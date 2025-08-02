@@ -9,15 +9,13 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
+// El archivo serviceAccountKey.json se cargará de forma segura en Render
 const serviceAccount = require('./serviceAccountKey.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'pedidos-con-gemini.firebasestorage.app'
+  storageBucket: 'pedidos-con-gemini.firebasestorage.app' // Asegúrate que este sea tu bucket
 });
 
-// <-- CORRECCIÓN: Se añade 'ignoreUndefinedProperties: true' como una capa extra de seguridad.
-// Esto previene que la app se caiga si por alguna razón se intenta guardar un 'undefined'.
-// Firestore simplemente ignorará ese campo en lugar de lanzar un error.
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); 
 
@@ -85,7 +83,6 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
         // test_event_code: "YOUR_TEST_CODE_HERE",
     };
     
-    // Limpiar claves nulas o indefinidas del payload para no enviar datos vacíos a Meta
     if (!payload.data[0].event_source_url) delete payload.data[0].event_source_url;
     if (!payload.data[0].fbc) delete payload.data[0].fbc;
 
@@ -100,6 +97,31 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
 };
 
 // --- WEBHOOK DE WHATSAPP ---
+
+// >>>>>>>> INICIO: CÓDIGO AÑADIDO PARA VERIFICACIÓN <<<<<<<<
+// Este endpoint maneja la solicitud GET de verificación de Meta
+app.get('/webhook', (req, res) => {
+    // Extrae los parámetros que envía Meta
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
+
+    // Comprueba que el modo y el token existan
+    if (mode && token) {
+        // Comprueba que el modo sea 'subscribe' y que el token coincida con el que pusiste en Render
+        if (mode === 'subscribe' && token === VERIFY_TOKEN) {
+            console.log('WEBHOOK_VERIFIED');
+            res.status(200).send(challenge);
+        } else {
+            // Si no coinciden, rechaza la solicitud
+            res.sendStatus(403);
+        }
+    }
+});
+// >>>>>>>> FIN: CÓDIGO AÑADIDO PARA VERIFICACIÓN <<<<<<<<
+
+
+// Este endpoint maneja los mensajes entrantes (ya lo tenías)
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
@@ -125,14 +147,12 @@ app.post('/webhook', async (req, res) => {
             if (!contactDoc.exists || !contactDoc.data().adReferral) {
                 isNewAdContact = true;
             }
-            // <-- CORRECCIÓN PRINCIPAL: Se usa '?? null' para evitar guardar 'undefined' en Firestore.
-            // Esto asegura que si un campo no viene en el payload de Meta, se guarda como 'null' en su lugar.
             contactData.adReferral = {
                 source_id: message.referral.source_id ?? null,
                 headline: message.referral.headline ?? null,
                 source_type: message.referral.source_type ?? null,
                 source_url: message.referral.source_url ?? null,
-                fbc: message.referral.ref ?? null, // El 'ref' es el fbc
+                fbc: message.referral.ref ?? null,
                 receivedAt: timestamp
             };
         }
@@ -166,7 +186,7 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-// --- ENDPOINT PARA ENVIAR MENSAJES (sin cambios) ---
+// --- ENDPOINT PARA ENVIAR MENSAJES ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType } = req.body;
@@ -227,7 +247,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 });
 
 
-// --- ENDPOINTS PARA ACCIONES MANUALES (sin cambios) ---
+// --- ENDPOINTS PARA ACCIONES MANUALES ---
 app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
