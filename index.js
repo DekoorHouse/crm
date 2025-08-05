@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON RESPUESTAS RÁPIDAS DINÁMICAS
+// index.js - VERSIÓN CON PANEL DE DETALLES DE CONTACTO
 
 require('dotenv').config();
 const express = require('express');
@@ -288,7 +288,38 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 });
 
 
-// --- ENDPOINTS PARA ACCIONES MANUALES ---
+// --- ENDPOINTS PARA ACCIONES MANUALES Y DATOS DE CONTACTO ---
+app.put('/api/contacts/:contactId', async (req, res) => {
+    const { contactId } = req.params;
+    const { name, email, nickname } = req.body;
+
+    if (!name) {
+        return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+
+        const updateData = {
+            name: name,
+            email: email || null,
+            nickname: nickname || null,
+        };
+
+        await contactRef.update(updateData);
+        res.status(200).json({ success: true, message: 'Contacto actualizado correctamente.' });
+
+    } catch (error) {
+        console.error('Error al actualizar el contacto:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el contacto.' });
+    }
+});
+
 app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
