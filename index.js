@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON NOTAS, FILTROS, EMOJIS Y RESPUESTAS RÁPIDAS
+// index.js - VERSIÓN CON NOTAS EDITABLES, FILTROS Y EMOJIS MEJORADOS
 
 require('dotenv').config();
 const express = require('express');
@@ -353,7 +353,7 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
     }
 });
 
-// --- INICIO: ENDPOINT PARA NOTAS INTERNAS ---
+// --- ENDPOINTS PARA NOTAS INTERNAS ---
 app.post('/api/contacts/:contactId/notes', async (req, res) => {
     const { contactId } = req.params;
     const { text } = req.body;
@@ -367,8 +367,6 @@ app.post('/api/contacts/:contactId/notes', async (req, res) => {
         await noteRef.add({
             text: text,
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            // Aquí podrías añadir el autor de la nota si tuvieras un sistema de usuarios
-            // author: auth.currentUser.email 
         });
         res.status(201).json({ success: true, message: 'Nota guardada correctamente.' });
     } catch (error) {
@@ -376,7 +374,37 @@ app.post('/api/contacts/:contactId/notes', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al guardar la nota.' });
     }
 });
-// --- FIN: ENDPOINT PARA NOTAS INTERNAS ---
+
+app.put('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
+    const { contactId, noteId } = req.params;
+    const { text } = req.body;
+
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
+
+    try {
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
+        await noteRef.update({ text: text });
+        res.status(200).json({ success: true, message: 'Nota actualizada correctamente.' });
+    } catch (error) {
+        console.error('Error al actualizar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al actualizar la nota.' });
+    }
+});
+
+app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
+    const { contactId, noteId } = req.params;
+
+    try {
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
+        await noteRef.delete();
+        res.status(200).json({ success: true, message: 'Nota eliminada correctamente.' });
+    } catch (error) {
+        console.error('Error al eliminar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al eliminar la nota.' });
+    }
+});
 
 
 app.listen(PORT, () => {
