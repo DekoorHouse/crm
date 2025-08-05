@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON NOTAS EDITABLES, FILTROS Y EMOJIS MEJORADOS
+// index.js - VERSIÓN CON RESPUESTAS RÁPIDAS DINÁMICAS
 
 require('dotenv').config();
 const express = require('express');
@@ -189,7 +189,6 @@ app.post('/webhook', async (req, res) => {
                 const snapshot = await query.get();
                 if (!snapshot.empty) {
                     const messageDoc = snapshot.docs[0];
-                    // Evitar la regresión de estados. Ej: no pasar de 'read' a 'delivered'
                     const currentStatus = messageDoc.data().status;
                     const statusOrder = { sent: 1, delivered: 2, read: 3 };
                     if (!currentStatus || statusOrder[newStatus] > statusOrder[currentStatus]) {
@@ -410,6 +409,43 @@ app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
     } catch (error) {
         console.error('Error al eliminar la nota:', error);
         res.status(500).json({ success: false, message: 'Error al eliminar la nota.' });
+    }
+});
+
+// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
+app.get('/api/quick-replies', async (req, res) => {
+    try {
+        const snapshot = await db.collection('quick_replies').orderBy('shortcut').get();
+        const replies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json(replies);
+    } catch (error) {
+        console.error('Error al obtener respuestas rápidas:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+app.post('/api/quick-replies', async (req, res) => {
+    const { shortcut, message } = req.body;
+
+    if (!shortcut || !message) {
+        return res.status(400).json({ success: false, message: 'El atajo y el mensaje son obligatorios.' });
+    }
+
+    try {
+        const existingReply = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
+        if (!existingReply.empty) {
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
+        }
+
+        const newReply = await db.collection('quick_replies').add({
+            shortcut: shortcut,
+            message: message,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+        res.status(201).json({ success: true, id: newReply.id });
+    } catch (error) {
+        console.error('Error al crear respuesta rápida:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
     }
 });
 
