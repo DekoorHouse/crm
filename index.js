@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CORREGIDA Y ROBUSTA
+// index.js - VERSIÓN SIN SECCIÓN DE EMAIL
 
 require('dotenv').config();
 const express = require('express');
@@ -9,11 +9,10 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-// El archivo serviceAccountKey.json se cargará de forma segura en Render
 const serviceAccount = require('./serviceAccountKey.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'pedidos-con-gemini.firebasestorage.app' // Asegúrate que este sea tu bucket
+  storageBucket: 'pedidos-con-gemini.firebasestorage.app'
 });
 
 const db = admin.firestore();
@@ -52,13 +51,12 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`; 
 
-    const userData = { ph: [], em: [] };
+    const userData = { ph: [] }; // Solo se usará el teléfono
     if (contactInfo.wa_id) userData.ph.push(sha256(contactInfo.wa_id));
-    if (contactInfo.email) userData.em.push(sha256(contactInfo.email));
     if (contactInfo.profile?.name) userData.fn = sha256(contactInfo.profile.name);
     
-    if (userData.ph.length === 0 && userData.em.length === 0) {
-        console.error(`No se puede enviar el evento '${eventName}' porque faltan identificadores de usuario (teléfono o email).`);
+    if (userData.ph.length === 0) {
+        console.error(`No se puede enviar el evento '${eventName}' porque falta el identificador de teléfono.`);
         return;
     }
 
@@ -98,30 +96,21 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
 
 // --- WEBHOOK DE WHATSAPP ---
 
-// >>>>>>>> INICIO: CÓDIGO AÑADIDO PARA VERIFICACIÓN <<<<<<<<
-// Este endpoint maneja la solicitud GET de verificación de Meta
 app.get('/webhook', (req, res) => {
-    // Extrae los parámetros que envía Meta
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];
 
-    // Comprueba que el modo y el token existan
     if (mode && token) {
-        // Comprueba que el modo sea 'subscribe' y que el token coincida con el que pusiste en Render
         if (mode === 'subscribe' && token === VERIFY_TOKEN) {
             console.log('WEBHOOK_VERIFIED');
             res.status(200).send(challenge);
         } else {
-            // Si no coinciden, rechaza la solicitud
             res.sendStatus(403);
         }
     }
 });
-// >>>>>>>> FIN: CÓDIGO AÑADIDO PARA VERIFICACIÓN <<<<<<<<
 
-
-// Este endpoint maneja los mensajes entrantes (ya lo tenías)
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
@@ -258,10 +247,10 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
         
+        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
-            profile: { name: contactData.name },
-            email: contactData.email 
+            profile: { name: contactData.name }
         };
 
         await sendConversionEvent('CompleteRegistration', 'chat', contactInfoForEvent, contactData.adReferral);
@@ -286,10 +275,10 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
         
+        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
-            profile: { name: contactData.name },
-            email: contactData.email
+            profile: { name: contactData.name }
         };
 
         await sendConversionEvent('Purchase', 'chat', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
@@ -308,10 +297,10 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
         const contactData = contactDoc.data();
 
+        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
-            profile: { name: contactData.name },
-            email: contactData.email
+            profile: { name: contactData.name }
         };
 
         await sendConversionEvent('ViewContent', 'website', contactInfoForEvent, contactData.adReferral);
