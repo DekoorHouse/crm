@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON RESPUESTAS RÁPIDAS DINÁMICAS
+// index.js - VERSIÓN CON NOTAS EDITABLES, FILTROS Y EMOJIS MEJORADOS
 
 require('dotenv').config();
 const express = require('express');
@@ -116,11 +116,87 @@ app.post('/webhook', async (req, res) => {
     const value = change?.value;
 
     if (value) {
+        // Procesa mensajes entrantes
         if (value.messages) {
-            // ... (código para procesar mensajes entrantes)
+            const message = value.messages[0];
+            const contactInfo = value.contacts[0];
+            const from = message.from;
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(from);
+            
+            let contactData = {
+                lastMessageTimestamp: timestamp,
+                name: contactInfo.profile.name,
+                wa_id: contactInfo.wa_id,
+                unreadCount: admin.firestore.FieldValue.increment(1)
+            };
+            
+            let isNewAdContact = false;
+            if (message.referral && message.referral.source_type === 'ad') {
+                const contactDoc = await contactRef.get();
+                if (!contactDoc.exists || !contactDoc.data().adReferral) {
+                    isNewAdContact = true;
+                }
+                contactData.adReferral = {
+                    source_id: message.referral.source_id ?? null,
+                    headline: message.referral.headline ?? null,
+                    source_type: message.referral.source_type ?? null,
+                    source_url: message.referral.source_url ?? null,
+                    fbc: message.referral.ref ?? null,
+                    receivedAt: timestamp
+                };
+            }
+
+            let messageData = { timestamp: timestamp, from: from, status: 'received' };
+            let lastMessageText = '';
+            try {
+                switch (message.type) {
+                    case 'text': messageData.text = message.text.body; lastMessageText = message.text.body; break;
+                    case 'image': case 'video': lastMessageText = message.type === 'image' ? '📷 Imagen' : '🎥 Video'; messageData.text = lastMessageText; break;
+                    default: lastMessageText = `Mensaje no soportado: ${message.type}`; messageData.text = lastMessageText; break;
+                }
+            } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
+
+            await contactRef.collection('messages').add(messageData);
+            contactData.lastMessage = lastMessageText;
+            await contactRef.set(contactData, { merge: true });
+            console.log(`Mensaje (${message.type}) de ${from} guardado.`);
+
+            if (isNewAdContact) {
+                try {
+                    await sendConversionEvent('ViewContent', 'website', contactInfo, contactData.adReferral);
+                    await sendConversionEvent('Lead', 'website', contactInfo, contactData.adReferral);
+                    await contactRef.update({ viewContentSent: true, leadEventSent: true });
+                } catch (error) {
+                    console.error(`Fallo al enviar eventos iniciales para ${from}:`, error.message);
+                }
+            }
         }
+
+        // Procesa actualizaciones de estado (sent, delivered, read)
         if (value.statuses) {
-            // ... (código para procesar estados)
+            const statusUpdate = value.statuses[0];
+            const wamid = statusUpdate.id;
+            const newStatus = statusUpdate.status;
+            const recipientId = statusUpdate.recipient_id;
+
+            console.log(`Recibido estado '${newStatus}' para el mensaje ${wamid} del contacto ${recipientId}`);
+
+            const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
+            const query = messagesRef.where('id', '==', wamid).limit(1);
+            
+            try {
+                const snapshot = await query.get();
+                if (!snapshot.empty) {
+                    const messageDoc = snapshot.docs[0];
+                    await messageDoc.ref.update({ status: newStatus });
+                    console.log(`Estado del mensaje ${wamid} actualizado a '${newStatus}' en Firestore.`);
+                } else {
+                    console.warn(`No se encontró el mensaje con WAMID ${wamid} para actualizar el estado.`);
+                }
+            } catch (error) {
+                console.error(`Error al actualizar el estado del mensaje ${wamid}:`, error);
+            }
         }
     }
     res.sendStatus(200);
@@ -128,64 +204,208 @@ app.post('/webhook', async (req, res) => {
 
 // --- ENDPOINT PARA ENVIAR MENSAJES ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
-    // ... (código para enviar mensajes)
+    const { contactId } = req.params;
+    const { text, fileUrl, fileType } = req.body;
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
+    }
+
+    if (!text && !fileUrl) {
+        return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
+    }
+
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    
+    let messagePayload;
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+
+        const contactData = contactDoc.data();
+        const lastTimestamp = contactData.lastMessageTimestamp;
+
+        if (lastTimestamp) {
+            const now = new Date();
+            const lastMessageDate = lastTimestamp.toDate();
+            const diffHours = (now.getTime() - lastMessageDate.getTime()) / (1000 * 60 * 60);
+
+            if (diffHours > 24) {
+                return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. No se puede enviar una respuesta.' });
+            }
+        }
+
+        if (text) {
+            messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
+        } else if (fileUrl && fileType) {
+            const type = fileType.startsWith('image/') ? 'image' : 'video';
+            messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
+        }
+
+        const response = await axios.post(url, messagePayload, { headers });
+        const messageId = response.data.messages[0].id;
+        
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        let messageToSave = {
+            from: PHONE_NUMBER_ID, 
+            status: 'sent', 
+            timestamp: timestamp, 
+            id: messageId 
+        };
+
+        if (text) {
+            messageToSave.text = text;
+        } else if (fileUrl) {
+            messageToSave.fileUrl = fileUrl;
+            messageToSave.fileType = fileType;
+            messageToSave.text = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video';
+        }
+        
+        await contactRef.collection('messages').add(messageToSave);
+        await contactRef.update({
+            lastMessage: messageToSave.text,
+            lastMessageTimestamp: timestamp,
+            unreadCount: 0 
+        });
+
+        res.status(200).json({ success: true, message: 'Mensaje enviado correctamente.' });
+    } catch (error) {
+        console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
+    }
 });
+
 
 // --- ENDPOINTS PARA ACCIONES MANUALES ---
 app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
-    // ... (código)
+    const { contactId } = req.params;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    try {
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        
+        const contactData = contactDoc.data();
+        if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
+        
+        const contactInfoForEvent = {
+            wa_id: contactData.wa_id,
+            profile: { name: contactData.name }
+        };
+
+        await sendConversionEvent('CompleteRegistration', 'chat', contactInfoForEvent, contactData.adReferral);
+        await contactRef.update({ registrationStatus: 'completed', registrationSource: contactData.adReferral ? 'meta_ad' : 'manual_organic', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
+        res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al procesar la solicitud.' });
+    }
 });
 
 app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
-    // ... (código)
+    const { contactId } = req.params;
+    const { value } = req.body;
+    const currency = 'MXN';
+    if (!value || isNaN(parseFloat(value))) return res.status(400).json({ success: false, message: 'Se requiere un valor numérico válido.' });
+    
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    try {
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        
+        const contactData = contactDoc.data();
+        if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
+        
+        const contactInfoForEvent = {
+            wa_id: contactData.wa_id,
+            profile: { name: contactData.name }
+        };
+
+        await sendConversionEvent('Purchase', 'chat', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
+        await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
+        res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al procesar la compra.' });
+    }
 });
 
 app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
-    // ... (código)
+    const { contactId } = req.params;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    try {
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        const contactData = contactDoc.data();
+
+        const contactInfoForEvent = {
+            wa_id: contactData.wa_id,
+            profile: { name: contactData.name }
+        };
+
+        await sendConversionEvent('ViewContent', 'website', contactInfoForEvent, contactData.adReferral);
+        res.status(200).json({ success: true, message: 'Evento ViewContent enviado manualmente.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al procesar el envío de ViewContent.' });
+    }
 });
 
 // --- ENDPOINTS PARA NOTAS INTERNAS ---
 app.post('/api/contacts/:contactId/notes', async (req, res) => {
-    // ... (código)
+    const { contactId } = req.params;
+    const { text } = req.body;
+
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
+
+    try {
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes');
+        await noteRef.add({
+            text: text,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+        res.status(201).json({ success: true, message: 'Nota guardada correctamente.' });
+    } catch (error) {
+        console.error('Error al guardar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al guardar la nota.' });
+    }
 });
 
 app.put('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    // ... (código)
+    const { contactId, noteId } = req.params;
+    const { text } = req.body;
+
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
+
+    try {
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
+        await noteRef.update({ text: text });
+        res.status(200).json({ success: true, message: 'Nota actualizada correctamente.' });
+    } catch (error) {
+        console.error('Error al actualizar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al actualizar la nota.' });
+    }
 });
 
 app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    // ... (código)
-});
+    const { contactId, noteId } = req.params;
 
-// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
-app.get('/api/quick-replies', async (req, res) => {
     try {
-        const repliesSnapshot = await db.collection('quick_replies').orderBy('shortcut').get();
-        const replies = repliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json(replies);
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
+        await noteRef.delete();
+        res.status(200).json({ success: true, message: 'Nota eliminada correctamente.' });
     } catch (error) {
-        console.error('Error al obtener respuestas rápidas:', error);
-        res.status(500).json({ success: false, message: 'Error al obtener respuestas rápidas.' });
+        console.error('Error al eliminar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al eliminar la nota.' });
     }
 });
 
-app.post('/api/quick-replies', async (req, res) => {
-    const { shortcut, message } = req.body;
-    if (!shortcut || !message) {
-        return res.status(400).json({ success: false, message: 'El atajo y el mensaje son requeridos.' });
-    }
-    try {
-        const newReplyRef = await db.collection('quick_replies').add({
-            shortcut: shortcut.toLowerCase(),
-            message: message,
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        });
-        res.status(201).json({ success: true, id: newReplyRef.id });
-    } catch (error) {
-        console.error('Error al crear respuesta rápida:', error);
-        res.status(500).json({ success: false, message: 'Error al crear la respuesta rápida.' });
-    }
-});
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
