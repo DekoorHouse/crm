@@ -1,4 +1,4 @@
-// index.js - VERSIÓN SIN SECCIÓN DE EMAIL
+// index.js - VERSIÓN CON VALIDACIÓN DE 24 HORAS
 
 require('dotenv').config();
 const express = require('express');
@@ -194,6 +194,29 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     let messagePayload;
 
     try {
+        // --- INICIO: VALIDACIÓN DE 24 HORAS ---
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+
+        const contactData = contactDoc.data();
+        const lastTimestamp = contactData.lastMessageTimestamp;
+
+        if (lastTimestamp) {
+            const now = new Date();
+            const lastMessageDate = lastTimestamp.toDate();
+            const diffHours = (now.getTime() - lastMessageDate.getTime()) / (1000 * 60 * 60);
+
+            if (diffHours > 24) {
+                return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. No se puede enviar una respuesta.' });
+            }
+        }
+        // --- FIN: VALIDACIÓN DE 24 HORAS ---
+
+
         if (text) {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
         } else if (fileUrl && fileType) {
@@ -204,7 +227,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         const response = await axios.post(url, messagePayload, { headers });
         const messageId = response.data.messages[0].id;
         
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         let messageToSave = {
             from: PHONE_NUMBER_ID, 
@@ -247,7 +269,6 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
         
-        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
             profile: { name: contactData.name }
@@ -275,7 +296,6 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
         
-        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
             profile: { name: contactData.name }
@@ -297,7 +317,6 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
         const contactData = contactDoc.data();
 
-        // Se crea el objeto para el evento sin el email
         const contactInfoForEvent = {
             wa_id: contactData.wa_id,
             profile: { name: contactData.name }
