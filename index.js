@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON VALIDACIÓN DE 24 HORAS
+// index.js - VERSIÓN CON NOTAS, FILTROS, EMOJIS Y RESPUESTAS RÁPIDAS
 
 require('dotenv').config();
 const express = require('express');
@@ -51,7 +51,7 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`; 
 
-    const userData = { ph: [] }; // Solo se usará el teléfono
+    const userData = { ph: [] };
     if (contactInfo.wa_id) userData.ph.push(sha256(contactInfo.wa_id));
     if (contactInfo.profile?.name) userData.fn = sha256(contactInfo.profile.name);
     
@@ -78,7 +78,6 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
             event_source_url: referralInfo?.source_url, 
             fbc: referralInfo?.fbc,
         }],
-        // test_event_code: "YOUR_TEST_CODE_HERE",
     };
     
     if (!payload.data[0].event_source_url) delete payload.data[0].event_source_url;
@@ -116,59 +115,87 @@ app.post('/webhook', async (req, res) => {
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    if (value && value.messages) {
-        const message = value.messages[0];
-        const contactInfo = value.contacts[0];
-        const from = message.from;
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
-        const contactRef = db.collection('contacts_whatsapp').doc(from);
-        
-        let contactData = {
-            lastMessageTimestamp: timestamp,
-            name: contactInfo.profile.name,
-            wa_id: contactInfo.wa_id,
-            unreadCount: admin.firestore.FieldValue.increment(1)
-        };
-        
-        let isNewAdContact = false;
-        if (message.referral && message.referral.source_type === 'ad') {
-            const contactDoc = await contactRef.get();
-            if (!contactDoc.exists || !contactDoc.data().adReferral) {
-                isNewAdContact = true;
-            }
-            contactData.adReferral = {
-                source_id: message.referral.source_id ?? null,
-                headline: message.referral.headline ?? null,
-                source_type: message.referral.source_type ?? null,
-                source_url: message.referral.source_url ?? null,
-                fbc: message.referral.ref ?? null,
-                receivedAt: timestamp
+    if (value) {
+        // Procesa mensajes entrantes
+        if (value.messages) {
+            const message = value.messages[0];
+            const contactInfo = value.contacts[0];
+            const from = message.from;
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(from);
+            
+            let contactData = {
+                lastMessageTimestamp: timestamp,
+                name: contactInfo.profile.name,
+                wa_id: contactInfo.wa_id,
+                unreadCount: admin.firestore.FieldValue.increment(1)
             };
+            
+            let isNewAdContact = false;
+            if (message.referral && message.referral.source_type === 'ad') {
+                const contactDoc = await contactRef.get();
+                if (!contactDoc.exists || !contactDoc.data().adReferral) {
+                    isNewAdContact = true;
+                }
+                contactData.adReferral = {
+                    source_id: message.referral.source_id ?? null,
+                    headline: message.referral.headline ?? null,
+                    source_type: message.referral.source_type ?? null,
+                    source_url: message.referral.source_url ?? null,
+                    fbc: message.referral.ref ?? null,
+                    receivedAt: timestamp
+                };
+            }
+
+            let messageData = { timestamp: timestamp, from: from, status: 'received' };
+            let lastMessageText = '';
+            try {
+                switch (message.type) {
+                    case 'text': messageData.text = message.text.body; lastMessageText = message.text.body; break;
+                    case 'image': case 'video': lastMessageText = message.type === 'image' ? '📷 Imagen' : '🎥 Video'; messageData.text = lastMessageText; break;
+                    default: lastMessageText = `Mensaje no soportado: ${message.type}`; messageData.text = lastMessageText; break;
+                }
+            } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
+
+            await contactRef.collection('messages').add(messageData);
+            contactData.lastMessage = lastMessageText;
+            await contactRef.set(contactData, { merge: true });
+            console.log(`Mensaje (${message.type}) de ${from} guardado.`);
+
+            if (isNewAdContact) {
+                try {
+                    await sendConversionEvent('ViewContent', 'website', contactInfo, contactData.adReferral);
+                    await sendConversionEvent('Lead', 'website', contactInfo, contactData.adReferral);
+                    await contactRef.update({ viewContentSent: true, leadEventSent: true });
+                } catch (error) {
+                    console.error(`Fallo al enviar eventos iniciales para ${from}:`, error.message);
+                }
+            }
         }
 
-        let messageData = { timestamp: timestamp, from: from, status: 'received' };
-        let lastMessageText = '';
-        try {
-            switch (message.type) {
-                case 'text': messageData.text = message.text.body; lastMessageText = message.text.body; break;
-                case 'image': case 'video': lastMessageText = message.type === 'image' ? '📷 Imagen' : '🎥 Video'; messageData.text = lastMessageText; break;
-                default: lastMessageText = `Mensaje no soportado: ${message.type}`; messageData.text = lastMessageText; break;
-            }
-        } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
+        // Procesa actualizaciones de estado (sent, delivered, read)
+        if (value.statuses) {
+            const statusUpdate = value.statuses[0];
+            const wamid = statusUpdate.id;
+            const newStatus = statusUpdate.status;
+            const recipientId = statusUpdate.recipient_id;
 
-        await contactRef.collection('messages').add(messageData);
-        contactData.lastMessage = lastMessageText;
-        await contactRef.set(contactData, { merge: true });
-        console.log(`Mensaje (${message.type}) de ${from} guardado.`);
+            console.log(`Recibido estado '${newStatus}' para el mensaje ${wamid} del contacto ${recipientId}`);
 
-        if (isNewAdContact) {
+            const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
+            const query = messagesRef.where('id', '==', wamid).limit(1);
+            
             try {
-                await sendConversionEvent('ViewContent', 'website', contactInfo, contactData.adReferral);
-                await sendConversionEvent('Lead', 'website', contactInfo, contactData.adReferral);
-
-                await contactRef.update({ viewContentSent: true, leadEventSent: true });
+                const snapshot = await query.get();
+                if (!snapshot.empty) {
+                    const messageDoc = snapshot.docs[0];
+                    await messageDoc.ref.update({ status: newStatus });
+                    console.log(`Estado del mensaje ${wamid} actualizado a '${newStatus}' en Firestore.`);
+                } else {
+                    console.warn(`No se encontró el mensaje con WAMID ${wamid} para actualizar el estado.`);
+                }
             } catch (error) {
-                console.error(`Fallo al enviar eventos iniciales para ${from}:`, error.message);
+                console.error(`Error al actualizar el estado del mensaje ${wamid}:`, error);
             }
         }
     }
@@ -194,7 +221,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     let messagePayload;
 
     try {
-        // --- INICIO: VALIDACIÓN DE 24 HORAS ---
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         const contactDoc = await contactRef.get();
 
@@ -214,8 +240,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. No se puede enviar una respuesta.' });
             }
         }
-        // --- FIN: VALIDACIÓN DE 24 HORAS ---
-
 
         if (text) {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
@@ -328,6 +352,32 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al procesar el envío de ViewContent.' });
     }
 });
+
+// --- INICIO: ENDPOINT PARA NOTAS INTERNAS ---
+app.post('/api/contacts/:contactId/notes', async (req, res) => {
+    const { contactId } = req.params;
+    const { text } = req.body;
+
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
+
+    try {
+        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes');
+        await noteRef.add({
+            text: text,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            // Aquí podrías añadir el autor de la nota si tuvieras un sistema de usuarios
+            // author: auth.currentUser.email 
+        });
+        res.status(201).json({ success: true, message: 'Nota guardada correctamente.' });
+    } catch (error) {
+        console.error('Error al guardar la nota:', error);
+        res.status(500).json({ success: false, message: 'Error al guardar la nota.' });
+    }
+});
+// --- FIN: ENDPOINT PARA NOTAS INTERNAS ---
+
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
