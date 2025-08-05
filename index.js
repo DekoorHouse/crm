@@ -117,10 +117,10 @@ app.post('/webhook', async (req, res) => {
 
     if (value) {
         if (value.messages) {
-            // ... (código existente para procesar mensajes entrantes)
+            // ... (código para procesar mensajes entrantes)
         }
         if (value.statuses) {
-            // ... (código existente para procesar estados)
+            // ... (código para procesar estados)
         }
     }
     res.sendStatus(200);
@@ -128,36 +128,36 @@ app.post('/webhook', async (req, res) => {
 
 // --- ENDPOINT PARA ENVIAR MENSAJES ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
-    // ... (código existente para enviar mensajes)
+    // ... (código para enviar mensajes)
 });
 
 // --- ENDPOINTS PARA ACCIONES MANUALES ---
 app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
 app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
 app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
 // --- ENDPOINTS PARA NOTAS INTERNAS ---
 app.post('/api/contacts/:contactId/notes', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
 app.put('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
 app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    // ... (código existente)
+    // ... (código)
 });
 
-// --- INICIO: ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
+// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
 app.get('/api/quick-replies', async (req, res) => {
     try {
         const repliesSnapshot = await db.collection('quick_replies').orderBy('shortcut').get();
@@ -186,7 +186,6 @@ app.post('/api/quick-replies', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al crear la respuesta rápida.' });
     }
 });
-// --- FIN: ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
