@@ -189,8 +189,15 @@ app.post('/webhook', async (req, res) => {
                 const snapshot = await query.get();
                 if (!snapshot.empty) {
                     const messageDoc = snapshot.docs[0];
-                    await messageDoc.ref.update({ status: newStatus });
-                    console.log(`Estado del mensaje ${wamid} actualizado a '${newStatus}' en Firestore.`);
+                    // Evitar la regresión de estados. Ej: no pasar de 'read' a 'delivered'
+                    const currentStatus = messageDoc.data().status;
+                    const statusOrder = { sent: 1, delivered: 2, read: 3 };
+                    if (!currentStatus || statusOrder[newStatus] > statusOrder[currentStatus]) {
+                        await messageDoc.ref.update({ status: newStatus });
+                        console.log(`Estado del mensaje ${wamid} actualizado a '${newStatus}' en Firestore.`);
+                    } else {
+                        console.log(`Se ignoró la actualización de estado de '${currentStatus}' a '${newStatus}' para el mensaje ${wamid}.`);
+                    }
                 } else {
                     console.warn(`No se encontró el mensaje con WAMID ${wamid} para actualizar el estado.`);
                 }
