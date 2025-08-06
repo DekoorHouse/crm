@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON BOT DE IA (GEMINI)
+// index.js - VERSIÓN CON BOT DE IA (GEMINI) Y MANEJO DE ERRORES MEJORADO
 
 require('dotenv').config();
 const express = require('express');
@@ -520,24 +520,31 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
             }]
         };
 
-        const geminiResponse = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        });
+        let generatedText;
+        try {
+            const geminiResponse = await fetch(apiUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
 
-        if (!geminiResponse.ok) {
-            const errorBody = await geminiResponse.text();
-            console.error('Error de la API de Gemini:', errorBody);
-            throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+            if (!geminiResponse.ok) {
+                const errorBody = await geminiResponse.text();
+                console.error('Error de la API de Gemini:', errorBody);
+                throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+            }
+
+            const result = await geminiResponse.json();
+            generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+
+            if (!generatedText) {
+                throw new Error('No se recibió una respuesta válida de la IA.');
+            }
+        } catch (geminiError) {
+             console.error('Fallo en la llamada a Gemini:', geminiError);
+             return res.status(500).json({ success: false, message: 'Error al contactar la IA de Gemini.' });
         }
 
-        const result = await geminiResponse.json();
-        const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-
-        if (!generatedText) {
-            throw new Error('No se recibió una respuesta válida de la IA.');
-        }
 
         // 4. Enviar la respuesta generada vía WhatsApp
         const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
