@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON PANEL DE DETALLES DE CONTACTO
+// index.js - VERSIÓN CON BOT DE IA (GEMINI)
 
 require('dotenv').config();
 const express = require('express');
@@ -7,6 +7,7 @@ const { getStorage } = require('firebase-admin/storage');
 const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
+const fetch = require('node-fetch'); // Asegúrate de tener node-fetch instalado: npm install node-fetch
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 const serviceAccount = require('./serviceAccountKey.json');
@@ -32,6 +33,7 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // <-- AÑADE TU API KEY DE GEMINI EN .env
 
 // --- FUNCIÓN PARA HASHEAR DATOS ---
 function sha256(data) {
@@ -477,6 +479,97 @@ app.post('/api/quick-replies', async (req, res) => {
     } catch (error) {
         console.error('Error al crear respuesta rápida:', error);
         res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+// --- ENDPOINT PARA BOT DE IA ---
+app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
+    const { contactId } = req.params;
+
+    if (!GEMINI_API_KEY) {
+        return res.status(500).json({ success: false, message: 'La API Key de Gemini no está configurada en el servidor.' });
+    }
+
+    try {
+        // 1. Obtener historial de la conversación
+        const messagesRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages');
+        const messagesSnapshot = await messagesRef.orderBy('timestamp', 'desc').limit(10).get();
+        
+        if (messagesSnapshot.empty) {
+            return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
+        }
+
+        const conversationHistory = messagesSnapshot.docs
+            .map(doc => {
+                const data = doc.data();
+                const sender = data.from === contactId ? 'Cliente' : 'Asistente';
+                return `${sender}: ${data.text}`;
+            })
+            .reverse() // Ordenar de más antiguo a más reciente
+            .join('\n');
+
+        // 2. Construir el prompt para Gemini
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial de la Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+
+        // 3. Llamar a la API de Gemini
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+        
+        const payload = {
+            contents: [{
+                parts: [{ text: prompt }]
+            }]
+        };
+
+        const geminiResponse = await fetch(apiUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        if (!geminiResponse.ok) {
+            const errorBody = await geminiResponse.text();
+            console.error('Error de la API de Gemini:', errorBody);
+            throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+        }
+
+        const result = await geminiResponse.json();
+        const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+
+        if (!generatedText) {
+            throw new Error('No se recibió una respuesta válida de la IA.');
+        }
+
+        // 4. Enviar la respuesta generada vía WhatsApp
+        const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+        const messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: generatedText } };
+
+        const response = await axios.post(url, messagePayload, { headers });
+        const messageId = response.data.messages[0].id;
+        
+        // 5. Guardar el mensaje enviado en Firestore
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const messageToSave = {
+            from: PHONE_NUMBER_ID, 
+            status: 'sent', 
+            timestamp: timestamp, 
+            id: messageId,
+            text: generatedText
+        };
+        
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        await contactRef.collection('messages').add(messageToSave);
+        await contactRef.update({
+            lastMessage: generatedText,
+            lastMessageTimestamp: timestamp,
+            unreadCount: 0 
+        });
+
+        res.status(200).json({ success: true, message: 'Respuesta generada y enviada con éxito.' });
+
+    } catch (error) {
+        console.error('Error al generar respuesta con IA:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
     }
 });
 
