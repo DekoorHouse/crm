@@ -1,5 +1,4 @@
-// index.js - VERSIÓN CON RESPUESTAS, REACCIONES Y BOT DE IA
-
+// index.js - VERSIÓN 1.7 CON GESTIÓN DE USUARIOS
 require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
@@ -20,7 +19,8 @@ const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); 
 
 const bucket = getStorage().bucket();
-console.log('Conexión con Firebase (Firestore y Storage) establecida.');
+const auth = admin.auth();
+console.log('Conexión con Firebase (Firestore, Storage y Auth) establecida.');
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
@@ -170,7 +170,7 @@ app.post('/webhook', async (req, res) => {
 // --- ENDPOINT PARA ENVIAR MENSAJES (ACTUALIZADO) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid } = req.body; // Se añade reply_to_wamid
+    const { text, fileUrl, fileType, reply_to_wamid } = req.body;
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
@@ -205,7 +205,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
         }
 
-        // Añadir contexto si se está respondiendo a un mensaje
         if (reply_to_wamid) {
             messagePayload.context = { message_id: reply_to_wamid };
         }
@@ -219,7 +218,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         if (text) { messageToSave.text = text; }
         else if (fileUrl) { messageToSave.fileUrl = fileUrl; messageToSave.fileType = fileType; messageToSave.text = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video'; }
         
-        // Guardar el contexto en Firestore para la UI
         if (reply_to_wamid) {
             messageToSave.context = { id: reply_to_wamid };
         }
@@ -237,12 +235,11 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 // --- NUEVO ENDPOINT PARA REACCIONES ---
 app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body; // `reaction` puede ser el emoji o `null` para quitarla
+    const { reaction } = req.body;
 
     try {
         const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
         
-        // Si la reacción es null o undefined, elimina el campo. Si no, lo actualiza.
         await messageRef.update({
             reaction: reaction || admin.firestore.FieldValue.delete()
         });
@@ -370,6 +367,93 @@ app.post('/api/quick-replies', async (req, res) => {
         res.status(201).json({ success: true, id: newReply.id });
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
+
+// --- START: USER MANAGEMENT ENDPOINTS ---
+
+// GET all users
+app.get('/api/users', async (req, res) => {
+    try {
+        const listUsersResult = await auth.listUsers(1000);
+        const userProfilesSnapshot = await db.collection('users').get();
+        const profiles = {};
+        userProfilesSnapshot.forEach(doc => {
+            profiles[doc.id] = doc.data();
+        });
+
+        const users = listUsersResult.users.map(userRecord => {
+            return {
+                ...userRecord.toJSON(),
+                profile: profiles[userRecord.uid]?.profile || 'N/D'
+            };
+        });
+        res.status(200).json(users);
+    } catch (error) {
+        console.error('Error listing users:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener la lista de usuarios.' });
+    }
+});
+
+// POST create a new user
+app.post('/api/users', async (req, res) => {
+    const { email, password, name, profile } = req.body;
+    if (!email || !password || !name || !profile) {
+        return res.status(400).json({ success: false, message: 'Email, contraseña, nombre y perfil son obligatorios.' });
+    }
+    try {
+        const userRecord = await auth.createUser({
+            email: email,
+            password: password,
+            displayName: name,
+        });
+
+        await db.collection('users').doc(userRecord.uid).set({
+            profile: profile
+        });
+
+        res.status(201).json({ success: true, uid: userRecord.uid });
+    } catch (error) {
+        console.error('Error creating new user:', error);
+        res.status(500).json({ success: false, message: `Error al crear el usuario: ${error.message}` });
+    }
+});
+
+// PUT update a user
+app.put('/api/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    const { name, profile } = req.body;
+    if (!name || !profile) {
+        return res.status(400).json({ success: false, message: 'Nombre y perfil son obligatorios.' });
+    }
+    try {
+        await auth.updateUser(uid, {
+            displayName: name,
+        });
+
+        await db.collection('users').doc(uid).set({
+            profile: profile
+        }, { merge: true });
+
+        res.status(200).json({ success: true, message: 'Usuario actualizado correctamente.' });
+    } catch (error) {
+        console.error(`Error updating user ${uid}:`, error);
+        res.status(500).json({ success: false, message: `Error al actualizar el usuario: ${error.message}` });
+    }
+});
+
+// DELETE a user
+app.delete('/api/users/:uid', async (req, res) => {
+    const { uid } = req.params;
+    try {
+        await auth.deleteUser(uid);
+        await db.collection('users').doc(uid).delete();
+        res.status(200).json({ success: true, message: 'Usuario eliminado correctamente.' });
+    } catch (error) {
+        console.error(`Error deleting user ${uid}:`, error);
+        res.status(500).json({ success: false, message: `Error al eliminar el usuario: ${error.message}` });
+    }
+});
+
+// --- END: USER MANAGEMENT ENDPOINTS ---
 
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
