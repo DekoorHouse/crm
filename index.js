@@ -167,7 +167,7 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-// --- ENDPOINT PARA ENVIAR MENSAJES (ACTUALIZADO PARA PLANTILLAS CON VARIABLES) ---
+// --- ENDPOINT PARA ENVIAR MENSAJES (CON LÓGICA CONDICIONAL PARA VARIABLES) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -195,33 +195,35 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
             messageToSaveText = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video';
         } else if (template && template.name && template.language) {
-            // --- INICIO: LÓGICA MEJORADA PARA PLANTILLAS CON VARIABLES ---
-            const contactDoc = await contactRef.get();
-            const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
-
+            
             messagePayload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: 'template',
                 template: {
                     name: template.name,
-                    language: { code: template.language },
-                    // Se añade el objeto 'components' para manejar las variables.
-                    // Por ahora, se asume que la primera variable {{1}} es el nombre del contacto.
-                    components: [{
-                        type: 'body',
-                        parameters: [{
-                            type: 'text',
-                            text: contactName
-                        }]
-                    }]
+                    language: { code: template.language }
                 }
             };
-            // Nota: Esta implementación asume que todas las plantillas con variables
-            // solo tienen una variable {{1}} en el cuerpo. Si una plantilla no tiene
-            // variables, la API de WhatsApp usualmente ignora el objeto 'components'.
-            // Si una plantilla tiene más variables, la llamada fallará.
-            // --- FIN: LÓGICA MEJORADA ---
+
+            // --- INICIO: LÓGICA CONDICIONAL PARA VARIABLES ---
+            const bodyComponent = template.components?.find(c => c.type === 'BODY');
+            const hasVariables = bodyComponent && bodyComponent.text.includes('{{1}}');
+
+            if (hasVariables) {
+                const contactDoc = await contactRef.get();
+                const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
+                
+                messagePayload.template.components = [{
+                    type: 'body',
+                    parameters: [{
+                        type: 'text',
+                        text: contactName
+                    }]
+                }];
+            }
+            // --- FIN: LÓGICA CONDICIONAL ---
+            
             messageToSaveText = `📄 Plantilla: ${template.name}`;
         } else {
              return res.status(400).json({ success: false, message: 'Formato de mensaje no válido.' });
