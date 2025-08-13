@@ -1,4 +1,5 @@
-// index.js - VERSIÓN 1.8 CON FILTRO DE USUARIOS SIN EMAIL
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES Y BOT DE IA
+
 require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
@@ -19,8 +20,7 @@ const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); 
 
 const bucket = getStorage().bucket();
-const auth = admin.auth();
-console.log('Conexión con Firebase (Firestore, Storage y Auth) establecida.');
+console.log('Conexión con Firebase (Firestore y Storage) establecida.');
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
@@ -167,7 +167,7 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-// --- ENDPOINT PARA ENVIAR MENSAJES (ACTUALIZADO) ---
+// --- ENDPOINT PARA ENVIAR MENSAJES (DENTRO DE 24H) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid } = req.body;
@@ -194,7 +194,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         if (lastTimestamp) {
             const diffHours = (new Date().getTime() - lastTimestamp.toDate().getTime()) / 3600000;
             if (diffHours > 24) {
-                return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. No se puede enviar una respuesta.' });
+                return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. Debes usar una plantilla.' });
             }
         }
 
@@ -232,18 +232,87 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     }
 });
 
-// --- NUEVO ENDPOINT PARA REACCIONES ---
+// --- NUEVO ENDPOINT PARA ENVIAR PLANTILLAS DE MENSAJES ---
+app.post('/api/contacts/:contactId/send-template', async (req, res) => {
+    const { contactId } = req.params;
+    const { templateName, params } = req.body; // params es un array de strings
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
+    }
+    if (!templateName || !params) {
+        return res.status(400).json({ success: false, message: 'Faltan el nombre de la plantilla y los parámetros.' });
+    }
+
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+
+    // Construir los componentes de la plantilla
+    const components = params.length > 0 ? [{
+        type: 'body',
+        parameters: params.map(p => ({ type: 'text', text: p }))
+    }] : [];
+
+    const messagePayload = {
+        messaging_product: 'whatsapp',
+        to: contactId,
+        type: 'template',
+        template: {
+            name: templateName,
+            language: {
+                code: 'es_MX' // Asumir un código de idioma, esto podría ser un parámetro también
+            },
+            components: components
+        }
+    };
+
+    try {
+        const response = await axios.post(url, messagePayload, { headers });
+        const messageId = response.data.messages[0].id;
+        
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        
+        // Guardar un registro del envío en Firestore
+        const messageToSave = {
+            from: PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: timestamp,
+            id: messageId,
+            text: `Plantilla '${templateName}' enviada.`, // Texto para la UI
+            isTemplate: true,
+            templateInfo: { // Guardar info de la plantilla para referencia
+                name: templateName,
+                params: params
+            }
+        };
+        
+        await contactRef.collection('messages').add(messageToSave);
+        // Actualizar el lastMessage para que aparezca en la lista de contactos
+        await contactRef.update({ 
+            lastMessage: `Plantilla: ${templateName}`, 
+            lastMessageTimestamp: timestamp, 
+            unreadCount: 0 
+        });
+
+        res.status(200).json({ success: true, message: 'Plantilla enviada correctamente.' });
+    } catch (error) {
+        console.error('Error al enviar plantilla vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error al enviar la plantilla a través de WhatsApp.' });
+    }
+});
+
+
+// --- ENDPOINT PARA REACCIONES ---
 app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
     const { reaction } = req.body;
 
     try {
         const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
-        
         await messageRef.update({
             reaction: reaction || admin.firestore.FieldValue.delete()
         });
-
         res.status(200).json({ success: true, message: 'Reacción actualizada.' });
     } catch (error) {
         console.error('Error al actualizar la reacción:', error);
@@ -367,95 +436,6 @@ app.post('/api/quick-replies', async (req, res) => {
         res.status(201).json({ success: true, id: newReply.id });
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
-
-// --- START: USER MANAGEMENT ENDPOINTS ---
-
-// GET all users
-app.get('/api/users', async (req, res) => {
-    try {
-        const listUsersResult = await auth.listUsers(1000);
-        const userProfilesSnapshot = await db.collection('users').get();
-        const profiles = {};
-        userProfilesSnapshot.forEach(doc => {
-            profiles[doc.id] = doc.data();
-        });
-
-        const users = listUsersResult.users
-            .filter(userRecord => userRecord.email) // Filtra usuarios que no tienen email
-            .map(userRecord => {
-                return {
-                    ...userRecord.toJSON(),
-                    profile: profiles[userRecord.uid]?.profile || 'N/D'
-                };
-            });
-        res.status(200).json(users);
-    } catch (error) {
-        console.error('Error listing users:', error);
-        res.status(500).json({ success: false, message: 'Error al obtener la lista de usuarios.' });
-    }
-});
-
-// POST create a new user
-app.post('/api/users', async (req, res) => {
-    const { email, password, name, profile } = req.body;
-    if (!email || !password || !name || !profile) {
-        return res.status(400).json({ success: false, message: 'Email, contraseña, nombre y perfil son obligatorios.' });
-    }
-    try {
-        const userRecord = await auth.createUser({
-            email: email,
-            password: password,
-            displayName: name,
-        });
-
-        await db.collection('users').doc(userRecord.uid).set({
-            profile: profile
-        });
-
-        res.status(201).json({ success: true, uid: userRecord.uid });
-    } catch (error) {
-        console.error('Error creating new user:', error);
-        res.status(500).json({ success: false, message: `Error al crear el usuario: ${error.message}` });
-    }
-});
-
-// PUT update a user
-app.put('/api/users/:uid', async (req, res) => {
-    const { uid } = req.params;
-    const { name, profile } = req.body;
-    if (!name || !profile) {
-        return res.status(400).json({ success: false, message: 'Nombre y perfil son obligatorios.' });
-    }
-    try {
-        await auth.updateUser(uid, {
-            displayName: name,
-        });
-
-        await db.collection('users').doc(uid).set({
-            profile: profile
-        }, { merge: true });
-
-        res.status(200).json({ success: true, message: 'Usuario actualizado correctamente.' });
-    } catch (error) {
-        console.error(`Error updating user ${uid}:`, error);
-        res.status(500).json({ success: false, message: `Error al actualizar el usuario: ${error.message}` });
-    }
-});
-
-// DELETE a user
-app.delete('/api/users/:uid', async (req, res) => {
-    const { uid } = req.params;
-    try {
-        await auth.deleteUser(uid);
-        await db.collection('users').doc(uid).delete();
-        res.status(200).json({ success: true, message: 'Usuario eliminado correctamente.' });
-    } catch (error) {
-        console.error(`Error deleting user ${uid}:`, error);
-        res.status(500).json({ success: false, message: `Error al eliminar el usuario: ${error.message}` });
-    }
-});
-
-// --- END: USER MANAGEMENT ENDPOINTS ---
 
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
