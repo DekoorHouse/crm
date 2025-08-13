@@ -31,7 +31,7 @@ const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID; // <-- ¡NUEVA VARIABLE DE ENTORNO!
+const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
@@ -113,7 +113,6 @@ app.post('/webhook', async (req, res) => {
             let messageData = { timestamp: timestamp, from: from, status: 'received', id: message.id };
             let lastMessageText = '';
             try {
-                // Guardar contexto si es una respuesta
                 if (message.context) {
                     messageData.context = { id: message.context.id };
                 }
@@ -171,7 +170,7 @@ app.post('/webhook', async (req, res) => {
 // --- ENDPOINT PARA ENVIAR MENSAJES (ACTUALIZADO PARA PLANTILLAS) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template } = req.body; // Se añade template
+    const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
@@ -196,7 +195,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
             messageToSaveText = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video';
         } else if (template && template.name && template.language) {
-            // Lógica para enviar plantillas
             messagePayload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
@@ -211,7 +209,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
              return res.status(400).json({ success: false, message: 'Formato de mensaje no válido.' });
         }
 
-        // Añadir contexto si se está respondiendo a un mensaje (no aplica a plantillas)
         if (reply_to_wamid && !template) {
             messagePayload.context = { message_id: reply_to_wamid };
         }
@@ -248,7 +245,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 });
 
 
-// --- NUEVO ENDPOINT PARA OBTENER PLANTILLAS DE WHATSAPP ---
+// --- ENDPOINT PARA OBTENER PLANTILLAS DE WHATSAPP (CON LOGGING) ---
 app.get('/api/whatsapp-templates', async (req, res) => {
     if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business en el servidor.' });
@@ -259,13 +256,21 @@ app.get('/api/whatsapp-templates', async (req, res) => {
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
         });
 
-        // MODIFICADO: Se elimina el filtro estricto por 'ACTIVE' para incluir plantillas con calidad pendiente.
+        // --- INICIO: LOGGING PARA DIAGNÓSTICO ---
+        // Este bloque imprimirá la respuesta completa de Meta en los logs de tu servidor (Render).
+        console.log("Respuesta completa de la API de plantillas de Meta:");
+        console.log(JSON.stringify(response.data, null, 2));
+        // --- FIN: LOGGING PARA DIAGNÓSTICO ---
+
         const templates = response.data.data
+            // Filtramos plantillas que no estén rechazadas.
+            .filter(t => t.status !== 'REJECTED')
             .map(t => ({
                 name: t.name,
                 language: t.language,
+                status: t.status, // Incluimos el estado para posible depuración futura
                 category: t.category,
-                components: t.components.map(c => ({ type: c.type, text: c.text })) // Mapear componentes para vista previa
+                components: t.components.map(c => ({ type: c.type, text: c.text }))
             }));
 
         res.status(200).json({ success: true, templates });
@@ -279,12 +284,11 @@ app.get('/api/whatsapp-templates', async (req, res) => {
 // --- NUEVO ENDPOINT PARA REACCIONES ---
 app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body; // `reaction` puede ser el emoji o `null` para quitarla
+    const { reaction } = req.body;
 
     try {
         const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
         
-        // Si la reacción es null o undefined, elimina el campo. Si no, lo actualiza.
         await messageRef.update({
             reaction: reaction || admin.firestore.FieldValue.delete()
         });
