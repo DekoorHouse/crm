@@ -258,15 +258,16 @@ app.get('/api/whatsapp-templates', async (req, res) => {
         const response = await axios.get(url, {
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
         });
-        // Filtrar y mapear solo los datos necesarios para el frontend
+
+        // MODIFICADO: Se elimina el filtro estricto por 'ACTIVE' para incluir plantillas con calidad pendiente.
         const templates = response.data.data
-            .filter(t => t.status === 'ACTIVE') // Solo plantillas activas
             .map(t => ({
                 name: t.name,
                 language: t.language,
                 category: t.category,
                 components: t.components.map(c => ({ type: c.type, text: c.text })) // Mapear componentes para vista previa
             }));
+
         res.status(200).json({ success: true, templates });
     } catch (error) {
         console.error('Error al obtener plantillas de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
