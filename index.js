@@ -206,25 +206,38 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 }
             };
 
-            // --- INICIO: LÓGICA CONDICIONAL PARA VARIABLES ---
+            // --- INICIO: LÓGICA MEJORADA PARA OBTENER TEXTO REAL DE PLANTILLA ---
             const bodyComponent = template.components?.find(c => c.type === 'BODY');
-            const hasVariables = bodyComponent && bodyComponent.text.includes('{{1}}');
-
-            if (hasVariables) {
-                const contactDoc = await contactRef.get();
-                const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
-                
-                messagePayload.template.components = [{
-                    type: 'body',
-                    parameters: [{
-                        type: 'text',
-                        text: contactName
-                    }]
-                }];
-            }
-            // --- FIN: LÓGICA CONDICIONAL ---
             
-            messageToSaveText = `📄 Plantilla: ${template.name}`;
+            // Por defecto, usamos el nombre de la plantilla como respaldo.
+            messageToSaveText = `📄 Plantilla: ${template.name}`; 
+
+            if (bodyComponent && bodyComponent.text) {
+                const hasVariables = bodyComponent.text.includes('{{1}}');
+
+                if (hasVariables) {
+                    const contactDoc = await contactRef.get();
+                    const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
+                    
+                    // Configura el payload para la API de WhatsApp con la variable.
+                    messagePayload.template.components = [{
+                        type: 'body',
+                        parameters: [{
+                            type: 'text',
+                            text: contactName
+                        }]
+                    }];
+
+                    // Reemplaza la variable en el texto para guardarlo en Firestore.
+                    messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
+
+                } else {
+                    // Si no hay variables, simplemente usa el texto de la plantilla.
+                    messageToSaveText = bodyComponent.text;
+                }
+            }
+            // --- FIN: LÓGICA MEJORADA ---
+            
         } else {
              return res.status(400).json({ success: false, message: 'Formato de mensaje no válido.' });
         }
