@@ -511,6 +511,53 @@ app.post('/api/quick-replies', async (req, res) => {
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
 
+// --- START: ENDPOINTS PARA ETIQUETAS (CORREGIDO) ---
+app.post('/api/tags', async (req, res) => {
+    const { label, color, key } = req.body;
+    if (!label || !color || !key) {
+        return res.status(400).json({ success: false, message: 'Faltan datos para crear la etiqueta.' });
+    }
+    try {
+        const existingTag = await db.collection('crm_tags').where('key', '==', key).limit(1).get();
+        if (!existingTag.empty) {
+            return res.status(409).json({ success: false, message: `La clave de etiqueta '${key}' ya existe.` });
+        }
+        const newTagRef = await db.collection('crm_tags').add({ label, color, key });
+        res.status(201).json({ success: true, id: newTagRef.id });
+    } catch (error) {
+        console.error('Error al crear la etiqueta:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la etiqueta.' });
+    }
+});
+
+app.put('/api/tags/:id', async (req, res) => {
+    const { id } = req.params;
+    const { label, color, key } = req.body;
+    if (!label || !color || !key) {
+        return res.status(400).json({ success: false, message: 'Faltan datos para actualizar la etiqueta.' });
+    }
+    try {
+        const tagRef = db.collection('crm_tags').doc(id);
+        await tagRef.update({ label, color, key });
+        res.status(200).json({ success: true, message: 'Etiqueta actualizada.' });
+    } catch (error) {
+        console.error('Error al actualizar la etiqueta:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la etiqueta.' });
+    }
+});
+
+app.delete('/api/tags/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('crm_tags').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Etiqueta eliminada.' });
+    } catch (error) {
+        console.error('Error al eliminar la etiqueta:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la etiqueta.' });
+    }
+});
+// --- END: ENDPOINTS PARA ETIQUETAS ---
+
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
