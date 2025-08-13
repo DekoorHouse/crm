@@ -1,4 +1,4 @@
-// index.js - VERSIÓN 1.7 CON GESTIÓN DE USUARIOS
+// index.js - VERSIÓN 1.8 CON FILTRO DE USUARIOS SIN EMAIL
 require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
@@ -380,12 +380,14 @@ app.get('/api/users', async (req, res) => {
             profiles[doc.id] = doc.data();
         });
 
-        const users = listUsersResult.users.map(userRecord => {
-            return {
-                ...userRecord.toJSON(),
-                profile: profiles[userRecord.uid]?.profile || 'N/D'
-            };
-        });
+        const users = listUsersResult.users
+            .filter(userRecord => userRecord.email) // Filtra usuarios que no tienen email
+            .map(userRecord => {
+                return {
+                    ...userRecord.toJSON(),
+                    profile: profiles[userRecord.uid]?.profile || 'N/D'
+                };
+            });
         res.status(200).json(users);
     } catch (error) {
         console.error('Error listing users:', error);
