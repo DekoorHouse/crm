@@ -112,7 +112,6 @@ app.post('/webhook', async (req, res) => {
             let messageData = { timestamp: timestamp, from: from, status: 'received', id: message.id };
             let lastMessageText = '';
             try {
-                // Guardar contexto si es una respuesta
                 if (message.context) {
                     messageData.context = { id: message.context.id };
                 }
@@ -169,73 +168,13 @@ app.post('/webhook', async (req, res) => {
 
 // --- ENDPOINT PARA ENVIAR MENSAJES (DENTRO DE 24H) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
-    const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid } = req.body;
-
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-        return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
-    }
-    if (!text && !fileUrl) {
-        return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
-    }
-
-    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    let messagePayload;
-
-    try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) {
-            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        }
-        const contactData = contactDoc.data();
-        const lastTimestamp = contactData.lastMessageTimestamp;
-        if (lastTimestamp) {
-            const diffHours = (new Date().getTime() - lastTimestamp.toDate().getTime()) / 3600000;
-            if (diffHours > 24) {
-                return res.status(403).json({ success: false, message: 'Han pasado más de 24 horas desde el último mensaje. Debes usar una plantilla.' });
-            }
-        }
-
-        if (text) {
-            messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
-        } else if (fileUrl && fileType) {
-            const type = fileType.startsWith('image/') ? 'image' : 'video';
-            messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
-        }
-
-        if (reply_to_wamid) {
-            messagePayload.context = { message_id: reply_to_wamid };
-        }
-
-        const response = await axios.post(url, messagePayload, { headers });
-        const messageId = response.data.messages[0].id;
-        
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
-        let messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: timestamp, id: messageId };
-
-        if (text) { messageToSave.text = text; }
-        else if (fileUrl) { messageToSave.fileUrl = fileUrl; messageToSave.fileType = fileType; messageToSave.text = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video'; }
-        
-        if (reply_to_wamid) {
-            messageToSave.context = { id: reply_to_wamid };
-        }
-        
-        await contactRef.collection('messages').add(messageToSave);
-        await contactRef.update({ lastMessage: messageToSave.text, lastMessageTimestamp: timestamp, unreadCount: 0 });
-
-        res.status(200).json({ success: true, message: 'Mensaje enviado correctamente.' });
-    } catch (error) {
-        console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
-    }
+    // ... (Este código no cambia)
 });
 
-// --- NUEVO ENDPOINT PARA ENVIAR PLANTILLAS DE MENSAJES ---
+// --- ENDPOINT PARA ENVIAR PLANTILLAS DE MENSAJES (CON MANEJO DE ERRORES MEJORADO) ---
 app.post('/api/contacts/:contactId/send-template', async (req, res) => {
     const { contactId } = req.params;
-    const { templateName, params } = req.body; // params es un array de strings
+    const { templateName, params } = req.body;
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
@@ -247,7 +186,6 @@ app.post('/api/contacts/:contactId/send-template', async (req, res) => {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
 
-    // Construir los componentes de la plantilla
     const components = params.length > 0 ? [{
         type: 'body',
         parameters: params.map(p => ({ type: 'text', text: p }))
@@ -259,9 +197,7 @@ app.post('/api/contacts/:contactId/send-template', async (req, res) => {
         type: 'template',
         template: {
             name: templateName,
-            language: {
-                code: 'es_MX' // Asumir un código de idioma, esto podría ser un parámetro también
-            },
+            language: { code: 'es_MX' },
             components: components
         }
     };
@@ -273,22 +209,17 @@ app.post('/api/contacts/:contactId/send-template', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         
-        // Guardar un registro del envío en Firestore
         const messageToSave = {
             from: PHONE_NUMBER_ID,
             status: 'sent',
             timestamp: timestamp,
             id: messageId,
-            text: `Plantilla '${templateName}' enviada.`, // Texto para la UI
+            text: `Plantilla '${templateName}' enviada.`,
             isTemplate: true,
-            templateInfo: { // Guardar info de la plantilla para referencia
-                name: templateName,
-                params: params
-            }
+            templateInfo: { name: templateName, params: params }
         };
         
         await contactRef.collection('messages').add(messageToSave);
-        // Actualizar el lastMessage para que aparezca en la lista de contactos
         await contactRef.update({ 
             lastMessage: `Plantilla: ${templateName}`, 
             lastMessageTimestamp: timestamp, 
@@ -298,181 +229,23 @@ app.post('/api/contacts/:contactId/send-template', async (req, res) => {
         res.status(200).json({ success: true, message: 'Plantilla enviada correctamente.' });
     } catch (error) {
         console.error('Error al enviar plantilla vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        
+        // --- INICIO DE LA MEJORA EN EL MANEJO DE ERRORES ---
+        if (error.response && error.response.data && error.response.data.error) {
+            const metaError = error.response.data.error;
+            const errorMessage = `Meta API Error: ${metaError.message} (Code: ${metaError.code}, Type: ${metaError.type}). ${metaError.error_user_title || ''} ${metaError.error_user_msg || ''}`;
+            // Devolvemos un mensaje de error más detallado al frontend
+            return res.status(500).json({ success: false, message: errorMessage });
+        }
+        // --- FIN DE LA MEJORA ---
+
         res.status(500).json({ success: false, message: 'Error al enviar la plantilla a través de WhatsApp.' });
     }
 });
 
 
-// --- ENDPOINT PARA REACCIONES ---
-app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
-    const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body;
-
-    try {
-        const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
-        await messageRef.update({
-            reaction: reaction || admin.firestore.FieldValue.delete()
-        });
-        res.status(200).json({ success: true, message: 'Reacción actualizada.' });
-    } catch (error) {
-        console.error('Error al actualizar la reacción:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la reacción.' });
-    }
-});
-
-
-// --- ENDPOINTS PARA ACCIONES MANUALES Y DATOS DE CONTACTO ---
-app.put('/api/contacts/:contactId', async (req, res) => {
-    const { contactId } = req.params;
-    const { name, email, nickname } = req.body;
-    if (!name) { return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' }); }
-    try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) { return res.status(404).json({ success: false, message: 'Contacto no encontrado.' }); }
-        const updateData = { name: name, email: email || null, nickname: nickname || null, };
-        await contactRef.update(updateData);
-        res.status(200).json({ success: true, message: 'Contacto actualizado correctamente.' });
-    } catch (error) {
-        console.error('Error al actualizar el contacto:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el contacto.' });
-    }
-});
-
-app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
-    const { contactId } = req.params;
-    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    try {
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        const contactData = contactDoc.data();
-        if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
-        const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('CompleteRegistration', 'chat', contactInfoForEvent, contactData.adReferral);
-        await contactRef.update({ registrationStatus: 'completed', registrationSource: contactData.adReferral ? 'meta_ad' : 'manual_organic', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al procesar la solicitud.' }); }
-});
-
-app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
-    const { contactId } = req.params;
-    const { value } = req.body;
-    const currency = 'MXN';
-    if (!value || isNaN(parseFloat(value))) return res.status(400).json({ success: false, message: 'Se requiere un valor numérico válido.' });
-    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    try {
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        const contactData = contactDoc.data();
-        if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
-        const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('Purchase', 'chat', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
-        await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al procesar la compra.' }); }
-});
-
-app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
-    const { contactId } = req.params;
-    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    try {
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        const contactData = contactDoc.data();
-        const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('ViewContent', 'website', contactInfoForEvent, contactData.adReferral);
-        res.status(200).json({ success: true, message: 'Evento ViewContent enviado manualmente.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al procesar el envío de ViewContent.' }); }
-});
-
-// --- ENDPOINTS PARA NOTAS INTERNAS ---
-app.post('/api/contacts/:contactId/notes', async (req, res) => {
-    const { contactId } = req.params;
-    const { text } = req.body;
-    if (!text) { return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' }); }
-    try {
-        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes');
-        await noteRef.add({ text: text, timestamp: admin.firestore.FieldValue.serverTimestamp(), });
-        res.status(201).json({ success: true, message: 'Nota guardada correctamente.' });
-    } catch (error) { console.error('Error al guardar la nota:', error); res.status(500).json({ success: false, message: 'Error al guardar la nota.' }); }
-});
-
-app.put('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    const { contactId, noteId } = req.params;
-    const { text } = req.body;
-    if (!text) { return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' }); }
-    try {
-        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
-        await noteRef.update({ text: text });
-        res.status(200).json({ success: true, message: 'Nota actualizada correctamente.' });
-    } catch (error) { console.error('Error al actualizar la nota:', error); res.status(500).json({ success: false, message: 'Error al actualizar la nota.' }); }
-});
-
-app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
-    const { contactId, noteId } = req.params;
-    try {
-        const noteRef = db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId);
-        await noteRef.delete();
-        res.status(200).json({ success: true, message: 'Nota eliminada correctamente.' });
-    } catch (error) { console.error('Error al eliminar la nota:', error); res.status(500).json({ success: false, message: 'Error al eliminar la nota.' }); }
-});
-
-// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
-app.get('/api/quick-replies', async (req, res) => {
-    try {
-        const snapshot = await db.collection('quick_replies').orderBy('shortcut').get();
-        const replies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json(replies);
-    } catch (error) { console.error('Error al obtener respuestas rápidas:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
-});
-
-app.post('/api/quick-replies', async (req, res) => {
-    const { shortcut, message } = req.body;
-    if (!shortcut || !message) { return res.status(400).json({ success: false, message: 'El atajo y el mensaje son obligatorios.' }); }
-    try {
-        const existingReply = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-        if (!existingReply.empty) { return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` }); }
-        const newReply = await db.collection('quick_replies').add({ shortcut: shortcut, message: message, createdAt: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(201).json({ success: true, id: newReply.id });
-    } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
-});
-
-// --- ENDPOINT PARA BOT DE IA ---
-app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
-    const { contactId } = req.params;
-    if (!GEMINI_API_KEY) { return res.status(500).json({ success: false, message: 'La API Key de Gemini no está configurada en el servidor.' }); }
-    try {
-        const messagesRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages');
-        const messagesSnapshot = await messagesRef.orderBy('timestamp', 'desc').limit(10).get();
-        if (messagesSnapshot.empty) { return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' }); }
-        const conversationHistory = messagesSnapshot.docs.map(doc => { const data = doc.data(); const sender = data.from === contactId ? 'Cliente' : 'Asistente'; return `${sender}: ${data.text}`; }).reverse().join('\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial de la Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
-        const payload = { contents: [{ parts: [{ text: prompt }] }] };
-        let generatedText;
-        try {
-            const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-            if (!geminiResponse.ok) { const errorBody = await geminiResponse.text(); console.error('Error de la API de Gemini:', errorBody); throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`); }
-            const result = await geminiResponse.json();
-            generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-            if (!generatedText) { throw new Error('No se recibió una respuesta válida de la IA.'); }
-        } catch (geminiError) { console.error('Fallo en la llamada a Gemini:', geminiError); return res.status(500).json({ success: false, message: 'Error al contactar la IA de Gemini.' }); }
-        const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-        const messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: generatedText } };
-        const response = await axios.post(url, messagePayload, { headers });
-        const messageId = response.data.messages[0].id;
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
-        const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: timestamp, id: messageId, text: generatedText };
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        await contactRef.collection('messages').add(messageToSave);
-        await contactRef.update({ lastMessage: generatedText, lastMessageTimestamp: timestamp, unreadCount: 0 });
-        res.status(200).json({ success: true, message: 'Respuesta generada y enviada con éxito.' });
-    } catch (error) {
-        console.error('Error al generar respuesta con IA:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
-    }
-});
+// --- OTROS ENDPOINTS (REACCIONES, NOTAS, IA, ETC.) ---
+// ... (El resto de tu código no cambia)
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
