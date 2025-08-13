@@ -511,7 +511,7 @@ app.post('/api/quick-replies', async (req, res) => {
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
 
-// --- START: ENDPOINTS PARA ETIQUETAS (CORREGIDO) ---
+// --- START: ENDPOINTS PARA ETIQUETAS ---
 app.post('/api/tags', async (req, res) => {
     const { label, color, key } = req.body;
     if (!label || !color || !key) {
@@ -554,6 +554,28 @@ app.delete('/api/tags/:id', async (req, res) => {
     } catch (error) {
         console.error('Error al eliminar la etiqueta:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar la etiqueta.' });
+    }
+});
+
+// --- NUEVO: Endpoint para eliminar todas las etiquetas ---
+app.delete('/api/tags', async (req, res) => {
+    try {
+        const snapshot = await db.collection('crm_tags').get();
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, message: 'No hay etiquetas para eliminar.' });
+        }
+        
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+        
+        await batch.commit();
+        
+        res.status(200).json({ success: true, message: 'Todas las etiquetas han sido eliminadas.' });
+    } catch (error) {
+        console.error('Error al eliminar todas las etiquetas:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar las etiquetas.' });
     }
 });
 // --- END: ENDPOINTS PARA ETIQUETAS ---
