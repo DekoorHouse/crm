@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES Y BOT DE IA
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA Y CAMPAÑAS
 
 require('dotenv').config();
 const express = require('express');
@@ -167,7 +167,52 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
 });
 
-// --- ENDPOINT PARA ENVIAR MENSAJES (CON LÓGICA CONDICIONAL PARA VARIABLES) ---
+// --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
+async function buildTemplatePayload(contactId, template) {
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    let messageToSaveText = `📄 Plantilla: ${template.name}`; 
+
+    const payload = {
+        messaging_product: 'whatsapp',
+        to: contactId,
+        type: 'template',
+        template: {
+            name: template.name,
+            language: { code: template.language },
+            components: []
+        }
+    };
+
+    const bodyComponent = template.components?.find(c => c.type === 'BODY');
+    if (bodyComponent && bodyComponent.text) {
+        const hasVariables = bodyComponent.text.includes('{{1}}');
+
+        if (hasVariables) {
+            const contactDoc = await contactRef.get();
+            const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
+            
+            payload.template.components.push({
+                type: 'body',
+                parameters: [{
+                    type: 'text',
+                    text: contactName
+                }]
+            });
+            messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
+        } else {
+            messageToSaveText = bodyComponent.text;
+        }
+    }
+    
+    if (payload.template.components.length === 0) {
+        delete payload.template.components;
+    }
+
+    return { payload, messageToSaveText };
+}
+
+
+// --- ENDPOINT PARA ENVIAR MENSAJES (Refactored) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -178,15 +223,13 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     if (!text && !fileUrl && !template) {
         return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     }
-
+    
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
     let messageToSaveText = '';
 
     try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-
         if (text) {
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
             messageToSaveText = text;
@@ -194,50 +237,10 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const type = fileType.startsWith('image/') ? 'image' : 'video';
             messagePayload = { messaging_product: 'whatsapp', to: contactId, type: type, [type]: { link: fileUrl } };
             messageToSaveText = fileType.startsWith('image/') ? '📷 Imagen' : '🎥 Video';
-        } else if (template && template.name && template.language) {
-            
-            messagePayload = {
-                messaging_product: 'whatsapp',
-                to: contactId,
-                type: 'template',
-                template: {
-                    name: template.name,
-                    language: { code: template.language }
-                }
-            };
-
-            // --- INICIO: LÓGICA MEJORADA PARA OBTENER TEXTO REAL DE PLANTILLA ---
-            const bodyComponent = template.components?.find(c => c.type === 'BODY');
-            
-            // Por defecto, usamos el nombre de la plantilla como respaldo.
-            messageToSaveText = `📄 Plantilla: ${template.name}`; 
-
-            if (bodyComponent && bodyComponent.text) {
-                const hasVariables = bodyComponent.text.includes('{{1}}');
-
-                if (hasVariables) {
-                    const contactDoc = await contactRef.get();
-                    const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
-                    
-                    // Configura el payload para la API de WhatsApp con la variable.
-                    messagePayload.template.components = [{
-                        type: 'body',
-                        parameters: [{
-                            type: 'text',
-                            text: contactName
-                        }]
-                    }];
-
-                    // Reemplaza la variable en el texto para guardarlo en Firestore.
-                    messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
-
-                } else {
-                    // Si no hay variables, simplemente usa el texto de la plantilla.
-                    messageToSaveText = bodyComponent.text;
-                }
-            }
-            // --- FIN: LÓGICA MEJORADA ---
-            
+        } else if (template) {
+            const { payload, messageToSaveText: TplText } = await buildTemplatePayload(contactId, template);
+            messagePayload = payload;
+            messageToSaveText = TplText;
         } else {
              return res.status(400).json({ success: false, message: 'Formato de mensaje no válido.' });
         }
@@ -250,6 +253,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         const messageId = response.data.messages[0].id;
         
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         let messageToSave = { 
             from: PHONE_NUMBER_ID, 
             status: 'sent', 
@@ -268,13 +272,77 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         }
         
         await contactRef.collection('messages').add(messageToSave);
-        await contactRef.update({ lastMessage: messageToSave.text, lastMessageTimestamp: timestamp, unreadCount: 0 });
+        await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
 
         res.status(200).json({ success: true, message: 'Mensaje enviado correctamente.' });
     } catch (error) {
         console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
+});
+
+// --- NUEVO ENDPOINT PARA CAMPAÑAS (ENVÍO MASIVO) ---
+app.post('/api/campaigns/send-template', async (req, res) => {
+    const { contactIds, template } = req.body;
+
+    if (!contactIds || !Array.isArray(contactIds) || contactIds.length === 0 || !template) {
+        return res.status(400).json({ success: false, message: 'Se requieren IDs de contacto y una plantilla.' });
+    }
+
+    console.log(`Iniciando campaña para ${contactIds.length} contactos con la plantilla ${template.name}.`);
+
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+
+    const results = {
+        successful: [],
+        failed: []
+    };
+
+    const promises = contactIds.map(contactId => (async () => {
+        try {
+            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            
+            const response = await axios.post(url, payload, { headers });
+            const messageId = response.data.messages[0].id;
+            
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            const messageToSave = { 
+                from: PHONE_NUMBER_ID, 
+                status: 'sent', 
+                timestamp: timestamp, 
+                id: messageId,
+                text: messageToSaveText
+            };
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
+
+            return { status: 'fulfilled', value: contactId };
+        } catch (error) {
+            const errorMessage = error.response ? JSON.stringify(error.response.data) : error.message;
+            console.error(`Fallo al enviar a ${contactId}:`, errorMessage);
+            return { status: 'rejected', reason: { contactId, error: errorMessage } };
+        }
+    })());
+
+    const outcomes = await Promise.all(promises);
+
+    outcomes.forEach(outcome => {
+        if (outcome.status === 'fulfilled') {
+            results.successful.push(outcome.value);
+        } else {
+            results.failed.push(outcome.reason);
+        }
+    });
+
+    console.log(`Campaña finalizada. Éxitos: ${results.successful.length}, Fallos: ${results.failed.length}.`);
+
+    res.status(200).json({
+        success: true,
+        message: `Campaña procesada. Enviados: ${results.successful.length}. Fallidos: ${results.failed.length}.`,
+        results
+    });
 });
 
 
@@ -288,9 +356,6 @@ app.get('/api/whatsapp-templates', async (req, res) => {
         const response = await axios.get(url, {
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
         });
-
-        console.log("Respuesta completa de la API de plantillas de Meta:");
-        console.log(JSON.stringify(response.data, null, 2));
 
         const templates = response.data.data
             .filter(t => t.status !== 'REJECTED')
