@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS Y MENSAJE DE AUSENCIA
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS, MENSAJE DE AUSENCIA E INTEGRACIÓN CON API DE CONVERSIONES
 
 require('dotenv').config();
 const express = require('express');
@@ -32,8 +32,8 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-const META_PIXEL_ID = process.env.META_PIXEL_ID;
-const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
+const META_PIXEL_ID = process.env.META_PIXEL_ID; // Asegúrate de tener esta variable en tu entorno
+const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN; // Y esta también
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
@@ -221,10 +221,9 @@ app.post('/webhook', async (req, res) => {
 
             if (isNewAdContact) {
                 try {
-                    await sendConversionEvent('ViewContent', 'website', contactInfo, contactData.adReferral);
-                    await sendConversionEvent('Lead', 'website', contactInfo, contactData.adReferral);
-                    await contactRef.update({ viewContentSent: true, leadEventSent: true });
-                } catch (error) { console.error(`Fallo al enviar eventos iniciales para ${from}:`, error.message); }
+                    await sendConversionEvent('Lead', 'whatsapp', contactInfo, contactData.adReferral);
+                    await contactRef.update({ leadEventSent: true });
+                } catch (error) { console.error(`Fallo al enviar evento Lead para ${from}:`, error.message); }
             }
         }
 
@@ -530,7 +529,7 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('Purchase', 'chat', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
+        await sendConversionEvent('Purchase', 'whatsapp', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
         await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al procesar la compra.' }); }
