@@ -650,6 +650,37 @@ app.post('/api/quick-replies', async (req, res) => {
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
 
+app.put('/api/quick-replies/:id', async (req, res) => {
+    const { id } = req.params;
+    const { shortcut, message } = req.body;
+    if (!shortcut || !message) { return res.status(400).json({ success: false, message: 'El atajo y el mensaje son obligatorios.' }); }
+    try {
+        const existingReplyQuery = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
+        if (!existingReplyQuery.empty && existingReplyQuery.docs[0].id !== id) {
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
+        }
+        const replyRef = db.collection('quick_replies').doc(id);
+        await replyRef.update({ shortcut, message });
+        res.status(200).json({ success: true, message: 'Respuesta rápida actualizada.' });
+    } catch (error) {
+        console.error('Error al actualizar respuesta rápida:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+app.delete('/api/quick-replies/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const replyRef = db.collection('quick_replies').doc(id);
+        await replyRef.delete();
+        res.status(200).json({ success: true, message: 'Respuesta rápida eliminada.' });
+    } catch (error) {
+        console.error('Error al eliminar respuesta rápida:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
