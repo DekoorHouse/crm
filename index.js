@@ -120,8 +120,24 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
         console.error(`No se puede enviar el evento '${eventName}' porque falta el identificador de teléfono.`);
         return;
     }
-    const finalCustomData = { lead_source: referralInfo ? 'WhatsApp Ad' : 'WhatsApp Organic', ad_headline: referralInfo?.headline, ad_id: referralInfo?.source_id, ...customData };
-    const payload = { data: [{ event_name: eventName, event_time: eventTime, event_id: eventId, action_source: actionSource, user_data: userData, custom_data: finalCustomData, event_source_url: referralInfo?.source_url, fbc: referralInfo?.fbc, }], };
+    const finalCustomData = { 
+        lead_source: referralInfo ? 'WhatsApp Ad' : 'WhatsApp Organic', 
+        ad_headline: referralInfo?.headline, 
+        ad_id: referralInfo?.source_id, 
+        ...customData 
+    };
+    const payload = { 
+        data: [{ 
+            event_name: eventName, 
+            event_time: eventTime, 
+            event_id: eventId, 
+            action_source: actionSource, 
+            user_data: userData, 
+            custom_data: finalCustomData, 
+            event_source_url: referralInfo?.source_url, 
+            fbc: referralInfo?.fbc, 
+        }], 
+    };
     if (!payload.data[0].event_source_url) delete payload.data[0].event_source_url;
     if (!payload.data[0].fbc) delete payload.data[0].fbc;
     try {
@@ -610,7 +626,7 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         const contactData = contactDoc.data();
         if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('Purchase', 'whatsapp', contactInfoForEvent, contactData.adReferral, { value: parseFloat(value), currency });
+        await sendConversionEvent('Purchase', 'whatsapp', contactInfoForEvent, contactData.adReferral || {}, { value: parseFloat(value), currency });
         await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al procesar la compra.' }); }
