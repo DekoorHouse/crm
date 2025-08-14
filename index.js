@@ -39,15 +39,25 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
 const BUSINESS_HOURS = {
     // Día: [hora de inicio, hora de fin] en formato 24 horas
-    1: [9, 18], // Lunes
-    2: [9, 18], // Martes
-    3: [9, 18], // Miércoles
-    4: [9, 18], // Jueves
-    5: [9, 18], // Viernes
-    // Sábado (6) y Domingo (0) están cerrados
+    1: [7, 19], // Lunes
+    2: [7, 19], // Martes
+    3: [7, 19], // Miércoles
+    4: [7, 19], // Jueves
+    5: [7, 19], // Viernes
+    6: [7, 14], // Sábado
+    // Domingo (0) está cerrado
 };
 const TIMEZONE = 'America/Mexico_City';
-const AWAY_MESSAGE = '¡Hola! Gracias por tu mensaje. Nuestro horario de atención es de lunes a viernes de 9:00 a 18:00. Te responderemos tan pronto como regresemos. ¡Gracias por tu paciencia!';
+const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.
+
+🕒 Nuestro horario de atención es:
+
+🗓 Lunes a Viernes: 7:00 am - 7:00 pm
+
+🗓 Sábado: 7:00 am - 2:00 pm
+Te responderemos tan pronto como regresemos.
+
+🙏 ¡Gracias por tu paciencia!`;
 
 
 // --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
