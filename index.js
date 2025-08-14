@@ -1,4 +1,7 @@
-// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS, MENSAJE DE AUSENCIA, API DE CONVERSIONES Y MENSAJE DE BIENVENIDA
+```
+
+```javascript
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS, MENSAJE DE AUSENCIA, API DE CONVERSIONES, MENSAJE DE BIENVENIDA Y ELIMINAR MENSAJES
 
 require('dotenv').config();
 const express = require('express');
@@ -419,6 +422,50 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
+
+// --- NUEVO ENDPOINT PARA ELIMINAR MENSAJES ---
+app.delete('/api/contacts/:contactId/messages/:wamid', async (req, res) => {
+    const { contactId, wamid } = req.params;
+
+    if (!WHATSAPP_TOKEN) {
+        return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
+    }
+
+    try {
+        // 1. Eliminar el mensaje de la API de WhatsApp
+        const url = `https://graph.facebook.com/v19.0/${wamid}`;
+        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
+        await axios.delete(url, { headers });
+        console.log(`Solicitud de eliminación enviada a WhatsApp para el mensaje ${wamid}.`);
+
+        // 2. Actualizar el mensaje en Firestore
+        const messagesRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages');
+        const q = messagesRef.where('id', '==', wamid).limit(1);
+        const snapshot = await q.get();
+
+        if (snapshot.empty) {
+            console.warn(`No se encontró el mensaje con WAMID ${wamid} en Firestore para actualizarlo, pero se eliminó de WhatsApp.`);
+            return res.status(200).json({ success: true, message: 'Mensaje eliminado de WhatsApp, pero no se encontró en la base de datos local.' });
+        }
+
+        const messageDoc = snapshot.docs[0];
+        await messageDoc.ref.update({
+            text: '🗑️ Mensaje eliminado',
+            status: 'deleted',
+            fileUrl: admin.firestore.FieldValue.delete(),
+            fileType: admin.firestore.FieldValue.delete()
+        });
+        console.log(`Mensaje ${wamid} actualizado a 'eliminado' en Firestore.`);
+
+        res.status(200).json({ success: true, message: 'Mensaje eliminado correctamente.' });
+
+    } catch (error) {
+        console.error(`Error al eliminar el mensaje ${wamid}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        const errorMessage = error.response?.data?.error?.message || 'Error del servidor al intentar eliminar el mensaje.';
+        res.status(500).json({ success: false, message: errorMessage });
+    }
+});
+
 
 // --- NUEVO ENDPOINT PARA CAMPAÑAS (ENVÍO MASIVO) ---
 app.post('/api/campaigns/send-template', async (req, res) => {
