@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS, MENSAJE DE AUSENCIA E INTEGRACIÓN CON API DE CONVERSIONES
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS, MENSAJE DE AUSENCIA, API DE CONVERSIONES Y MENSAJE DE BIENVENIDA
 
 require('dotenv').config();
 const express = require('express');
@@ -58,6 +58,28 @@ const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.
 Te responderemos tan pronto como regresemos.
 
 🙏 ¡Gracias por tu paciencia!`;
+
+// --- CONFIGURACIÓN DE MENSAJES DE BIENVENIDA ---
+const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte con nosotros. ¿En qué podemos ayudarte hoy?';
+
+const CAMPAIGN_WELCOME_MESSAGES = {
+    // "ID_DEL_ANUNCIO": "Tu mensaje de bienvenida para esta campaña"
+    "120229247610060637": `¡Hola! 👋 El Envío Gratis está a punto de terminar. ¡No te lo pierdas! 🔥
+
+Por solo $650 pesos, obtienes:
+
+🚀 *Envío GRATIS en todo México*
+🏡 *Entrega a domicilio segura*
+🔒 *Garantía de durabilidad*
+🔐 *Más de 500 referencias en Facebook* ✅❤️
+💰 *Pago en Oxxo o por transferencia*
+
+✨ El regalo que le recordará tu amor todos los días ✨
+📷 *SIN ANTICIPO* paga hasta que este terminado antes de enviar
+
+*¿Qué nombres quieres que lleve la suya?* 😃`,
+    "ID_DEL_ANUNCIO_2": "¡Hola! Gracias por tu interés en nuestra nueva colección. ¿Tienes alguna pregunta sobre los productos?"
+};
 
 
 // --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
@@ -160,9 +182,38 @@ app.post('/webhook', async (req, res) => {
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(from);
             
+            const contactDoc = await contactRef.get();
+            const isNewContact = !contactDoc.exists;
+
+            // --- LÓGICA DE MENSAJE DE BIENVENIDA ---
+            if (isNewContact) {
+                let welcomeMessage = GENERAL_WELCOME_MESSAGE;
+                if (message.referral && message.referral.source_type === 'ad') {
+                    const adId = message.referral.source_id;
+                    if (CAMPAIGN_WELCOME_MESSAGES[adId]) {
+                        welcomeMessage = CAMPAIGN_WELCOME_MESSAGES[adId];
+                    }
+                }
+                
+                try {
+                    const messageId = await sendWhatsAppMessage(from, welcomeMessage);
+                    const welcomeMessageData = {
+                        from: PHONE_NUMBER_ID,
+                        status: 'sent',
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: messageId,
+                        text: welcomeMessage
+                    };
+                    await contactRef.collection('messages').add(welcomeMessageData);
+                    console.log(`Mensaje de bienvenida enviado a ${from}.`);
+                } catch (error) {
+                    console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
+                }
+            }
+            // --- FIN DE LÓGICA DE MENSAJE DE BIENVENIDA ---
+
             // --- LÓGICA DE MENSAJE DE AUSENCIA ---
-            if (!isWithinBusinessHours()) {
-                const contactDoc = await contactRef.get();
+            if (!isWithinBusinessHours() && !isNewContact) { // No enviar si es un contacto nuevo para no duplicar mensajes
                 const now = new Date();
                 const lastAwayMessageSent = contactDoc.data()?.lastAwayMessageSent?.toDate();
                 const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
@@ -193,11 +244,10 @@ app.post('/webhook', async (req, res) => {
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             
-            let isNewAdContact = false;
             if (message.referral && message.referral.source_type === 'ad') {
-                const contactDoc = await contactRef.get();
-                if (!contactDoc.exists || !contactDoc.data().adReferral) { isNewAdContact = true; }
-                contactData.adReferral = { source_id: message.referral.source_id ?? null, headline: message.referral.headline ?? null, source_type: message.referral.source_type ?? null, source_url: message.referral.source_url ?? null, fbc: message.referral.ref ?? null, receivedAt: timestamp };
+                if (isNewContact) {
+                    contactData.adReferral = { source_id: message.referral.source_id ?? null, headline: message.referral.headline ?? null, source_type: message.referral.source_type ?? null, source_url: message.referral.source_url ?? null, fbc: message.referral.ref ?? null, receivedAt: timestamp };
+                }
             }
 
             let messageData = { timestamp: timestamp, from: from, status: 'received', id: message.id };
@@ -219,7 +269,7 @@ app.post('/webhook', async (req, res) => {
             await contactRef.set(contactData, { merge: true });
             console.log(`Mensaje (${message.type}) de ${from} guardado.`);
 
-            if (isNewAdContact) {
+            if (isNewContact && contactData.adReferral) {
                 try {
                     await sendConversionEvent('Lead', 'whatsapp', contactInfo, contactData.adReferral);
                     await contactRef.update({ leadEventSent: true });
