@@ -420,46 +420,33 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     }
 });
 
-// --- NUEVO ENDPOINT PARA ELIMINAR MENSAJES ---
+// --- ENDPOINT PARA "ANULAR" MENSAJES EN FIRESTORE (YA NO LLAMA A LA API DE WHATSAPP) ---
 app.delete('/api/contacts/:contactId/messages/:wamid', async (req, res) => {
     const { contactId, wamid } = req.params;
 
-    if (!WHATSAPP_TOKEN) {
-        return res.status(500).json({ success: false, message: 'Faltan las credenciales de WhatsApp en el servidor.' });
-    }
-
     try {
-        // 1. Eliminar el mensaje de la API de WhatsApp
-        const url = `https://graph.facebook.com/v19.0/${wamid}`;
-        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
-        await axios.delete(url, { headers });
-        console.log(`Solicitud de eliminación enviada a WhatsApp para el mensaje ${wamid}.`);
-
-        // 2. Actualizar el mensaje en Firestore
         const messagesRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages');
         const q = messagesRef.where('id', '==', wamid).limit(1);
         const snapshot = await q.get();
 
         if (snapshot.empty) {
-            console.warn(`No se encontró el mensaje con WAMID ${wamid} en Firestore para actualizarlo, pero se eliminó de WhatsApp.`);
-            return res.status(200).json({ success: true, message: 'Mensaje eliminado de WhatsApp, pero no se encontró en la base de datos local.' });
+            return res.status(404).json({ success: false, message: 'Mensaje no encontrado en la base de datos.' });
         }
 
         const messageDoc = snapshot.docs[0];
         await messageDoc.ref.update({
-            text: '🗑️ Mensaje eliminado',
+            text: '🗑️ Mensaje anulado por el usuario',
             status: 'deleted',
             fileUrl: admin.firestore.FieldValue.delete(),
             fileType: admin.firestore.FieldValue.delete()
         });
-        console.log(`Mensaje ${wamid} actualizado a 'eliminado' en Firestore.`);
+        console.log(`Mensaje ${wamid} actualizado a 'anulado' en Firestore.`);
 
-        res.status(200).json({ success: true, message: 'Mensaje eliminado correctamente.' });
+        res.status(200).json({ success: true, message: 'Mensaje anulado en el CRM.' });
 
     } catch (error) {
-        console.error(`Error al eliminar el mensaje ${wamid}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        const errorMessage = error.response?.data?.error?.message || 'Error del servidor al intentar eliminar el mensaje.';
-        res.status(500).json({ success: false, message: errorMessage });
+        console.error(`Error al anular el mensaje ${wamid} en Firestore:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al anular el mensaje.' });
     }
 });
 
