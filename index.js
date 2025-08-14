@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA Y CAMPAÑAS
+// index.js - VERSIÓN CON PLANTILLAS, RESPUESTAS, REACCIONES, BOT DE IA, CAMPAÑAS Y MENSAJE DE AUSENCIA
 
 require('dotenv').config();
 const express = require('express');
@@ -35,6 +35,35 @@ const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
+const BUSINESS_HOURS = {
+    // Día: [hora de inicio, hora de fin] en formato 24 horas
+    1: [9, 18], // Lunes
+    2: [9, 18], // Martes
+    3: [9, 18], // Miércoles
+    4: [9, 18], // Jueves
+    5: [9, 18], // Viernes
+    // Sábado (6) y Domingo (0) están cerrados
+};
+const TIMEZONE = 'America/Mexico_City';
+const AWAY_MESSAGE = '¡Hola! Gracias por tu mensaje. Nuestro horario de atención es de lunes a viernes de 9:00 a 18:00. Te responderemos tan pronto como regresemos. ¡Gracias por tu paciencia!';
+
+
+// --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
+function isWithinBusinessHours() {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
+    const day = now.getDay(); // Domingo = 0, Lunes = 1, etc.
+    const hour = now.getHours();
+
+    const hoursToday = BUSINESS_HOURS[day];
+    if (!hoursToday) {
+        return false; // Cerrado hoy
+    }
+
+    const [startHour, endHour] = hoursToday;
+    return hour >= startHour && hour < endHour;
+}
 
 // --- FUNCIÓN PARA HASHEAR DATOS ---
 function sha256(data) {
@@ -73,6 +102,26 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
     }
 };
 
+// --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES DE WHATSAPP ---
+async function sendWhatsAppMessage(to, text) {
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    const payload = {
+        messaging_product: 'whatsapp',
+        to: to,
+        type: 'text',
+        text: { body: text }
+    };
+    try {
+        const response = await axios.post(url, payload, { headers });
+        return response.data.messages[0].id;
+    } catch (error) {
+        console.error(`Error al enviar mensaje de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw error;
+    }
+}
+
+
 // --- WEBHOOK DE WHATSAPP ---
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
@@ -101,6 +150,37 @@ app.post('/webhook', async (req, res) => {
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(from);
             
+            // --- LÓGICA DE MENSAJE DE AUSENCIA ---
+            if (!isWithinBusinessHours()) {
+                const contactDoc = await contactRef.get();
+                const now = new Date();
+                const lastAwayMessageSent = contactDoc.data()?.lastAwayMessageSent?.toDate();
+                const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+                if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
+                    try {
+                        const messageId = await sendWhatsAppMessage(from, AWAY_MESSAGE);
+                        const awayMessageData = {
+                            from: PHONE_NUMBER_ID,
+                            status: 'sent',
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: messageId,
+                            text: AWAY_MESSAGE
+                        };
+                        await contactRef.collection('messages').add(awayMessageData);
+                        await contactRef.set({
+                            lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(),
+                            lastMessage: AWAY_MESSAGE,
+                            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+                        console.log(`Mensaje de ausencia enviado a ${from}.`);
+                    } catch (error) {
+                        console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
+                    }
+                }
+            }
+            // --- FIN DE LÓGICA DE MENSAJE DE AUSENCIA ---
+
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             
             let isNewAdContact = false;
@@ -510,75 +590,6 @@ app.post('/api/quick-replies', async (req, res) => {
         res.status(201).json({ success: true, id: newReply.id });
     } catch (error) { console.error('Error al crear respuesta rápida:', error); res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
-
-// --- START: ENDPOINTS PARA ETIQUETAS ---
-app.post('/api/tags', async (req, res) => {
-    const { label, color, key } = req.body;
-    if (!label || !color || !key) {
-        return res.status(400).json({ success: false, message: 'Faltan datos para crear la etiqueta.' });
-    }
-    try {
-        const existingTag = await db.collection('crm_tags').where('key', '==', key).limit(1).get();
-        if (!existingTag.empty) {
-            return res.status(409).json({ success: false, message: `La clave de etiqueta '${key}' ya existe.` });
-        }
-        const newTagRef = await db.collection('crm_tags').add({ label, color, key });
-        res.status(201).json({ success: true, id: newTagRef.id });
-    } catch (error) {
-        console.error('Error al crear la etiqueta:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear la etiqueta.' });
-    }
-});
-
-app.put('/api/tags/:id', async (req, res) => {
-    const { id } = req.params;
-    const { label, color, key } = req.body;
-    if (!label || !color || !key) {
-        return res.status(400).json({ success: false, message: 'Faltan datos para actualizar la etiqueta.' });
-    }
-    try {
-        const tagRef = db.collection('crm_tags').doc(id);
-        await tagRef.update({ label, color, key });
-        res.status(200).json({ success: true, message: 'Etiqueta actualizada.' });
-    } catch (error) {
-        console.error('Error al actualizar la etiqueta:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la etiqueta.' });
-    }
-});
-
-app.delete('/api/tags/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await db.collection('crm_tags').doc(id).delete();
-        res.status(200).json({ success: true, message: 'Etiqueta eliminada.' });
-    } catch (error) {
-        console.error('Error al eliminar la etiqueta:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la etiqueta.' });
-    }
-});
-
-// --- NUEVO: Endpoint para eliminar todas las etiquetas ---
-app.delete('/api/tags', async (req, res) => {
-    try {
-        const snapshot = await db.collection('crm_tags').get();
-        if (snapshot.empty) {
-            return res.status(200).json({ success: true, message: 'No hay etiquetas para eliminar.' });
-        }
-        
-        const batch = db.batch();
-        snapshot.docs.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        
-        await batch.commit();
-        
-        res.status(200).json({ success: true, message: 'Todas las etiquetas han sido eliminadas.' });
-    } catch (error) {
-        console.error('Error al eliminar todas las etiquetas:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al eliminar las etiquetas.' });
-    }
-});
-// --- END: ENDPOINTS PARA ETIQUETAS ---
 
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
