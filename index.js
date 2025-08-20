@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CORREGIDA Y ROBUSTA
+// index.js - VERSIÓN CORREGIDA Y ROBUSTA CON SERVIDOR WEB
 
 require('dotenv').config();
 const express = require('express');
@@ -8,6 +8,7 @@ const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
+const path = require('path'); // <-- AÑADIDO: Módulo para manejar rutas de archivos
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 const serviceAccount = require('./serviceAccountKey.json');
@@ -26,6 +27,10 @@ console.log('Conexión con Firebase (Firestore y Storage) establecida.');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// --- AÑADIDO: Servir archivos estáticos desde la carpeta 'public' ---
+app.use(express.static(path.join(__dirname, 'public')));
+
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -619,6 +624,12 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
     }
 });
+
+// --- AÑADIDO: Ruta para servir la aplicación frontend ---
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
 
 app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
