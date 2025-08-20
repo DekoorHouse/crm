@@ -1,0 +1,1903 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="facebook-domain-verification" content="m7n0j9b01p6pe3g4tum7xjuxz685" />
+    <title>WhatsApp CRM ✨</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+    <style>
+        :root {
+            --font-heading: 'Poppins', sans-serif;
+            --font-body: 'Nunito Sans', sans-serif;
+            --color-bg: #f8f9fa; 
+            --color-container-bg: #FFFFFF;
+            --color-sidebar-bg: #FFFFFF;
+            --color-text: #5D5C61;
+            --color-text-light: #7e7c82;
+            --color-primary: #81B29A; 
+            --color-secondary: #E07A5F;
+            --color-accent: #F2CC8F;
+            --color-border: #EAE6E1;
+            --color-shadow: rgba(93, 92, 97, 0.08);
+            --color-danger: #dc3545;
+            --color-danger-hover: #c82333;
+            --color-subtle-bg: #f0f0f0;
+            --color-subtle-text: #7e7c82;
+            --color-subtle-hover-bg: #e0e0e0;
+            --color-bubble-sent-bg: #dcf8c6;
+            --color-bubble-sent-text: #303030;
+            --color-bubble-received-bg: #FFFFFF;
+            --color-bubble-received-text: #303030;
+            --border-radius-sm: 6px;
+            --border-radius-md: 10px;
+            --border-radius-lg: 15px;
+        }
+        body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; }
+        h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); color: var(--color-text); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #c5c5c5; }
+        .hidden { display: none; }
+        input[type="file"], input[type="color"] { display: none; }
+        .btn { font-family: var(--font-heading); font-weight: 600; padding: 8px 18px; border: none; border-radius: var(--border-radius-md); cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+        .btn:disabled { background-color: #cccccc; color: #666666; cursor: not-allowed; opacity: 0.7; }
+        .btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); }
+        .btn:active:not(:disabled) { transform: translateY(0px); box-shadow: none; }
+        .btn-sm { padding: 5px 12px; font-size: 0.85rem; }
+        .btn-icon { padding: 8px; font-size: 1rem; }
+        .btn-primary { background-color: var(--color-primary); color: white; }
+        .btn-primary:hover:not(:disabled) { background-color: #70a087; }
+        .btn-secondary { background-color: var(--color-secondary); color: white; }
+        .btn-secondary:hover:not(:disabled) { background-color: #d8684a; }
+        .btn-danger { background-color: var(--color-danger); color: white; }
+        .btn-danger:hover:not(:disabled) { background-color: #c82333; }
+        .btn-subtle { background-color: var(--color-subtle-bg); color: var(--color-subtle-text); }
+        .btn-subtle:hover { background-color: var(--color-subtle-hover-bg); color: var(--color-primary); }
+        input[type="email"], input[type="password"], input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 10px 15px; margin-bottom: 15px; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); font-family: var(--font-body); font-size: 0.95rem; color: var(--color-text); background-color: #f7f9fc; transition: all 0.2s ease; }
+        input:focus, textarea:focus, select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2); }
+        input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
+        #search-contacts-input { margin-bottom: 0; background-color: var(--color-container-bg); }
+        #app-header { background-color: var(--color-container-bg); border-bottom: 1px solid var(--color-border); }
+        #app-header h1 { color: var(--color-primary); }
+        #contacts-panel { background-color: #f8f9fa; border-right: 1px solid var(--color-border); }
+        .contact-item { transition: all 0.2s ease; border-left: 4px solid transparent; }
+        .contact-item:hover { background-color: #eef2f7; }
+        .contact-item.selected { background-image: linear-gradient(to right, var(--color-primary) 80%, var(--color-container-bg)); border-left-color: var(--color-primary); }
+        .contact-item.selected h3, .contact-item.selected p { color: white !important; }
+        .contact-item.selected .unread-badge { background-color: white; color: var(--color-primary); }
+        .contact-item.selected .fas, .contact-item.selected .far { color: white !important; }
+        .contact-item.campaign-mode { cursor: default; }
+        .contact-item.campaign-mode:hover { background-color: transparent; }
+        .unread-badge { background-color: var(--color-primary); color: white; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 12px; min-width: 20px; text-align: center; line-height: 1.2; }
+        #chat-panel { background-color: #e5ddd5; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
+        .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); }
+        .chat-footer { background-color: #f8f9fa; padding: 8px 16px; }
+        #message-input { background-color: var(--color-container-bg); border-radius: 25px; padding: 8px 18px; border: 1px solid var(--color-border); font-size: 0.9rem; }
+        #message-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(129, 178, 154, 0.2); }
+        .chat-icon-btn { color: var(--color-text-light); transition: color 0.2s ease; }
+        .chat-icon-btn:hover { color: var(--color-primary); }
+        
+        .message-wrapper { display: flex; flex-direction: column; }
+        .message-wrapper.sent { align-items: flex-end; }
+        .message-wrapper.received { align-items: flex-start; }
+        
+        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 70%; margin-top: 1px; margin-bottom: 1px; }
+        .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
+        .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
+        .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
+        
+        .message-actions { position: absolute; top: -12px; right: 10px; background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; padding: 2px; opacity: 0; visibility: hidden; transition: all 0.2s ease; z-index: 10; }
+        .message-action-btn { background: none; border: none; cursor: pointer; color: var(--color-text-light); padding: 6px; display: flex; align-items: center; justify-content: center; }
+        .message-action-btn:hover { color: var(--color-primary); }
+        .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .reactions-container.received-reaction { left: 10px; right: auto; }
+        .reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 10px 8px; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
+        .reply-preview p { margin: 0; font-size: 0.85rem; }
+        .reply-preview .reply-author { font-weight: 600; color: var(--color-primary); }
+        .reply-preview .reply-text { color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        #reply-context-bar { background-color: #f0f2f5; padding: 8px 16px; border-top: 1px solid var(--color-border); position: relative; }
+        #cancel-reply-btn { position: absolute; top: 4px; right: 8px; background: none; border: none; font-size: 1.2rem; color: #999; cursor: pointer; }
+
+        .message-bubble img, .message-bubble video { border-radius: var(--border-radius-sm); }
+        .drag-overlay { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(255, 255, 255, 0.85); border: 3px dashed var(--color-primary); border-radius: 0.5rem; display: flex; align-items: center; justify-content: center; z-index: 20; pointer-events: none; }
+        .drag-overlay-content { color: var(--color-primary); font-family: var(--font-heading); font-size: 1.5rem; font-weight: 600; text-align: center; }
+        #file-preview-container { background-color: #f8f9fa; padding: 10px; border-bottom: 1px solid var(--color-border); }
+        .file-preview-content { position: relative; display: inline-flex; align-items: center; background-color: var(--color-container-bg); border-radius: var(--border-radius-md); padding: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .file-preview-content img, .file-preview-content video { max-height: 60px; max-width: 60px; border-radius: var(--border-radius-sm); object-fit: cover; }
+        #cancel-file-btn { position: absolute; top: -8px; right: -8px; background-color: var(--color-danger); color: white; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.2); transition: background-color 0.2s ease; }
+        #cancel-file-btn:hover { background-color: var(--color-danger-hover); }
+        .date-separator { text-align: center; margin: 16px auto 12px; padding: 5px 12px; background-color: #e1f3fb; color: var(--color-text); border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); font-size: 0.8rem; font-weight: 600; max-width: fit-content; }
+        #sticky-date-header { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out; opacity: 0; pointer-events: none; }
+        #sticky-date-header.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+        .chat-image-preview { width: 250px; height: 250px; object-fit: cover; border-radius: var(--border-radius-sm); cursor: pointer; display: block; }
+        .message-bubble.has-image { padding: 0; background-color: transparent; box-shadow: none; }
+        .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
+        .time-overlay .fas { color: white !important; }
+        .image-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.75); z-index: 998; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .image-modal-backdrop.visible { opacity: 1; pointer-events: all; }
+        .image-modal-content { position: relative; transform: scale(0.9); transition: transform 0.3s ease; }
+        .image-modal-backdrop.visible .image-modal-content { transform: scale(1); }
+        .image-modal-content img { max-width: 90vw; max-height: 85vh; border-radius: var(--border-radius-md); }
+        .image-modal-close { position: absolute; top: -15px; right: -15px; width: 35px; height: 35px; background-color: white; color: black; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
+        
+        .filter-btn { background-color: #e2e8f0; color: #4a5568; font-weight: 600; padding: 5px 10px; border-radius: 9999px; font-size: 0.75rem; transition: all 0.2s ease; }
+        .filter-btn.active { background-color: var(--color-primary); color: white; }
+        .tab-btn { position: relative; padding: 6px 14px; font-weight: 600; color: var(--color-text-light); border-bottom: 3px solid transparent; transition: all 0.2s ease; font-size: 0.9rem; }
+        .tab-btn.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+        .note-count-badge { position: absolute; top: 2px; right: 2px; background-color: var(--color-secondary); color: white; font-size: 0.65rem; font-weight: 700; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; }
+        .note-item { background-color: #fffbeb; border-left: 4px solid #facc15; padding: 12px; border-radius: var(--border-radius-md); margin-bottom: 10px; }
+        .note-item p { margin: 0; white-space: pre-wrap; }
+        .note-item .note-meta { font-size: 0.75rem; color: var(--color-text-light); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+        .note-actions button { background: none; border: none; color: var(--color-text-light); cursor: pointer; padding: 4px; }
+        .note-actions button:hover { color: var(--color-primary); }
+        #emoji-picker { position: absolute; bottom: 60px; left: 10px; background: white; border-radius: var(--border-radius-lg); box-shadow: 0 5px 15px rgba(0,0,0,0.15); z-index: 30; width: 300px; }
+        .picker-header { padding: 8px; border-bottom: 1px solid var(--color-border); }
+        .picker-content { padding: 8px; max-height: 200px; overflow-y: auto; }
+        .emoji-category { font-weight: bold; margin-top: 8px; margin-bottom: 4px; font-size: 0.9rem; }
+        .emoji, .quick-reply-item { cursor: pointer; padding: 5px; border-radius: 5px; display: inline-block; font-size: 1.2rem; }
+        .emoji:hover, .quick-reply-item:hover { background-color: #f0f0f0; }
+        
+        .picker-container { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px; background: white; border-radius: var(--border-radius-md); box-shadow: 0 -5px 15px rgba(0,0,0,0.1); z-index: 30; max-height: 250px; overflow-y: auto; }
+        .picker-item { display: block; width: 100%; text-align: left; font-size: 0.9rem; padding: 10px 15px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
+        .picker-item:last-child { border-bottom: none; }
+        .picker-item:hover { background-color: #f7f9fc; }
+        .picker-item strong { color: var(--color-primary); }
+        .picker-add-btn { display: block; width: 100%; text-align: left; font-size: 0.9rem; padding: 10px 15px; cursor: pointer; color: var(--color-primary); font-weight: 600; }
+        .picker-add-btn:hover { background-color: #f7f9fc; }
+        .template-item .template-category { font-size: 0.75rem; background-color: var(--color-subtle-bg); color: var(--color-subtle-text); padding: 2px 6px; border-radius: 9999px; text-transform: uppercase; font-weight: 600; }
+        
+        .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
+        .modal-content { background-color: white; padding: 25px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 90%; max-width: 500px; }
+        .modal-content h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; }
+        .modal-content label { display: block; font-weight: 600; margin-bottom: 8px; }
+
+        #contact-details-panel { width: 0; transition: width 0.3s ease-in-out; background-color: var(--color-container-bg); border-left: 1px solid var(--color-border); flex-shrink: 0; }
+        #contact-details-panel.open { width: 320px; }
+        
+        .status-btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
+        .status-btn { padding: 3px 10px; font-size: 0.7rem; border-radius: 9999px; border: 1px solid transparent; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+        .status-btn:hover:not(.active) { transform: translateY(-1px); }
+        
+        /* --- START: Estilos de la Barra Lateral --- */
+        #main-sidebar { background-color: var(--color-sidebar-bg); border-right: 1px solid var(--color-border); width: 280px; transition: width 0.3s ease-in-out; flex-shrink: 0; }
+        #main-sidebar.collapsed { width: 80px; }
+        #main-sidebar.collapsed .sidebar-text { display: none; }
+        #main-sidebar.collapsed .nav-item { justify-content: center; }
+        .nav-item { display: flex; align-items: center; padding: 12px 16px; border-radius: var(--border-radius-md); margin-bottom: 6px; transition: background-color 0.2s ease, color 0.2s ease; cursor: pointer; font-weight: 600; color: var(--color-text-light); }
+        .nav-item:hover { background-color: #f0f2f5; color: var(--color-text); }
+        .nav-item.active { background-color: #eef2ff; color: #4338ca; }
+        .nav-item i { width: 24px; text-align: center; margin-right: 12px; font-size: 1.1rem; }
+        #main-sidebar.collapsed .nav-item i { margin-right: 0; }
+        /* --- END: Estilos de la Barra Lateral --- */
+
+        /* --- START: Estilos de las Vistas Principales --- */
+        .view-container { padding: 2rem; background-color: white; height: 100%; overflow-y: auto; }
+        .view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
+        .view-header h1 { font-size: 1.8rem; font-weight: 700; }
+        .table { width: 100%; border-collapse: collapse; }
+        .table th, .table td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--color-border); }
+        .table th { font-weight: 600; color: var(--color-text-light); font-size: 0.8rem; text-transform: uppercase; }
+        .table tr:hover { background-color: #f8f9fa; }
+        .tag-color-cell { display: flex; align-items: center; gap: 10px; }
+        .tag-color-swatch { width: 24px; height: 24px; border-radius: 50%; }
+        .actions-cell button, .actions-cell a { color: var(--color-text-light); }
+        .actions-cell button:hover, .actions-cell a:hover { color: var(--color-primary); }
+
+        .campaign-form-section { margin-bottom: 2rem; }
+        .campaign-form-section label { display: block; font-weight: 600; margin-bottom: 0.5rem; }
+        #recipient-count-display { margin-top: 0.5rem; font-style: italic; color: var(--color-text-light); }
+        /* --- END: Estilos de las Vistas Principales --- */
+
+        /* --- START: Estilos de Layout Principal --- */
+        #app-body { display: flex; flex: 1; overflow: hidden; }
+        #main-view-container { flex: 1; min-width: 0; }
+        #chat-view { display: flex; flex: 1; min-width: 0; height: 100%; }
+        #contacts-panel { flex-shrink: 0; }
+        #chat-panel { flex-grow: 1; min-width: 0; }
+        #contact-details-panel { flex-shrink: 0; }
+        /* --- END: Estilos de Layout Principal --- */
+
+        /* --- FIX: Estilo para el selector de color --- */
+        .color-picker-label {
+            display: inline-block;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 2px solid var(--color-border);
+        }
+
+        /* --- START: Estilos para Drag and Drop --- */
+        .draggable-row {
+            cursor: grab;
+        }
+        .sortable-ghost {
+            background-color: #eef2ff;
+            opacity: 0.7;
+        }
+        .sortable-drag {
+            background-color: #ffffff;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        /* --- END: Estilos para Drag and Drop --- */
+    </style>
+</head>
+<body class="antialiased">
+    <div id="app-container" class="h-screen w-screen flex flex-col">
+        <header id="app-header" class="p-4 shadow-md z-10 flex items-center">
+             <button id="tag-sidebar-toggle" onclick="toggleTagSidebar()" class="text-xl text-gray-600 hover:text-primary mr-4"><i class="fas fa-bars"></i></button>
+             <h1 class="text-2xl font-bold"><i class="fab fa-whatsapp text-green-500"></i> CRM</h1>
+        </header>
+        <div id="error-container" class="bg-yellow-200 text-yellow-800 p-3 text-center hidden">
+            <p><strong><i class="fas fa-exclamation-triangle"></i> Aviso:</strong> <span id="error-message"></span></p>
+        </div>
+        <div id="app-body">
+            <aside id="main-sidebar" class="h-full flex flex-col p-4">
+                <nav class="flex-1">
+                    <a onclick="navigateTo('chats')" data-view="chats" class="nav-item active">
+                        <i class="fas fa-comments"></i>
+                        <span class="sidebar-text">Chats</span>
+                    </a>
+                    <a onclick="navigateTo('contacts')" data-view="contacts" class="nav-item">
+                        <i class="fas fa-address-book"></i>
+                        <span class="sidebar-text">Contactos</span>
+                    </a>
+                    <a onclick="navigateTo('etiquetas')" data-view="etiquetas" class="nav-item">
+                        <i class="fas fa-tags"></i>
+                        <span class="sidebar-text">Etiquetas</span>
+                    </a>
+                    <a onclick="navigateTo('campanas')" data-view="campanas" class="nav-item">
+                        <i class="fas fa-bullhorn"></i>
+                        <span class="sidebar-text">Campañas</span>
+                    </a>
+                    <a onclick="navigateTo('mensajes-ads')" data-view="mensajes-ads" class="nav-item">
+                        <i class="fas fa-ad"></i>
+                        <span class="sidebar-text">Mensajes Ads</span>
+                    </a>
+                    <a onclick="navigateTo('respuestas-rapidas')" data-view="respuestas-rapidas" class="nav-item">
+                        <i class="fas fa-bolt"></i>
+                        <span class="sidebar-text">Respuestas rápidas</span>
+                    </a>
+                     <a href="#" class="nav-item">
+                        <i class="fas fa-cog"></i>
+                        <span class="sidebar-text">Configuración</span>
+                    </a>
+                </nav>
+            </aside>
+
+            <main id="main-view-container">
+                </main>
+        </div>
+    </div>
+    
+    <div id="image-modal" class="image-modal-backdrop" onclick="closeImageModal()">
+        <div class="image-modal-content" onclick="event.stopPropagation()">
+            <img id="modal-image-content" src="" alt="Vista ampliada">
+            <button class="image-modal-close" onclick="closeImageModal()"><i class="fas fa-times"></i></button>
+        </div>
+    </div>
+
+    <div id="quick-reply-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="quick-reply-modal-title">Añadir Respuesta Rápida</h2>
+            <form id="quick-reply-form">
+                <div>
+                    <label for="qr-shortcut">Atajo (sin "/")</label>
+                    <input type="text" id="qr-shortcut" required class="!mb-4">
+                </div>
+                <div>
+                    <label for="qr-message">Mensaje</label>
+                    <textarea id="qr-message" rows="4" required class="!mb-4"></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="closeQuickReplyModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="edit-contact-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="edit-contact-modal-title">Editar Contacto</h2>
+            <form id="edit-contact-form">
+                 <input type="hidden" id="edit-contact-id">
+                <div>
+                    <label for="edit-contact-name">Nombre</label>
+                    <input type="text" id="edit-contact-name" required class="!mb-4">
+                </div>
+                 <div>
+                    <label for="edit-contact-nickname">Apodo</label>
+                    <input type="text" id="edit-contact-nickname" class="!mb-4">
+                </div>
+                <div>
+                    <label for="edit-contact-email">Correo Electrónico</label>
+                    <input type="email" id="edit-contact-email" class="!mb-4">
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="closeEditContactModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <div id="tag-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="tag-modal-title">Nueva Etiqueta</h2>
+            <form id="tag-form">
+                <input type="hidden" id="tag-id">
+                <div>
+                    <label for="tag-label">Nombre de la Etiqueta</label>
+                    <input type="text" id="tag-label" required class="!mb-4">
+                </div>
+                <div>
+                    <label>Color</label>
+                    <div class="flex items-center gap-4">
+                        <input type="color" id="tag-color-input" value="#3182ce">
+                        <label for="tag-color-input" id="tag-color-preview" class="color-picker-label" style="background-color: #3182ce;"></label>
+                        <span id="tag-color-hex">#3182ce</span>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeTagModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
+
+    <script>
+        const firebaseConfig = { apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg", authDomain: "pedidos-con-gemini.firebaseapp.com", projectId: "pedidos-con-gemini", storageBucket: "pedidos-con-gemini.firebasestorage.app", messagingSenderId: "300825194175", appId: "1:300825194175:web:972fa7b8af195a83e6e00a", measurementId: "G-FTCDCMZB1S" };
+        firebaseConfig.databaseURL = "https://pedidos-con-gemini-default-rtdb.firebaseio.com";
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+        const storage = firebase.storage();
+        
+        const API_BASE_URL = 'https://crm-rzon.onrender.com';
+
+        const mainViewContainer = document.getElementById('main-view-container');
+        const errorContainerEl = document.getElementById('error-container');
+        const errorMessageEl = document.getElementById('error-message');
+              
+        let state = { 
+            contacts: [], 
+            messages: [], 
+            notes: [],
+            quickReplies: [],
+            templates: [],
+            tags: [],
+            selectedContactId: null, 
+            loadingMessages: false, 
+            isUploading: false, 
+            stagedFile: null,
+            activeFilter: 'all',
+            activeTab: 'chat',
+            emojiPickerOpen: false,
+            quickReplyPickerOpen: false,
+            templatePickerOpen: false,
+            contactDetailsOpen: false,
+            isEditingNote: null,
+            replyingToMessage: null, 
+            campaignMode: false,
+            selectedContactIdsForCampaign: [],
+            isTagSidebarOpen: true,
+            activeView: 'chats',
+        };
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null;
+        let ticking = false;
+
+        // --- START: FUNCIÓN AUXILIAR PARA FORMATEAR TEXTO ---
+        function formatWhatsAppText(text) {
+            if (!text) return '';
+            
+            // Escapar HTML para seguridad
+            let safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+            
+            // Reemplazar *texto* con <strong>texto</strong>
+            safeText = safeText.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
+            
+            // Reemplazar saltos de línea con <br>
+            safeText = safeText.replace(/\n/g, '<br>');
+
+            // Reemplazar URLs con enlaces clickables
+            const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+            safeText = safeText.replace(urlRegex, (url) => {
+                let href = url;
+                if (!url.startsWith('http')) {
+                    href = 'https://' + url;
+                }
+                return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${url}</a>`;
+            });
+
+            return safeText;
+        }
+        // --- END: FUNCIÓN AUXILIAR PARA FORMATEAR TEXTO ---
+
+        // --- PLANTILLAS DE VISTAS ---
+
+        const ChatViewTemplate = () => `
+            <div id="chat-view">
+                <aside id="contacts-panel" class="w-full md:w-1/3 lg:w-1/4 h-full flex flex-col">
+                    <div class="p-4 border-b border-gray-200">
+                        <input type="text" id="search-contacts-input" oninput="handleSearchContacts()" placeholder="Buscar o iniciar un nuevo chat..." class="w-full">
+                    </div>
+                    <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-gray-200 bg-white items-center"></div>
+                    <div id="contacts-loading" class="p-4 text-center text-gray-400">Cargando contactos...</div>
+                    <div id="contacts-list" class="flex-1 overflow-y-auto"></div>
+                </aside>
+                <section id="chat-panel" class="flex-1 flex flex-col relative"></section>
+                <aside id="contact-details-panel"></aside>
+            </div>
+        `;
+
+        const TagsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Etiquetas</h1>
+                    <div class="flex items-center gap-4">
+                        <button onclick="openTagModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar</button>
+                        <button onclick="handleDeleteAllTags()" class="btn btn-danger"><i class="fas fa-trash-alt mr-2"></i>Eliminar Todas</button>
+                    </div>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>Color</th>
+                            <th>Comportamiento</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tags-table-body"></tbody>
+                </table>
+            </div>
+        `;
+
+        const CampaignsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Crear Campaña</h1>
+                </div>
+                <div class="max-w-2xl">
+                    <div class="campaign-form-section">
+                        <label for="campaign-tag-select">1. Enviar a contactos con la etiqueta:</label>
+                        <select id="campaign-tag-select" onchange="updateCampaignRecipientCount()" class="!mb-2"></select>
+                        <p id="recipient-count-display">Se enviará a 0 contactos.</p>
+                    </div>
+                    <div class="campaign-form-section">
+                        <label for="campaign-template-select">2. Seleccionar Plantilla de Mensaje:</label>
+                        <select id="campaign-template-select" class="!mb-2"></select>
+                    </div>
+                    <div class="campaign-form-section">
+                        <button id="send-campaign-btn" onclick="handleSendCampaign()" class="btn btn-primary btn-lg">
+                            <i class="fas fa-paper-plane mr-2"></i>
+                            Enviar Campaña
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        const MensajesAdsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Mensajes Ads</h1>
+                </div>
+                <div class="p-8 text-center text-gray-500">
+                    <i class="fas fa-tools text-4xl mb-4"></i>
+                    <h2 class="text-xl font-semibold">En construcción</h2>
+                    <p class="mt-2">Esta sección mostrará los mensajes provenientes de campañas de anuncios.</p>
+                </div>
+            </div>
+        `;
+
+        const ContactsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Contactos</h1>
+                     <div class="flex items-center gap-4">
+                        <button onclick="openEditContactModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Contacto</button>
+                    </div>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>WhatsApp</th>
+                            <th>Correo Electrónico</th>
+                            <th>Etiquetas</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="contacts-table-body"></tbody>
+                </table>
+            </div>
+        `;
+
+        const QuickRepliesViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Respuestas Rápidas</h1>
+                    <button onclick="openQuickReplyModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Atajo</th>
+                            <th>Mensaje</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="quick-replies-table-body"></tbody>
+                </table>
+            </div>
+        `;
+
+        // --- PLANTILLAS DE COMPONENTES ---
+        const UserIcon = (contact, size = 'h-9 w-9') => {
+            if (contact && contact.profileImageUrl) {
+                return `<img src="${contact.profileImageUrl}" alt="${contact.name}" class="${size} rounded-full object-cover">`;
+            }
+            const contactStatusKey = contact.status;
+            const tag = state.tags.find(t => t.key === contactStatusKey);
+            const bgColor = tag ? tag.color : '#d1d5db';
+            const initial = contact.name ? contact.name.charAt(0).toUpperCase() : '?';
+            
+            return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style="background-color: ${bgColor};">
+                        ${initial}
+                    </div>`;
+        };
+        
+        const ContactItemTemplate = (contact, isSelected) => {
+            const typingText = contact.lastMessage || 'Sin mensajes.';
+            const unreadBadge = contact.unreadCount > 0 ? `<span class="unread-badge">${contact.unreadCount}</span>` : '';
+            
+            const mainContent = `<div class="flex-grow overflow-hidden ml-2">
+                                    <h3 class="font-semibold text-sm text-gray-800 truncate flex items-center">${contact.name || 'Desconocido'}</h3>
+                                    <div class="flex justify-between items-center">
+                                        <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
+                                        <div class="flex items-center gap-2">${unreadBadge}</div>
+                                    </div>
+                                 </div>`;
+
+            const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
+
+            return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''}" data-contact-id="${contact.id}">
+                        ${UserIcon(contact)}
+                        ${mainContent}
+                    </div>`;
+        };
+
+        const MessageStatusIconTemplate = (status) => {
+            const sentColor = '#9ca3af';
+            const readColor = '#53bdeb';
+            switch (status) {
+                case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
+                case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
+                case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
+                default: return '';
+            }
+        };
+
+        const RepliedMessagePreviewTemplate = (originalMessage) => {
+            if (!originalMessage) return '';
+            const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
+            const textPreview = originalMessage.text || (originalMessage.fileType ? `📷 Archivo` : '');
+
+            return `
+                <div class="reply-preview">
+                    <p class="reply-author">${authorName}</p>
+                    <p class="reply-text">${textPreview}</p>
+                </div>
+            `;
+        };
+        
+        const MessageBubbleTemplate = (message) => {
+            const isSent = message.from !== state.selectedContactId;
+            const time = message.timestamp ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            
+            let content = '';
+            let bubbleExtraClass = '';
+            let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
+            
+            if (message.fileUrl && message.fileType.startsWith('image/')) {
+                content = `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
+                bubbleExtraClass = 'has-image';
+                timeAndStatusHTML = '';
+            } else if (message.fileUrl && message.fileType.startsWith('video/')) {
+                content = `<video controls class="rounded-lg max-w-xs"><source src="${message.fileUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
+            } else {
+                content = `<p class="break-words">${formatWhatsAppText(message.text)}</p>`;
+            }
+            
+            let replyPreviewHTML = '';
+            if (message.context && message.context.id) {
+                const originalMessage = state.messages.find(m => m.id === message.context.id);
+                replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
+            }
+
+            const actionsHTML = `
+                <div class="message-actions">
+                    <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
+                    <button class="message-action-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')" title="Reaccionar"><i class="far fa-thumbs-up"></i></button>
+                </div>
+            `;
+
+            const reactionHTML = message.reaction ? `<div class="reactions-container ${isSent ? '' : 'received-reaction'}">${message.reaction}</div>` : '';
+
+            const bubbleAlignment = isSent ? 'justify-end' : 'justify-start';
+            const bubbleClasses = isSent ? 'sent' : 'received';
+            
+            return `
+                <div class="flex my-1 ${bubbleAlignment}">
+                    <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
+                        ${actionsHTML}
+                        ${replyPreviewHTML}
+                        ${content}
+                        ${timeAndStatusHTML}
+                        ${reactionHTML}
+                    </div>
+                </div>`;
+        };
+        
+        const NoteItemTemplate = (note) => {
+            const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
+            const isEditing = state.isEditingNote === note.id;
+
+            return isEditing
+                ? `<div class="note-item">
+                     <textarea id="edit-note-input-${note.id}" class="!mb-2" rows="3">${note.text}</textarea>
+                     <div class="flex justify-end gap-2">
+                       <button class="btn btn-subtle btn-sm" onclick="toggleEditNote(null)">Cancelar</button>
+                       <button class="btn btn-primary btn-sm" onclick="handleUpdateNote('${note.id}')">Guardar</button>
+                     </div>
+                   </div>`
+                : `<div class="note-item">
+                     <p>${note.text}</p>
+                     <div class="note-meta">
+                       <span>${time}</span>
+                       <div class="note-actions">
+                         <button onclick="toggleEditNote('${note.id}')" title="Editar nota"><i class="fas fa-pencil-alt"></i></button>
+                         <button onclick="handleDeleteNote('${note.id}')" title="Eliminar nota"><i class="fas fa-trash-alt"></i></button>
+                       </div>
+                     </div>
+                   </div>`;
+        };
+
+        const FilePreviewTemplate = (file) => { const objectURL = URL.createObjectURL(file); const isImage = file.type.startsWith('image/'); const previewElement = isImage ? `<img src="${objectURL}" alt="Vista previa">` : `<video src="${objectURL}" alt="Vista previa"></video>`; return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name}</p> <p>${(file.size / 1024).toFixed(1)} KB</p> </div> </div>`; };
+        
+        const StatusButtonsTemplate = (contact) => {
+            let buttonsHtml = '<div class="status-btn-group">';
+            state.tags.forEach(tag => {
+                const isActive = contact.status === tag.key;
+                buttonsHtml += `<button 
+                                    onclick="handleStatusChange('${tag.key}')" 
+                                    class="status-btn ${isActive ? 'active' : ''}"
+                                    style="${isActive ? `background-color: ${tag.color}; color: white; border-color: ${tag.color};` : `background-color: ${tag.color}20; color: ${tag.color}; border-color: ${tag.color}50;`}"
+                                >
+                                    ${tag.label}
+                                </button>`;
+            });
+            buttonsHtml += '</div>';
+            return buttonsHtml;
+        };
+        
+        const ReplyContextBarTemplate = (message) => {
+            if (!message) return '';
+            const authorName = message.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
+            const textPreview = message.text || (message.fileType ? `📷 Archivo` : '');
+            return `
+                <button id="cancel-reply-btn" onclick="cancelReply()"><i class="fas fa-times"></i></button>
+                <div class="reply-preview !p-0 !border-l-2 !m-0">
+                    <p class="reply-author">Respondiendo a ${authorName}</p>
+                    <p class="reply-text">${textPreview}</p>
+                </div>
+            `;
+        };
+
+        const ChatWindowTemplate = (contact) => {
+            const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
+            if (!contact) { return emptyChat; }
+
+            const footerContent = `
+                <form id="message-form" class="flex items-center space-x-3">
+                     <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
+                     <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*">
+                     <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
+                     <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
+                     <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
+                     <input id="message-input" type="text" placeholder="Escribe un mensaje o usa / para respuestas rápidas..." class="flex-1 focus:outline-none" autocomplete="off" />
+                     <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
+                </form>`;
+            
+            const mainContent = state.activeTab === 'chat'
+                ? `<main id="messages-container" class="relative flex-1 p-4 overflow-y-auto"><div id="sticky-date-header" class="date-separator"></div><div id="messages-content"></div></main>`
+                : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">
+                     <form id="note-form" class="mb-4">
+                       <textarea id="note-input" placeholder="Escribe una nota interna..." class="!mb-2" rows="3"></textarea>
+                       <button type="submit" class="btn btn-primary btn-sm">Guardar Nota</button>
+                     </form>
+                     <div id="notes-content"></div>
+                   </main>`;
+            
+            const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
+            const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
+
+            return `
+                <div id="drag-drop-overlay" class="drag-overlay hidden"><div class="drag-overlay-content"><i class="fas fa-file-import text-5xl mb-4"></i><p>Suelta el archivo para adjuntarlo</p></div></div>
+                <header class="chat-header p-2 shadow-sm flex items-start space-x-2">
+                    <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
+                    <div class="flex-grow">
+                        <h2 class="text-base font-semibold text-gray-800 cursor-pointer" onclick="openContactDetails()">${contact.name}</h2>
+                        <div class="flex items-center text-xs text-gray-500">
+                            <span>+${contact.id}</span>
+                            <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>
+                        </div>
+                        <div id="contact-status-wrapper" class="mt-1.5"></div>
+                    </div>
+                </header>
+                <div class="bg-white border-b border-gray-200 flex">
+                    <button class="tab-btn ${state.activeTab === 'chat' ? 'active' : ''}" onclick="setActiveTab('chat')"><i class="fas fa-comments mr-2"></i>Chat</button>
+                    <button class="tab-btn ${state.activeTab === 'notes' ? 'active' : ''}" onclick="setActiveTab('notes')"><i class="fas fa-sticky-note mr-2"></i>Notas Internas ${notesBadge}</button>
+                </div>
+                ${mainContent}
+                <div id="file-preview-container"></div>
+                <footer class="chat-footer relative">
+                    ${replyContextBarHTML}
+                    <div id="quick-reply-picker" class="picker-container hidden"></div>
+                    <div id="template-picker" class="picker-container hidden"></div>
+                    <div id="upload-progress" class="text-center text-sm text-yellow-600 mb-2 hidden"></div>
+                    ${footerContent}
+                    <div id="emoji-picker" class="hidden"></div>
+                </footer>`;
+        };
+
+        const ContactDetailsSidebarTemplate = (contact) => {
+            if (!contact) return '';
+            return `
+                <div class="h-full flex flex-col">
+                    <header class="p-4 flex items-center justify-between border-b border-gray-200">
+                        <h3 class="font-semibold text-lg">Detalles del contacto</h3>
+                        <button onclick="closeContactDetails()" class="text-gray-500 hover:text-gray-800"><i class="fas fa-times"></i></button>
+                    </header>
+                    <div class="flex-1 p-6 overflow-y-auto">
+                        <div class="text-center mb-6">
+                            ${UserIcon(contact, 'h-24 w-24')}
+                            <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
+                            <p class="text-gray-500">+${contact.id}</p>
+                        </div>
+                        <div class="space-y-4 text-sm">
+                            <div>
+                                <p class="font-semibold text-gray-400">Correo Electrónico</p>
+                                <p>${contact.email || 'No especificado'}</p>
+                            </div>
+                            <div>
+                                <p class="font-semibold text-gray-400">Apodo</p>
+                                <p>${contact.nickname || 'No especificado'}</p>
+                            </div>
+                        </div>
+                        <div class="mt-6 border-t pt-6 space-y-2">
+                           <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Marcar como Compra</button>
+                           <button onclick="handleMarkAsRegistration()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-user-check mr-2"></i>Marcar como Registro</button>
+                           <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto'</button>
+                        </div>
+                    </div>
+                    <footer class="p-4 border-t border-gray-200">
+                        <button onclick="openEditContactModal('${contact.id}')" class="btn btn-primary w-full">Editar Contacto</button>
+                    </footer>
+                </div>
+            `;
+        };
+        
+        // --- START: FUNCIONES DE FECHA (AÑADIDAS PARA CORREGIR EL ERROR) ---
+        function isSameDay(d1, d2) {
+            if (!d1 || !d2) return false;
+            return d1.getFullYear() === d2.getFullYear() &&
+                   d1.getMonth() === d2.getMonth() &&
+                   d1.getDate() === d2.getDate();
+        }
+
+        function formatDateSeparator(date) {
+            const today = new Date();
+            const yesterday = new Date(today);
+            yesterday.setDate(yesterday.getDate() - 1);
+
+            if (isSameDay(date, today)) {
+                return 'Hoy';
+            }
+            if (isSameDay(date, yesterday)) {
+                return 'Ayer';
+            }
+            return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
+        }
+
+        const DateSeparatorTemplate = (dateString) => {
+            return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
+        };
+        // --- END: FUNCIONES DE FECHA ---
+
+        // --- INICIALIZACIÓN DE LA APP ---
+        document.addEventListener('DOMContentLoaded', startApp);
+
+        function startApp() { 
+            navigateTo(state.activeView);
+            listenForContacts(); 
+            listenForQuickReplies();
+            listenForTags();
+            fetchTemplates();
+            document.addEventListener('click', handleClickOutside);
+        }
+        
+        function stopApp() { 
+            if (unsubscribeContactsListener) unsubscribeContactsListener(); 
+            if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
+            if (unsubscribeNotesListener) unsubscribeNotesListener();
+            if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
+            if (unsubscribeTagsListener) unsubscribeTagsListener();
+            document.removeEventListener('click', handleClickOutside);
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], templates: [], tags: [], selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            mainViewContainer.innerHTML = '';
+        }
+        
+        // --- NAVEGACIÓN Y RENDERIZADO DE VISTAS ---
+        function navigateTo(viewName) {
+            state.activeView = viewName;
+
+            document.querySelectorAll('#main-sidebar .nav-item').forEach(item => {
+                item.classList.toggle('active', item.dataset.view === viewName);
+            });
+
+            switch (viewName) {
+                case 'chats':
+                    mainViewContainer.innerHTML = ChatViewTemplate();
+                    renderChatWindow(); 
+                    listenForContacts(); 
+                    break;
+                case 'contacts':
+                    mainViewContainer.innerHTML = ContactsViewTemplate();
+                    renderContactsView();
+                    break;
+                case 'etiquetas':
+                    mainViewContainer.innerHTML = TagsViewTemplate();
+                    renderTagsView();
+                    break;
+                case 'campanas':
+                    mainViewContainer.innerHTML = CampaignsViewTemplate();
+                    renderCampaignsView();
+                    break;
+                case 'mensajes-ads':
+                    mainViewContainer.innerHTML = MensajesAdsViewTemplate();
+                    break;
+                case 'respuestas-rapidas':
+                    mainViewContainer.innerHTML = QuickRepliesViewTemplate();
+                    renderQuickRepliesView();
+                    break;
+                default:
+                    mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
+            }
+        }
+
+        function renderChatWindow() { 
+            if (state.activeView !== 'chats') return;
+            
+            const chatPanelEl = document.getElementById('chat-panel');
+            if (!chatPanelEl) return;
+
+            const contact = state.contacts.find(c => c.id === state.selectedContactId); 
+            chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+            
+            if (contact) { 
+                const statusWrapper = document.getElementById('contact-status-wrapper');
+                if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
+                if (state.activeTab === 'chat') {
+                    renderMessages();
+                    const messagesContainer = document.getElementById('messages-container'); 
+                    if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
+                    
+                    const messageForm = document.getElementById('message-form');
+                    const messageInput = document.getElementById('message-input'); 
+                    if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
+                    if (messageInput) { 
+                        messageInput.addEventListener('paste', handlePaste); 
+                        messageInput.addEventListener('input', handleQuickReplyInput);
+                        messageInput.focus(); 
+                    } 
+                    setupDragAndDrop(); 
+                    
+                } else if (state.activeTab === 'notes') {
+                    renderNotes();
+                    document.getElementById('note-form').addEventListener('submit', handleSaveNote);
+                }
+            } 
+        }
+
+        function renderTagsView() {
+            if (state.activeView !== 'etiquetas') return;
+            const tableBody = document.getElementById('tags-table-body');
+            if (!tableBody) return;
+
+            tableBody.innerHTML = state.tags.map(tag => `
+                <tr>
+                    <td class="font-semibold">${tag.label}</td>
+                    <td>
+                        <div class="tag-color-cell">
+                            <span class="tag-color-swatch" style="background-color: ${tag.color};"></span>
+                            <span>${tag.color}</span>
+                        </div>
+                    </td>
+                    <td class="actions-cell">
+                        <button onclick="openTagModal(state.tags.find(t => t.id === '${tag.id}'))" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                        <button onclick="handleDeleteTag('${tag.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function renderContactsView() {
+            if (state.activeView !== 'contacts') return;
+            const tableBody = document.getElementById('contacts-table-body');
+            if (!tableBody) return;
+
+            tableBody.innerHTML = state.contacts.map(contact => {
+                 const tag = state.tags.find(t => t.key === contact.status) || { label: 'Sin etiqueta', color: '#d1d5db' };
+                return `
+                    <tr>
+                        <td class="font-semibold">${contact.name || 'Desconocido'}</td>
+                        <td>${contact.id}</td>
+                        <td>${contact.email || 'N/A'}</td>
+                        <td>
+                            <span class="px-2 py-1 text-xs rounded-full text-white" style="background-color: ${tag.color};">${tag.label}</span>
+                        </td>
+                        <td class="actions-cell">
+                            <a href="https://wa.me/${contact.id}" target="_blank" class="p-2"><i class="fab fa-whatsapp"></i></a>
+                            <button onclick="openEditContactModal('${contact.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                            <button onclick="handleDeleteContact('${contact.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                        </td>
+                    </tr>
+                `
+            }).join('');
+        }
+        
+        function renderCampaignsView() {
+            if (state.activeView !== 'campanas') return;
+            const tagSelect = document.getElementById('campaign-tag-select');
+            const templateSelect = document.getElementById('campaign-template-select');
+
+            if (tagSelect) {
+                tagSelect.innerHTML = '<option value="all">Todos los contactos</option>' + state.tags.map(tag => `<option value="${tag.key}">${tag.label}</option>`).join('');
+            }
+            if (templateSelect) {
+                templateSelect.innerHTML = '<option value="">-- Selecciona una plantilla --</option>' + state.templates.map(t => `<option value='${JSON.stringify(t)}'>${t.name} (${t.language})</option>`).join('');
+            }
+            updateCampaignRecipientCount();
+        }
+
+        function renderQuickRepliesView() {
+            if (state.activeView !== 'respuestas-rapidas') return;
+            const tableBody = document.getElementById('quick-replies-table-body');
+            if (!tableBody) return;
+
+            tableBody.innerHTML = state.quickReplies.map(reply => `
+                <tr>
+                    <td class="font-semibold">/${reply.shortcut}</td>
+                    <td class="text-gray-600">${reply.message}</td>
+                    <td class="actions-cell">
+                        <button onclick="openQuickReplyModal('${reply.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                        <button onclick="handleDeleteQuickReply('${reply.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function updateCampaignRecipientCount() {
+            const tagSelect = document.getElementById('campaign-tag-select');
+            const display = document.getElementById('recipient-count-display');
+            if (!tagSelect || !display) return;
+
+            const selectedTagKey = tagSelect.value;
+            let recipients = [];
+
+            if (selectedTagKey === 'all') {
+                recipients = state.contacts;
+            } else {
+                recipients = state.contacts.filter(c => c.status === selectedTagKey);
+            }
+            
+            display.textContent = `Se enviará a ${recipients.length} contactos.`;
+        }
+
+
+        function renderMessages() { const contentContainer = document.getElementById('messages-content'); if (!contentContainer) return; let lastMessageDate = null; let messagesHtml = ''; state.messages.forEach(message => { if (!message.timestamp || !message.timestamp.seconds) return; const currentMessageDate = new Date(message.timestamp.seconds * 1000); if (!isSameDay(currentMessageDate, lastMessageDate)) { messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate)); lastMessageDate = currentMessageDate; } messagesHtml += MessageBubbleTemplate(message); }); contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>'; document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' }); handleScroll(); }
+        
+        function renderNotes() { 
+            const contentContainer = document.getElementById('notes-content'); 
+            if (!contentContainer) return; 
+            contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); 
+        }
+
+        function handleScroll() { const container = document.getElementById('messages-container'); const stickyHeader = document.getElementById('sticky-date-header'); if (!container || !stickyHeader) return; const anchors = Array.from(container.querySelectorAll('.date-separator-anchor')); let currentStickyText = null; const scrollTop = container.scrollTop; for (let i = 0; i < anchors.length; i++) { const anchor = anchors[i]; if (scrollTop >= anchor.offsetTop - 16) { currentStickyText = anchor.textContent; } else { break; } } if (currentStickyText) { if (stickyHeader.textContent !== currentStickyText) { stickyHeader.textContent = currentStickyText; } stickyHeader.classList.add('visible'); } else { stickyHeader.classList.remove('visible'); } }
+        
+        function showError(message) { errorMessageEl.textContent = message; errorContainerEl.classList.remove('hidden'); setTimeout(() => hideError(), 5000); }
+        function hideError() { errorContainerEl.classList.add('hidden'); }
+        function openImageModal(imageUrl) { const modal = document.getElementById('image-modal'); const modalImage = document.getElementById('modal-image-content'); modalImage.src = imageUrl; modal.classList.add('visible'); }
+        function closeImageModal() { const modal = document.getElementById('image-modal'); modal.classList.remove('visible'); const modalImage = document.getElementById('modal-image-content'); setTimeout(() => { modalImage.src = ''; }, 300); }
+        function copyToClipboard(text, buttonElement) { navigator.clipboard.writeText(text).then(() => { const originalIconHTML = buttonElement.innerHTML; buttonElement.innerHTML = '<i class="fas fa-check text-green-500"></i>'; buttonElement.disabled = true; setTimeout(() => { buttonElement.innerHTML = originalIconHTML; buttonElement.disabled = false; }, 1500); }).catch(err => { console.error('Error al copiar: ', err); alert('No se pudo copiar el número.'); }); }
+
+        async function handleSelectContact(contactId) { 
+            if (state.campaignMode) return;
+            if (state.selectedContactId === contactId && !state.contactDetailsOpen) {
+                if (state.activeTab !== 'chat') { setActiveTab('chat'); }
+                return;
+            }
+            closeContactDetails();
+            cancelStagedFile(); 
+            cancelReply();
+            db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err)); 
+            state.selectedContactId = contactId; 
+            state.loadingMessages = true; 
+            state.activeTab = 'chat';
+            state.isEditingNote = null;
+            handleSearchContacts(); 
+            
+            if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
+            unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc').onSnapshot( (snapshot) => { hideError(); state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })); state.loadingMessages = false; if(state.activeTab === 'chat') renderMessages(); }, (error) => { console.error(error); showError(`Error al cargar mensajes.`); state.loadingMessages = false; state.messages = []; if(state.activeTab === 'chat') renderMessages(); } ); 
+            
+            if (unsubscribeNotesListener) unsubscribeNotesListener();
+            unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
+            
+            renderChatWindow();
+        }
+        
+        async function handleSendMessage(event) {
+            event.preventDefault();
+            const input = document.getElementById('message-input');
+            let text = input.value.trim();
+            const contact = state.contacts.find(c => c.id === state.selectedContactId);
+            if (!contact || state.isUploading) return;
+
+            // Lógica para respuestas rápidas
+            if (text.startsWith('/')) {
+                const shortcut = text.substring(1);
+                const matchingReply = state.quickReplies.find(reply => reply.shortcut === shortcut);
+                if (matchingReply) {
+                    text = matchingReply.message; // Reemplaza el atajo por el mensaje completo
+                } else {
+                    return; // Si no hay coincidencia exacta, no envía nada
+                }
+            }
+            
+            if (!text && !state.stagedFile) return;
+            
+            if (text && !contact.isWithin24HourWindow) {
+                showError("La ventana de 24 horas ha cerrado. Solo puedes enviar plantillas.");
+                return;
+            }
+
+            input.value = '';
+
+            const messageData = { text: text };
+            if (state.replyingToMessage) {
+                messageData.reply_to_wamid = state.replyingToMessage.id;
+            }
+
+            try {
+                let response;
+                if (state.stagedFile) {
+                    response = await uploadAndSendFile(state.stagedFile); 
+                    cancelStagedFile();
+                } else if (text) {
+                    await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
+                    response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(messageData)
+                    });
+                }
+                
+                if (response && !response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error del servidor.');
+                }
+                cancelReply();
+            } catch (error) {
+                console.error("Error en el proceso de envío:", error);
+                showError(error.message);
+                if (text && !state.stagedFile) { input.value = text; }
+            }
+        }
+
+        async function handleSendTemplate(templateObject) {
+            if (!state.selectedContactId) return;
+
+            const templateData = {
+                template: templateObject
+            };
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(templateData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
+                }
+                
+                toggleTemplatePicker();
+            } catch (error) {
+                console.error("Error al enviar la plantilla:", error);
+                showError(error.message);
+            }
+        }
+        
+        async function handleSaveNote(event) {
+            event.preventDefault();
+            const input = document.getElementById('note-input');
+            const text = input.value.trim();
+            if (!text || !state.selectedContactId) return;
+            
+            input.disabled = true;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+                if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || 'Error del servidor'); }
+                input.value = '';
+            } catch (error) { console.error('Error al guardar la nota:', error); showError(error.message); } finally { input.disabled = false; }
+        }
+
+        async function handleUpdateNote(noteId) {
+            const input = document.getElementById(`edit-note-input-${noteId}`);
+            const newText = input.value.trim();
+            if (!newText || !state.selectedContactId) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes/${noteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: newText }) });
+                if (!response.ok) throw new Error('No se pudo actualizar la nota.');
+                toggleEditNote(null);
+            } catch (error) { showError(error.message); }
+        }
+
+        async function handleDeleteNote(noteId) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes/${noteId}`, { method: 'DELETE' });
+                if (!response.ok) throw new Error('No se pudo eliminar la nota.');
+            } catch (error) { showError(error.message); }
+        }
+
+        function toggleEditNote(noteId) { state.isEditingNote = state.isEditingNote === noteId ? null : noteId; renderNotes(); }
+
+        async function uploadAndSendFile(file) { 
+            if (!file || !state.selectedContactId || state.isUploading) return; 
+            const progressEl = document.getElementById('upload-progress'); 
+            const submitButton = document.querySelector('#message-form button[type="submit"]'); 
+            state.isUploading = true; 
+            progressEl.textContent = 'Subiendo 0%...'; 
+            progressEl.classList.remove('hidden'); 
+            if(submitButton) submitButton.disabled = true; 
+            
+            const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
+            const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`; 
+            
+            const fileRef = storage.ref(filePath); 
+            const uploadTask = fileRef.put(file); 
+            return new Promise((resolve, reject) => { 
+                uploadTask.on('state_changed', (snapshot) => { const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; }, (error) => { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; reject(new Error("Falló la subida del archivo.")); }, async () => { 
+                    try { 
+                        const downloadURL = await uploadTask.snapshot.ref.getDownloadURL(); 
+                        const messageData = { fileUrl: downloadURL, fileType: file.type };
+                        if (state.replyingToMessage) {
+                            messageData.reply_to_wamid = state.replyingToMessage.id;
+                        }
+                        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) }); 
+                        resolve(response);
+                    } catch (error) { reject(error); } finally { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; } 
+                }); 
+            }); 
+        }
+
+        function handleStatusChange(newStatus) {
+            if (!state.selectedContactId || !newStatus) return;
+            db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ status: newStatus }).catch(err => { console.error("Error updating status:", err); showError("No se pudo actualizar la etiqueta."); });
+        }
+        
+        function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; renderFilePreview(); }
+        function renderFilePreview() { const container = document.getElementById('file-preview-container'); if (container) { if (state.stagedFile) { container.innerHTML = FilePreviewTemplate(state.stagedFile); } else { container.innerHTML = ''; } } }
+        function cancelStagedFile() { if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } state.stagedFile = null; const fileInput = document.getElementById('file-input'); if(fileInput) fileInput.value = null; renderFilePreview(); }
+        function handleFileInputChange(event) { const file = event.target.files[0]; if (file) stageFile(file); }
+        function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
+        function setupDragAndDrop() { const chatArea = document.getElementById('chat-panel'); const overlay = document.getElementById('drag-drop-overlay'); if (!chatArea || !overlay) return; const showOverlay = () => overlay.classList.remove('hidden'); const hideOverlay = () => overlay.classList.add('hidden'); chatArea.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) { showOverlay(); } }); chatArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); }); chatArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); if (e.relatedTarget === null || !chatArea.contains(e.relatedTarget)) { hideOverlay(); } }); chatArea.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); hideOverlay(); const files = e.dataTransfer.files; if (files.length > 0) { stageFile(files[0]); } }); }
+        
+        function handleSearchContacts() {
+            const searchInput = document.getElementById('search-contacts-input');
+            const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+            
+            let filteredContacts = state.contacts;
+            if (state.activeFilter !== 'all') {
+                filteredContacts = state.contacts.filter(c => c.status === state.activeFilter);
+            }
+
+            const contactsToRender = searchTerm ? filteredContacts.filter(c => (c.name || '').toLowerCase().includes(searchTerm) || c.id.includes(searchTerm) || (c.lastMessage || '').toLowerCase().includes(searchTerm)) : filteredContacts;
+            
+            const contactsListEl = document.getElementById('contacts-list');
+            if (contactsListEl) {
+                contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
+            }
+        }
+
+        function setFilter(filter) { 
+            state.activeFilter = filter; 
+            document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
+            document.getElementById(`filter-${filter}`).classList.add('active'); 
+            handleSearchContacts(); 
+        }
+        
+        function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
+        
+        function handleClickOutside(event) {
+            const emojiPicker = document.getElementById('emoji-picker');
+            const emojiToggleBtn = document.getElementById('emoji-toggle-btn');
+            if (state.emojiPickerOpen && emojiPicker && emojiToggleBtn && !emojiPicker.contains(event.target) && !emojiToggleBtn.contains(event.target)) {
+                toggleEmojiPicker();
+            }
+
+            const templatePicker = document.getElementById('template-picker');
+            const templateToggleBtn = document.getElementById('template-toggle-btn');
+            if (state.templatePickerOpen && templatePicker && templateToggleBtn && !templatePicker.contains(event.target) && !templateToggleBtn.contains(event.target)) {
+                toggleTemplatePicker();
+            }
+        }
+
+        function listenForContacts() {
+            if (unsubscribeContactsListener) unsubscribeContactsListener();
+            
+            const contactsLoadingEl = document.getElementById('contacts-loading');
+            if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
+
+            unsubscribeContactsListener = db.collection('contacts_whatsapp').onSnapshot((snapshot) => {
+                hideError();
+                let newContacts = snapshot.docs.map(doc => {
+                    const contact = { id: doc.id, ...doc.data() };
+                    const lastTimestamp = contact.lastMessageTimestamp;
+                    if (!lastTimestamp) { contact.isWithin24HourWindow = false; }
+                    else { const diffHours = (new Date().getTime() - lastTimestamp.toDate().getTime()) / 3600000; contact.isWithin24HourWindow = diffHours <= 24; }
+                    return contact;
+                });
+                newContacts.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
+                state.contacts = newContacts;
+                
+                if (state.activeView === 'chats') {
+                    handleSearchContacts();
+                } else if (state.activeView === 'contacts') {
+                    renderContactsView();
+                }
+
+                if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
+                if (state.selectedContactId) {
+                    const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
+                    if (updatedContact) {
+                        if (state.contactDetailsOpen) {
+                             const contactDetailsPanelEl = document.getElementById('contact-details-panel');
+                             if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
+                        }
+                        renderChatWindow();
+                    } else { closeContactDetails(); }
+                }
+            }, (error) => { console.error(error); showError("No se pudo conectar a los contactos."); if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; });
+        }
+
+        function listenForQuickReplies() { 
+            if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener(); 
+            unsubscribeQuickRepliesListener = db.collection('quick_replies').orderBy('shortcut').onSnapshot((snapshot) => { 
+                state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+                if (state.activeView === 'respuestas-rapidas') {
+                    renderQuickRepliesView();
+                }
+            }, (error) => { console.error("Error fetching quick replies:", error); showError("No se pudieron cargar las respuestas rápidas."); }); 
+        }
+        
+        function handleQuickReplyInput(event) { 
+            const input = event.target; 
+            const text = input.value; 
+            if (text.startsWith('/')) { 
+                state.quickReplyPickerOpen = true; 
+                state.templatePickerOpen = false;
+                state.emojiPickerOpen = false;
+                const searchTerm = text.substring(1); 
+                renderQuickReplyPicker(searchTerm); 
+            } else { 
+                state.quickReplyPickerOpen = false; 
+            }
+            renderAllPickers();
+        }
+
+        function renderQuickReplyPicker(searchTerm) {
+            const picker = document.getElementById('quick-reply-picker');
+            if (!picker) return;
+            const lowerCaseSearchTerm = searchTerm.toLowerCase();
+            const filteredReplies = state.quickReplies.filter(reply => reply.shortcut.toLowerCase().includes(lowerCaseSearchTerm));
+            
+            let pickerHTML = '';
+            if (filteredReplies.length > 0) {
+                pickerHTML = filteredReplies.map(reply => {
+                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message}</span></button>`;
+                }).join('');
+            } else if (searchTerm) {
+                pickerHTML = `<button class="picker-add-btn" onclick="openQuickReplyModal('${searchTerm}')"><i class="fas fa-plus-circle mr-2"></i> Añadir respuesta rápida: /${searchTerm}</button>`;
+            } else {
+                 pickerHTML = state.quickReplies.map(reply => {
+                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message}</span></button>`;
+                }).join('');
+            }
+            picker.innerHTML = pickerHTML;
+        }
+
+        function selectQuickReply(replyId) {
+            const reply = state.quickReplies.find(r => r.id === replyId);
+            if (!reply) {
+                console.error("Quick reply not found:", replyId);
+                return;
+            }
+            const message = reply.message;
+            const input = document.getElementById('message-input');
+            input.value = message;
+            input.focus();
+            state.quickReplyPickerOpen = false;
+            renderAllPickers();
+        }
+        
+        function openQuickReplyModal(param = null) {
+            const modal = document.getElementById('quick-reply-modal');
+            const form = document.getElementById('quick-reply-form');
+            form.reset();
+
+            const isEditing = param && state.quickReplies.some(r => r.id === param);
+            const reply = isEditing ? state.quickReplies.find(r => r.id === param) : null;
+            const newShortcut = !isEditing && typeof param === 'string' ? param : '';
+
+            document.getElementById('quick-reply-modal-title').textContent = isEditing ? 'Editar Respuesta Rápida' : 'Añadir Respuesta Rápida';
+            document.getElementById('qr-shortcut').value = isEditing ? reply.shortcut : newShortcut;
+            document.getElementById('qr-message').value = isEditing ? reply.message : '';
+            
+            modal.classList.remove('hidden');
+            document.getElementById('qr-shortcut').focus();
+            
+            form.onsubmit = (event) => {
+                event.preventDefault();
+                handleSaveQuickReply(isEditing ? param : null);
+            };
+        }
+
+        function closeQuickReplyModal() { document.getElementById('quick-reply-modal').classList.add('hidden'); }
+        
+        async function handleSaveQuickReply(replyId = null) {
+            const shortcut = document.getElementById('qr-shortcut').value.trim();
+            const message = document.getElementById('qr-message').value.trim();
+            if (!shortcut || !message) {
+                showError("El atajo y el mensaje no pueden estar vacíos.");
+                return;
+            }
+
+            const url = replyId 
+                ? `${API_BASE_URL}/api/quick-replies/${replyId}`
+                : `${API_BASE_URL}/api/quick-replies`;
+            
+            const method = replyId ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ shortcut, message })
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al guardar.');
+                }
+                closeQuickReplyModal();
+                if (method === 'POST') {
+                    const messageInput = document.getElementById('message-input');
+                    if (messageInput && messageInput.value.startsWith(`/${shortcut}`)) {
+                        selectQuickReply(message);
+                    }
+                }
+            } catch (error) {
+                console.error("Error saving quick reply:", error);
+                showError(error.message);
+            }
+        }
+
+        async function handleDeleteQuickReply(replyId) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar esta respuesta rápida?')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/quick-replies/${replyId}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar la respuesta rápida.');
+                }
+            } catch (error) {
+                console.error("Error deleting quick reply:", error);
+                showError(error.message);
+            }
+        }
+
+        async function fetchTemplates() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/whatsapp-templates`);
+                const data = await response.json();
+                if (data.success) {
+                    state.templates = data.templates;
+                } else {
+                    throw new Error(data.message);
+                }
+            } catch (error) {
+                console.error("Error al cargar las plantillas:", error);
+                showError("No se pudieron cargar las plantillas de WhatsApp.");
+            }
+        }
+
+        // --- START: FUNCIONES DE PICKERS (CORREGIDO) ---
+        function toggleTemplatePicker() {
+            state.templatePickerOpen = !state.templatePickerOpen;
+            state.quickReplyPickerOpen = false;
+            state.emojiPickerOpen = false;
+            if (state.templatePickerOpen) {
+                renderTemplatePicker(); // Se llama a la función que renderiza
+            }
+            renderAllPickers();
+        }
+
+        function renderTemplatePicker() {
+            const picker = document.getElementById('template-picker');
+            if (!picker) return;
+
+            if (state.templates.length === 0) {
+                picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas disponibles.</div>`;
+                return;
+            }
+
+            picker.innerHTML = state.templates.map(template => {
+                const templateString = JSON.stringify(template).replace(/'/g, "&apos;");
+                return `<button class="picker-item template-item" onclick='handleSendTemplate(${templateString})'>
+                            <div class="flex justify-between items-center">
+                                <strong>${template.name}</strong>
+                                <span class="template-category">${template.category}</span>
+                            </div>
+                        </button>`;
+            }).join('');
+        }
+
+        function toggleEmojiPicker() {
+            state.emojiPickerOpen = !state.emojiPickerOpen;
+            state.quickReplyPickerOpen = false;
+            state.templatePickerOpen = false;
+            if (state.emojiPickerOpen) {
+                renderEmojiPicker(); // Se llama a la función que renderiza
+            }
+            renderAllPickers();
+        }
+
+        function renderEmojiPicker() {
+            const picker = document.getElementById('emoji-picker');
+            if (!picker || picker.innerHTML !== '') return; // Evita re-renderizar si ya tiene contenido
+
+            const emojis = {
+                'Smileys & Emotion': ['😀', '😂', '😍', '🤔', '😢', '😡', '👍', '👎', '❤️', '🔥', '🎉'],
+                'People & Body': ['👋', '🙏', '💪', '👀', '🧠', '💼', '🧑‍💻', '🚀'],
+                'Objects': ['📞', '💡', '💰', '📈', '📌', '📎', '📅', '✅']
+            };
+
+            let html = '<div class="picker-content">';
+            for (const category in emojis) {
+                html += `<div class="emoji-category">${category}</div>`;
+                html += emojis[category].map(emoji => `<span class="emoji" onclick="selectEmoji('${emoji}')">${emoji}</span>`).join('');
+            }
+            html += '</div>';
+            picker.innerHTML = html;
+        }
+
+        function selectEmoji(emoji) {
+            const input = document.getElementById('message-input');
+            input.value += emoji;
+            input.focus();
+        }
+        // --- END: FUNCIONES DE PICKERS ---
+
+        function renderAllPickers() {
+            const emojiPicker = document.getElementById('emoji-picker');
+            const quickReplyPicker = document.getElementById('quick-reply-picker');
+            const templatePicker = document.getElementById('template-picker');
+
+            if(emojiPicker) emojiPicker.classList.toggle('hidden', !state.emojiPickerOpen);
+            if(quickReplyPicker) quickReplyPicker.classList.toggle('hidden', !state.quickReplyPickerOpen);
+            if(templatePicker) templatePicker.classList.toggle('hidden', !state.templatePickerOpen);
+        }
+
+        function openContactDetails() { 
+            const contactDetailsPanelEl = document.getElementById('contact-details-panel');
+            if (!state.selectedContactId || !contactDetailsPanelEl) return; 
+            const contact = state.contacts.find(c => c.id === state.selectedContactId); 
+            if (!contact) return; 
+            contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(contact); 
+            contactDetailsPanelEl.classList.add('open'); 
+            state.contactDetailsOpen = true; 
+        }
+        function closeContactDetails() { 
+            const contactDetailsPanelEl = document.getElementById('contact-details-panel');
+            if(contactDetailsPanelEl) {
+                contactDetailsPanelEl.classList.remove('open'); 
+                contactDetailsPanelEl.innerHTML = ''; 
+            }
+            state.contactDetailsOpen = false; 
+        }
+        function openEditContactModal(contactId = null) {
+            const modal = document.getElementById('edit-contact-modal');
+            const form = document.getElementById('edit-contact-form');
+            form.reset();
+            document.getElementById('edit-contact-modal-title').textContent = contactId ? 'Editar Contacto' : 'Agregar Contacto';
+            document.getElementById('edit-contact-id').value = contactId || '';
+
+            if (contactId) {
+                const contact = state.contacts.find(c => c.id === contactId);
+                if (contact) {
+                    document.getElementById('edit-contact-name').value = contact.name || '';
+                    document.getElementById('edit-contact-nickname').value = contact.nickname || '';
+                    document.getElementById('edit-contact-email').value = contact.email || '';
+                }
+            }
+            
+            modal.classList.remove('hidden');
+            document.getElementById('edit-contact-name').focus();
+            form.onsubmit = handleUpdateContact;
+        }
+        function closeEditContactModal() { document.getElementById('edit-contact-modal').classList.add('hidden'); }
+        async function handleUpdateContact(event) { 
+            event.preventDefault(); 
+            const id = document.getElementById('edit-contact-id').value;
+            const name = document.getElementById('edit-contact-name').value.trim(); 
+            const nickname = document.getElementById('edit-contact-nickname').value.trim(); 
+            const email = document.getElementById('edit-contact-email').value.trim(); 
+            if (!name) { showError("El nombre no puede estar vacío."); return; } 
+            
+            const contactId = id || state.selectedContactId;
+            if (!contactId) { showError("No se ha seleccionado un contacto."); return; }
+
+            const button = event.target.querySelector('button[type="submit"]'); 
+            button.disabled = true; 
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
+            try { 
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, nickname, email }) }); 
+                if (!response.ok) { 
+                    const errorData = await response.json(); 
+                    throw new Error(errorData.message || 'Error al actualizar'); 
+                } 
+                closeEditContactModal(); 
+            } catch (error) { 
+                showError(error.message); 
+            } finally { 
+                button.disabled = false; 
+                button.textContent = 'Guardar'; 
+            } 
+        }
+
+        async function handleDeleteContact(contactId) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar este contacto?')) return;
+            // Aquí iría la llamada a la API para eliminar el contacto
+            console.log("Eliminar contacto:", contactId);
+        }
+
+        // RESTAURADO: Función para generar respuestas con IA
+        async function handleGenerateReply() { 
+            if (!state.selectedContactId) return; 
+            const button = document.getElementById('generate-reply-btn'); 
+            button.disabled = true; 
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
+            try { 
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/generate-reply`, { method: 'POST' }); 
+                if (!response.ok) { 
+                    const errorData = await response.json(); 
+                    throw new Error(errorData.message || 'Error al generar y enviar respuesta.'); 
+                } 
+            } catch (error) { 
+                showError(error.message); 
+            } finally { 
+                button.disabled = false; 
+                button.innerHTML = '<i class="fas fa-magic"></i>'; 
+            } 
+        }
+
+        function handleStartReply(event, messageDocId) {
+            event.stopPropagation();
+            const message = state.messages.find(m => m.docId === messageDocId);
+            if (message) {
+                state.replyingToMessage = message;
+                renderChatWindow();
+                document.getElementById('message-input')?.focus();
+            }
+        }
+
+        function cancelReply() {
+            if (state.replyingToMessage) {
+                state.replyingToMessage = null;
+                renderChatWindow();
+            }
+        }
+
+        async function handleSelectReaction(event, messageDocId, emoji) {
+            event.stopPropagation();
+            if (!state.selectedContactId) return;
+
+            const message = state.messages.find(m => m.docId === messageDocId);
+            if (!message) return;
+
+            const newReaction = message.reaction === emoji ? null : emoji;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages/${messageDocId}/react`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ reaction: newReaction })
+                });
+                if (!response.ok) {
+                    throw new Error('No se pudo guardar la reacción.');
+                }
+            } catch (error) {
+                console.error("Error al reaccionar:", error);
+                showError(error.message);
+            }
+        }
+        
+        // --- START: FUNCIONES PARA EVENTOS DE META ---
+        async function handleMarkAsPurchase() {
+            if (!state.selectedContactId) return;
+            const value = prompt("Ingresa el valor de la compra (ej. 150.50):");
+            if (value === null || value.trim() === '' || isNaN(parseFloat(value))) {
+                showError("Debes ingresar un valor numérico válido.");
+                return;
+            }
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/mark-as-purchase`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ value: parseFloat(value) })
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message);
+                alert(result.message);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function handleMarkAsRegistration() {
+            if (!state.selectedContactId) return;
+            if (!confirm("¿Confirmas que este contacto completó el registro?")) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/mark-as-registration`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message);
+                alert(result.message);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+        async function handleSendViewContent() {
+            if (!state.selectedContactId) return;
+            if (!confirm("¿Confirmas que quieres enviar el evento 'Contenido Visto' para este contacto?")) return;
+             try {
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/send-view-content`, { method: 'POST' });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.message);
+                alert(result.message);
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        // --- END: FUNCIONES PARA EVENTOS DE META ---
+
+
+        // --- FUNCIONES PARA CAMPAÑAS ---
+        async function handleSendCampaign() {
+            const tagSelect = document.getElementById('campaign-tag-select');
+            const templateSelect = document.getElementById('campaign-template-select');
+            const button = document.getElementById('send-campaign-btn');
+
+            const selectedTagKey = tagSelect.value;
+            const templateString = templateSelect.value;
+            
+            if (!templateString) { showError("Por favor, selecciona una plantilla para enviar."); return; }
+
+            let recipients = [];
+            if (selectedTagKey === 'all') {
+                recipients = state.contacts;
+            } else {
+                recipients = state.contacts.filter(c => c.status === selectedTagKey);
+            }
+            
+            if (recipients.length === 0) { showError("No hay contactos en la etiqueta seleccionada para enviar la campaña."); return; }
+
+            const contactIds = recipients.map(c => c.id);
+            const template = JSON.parse(templateString);
+
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...`;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/campaigns/send-template`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contactIds, template })
+                });
+
+                const result = await response.json();
+                if (!response.ok || !result.success) { throw new Error(result.message || "Ocurrió un error en el servidor."); }
+
+                alert(`Campaña enviada.\n\nÉxitos: ${result.results.successful.length}\nFallos: ${result.results.failed.length}`);
+                
+            } catch (error) {
+                console.error("Error al enviar la campaña:", error);
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = `<i class="fas fa-paper-plane mr-2"></i> Enviar Campaña`;
+            }
+        }
+
+
+        // --- FUNCIONES PARA GESTIÓN DE ETIQUETAS ---
+        function toggleTagSidebar() {
+            state.isTagSidebarOpen = !state.isTagSidebarOpen;
+            document.getElementById('main-sidebar').classList.toggle('collapsed', !state.isTagSidebarOpen);
+        }
+
+        function listenForTags() {
+            if(unsubscribeTagsListener) unsubscribeTagsListener();
+            unsubscribeTagsListener = db.collection('crm_tags').orderBy('label').onSnapshot(snapshot => {
+                state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if(state.activeView === 'chats') {
+                    renderTagFilters();
+                    handleSearchContacts(); 
+                }
+                if(state.activeView === 'etiquetas') {
+                    renderTagsView();
+                }
+                if(state.activeView === 'campanas') {
+                    renderCampaignsView();
+                }
+            }, error => {
+                console.error("Error al escuchar las etiquetas:", error);
+                showError("No se pudieron cargar las etiquetas.");
+            });
+        }
+
+        function renderTagFilters() {
+            const container = document.getElementById('tag-filters-container');
+            if(!container) return;
+            let filtersHTML = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+            filtersHTML += state.tags.map(tag => `
+                <button id="filter-${tag.key}" class="filter-btn ${state.activeFilter === tag.key ? 'active' : ''}" onclick="setFilter('${tag.key}')">${tag.label}</button>
+            `).join('');
+            container.innerHTML = filtersHTML;
+        }
+
+        function openTagModal(tag = null) {
+            const modal = document.getElementById('tag-modal');
+            const form = document.getElementById('tag-form');
+            form.reset();
+            
+            if (tag) {
+                document.getElementById('tag-modal-title').textContent = 'Editar Etiqueta';
+                document.getElementById('tag-id').value = tag.id;
+                document.getElementById('tag-label').value = tag.label;
+                document.getElementById('tag-color-input').value = tag.color;
+            } else {
+                document.getElementById('tag-modal-title').textContent = 'Nueva Etiqueta';
+                document.getElementById('tag-id').value = '';
+                document.getElementById('tag-color-input').value = '#3182ce';
+            }
+            
+            const colorInput = document.getElementById('tag-color-input');
+            document.getElementById('tag-color-preview').style.backgroundColor = colorInput.value;
+            document.getElementById('tag-color-hex').textContent = colorInput.value;
+
+            modal.classList.remove('hidden');
+            document.getElementById('tag-label').focus();
+            form.onsubmit = handleSaveTag;
+        }
+
+        function closeTagModal() {
+            document.getElementById('tag-modal').classList.add('hidden');
+        }
+
+        async function handleSaveTag(event) {
+            event.preventDefault();
+            const id = document.getElementById('tag-id').value;
+            const label = document.getElementById('tag-label').value.trim();
+            const color = document.getElementById('tag-color-input').value;
+
+            if (!label || !color) {
+                showError("El nombre y el color de la etiqueta son obligatorios.");
+                return;
+            }
+            
+            const key = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            const tagData = { label, color, key };
+
+            const button = event.target.querySelector('button[type="submit"]');
+            button.disabled = true;
+
+            try {
+                let response;
+                if (id) {
+                    response = await fetch(`${API_BASE_URL}/api/tags/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tagData)
+                    });
+                } else {
+                    response = await fetch(`${API_BASE_URL}/api/tags`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(tagData)
+                    });
+                }
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al guardar la etiqueta.');
+                }
+                closeTagModal();
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+            }
+        }
+
+        async function handleDeleteTag(id) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar esta etiqueta? Esto no se puede deshacer.')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/tags/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar la etiqueta.');
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        
+        async function handleDeleteAllTags() {
+            if (!window.confirm('¿Estás SEGURO de que quieres eliminar TODAS las etiquetas? Esta acción es irreversible.')) return;
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/tags`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar las etiquetas.');
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+
+    </script>
+</body>
+</html>
