@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CORREGIDA Y ROBUSTA CON SERVIDOR WEB
+// index.js - VERSIÓN CORREGIDA Y ROBUSTA CON SERVIDOR WEB Y DESCARGA DE IMÁGENES
 
 require('dotenv').config();
 const express = require('express');
@@ -8,7 +8,7 @@ const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
-const path = require('path'); // <-- AÑADIDO: Módulo para manejar rutas de archivos
+const path = require('path');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 const serviceAccount = require('./serviceAccountKey.json');
@@ -27,8 +27,6 @@ console.log('Conexión con Firebase (Firestore y Storage) establecida.');
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// --- AÑADIDO: Servir archivos estáticos desde la carpeta 'public' ---
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -175,7 +173,46 @@ async function sendWhatsAppMessage(to, text) {
     }
 }
 
-// --- WEBHOOK DE WHATSAPP ---
+// --- NUEVA FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
+async function downloadAndUploadImage(mediaId, from) {
+    try {
+        // 1. Obtener la URL de la imagen desde Meta
+        const mediaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        const mediaUrl = mediaUrlResponse.data.url;
+        const mimeType = mediaUrlResponse.data.mime_type;
+        const fileExtension = mimeType.split('/')[1] || 'jpg';
+
+        // 2. Descargar la imagen
+        const imageResponse = await axios.get(mediaUrl, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: 'arraybuffer'
+        });
+        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+
+        // 3. Subir la imagen a Firebase Storage
+        const fileName = `whatsapp_media/${from}/${mediaId}.${fileExtension}`;
+        const file = bucket.file(fileName);
+        await file.save(imageBuffer, {
+            metadata: { contentType: mimeType }
+        });
+
+        // 4. Hacer el archivo público y obtener la URL
+        await file.makePublic();
+        const publicUrl = file.publicUrl();
+        
+        console.log(`Imagen ${mediaId} subida y disponible en: ${publicUrl}`);
+        return { publicUrl, mimeType };
+
+    } catch (error) {
+        console.error(`❌ Error al procesar la imagen ${mediaId}:`, error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+
+// --- WEBHOOK DE WHATSAPP (MODIFICADO) ---
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -243,13 +280,32 @@ app.post('/webhook', async (req, res) => {
 
             let messageData = { timestamp, from, status: 'received', id: message.id };
             let lastMessageText = '';
+            
             try {
                 if (message.context) messageData.context = { id: message.context.id };
                 switch (message.type) {
-                    case 'text': messageData.text = message.text.body; lastMessageText = message.text.body; break;
-                    case 'image': lastMessageText = '📷 Imagen'; messageData.text = lastMessageText; break;
-                    case 'video': lastMessageText = '🎥 Video'; messageData.text = lastMessageText; break;
-                    default: lastMessageText = `Mensaje no soportado: ${message.type}`; messageData.text = lastMessageText; break;
+                    case 'text':
+                        messageData.text = message.text.body;
+                        lastMessageText = message.text.body;
+                        break;
+                    case 'image':
+                        lastMessageText = '📷 Imagen';
+                        messageData.text = lastMessageText;
+                        const imageData = await downloadAndUploadImage(message.image.id, from);
+                        if (imageData) {
+                            messageData.fileUrl = imageData.publicUrl;
+                            messageData.fileType = imageData.mimeType;
+                        }
+                        break;
+                    case 'video':
+                        lastMessageText = '🎥 Video';
+                        messageData.text = lastMessageText;
+                        // Aquí iría la lógica para descargar videos, similar a la de imágenes
+                        break;
+                    default:
+                        lastMessageText = `Mensaje no soportado: ${message.type}`;
+                        messageData.text = lastMessageText;
+                        break;
                 }
             } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
 
