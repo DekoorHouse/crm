@@ -35,7 +35,7 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-const META_PIXEL_ID = process.env.META_PIXEL_ID;
+const META_PIXEL_ID = process.env.META_PIXEL_ID; // Debe ser el ID de tu CONJUNTO DE DATOS (Dataset)
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -98,8 +98,18 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA) ---
-const sendConversionEvent = async (eventName, actionSource, contactInfo, referralInfo, customData = {}) => {
+/**
+ * --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN A META ---
+ * Envía un evento a la API de Conversiones de Meta.
+ * El 'action_source' se establece permanentemente como 'business_messaging',
+ * que es el valor correcto para todos los eventos originados en WhatsApp.
+ * Esto asegura una atribución y optimización precisas de las campañas.
+ * @param {string} eventName - El nombre del evento (ej. 'Purchase', 'Lead').
+ * @param {object} contactInfo - Información del contacto (wa_id, profile.name).
+ * @param {object} referralInfo - Información de referencia del anuncio (si existe).
+ * @param {object} customData - Datos personalizados adicionales (ej. { value, currency }).
+ */
+const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
         return;
@@ -109,6 +119,7 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
         throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
+    // La URL de la API de Graph usa una versión, es buena práctica revisarla periódicamente.
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
@@ -136,7 +147,8 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
             event_name: eventName,
             event_time: eventTime,
             event_id: eventId,
-            action_source: actionSource,
+            // CORRECCIÓN CLAVE: 'business_messaging' es el valor correcto para eventos de WhatsApp.
+            action_source: 'business_messaging',
             user_data: userData,
             custom_data: finalCustomData,
         }],
@@ -145,7 +157,8 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
     if (referralInfo?.source_url) {
         payload.data[0].event_source_url = referralInfo.source_url;
     }
-    if (referralInfo?.fbc) {
+    // 'ref' en el webhook de referral a menudo contiene el fbc.
+    if (referralInfo?.fbc) { 
         payload.data[0].fbc = referralInfo.fbc;
     }
 
@@ -158,6 +171,7 @@ const sendConversionEvent = async (eventName, actionSource, contactInfo, referra
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 };
+
 
 // --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES DE WHATSAPP ---
 async function sendWhatsAppMessage(to, text) {
@@ -316,7 +330,8 @@ app.post('/webhook', async (req, res) => {
 
             if (isNewContact && contactData.adReferral) {
                 try {
-                    await sendConversionEvent('Lead', 'whatsapp', contactInfo, contactData.adReferral);
+                    // El `action_source` ya está definido como 'business_messaging' dentro de la función.
+                    await sendConversionEvent('Lead', contactInfo, contactData.adReferral);
                     await contactRef.update({ leadEventSent: true });
                 } catch (error) { console.error(`Fallo al enviar evento Lead para ${from}:`, error.message); }
             }
@@ -496,8 +511,8 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        // SOLUCIÓN: Cambiado 'chat' por 'website' para coincidir con el evento que sí funciona.
-        await sendConversionEvent('CompleteRegistration', 'website', contactInfoForEvent, contactData.adReferral);
+        // CORRECCIÓN: Se llama a la función sin el parámetro `action_source`, ya que ahora está centralizado en la función.
+        await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral);
         
         await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
@@ -524,8 +539,10 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        // SOLUCIÓN: Cambiado 'chat' por 'website' para coincidir con el evento que sí funciona.
-        await sendConversionEvent('Purchase', 'website', contactInfoForEvent, contactData.adReferral || {}, { value: parseFloat(value), currency });
+        const customPurchaseData = { value: parseFloat(value), currency };
+        
+        // CORRECCIÓN: Se llama a la función sin `action_source` y se pasan los datos de la compra.
+        await sendConversionEvent('Purchase', contactInfoForEvent, contactData.adReferral || {}, customPurchaseData);
         
         await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
@@ -547,7 +564,8 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('ViewContent', 'website', contactInfoForEvent, contactData.adReferral);
+        // CORRECCIÓN: Se llama a la función sin el parámetro `action_source`.
+        await sendConversionEvent('ViewContent', contactInfoForEvent, contactData.adReferral);
         res.status(200).json({ success: true, message: 'Evento ViewContent enviado.' });
     } catch (error) {
         console.error(`Error en send-view-content para ${contactId}:`, error.message);
@@ -665,7 +683,8 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
         const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
         
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${GEMINI_API_KEY}`;
+        // Se recomienda usar un modelo estable como 'gemini-1.5-flash-latest'
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
         const payload = { contents: [{ parts: [{ text: prompt }] }] };
         
         const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
@@ -675,13 +694,17 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
         if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
         
-        await sendWhatsAppMessage(contactId, generatedText);
-        res.status(200).json({ success: true, message: 'Respuesta generada y enviada.' });
+        // La respuesta de la IA no se envía automáticamente. Se retorna al frontend para que el usuario la apruebe.
+        // Si quisieras enviarla automáticamente, descomenta la siguiente línea:
+        // await sendWhatsAppMessage(contactId, generatedText);
+        
+        res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion: generatedText });
     } catch (error) {
         console.error('Error al generar respuesta con IA:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
     }
 });
+
 
 // --- AÑADIDO: Ruta para servir la aplicación frontend ---
 app.get('*', (req, res) => {
@@ -690,5 +713,5 @@ app.get('*', (req, res) => {
 
 
 app.listen(PORT, () => {
-  console.log(`Servidor escuchando en el puerto ${PORT}`);
+  console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
