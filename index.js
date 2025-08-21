@@ -496,7 +496,8 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('CompleteRegistration', 'chat', contactInfoForEvent, contactData.adReferral);
+        // SOLUCIÓN: Cambiado 'chat' por 'website' para coincidir con el evento que sí funciona.
+        await sendConversionEvent('CompleteRegistration', 'website', contactInfoForEvent, contactData.adReferral);
         
         await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
@@ -523,8 +524,8 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        // CORRECCIÓN: Cambiado 'whatsapp' por 'chat'
-        await sendConversionEvent('Purchase', 'chat', contactInfoForEvent, contactData.adReferral || {}, { value: parseFloat(value), currency });
+        // SOLUCIÓN: Cambiado 'chat' por 'website' para coincidir con el evento que sí funciona.
+        await sendConversionEvent('Purchase', 'website', contactInfoForEvent, contactData.adReferral || {}, { value: parseFloat(value), currency });
         
         await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
