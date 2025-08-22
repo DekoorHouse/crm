@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA CON PARÁMETRO DE CANAL DE MENSAJERÍA
+// index.js - VERSIÓN FINAL CORREGIDA CON MANEJO DE REFERRAL NULO
 
 require('dotenv').config();
 const express = require('express');
@@ -35,7 +35,7 @@ const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
-const META_PIXEL_ID = process.env.META_PIXEL_ID; // Debe ser el ID de tu CONJUNTO DE DATOS (Dataset)
+const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
@@ -98,15 +98,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-/**
- * --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN A META (VERSIÓN CORREGIDA) ---
- * Envía un evento a la API de Conversiones de Meta.
- * Incluye los parámetros 'action_source' y 'messaging_channel' requeridos por Meta.
- * @param {string} eventName - El nombre del evento (ej. 'Purchase', 'Lead').
- * @param {object} contactInfo - Información del contacto (wa_id, profile.name).
- * @param {object} referralInfo - Información de referencia del anuncio (si existe).
- * @param {object} customData - Datos personalizados adicionales (ej. { value, currency }).
- */
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
@@ -133,7 +125,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
     }
 
     const finalCustomData = {
-        lead_source: referralInfo ? 'WhatsApp Ad' : 'WhatsApp Organic',
+        lead_source: referralInfo && Object.keys(referralInfo).length > 0 ? 'WhatsApp Ad' : 'WhatsApp Organic',
         ad_headline: referralInfo?.headline,
         ad_id: referralInfo?.source_id,
         ...customData
@@ -145,11 +137,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_time: eventTime,
             event_id: eventId,
             action_source: 'business_messaging',
-            // ===================================================================
-            // === CORRECCIÓN APLICADA SEGÚN EL ERROR DE LA API DE META ===
-            // Se añade el canal específico, que es un requisito cuando action_source es 'business_messaging'.
             messaging_channel: 'whatsapp', 
-            // ===================================================================
             user_data: userData,
             custom_data: finalCustomData,
         }],
@@ -505,7 +493,11 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral);
+        // ===================================================================
+        // === CORRECCIÓN APLICADA: Añadido fallback a objeto vacío       ===
+        // Esto previene un crash si el contacto es orgánico y no tiene `adReferral`.
+        await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral || {});
+        // ===================================================================
         
         await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
@@ -556,13 +548,19 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('ViewContent', contactInfoForEvent, contactData.adReferral);
+        // ===================================================================
+        // === CORRECCIÓN APLICADA: Añadido fallback a objeto vacío       ===
+        // Esto previene el error 500 si el contacto no tiene `adReferral`.
+        await sendConversionEvent('ViewContent', contactInfoForEvent, contactData.adReferral || {});
+        // ===================================================================
+
         res.status(200).json({ success: true, message: 'Evento ViewContent enviado.' });
     } catch (error) {
         console.error(`Error en send-view-content para ${contactId}:`, error.message);
         res.status(500).json({ success: false, message: error.message || 'Error al procesar el envío de ViewContent.' });
     }
 });
+
 
 // --- ENDPOINTS PARA NOTAS INTERNAS ---
 app.post('/api/contacts/:contactId/notes', async (req, res) => {
