@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA CON MANEJO DE REFERRAL NULO
+// index.js - VERSIÓN FINAL CORREGIDA CON ENVÍO DE CTWA_CLID
 
 require('dotenv').config();
 const express = require('express');
@@ -123,6 +123,14 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         console.error(`❌ Error al hashear los datos del usuario para el evento '${eventName}':`, hashError);
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
+
+    // ===================================================================
+    // === CORRECCIÓN APLICADA: Añadir 'ctwa_clid' a user_data si existe ===
+    // Este parámetro es requerido por Meta para atribuir eventos a anuncios de Clic a WhatsApp.
+    if (referralInfo?.ctwa_clid) {
+        userData.ctwa_clid = referralInfo.ctwa_clid;
+    }
+    // ===================================================================
 
     const finalCustomData = {
         lead_source: referralInfo && Object.keys(referralInfo).length > 0 ? 'WhatsApp Ad' : 'WhatsApp Organic',
@@ -273,7 +281,19 @@ app.post('/webhook', async (req, res) => {
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             if (isNewContact && message.referral?.source_type === 'ad') {
-                contactData.adReferral = { source_id: message.referral.source_id ?? null, headline: message.referral.headline ?? null, source_type: message.referral.source_type ?? null, source_url: message.referral.source_url ?? null, fbc: message.referral.ref ?? null, receivedAt: timestamp };
+                // ===================================================================
+                // === CORRECCIÓN APLICADA: Guardar 'ctwa_clid' explícitamente    ===
+                // El campo `ref` del webhook contiene el Click ID que necesitamos.
+                contactData.adReferral = { 
+                    source_id: message.referral.source_id ?? null, 
+                    headline: message.referral.headline ?? null, 
+                    source_type: message.referral.source_type ?? null, 
+                    source_url: message.referral.source_url ?? null, 
+                    fbc: message.referral.ref ?? null, // Se puede dejar por si acaso
+                    ctwa_clid: message.referral.ref ?? null, // Este es el campo crucial
+                    receivedAt: timestamp 
+                };
+                // ===================================================================
             }
 
             let messageData = { timestamp, from, status: 'received', id: message.id };
@@ -493,11 +513,7 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        // ===================================================================
-        // === CORRECCIÓN APLICADA: Añadido fallback a objeto vacío       ===
-        // Esto previene un crash si el contacto es orgánico y no tiene `adReferral`.
         await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral || {});
-        // ===================================================================
         
         await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
@@ -548,11 +564,7 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        // ===================================================================
-        // === CORRECCIÓN APLICADA: Añadido fallback a objeto vacío       ===
-        // Esto previene el error 500 si el contacto no tiene `adReferral`.
         await sendConversionEvent('ViewContent', contactInfoForEvent, contactData.adReferral || {});
-        // ===================================================================
 
         res.status(200).json({ success: true, message: 'Evento ViewContent enviado.' });
     } catch (error) {
