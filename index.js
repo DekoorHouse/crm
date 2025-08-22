@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA CON ENVÍO DE CTWA_CLID
+// index.js - VERSIÓN FINAL CORREGIDA SIN event_source_url PARA MENSAJERÍA
 
 require('dotenv').config();
 const express = require('express');
@@ -124,13 +124,9 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // ===================================================================
-    // === CORRECCIÓN APLICADA: Añadir 'ctwa_clid' a user_data si existe ===
-    // Este parámetro es requerido por Meta para atribuir eventos a anuncios de Clic a WhatsApp.
     if (referralInfo?.ctwa_clid) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
     }
-    // ===================================================================
 
     const finalCustomData = {
         lead_source: referralInfo && Object.keys(referralInfo).length > 0 ? 'WhatsApp Ad' : 'WhatsApp Organic',
@@ -151,9 +147,11 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         }],
     };
 
-    if (referralInfo?.source_url) {
-        payload.data[0].event_source_url = referralInfo.source_url;
-    }
+    // ===================================================================
+    // === CORRECCIÓN APLICADA: ELIMINADO event_source_url           ===
+    // Este parámetro es inválido para eventos con action_source: 'business_messaging'.
+    // ===================================================================
+    
     if (referralInfo?.fbc) { 
         payload.data[0].fbc = referralInfo.fbc;
     }
@@ -281,19 +279,15 @@ app.post('/webhook', async (req, res) => {
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             if (isNewContact && message.referral?.source_type === 'ad') {
-                // ===================================================================
-                // === CORRECCIÓN APLICADA: Guardar 'ctwa_clid' explícitamente    ===
-                // El campo `ref` del webhook contiene el Click ID que necesitamos.
                 contactData.adReferral = { 
                     source_id: message.referral.source_id ?? null, 
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
-                    source_url: message.referral.source_url ?? null, 
-                    fbc: message.referral.ref ?? null, // Se puede dejar por si acaso
-                    ctwa_clid: message.referral.ref ?? null, // Este es el campo crucial
+                    source_url: message.referral.source_url ?? null, // Se guarda pero no se envía a CAPI
+                    fbc: message.referral.ref ?? null, 
+                    ctwa_clid: message.referral.ref ?? null,
                     receivedAt: timestamp 
                 };
-                // ===================================================================
             }
 
             let messageData = { timestamp, from, status: 'received', id: message.id };
