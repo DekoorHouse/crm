@@ -129,10 +129,8 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
 
     if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
-        // ✅ CORRECCIÓN: El fbc va en user_data, no en el nivel principal
-        if (referralInfo.fbc) {
-            userData.fbc = referralInfo.fbc;
-        }
+        // ❌ NO incluir fbc para eventos de WhatsApp - Meta no lo acepta con business_messaging
+        // El fbc solo es para eventos web/Facebook, no para WhatsApp
     }
 
     const finalCustomData = {
@@ -152,12 +150,10 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_id: eventId,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp', 
-            user_data: userData,  // ✅ Aquí van TODOS los datos del usuario, incluido fbc y ctwa_clid
+            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
             custom_data: finalCustomData,
         }],
     };
-    
-    // Ya no necesitamos estas líneas porque fbc ya está en user_data
 
     try {
         console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
@@ -289,8 +285,8 @@ app.post('/webhook', async (req, res) => {
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
                     source_url: message.referral.source_url ?? null,
-                    fbc: message.referral.ctwa_clid ? `fb.1.${Date.now()}.${message.referral.ctwa_clid}` : null,
-                    ctwa_clid: message.referral.ctwa_clid ?? null,  // ✅ Obtiene ctwa_clid directamente
+                    // NO guardamos fbc - Meta no lo acepta para WhatsApp Business
+                    ctwa_clid: message.referral.ctwa_clid ?? null,  // ✅ Solo necesitamos ctwa_clid
                     receivedAt: timestamp 
                 };
                 
