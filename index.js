@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA SIN event_source_url PARA MENSAJERÍA
+// index.js - VERSIÓN FINAL Y ROBUSTA CON MANEJO DE DATOS ANTIGUOS
 
 require('dotenv').config();
 const express = require('express');
@@ -124,16 +124,26 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    if (referralInfo?.ctwa_clid) {
+    // ===================================================================
+    // === CORRECCIÓN DE ROBUSTEZ: 'ctwa_clid' es la única fuente de verdad ===
+    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio.
+    // Esto soluciona el problema con contactos antiguos que no tienen este campo guardado.
+    const isAdReferral = referralInfo && referralInfo.ctwa_clid;
+
+    if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
     }
+    // ===================================================================
 
     const finalCustomData = {
-        lead_source: referralInfo && Object.keys(referralInfo).length > 0 ? 'WhatsApp Ad' : 'WhatsApp Organic',
-        ad_headline: referralInfo?.headline,
-        ad_id: referralInfo?.source_id,
+        lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
+        ad_headline: isAdReferral ? referralInfo.headline : undefined,
+        ad_id: isAdReferral ? referralInfo.source_id : undefined,
         ...customData
     };
+
+    // Limpia cualquier clave 'undefined' que se haya añadido
+    Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
     const payload = {
         data: [{
@@ -146,13 +156,8 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             custom_data: finalCustomData,
         }],
     };
-
-    // ===================================================================
-    // === CORRECCIÓN APLICADA: ELIMINADO event_source_url           ===
-    // Este parámetro es inválido para eventos con action_source: 'business_messaging'.
-    // ===================================================================
     
-    if (referralInfo?.fbc) { 
+    if (isAdReferral && referralInfo.fbc) { 
         payload.data[0].fbc = referralInfo.fbc;
     }
 
@@ -283,7 +288,7 @@ app.post('/webhook', async (req, res) => {
                     source_id: message.referral.source_id ?? null, 
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
-                    source_url: message.referral.source_url ?? null, // Se guarda pero no se envía a CAPI
+                    source_url: message.referral.source_url ?? null,
                     fbc: message.referral.ref ?? null, 
                     ctwa_clid: message.referral.ref ?? null,
                     receivedAt: timestamp 
