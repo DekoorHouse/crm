@@ -124,6 +124,11 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
+    // ✅ IMPORTANTE: Agregar el WhatsApp Business Account ID (requerido por Meta)
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
+
     // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
 
