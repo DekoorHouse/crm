@@ -283,24 +283,17 @@ app.post('/webhook', async (req, res) => {
             }
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
-            
-            // ===================================================================
-            // === INICIO DE LA CORRECCIÓN ===
-            // ===================================================================
             if (isNewContact && message.referral?.source_type === 'ad') {
-                contactData.adReferral = { 
-                    source_id: message.referral.source_id ?? null, 
-                    headline: message.referral.headline ?? null, 
-                    source_type: message.referral.source_type ?? null, 
-                    source_url: message.referral.source_url ?? null,
-                    fbc: message.referral.ref ?? null, 
-                    ctwa_clid: message.referral.ctwa_clid ?? null, // <-- CÓDIGO CORREGIDO
-                    receivedAt: timestamp 
-                };
-            }
-            // ===================================================================
-            // === FIN DE LA CORRECCIÓN ===
-            // ===================================================================
+    contactData.adReferral = { 
+        source_id: message.referral.source_id ?? null, 
+        headline: message.referral.headline ?? null, 
+        source_type: message.referral.source_type ?? null, 
+        source_url: message.referral.source_url ?? null,
+        fbc: message.referral.ctwa_clid ? `fb.1.${Date.now()}.${message.referral.ctwa_clid}` : null,  // ✅ CORRECTO - Formatea el fbc correctamente
+        ctwa_clid: message.referral.ctwa_clid ?? null,     // ✅ CORRECTO - Obtiene ctwa_clid directamente
+        receivedAt: timestamp 
+    };
+}
 
             let messageData = { timestamp, from, status: 'received', id: message.id };
             let lastMessageText = '';
