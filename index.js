@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL Y ROBUSTA CON MANEJO DE DATOS ANTIGUOS
+// index.js - VERSIÓN FINAL CORREGIDA CON CTWA_CLID Y FBC
 
 require('dotenv').config();
 const express = require('express');
@@ -51,7 +51,7 @@ const BUSINESS_HOURS = {
 const TIMEZONE = 'America/Mexico_City';
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.
 
-🕒 Nuestro horario de atención es:
+🕑 Nuestro horario de atención es:
 
 🗓 Lunes a Viernes: 7:00 am - 7:00 pm
 
@@ -70,7 +70,7 @@ Por solo $650 pesos, obtienes:
 🚀 *Envío GRATIS en todo México*
 🏡 *Entrega a domicilio segura*
 🔒 *Garantía de durabilidad*
-🔐 *Más de 500 referencias en Facebook* ✅❤️
+📝 *Más de 500 referencias en Facebook* ✅❤️
 💰 *Pago en Oxxo o por transferencia*
 
 ✨ El regalo que le recordará tu amor todos los días ✨
@@ -98,7 +98,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN ---
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA) ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
@@ -124,16 +124,16 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // ===================================================================
-    // === CORRECCIÓN DE ROBUSTEZ: 'ctwa_clid' es la única fuente de verdad ===
-    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio.
-    // Esto soluciona el problema con contactos antiguos que no tienen este campo guardado.
+    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
 
     if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
+        // ✅ CORRECCIÓN: El fbc va en user_data, no en el nivel principal
+        if (referralInfo.fbc) {
+            userData.fbc = referralInfo.fbc;
+        }
     }
-    // ===================================================================
 
     const finalCustomData = {
         lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
@@ -152,14 +152,12 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_id: eventId,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp', 
-            user_data: userData,
+            user_data: userData,  // ✅ Aquí van TODOS los datos del usuario, incluido fbc y ctwa_clid
             custom_data: finalCustomData,
         }],
     };
     
-    if (isAdReferral && referralInfo.fbc) { 
-        payload.data[0].fbc = referralInfo.fbc;
-    }
+    // Ya no necesitamos estas líneas porque fbc ya está en user_data
 
     try {
         console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
@@ -283,17 +281,22 @@ app.post('/webhook', async (req, res) => {
             }
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
+            
+            // ✅ CORRECCIÓN: Guardar ctwa_clid correctamente desde message.referral
             if (isNewContact && message.referral?.source_type === 'ad') {
-    contactData.adReferral = { 
-        source_id: message.referral.source_id ?? null, 
-        headline: message.referral.headline ?? null, 
-        source_type: message.referral.source_type ?? null, 
-        source_url: message.referral.source_url ?? null,
-        fbc: message.referral.ctwa_clid ? `fb.1.${Date.now()}.${message.referral.ctwa_clid}` : null,  // ✅ CORRECTO - Formatea el fbc correctamente
-        ctwa_clid: message.referral.ctwa_clid ?? null,     // ✅ CORRECTO - Obtiene ctwa_clid directamente
-        receivedAt: timestamp 
-    };
-}
+                contactData.adReferral = { 
+                    source_id: message.referral.source_id ?? null, 
+                    headline: message.referral.headline ?? null, 
+                    source_type: message.referral.source_type ?? null, 
+                    source_url: message.referral.source_url ?? null,
+                    fbc: message.referral.ctwa_clid ? `fb.1.${Date.now()}.${message.referral.ctwa_clid}` : null,
+                    ctwa_clid: message.referral.ctwa_clid ?? null,  // ✅ Obtiene ctwa_clid directamente
+                    receivedAt: timestamp 
+                };
+                
+                // DEBUG: Para ver qué está llegando
+                console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
+            }
 
             let messageData = { timestamp, from, status: 'received', id: message.id };
             let lastMessageText = '';
