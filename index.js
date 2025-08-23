@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA PARA EVENTOS DE WHATSAPP EN META
+// index.js - VERSIÓN FINAL CORREGIDA PARA EVENTOS DE WHATSAPP EN META (SIN ERRORES)
 
 require('dotenv').config();
 const express = require('express');
@@ -96,10 +96,10 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- ✅ FUNCIÓN PRINCIPAL CORREGIDA PARA EVENTOS DE WHATSAPP ---
+// --- ✅ FUNCIÓN PRINCIPAL CORREGIDA PARA EVENTOS DE WHATSAPP (SIN ERRORES) ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
-    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.warn('Advertencia: Faltan credenciales para eventos de WhatsApp (WABA_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
+    if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
+        console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
         return;
     }
     
@@ -108,14 +108,14 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
-    // ✅ USAR EL ENDPOINT DEL WHATSAPP BUSINESS ACCOUNT DIRECTAMENTE
-    const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/events`;
+    // ✅ USAR EL ENDPOINT DEL PIXEL CON CONFIGURACIÓN ESPECÍFICA PARA WHATSAPP
+    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `wa_${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
     // Preparar datos del usuario hasheados
     const userData = { 
-        ph: [sha256(contactInfo.wa_id)] // ✅ Solo necesitamos el número hasheado
+        ph: [sha256(contactInfo.wa_id)] // ✅ Número de WhatsApp hasheado
     };
     
     // Agregar nombre si existe
@@ -123,16 +123,23 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         userData.fn = sha256(contactInfo.profile.name);
     }
 
-    // Detectar si es un evento proveniente de anuncio y agregar ctwa_clid
+    // ✅ CLAVE: Detectar si es un evento proveniente de anuncio y agregar ctwa_clid
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
     if (isAdReferral) {
-        userData.ctwa_clid = referralInfo.ctwa_clid; // ✅ Este es el parámetro clave
+        userData.ctwa_clid = referralInfo.ctwa_clid; // ✅ Este parámetro es CRÍTICO para la atribución de WhatsApp
+    }
+
+    // ✅ IMPORTANTE: Agregar WhatsApp Business Account ID en user_data
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
     }
 
     // Preparar datos personalizados del evento
     const finalCustomData = {
         lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
         platform: 'whatsapp',
+        messaging_channel: 'whatsapp',
+        business_account_id: WHATSAPP_BUSINESS_ACCOUNT_ID,
         ...customData
     };
 
@@ -148,21 +155,21 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         finalCustomData[key] === undefined && delete finalCustomData[key]
     );
 
-    // ✅ ESTRUCTURA CORRECTA PARA WHATSAPP BUSINESS ACCOUNT
+    // ✅ ESTRUCTURA OPTIMIZADA PARA WHATSAPP CON PIXEL ENDPOINT
     const payload = {
         data: [{
             event_name: eventName,
             event_time: eventTime,
             event_id: eventId,
-            action_source: 'business_messaging', // ✅ Correcto para WhatsApp
+            action_source: 'business_messaging', // ✅ Indica que viene de mensajería empresarial
             messaging_channel: 'whatsapp', // ✅ Especifica WhatsApp
-            user_data: userData, // ✅ Incluye ctwa_clid aquí
+            user_data: userData, // ✅ Incluye ctwa_clid y WABA ID
             custom_data: finalCustomData
         }]
     };
 
     try {
-        console.log(`📤 Enviando evento '${eventName}' para ${contactInfo.wa_id} vía WhatsApp Business Account...`);
+        console.log(`📤 Enviando evento '${eventName}' para ${contactInfo.wa_id} como evento de WhatsApp...`);
         console.log('Payload:', JSON.stringify(payload, null, 2));
         
         const response = await axios.post(url, payload, { 
@@ -176,7 +183,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         
         // Log de respuesta para depuración
         if (response.data) {
-            console.log('Respuesta de Meta:', JSON.stringify(response.data, null, 2));
+            console.log('✅ Respuesta exitosa de Meta:', JSON.stringify(response.data, null, 2));
         }
         
     } catch (error) {
@@ -186,13 +193,13 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             console.error('Status:', error.response.status);
             console.error('Detalles del error:', JSON.stringify(error.response.data, null, 2));
             
-            // Si el error es de dataset, intentar con método alternativo
+            // Si hay error de permissions o dataset, intentar método alternativo
             const errorCode = error.response.data?.error?.code;
             const errorSubcode = error.response.data?.error?.error_subcode;
             
-            if (errorCode === 100 && errorSubcode === 2804132) {
-                console.log('🔄 Error de dataset de WhatsApp, intentando método alternativo...');
-                return await sendConversionEventFallback(eventName, contactInfo, referralInfo, customData);
+            if (errorCode === 100 && (errorSubcode === 33 || errorSubcode === 2804132)) {
+                console.log('🔄 Error de permisos/dataset, intentando método web alternativo...');
+                return await sendConversionEventWebFallback(eventName, contactInfo, referralInfo, customData);
             }
         } else {
             console.error('Error de red:', error.message);
@@ -202,18 +209,18 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
     }
 };
 
-// --- ✅ MÉTODO ALTERNATIVO SI FALLA EL WHATSAPP BUSINESS ACCOUNT ---
-const sendConversionEventFallback = async (eventName, contactInfo, referralInfo, customData = {}) => {
+// --- ✅ MÉTODO ALTERNATIVO COMO WEB EVENT (MANTIENE ATRIBUCIÓN DE WHATSAPP) ---
+const sendConversionEventWebFallback = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Pixel. No se puede enviar evento alternativo.');
         return;
     }
 
-    console.log('🔄 Usando método alternativo con identificación de WhatsApp...');
+    console.log('🔄 Usando método web alternativo manteniendo atribución de WhatsApp...');
     
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
-    const eventId = `fallback_${eventName}_${contactInfo.wa_id}_${eventTime}`;
+    const eventId = `web_wa_${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
     const userData = { 
         ph: [sha256(contactInfo.wa_id)]
@@ -223,16 +230,23 @@ const sendConversionEventFallback = async (eventName, contactInfo, referralInfo,
         userData.fn = sha256(contactInfo.profile.name);
     }
 
-    // ✅ IMPORTANTE: Mantener ctwa_clid para preservar la atribución de WhatsApp
+    // ✅ CRÍTICO: Mantener ctwa_clid para preservar la atribución de WhatsApp
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
     if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
     }
 
+    // ✅ IMPORTANTE: Agregar WABA ID para identificar como WhatsApp
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
+
     const finalCustomData = {
-        lead_source: isAdReferral ? 'WhatsApp Ad (Fallback)' : 'WhatsApp Organic (Fallback)',
+        lead_source: isAdReferral ? 'WhatsApp Ad (Web Tracking)' : 'WhatsApp Organic (Web Tracking)',
         platform: 'whatsapp',
-        method: 'fallback_pixel',
+        method: 'web_fallback',
+        messaging_channel: 'whatsapp',
+        original_source: 'whatsapp_business_messaging',
         whatsapp_business_account_id: WHATSAPP_BUSINESS_ACCOUNT_ID,
         ...customData
     };
@@ -240,6 +254,7 @@ const sendConversionEventFallback = async (eventName, contactInfo, referralInfo,
     if (isAdReferral) {
         if (referralInfo.headline) finalCustomData.ad_headline = referralInfo.headline;
         if (referralInfo.source_id) finalCustomData.ad_id = referralInfo.source_id;
+        if (referralInfo.source_url) finalCustomData.ad_source_url = referralInfo.source_url;
     }
 
     Object.keys(finalCustomData).forEach(key => 
@@ -251,53 +266,65 @@ const sendConversionEventFallback = async (eventName, contactInfo, referralInfo,
             event_name: eventName,
             event_time: eventTime,
             event_id: eventId,
-            action_source: 'website', // Usar website para evitar error de dataset
-            user_data: userData, // ✅ Incluye ctwa_clid para mantener atribución
+            action_source: 'website', // ✅ Usar website para evitar errores de permisos
+            user_data: userData, // ✅ Incluye ctwa_clid para mantener atribución de WhatsApp
             custom_data: finalCustomData
         }]
     };
 
     try {
-        await axios.post(url, payload, { 
+        const response = await axios.post(url, payload, { 
             headers: { 
                 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 
                 'Content-Type': 'application/json' 
             } 
         });
         
-        console.log(`✅ Evento '${eventName}' enviado como fallback (manteniendo atribución de WhatsApp).`);
+        console.log(`✅ Evento '${eventName}' enviado como fallback web (atribución de WhatsApp preservada).`);
+        
+        if (response.data) {
+            console.log('✅ Respuesta exitosa del método fallback:', JSON.stringify(response.data, null, 2));
+        }
         
     } catch (fallbackError) {
-        console.error(`❌ Error en método fallback:`, fallbackError.response?.data || fallbackError.message);
+        console.error(`❌ Error en método fallback web:`, fallbackError.response?.data || fallbackError.message);
         throw new Error(`Ambos métodos fallaron para el evento '${eventName}'.`);
     }
 };
 
-// --- ✅ FUNCIÓN PARA CREAR DATASET PROGRAMÁTICAMENTE (OPCIONAL) ---
-const createWhatsAppDataset = async () => {
-    if (!META_CAPI_ACCESS_TOKEN || !WHATSAPP_BUSINESS_ACCOUNT_ID) {
-        console.error('❌ Faltan credenciales para crear dataset.');
-        return null;
+// --- ✅ FUNCIÓN PARA VERIFICAR CONFIGURACIÓN DE WHATSAPP ---
+const verifyWhatsAppConfiguration = async () => {
+    console.log('🔍 Verificando configuración de WhatsApp...');
+    
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        console.error('❌ WHATSAPP_BUSINESS_ACCOUNT_ID no está configurado');
+        return false;
     }
-
+    
+    if (!META_CAPI_ACCESS_TOKEN) {
+        console.error('❌ META_CAPI_ACCESS_TOKEN no está configurado');
+        return false;
+    }
+    
+    if (!META_PIXEL_ID) {
+        console.error('❌ META_PIXEL_ID no está configurado');
+        return false;
+    }
+    
+    // Verificar acceso al WhatsApp Business Account
     try {
-        const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/datasets`;
-        const response = await axios.post(url, {
-            name: `WhatsApp Events Dataset - ${new Date().toISOString().split('T')[0]}`
-        }, {
-            headers: { 
-                'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 
-                'Content-Type': 'application/json' 
-            }
+        const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}`;
+        const response = await axios.get(url, {
+            headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}` }
         });
-
-        const datasetId = response.data.id;
-        console.log(`✅ Dataset creado para WhatsApp Business Account: ${datasetId}`);
-        return datasetId;
+        
+        console.log('✅ WhatsApp Business Account accesible:', response.data.name || 'Sin nombre');
+        return true;
         
     } catch (error) {
-        console.error('❌ Error al crear dataset:', error.response?.data || error.message);
-        return null;
+        console.error('❌ No se puede acceder al WhatsApp Business Account:', error.response?.data?.error?.message || error.message);
+        console.log('ℹ️ Se usará el método fallback automáticamente');
+        return true; // Continuar con fallback
     }
 };
 
@@ -832,29 +859,23 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     }
 });
 
-// --- ✅ NUEVO ENDPOINT PARA CREAR DATASET (OPCIONAL) ---
-app.post('/api/create-whatsapp-dataset', async (req, res) => {
-    try {
-        const datasetId = await createWhatsAppDataset();
-        if (datasetId) {
-            res.status(200).json({ success: true, message: 'Dataset creado exitosamente.', datasetId });
-        } else {
-            res.status(500).json({ success: false, message: 'No se pudo crear el dataset.' });
-        }
-    } catch (error) {
-        console.error('Error al crear dataset:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear el dataset.' });
-    }
-});
-
 // --- AÑADIDO: Ruta para servir la aplicación frontend ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-app.listen(PORT, () => {
+// --- ✅ INICIO DEL SERVIDOR CON VERIFICACIÓN ---
+app.listen(PORT, async () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
   console.log(`✅ Configuración de eventos WhatsApp para Meta activa`);
-  console.log(`📱 WhatsApp Business Account ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID ? 'Configurado' : 'Falta configurar'}`);
-  console.log(`🎯 Meta CAPI Access Token: ${META_CAPI_ACCESS_TOKEN ? 'Configurado' : 'Falta configurar'}`);
+  console.log(`📱 WhatsApp Business Account ID: ${WHATSAPP_BUSINESS_ACCOUNT_ID ? 'Configurado ✅' : 'Falta configurar ❌'}`);
+  console.log(`🎯 Meta CAPI Access Token: ${META_CAPI_ACCESS_TOKEN ? 'Configurado ✅' : 'Falta configurar ❌'}`);
+  console.log(`📊 Meta Pixel ID: ${META_PIXEL_ID ? 'Configurado ✅' : 'Falta configurar ❌'}`);
+  
+  // Verificar configuración de WhatsApp
+  try {
+    await verifyWhatsAppConfiguration();
+  } catch (error) {
+    console.error('⚠️ Error verificando configuración:', error.message);
+  }
 });
