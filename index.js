@@ -109,7 +109,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
-    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?test_event_code=TEST10093`;
+    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
