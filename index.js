@@ -14,7 +14,7 @@ const path = require('path');
 const serviceAccount = require('./serviceAccountKey.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'pedidos-con-gemini.firebasestorage.app' // <-- ¡CORREGIDO!
+  storageBucket: 'pedidos-con-gemini.firebasestorage.app'
 });
 
 const db = admin.firestore();
@@ -405,21 +405,28 @@ app.post('/webhook', async (req, res) => {
                 } catch (error) {
                     console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
                 }
-            } else if (!isWithinBusinessHours() && !contactData.botActive) { // Only send away message if bot is off
-                const now = new Date();
-                const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
-                const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+            } else if (!isWithinBusinessHours() && !contactData.botActive) { 
+                // START: MODIFICACIÓN PARA VERIFICAR AJUSTE EN FIRESTORE
+                const settingsDoc = await db.collection('crm_settings').doc('away_message').get();
+                const awayMessageIsActive = settingsDoc.exists ? settingsDoc.data().isActive : true; // Activado por defecto si no existe el ajuste
 
-                if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
-                    try {
-                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
-                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
-                        await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                        console.log(`Mensaje de ausencia enviado a ${from}.`);
-                    } catch (error) {
-                        console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
+                if (awayMessageIsActive) {
+                    const now = new Date();
+                    const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
+                    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+                    if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
+                        try {
+                            const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
+                            await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
+                            await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                            console.log(`Mensaje de ausencia enviado a ${from}.`);
+                        } catch (error) {
+                            console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
+                        }
                     }
                 }
+                // END: MODIFICACIÓN PARA VERIFICAR AJUSTE EN FIRESTORE
             }
 
             if (isNewContact && newContactData.adReferral) {
@@ -1004,6 +1011,36 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
     }
 });
 // --- END: KNOWLEDGE BASE ENDPOINTS ---
+
+// --- START: NUEVOS ENDPOINTS PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
+app.get('/api/settings/away-message', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('away_message').get();
+        if (!doc.exists) {
+            // Si no existe, lo devolvemos como activado por defecto
+            return res.status(200).json({ success: true, settings: { isActive: true } });
+        }
+        res.status(200).json({ success: true, settings: doc.data() });
+    } catch (error) {
+        console.error("Error getting away message settings:", error);
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración.' });
+    }
+});
+
+app.post('/api/settings/away-message', async (req, res) => {
+    const { isActive } = req.body;
+    if (typeof isActive !== 'boolean') {
+        return res.status(400).json({ success: false, message: 'El valor de "isActive" debe ser booleano.' });
+    }
+    try {
+        await db.collection('crm_settings').doc('away_message').set({ isActive });
+        res.status(200).json({ success: true, message: 'Configuración guardada.' });
+    } catch (error) {
+        console.error("Error saving away message settings:", error);
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
+    }
+});
+// --- END: NUEVOS ENDPOINTS PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
 
 
 // --- HELPER FUNCTION FOR GEMINI ---
