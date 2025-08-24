@@ -154,17 +154,19 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             user_data: userData,
             custom_data: finalCustomData,
         }],
-        // ✅ CORRECCIÓN: El test_event_code va aquí, en el cuerpo del payload.
-        test_event_code: 'TEST16433' 
+        // --- CAMBIO REALIZADO ---
+        // La siguiente línea ha sido comentada para enviar eventos en modo de PRODUCCIÓN.
+        // Descoméntala para volver al modo de PRUEBA.
+        // test_event_code: 'TEST16433' 
     };
 
     try {
-        console.log(`Enviando evento DE PRUEBA '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
-        // Se hace el POST a la URL limpia con el payload que ya incluye el código de prueba.
+        console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
+        // Se hace el POST a la URL limpia con el payload.
         await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
-        console.log(`✅ Evento DE PRUEBA '${eventName}' enviado a Meta.`);
+        console.log(`✅ Evento '${eventName}' enviado a Meta.`);
     } catch (error) {
-        console.error(`❌ Error al enviar evento DE PRUEBA '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`❌ Error al enviar evento '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 };
