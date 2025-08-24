@@ -738,17 +738,7 @@ app.post('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
 });
 
-app.put('/api/tags/:id', async (req, res) => {
-    const { id } = req.params;
-    const { label, color, key } = req.body;
-    if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
-    try {
-        // Note: We don't update 'order' here, it's handled by a separate endpoint
-        await db.collection('crm_tags').doc(id).update({ label, color, key });
-        res.status(200).json({ success: true });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
-});
-
+// --- FIX: Reordered the routes. The specific route must come before the general one. ---
 // --- NEW ENDPOINT TO HANDLE TAG REORDERING ---
 app.put('/api/tags/order', async (req, res) => {
     const { orderedIds } = req.body;
@@ -769,6 +759,16 @@ app.put('/api/tags/order', async (req, res) => {
     }
 });
 
+app.put('/api/tags/:id', async (req, res) => {
+    const { id } = req.params;
+    const { label, color, key } = req.body;
+    if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
+    try {
+        // Note: We don't update 'order' here, it's handled by a separate endpoint
+        await db.collection('crm_tags').doc(id).update({ label, color, key });
+        res.status(200).json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
+});
 
 app.delete('/api/tags/:id', async (req, res) => {
     const { id } = req.params;
