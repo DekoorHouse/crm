@@ -158,6 +158,7 @@
         .modal-content { background-color: white; padding: 25px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 90%; max-width: 500px; }
         .modal-content h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; }
         .modal-content label { display: block; font-weight: 600; margin-bottom: 8px; }
+        .media-preview { margin-top: 10px; max-height: 100px; border-radius: var(--border-radius-md); }
 
         #contact-details-panel { width: 0; transition: width 0.3s ease-in-out; background-color: var(--color-container-bg); border-left: 1px solid var(--color-border); flex-shrink: 0; }
         #contact-details-panel.open { width: 320px; }
@@ -300,19 +301,31 @@
         </div>
     </div>
 
+    <!-- UPDATED QUICK REPLY MODAL -->
     <div id="quick-reply-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="quick-reply-modal-title">Añadir Respuesta Rápida</h2>
             <form id="quick-reply-form">
+                <input type="hidden" id="qr-doc-id">
+                <input type="hidden" id="qr-file-url">
+                <input type="hidden" id="qr-file-type">
+                <input type="file" id="qr-file-input" accept="image/*,video/*,application/pdf">
+                
                 <div>
                     <label for="qr-shortcut">Atajo (sin "/")</label>
                     <input type="text" id="qr-shortcut" required class="!mb-4">
                 </div>
                 <div>
-                    <label for="qr-message">Mensaje</label>
-                    <textarea id="qr-message" rows="4" required class="!mb-4"></textarea>
+                    <label for="qr-message">Mensaje (opcional si adjuntas archivo)</label>
+                    <textarea id="qr-message" rows="4" class="!mb-4"></textarea>
                 </div>
-                <div class="flex justify-end gap-3">
+                <div>
+                    <label for="qr-file-input" class="btn btn-subtle !inline-flex !w-auto">
+                        <i class="fas fa-paperclip mr-2"></i> Adjuntar Archivo
+                    </label>
+                    <div id="qr-media-preview" class="mt-2"></div>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
                     <button type="button" onclick="closeQuickReplyModal()" class="btn btn-subtle">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar</button>
                 </div>
@@ -320,12 +333,16 @@
         </div>
     </div>
 
-    <!-- NEW MODAL FOR AD RESPONSES -->
+    <!-- UPDATED AD RESPONSE MODAL -->
     <div id="ad-response-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
             <form id="ad-response-form">
-                <input type="hidden" id="ad-response-doc-id">
+                <input type="hidden" id="ar-doc-id">
+                <input type="hidden" id="ar-file-url">
+                <input type="hidden" id="ar-file-type">
+                <input type="file" id="ar-file-input" accept="image/*,video/*,application/pdf">
+
                 <div>
                     <label for="ar-name">Nombre del Anuncio</label>
                     <input type="text" id="ar-name" required class="!mb-4" placeholder="Ej: Campaña Día de la Madre">
@@ -335,10 +352,16 @@
                     <input type="text" id="ar-ad-id" required class="!mb-4" placeholder="Ej: 120229247610060637">
                 </div>
                 <div>
-                    <label for="ar-message">Mensaje de Respuesta</label>
-                    <textarea id="ar-message" rows="5" required class="!mb-4" placeholder="Escribe el mensaje de bienvenida para este anuncio..."></textarea>
+                    <label for="ar-message">Mensaje de Respuesta (opcional si adjuntas archivo)</label>
+                    <textarea id="ar-message" rows="5" class="!mb-4" placeholder="Escribe el mensaje de bienvenida para este anuncio..."></textarea>
                 </div>
-                <div class="flex justify-end gap-3">
+                 <div>
+                    <label for="ar-file-input" class="btn btn-subtle !inline-flex !w-auto">
+                        <i class="fas fa-paperclip mr-2"></i> Adjuntar Archivo
+                    </label>
+                    <div id="ar-media-preview" class="mt-2"></div>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
                     <button type="button" onclick="closeAdResponseModal()" class="btn btn-subtle">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar</button>
                 </div>
@@ -432,7 +455,7 @@
             messages: [], 
             notes: [],
             quickReplies: [],
-            adResponses: [], // NEW: State for ad responses
+            adResponses: [],
             templates: [],
             tags: [],
             selectedContactId: null, 
@@ -452,13 +475,12 @@
             isTagSidebarOpen: true,
             activeView: 'chats',
         };
-        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null; // NEW: Listener for ad responses
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null;
         let ticking = false;
 
         // --- START: Authentication Logic ---
         auth.onAuthStateChanged(user => {
             if (user) {
-                // User is signed in
                 loginView.classList.add('hidden');
                 loginView.classList.remove('flex');
                 appContainer.classList.remove('hidden');
@@ -466,7 +488,6 @@
                 userInfoEl.textContent = `Usuario: ${user.email}`;
                 startApp();
             } else {
-                // User is signed out
                 stopApp();
                 loginView.classList.remove('hidden');
                 loginView.classList.add('flex');
@@ -474,7 +495,6 @@
                 appContainer.classList.remove('flex');
                 userInfoEl.textContent = '';
             }
-            // Hide loading overlay after auth check
             loadingOverlay.style.opacity = '0';
             setTimeout(() => { loadingOverlay.style.display = 'none'; }, 500);
         });
@@ -512,16 +532,10 @@
         function formatWhatsAppText(text) {
             if (!text) return '';
             
-            // Escapar HTML para seguridad
             let safeText = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
-            
-            // Reemplazar *texto* con <strong>texto</strong>
             safeText = safeText.replace(/\*(.*?)\*/g, '<strong>$1</strong>');
-            
-            // Reemplazar saltos de línea con <br>
             safeText = safeText.replace(/\n/g, '<br>');
 
-            // Reemplazar URLs con enlaces clickables
             const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
             safeText = safeText.replace(urlRegex, (url) => {
                 let href = url;
@@ -599,7 +613,6 @@
             </div>
         `;
         
-        // NEW/UPDATED VIEW TEMPLATE
         const MensajesAdsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
@@ -952,7 +965,7 @@
             listenForContacts(); 
             listenForQuickReplies();
             listenForTags();
-            listenForAdResponses(); // NEW: Listen for ad responses
+            listenForAdResponses();
             fetchTemplates();
             document.addEventListener('click', handleClickOutside);
         }
@@ -963,7 +976,7 @@
             if (unsubscribeNotesListener) unsubscribeNotesListener();
             if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
             if (unsubscribeTagsListener) unsubscribeTagsListener();
-            if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener(); // NEW: Stop listening
+            if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             document.removeEventListener('click', handleClickOutside);
             state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
@@ -997,7 +1010,7 @@
                     break;
                 case 'mensajes-ads':
                     mainViewContainer.innerHTML = MensajesAdsViewTemplate();
-                    renderAdResponsesView(); // NEW: Render the new view
+                    renderAdResponsesView();
                     break;
                 case 'respuestas-rapidas':
                     mainViewContainer.innerHTML = QuickRepliesViewTemplate();
@@ -1111,7 +1124,7 @@
             tableBody.innerHTML = state.quickReplies.map(reply => `
                 <tr>
                     <td class="font-semibold">/${reply.shortcut}</td>
-                    <td class="text-gray-600">${reply.message}</td>
+                    <td class="text-gray-600">${reply.message || ''} ${reply.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
                     <td class="actions-cell">
                         <button onclick="openQuickReplyModal('${reply.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                         <button onclick="handleDeleteQuickReply('${reply.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
@@ -1120,7 +1133,6 @@
             `).join('');
         }
 
-        // NEW RENDER FUNCTION FOR AD RESPONSES
         function renderAdResponsesView() {
             if (state.activeView !== 'mensajes-ads') return;
             const tableBody = document.getElementById('ad-responses-table-body');
@@ -1135,7 +1147,7 @@
                 <tr>
                     <td class="font-semibold">${response.adName}</td>
                     <td class="font-mono text-sm">${response.adId}</td>
-                    <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message}</td>
+                    <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message || ''} ${response.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
                     <td class="actions-cell">
                         <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                         <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
@@ -1210,27 +1222,31 @@
             const contact = state.contacts.find(c => c.id === state.selectedContactId);
             if (!contact || state.isUploading) return;
 
-            // Lógica para respuestas rápidas
+            let fileUrl = null;
+            let fileType = null;
+
             if (text.startsWith('/')) {
                 const shortcut = text.substring(1);
                 const matchingReply = state.quickReplies.find(reply => reply.shortcut === shortcut);
                 if (matchingReply) {
-                    text = matchingReply.message; // Reemplaza el atajo por el mensaje completo
+                    text = matchingReply.message || '';
+                    fileUrl = matchingReply.fileUrl;
+                    fileType = matchingReply.fileType;
                 } else {
-                    return; // Si no hay coincidencia exacta, no envía nada
+                    return; 
                 }
             }
             
-            if (!text && !state.stagedFile) return;
+            if (!text && !state.stagedFile && !fileUrl) return;
             
-            if (text && !contact.isWithin24HourWindow) {
+            if (text && !contact.isWithin24HourWindow && !fileUrl) {
                 showError("La ventana de 24 horas ha cerrado. Solo puedes enviar plantillas.");
                 return;
             }
 
             input.value = '';
 
-            const messageData = { text: text };
+            const messageData = { text, fileUrl, fileType };
             if (state.replyingToMessage) {
                 messageData.reply_to_wamid = state.replyingToMessage.id;
             }
@@ -1240,7 +1256,7 @@
                 if (state.stagedFile) {
                     response = await uploadAndSendFile(state.stagedFile); 
                     cancelStagedFile();
-                } else if (text) {
+                } else {
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
                     response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
                         method: 'POST',
@@ -1489,73 +1505,74 @@
 
         function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
-            if (!reply) {
-                console.error("Quick reply not found:", replyId);
-                return;
-            }
-            const message = reply.message;
+            if (!reply) return;
+            
             const input = document.getElementById('message-input');
-            input.value = message;
-            input.focus();
-            state.quickReplyPickerOpen = false;
-            renderAllPickers();
+            input.value = ''; // Clear the input
+            
+            handleSendMessage({ preventDefault: () => {} }); // Trigger send with the reply data
         }
         
         function openQuickReplyModal(param = null) {
             const modal = document.getElementById('quick-reply-modal');
             const form = document.getElementById('quick-reply-form');
             form.reset();
+            document.getElementById('qr-media-preview').innerHTML = '';
 
             const isEditing = param && state.quickReplies.some(r => r.id === param);
             const reply = isEditing ? state.quickReplies.find(r => r.id === param) : null;
             const newShortcut = !isEditing && typeof param === 'string' ? param : '';
 
             document.getElementById('quick-reply-modal-title').textContent = isEditing ? 'Editar Respuesta Rápida' : 'Añadir Respuesta Rápida';
+            document.getElementById('qr-doc-id').value = isEditing ? reply.id : '';
             document.getElementById('qr-shortcut').value = isEditing ? reply.shortcut : newShortcut;
-            document.getElementById('qr-message').value = isEditing ? reply.message : '';
+            document.getElementById('qr-message').value = isEditing ? reply.message || '' : '';
+            document.getElementById('qr-file-url').value = isEditing ? reply.fileUrl || '' : '';
+            document.getElementById('qr-file-type').value = isEditing ? reply.fileType || '' : '';
             
+            if (isEditing && reply.fileUrl) {
+                document.getElementById('qr-media-preview').innerHTML = `<img src="${reply.fileUrl}" class="media-preview"/>`;
+            }
+
             modal.classList.remove('hidden');
             document.getElementById('qr-shortcut').focus();
             
+            document.getElementById('qr-file-input').onchange = (e) => handleModalFileUpload(e, 'qr');
             form.onsubmit = (event) => {
                 event.preventDefault();
-                handleSaveQuickReply(isEditing ? param : null);
+                handleSaveQuickReply();
             };
         }
 
         function closeQuickReplyModal() { document.getElementById('quick-reply-modal').classList.add('hidden'); }
         
-        async function handleSaveQuickReply(replyId = null) {
+        async function handleSaveQuickReply() {
+            const id = document.getElementById('qr-doc-id').value;
             const shortcut = document.getElementById('qr-shortcut').value.trim();
             const message = document.getElementById('qr-message').value.trim();
-            if (!shortcut || !message) {
-                showError("El atajo y el mensaje no pueden estar vacíos.");
+            const fileUrl = document.getElementById('qr-file-url').value.trim();
+            const fileType = document.getElementById('qr-file-type').value.trim();
+
+            if (!shortcut || (!message && !fileUrl)) {
+                showError("El atajo y un mensaje o archivo son obligatorios.");
                 return;
             }
 
-            const url = replyId 
-                ? `${API_BASE_URL}/api/quick-replies/${replyId}`
-                : `${API_BASE_URL}/api/quick-replies`;
-            
-            const method = replyId ? 'PUT' : 'POST';
+            const data = { shortcut, message, fileUrl, fileType };
+            const url = id ? `${API_BASE_URL}/api/quick-replies/${id}` : `${API_BASE_URL}/api/quick-replies`;
+            const method = id ? 'PUT' : 'POST';
 
             try {
                 const response = await fetch(url, {
                     method: method,
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ shortcut, message })
+                    body: JSON.stringify(data)
                 });
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.message || 'Error al guardar.');
                 }
                 closeQuickReplyModal();
-                if (method === 'POST') {
-                    const messageInput = document.getElementById('message-input');
-                    if (messageInput && messageInput.value.startsWith(`/${shortcut}`)) {
-                        selectQuickReply(message);
-                    }
-                }
             } catch (error) {
                 console.error("Error saving quick reply:", error);
                 showError(error.message);
@@ -1592,13 +1609,12 @@
             }
         }
 
-        // --- START: FUNCIONES DE PICKERS (CORREGIDO) ---
         function toggleTemplatePicker() {
             state.templatePickerOpen = !state.templatePickerOpen;
             state.quickReplyPickerOpen = false;
             state.emojiPickerOpen = false;
             if (state.templatePickerOpen) {
-                renderTemplatePicker(); // Se llama a la función que renderiza
+                renderTemplatePicker();
             }
             renderAllPickers();
         }
@@ -1628,14 +1644,14 @@
             state.quickReplyPickerOpen = false;
             state.templatePickerOpen = false;
             if (state.emojiPickerOpen) {
-                renderEmojiPicker(); // Se llama a la función que renderiza
+                renderEmojiPicker();
             }
             renderAllPickers();
         }
 
         function renderEmojiPicker() {
             const picker = document.getElementById('emoji-picker');
-            if (!picker || picker.innerHTML !== '') return; // Evita re-renderizar si ya tiene contenido
+            if (!picker || picker.innerHTML !== '') return;
 
             const emojis = {
                 'Smileys & Emotion': ['😀', '😂', '😍', '🤔', '😢', '😡', '👍', '👎', '❤️', '🔥', '🎉'],
@@ -1657,7 +1673,6 @@
             input.value += emoji;
             input.focus();
         }
-        // --- END: FUNCIONES DE PICKERS ---
 
         function renderAllPickers() {
             const emojiPicker = document.getElementById('emoji-picker');
@@ -1738,11 +1753,9 @@
 
         async function handleDeleteContact(contactId) {
             if (!window.confirm('¿Estás seguro de que quieres eliminar este contacto?')) return;
-            // Aquí iría la llamada a la API para eliminar el contacto
             console.log("Eliminar contacto:", contactId);
         }
 
-        // RESTAURADO: Función para generar respuestas con IA
         async function handleGenerateReply() { 
             if (!state.selectedContactId) return; 
             const button = document.getElementById('generate-reply-btn'); 
@@ -1750,10 +1763,11 @@
             button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
             try { 
                 const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/generate-reply`, { method: 'POST' }); 
+                const result = await response.json();
                 if (!response.ok) { 
-                    const errorData = await response.json(); 
-                    throw new Error(errorData.message || 'Error al generar y enviar respuesta.'); 
-                } 
+                    throw new Error(result.message || 'Error al generar respuesta.'); 
+                }
+                document.getElementById('message-input').value = result.suggestion;
             } catch (error) { 
                 showError(error.message); 
             } finally { 
@@ -1803,7 +1817,6 @@
             }
         }
         
-        // --- START: FUNCIONES PARA EVENTOS DE META ---
         async function handleMarkAsPurchase() {
             if (!state.selectedContactId) return;
             const value = prompt("Ingresa el valor de la compra (ej. 150.50):");
@@ -1850,10 +1863,7 @@
                 showError(error.message);
             }
         }
-        // --- END: FUNCIONES PARA EVENTOS DE META ---
 
-
-        // --- FUNCIONES PARA CAMPAÑAS ---
         async function handleSendCampaign() {
             const tagSelect = document.getElementById('campaign-tag-select');
             const templateSelect = document.getElementById('campaign-template-select');
@@ -1900,8 +1910,6 @@
             }
         }
 
-
-        // --- FUNCIONES PARA GESTIÓN DE ETIQUETAS ---
         function toggleTagSidebar() {
             state.isTagSidebarOpen = !state.isTagSidebarOpen;
             document.getElementById('main-sidebar').classList.toggle('collapsed', !state.isTagSidebarOpen);
@@ -2039,7 +2047,6 @@
             }
         }
 
-        // --- NEW: FUNCTIONS FOR AD RESPONSES ---
         function listenForAdResponses() {
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             unsubscribeAdResponsesListener = db.collection('ad_responses').orderBy('adName').onSnapshot(snapshot => {
@@ -2057,19 +2064,27 @@
             const modal = document.getElementById('ad-response-modal');
             const form = document.getElementById('ad-response-form');
             form.reset();
+            document.getElementById('ar-media-preview').innerHTML = '';
             
             const isEditing = responseId && state.adResponses.some(r => r.id === responseId);
             const response = isEditing ? state.adResponses.find(r => r.id === responseId) : null;
 
             document.getElementById('ad-response-modal-title').textContent = isEditing ? 'Editar Mensaje de Anuncio' : 'Añadir Mensaje de Anuncio';
-            document.getElementById('ad-response-doc-id').value = isEditing ? response.id : '';
+            document.getElementById('ar-doc-id').value = isEditing ? response.id : '';
             document.getElementById('ar-name').value = isEditing ? response.adName : '';
             document.getElementById('ar-ad-id').value = isEditing ? response.adId : '';
-            document.getElementById('ar-message').value = isEditing ? response.message : '';
+            document.getElementById('ar-message').value = isEditing ? response.message || '' : '';
+            document.getElementById('ar-file-url').value = isEditing ? response.fileUrl || '' : '';
+            document.getElementById('ar-file-type').value = isEditing ? response.fileType || '' : '';
+            
+            if (isEditing && response.fileUrl) {
+                document.getElementById('ar-media-preview').innerHTML = `<img src="${response.fileUrl}" class="media-preview"/>`;
+            }
 
             modal.classList.remove('hidden');
             document.getElementById('ar-name').focus();
-
+            
+            document.getElementById('ar-file-input').onchange = (e) => handleModalFileUpload(e, 'ar');
             form.onsubmit = (event) => {
                 event.preventDefault();
                 handleSaveAdResponse();
@@ -2081,17 +2096,19 @@
         }
 
         async function handleSaveAdResponse() {
-            const id = document.getElementById('ad-response-doc-id').value;
+            const id = document.getElementById('ar-doc-id').value;
             const adName = document.getElementById('ar-name').value.trim();
             const adId = document.getElementById('ar-ad-id').value.trim();
             const message = document.getElementById('ar-message').value.trim();
+            const fileUrl = document.getElementById('ar-file-url').value.trim();
+            const fileType = document.getElementById('ar-file-type').value.trim();
 
-            if (!adName || !adId || !message) {
-                showError("Todos los campos son obligatorios.");
+            if (!adName || !adId || (!message && !fileUrl)) {
+                showError("Nombre, ID de anuncio y un mensaje o archivo son obligatorios.");
                 return;
             }
 
-            const data = { adName, adId, message };
+            const data = { adName, adId, message, fileUrl, fileType };
             const url = id ? `${API_BASE_URL}/api/ad-responses/${id}` : `${API_BASE_URL}/api/ad-responses`;
             const method = id ? 'PUT' : 'POST';
 
@@ -2124,6 +2141,45 @@
                 showError(error.message);
             }
         }
+        
+        async function handleModalFileUpload(event, prefix) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const previewEl = document.getElementById(`${prefix}-media-preview`);
+            const urlInput = document.getElementById(`${prefix}-file-url`);
+            const typeInput = document.getElementById(`${prefix}-file-type`);
+            const submitButton = event.target.form.querySelector('button[type="submit"]');
+
+            previewEl.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo...`;
+            submitButton.disabled = true;
+
+            const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
+            const filePath = `shared_media/${userIdentifier}/${Date.now()}_${file.name}`;
+            const fileRef = storage.ref(filePath);
+            
+            try {
+                const uploadTask = await fileRef.put(file);
+                const downloadURL = await uploadTask.ref.getDownloadURL();
+                
+                urlInput.value = downloadURL;
+                typeInput.value = file.type;
+                
+                if (file.type.startsWith('image/')) {
+                    previewEl.innerHTML = `<img src="${downloadURL}" class="media-preview"/>`;
+                } else {
+                    previewEl.innerHTML = `<p class="text-sm text-gray-600"><i class="fas fa-check-circle text-green-500 mr-2"></i>Archivo subido: ${file.name}</p>`;
+                }
+
+            } catch (error) {
+                console.error("Error subiendo archivo:", error);
+                showError("No se pudo subir el archivo.");
+                previewEl.innerHTML = `<p class="text-sm text-red-500">Error al subir.</p>`;
+            } finally {
+                submitButton.disabled = false;
+            }
+        }
+
     </script>
 </body>
 </html>
