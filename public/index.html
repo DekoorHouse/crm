@@ -313,9 +313,9 @@
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
                     </a>
-                    <a onclick="navigateTo('bot')" data-view="bot" class="nav-item">
+                    <a onclick="navigateTo('respuestas-ia')" data-view="respuestas-ia" class="nav-item">
                         <i class="fas fa-robot"></i>
-                        <span class="sidebar-text">Bot</span>
+                        <span class="sidebar-text">Respuestas IA</span>
                     </a>
                 </nav>
                 <div class="mt-auto">
@@ -475,6 +475,38 @@
         </div>
     </div>
 
+    <!-- KNOWLEDGE BASE MODAL -->
+    <div id="knowledge-base-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="kb-modal-title">Añadir Respuesta a la Base de Conocimiento</h2>
+            <form id="kb-form">
+                <input type="hidden" id="kb-doc-id">
+                <input type="hidden" id="kb-file-url">
+                <input type="hidden" id="kb-file-type">
+                <input type="file" id="kb-file-input" accept="image/*,video/*,application/pdf">
+                
+                <div>
+                    <label for="kb-topic">Tema / Palabras Clave</label>
+                    <input type="text" id="kb-topic" required class="!mb-4" placeholder="Ej: precio, envío, garantía">
+                </div>
+                <div>
+                    <label for="kb-answer">Respuesta Base (La IA usará esto como guía)</label>
+                    <textarea id="kb-answer" rows="4" class="!mb-4" required></textarea>
+                </div>
+                <div>
+                    <label for="kb-file-input" class="btn btn-subtle !inline-flex !w-auto">
+                        <i class="fas fa-paperclip mr-2"></i> Adjuntar Archivo (Opcional)
+                    </label>
+                    <div id="kb-media-preview" class="mt-2"></div>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeKnowledgeBaseModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -514,6 +546,7 @@
             adResponses: [],
             templates: [],
             tags: [],
+            knowledgeBase: [],
             botSettings: { instructions: '' },
             selectedContactId: null, 
             loadingMessages: false, 
@@ -532,7 +565,7 @@
             isTagSidebarOpen: true,
             activeView: 'chats',
         };
-        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null;
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null;
         let ticking = false;
         let tagsSortable = null; // Variable to hold the Sortable instance
 
@@ -744,22 +777,44 @@
             </div>
         `;
 
-        const BotViewTemplate = () => `
+        const KnowledgeBaseViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
-                    <h1>Control del Bot</h1>
-                    <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-cog mr-2"></i>Ajustes</button>
+                    <h1>Respuestas IA</h1>
+                    <div>
+                        <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-cog mr-2"></i>Ajustes del Bot</button>
+                        <button onclick="openKnowledgeBaseModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
+                    </div>
                 </div>
-                <p class="mb-6 text-gray-600">Activa o desactiva el bot de respuesta automática para cada conversación. El bot utilizará las instrucciones guardadas en los ajustes.</p>
-                <table class="table">
-                    <thead>
-                        <tr>
-                            <th>Contacto</th>
-                            <th>Bot Activo</th>
-                        </tr>
-                    </thead>
-                    <tbody id="bot-contacts-table-body"></tbody>
-                </table>
+                
+                <div class="mb-8">
+                    <h2 class="text-xl font-bold mb-4">Base de Conocimiento</h2>
+                    <p class="mb-4 text-gray-600">Aquí puedes añadir respuestas a preguntas frecuentes. El bot usará esta información para contestar automáticamente.</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Tema / Palabras Clave</th>
+                                <th>Respuesta Base</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kb-table-body"></tbody>
+                    </table>
+                </div>
+
+                <div>
+                    <h2 class="text-xl font-bold mb-4">Control del Bot por Contacto</h2>
+                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales.</p>
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Contacto</th>
+                                <th>Bot Activo</th>
+                            </tr>
+                        </thead>
+                        <tbody id="bot-contacts-table-body"></tbody>
+                    </table>
+                </div>
             </div>
         `;
 
@@ -1053,6 +1108,7 @@
             listenForQuickReplies();
             listenForTags();
             listenForAdResponses();
+            listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
             document.addEventListener('click', handleClickOutside);
@@ -1065,8 +1121,9 @@
             if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
             if (unsubscribeTagsListener) unsubscribeTagsListener();
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
+            if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], botSettings: { instructions: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1108,9 +1165,9 @@
                     mainViewContainer.innerHTML = QuickRepliesViewTemplate();
                     renderQuickRepliesView();
                     break;
-                case 'bot':
-                    mainViewContainer.innerHTML = BotViewTemplate();
-                    renderBotView();
+                case 'respuestas-ia':
+                    mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
+                    renderKnowledgeBaseView();
                     break;
                 default:
                     mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
@@ -1308,12 +1365,24 @@
             });
         }
 
-        function renderBotView() {
-            if (state.activeView !== 'bot') return;
-            const tableBody = document.getElementById('bot-contacts-table-body');
-            if (!tableBody) return;
+        function renderKnowledgeBaseView() {
+            if (state.activeView !== 'respuestas-ia') return;
+            const kbTableBody = document.getElementById('kb-table-body');
+            const botContactsTableBody = document.getElementById('bot-contacts-table-body');
+            if (!kbTableBody || !botContactsTableBody) return;
 
-            tableBody.innerHTML = state.contacts.map(contact => `
+            kbTableBody.innerHTML = state.knowledgeBase.map(entry => `
+                <tr>
+                    <td class="font-semibold">${entry.topic}</td>
+                    <td class="text-gray-600">${entry.answer} ${entry.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
+                    <td class="actions-cell">
+                        <button onclick="openKnowledgeBaseModal('${entry.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                        <button onclick="handleDeleteKnowledgeBaseEntry('${entry.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+
+            botContactsTableBody.innerHTML = state.contacts.map(contact => `
                 <tr>
                     <td class="font-semibold">${contact.name || contact.id}</td>
                     <td>
@@ -1622,8 +1691,8 @@
                     renderContactsView();
                 } else if (state.activeView === 'pipeline') {
                     renderPipelineView();
-                } else if (state.activeView === 'bot') {
-                    renderBotView();
+                } else if (state.activeView === 'respuestas-ia') {
+                    renderKnowledgeBaseView();
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
@@ -2408,7 +2477,7 @@
             }
         }
 
-        // --- START: Bot Functions ---
+        // --- START: Bot & Knowledge Base Functions ---
         function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
@@ -2466,7 +2535,101 @@
                 if(toggle) toggle.checked = !isActive;
             }
         }
-        // --- END: Bot Functions ---
+
+        function listenForKnowledgeBase() {
+            if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
+            unsubscribeKnowledgeBaseListener = db.collection('ai_knowledge_base').orderBy('topic').onSnapshot(snapshot => {
+                state.knowledgeBase = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (state.activeView === 'respuestas-ia') {
+                    renderKnowledgeBaseView();
+                }
+            }, error => {
+                console.error("Error fetching knowledge base:", error);
+                showError("No se pudo cargar la base de conocimiento.");
+            });
+        }
+
+        function openKnowledgeBaseModal(entryId = null) {
+            const modal = document.getElementById('knowledge-base-modal');
+            const form = document.getElementById('kb-form');
+            form.reset();
+            document.getElementById('kb-media-preview').innerHTML = '';
+
+            const isEditing = entryId && state.knowledgeBase.some(e => e.id === entryId);
+            const entry = isEditing ? state.knowledgeBase.find(e => e.id === entryId) : null;
+
+            document.getElementById('kb-modal-title').textContent = isEditing ? 'Editar Entrada' : 'Añadir Respuesta a la Base de Conocimiento';
+            document.getElementById('kb-doc-id').value = isEditing ? entry.id : '';
+            document.getElementById('kb-topic').value = isEditing ? entry.topic : '';
+            document.getElementById('kb-answer').value = isEditing ? entry.answer : '';
+            document.getElementById('kb-file-url').value = isEditing ? entry.fileUrl || '' : '';
+            document.getElementById('kb-file-type').value = isEditing ? entry.fileType || '' : '';
+            
+            if (isEditing && entry.fileUrl) {
+                document.getElementById('kb-media-preview').innerHTML = `<img src="${entry.fileUrl}" class="media-preview"/>`;
+            }
+
+            modal.classList.remove('hidden');
+            document.getElementById('kb-topic').focus();
+            
+            document.getElementById('kb-file-input').onchange = (e) => handleModalFileUpload(e, 'kb');
+            form.onsubmit = (event) => {
+                event.preventDefault();
+                handleSaveKnowledgeBaseEntry();
+            };
+        }
+
+        function closeKnowledgeBaseModal() {
+            document.getElementById('knowledge-base-modal').classList.add('hidden');
+        }
+
+        async function handleSaveKnowledgeBaseEntry() {
+            const id = document.getElementById('kb-doc-id').value;
+            const topic = document.getElementById('kb-topic').value.trim();
+            const answer = document.getElementById('kb-answer').value.trim();
+            const fileUrl = document.getElementById('kb-file-url').value.trim();
+            const fileType = document.getElementById('kb-file-type').value.trim();
+
+            if (!topic || !answer) {
+                showError("El tema y la respuesta base son obligatorios.");
+                return;
+            }
+
+            const data = { topic, answer, fileUrl, fileType };
+            const url = id ? `${API_BASE_URL}/api/knowledge-base/${id}` : `${API_BASE_URL}/api/knowledge-base`;
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al guardar.');
+                }
+                closeKnowledgeBaseModal();
+            } catch (error) {
+                console.error("Error saving knowledge base entry:", error);
+                showError(error.message);
+            }
+        }
+
+        async function handleDeleteKnowledgeBaseEntry(id) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar esta entrada de la base de conocimiento?')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/knowledge-base/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar la entrada.');
+                }
+            } catch (error) {
+                console.error("Error deleting knowledge base entry:", error);
+                showError(error.message);
+            }
+        }
+        // --- END: Bot & Knowledge Base Functions ---
 
     </script>
 </body>
