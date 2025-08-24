@@ -405,6 +405,10 @@ app.post('/webhook', async (req, res) => {
                 const textToSend = adResponseData?.message || GENERAL_WELCOME_MESSAGE;
                 if (textToSend) {
                     try {
+                         // Optional delay to ensure messages arrive in order
+                        if (adResponseData && adResponseData.fileUrl) {
+                            await new Promise(resolve => setTimeout(resolve, 500));
+                        }
                         const sentTextData = await sendAdvancedWhatsAppMessage(from, { text: textToSend });
                         const textMessageToSave = {
                             from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -490,56 +494,53 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     
-    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    let messagePayload, messageToSaveText;
-
     try {
-        if (template) {
-            const { payload, messageToSaveText: TplText } = await buildTemplatePayload(contactId, template);
-            messagePayload = payload;
-            messageToSaveText = TplText;
-        } else {
-            // Reutiliza la lógica de la función avanzada para mensajes manuales
-            const messageContent = { text, fileUrl, fileType };
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, messageContent);
-            
-            const timestamp = admin.firestore.FieldValue.serverTimestamp();
-            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-            let messageToSave = { 
-                from: PHONE_NUMBER_ID, 
-                status: 'sent', 
-                timestamp, 
-                id: sentMessageData.id, 
-                text: sentMessageData.textForDb,
-                fileUrl: sentMessageData.fileUrlForDb,
-                fileType: sentMessageData.fileTypeForDb
-            };
-            
-            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
-            
-            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-            
-            await contactRef.collection('messages').add(messageToSave);
-            await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: timestamp, unreadCount: 0 });
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
-            return res.status(200).json({ success: true, message: 'Mensaje enviado.' });
+        if (template) {
+            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
+
+            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, { 
+                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } 
+            });
+            const messageId = response.data.messages[0].id;
+            
+            const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+
+        } else {
+            // Lógica para mensajes manuales y respuestas rápidas
+            if (fileUrl && fileType) {
+                const sentMediaData = await sendAdvancedWhatsAppMessage(contactId, { fileUrl, fileType });
+                const mediaMessageToSave = {
+                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentMediaData.id, text: sentMediaData.textForDb,
+                    fileUrl: sentMediaData.fileUrlForDb, fileType: sentMediaData.fileTypeForDb
+                };
+                if (reply_to_wamid) mediaMessageToSave.context = { id: reply_to_wamid };
+                Object.keys(mediaMessageToSave).forEach(key => mediaMessageToSave[key] == null && delete mediaMessageToSave[key]);
+                await contactRef.collection('messages').add(mediaMessageToSave);
+                await contactRef.update({ lastMessage: sentMediaData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+            }
+
+            if (text) {
+                if (fileUrl) await new Promise(resolve => setTimeout(resolve, 500)); // Pequeña pausa
+                
+                const sentTextData = await sendAdvancedWhatsAppMessage(contactId, { text });
+                const textMessageToSave = {
+                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentTextData.id, text: sentTextData.textForDb,
+                };
+                // No añadir contexto de respuesta al segundo mensaje para evitar confusión
+                await contactRef.collection('messages').add(textMessageToSave);
+                await contactRef.update({ lastMessage: sentTextData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+            }
         }
 
-        // Lógica para plantillas
-        if (reply_to_wamid) messagePayload.context = { message_id: reply_to_wamid };
+        res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
 
-        const response = await axios.post(url, messagePayload, { headers });
-        const messageId = response.data.messages[0].id;
-        
-        const timestamp = admin.firestore.FieldValue.serverTimestamp();
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        let messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText };
-        
-        await contactRef.collection('messages').add(messageToSave);
-        await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
-
-        res.status(200).json({ success: true, message: 'Mensaje enviado.' });
     } catch (error) {
         console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
@@ -1094,8 +1095,8 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
-        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
@@ -1114,4 +1115,3 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
-});
