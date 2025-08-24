@@ -98,7 +98,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA) ---
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA FINAL) ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
@@ -109,7 +109,8 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
-    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events?test_event_code=TEST16433`;
+    // ✅ CORRECCIÓN: La URL debe estar limpia, sin parámetros de consulta.
+    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
@@ -124,18 +125,14 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // ✅ IMPORTANTE: Agregar el WhatsApp Business Account ID (requerido por Meta)
     if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
         userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
     }
 
-    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
 
     if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
-        // ❌ NO incluir fbc para eventos de WhatsApp - Meta no lo acepta con business_messaging
-        // El fbc solo es para eventos web/Facebook, no para WhatsApp
     }
 
     const finalCustomData = {
@@ -145,7 +142,6 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         ...customData
     };
 
-    // Limpia cualquier clave 'undefined' que se haya añadido
     Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
     const payload = {
@@ -155,17 +151,20 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_id: eventId,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp', 
-            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
+            user_data: userData,
             custom_data: finalCustomData,
         }],
+        // ✅ CORRECCIÓN: El test_event_code va aquí, en el cuerpo del payload.
+        test_event_code: 'TEST16433' 
     };
 
     try {
-        console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
+        console.log(`Enviando evento DE PRUEBA '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
+        // Se hace el POST a la URL limpia con el payload que ya incluye el código de prueba.
         await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
-        console.log(`✅ Evento '${eventName}' enviado a Meta.`);
+        console.log(`✅ Evento DE PRUEBA '${eventName}' enviado a Meta.`);
     } catch (error) {
-        console.error(`❌ Error al enviar evento '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`❌ Error al enviar evento DE PRUEBA '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 };
@@ -283,19 +282,16 @@ app.post('/webhook', async (req, res) => {
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             
-            // ✅ CORRECCIÓN: Guardar ctwa_clid correctamente desde message.referral
             if (isNewContact && message.referral?.source_type === 'ad') {
                 contactData.adReferral = { 
                     source_id: message.referral.source_id ?? null, 
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
                     source_url: message.referral.source_url ?? null,
-                    // NO guardamos fbc - Meta no lo acepta para WhatsApp Business
-                    ctwa_clid: message.referral.ctwa_clid ?? null,  // ✅ Solo necesitamos ctwa_clid
+                    ctwa_clid: message.referral.ctwa_clid ?? null,
                     receivedAt: timestamp 
                 };
                 
-                // DEBUG: Para ver qué está llegando
                 console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
             }
 
