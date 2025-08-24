@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS Y MULTIMEDIA
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA Y BOT AUTOMÁTICO
 
 require('dotenv').config();
 const express = require('express');
@@ -257,11 +257,45 @@ app.post('/webhook', async (req, res) => {
             
             const contactDoc = await contactRef.get();
             const isNewContact = !contactDoc.exists;
+            const contactData = contactDoc.exists ? contactDoc.data() : {};
+
+            // --- START: BOT LOGIC ---
+            if (contactData.botActive) {
+                console.log(`🤖 Bot is active for ${from}. Generating response...`);
+                try {
+                    const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+                    const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
+
+                    const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
+                    const conversationHistory = messagesSnapshot.docs.map(doc => {
+                        const d = doc.data();
+                        return `${d.from === from ? 'Cliente' : 'Asistente'}: ${d.text}`;
+                    }).reverse().join('\n');
+
+                    const prompt = `${botInstructions}\n\n--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+                    
+                    const generatedText = await generateGeminiResponse(prompt);
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: generatedText });
+
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID,
+                        status: 'sent',
+                        timestamp,
+                        id: sentMessageData.id,
+                        text: sentMessageData.textForDb
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: timestamp });
+                    console.log(`🤖 Bot response sent to ${from}.`);
+
+                } catch (error) {
+                    console.error(`❌ Error in bot logic for ${from}:`, error);
+                }
+            }
+            // --- END: BOT LOGIC ---
 
             if (isNewContact) {
                 let messageToSend = { text: GENERAL_WELCOME_MESSAGE }; // Objeto de mensaje por defecto
 
-                // LÓGICA ACTUALIZADA: Revisa si hay un mensaje de anuncio (con posible multimedia)
                 if (message.referral?.source_type === 'ad') {
                     const adId = message.referral.source_id;
                     const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
@@ -281,7 +315,6 @@ app.post('/webhook', async (req, res) => {
                 }
                 
                 try {
-                    // Usa la nueva función de envío avanzada
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, messageToSend);
                     
                     const messageToSave = {
@@ -301,9 +334,9 @@ app.post('/webhook', async (req, res) => {
                 } catch (error) {
                     console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
                 }
-            } else if (!isWithinBusinessHours()) {
+            } else if (!isWithinBusinessHours() && !contactData.botActive) { // Only send away message if bot is off
                 const now = new Date();
-                const lastAwayMessageSent = contactDoc.data()?.lastAwayMessageSent?.toDate();
+                const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
                 const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
                 if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
@@ -318,10 +351,10 @@ app.post('/webhook', async (req, res) => {
                 }
             }
 
-            let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
+            let newContactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             
             if (isNewContact && message.referral?.source_type === 'ad') {
-                contactData.adReferral = { 
+                newContactData.adReferral = { 
                     source_id: message.referral.source_id ?? null, 
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
@@ -364,13 +397,13 @@ app.post('/webhook', async (req, res) => {
             } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
 
             await contactRef.collection('messages').add(messageData);
-            contactData.lastMessage = lastMessageText;
-            await contactRef.set(contactData, { merge: true });
+            newContactData.lastMessage = lastMessageText;
+            await contactRef.set(newContactData, { merge: true });
             console.log(`Mensaje (${message.type}) de ${from} guardado.`);
 
-            if (isNewContact && contactData.adReferral) {
+            if (isNewContact && newContactData.adReferral) {
                 try {
-                    await sendConversionEvent('Lead', contactInfo, contactData.adReferral);
+                    await sendConversionEvent('Lead', contactInfo, newContactData.adReferral);
                     await contactRef.update({ leadEventSent: true });
                 } catch (error) { console.error(`Fallo al enviar evento Lead para ${from}:`, error.message); }
             }
@@ -863,11 +896,60 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
+// --- START: BOT ENDPOINTS ---
+app.get('/api/bot/settings', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('bot').get();
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { instructions: '' } });
+        }
+        res.status(200).json({ success: true, settings: doc.data() });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot.' });
+    }
+});
 
-// --- ENDPOINT PARA BOT DE IA ---
+app.post('/api/bot/settings', async (req, res) => {
+    const { instructions } = req.body;
+    try {
+        await db.collection('crm_settings').doc('bot').set({ instructions });
+        res.status(200).json({ success: true, message: 'Configuración del bot guardada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración del bot.' });
+    }
+});
+
+app.post('/api/bot/toggle', async (req, res) => {
+    const { contactId, isActive } = req.body;
+    try {
+        await db.collection('contacts_whatsapp').doc(contactId).update({ botActive: isActive });
+        res.status(200).json({ success: true, message: `Bot ${isActive ? 'activado' : 'desactivado'} para ${contactId}.` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar el estado del bot.' });
+    }
+});
+// --- END: BOT ENDPOINTS ---
+
+// --- HELPER FUNCTION FOR GEMINI ---
+async function generateGeminiResponse(prompt) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    
+    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+    
+    const result = await geminiResponse.json();
+    const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
+    return generatedText;
+}
+
+// --- ENDPOINT PARA BOT DE IA (MANUAL) ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
-    if (!GEMINI_API_KEY) return res.status(500).json({ success: false, message: 'La API Key de Gemini no está configurada.' });
     try {
         const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
@@ -875,17 +957,8 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
         const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
         
-        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-        const payload = { contents: [{ parts: [{ text: prompt }] }] };
-        
-        const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-        if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
-        
-        const result = await geminiResponse.json();
-        const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-        if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
-        
-        res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion: generatedText });
+        const suggestion = await generateGeminiResponse(prompt);
+        res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
     } catch (error) {
         console.error('Error al generar respuesta con IA:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
