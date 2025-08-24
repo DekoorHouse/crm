@@ -848,7 +848,7 @@
             state.tags.forEach(tag => {
                 const isActive = contact.status === tag.key;
                 buttonsHtml += `<button 
-                                    onclick="handleStatusChange('${tag.key}')" 
+                                    onclick="handleStatusChange('${contact.id}', '${tag.key}')" 
                                     class="status-btn ${isActive ? 'active' : ''}"
                                     style="${isActive ? `background-color: ${tag.color}; color: white; border-color: ${tag.color};` : `background-color: ${tag.color}20; color: ${tag.color}; border-color: ${tag.color}50;`}"
                                 >
@@ -1204,20 +1204,32 @@
 
             container.innerHTML = state.tags.map(tag => {
                 const contactsInStage = state.contacts.filter(c => c.status === tag.key);
+                const totalUnread = contactsInStage.reduce((sum, contact) => sum + (contact.unreadCount || 0), 0);
+                const unreadHeaderBadge = totalUnread > 0 ? `<span class="unread-badge !bg-red-500">${totalUnread}</span>` : '';
+
                 return `
                     <div class="pipeline-column">
                         <div class="pipeline-header">
                             <span class="tag-color-swatch" style="background-color: ${tag.color};"></span>
-                            <span>${tag.label}</span>
-                            <span class="ml-auto text-sm font-normal text-gray-500">${contactsInStage.length}</span>
+                            <span class="font-bold">${tag.label}</span>
+                            <span class="ml-auto text-sm font-normal text-gray-500 flex items-center gap-2">
+                                ${unreadHeaderBadge}
+                                <span class="flex items-center gap-1"><i class="fas fa-user"></i> ${contactsInStage.length}</span>
+                            </span>
                         </div>
                         <div class="pipeline-cards" data-tag-key="${tag.key}">
-                            ${contactsInStage.map(contact => `
+                            ${contactsInStage.map(contact => {
+                                const unreadBadge = contact.unreadCount > 0 ? `<span class="unread-badge">${contact.unreadCount}</span>` : '';
+                                return `
                                 <div class="pipeline-card" data-contact-id="${contact.id}" style="border-left-color: ${tag.color};">
-                                    <div class="contact-name">${contact.name || 'Desconocido'}</div>
+                                    <div class="flex justify-between items-start">
+                                        <div class="contact-name">${contact.name || 'Desconocido'}</div>
+                                        ${unreadBadge}
+                                    </div>
                                     <p class="last-message">${contact.lastMessage || 'Sin mensajes'}</p>
                                 </div>
-                            `).join('')}
+                                `
+                            }).join('')}
                         </div>
                     </div>
                 `;
