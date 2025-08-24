@@ -4,6 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
 const { getStorage } = require('firebase-admin/storage');
+const { google } = require('googleapis'); // <-- AÑADIDO: Librería de Google
 const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
@@ -38,6 +39,65 @@ const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+// --- AÑADIDO: CONFIGURACIÓN DE GOOGLE SHEETS ---
+const SHEETS_CREDENTIALS_PATH = path.join(__dirname, 'google-sheets-credentials.json');
+const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+
+async function getGoogleSheetsClient() {
+    try {
+        const auth = new google.auth.GoogleAuth({
+            keyFile: SHEETS_CREDENTIALS_PATH,
+            scopes: SHEETS_SCOPES,
+        });
+        const client = await auth.getClient();
+        return google.sheets({ version: 'v4', auth: client });
+    } catch (error) {
+        console.error("❌ Error al autenticar con Google Sheets. Asegúrate de que el archivo 'google-sheets-credentials.json' existe y es correcto.", error.message);
+        return null;
+    }
+}
+
+// --- AÑADIDO: FUNCIÓN PARA VERIFICAR COBERTURA ---
+async function checkCoverage(postalCode) {
+    if (!postalCode) return null;
+
+    const sheets = await getGoogleSheetsClient();
+    if (!sheets) return "No se pudo verificar la cobertura en este momento.";
+
+    try {
+        const settingsDoc = await db.collection('crm_settings').doc('general').get();
+        const sheetId = settingsDoc.exists ? settingsDoc.data().googleSheetId : null;
+
+        if (!sheetId) {
+            console.warn("Advertencia: No se ha configurado un ID de Google Sheet en los ajustes.");
+            return "La herramienta de cobertura no está configurada.";
+        }
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: sheetId,
+            range: 'A:A', // Asume que los códigos postales están en la columna A
+        });
+
+        const rows = response.data.values;
+        if (rows && rows.length) {
+            const coverageZips = rows.flat();
+            if (coverageZips.includes(postalCode.toString())) {
+                return `✅ ¡Buenas noticias! Sí tenemos cobertura en el código postal ${postalCode}.`;
+            } else {
+                return `❌ Lo sentimos, por el momento no tenemos cobertura en el código postal ${postalCode}.`;
+            }
+        }
+        return `No se encontraron datos de cobertura para verificar el código postal ${postalCode}.`;
+    } catch (error) {
+        console.error(`❌ Error al leer la hoja de Google Sheets (ID: ${sheetId})`, error.message);
+        if (error.code === 404) {
+             return "Error: No se encontró la hoja de cálculo. Verifica el ID en los ajustes.";
+        }
+        return "Hubo un problema al verificar la cobertura. Por favor, inténtalo más tarde.";
+    }
+}
+
 
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
 const BUSINESS_HOURS = {
@@ -328,7 +388,17 @@ app.post('/webhook', async (req, res) => {
                     await delay(randomDelay);
 
                     const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-                    const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
+                    let botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
+                    
+                    // --- MODIFICADO: Lógica de Cobertura y Prompt ---
+                    let coverageInfo = '';
+                    const postalCodeMatch = messageData.text.match(/\b\d{5}\b/); // Busca un código postal de 5 dígitos
+                    if (postalCodeMatch) {
+                        const postalCode = postalCodeMatch[0];
+                        coverageInfo = await checkCoverage(postalCode);
+                    }
+
+                    botInstructions += "\n\nSi el cliente pregunta por cobertura o proporciona un código postal, usa la 'Información de Cobertura' para responder. Si no hay información de cobertura, amablemente pide al cliente su código postal de 5 dígitos para verificar.";
 
                     const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
                     const conversationHistory = messagesSnapshot.docs.map(doc => {
@@ -350,7 +420,7 @@ app.post('/webhook', async (req, res) => {
                         }
                     }
 
-                    const prompt = `${botInstructions}\n\n${adContext}--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+                    const prompt = `${botInstructions}\n\n${adContext}--- Información de Cobertura ---\n${coverageInfo || 'No se ha verificado ninguna cobertura aún.'}\n\n--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
                     
                     const generatedText = await generateGeminiResponse(prompt);
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: generatedText });
@@ -1005,6 +1075,29 @@ app.post('/api/settings/global-bot', async (req, res) => {
         res.status(200).json({ success: true, message: 'Configuración del bot global guardada.' });
     } catch (error) {
         res.status(500).json({ success: false, message: 'Error al guardar el ajuste del bot global.' });
+    }
+});
+
+// --- AÑADIDO: ENDPOINT PARA GUARDAR GOOGLE SHEET ID ---
+app.get('/api/settings/google-sheet', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        if (!doc.exists || !doc.data().googleSheetId) {
+            return res.status(200).json({ success: true, settings: { googleSheetId: '' } });
+        }
+        res.status(200).json({ success: true, settings: { googleSheetId: doc.data().googleSheetId } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración de Google Sheet.' });
+    }
+});
+
+app.post('/api/settings/google-sheet', async (req, res) => {
+    const { googleSheetId } = req.body;
+    try {
+        await db.collection('crm_settings').doc('general').set({ googleSheetId }, { merge: true });
+        res.status(200).json({ success: true, message: 'ID de Google Sheet guardado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración de Google Sheet.' });
     }
 });
 // --- END: NEW GENERAL SETTINGS ENDPOINTS ---
