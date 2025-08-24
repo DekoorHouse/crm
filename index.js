@@ -258,8 +258,60 @@ app.post('/webhook', async (req, res) => {
             const contactDoc = await contactRef.get();
             const isNewContact = !contactDoc.exists;
             const contactData = contactDoc.exists ? contactDoc.data() : {};
+            
+            // --- START: SAVE INCOMING MESSAGE FIRST ---
+            let messageData = { timestamp, from, status: 'received', id: message.id };
+            let lastMessageText = '';
+            
+            try {
+                if (message.context) messageData.context = { id: message.context.id };
+                switch (message.type) {
+                    case 'text':
+                        messageData.text = message.text.body;
+                        lastMessageText = message.text.body;
+                        break;
+                    case 'image':
+                        lastMessageText = '📷 Imagen';
+                        messageData.text = lastMessageText;
+                        const imageData = await downloadAndUploadImage(message.image.id, from);
+                        if (imageData) {
+                            messageData.fileUrl = imageData.publicUrl;
+                            messageData.fileType = imageData.mimeType;
+                        }
+                        break;
+                    case 'video':
+                        lastMessageText = '🎥 Video';
+                        messageData.text = lastMessageText;
+                        break;
+                    default:
+                        lastMessageText = `Mensaje no soportado: ${message.type}`;
+                        messageData.text = lastMessageText;
+                        break;
+                }
+            } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
 
-            // --- START: BOT LOGIC ---
+            await contactRef.collection('messages').add(messageData);
+            
+            let newContactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
+            newContactData.lastMessage = lastMessageText;
+            
+            if (isNewContact && message.referral?.source_type === 'ad') {
+                newContactData.adReferral = { 
+                    source_id: message.referral.source_id ?? null, 
+                    headline: message.referral.headline ?? null, 
+                    source_type: message.referral.source_type ?? null, 
+                    source_url: message.referral.source_url ?? null,
+                    ctwa_clid: message.referral.ctwa_clid ?? null,
+                    receivedAt: timestamp 
+                };
+                console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
+            }
+            
+            await contactRef.set(newContactData, { merge: true });
+            console.log(`Mensaje (${message.type}) de ${from} guardado.`);
+            // --- END: SAVE INCOMING MESSAGE FIRST ---
+
+            // --- START: BOT LOGIC (Now runs AFTER saving the message) ---
             if (contactData.botActive) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
                 try {
@@ -280,11 +332,11 @@ app.post('/webhook', async (req, res) => {
                     await contactRef.collection('messages').add({
                         from: PHONE_NUMBER_ID,
                         status: 'sent',
-                        timestamp,
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         id: sentMessageData.id,
                         text: sentMessageData.textForDb
                     });
-                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: timestamp });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                     console.log(`🤖 Bot response sent to ${from}.`);
 
                 } catch (error) {
@@ -320,7 +372,7 @@ app.post('/webhook', async (req, res) => {
                     const messageToSave = {
                         from: PHONE_NUMBER_ID,
                         status: 'sent',
-                        timestamp,
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         id: sentMessageData.id,
                         text: sentMessageData.textForDb,
                         fileUrl: sentMessageData.fileUrlForDb,
@@ -342,64 +394,14 @@ app.post('/webhook', async (req, res) => {
                 if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
                     try {
                         const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
-                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: sentMessageData.id, text: AWAY_MESSAGE });
-                        await contactRef.set({ lastAwayMessageSent: timestamp, lastMessage: AWAY_MESSAGE, lastMessageTimestamp: timestamp }, { merge: true });
+                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
+                        await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
                         console.log(`Mensaje de ausencia enviado a ${from}.`);
                     } catch (error) {
                         console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
                     }
                 }
             }
-
-            let newContactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
-            
-            if (isNewContact && message.referral?.source_type === 'ad') {
-                newContactData.adReferral = { 
-                    source_id: message.referral.source_id ?? null, 
-                    headline: message.referral.headline ?? null, 
-                    source_type: message.referral.source_type ?? null, 
-                    source_url: message.referral.source_url ?? null,
-                    ctwa_clid: message.referral.ctwa_clid ?? null,
-                    receivedAt: timestamp 
-                };
-                
-                console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
-            }
-
-            let messageData = { timestamp, from, status: 'received', id: message.id };
-            let lastMessageText = '';
-            
-            try {
-                if (message.context) messageData.context = { id: message.context.id };
-                switch (message.type) {
-                    case 'text':
-                        messageData.text = message.text.body;
-                        lastMessageText = message.text.body;
-                        break;
-                    case 'image':
-                        lastMessageText = '📷 Imagen';
-                        messageData.text = lastMessageText;
-                        const imageData = await downloadAndUploadImage(message.image.id, from);
-                        if (imageData) {
-                            messageData.fileUrl = imageData.publicUrl;
-                            messageData.fileType = imageData.mimeType;
-                        }
-                        break;
-                    case 'video':
-                        lastMessageText = '🎥 Video';
-                        messageData.text = lastMessageText;
-                        break;
-                    default:
-                        lastMessageText = `Mensaje no soportado: ${message.type}`;
-                        messageData.text = lastMessageText;
-                        break;
-                }
-            } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
-
-            await contactRef.collection('messages').add(messageData);
-            newContactData.lastMessage = lastMessageText;
-            await contactRef.set(newContactData, { merge: true });
-            console.log(`Mensaje (${message.type}) de ${from} guardado.`);
 
             if (isNewContact && newContactData.adReferral) {
                 try {
