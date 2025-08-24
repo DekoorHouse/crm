@@ -371,46 +371,52 @@ app.post('/webhook', async (req, res) => {
             }
 
             if (isNewContact) {
-                let messageToSend = { text: GENERAL_WELCOME_MESSAGE };
+                const adId = message.referral?.source_id;
+                let adResponseData = null;
 
-                if (message.referral?.source_type === 'ad') {
-                    const adId = message.referral.source_id;
+                if (adId) {
                     const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
                     const adResponseSnapshot = await adResponseRef.get();
-                    
                     if (!adResponseSnapshot.empty) {
-                        const adResponseData = adResponseSnapshot.docs[0].data();
-                        messageToSend = {
-                            text: adResponseData.message,
-                            fileUrl: adResponseData.fileUrl,
-                            fileType: adResponseData.fileType
-                        };
-                        console.log(`Mensaje de bienvenida (con posible multimedia) encontrado para el Ad ID: ${adId}`);
+                        adResponseData = adResponseSnapshot.docs[0].data();
+                        console.log(`Mensaje de bienvenida encontrado para el Ad ID: ${adId}`);
                     } else {
                         console.log(`No se encontró mensaje de bienvenida para el Ad ID: ${adId}. Usando mensaje general.`);
                     }
                 }
-                
-                try {
-                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, messageToSend);
-                    
-                    const messageToSave = {
-                        from: PHONE_NUMBER_ID,
-                        status: 'sent',
-                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id,
-                        text: sentMessageData.textForDb,
-                        fileUrl: sentMessageData.fileUrlForDb,
-                        fileType: sentMessageData.fileTypeForDb
-                    };
-                    
-                    Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
 
-                    await contactRef.collection('messages').add(messageToSave);
-                    console.log(`Mensaje de bienvenida enviado a ${from}.`);
-                } catch (error) {
-                    console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
+                // Send media first if it exists
+                if (adResponseData && adResponseData.fileUrl) {
+                    try {
+                        const sentMediaData = await sendAdvancedWhatsAppMessage(from, { fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                        const mediaMessageToSave = {
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMediaData.id, text: sentMediaData.textForDb, fileUrl: sentMediaData.fileUrlForDb, fileType: sentMediaData.fileTypeForDb
+                        };
+                        Object.keys(mediaMessageToSave).forEach(key => mediaMessageToSave[key] == null && delete mediaMessageToSave[key]);
+                        await contactRef.collection('messages').add(mediaMessageToSave);
+                        console.log(`Archivo multimedia de bienvenida enviado a ${from}.`);
+                    } catch (error) {
+                        console.error(`Fallo al enviar archivo multimedia de bienvenida a ${from}:`, error);
+                    }
                 }
+
+                // Send text message (either from ad or general welcome)
+                const textToSend = adResponseData?.message || GENERAL_WELCOME_MESSAGE;
+                if (textToSend) {
+                    try {
+                        const sentTextData = await sendAdvancedWhatsAppMessage(from, { text: textToSend });
+                        const textMessageToSave = {
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentTextData.id, text: sentTextData.textForDb
+                        };
+                        await contactRef.collection('messages').add(textMessageToSave);
+                        console.log(`Mensaje de texto de bienvenida enviado a ${from}.`);
+                    } catch (error) {
+                        console.error(`Fallo al enviar mensaje de texto de bienvenida a ${from}:`, error);
+                    }
+                }
+
             } else if (awayMessageActive && !isWithinBusinessHours() && !shouldBotReply) {
                 const now = new Date();
                 const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
