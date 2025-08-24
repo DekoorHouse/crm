@@ -317,8 +317,8 @@ app.post('/webhook', async (req, res) => {
             const globalBotActive = generalSettingsDoc.exists ? generalSettingsDoc.data().globalBotActive : false;
             const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive !== false : true; // Default to true
 
-            // The bot replies if the global toggle is ON and the individual contact toggle is not explicitly turned OFF.
-            const shouldBotReply = globalBotActive && (contactData.botActive !== false);
+            // The bot replies if the global toggle is ON, the individual contact toggle is not explicitly OFF, AND it's NOT a new contact.
+            const shouldBotReply = globalBotActive && (contactData.botActive !== false) && !isNewContact;
 
             if (shouldBotReply) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
@@ -1115,3 +1115,4 @@ app.get('*', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
+});
