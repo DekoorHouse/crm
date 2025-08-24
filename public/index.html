@@ -320,6 +320,33 @@
         </div>
     </div>
 
+    <!-- NEW MODAL FOR AD RESPONSES -->
+    <div id="ad-response-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
+            <form id="ad-response-form">
+                <input type="hidden" id="ad-response-doc-id">
+                <div>
+                    <label for="ar-name">Nombre del Anuncio</label>
+                    <input type="text" id="ar-name" required class="!mb-4" placeholder="Ej: Campaña Día de la Madre">
+                </div>
+                <div>
+                    <label for="ar-ad-id">Identificador del Anuncio (Ad ID)</label>
+                    <input type="text" id="ar-ad-id" required class="!mb-4" placeholder="Ej: 120229247610060637">
+                </div>
+                <div>
+                    <label for="ar-message">Mensaje de Respuesta</label>
+                    <textarea id="ar-message" rows="5" required class="!mb-4" placeholder="Escribe el mensaje de bienvenida para este anuncio..."></textarea>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="closeAdResponseModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+
     <div id="edit-contact-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="edit-contact-modal-title">Editar Contacto</h2>
@@ -405,6 +432,7 @@
             messages: [], 
             notes: [],
             quickReplies: [],
+            adResponses: [], // NEW: State for ad responses
             templates: [],
             tags: [],
             selectedContactId: null, 
@@ -424,7 +452,7 @@
             isTagSidebarOpen: true,
             activeView: 'chats',
         };
-        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null;
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null; // NEW: Listener for ad responses
         let ticking = false;
 
         // --- START: Authentication Logic ---
@@ -571,16 +599,25 @@
             </div>
         `;
         
+        // NEW/UPDATED VIEW TEMPLATE
         const MensajesAdsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
-                    <h1>Mensajes Ads</h1>
+                    <h1>Mensajes de Bienvenida por Anuncio</h1>
+                    <button onclick="openAdResponseModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Mensaje</button>
                 </div>
-                <div class="p-8 text-center text-gray-500">
-                    <i class="fas fa-tools text-4xl mb-4"></i>
-                    <h2 class="text-xl font-semibold">En construcción</h2>
-                    <p class="mt-2">Esta sección mostrará los mensajes provenientes de campañas de anuncios.</p>
-                </div>
+                <p class="mb-6 text-gray-600">Configura respuestas automáticas para los clientes que llegan desde un anuncio de Facebook o Instagram. El sistema identificará el anuncio y enviará el mensaje correspondiente.</p>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Nombre del Anuncio</th>
+                            <th>ID del Anuncio</th>
+                            <th>Mensaje</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ad-responses-table-body"></tbody>
+                </table>
             </div>
         `;
 
@@ -915,6 +952,7 @@
             listenForContacts(); 
             listenForQuickReplies();
             listenForTags();
+            listenForAdResponses(); // NEW: Listen for ad responses
             fetchTemplates();
             document.addEventListener('click', handleClickOutside);
         }
@@ -925,8 +963,9 @@
             if (unsubscribeNotesListener) unsubscribeNotesListener();
             if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
             if (unsubscribeTagsListener) unsubscribeTagsListener();
+            if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener(); // NEW: Stop listening
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], templates: [], tags: [], selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -958,6 +997,7 @@
                     break;
                 case 'mensajes-ads':
                     mainViewContainer.innerHTML = MensajesAdsViewTemplate();
+                    renderAdResponsesView(); // NEW: Render the new view
                     break;
                 case 'respuestas-rapidas':
                     mainViewContainer.innerHTML = QuickRepliesViewTemplate();
@@ -1075,6 +1115,30 @@
                     <td class="actions-cell">
                         <button onclick="openQuickReplyModal('${reply.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                         <button onclick="handleDeleteQuickReply('${reply.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // NEW RENDER FUNCTION FOR AD RESPONSES
+        function renderAdResponsesView() {
+            if (state.activeView !== 'mensajes-ads') return;
+            const tableBody = document.getElementById('ad-responses-table-body');
+            if (!tableBody) return;
+
+            if (state.adResponses.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No has agregado ningún mensaje de anuncio todavía.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = state.adResponses.map(response => `
+                <tr>
+                    <td class="font-semibold">${response.adName}</td>
+                    <td class="font-mono text-sm">${response.adId}</td>
+                    <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message}</td>
+                    <td class="actions-cell">
+                        <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                        <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -1975,6 +2039,91 @@
             }
         }
 
+        // --- NEW: FUNCTIONS FOR AD RESPONSES ---
+        function listenForAdResponses() {
+            if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
+            unsubscribeAdResponsesListener = db.collection('ad_responses').orderBy('adName').onSnapshot(snapshot => {
+                state.adResponses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (state.activeView === 'mensajes-ads') {
+                    renderAdResponsesView();
+                }
+            }, error => {
+                console.error("Error al escuchar los mensajes de anuncios:", error);
+                showError("No se pudieron cargar los mensajes de anuncios.");
+            });
+        }
+
+        function openAdResponseModal(responseId = null) {
+            const modal = document.getElementById('ad-response-modal');
+            const form = document.getElementById('ad-response-form');
+            form.reset();
+            
+            const isEditing = responseId && state.adResponses.some(r => r.id === responseId);
+            const response = isEditing ? state.adResponses.find(r => r.id === responseId) : null;
+
+            document.getElementById('ad-response-modal-title').textContent = isEditing ? 'Editar Mensaje de Anuncio' : 'Añadir Mensaje de Anuncio';
+            document.getElementById('ad-response-doc-id').value = isEditing ? response.id : '';
+            document.getElementById('ar-name').value = isEditing ? response.adName : '';
+            document.getElementById('ar-ad-id').value = isEditing ? response.adId : '';
+            document.getElementById('ar-message').value = isEditing ? response.message : '';
+
+            modal.classList.remove('hidden');
+            document.getElementById('ar-name').focus();
+
+            form.onsubmit = (event) => {
+                event.preventDefault();
+                handleSaveAdResponse();
+            };
+        }
+
+        function closeAdResponseModal() {
+            document.getElementById('ad-response-modal').classList.add('hidden');
+        }
+
+        async function handleSaveAdResponse() {
+            const id = document.getElementById('ad-response-doc-id').value;
+            const adName = document.getElementById('ar-name').value.trim();
+            const adId = document.getElementById('ar-ad-id').value.trim();
+            const message = document.getElementById('ar-message').value.trim();
+
+            if (!adName || !adId || !message) {
+                showError("Todos los campos son obligatorios.");
+                return;
+            }
+
+            const data = { adName, adId, message };
+            const url = id ? `${API_BASE_URL}/api/ad-responses/${id}` : `${API_BASE_URL}/api/ad-responses`;
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al guardar el mensaje.');
+                }
+                closeAdResponseModal();
+            } catch (error) {
+                console.error("Error saving ad response:", error);
+                showError(error.message);
+            }
+        }
+
+        async function handleDeleteAdResponse(id) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar este mensaje de anuncio?')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/ad-responses/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar el mensaje.');
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
     </script>
 </body>
 </html>
