@@ -41,7 +41,7 @@
         }
         body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; }
         h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); color: var(--color-text); }
-        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #c5c5c5; }
@@ -205,6 +205,19 @@
         .sortable-ghost { background-color: #eef2ff; opacity: 0.7; }
         .sortable-drag { background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
         
+        /* --- START: Pipeline Styles --- */
+        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; overflow-x: auto; height: 100%; align-items: flex-start; }
+        .pipeline-column { flex: 0 0 300px; width: 300px; background-color: #f1f2f4; border-radius: var(--border-radius-lg); display: flex; flex-direction: column; max-height: 100%; }
+        .pipeline-header { padding: 1rem; font-weight: 600; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
+        .pipeline-header .tag-color-swatch { flex-shrink: 0; }
+        .pipeline-cards { padding: 0.5rem; overflow-y: auto; min-height: 100px; flex-grow: 1; }
+        .pipeline-card { background-color: white; border-radius: var(--border-radius-md); padding: 0.8rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: grab; border-left: 4px solid; }
+        .pipeline-card:active { cursor: grabbing; }
+        .pipeline-card .contact-name { font-weight: 600; }
+        .pipeline-card .last-message { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sortable-ghost.pipeline-card { opacity: 0.5; background: #cce5ff; }
+        /* --- END: Pipeline Styles --- */
+
         /* --- START: Login Styles --- */
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-bg); display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
         .login-container { background-color: var(--color-container-bg); padding: 40px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 25px var(--color-shadow); text-align: center; max-width: 420px; width: 100%; }
@@ -259,6 +272,10 @@
                     <a onclick="navigateTo('chats')" data-view="chats" class="nav-item active">
                         <i class="fas fa-comments"></i>
                         <span class="sidebar-text">Chats</span>
+                    </a>
+                    <a onclick="navigateTo('pipeline')" data-view="pipeline" class="nav-item">
+                        <i class="fas fa-stream"></i>
+                        <span class="sidebar-text">Pipeline</span>
                     </a>
                     <a onclick="navigateTo('contacts')" data-view="contacts" class="nav-item">
                         <i class="fas fa-address-book"></i>
@@ -563,6 +580,15 @@
                 </aside>
                 <section id="chat-panel" class="flex-1 flex flex-col relative"></section>
                 <aside id="contact-details-panel"></aside>
+            </div>
+        `;
+
+        const PipelineViewTemplate = () => `
+            <div class="view-container !p-0 flex flex-col h-full">
+                <div class="view-header !p-4 !mb-0 border-b border-gray-200">
+                    <h1>Pipeline de Ventas</h1>
+                </div>
+                <div id="pipeline-container" class="pipeline-container flex-1"></div>
             </div>
         `;
 
@@ -996,6 +1022,10 @@
                     renderChatWindow(); 
                     listenForContacts(); 
                     break;
+                case 'pipeline':
+                    mainViewContainer.innerHTML = PipelineViewTemplate();
+                    renderPipelineView();
+                    break;
                 case 'contacts':
                     mainViewContainer.innerHTML = ContactsViewTemplate();
                     renderContactsView();
@@ -1154,6 +1184,47 @@
                     </td>
                 </tr>
             `).join('');
+        }
+
+        function renderPipelineView() {
+            if (state.activeView !== 'pipeline') return;
+            const container = document.getElementById('pipeline-container');
+            if (!container) return;
+
+            container.innerHTML = state.tags.map(tag => {
+                const contactsInStage = state.contacts.filter(c => c.status === tag.key);
+                return `
+                    <div class="pipeline-column">
+                        <div class="pipeline-header">
+                            <span class="tag-color-swatch" style="background-color: ${tag.color};"></span>
+                            <span>${tag.label}</span>
+                            <span class="ml-auto text-sm font-normal text-gray-500">${contactsInStage.length}</span>
+                        </div>
+                        <div class="pipeline-cards" data-tag-key="${tag.key}">
+                            ${contactsInStage.map(contact => `
+                                <div class="pipeline-card" data-contact-id="${contact.id}" style="border-left-color: ${tag.color};">
+                                    <div class="contact-name">${contact.name || 'Desconocido'}</div>
+                                    <p class="last-message">${contact.lastMessage || 'Sin mensajes'}</p>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            
+            // Initialize SortableJS on each column
+            document.querySelectorAll('.pipeline-cards').forEach(column => {
+                new Sortable(column, {
+                    group: 'pipeline',
+                    animation: 150,
+                    ghostClass: 'sortable-ghost',
+                    onEnd: (evt) => {
+                        const contactId = evt.item.dataset.contactId;
+                        const newTagKey = evt.to.dataset.tagKey;
+                        handleStatusChange(contactId, newTagKey);
+                    }
+                });
+            });
         }
 
         function updateCampaignRecipientCount() {
@@ -1367,9 +1438,10 @@
             }); 
         }
 
-        function handleStatusChange(newStatus) {
-            if (!state.selectedContactId || !newStatus) return;
-            db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ status: newStatus }).catch(err => { console.error("Error updating status:", err); showError("No se pudo actualizar la etiqueta."); });
+        function handleStatusChange(contactId, newStatus) {
+            const id = contactId || state.selectedContactId;
+            if (!id || !newStatus) return;
+            db.collection('contacts_whatsapp').doc(id).update({ status: newStatus }).catch(err => { console.error("Error updating status:", err); showError("No se pudo actualizar la etiqueta."); });
         }
         
         function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; renderFilePreview(); }
@@ -1441,6 +1513,8 @@
                     handleSearchContacts();
                 } else if (state.activeView === 'contacts') {
                     renderContactsView();
+                } else if (state.activeView === 'pipeline') {
+                    renderPipelineView();
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
@@ -1508,9 +1582,9 @@
             if (!reply) return;
             
             const input = document.getElementById('message-input');
-            input.value = ''; // Clear the input
+            input.value = `/${reply.shortcut}`;
             
-            handleSendMessage({ preventDefault: () => {} }); // Trigger send with the reply data
+            handleSendMessage({ preventDefault: () => {} }); 
         }
         
         function openQuickReplyModal(param = null) {
@@ -1928,6 +2002,9 @@
                 }
                 if(state.activeView === 'campanas') {
                     renderCampaignsView();
+                }
+                 if(state.activeView === 'pipeline') {
+                    renderPipelineView();
                 }
             }, error => {
                 console.error("Error al escuchar las etiquetas:", error);
