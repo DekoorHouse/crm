@@ -150,29 +150,41 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
 };
 
 
-// --- NUEVO: FUNCIÓN AVANZADA PARA ENVIAR MENSAJES DE WHATSAPP (TEXTO Y MULTIMEDIA) ---
+// --- START: FUNCIÓN MODIFICADA PARA ENVIAR MENSAJES ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
-    let messageToSaveText;
+    let messageToSaveText = text || ''; // Usar el texto si existe, si no, un string vacío.
 
-    if (text) {
-        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
-        messageToSaveText = text;
-    } else if (fileUrl && fileType) {
+    if (fileUrl && fileType) {
+        // Si hay un archivo, preparamos un mensaje multimedia.
         const type = fileType.startsWith('image/') ? 'image' : 
                      fileType.startsWith('video/') ? 'video' : 
                      fileType.startsWith('audio/') ? 'audio' : 'document';
         
-        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: { link: fileUrl } };
-        
-        if (type === 'image') messageToSaveText = '📷 Imagen';
-        else if (type === 'video') messageToSaveText = '🎥 Video';
-        else if (type === 'audio') messageToSaveText = '🎵 Audio';
-        else messageToSaveText = '📄 Documento';
+        const mediaObject = { link: fileUrl };
+        // Si también hay texto, lo añadimos como 'caption' (pie de foto/video).
+        if (text) {
+            mediaObject.caption = text;
+        }
 
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
+        
+        // Si no había texto para el caption, ponemos un texto por defecto para la base de datos.
+        if (!text) {
+             if (type === 'image') messageToSaveText = '📷 Imagen';
+             else if (type === 'video') messageToSaveText = '🎥 Video';
+             else if (type === 'audio') messageToSaveText = '🎵 Audio';
+             else messageToSaveText = '📄 Documento';
+        }
+
+    } else if (text) {
+        // Si solo hay texto, preparamos un mensaje de texto simple.
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
     } else {
+        // Si no hay ni texto ni archivo, es un error.
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
 
@@ -180,7 +192,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
         const response = await axios.post(url, messagePayload, { headers });
         const messageId = response.data.messages[0].id;
         
-        // Devuelve los datos necesarios para guardar el mensaje en Firestore
+        // Devolvemos los datos formateados para guardarlos en Firestore.
         return {
             id: messageId,
             textForDb: messageToSaveText,
@@ -192,6 +204,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
         throw error;
     }
 }
+// --- END: FUNCIÓN MODIFICADA PARA ENVIAR MENSAJES ---
 
 
 // --- FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
