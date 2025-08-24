@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS Y MULTIMEDIA
 
 require('dotenv').config();
 const express = require('express');
@@ -61,10 +61,7 @@ Te responderemos tan pronto como regresemos.
 🙏 ¡Gracias por tu paciencia!`;
 
 // --- CONFIGURACIÓN DE MENSAJES DE BIENVENIDA ---
-// UPDATED: Improved default welcome message
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
-// DELETED: Hardcoded campaign messages are now managed in Firestore
-// const CAMPAIGN_WELCOME_MESSAGES = { ... };
 
 
 // --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
@@ -153,19 +150,49 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
 };
 
 
-// --- FUNCIÓN AUXILIAR PARA ENVIAR MENSAJES DE WHATSAPP ---
-async function sendWhatsAppMessage(to, text) {
+// --- NUEVO: FUNCIÓN AVANZADA PARA ENVIAR MENSAJES DE WHATSAPP (TEXTO Y MULTIMEDIA) ---
+async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    const payload = { messaging_product: 'whatsapp', to: to, type: 'text', text: { body: text } };
+    let messagePayload;
+    let messageToSaveText;
+
+    if (text) {
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
+    } else if (fileUrl && fileType) {
+        const type = fileType.startsWith('image/') ? 'image' : 
+                     fileType.startsWith('video/') ? 'video' : 
+                     fileType.startsWith('audio/') ? 'audio' : 'document';
+        
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: { link: fileUrl } };
+        
+        if (type === 'image') messageToSaveText = '📷 Imagen';
+        else if (type === 'video') messageToSaveText = '🎥 Video';
+        else if (type === 'audio') messageToSaveText = '🎵 Audio';
+        else messageToSaveText = '📄 Documento';
+
+    } else {
+        throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
+    }
+
     try {
-        const response = await axios.post(url, payload, { headers });
-        return response.data.messages[0].id;
+        const response = await axios.post(url, messagePayload, { headers });
+        const messageId = response.data.messages[0].id;
+        
+        // Devuelve los datos necesarios para guardar el mensaje en Firestore
+        return {
+            id: messageId,
+            textForDb: messageToSaveText,
+            fileUrlForDb: fileUrl || null,
+            fileTypeForDb: fileType || null
+        };
     } catch (error) {
-        console.error(`Error al enviar mensaje de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
     }
 }
+
 
 // --- FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
 async function downloadAndUploadImage(mediaId, from) {
@@ -232,22 +259,44 @@ app.post('/webhook', async (req, res) => {
             const isNewContact = !contactDoc.exists;
 
             if (isNewContact) {
-                let welcomeMessage = GENERAL_WELCOME_MESSAGE;
-                // NEW LOGIC: Check for ad-specific message in Firestore
+                let messageToSend = { text: GENERAL_WELCOME_MESSAGE }; // Objeto de mensaje por defecto
+
+                // LÓGICA ACTUALIZADA: Revisa si hay un mensaje de anuncio (con posible multimedia)
                 if (message.referral?.source_type === 'ad') {
                     const adId = message.referral.source_id;
                     const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
                     const adResponseSnapshot = await adResponseRef.get();
+                    
                     if (!adResponseSnapshot.empty) {
-                        welcomeMessage = adResponseSnapshot.docs[0].data().message;
-                        console.log(`Mensaje de bienvenida encontrado para el Ad ID: ${adId}`);
+                        const adResponseData = adResponseSnapshot.docs[0].data();
+                        messageToSend = {
+                            text: adResponseData.message,
+                            fileUrl: adResponseData.fileUrl,
+                            fileType: adResponseData.fileType
+                        };
+                        console.log(`Mensaje de bienvenida (con posible multimedia) encontrado para el Ad ID: ${adId}`);
                     } else {
                         console.log(`No se encontró mensaje de bienvenida para el Ad ID: ${adId}. Usando mensaje general.`);
                     }
                 }
+                
                 try {
-                    const messageId = await sendWhatsAppMessage(from, welcomeMessage);
-                    await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: welcomeMessage });
+                    // Usa la nueva función de envío avanzada
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, messageToSend);
+                    
+                    const messageToSave = {
+                        from: PHONE_NUMBER_ID,
+                        status: 'sent',
+                        timestamp,
+                        id: sentMessageData.id,
+                        text: sentMessageData.textForDb,
+                        fileUrl: sentMessageData.fileUrlForDb,
+                        fileType: sentMessageData.fileTypeForDb
+                    };
+                    
+                    Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+
+                    await contactRef.collection('messages').add(messageToSave);
                     console.log(`Mensaje de bienvenida enviado a ${from}.`);
                 } catch (error) {
                     console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
@@ -259,8 +308,8 @@ app.post('/webhook', async (req, res) => {
 
                 if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
                     try {
-                        const messageId = await sendWhatsAppMessage(from, AWAY_MESSAGE);
-                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: AWAY_MESSAGE });
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
+                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: sentMessageData.id, text: AWAY_MESSAGE });
                         await contactRef.set({ lastAwayMessageSent: timestamp, lastMessage: AWAY_MESSAGE, lastMessageTimestamp: timestamp }, { merge: true });
                         console.log(`Mensaje de ausencia enviado a ${from}.`);
                     } catch (error) {
@@ -380,22 +429,39 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     let messagePayload, messageToSaveText;
 
     try {
-        if (text) {
-            messagePayload = { messaging_product: 'whatsapp', to: contactId, type: 'text', text: { body: text } };
-            messageToSaveText = text;
-        } else if (fileUrl && fileType) {
-            const type = fileType.startsWith('image/') ? 'image' : 'video';
-            messagePayload = { messaging_product: 'whatsapp', to: contactId, type, [type]: { link: fileUrl } };
-            messageToSaveText = type === 'image' ? '📷 Imagen' : '🎥 Video';
-        } else if (template) {
+        if (template) {
             const { payload, messageToSaveText: TplText } = await buildTemplatePayload(contactId, template);
             messagePayload = payload;
             messageToSaveText = TplText;
         } else {
-             return res.status(400).json({ success: false, message: 'Formato de mensaje no válido.' });
+            // Reutiliza la lógica de la función avanzada para mensajes manuales
+            const messageContent = { text, fileUrl, fileType };
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, messageContent);
+            
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            let messageToSave = { 
+                from: PHONE_NUMBER_ID, 
+                status: 'sent', 
+                timestamp, 
+                id: sentMessageData.id, 
+                text: sentMessageData.textForDb,
+                fileUrl: sentMessageData.fileUrlForDb,
+                fileType: sentMessageData.fileTypeForDb
+            };
+            
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
+            
+            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+            
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: timestamp, unreadCount: 0 });
+
+            return res.status(200).json({ success: true, message: 'Mensaje enviado.' });
         }
 
-        if (reply_to_wamid && !template) messagePayload.context = { message_id: reply_to_wamid };
+        // Lógica para plantillas
+        if (reply_to_wamid) messagePayload.context = { message_id: reply_to_wamid };
 
         const response = await axios.post(url, messagePayload, { headers });
         const messageId = response.data.messages[0].id;
@@ -403,9 +469,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         const timestamp = admin.firestore.FieldValue.serverTimestamp();
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         let messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText };
-        
-        if (fileUrl) { messageToSave.fileUrl = fileUrl; messageToSave.fileType = fileType; }
-        if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
         
         await contactRef.collection('messages').add(messageToSave);
         await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
@@ -416,6 +479,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
+
 
 // --- ENDPOINT PARA CAMPAÑAS ---
 app.post('/api/campaigns/send-template', async (req, res) => {
@@ -591,29 +655,69 @@ app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la nota.' }); }
 });
 
-// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
+// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS (CON SOPORTE MULTIMEDIA) ---
 app.post('/api/quick-replies', async (req, res) => {
-    const { shortcut, message } = req.body;
-    if (!shortcut || !message) return res.status(400).json({ success: false, message: 'El atajo y el mensaje son obligatorios.' });
+    const { shortcut, message, fileUrl, fileType } = req.body;
+    if (!shortcut || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'El atajo y un mensaje de texto o un archivo multimedia son obligatorios.' });
+    }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
+    }
+
     try {
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-        if (!existing.empty) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
-        const newReply = await db.collection('quick_replies').add({ shortcut, message });
-        res.status(201).json({ success: true, id: newReply.id });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+        if (!existing.empty) {
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
+        }
+        
+        const replyData = { 
+            shortcut, 
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null 
+        };
+
+        const newReply = await db.collection('quick_replies').add(replyData);
+        res.status(201).json({ success: true, id: newReply.id, data: replyData });
+    } catch (error) { 
+        console.error("Error creating quick reply:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la respuesta rápida.' }); 
+    }
 });
 
 app.put('/api/quick-replies/:id', async (req, res) => {
     const { id } = req.params;
-    const { shortcut, message } = req.body;
-    if (!shortcut || !message) return res.status(400).json({ success: false, message: 'El atajo y el mensaje son obligatorios.' });
+    const { shortcut, message, fileUrl, fileType } = req.body;
+
+    if (!shortcut || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'El atajo y un mensaje de texto o un archivo multimedia son obligatorios.' });
+    }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
+    }
+
     try {
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-        if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
-        await db.collection('quick_replies').doc(id).update({ shortcut, message });
+        if (!existing.empty && existing.docs[0].id !== id) {
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
+        }
+
+        const updateData = {
+            shortcut,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+
+        await db.collection('quick_replies').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Respuesta rápida actualizada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) { 
+        console.error("Error updating quick reply:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la respuesta rápida.' }); 
+    }
 });
+
 
 app.delete('/api/quick-replies/:id', async (req, res) => {
     const { id } = req.params;
@@ -661,16 +765,32 @@ app.delete('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' }); }
 });
 
-// --- NEW: ENDPOINTS FOR AD RESPONSES ---
+// --- ENDPOINTS PARA RESPUESTAS DE ANUNCIOS (CON SOPORTE MULTIMEDIA) ---
 app.post('/api/ad-responses', async (req, res) => {
-    const { adName, adId, message } = req.body;
-    if (!adName || !adId || !message) return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
+    const { adName, adId, message, fileUrl, fileType } = req.body;
+    if (!adName || !adId || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID del anuncio y un mensaje de texto o archivo multimedia son obligatorios.' });
+    }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
+    }
+
     try {
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty) return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya tiene un mensaje configurado.` });
+        if (!existing.empty) {
+            return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya tiene un mensaje configurado.` });
+        }
         
-        const newResponse = await db.collection('ad_responses').add({ adName, adId, message });
-        res.status(201).json({ success: true, id: newResponse.id });
+        const responseData = {
+            adName,
+            adId,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+
+        const newResponse = await db.collection('ad_responses').add(responseData);
+        res.status(201).json({ success: true, id: newResponse.id, data: responseData });
     } catch (error) {
         console.error("Error creating ad response:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje.' });
@@ -679,20 +799,35 @@ app.post('/api/ad-responses', async (req, res) => {
 
 app.put('/api/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
-    const { adName, adId, message } = req.body;
-    if (!adName || !adId || !message) return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
+    const { adName, adId, message, fileUrl, fileType } = req.body;
+    if (!adName || !adId || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID del anuncio y un mensaje de texto o archivo multimedia son obligatorios.' });
+    }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
+    }
     try {
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
         if (!existing.empty && existing.docs[0].id !== id) {
             return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya está en uso.` });
         }
-        await db.collection('ad_responses').doc(id).update({ adName, adId, message });
+        
+        const updateData = {
+            adName,
+            adId,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+
+        await db.collection('ad_responses').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
     } catch (error) {
         console.error("Error updating ad response:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
     }
 });
+
 
 app.delete('/api/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
