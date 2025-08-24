@@ -658,6 +658,31 @@
         }
         // --- END: FUNCIÓN AUXILIAR PARA FORMATEAR TEXTO ---
 
+        // --- NUEVA FUNCIÓN PARA COPIAR CON FORMATO ---
+        function copyFormattedText(text, buttonElement) {
+            const formattedHtml = formatWhatsAppText(text).replace(/<br>/g, '\n');
+            const plainText = formattedHtml.replace(/<[^>]+>/g, '');
+
+            // Crear un elemento temporal para copiar el HTML
+            const listener = (e) => {
+                e.preventDefault();
+                e.clipboardData.setData('text/html', formattedHtml);
+                e.clipboardData.setData('text/plain', plainText);
+            };
+
+            document.addEventListener('copy', listener);
+            document.execCommand('copy');
+            document.removeEventListener('copy', listener);
+            
+            const originalIconHTML = buttonElement.innerHTML;
+            buttonElement.innerHTML = '<i class="fas fa-check text-green-500"></i>';
+            buttonElement.disabled = true;
+            setTimeout(() => {
+                buttonElement.innerHTML = originalIconHTML;
+                buttonElement.disabled = false;
+            }, 1500);
+        }
+
         // --- PLANTILLAS DE VISTAS ---
 
         const ChatViewTemplate = () => `
@@ -958,6 +983,8 @@
                 <div class="message-actions">
                     <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
                     <button class="message-action-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')" title="Reaccionar"><i class="far fa-thumbs-up"></i></button>
+                    <!-- NUEVO BOTÓN PARA COPIAR -->
+                    <button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>
                 </div>
             `;
 
