@@ -315,8 +315,7 @@ app.post('/webhook', async (req, res) => {
             if (contactData.botActive) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
                 try {
-                    // **NEW:** Simulate a human-like delay before responding
-                    const randomDelay = Math.floor(Math.random() * 3000) + 2000; // Delay between 2 to 5 seconds
+                    const randomDelay = Math.floor(Math.random() * 3000) + 2000;
                     const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
                     await delay(randomDelay);
 
@@ -328,8 +327,23 @@ app.post('/webhook', async (req, res) => {
                         const d = doc.data();
                         return `${d.from === from ? 'Cliente' : 'Asistente'}: ${d.text}`;
                     }).reverse().join('\n');
+                    
+                    // **NEW:** Fetch ad context if it exists
+                    let adContext = '';
+                    const finalContactData = (await contactRef.get()).data(); // Get the most recent contact data
+                    if (finalContactData.adReferral && finalContactData.adReferral.source_id) {
+                        const adResponseRef = db.collection('ad_responses').where('adId', '==', finalContactData.adReferral.source_id).limit(1);
+                        const adResponseSnapshot = await adResponseRef.get();
+                        if (!adResponseSnapshot.empty) {
+                            const adResponseData = adResponseSnapshot.docs[0].data();
+                            if (adResponseData.message) {
+                                adContext = `--- Información Clave de la Campaña (Contexto Inicial) ---\n${adResponseData.message}\n\n`;
+                                console.log(`🤖 Added ad context for Ad ID: ${finalContactData.adReferral.source_id}`);
+                            }
+                        }
+                    }
 
-                    const prompt = `${botInstructions}\n\n--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+                    const prompt = `${botInstructions}\n\n${adContext}--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
                     
                     const generatedText = await generateGeminiResponse(prompt);
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: generatedText });
