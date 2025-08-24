@@ -233,6 +233,15 @@
         #login-error-message { margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; }
         /* --- END: Login Styles --- */
 
+        /* --- START: Bot View Styles --- */
+        .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
+        .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--color-primary); }
+        input:checked + .slider:before { transform: translateX(22px); }
+        /* --- END: Bot View Styles --- */
+
     </style>
 </head>
 <body class="antialiased">
@@ -304,6 +313,10 @@
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
                     </a>
+                    <a onclick="navigateTo('bot')" data-view="bot" class="nav-item">
+                        <i class="fas fa-robot"></i>
+                        <span class="sidebar-text">Bot</span>
+                    </a>
                 </nav>
                 <div class="mt-auto">
                      <a id="logout-button" class="nav-item">
@@ -325,7 +338,7 @@
         </div>
     </div>
 
-    <!-- UPDATED QUICK REPLY MODAL -->
+    <!-- QUICK REPLY MODAL -->
     <div id="quick-reply-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="quick-reply-modal-title">Añadir Respuesta Rápida</h2>
@@ -357,7 +370,7 @@
         </div>
     </div>
 
-    <!-- UPDATED AD RESPONSE MODAL -->
+    <!-- AD RESPONSE MODAL -->
     <div id="ad-response-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
@@ -393,7 +406,7 @@
         </div>
     </div>
 
-
+    <!-- EDIT CONTACT MODAL -->
     <div id="edit-contact-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="edit-contact-modal-title">Editar Contacto</h2>
@@ -419,6 +432,7 @@
         </div>
     </div>
     
+    <!-- TAG MODAL -->
     <div id="tag-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="tag-modal-title">Nueva Etiqueta</h2>
@@ -443,6 +457,24 @@
             </form>
         </div>
     </div>
+
+    <!-- BOT SETTINGS MODAL -->
+    <div id="bot-settings-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="bot-settings-modal-title">Ajustes del Bot</h2>
+            <form id="bot-settings-form">
+                <div>
+                    <label for="bot-instructions">Instrucciones para Gemini</label>
+                    <textarea id="bot-instructions" rows="8" class="!mb-4" placeholder="Ej: Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes."></textarea>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeBotSettingsModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar Instrucciones</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
 
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
@@ -482,6 +514,7 @@
             adResponses: [],
             templates: [],
             tags: [],
+            botSettings: { instructions: '' },
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
@@ -707,6 +740,25 @@
                         </tr>
                     </thead>
                     <tbody id="quick-replies-table-body"></tbody>
+                </table>
+            </div>
+        `;
+
+        const BotViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Control del Bot</h1>
+                    <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-cog mr-2"></i>Ajustes</button>
+                </div>
+                <p class="mb-6 text-gray-600">Activa o desactiva el bot de respuesta automática para cada conversación. El bot utilizará las instrucciones guardadas en los ajustes.</p>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Contacto</th>
+                            <th>Bot Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody id="bot-contacts-table-body"></tbody>
                 </table>
             </div>
         `;
@@ -1002,6 +1054,7 @@
             listenForTags();
             listenForAdResponses();
             fetchTemplates();
+            fetchBotSettings();
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1013,7 +1066,7 @@
             if (unsubscribeTagsListener) unsubscribeTagsListener();
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], botSettings: { instructions: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1054,6 +1107,10 @@
                 case 'respuestas-rapidas':
                     mainViewContainer.innerHTML = QuickRepliesViewTemplate();
                     renderQuickRepliesView();
+                    break;
+                case 'bot':
+                    mainViewContainer.innerHTML = BotViewTemplate();
+                    renderBotView();
                     break;
                 default:
                     mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
@@ -1249,6 +1306,24 @@
                     }
                 });
             });
+        }
+
+        function renderBotView() {
+            if (state.activeView !== 'bot') return;
+            const tableBody = document.getElementById('bot-contacts-table-body');
+            if (!tableBody) return;
+
+            tableBody.innerHTML = state.contacts.map(contact => `
+                <tr>
+                    <td class="font-semibold">${contact.name || contact.id}</td>
+                    <td>
+                        <label class="toggle-switch">
+                            <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive ? 'checked' : ''}>
+                            <span class="slider"></span>
+                        </label>
+                    </td>
+                </tr>
+            `).join('');
         }
 
         function updateCampaignRecipientCount() {
@@ -1547,6 +1622,8 @@
                     renderContactsView();
                 } else if (state.activeView === 'pipeline') {
                     renderPipelineView();
+                } else if (state.activeView === 'bot') {
+                    renderBotView();
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
@@ -2330,6 +2407,66 @@
                 submitButton.disabled = false;
             }
         }
+
+        // --- START: Bot Functions ---
+        function openBotSettingsModal() {
+            const modal = document.getElementById('bot-settings-modal');
+            const form = document.getElementById('bot-settings-form');
+            document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
+            modal.classList.remove('hidden');
+            form.onsubmit = handleSaveBotSettings;
+        }
+
+        function closeBotSettingsModal() {
+            document.getElementById('bot-settings-modal').classList.add('hidden');
+        }
+
+        async function fetchBotSettings() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/bot/settings`);
+                const data = await response.json();
+                if (data.success) {
+                    state.botSettings = data.settings;
+                }
+            } catch (error) {
+                console.error("Error fetching bot settings:", error);
+            }
+        }
+
+        async function handleSaveBotSettings(event) {
+            event.preventDefault();
+            const instructions = document.getElementById('bot-instructions').value;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/bot/settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ instructions })
+                });
+                if (!response.ok) throw new Error('Failed to save settings.');
+                state.botSettings.instructions = instructions;
+                closeBotSettingsModal();
+            } catch (error) {
+                showError("No se pudieron guardar los ajustes del bot.");
+            }
+        }
+
+        async function handleBotToggle(contactId, isActive) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/bot/toggle`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contactId, isActive })
+                });
+                if (!response.ok) throw new Error('Failed to update bot status.');
+                // The listener will update the UI automatically
+            } catch (error) {
+                showError("No se pudo cambiar el estado del bot.");
+                // Revert the toggle on failure
+                const toggle = document.querySelector(`input[onchange="handleBotToggle('${contactId}', this.checked)"]`);
+                if(toggle) toggle.checked = !isActive;
+            }
+        }
+        // --- END: Bot Functions ---
 
     </script>
 </body>
