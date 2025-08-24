@@ -14,7 +14,7 @@ const path = require('path');
 const serviceAccount = require('./serviceAccountKey.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'pedidos-con-gemini.appspot.com'
+  storageBucket: 'pedidos-con-gemini.firebasestorage.app' // <-- ¡CORREGIDO!
 });
 
 const db = admin.firestore();
