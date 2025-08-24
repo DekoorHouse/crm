@@ -729,10 +729,11 @@ app.delete('/api/quick-replies/:id', async (req, res) => {
 
 // --- ENDPOINTS PARA ETIQUETAS ---
 app.post('/api/tags', async (req, res) => {
-    const { label, color, key } = req.body;
-    if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
+    // MODIFIED: Accept 'order' field
+    const { label, color, key, order } = req.body;
+    if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
-        await db.collection('crm_tags').add({ label, color, key });
+        await db.collection('crm_tags').add({ label, color, key, order });
         res.status(201).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
 });
@@ -742,10 +743,32 @@ app.put('/api/tags/:id', async (req, res) => {
     const { label, color, key } = req.body;
     if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
+        // Note: We don't update 'order' here, it's handled by a separate endpoint
         await db.collection('crm_tags').doc(id).update({ label, color, key });
         res.status(200).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
 });
+
+// --- NEW ENDPOINT TO HANDLE TAG REORDERING ---
+app.put('/api/tags/order', async (req, res) => {
+    const { orderedIds } = req.body;
+    if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ success: false, message: 'Se esperaba un array de IDs.' });
+    }
+    try {
+        const batch = db.batch();
+        orderedIds.forEach((id, index) => {
+            const tagRef = db.collection('crm_tags').doc(id);
+            batch.update(tagRef, { order: index });
+        });
+        await batch.commit();
+        res.status(200).json({ success: true, message: 'Orden de etiquetas actualizado.' });
+    } catch (error) {
+        console.error("Error updating tag order:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el orden.' });
+    }
+});
+
 
 app.delete('/api/tags/:id', async (req, res) => {
     const { id } = req.params;
