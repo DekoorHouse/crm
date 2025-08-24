@@ -941,8 +941,13 @@ async function generateGeminiResponse(prompt) {
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     
     const result = await geminiResponse.json();
-    const generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
+    // **FIX:** Remove "Asistente:" prefix if present
+    if (generatedText.startsWith('Asistente:')) {
+        generatedText = generatedText.substring('Asistente:'.length).trim();
+    }
     
     return generatedText;
 }
