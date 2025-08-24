@@ -212,12 +212,13 @@
         /* --- END: Drag and Drop Styles --- */
         
         /* --- START: Pipeline Styles --- */
-        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; overflow-x: auto; height: 100%; align-items: flex-start; }
+        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; /* Added extra padding */ overflow-x: auto; height: 100%; align-items: flex-start; }
         .pipeline-column { flex: 0 0 300px; width: 300px; background-color: #f1f2f4; border-radius: var(--border-radius-lg); display: flex; flex-direction: column; max-height: 100%; }
         .pipeline-header { padding: 1rem; font-weight: 600; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
         .pipeline-header .tag-color-swatch { flex-shrink: 0; }
         .pipeline-cards { padding: 0.5rem; overflow-y: auto; min-height: 100px; flex-grow: 1; }
-        .pipeline-card { background-color: white; border-radius: var(--border-radius-md); padding: 0.8rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: grab; border-left: 4px solid; }
+        .pipeline-card { background-color: white; border-radius: var(--border-radius-md); padding: 0.8rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer; border-left: 4px solid; transition: box-shadow 0.2s ease; }
+        .pipeline-card:hover { box-shadow: 0 4px 8px rgba(0,0,0,0.12); }
         .pipeline-card:active { cursor: grabbing; }
         .pipeline-card .contact-name { font-weight: 600; }
         .pipeline-card .last-message { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1221,7 +1222,7 @@
                             ${contactsInStage.map(contact => {
                                 const unreadBadge = contact.unreadCount > 0 ? `<span class="unread-badge">${contact.unreadCount}</span>` : '';
                                 return `
-                                <div class="pipeline-card" data-contact-id="${contact.id}" style="border-left-color: ${tag.color};">
+                                <div class="pipeline-card" data-contact-id="${contact.id}" style="border-left-color: ${tag.color};" onclick="handleSelectContactFromPipeline('${contact.id}')">
                                     <div class="flex justify-between items-start">
                                         <div class="contact-name">${contact.name || 'Desconocido'}</div>
                                         ${unreadBadge}
@@ -1283,6 +1284,14 @@
         function openImageModal(imageUrl) { const modal = document.getElementById('image-modal'); const modalImage = document.getElementById('modal-image-content'); modalImage.src = imageUrl; modal.classList.add('visible'); }
         function closeImageModal() { const modal = document.getElementById('image-modal'); modal.classList.remove('visible'); const modalImage = document.getElementById('modal-image-content'); setTimeout(() => { modalImage.src = ''; }, 300); }
         function copyToClipboard(text, buttonElement) { navigator.clipboard.writeText(text).then(() => { const originalIconHTML = buttonElement.innerHTML; buttonElement.innerHTML = '<i class="fas fa-check text-green-500"></i>'; buttonElement.disabled = true; setTimeout(() => { buttonElement.innerHTML = originalIconHTML; buttonElement.disabled = false; }, 1500); }).catch(err => { console.error('Error al copiar: ', err); alert('No se pudo copiar el número.'); }); }
+
+        function handleSelectContactFromPipeline(contactId) {
+            navigateTo('chats');
+            // A short delay ensures the UI for the chat view is ready before we try to select a contact
+            setTimeout(() => {
+                handleSelectContact(contactId);
+            }, 100);
+        }
 
         async function handleSelectContact(contactId) { 
             if (state.campaignMode) return;
