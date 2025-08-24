@@ -564,6 +564,7 @@
             botSettings: { instructions: '' },
             // START: NUEVO ESTADO PARA AJUSTES
             awayMessageSettings: { isActive: true },
+            globalBotSettings: { isActive: false }, // Nuevo estado para el bot global
             // END: NUEVO ESTADO PARA AJUSTES
             selectedContactId: null, 
             loadingMessages: false, 
@@ -820,8 +821,8 @@
                 </div>
 
                 <div>
-                    <h2 class="text-xl font-bold mb-4">Control del Bot por Contacto</h2>
-                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales.</p>
+                    <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
+                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
                     <table class="table">
                         <thead>
                             <tr>
@@ -851,6 +852,16 @@
                             </div>
                             <label class="toggle-switch">
                                 <input type="checkbox" id="away-message-toggle" onchange="handleAwayMessageToggle(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                        <div class="flex items-center justify-between border-t border-gray-200 mt-6 pt-6">
+                            <div>
+                                <h3 class="font-semibold">Bot IA Global</h3>
+                                <p class="text-sm text-gray-500">Activar la inteligencia artificial para todas las conversaciones.</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="global-bot-toggle" onchange="handleGlobalBotToggle(this.checked)">
                                 <span class="slider"></span>
                             </label>
                         </div>
@@ -1050,9 +1061,21 @@
             const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
             const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
+            // START: NUEVO BOTÓN DE IA INDIVIDUAL EN EL HEADER
+            const isBotActiveForContact = contact.botActive !== false;
+            const botToggleHTML = `
+                <button 
+                    onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})" 
+                    class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isBotActiveForContact ? 'text-green-500' : 'text-gray-400'}" 
+                    title="${isBotActiveForContact ? 'Desactivar IA para este chat' : 'Activar IA para este chat'}">
+                    <i class="fas fa-robot text-xl"></i>
+                </button>
+            `;
+            // END: NUEVO BOTÓN DE IA INDIVIDUAL EN EL HEADER
+
             return `
                 <div id="drag-drop-overlay" class="drag-overlay hidden"><div class="drag-overlay-content"><i class="fas fa-file-import text-5xl mb-4"></i><p>Suelta el archivo para adjuntarlo</p></div></div>
-                <header class="chat-header p-2 shadow-sm flex items-start space-x-2">
+                <header class="chat-header p-2 shadow-sm flex items-center space-x-2">
                     <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
                     <div class="flex-grow">
                         <h2 class="text-base font-semibold text-gray-800 cursor-pointer" onclick="openContactDetails()">${contact.name}</h2>
@@ -1061,6 +1084,9 @@
                             <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>
                         </div>
                         <div id="contact-status-wrapper" class="mt-1.5"></div>
+                    </div>
+                    <div class="flex items-center pr-2">
+                        ${botToggleHTML}
                     </div>
                 </header>
                 <div class="bg-white border-b border-gray-200 flex">
@@ -1153,7 +1179,8 @@
             listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
-            fetchAwayMessageSettings(); // <-- NUEVA FUNCIÓN
+            fetchAwayMessageSettings();
+            fetchGlobalBotSettings(); // <-- NUEVA FUNCIÓN
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1166,7 +1193,7 @@
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1447,9 +1474,13 @@
         // START: NUEVA FUNCIÓN PARA RENDERIZAR LA VISTA DE AJUSTES
         function renderAjustesView() {
             if (state.activeView !== 'ajustes') return;
-            const toggle = document.getElementById('away-message-toggle');
-            if (toggle) {
-                toggle.checked = state.awayMessageSettings.isActive;
+            const awayToggle = document.getElementById('away-message-toggle');
+            if (awayToggle) {
+                awayToggle.checked = state.awayMessageSettings.isActive;
+            }
+            const botToggle = document.getElementById('global-bot-toggle');
+            if (botToggle) {
+                botToggle.checked = state.globalBotSettings.isActive;
             }
         }
         // END: NUEVA FUNCIÓN PARA RENDERIZAR LA VISTA DE AJUSTES
@@ -2690,7 +2721,7 @@
         }
         // --- END: Bot & Knowledge Base Functions ---
 
-        // --- START: NUEVAS FUNCIONES PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
+        // --- START: NUEVAS FUNCIONES PARA AJUSTES ---
         async function fetchAwayMessageSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
@@ -2713,15 +2744,42 @@
                 });
                 if (!response.ok) throw new Error('No se pudo guardar el ajuste.');
                 state.awayMessageSettings.isActive = isActive;
-                // Opcional: mostrar una pequeña notificación de éxito
             } catch (error) {
                 showError(error.message);
-                // Revertir el toggle si falla el guardado
                 const toggle = document.getElementById('away-message-toggle');
                 if (toggle) toggle.checked = !isActive;
             }
         }
-        // --- END: NUEVAS FUNCIONES PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
+
+        async function fetchGlobalBotSettings() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/settings/global-bot`);
+                const data = await response.json();
+                if (data.success) {
+                    state.globalBotSettings.isActive = data.settings.isActive;
+                }
+            } catch (error) {
+                console.error("Error fetching global bot settings:", error);
+                showError("No se pudo cargar la configuración del bot global.");
+            }
+        }
+
+        async function handleGlobalBotToggle(isActive) {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/settings/global-bot`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ isActive })
+                });
+                if (!response.ok) throw new Error('No se pudo guardar el ajuste del bot global.');
+                state.globalBotSettings.isActive = isActive;
+            } catch (error) {
+                showError(error.message);
+                const toggle = document.getElementById('global-bot-toggle');
+                if (toggle) toggle.checked = !isActive;
+            }
+        }
+        // --- END: NUEVAS FUNCIONES PARA AJUSTES ---
 
     </script>
 </body>
