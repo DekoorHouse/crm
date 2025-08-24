@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON CAMBIO PARA EVITAR ERROR (NO RECOMENDADO)
+// index.js - VERSIÓN FINAL CORREGIDA CON CTWA_CLID Y FBC
 
 require('dotenv').config();
 const express = require('express');
@@ -98,7 +98,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (MODIFICADA) ---
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA) ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
@@ -124,17 +124,18 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // El ID de la cuenta de WhatsApp Business ya no es necesario si cambiamos el action_source
-    // if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
-    //     userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
-    // }
+    // ✅ IMPORTANTE: Agregar el WhatsApp Business Account ID (requerido por Meta)
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
 
+    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
 
     if (isAdReferral) {
-        // Para eventos web, sí podemos usar fbc y fbp si los tuviéramos.
-        // ctwa_clid sigue siendo útil para la atribución.
         userData.ctwa_clid = referralInfo.ctwa_clid;
+        // ❌ NO incluir fbc para eventos de WhatsApp - Meta no lo acepta con business_messaging
+        // El fbc solo es para eventos web/Facebook, no para WhatsApp
     }
 
     const finalCustomData = {
@@ -144,6 +145,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         ...customData
     };
 
+    // Limpia cualquier clave 'undefined' que se haya añadido
     Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
     const payload = {
@@ -151,23 +153,9 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_name: eventName,
             event_time: eventTime,
             event_id: eventId,
-            // =================================================================
-            // INICIO DEL CAMBIO (NO RECOMENDADO)
-            // =================================================================
-            // Cambiamos 'business_messaging' por 'website'.
-            // Esto solucionará el error de la API, pero hará que tus eventos
-            // se atribuyan a "sitio web" en lugar de a "meta" o "mensajería".
-            // Usa esto solo como último recurso si no puedes conectar los activos
-            // en el Business Manager.
-            action_source: 'website', 
-            
-            // Al cambiar a 'website', los siguientes campos ya no son necesarios
-            // y podrían causar conflictos. Es mejor comentarlos.
-            // messaging_channel: 'whatsapp', 
-            // =================================================================
-            // FIN DEL CAMBIO
-            // =================================================================
-            user_data: userData,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp', 
+            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
             custom_data: finalCustomData,
         }],
     };
@@ -295,15 +283,19 @@ app.post('/webhook', async (req, res) => {
 
             let contactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
             
+            // ✅ CORRECCIÓN: Guardar ctwa_clid correctamente desde message.referral
             if (isNewContact && message.referral?.source_type === 'ad') {
                 contactData.adReferral = { 
                     source_id: message.referral.source_id ?? null, 
                     headline: message.referral.headline ?? null, 
                     source_type: message.referral.source_type ?? null, 
                     source_url: message.referral.source_url ?? null,
-                    ctwa_clid: message.referral.ctwa_clid ?? null,
+                    // NO guardamos fbc - Meta no lo acepta para WhatsApp Business
+                    ctwa_clid: message.referral.ctwa_clid ?? null,  // ✅ Solo necesitamos ctwa_clid
                     receivedAt: timestamp 
                 };
+                
+                // DEBUG: Para ver qué está llegando
                 console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
             }
 
