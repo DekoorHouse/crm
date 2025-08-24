@@ -1,4 +1,4 @@
-// index.js - VERSIÓN FINAL CORREGIDA CON CTWA_CLID Y FBC
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS
 
 require('dotenv').config();
 const express = require('express');
@@ -61,23 +61,10 @@ Te responderemos tan pronto como regresemos.
 🙏 ¡Gracias por tu paciencia!`;
 
 // --- CONFIGURACIÓN DE MENSAJES DE BIENVENIDA ---
-const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte con nosotros. ¿En qué podemos ayudarte hoy?';
-const CAMPAIGN_WELCOME_MESSAGES = {
-    "120229247610060637": `¡Hola! 👋 El Envío Gratis está a punto de terminar. ¡No te lo pierdas! 🔥
-
-Por solo $650 pesos, obtienes:
-
-🚀 *Envío GRATIS en todo México*
-🏡 *Entrega a domicilio segura*
-🔒 *Garantía de durabilidad*
-📝 *Más de 500 referencias en Facebook* ✅❤️
-💰 *Pago en Oxxo o por transferencia*
-
-✨ El regalo que le recordará tu amor todos los días ✨
-📷 *SIN ANTICIPO* paga hasta que este terminado antes de enviar
-
-*¿Qué nombres quieres que lleve la suya?* 😃`,
-};
+// UPDATED: Improved default welcome message
+const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
+// DELETED: Hardcoded campaign messages are now managed in Firestore
+// const CAMPAIGN_WELCOME_MESSAGES = { ... };
 
 
 // --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
@@ -98,7 +85,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA FINAL) ---
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN ---
 const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
@@ -109,7 +96,6 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
-    // ✅ CORRECCIÓN: La URL debe estar limpia, sin parámetros de consulta.
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
@@ -154,15 +140,10 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             user_data: userData,
             custom_data: finalCustomData,
         }],
-        // --- CAMBIO REALIZADO ---
-        // La siguiente línea ha sido comentada para enviar eventos en modo de PRODUCCIÓN.
-        // Descoméntala para volver al modo de PRUEBA.
-        // test_event_code: 'TEST16433' 
     };
 
     try {
         console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
-        // Se hace el POST a la URL limpia con el payload.
         await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
         console.log(`✅ Evento '${eventName}' enviado a Meta.`);
     } catch (error) {
@@ -186,7 +167,7 @@ async function sendWhatsAppMessage(to, text) {
     }
 }
 
-// --- NUEVA FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
+// --- FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
 async function downloadAndUploadImage(mediaId, from) {
     try {
         const mediaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
@@ -252,10 +233,16 @@ app.post('/webhook', async (req, res) => {
 
             if (isNewContact) {
                 let welcomeMessage = GENERAL_WELCOME_MESSAGE;
+                // NEW LOGIC: Check for ad-specific message in Firestore
                 if (message.referral?.source_type === 'ad') {
                     const adId = message.referral.source_id;
-                    if (CAMPAIGN_WELCOME_MESSAGES[adId]) {
-                        welcomeMessage = CAMPAIGN_WELCOME_MESSAGES[adId];
+                    const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
+                    const adResponseSnapshot = await adResponseRef.get();
+                    if (!adResponseSnapshot.empty) {
+                        welcomeMessage = adResponseSnapshot.docs[0].data().message;
+                        console.log(`Mensaje de bienvenida encontrado para el Ad ID: ${adId}`);
+                    } else {
+                        console.log(`No se encontró mensaje de bienvenida para el Ad ID: ${adId}. Usando mensaje general.`);
                     }
                 }
                 try {
@@ -673,6 +660,51 @@ app.delete('/api/tags', async (req, res) => {
         res.status(200).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' }); }
 });
+
+// --- NEW: ENDPOINTS FOR AD RESPONSES ---
+app.post('/api/ad-responses', async (req, res) => {
+    const { adName, adId, message } = req.body;
+    if (!adName || !adId || !message) return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
+    try {
+        const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+        if (!existing.empty) return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya tiene un mensaje configurado.` });
+        
+        const newResponse = await db.collection('ad_responses').add({ adName, adId, message });
+        res.status(201).json({ success: true, id: newResponse.id });
+    } catch (error) {
+        console.error("Error creating ad response:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje.' });
+    }
+});
+
+app.put('/api/ad-responses/:id', async (req, res) => {
+    const { id } = req.params;
+    const { adName, adId, message } = req.body;
+    if (!adName || !adId || !message) return res.status(400).json({ success: false, message: 'Todos los campos son obligatorios.' });
+    try {
+        const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+        if (!existing.empty && existing.docs[0].id !== id) {
+            return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya está en uso.` });
+        }
+        await db.collection('ad_responses').doc(id).update({ adName, adId, message });
+        res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
+    } catch (error) {
+        console.error("Error updating ad response:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
+    }
+});
+
+app.delete('/api/ad-responses/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('ad_responses').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Mensaje de anuncio eliminado.' });
+    } catch (error) {
+        console.error("Error deleting ad response:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar.' });
+    }
+});
+
 
 // --- ENDPOINT PARA BOT DE IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
