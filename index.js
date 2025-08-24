@@ -311,8 +311,16 @@ app.post('/webhook', async (req, res) => {
             console.log(`Mensaje (${message.type}) de ${from} guardado.`);
             // --- END: SAVE INCOMING MESSAGE FIRST ---
 
-            // --- START: BOT LOGIC (Now runs AFTER saving the message) ---
-            if (contactData.botActive) {
+            // --- START: BOT & AUTOMATION LOGIC ---
+            // Fetch global settings to determine bot and away message behavior
+            const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
+            const globalBotActive = generalSettingsDoc.exists ? generalSettingsDoc.data().globalBotActive : false;
+            const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive !== false : true; // Default to true
+
+            // The bot replies if the global toggle is ON and the individual contact toggle is not explicitly turned OFF.
+            const shouldBotReply = globalBotActive && (contactData.botActive !== false);
+
+            if (shouldBotReply) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
                 try {
                     const randomDelay = Math.floor(Math.random() * 3000) + 2000;
@@ -328,9 +336,8 @@ app.post('/webhook', async (req, res) => {
                         return `${d.from === from ? 'Cliente' : 'Asistente'}: ${d.text}`;
                     }).reverse().join('\n');
                     
-                    // **NEW:** Fetch ad context if it exists
                     let adContext = '';
-                    const finalContactData = (await contactRef.get()).data(); // Get the most recent contact data
+                    const finalContactData = (await contactRef.get()).data();
                     if (finalContactData.adReferral && finalContactData.adReferral.source_id) {
                         const adResponseRef = db.collection('ad_responses').where('adId', '==', finalContactData.adReferral.source_id).limit(1);
                         const adResponseSnapshot = await adResponseRef.get();
@@ -362,10 +369,9 @@ app.post('/webhook', async (req, res) => {
                     console.error(`❌ Error in bot logic for ${from}:`, error);
                 }
             }
-            // --- END: BOT LOGIC ---
 
             if (isNewContact) {
-                let messageToSend = { text: GENERAL_WELCOME_MESSAGE }; // Objeto de mensaje por defecto
+                let messageToSend = { text: GENERAL_WELCOME_MESSAGE };
 
                 if (message.referral?.source_type === 'ad') {
                     const adId = message.referral.source_id;
@@ -405,7 +411,7 @@ app.post('/webhook', async (req, res) => {
                 } catch (error) {
                     console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
                 }
-            } else if (!isWithinBusinessHours() && !contactData.botActive) { // Only send away message if bot is off
+            } else if (awayMessageActive && !isWithinBusinessHours() && !shouldBotReply) {
                 const now = new Date();
                 const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
                 const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
