@@ -14,7 +14,7 @@ const path = require('path');
 const serviceAccount = require('./serviceAccountKey.json');
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
-  storageBucket: 'pedidos-con-gemini.firebasestorage.app'
+  storageBucket: 'pedidos-con-gemini.appspot.com'
 });
 
 const db = admin.firestore();
@@ -950,6 +950,61 @@ app.post('/api/bot/toggle', async (req, res) => {
     }
 });
 // --- END: BOT ENDPOINTS ---
+
+// --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
+app.post('/api/knowledge-base', async (req, res) => {
+    const { topic, answer, fileUrl, fileType } = req.body;
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    }
+    try {
+        const entryData = { 
+            topic, 
+            answer,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null 
+        };
+        const newEntry = await db.collection('ai_knowledge_base').add(entryData);
+        res.status(201).json({ success: true, id: newEntry.id, data: entryData });
+    } catch (error) { 
+        console.error("Error creating knowledge base entry:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la entrada.' }); 
+    }
+});
+
+app.put('/api/knowledge-base/:id', async (req, res) => {
+    const { id } = req.params;
+    const { topic, answer, fileUrl, fileType } = req.body;
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    }
+    try {
+        const updateData = {
+            topic,
+            answer,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+        await db.collection('ai_knowledge_base').doc(id).update(updateData);
+        res.status(200).json({ success: true, message: 'Entrada actualizada.' });
+    } catch (error) { 
+        console.error("Error updating knowledge base entry:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la entrada.' }); 
+    }
+});
+
+app.delete('/api/knowledge-base/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('ai_knowledge_base').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Entrada eliminada.' });
+    } catch (error) { 
+        console.error("Error deleting knowledge base entry:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' }); 
+    }
+});
+// --- END: KNOWLEDGE BASE ENDPOINTS ---
+
 
 // --- HELPER FUNCTION FOR GEMINI ---
 async function generateGeminiResponse(prompt) {
