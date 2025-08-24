@@ -315,6 +315,11 @@ app.post('/webhook', async (req, res) => {
             if (contactData.botActive) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
                 try {
+                    // **NEW:** Simulate a human-like delay before responding
+                    const randomDelay = Math.floor(Math.random() * 3000) + 2000; // Delay between 2 to 5 seconds
+                    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                    await delay(randomDelay);
+
                     const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
                     const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
 
