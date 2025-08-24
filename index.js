@@ -150,41 +150,29 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
 };
 
 
-// --- START: FUNCIÓN MODIFICADA PARA ENVIAR MENSAJES ---
+// --- NUEVO: FUNCIÓN AVANZADA PARA ENVIAR MENSAJES DE WHATSAPP (TEXTO Y MULTIMEDIA) ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
-    let messageToSaveText = text || ''; // Usar el texto si existe, si no, un string vacío.
+    let messageToSaveText;
 
-    if (fileUrl && fileType) {
-        // Si hay un archivo, preparamos un mensaje multimedia.
+    if (text) {
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
+    } else if (fileUrl && fileType) {
         const type = fileType.startsWith('image/') ? 'image' : 
                      fileType.startsWith('video/') ? 'video' : 
                      fileType.startsWith('audio/') ? 'audio' : 'document';
         
-        const mediaObject = { link: fileUrl };
-        // Si también hay texto, lo añadimos como 'caption' (pie de foto/video).
-        if (text) {
-            mediaObject.caption = text;
-        }
-
-        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: { link: fileUrl } };
         
-        // Si no había texto para el caption, ponemos un texto por defecto para la base de datos.
-        if (!text) {
-             if (type === 'image') messageToSaveText = '📷 Imagen';
-             else if (type === 'video') messageToSaveText = '🎥 Video';
-             else if (type === 'audio') messageToSaveText = '🎵 Audio';
-             else messageToSaveText = '📄 Documento';
-        }
+        if (type === 'image') messageToSaveText = '📷 Imagen';
+        else if (type === 'video') messageToSaveText = '🎥 Video';
+        else if (type === 'audio') messageToSaveText = '🎵 Audio';
+        else messageToSaveText = '📄 Documento';
 
-    } else if (text) {
-        // Si solo hay texto, preparamos un mensaje de texto simple.
-        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
-        messageToSaveText = text;
     } else {
-        // Si no hay ni texto ni archivo, es un error.
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
 
@@ -192,7 +180,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
         const response = await axios.post(url, messagePayload, { headers });
         const messageId = response.data.messages[0].id;
         
-        // Devolvemos los datos formateados para guardarlos en Firestore.
+        // Devuelve los datos necesarios para guardar el mensaje en Firestore
         return {
             id: messageId,
             textForDb: messageToSaveText,
@@ -204,7 +192,6 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
         throw error;
     }
 }
-// --- END: FUNCIÓN MODIFICADA PARA ENVIAR MENSAJES ---
 
 
 // --- FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
@@ -418,28 +405,21 @@ app.post('/webhook', async (req, res) => {
                 } catch (error) {
                     console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
                 }
-            } else if (!isWithinBusinessHours() && !contactData.botActive) { 
-                // START: MODIFICACIÓN PARA VERIFICAR AJUSTE EN FIRESTORE
-                const settingsDoc = await db.collection('crm_settings').doc('away_message').get();
-                const awayMessageIsActive = settingsDoc.exists ? settingsDoc.data().isActive : true; // Activado por defecto si no existe el ajuste
+            } else if (!isWithinBusinessHours() && !contactData.botActive) { // Only send away message if bot is off
+                const now = new Date();
+                const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
+                const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
-                if (awayMessageIsActive) {
-                    const now = new Date();
-                    const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
-                    const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
-
-                    if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
-                        try {
-                            const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
-                            await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
-                            await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                            console.log(`Mensaje de ausencia enviado a ${from}.`);
-                        } catch (error) {
-                            console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
-                        }
+                if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
+                    try {
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
+                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
+                        await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                        console.log(`Mensaje de ausencia enviado a ${from}.`);
+                    } catch (error) {
+                        console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
                     }
                 }
-                // END: MODIFICACIÓN PARA VERIFICAR AJUSTE EN FIRESTORE
             }
 
             if (isNewContact && newContactData.adReferral) {
@@ -937,7 +917,7 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
-// --- START: BOT ENDPOINTS ---
+// --- START: BOT & SETTINGS ENDPOINTS ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
@@ -969,7 +949,54 @@ app.post('/api/bot/toggle', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al actualizar el estado del bot.' });
     }
 });
-// --- END: BOT ENDPOINTS ---
+
+// --- START: NEW GENERAL SETTINGS ENDPOINTS ---
+app.get('/api/settings/away-message', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { isActive: true } }); // Default to active
+        }
+        res.status(200).json({ success: true, settings: { isActive: doc.data().awayMessageActive } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del mensaje de ausencia.' });
+    }
+});
+
+app.post('/api/settings/away-message', async (req, res) => {
+    const { isActive } = req.body;
+    try {
+        await db.collection('crm_settings').doc('general').set({ awayMessageActive: isActive }, { merge: true });
+        res.status(200).json({ success: true, message: 'Configuración del mensaje de ausencia guardada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
+    }
+});
+
+app.get('/api/settings/global-bot', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { isActive: false } }); // Default to inactive
+        }
+        res.status(200).json({ success: true, settings: { isActive: doc.data().globalBotActive } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot global.' });
+    }
+});
+
+app.post('/api/settings/global-bot', async (req, res) => {
+    const { isActive } = req.body;
+    try {
+        await db.collection('crm_settings').doc('general').set({ globalBotActive: isActive }, { merge: true });
+        res.status(200).json({ success: true, message: 'Configuración del bot global guardada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar el ajuste del bot global.' });
+    }
+});
+// --- END: NEW GENERAL SETTINGS ENDPOINTS ---
+
+// --- END: BOT & SETTINGS ENDPOINTS ---
 
 // --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
 app.post('/api/knowledge-base', async (req, res) => {
@@ -1024,36 +1051,6 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
     }
 });
 // --- END: KNOWLEDGE BASE ENDPOINTS ---
-
-// --- START: NUEVOS ENDPOINTS PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
-app.get('/api/settings/away-message', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('away_message').get();
-        if (!doc.exists) {
-            // Si no existe, lo devolvemos como activado por defecto
-            return res.status(200).json({ success: true, settings: { isActive: true } });
-        }
-        res.status(200).json({ success: true, settings: doc.data() });
-    } catch (error) {
-        console.error("Error getting away message settings:", error);
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración.' });
-    }
-});
-
-app.post('/api/settings/away-message', async (req, res) => {
-    const { isActive } = req.body;
-    if (typeof isActive !== 'boolean') {
-        return res.status(400).json({ success: false, message: 'El valor de "isActive" debe ser booleano.' });
-    }
-    try {
-        await db.collection('crm_settings').doc('away_message').set({ isActive });
-        res.status(200).json({ success: true, message: 'Configuración guardada.' });
-    } catch (error) {
-        console.error("Error saving away message settings:", error);
-        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
-    }
-});
-// --- END: NUEVOS ENDPOINTS PARA AJUSTES DEL MENSAJE DE AUSENCIA ---
 
 
 // --- HELPER FUNCTION FOR GEMINI ---
