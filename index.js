@@ -29,7 +29,22 @@ const bucket = getStorage().bucket();
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
-app.use(cors());
+
+// --- INICIO: CORRECCIÓN DE CORS ---
+// Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
+const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000'];
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (whitelist.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+app.use(cors(corsOptions));
+// --- FIN: CORRECCIÓN DE CORS ---
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -353,9 +368,7 @@ app.post('/webhook', async (req, res) => {
 
     if (value && value.messages && value.contacts) {
         const message = value.messages[0];
-        // --- INICIO: AÑADIDO LOG DE DEPURACIÓN ADICIONAL ---
         console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
-        // --- FIN: AÑADIDO LOG DE DEPURACIÓN ADICIONAL ---
         const contactInfo = value.contacts[0];
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
