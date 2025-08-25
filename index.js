@@ -4,7 +4,7 @@ require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
 const { getStorage } = require('firebase-admin/storage');
-const { google } = require('googleapis'); // <-- AÑADIDO: Librería de Google
+const { google } = require('googleapis');
 const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
@@ -12,7 +12,9 @@ const fetch = require('node-fetch');
 const path = require('path');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-const serviceAccount = require('./serviceAccountKey.json');
+// Lee las credenciales desde una variable de entorno en lugar de un archivo JSON
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
   storageBucket: 'pedidos-con-gemini.firebasestorage.app'
@@ -40,25 +42,27 @@ const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// --- AÑADIDO: CONFIGURACIÓN DE GOOGLE SHEETS ---
-const SHEETS_CREDENTIALS_PATH = path.join(__dirname, 'google-sheets-credentials.json');
+// --- CONFIGURACIÓN DE GOOGLE SHEETS ---
 const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 
 async function getGoogleSheetsClient() {
     try {
+        // Lee las credenciales desde una variable de entorno
+        const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS_JSON);
+        
         const auth = new google.auth.GoogleAuth({
-            keyFile: SHEETS_CREDENTIALS_PATH,
+            credentials, // Usa el objeto de credenciales directamente
             scopes: SHEETS_SCOPES,
         });
         const client = await auth.getClient();
         return google.sheets({ version: 'v4', auth: client });
     } catch (error) {
-        console.error("❌ Error al autenticar con Google Sheets. Asegúrate de que el archivo 'google-sheets-credentials.json' existe y es correcto.", error.message);
+        console.error("❌ Error al autenticar con Google Sheets. Asegúrate de que la variable de entorno 'GOOGLE_SHEETS_CREDENTIALS_JSON' esté configurada correctamente.", error.message);
         return null;
     }
 }
 
-// --- AÑADIDO: FUNCIÓN PARA VERIFICAR COBERTURA ---
+// --- FUNCIÓN PARA VERIFICAR COBERTURA ---
 async function checkCoverage(postalCode) {
     if (!postalCode) return null;
 
@@ -76,7 +80,8 @@ async function checkCoverage(postalCode) {
 
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
-            range: 'A:A', // Asume que los códigos postales están en la columna A
+            // --- CAMBIO REALIZADO AQUÍ ---
+            range: 'M:M', // Lee los códigos postales de la columna M
         });
 
         const rows = response.data.values;
@@ -120,7 +125,7 @@ Te responderemos tan pronto como regresemos.
 
 🙏 ¡Gracias por tu paciencia!`;
 
-// --- CONFIGURACIÓN DE MENSAJES DE BIENVENIDA ---
+// --- CONFIGURACIÓN DE MENSAJES DE BIENVENida ---
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
 
