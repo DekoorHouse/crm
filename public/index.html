@@ -318,12 +318,10 @@
                         <i class="fas fa-robot"></i>
                         <span class="sidebar-text">Respuestas IA</span>
                     </a>
-                    <!-- START: NUEVO LINK DE NAVEGACIÓN -->
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
                         <span class="sidebar-text">Ajustes</span>
                     </a>
-                    <!-- END: NUEVO LINK DE NAVEGACIÓN -->
                 </nav>
                 <div class="mt-auto">
                      <a id="logout-button" class="nav-item">
@@ -526,7 +524,7 @@
             apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg", 
             authDomain: "pedidos-con-gemini.firebaseapp.com", 
             projectId: "pedidos-con-gemini", 
-            storageBucket: "pedidos-con-gemini.firebasestorage.app", // <-- ¡CORREGIDO!
+            storageBucket: "pedidos-con-gemini.appspot.com",
             messagingSenderId: "300825194175", 
             appId: "1:300825194175:web:972fa7b8af195a83e6e00a", 
             measurementId: "G-FTCDCMZB1S" 
@@ -562,10 +560,9 @@
             tags: [],
             knowledgeBase: [],
             botSettings: { instructions: '' },
-            // START: NUEVO ESTADO PARA AJUSTES
             awayMessageSettings: { isActive: true },
-            globalBotSettings: { isActive: false }, // Nuevo estado para el bot global
-            // END: NUEVO ESTADO PARA AJUSTES
+            globalBotSettings: { isActive: false },
+            googleSheetSettings: { googleSheetId: '' }, // <-- NUEVO ESTADO
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
@@ -585,7 +582,7 @@
         };
         let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null;
         let ticking = false;
-        let tagsSortable = null; // Variable to hold the Sortable instance
+        let tagsSortable = null;
 
         // --- START: Authentication Logic ---
         auth.onAuthStateChanged(user => {
@@ -663,7 +660,6 @@
             const formattedHtml = formatWhatsAppText(text).replace(/<br>/g, '\n');
             const plainText = formattedHtml.replace(/<[^>]+>/g, '');
 
-            // Crear un elemento temporal para copiar el HTML
             const listener = (e) => {
                 e.preventDefault();
                 e.clipboardData.setData('text/html', formattedHtml);
@@ -861,7 +857,6 @@
             </div>
         `;
 
-        // START: NUEVA PLANTILLA PARA LA VISTA DE AJUSTES
         const SettingsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
@@ -891,10 +886,22 @@
                             </label>
                         </div>
                     </div>
+                    <!-- START: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
+                    <div class="settings-card">
+                        <h2 class="text-xl font-bold mb-4">Integraciones</h2>
+                        <div>
+                            <label for="google-sheet-id-input" class="font-semibold">ID de Google Sheet para Cobertura</label>
+                            <p class="text-sm text-gray-500 mb-3">Pega aquí el ID de tu hoja de cálculo con los códigos postales.</p>
+                            <div class="flex items-center gap-3">
+                                <input type="text" id="google-sheet-id-input" class="!mb-0" placeholder="Ej: 1aBcDeFgHiJkLmNoPqRsTuVwXyZ_1234567890">
+                                <button id="save-google-sheet-id-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- END: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                 </div>
             </div>
         `;
-        // END: NUEVA PLANTILLA PARA LA VISTA DE AJUSTES
 
         // --- PLANTILLAS DE COMPONENTES ---
         const UserIcon = (contact, size = 'h-9 w-9') => {
@@ -983,7 +990,6 @@
                 <div class="message-actions">
                     <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
                     <button class="message-action-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')" title="Reaccionar"><i class="far fa-thumbs-up"></i></button>
-                    <!-- NUEVO BOTÓN PARA COPIAR -->
                     <button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>
                 </div>
             `;
@@ -1088,7 +1094,6 @@
             const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
             const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
-            // START: NUEVO BOTÓN DE IA INDIVIDUAL EN EL HEADER
             const isBotActiveForContact = contact.botActive !== false;
             const botToggleHTML = `
                 <button 
@@ -1098,7 +1103,6 @@
                     <i class="fas fa-robot text-xl"></i>
                 </button>
             `;
-            // END: NUEVO BOTÓN DE IA INDIVIDUAL EN EL HEADER
 
             return `
                 <div id="drag-drop-overlay" class="drag-overlay hidden"><div class="drag-overlay-content"><i class="fas fa-file-import text-5xl mb-4"></i><p>Suelta el archivo para adjuntarlo</p></div></div>
@@ -1207,7 +1211,8 @@
             fetchTemplates();
             fetchBotSettings();
             fetchAwayMessageSettings();
-            fetchGlobalBotSettings(); // <-- NUEVA FUNCIÓN
+            fetchGlobalBotSettings();
+            fetchGoogleSheetSettings(); // <-- NUEVA FUNCIÓN
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1220,7 +1225,7 @@
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1266,12 +1271,10 @@
                     mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
                     renderKnowledgeBaseView();
                     break;
-                // START: NUEVO CASO PARA LA VISTA DE AJUSTES
                 case 'ajustes':
                     mainViewContainer.innerHTML = SettingsViewTemplate();
                     renderAjustesView();
                     break;
-                // END: NUEVO CASO PARA LA VISTA DE AJUSTES
                 default:
                     mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
             }
@@ -1453,7 +1456,6 @@
                 `;
             }).join('');
             
-            // Initialize SortableJS on each column
             document.querySelectorAll('.pipeline-cards').forEach(column => {
                 new Sortable(column, {
                     group: 'pipeline',
@@ -1498,7 +1500,6 @@
             `).join('');
         }
 
-        // START: NUEVA FUNCIÓN PARA RENDERIZAR LA VISTA DE AJUSTES
         function renderAjustesView() {
             if (state.activeView !== 'ajustes') return;
             const awayToggle = document.getElementById('away-message-toggle');
@@ -1509,8 +1510,17 @@
             if (botToggle) {
                 botToggle.checked = state.globalBotSettings.isActive;
             }
+            // START: NUEVA LÓGICA PARA GOOGLE SHEETS
+            const sheetIdInput = document.getElementById('google-sheet-id-input');
+            if (sheetIdInput) {
+                sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
+            }
+            const saveSheetIdBtn = document.getElementById('save-google-sheet-id-btn');
+            if (saveSheetIdBtn) {
+                saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
+            }
+            // END: NUEVA LÓGICA PARA GOOGLE SHEETS
         }
-        // END: NUEVA FUNCIÓN PARA RENDERIZAR LA VISTA DE AJUSTES
 
         function updateCampaignRecipientCount() {
             const tagSelect = document.getElementById('campaign-tag-select');
@@ -1548,7 +1558,6 @@
 
         function handleSelectContactFromPipeline(contactId) {
             navigateTo('chats');
-            // A short delay ensures the UI for the chat view is ready before we try to select a contact
             setTimeout(() => {
                 handleSelectContact(contactId);
             }, 100);
@@ -2286,7 +2295,6 @@
 
         function listenForTags() {
             if(unsubscribeTagsListener) unsubscribeTagsListener();
-            // MODIFIED: Order by the 'order' field
             unsubscribeTagsListener = db.collection('crm_tags').orderBy('order').onSnapshot(snapshot => {
                 state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 if(state.activeView === 'chats') {
@@ -2359,7 +2367,6 @@
             }
             
             const key = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
-            // MODIFIED: Add order property for new tags
             const tagData = { label, color, key };
             if (!id) {
                 tagData.order = state.tags.length;
@@ -2424,22 +2431,19 @@
             }
         }
 
-        // --- START: Drag and Drop Logic for Tags ---
         function initTagsSortable() {
             const tableBody = document.getElementById('tags-table-body');
-            if (tableBody && !tagsSortable) { // Initialize only once
+            if (tableBody && !tagsSortable) {
                 tagsSortable = new Sortable(tableBody, {
                     animation: 150,
-                    handle: '.drag-handle', // Specify the handle element
+                    handle: '.drag-handle',
                     ghostClass: 'sortable-ghost',
                     onEnd: async (evt) => {
                         const rows = Array.from(evt.target.children);
                         const orderedIds = rows.map(row => row.dataset.id);
                         
-                        // Optimistically update state to reflect new order immediately
                         state.tags.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
                         
-                        // Send the new order to the backend
                         try {
                             const response = await fetch(`${API_BASE_URL}/api/tags/order`, {
                                 method: 'PUT',
@@ -2452,14 +2456,12 @@
                         } catch (error) {
                             console.error("Error updating tag order:", error);
                             showError("No se pudo guardar el nuevo orden. Intenta de nuevo.");
-                            // Revert to the old order if the API call fails
                             listenForTags();
                         }
                     },
                 });
             }
         }
-        // --- END: Drag and Drop Logic for Tags ---
 
         function listenForAdResponses() {
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
@@ -2644,10 +2646,8 @@
                     body: JSON.stringify({ contactId, isActive })
                 });
                 if (!response.ok) throw new Error('Failed to update bot status.');
-                // The listener will update the UI automatically
             } catch (error) {
                 showError("No se pudo cambiar el estado del bot.");
-                // Revert the toggle on failure
                 const toggle = document.querySelector(`input[onchange="handleBotToggle('${contactId}', this.checked)"]`);
                 if(toggle) toggle.checked = !isActive;
             }
@@ -2806,7 +2806,51 @@
                 if (toggle) toggle.checked = !isActive;
             }
         }
-        // --- END: NUEVAS FUNCIONES PARA AJUSTES ---
+
+        // --- START: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
+        async function fetchGoogleSheetSettings() {
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`);
+                const data = await response.json();
+                if (data.success) {
+                    state.googleSheetSettings.googleSheetId = data.settings.googleSheetId;
+                }
+            } catch (error) {
+                console.error("Error fetching Google Sheet settings:", error);
+                showError("No se pudo cargar la configuración de Google Sheet.");
+            }
+        }
+
+        async function handleSaveGoogleSheetId() {
+            const input = document.getElementById('google-sheet-id-input');
+            const button = document.getElementById('save-google-sheet-id-btn');
+            const googleSheetId = input.value.trim();
+
+            if (!googleSheetId) {
+                showError("El ID de Google Sheet no puede estar vacío.");
+                return;
+            }
+
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ googleSheetId })
+                });
+                if (!response.ok) throw new Error('No se pudo guardar el ID de Google Sheet.');
+                state.googleSheetSettings.googleSheetId = googleSheetId;
+                showError("¡ID de Google Sheet guardado con éxito!"); // Usamos showError para una notificación verde/amarilla
+            } catch (error) {
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Guardar';
+            }
+        }
+        // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
 
     </script>
 </body>
