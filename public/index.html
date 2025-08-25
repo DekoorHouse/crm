@@ -1968,9 +1968,8 @@
             document.getElementById('qr-file-url').value = isEditing ? reply.fileUrl || '' : '';
             document.getElementById('qr-file-type').value = isEditing ? reply.fileType || '' : '';
             
-            if (isEditing && reply.fileUrl) {
-                document.getElementById('qr-media-preview').innerHTML = `<img src="${reply.fileUrl}" class="media-preview"/>`;
-            }
+            // Render preview consistently (image/video/link) with delete X
+            updateQuickReplyPreview();
 
             modal.classList.remove('hidden');
             document.getElementById('qr-shortcut').focus();
@@ -1981,6 +1980,41 @@
                 handleSaveQuickReply();
             };
         }
+        function updateQuickReplyPreview() {
+            const mediaPreviewEl = document.getElementById('qr-media-preview');
+            const fileUrl  = document.getElementById('qr-file-url').value;
+            const fileType = document.getElementById('qr-file-type').value;
+
+            mediaPreviewEl.innerHTML = '';
+
+            if (!fileUrl) return;
+
+            let inner = '';
+            if (fileType && fileType.startsWith('image/')) {
+                inner = `<img src="${fileUrl}" class="media-preview"/>`;
+            } else if (fileType && fileType.startsWith('video/')) {
+                inner = `<video src="${fileUrl}" class="media-preview" controls></video>`;
+            } else {
+                inner = `<a href="${fileUrl}" target="_blank" class="text-blue-600 underline">Ver archivo</a>`;
+            }
+
+            mediaPreviewEl.innerHTML = `
+              <div class="relative inline-block p-2 border rounded-md bg-gray-100">
+                ${inner}
+                <button type="button" onclick="removeQuickReplyFile()"
+                  class="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center text-xs font-bold cursor-pointer"
+                  title="Eliminar archivo">&times;</button>
+              </div>`;
+        }
+
+        function removeQuickReplyFile() {
+            document.getElementById('qr-file-url').value  = '';
+            document.getElementById('qr-file-type').value = '';
+            const f = document.getElementById('qr-file-input');
+            if (f) f.value = '';
+            updateQuickReplyPreview();
+        }
+
 
         function closeQuickReplyModal() { document.getElementById('quick-reply-modal').classList.add('hidden'); }
         
@@ -2671,6 +2705,8 @@
                 
                 if (prefix === 'ar') {
                     updateAdResponsePreview();
+                } else if (prefix === 'qr') {
+                    updateQuickReplyPreview();
                 } else if (file.type.startsWith('image/')) {
                     previewEl.innerHTML = `<img src="${downloadURL}" class="media-preview"/>`;
                 } else {
