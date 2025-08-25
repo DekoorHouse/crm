@@ -4,7 +4,6 @@ require('dotenv').config();
 const express = require('express');
 const admin = require('firebase-admin');
 const { getStorage } = require('firebase-admin/storage');
-const { google } = require('googleapis');
 const cors = require('cors');
 const axios = require('axios');
 const crypto = require('crypto');
@@ -12,39 +11,21 @@ const fetch = require('node-fetch');
 const path = require('path');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
-try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: 'pedidos-con-gemini.firebasestorage.app'
-    });
-    console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
-} catch (error) {
-    console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
-}
+const serviceAccount = require('./serviceAccountKey.json');
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+  storageBucket: 'pedidos-con-gemini.firebasestorage.app' // <-- ¡CORREGIDO!
+});
 
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true }); 
+
 const bucket = getStorage().bucket();
+console.log('Conexión con Firebase (Firestore y Storage) establecida.');
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
-
-// --- INICIO: CORRECCIÓN DE CORS ---
-// Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
-const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000'];
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (whitelist.indexOf(origin) !== -1 || !origin) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-};
-app.use(cors(corsOptions));
-// --- FIN: CORRECCIÓN DE CORS ---
-
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -58,189 +39,32 @@ const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// --- CONFIGURACIÓN DE GOOGLE SHEETS ---
-const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
-
-async function getGoogleSheetsClient() {
-    try {
-        const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS_JSON);
-        const auth = new google.auth.GoogleAuth({
-            credentials,
-            scopes: SHEETS_SCOPES,
-        });
-        const client = await auth.getClient();
-        console.log('✅ Autenticación con Google Sheets exitosa.');
-        return google.sheets({ version: 'v4', auth: client });
-    } catch (error) {
-        console.error("❌ Error al autenticar con Google Sheets. Revisa la variable de entorno 'GOOGLE_SHEETS_CREDENTIALS_JSON'.", error.message);
-        return null;
-    }
-}
-
-// --- FUNCIÓN PARA VERIFICAR COBERTURA ---
-async function checkCoverage(postalCode) {
-    if (!postalCode) return null;
-    console.log(`[LOG] Iniciando verificación de cobertura para CP: ${postalCode}`);
-
-    const sheets = await getGoogleSheetsClient();
-    if (!sheets) return "No se pudo verificar la cobertura en este momento.";
-
-    try {
-        const settingsDoc = await db.collection('crm_settings').doc('general').get();
-        const sheetId = settingsDoc.exists ? settingsDoc.data().googleSheetId : null;
-
-        if (!sheetId) {
-            console.warn("[LOG] Advertencia: No se ha configurado un ID de Google Sheet en los ajustes.");
-            return "La herramienta de cobertura no está configurada.";
-        }
-        console.log(`[LOG] Usando Google Sheet ID: ${sheetId}`);
-
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: sheetId,
-            range: 'M:M',
-        });
-        console.log('[LOG] Respuesta de Google Sheets API recibida.');
-
-        const rows = response.data.values;
-        if (rows && rows.length) {
-            const coverageZips = rows.flat();
-            if (coverageZips.includes(postalCode.toString())) {
-                console.log(`[LOG] Cobertura ENCONTRADA para ${postalCode}.`);
-                return `✅ ¡Buenas noticias! Sí tenemos cobertura en el código postal ${postalCode}.`;
-            } else {
-                console.log(`[LOG] Cobertura NO encontrada para ${postalCode}.`);
-                return `❌ Lo sentimos, por el momento no tenemos cobertura en el código postal ${postalCode}.`;
-            }
-        }
-        console.log(`[LOG] No se encontraron datos en la hoja para el CP ${postalCode}.`);
-        return `No se encontraron datos de cobertura para verificar el código postal ${postalCode}.`;
-    } catch (error) {
-        console.error(`❌ [LOG] Error al leer la hoja de Google Sheets. DETALLE:`, error.message);
-        if (error.code === 404) {
-             return "Error: No se encontró la hoja de cálculo. Verifica el ID en los ajustes.";
-        }
-        if (error.code === 403) {
-            return "Error de permisos. Asegúrate de haber compartido la hoja con el correo de servicio y de haber habilitado la API de Google Sheets.";
-        }
-        return "Hubo un problema al verificar la cobertura. Por favor, inténtalo más tarde.";
-    }
-}
-
-// --- HELPER FUNCTION FOR GEMINI ---
-async function generateGeminiResponse(prompt) {
-    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }] };
-    
-    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
-    
-    const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
-    
-    if (generatedText.startsWith('Asistente:')) {
-        generatedText = generatedText.substring('Asistente:'.length).trim();
-    }
-    
-    return generatedText;
-}
-
-
-// --- LÓGICA CENTRAL DEL BOT DE IA ---
-async function triggerAutoReplyAI(message, contactRef) {
-    const contactId = contactRef.id;
-    console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
-
-    try {
-        // 1. Verificar si el bot debe actuar
-        const contactDoc = await contactRef.get();
-        const contactData = contactDoc.data();
-        const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
-        const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
-
-        if (!globalBotActive) {
-            console.log(`[AI] Bot global desactivado. No se enviará respuesta.`);
-            return;
-        }
-        if (contactData.botActive === false) {
-            console.log(`[AI] Bot desactivado para el contacto ${contactId}. No se enviará respuesta.`);
-            return;
-        }
-
-        // 2. Lógica especial para Códigos Postales
-        if (message.type === 'text') {
-            const postalCodeRegex = /(?:cp|código postal|codigo postal)\s*:?\s*(\d{5})/i;
-            const match = message.text.body.match(postalCodeRegex);
-            if (match && match[1]) {
-                const postalCode = match[1];
-                console.log(`[AI] Código postal detectado: ${postalCode}. Verificando cobertura.`);
-                const coverageResponse = await checkCoverage(postalCode);
-                if (coverageResponse) {
-                    const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
-                    await contactRef.collection('messages').add({
-                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
-                    });
-                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-                    console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
-                    return; // Termina el proceso aquí
-                }
-            }
-        }
-
-        // 3. Preparar el prompt para Gemini
-        const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-        const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
-
-        const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
-        const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
-
-        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
-        const conversationHistory = messagesSnapshot.docs.map(doc => {
-            const d = doc.data();
-            return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
-        }).reverse().join('\n');
-
-        const prompt = `
-            **Instrucciones Generales:**
-            ${botInstructions}
-
-            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**
-            ${knowledgeBase || 'No hay información adicional.'}
-
-            **Historial de la Conversación Reciente:**
-            ${conversationHistory}
-
-            **Tarea:**
-            Basado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.
-        `;
-        
-        console.log(`[AI] Generando respuesta para ${contactId}.`);
-        const aiResponse = await generateGeminiResponse(prompt);
-
-        // 4. Enviar respuesta y guardar en la base de datos
-        const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
-        await contactRef.collection('messages').add({
-            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
-        });
-        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-        console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
-
-    } catch (error) {
-        console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
-    }
-}
-
-
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
-const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] };
+const BUSINESS_HOURS = {
+    1: [7, 19], // Lunes
+    2: [7, 19], // Martes
+    3: [7, 19], // Miércoles
+    4: [7, 19], // Jueves
+    5: [7, 19], // Viernes
+    6: [7, 14], // Sábado
+};
 const TIMEZONE = 'America/Mexico_City';
-const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
+const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.
+
+🕑 Nuestro horario de atención es:
+
+🗓 Lunes a Viernes: 7:00 am - 7:00 pm
+
+🗓 Sábado: 7:00 am - 2:00 pm
+Te responderemos tan pronto como regresemos.
+
+🙏 ¡Gracias por tu paciencia!`;
+
+// --- CONFIGURACIÓN DE MENSAJES DE BIENVENIDA ---
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
+
+// --- FUNCIÓN PARA VERIFICAR HORARIO DE ATENCIÓN ---
 function isWithinBusinessHours() {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
     const day = now.getDay();
@@ -251,59 +75,82 @@ function isWithinBusinessHours() {
     return hour >= startHour && hour < endHour;
 }
 
+// --- FUNCIÓN PARA HASHEAR DATOS ---
 function sha256(data) {
     if (!data) return null;
-    return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
+    const normalizedData = typeof data === 'string' ? data.toLowerCase().replace(/\s/g, '') : data.toString();
+    return crypto.createHash('sha256').update(normalizedData).digest('hex');
 }
 
-// --- INICIO: CORRECCIÓN DE BUG CRÍTICO (FUNCIÓN FALTANTE) ---
-async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN ---
+const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
+        console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
         return;
+    }
+    if (!contactInfo || !contactInfo.wa_id) {
+        console.error(`❌ Error Crítico: No se puede enviar el evento '${eventName}' porque falta el 'wa_id' del contacto.`);
+        throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
-    const event_time = Math.floor(new Date().getTime() / 1000);
-    const event_id = `${eventName}_${contactInfo.wa_id}_${event_time}`;
-
-    const userData = {
-        "ph": [sha256(contactInfo.wa_id)],
-        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // First name
-        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
-    };
-
-    const eventData = {
-        "event_name": eventName,
-        "event_time": event_time,
-        "event_id": event_id,
-        "user_data": userData,
-        "action_source": "whatsapp",
-        "custom_data": customData
-    };
+    const eventTime = Math.floor(Date.now() / 1000);
+    const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
-    if (referral && referral.source_type === 'ad') {
-        eventData.data_processing_options = [];
-        eventData.data_processing_options_country = 0;
-        eventData.data_processing_options_state = 0;
+    const userData = { ph: [] };
+    try {
+        userData.ph.push(sha256(contactInfo.wa_id));
+        if (contactInfo.profile?.name) {
+            userData.fn = sha256(contactInfo.profile.name);
+        }
+    } catch (hashError) {
+        console.error(`❌ Error al hashear los datos del usuario para el evento '${eventName}':`, hashError);
+        throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
+
+    const isAdReferral = referralInfo && referralInfo.ctwa_clid;
+
+    if (isAdReferral) {
+        userData.ctwa_clid = referralInfo.ctwa_clid;
+    }
+
+    const finalCustomData = {
+        lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
+        ad_headline: isAdReferral ? referralInfo.headline : undefined,
+        ad_id: isAdReferral ? referralInfo.source_id : undefined,
+        ...customData
+    };
+
+    Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
+
     const payload = {
-        "data": [eventData],
-        "access_token": META_CAPI_ACCESS_TOKEN
+        data: [{
+            event_name: eventName,
+            event_time: eventTime,
+            event_id: eventId,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp', 
+            user_data: userData,
+            custom_data: finalCustomData,
+        }],
     };
 
     try {
-        console.log(`[CAPI] Sending event '${eventName}' for ${contactInfo.wa_id}`);
-        const response = await axios.post(url, payload);
-        console.log('[CAPI] Event sent successfully:', response.data);
+        console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
+        await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
+        console.log(`✅ Evento '${eventName}' enviado a Meta.`);
     } catch (error) {
-        console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
+        console.error(`❌ Error al enviar evento '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
-}
-// --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
+};
 
 
+// --- NUEVO: FUNCIÓN AVANZADA PARA ENVIAR MENSAJES DE WHATSAPP (TEXTO Y MULTIMEDIA) ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
@@ -330,11 +177,10 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     }
 
     try {
-        console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
         const response = await axios.post(url, messagePayload, { headers });
-        console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
         const messageId = response.data.messages[0].id;
         
+        // Devuelve los datos necesarios para guardar el mensaje en Firestore
         return {
             id: messageId,
             textForDb: messageToSaveText,
@@ -342,10 +188,46 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
             fileTypeForDb: fileType || null
         };
     } catch (error) {
-        console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
     }
 }
+
+
+// --- FUNCIÓN PARA DESCARGAR Y SUBIR IMÁGENES ---
+async function downloadAndUploadImage(mediaId, from) {
+    try {
+        const mediaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        const mediaUrl = mediaUrlResponse.data.url;
+        const mimeType = mediaUrlResponse.data.mime_type;
+        const fileExtension = mimeType.split('/')[1] || 'jpg';
+
+        const imageResponse = await axios.get(mediaUrl, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: 'arraybuffer'
+        });
+        const imageBuffer = Buffer.from(imageResponse.data, 'binary');
+
+        const fileName = `whatsapp_media/${from}/${mediaId}.${fileExtension}`;
+        const file = bucket.file(fileName);
+        await file.save(imageBuffer, {
+            metadata: { contentType: mimeType }
+        });
+
+        await file.makePublic();
+        const publicUrl = file.publicUrl();
+        
+        console.log(`Imagen ${mediaId} subida y disponible en: ${publicUrl}`);
+        return { publicUrl, mimeType };
+
+    } catch (error) {
+        console.error(`❌ Error al procesar la imagen ${mediaId}:`, error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
 
 // --- WEBHOOK DE WHATSAPP ---
 app.get('/webhook', (req, res) => {
@@ -360,128 +242,209 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// --- LÓGICA DEL WEBHOOK ACTUALIZADA ---
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    if (value && value.messages && value.contacts) {
-        const message = value.messages[0];
-        console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
-        const contactInfo = value.contacts[0];
-        const from = message.from;
-        const contactRef = db.collection('contacts_whatsapp').doc(from);
-        
-        if (message.from === PHONE_NUMBER_ID) {
-            console.log("[LOG] Mensaje saliente ignorado.");
-            return res.sendStatus(200);
-        }
+    if (value) {
+        if (value.messages) {
+            const message = value.messages[0];
+            const contactInfo = value.contacts[0];
+            const from = message.from;
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(from);
+            
+            const contactDoc = await contactRef.get();
+            const isNewContact = !contactDoc.exists;
+            const contactData = contactDoc.exists ? contactDoc.data() : {};
+            
+            // --- START: SAVE INCOMING MESSAGE FIRST ---
+            let messageData = { timestamp, from, status: 'received', id: message.id };
+            let lastMessageText = '';
+            
+            try {
+                if (message.context) messageData.context = { id: message.context.id };
+                switch (message.type) {
+                    case 'text':
+                        messageData.text = message.text.body;
+                        lastMessageText = message.text.body;
+                        break;
+                    case 'image':
+                        lastMessageText = '📷 Imagen';
+                        messageData.text = lastMessageText;
+                        const imageData = await downloadAndUploadImage(message.image.id, from);
+                        if (imageData) {
+                            messageData.fileUrl = imageData.publicUrl;
+                            messageData.fileType = imageData.mimeType;
+                        }
+                        break;
+                    case 'video':
+                        lastMessageText = '🎥 Video';
+                        messageData.text = lastMessageText;
+                        break;
+                    default:
+                        lastMessageText = `Mensaje no soportado: ${message.type}`;
+                        messageData.text = lastMessageText;
+                        break;
+                }
+            } catch (error) { console.error("Error procesando contenido del mensaje:", error.message); }
 
-        const contactDoc = await contactRef.get();
-        const isNewContact = !contactDoc.exists;
+            await contactRef.collection('messages').add(messageData);
+            
+            let newContactData = { lastMessageTimestamp: timestamp, name: contactInfo.profile.name, wa_id: contactInfo.wa_id, unreadCount: admin.firestore.FieldValue.increment(1) };
+            newContactData.lastMessage = lastMessageText;
+            
+            if (isNewContact && message.referral?.source_type === 'ad') {
+                newContactData.adReferral = { 
+                    source_id: message.referral.source_id ?? null, 
+                    headline: message.referral.headline ?? null, 
+                    source_type: message.referral.source_type ?? null, 
+                    source_url: message.referral.source_url ?? null,
+                    ctwa_clid: message.referral.ctwa_clid ?? null,
+                    receivedAt: timestamp 
+                };
+                console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
+            }
+            
+            await contactRef.set(newContactData, { merge: true });
+            console.log(`Mensaje (${message.type}) de ${from} guardado.`);
+            // --- END: SAVE INCOMING MESSAGE FIRST ---
 
-        // 1. Guardar el mensaje y actualizar el contacto
-        let messageData = { 
-            timestamp: admin.firestore.FieldValue.serverTimestamp(), 
-            from, 
-            status: 'received', 
-            id: message.id,
-            type: message.type,
-        };
-        if (message.type === 'text') {
-            messageData.text = message.text.body;
-        } else {
-            messageData.text = `Mensaje multimedia (${message.type})`;
-        }
-        await contactRef.collection('messages').add(messageData);
-        
-        let contactUpdateData = {
-            name: contactInfo.profile.name,
-            wa_id: contactInfo.wa_id,
-            lastMessage: messageData.text,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-            unreadCount: admin.firestore.FieldValue.increment(1)
-        };
-        if (message.referral) {
-            contactUpdateData.adReferral = message.referral;
-        }
-        await contactRef.set(contactUpdateData, { merge: true });
-        console.log(`[LOG] Mensaje de ${from} guardado.`);
+            // --- START: BOT LOGIC (Now runs AFTER saving the message) ---
+            if (contactData.botActive) {
+                console.log(`🤖 Bot is active for ${from}. Generating response...`);
+                try {
+                    const randomDelay = Math.floor(Math.random() * 3000) + 2000;
+                    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+                    await delay(randomDelay);
 
-        // 2. Lógica de Respuesta Automática (Bienvenida o IA)
-        if (isNewContact) {
-            let adResponseSent = false;
-            if (message.referral && message.referral.ad_id) {
-                const adId = message.referral.ad_id;
-                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
-                const adResponsesRef = db.collection('ad_responses');
-                const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
+                    const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+                    const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
 
-                if (!snapshot.empty) {
-                    const adResponseData = snapshot.docs[0].data();
-                    try {
-                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, {
+                    const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
+                    const conversationHistory = messagesSnapshot.docs.map(doc => {
+                        const d = doc.data();
+                        return `${d.from === from ? 'Cliente' : 'Asistente'}: ${d.text}`;
+                    }).reverse().join('\n');
+                    
+                    // **NEW:** Fetch ad context if it exists
+                    let adContext = '';
+                    const finalContactData = (await contactRef.get()).data(); // Get the most recent contact data
+                    if (finalContactData.adReferral && finalContactData.adReferral.source_id) {
+                        const adResponseRef = db.collection('ad_responses').where('adId', '==', finalContactData.adReferral.source_id).limit(1);
+                        const adResponseSnapshot = await adResponseRef.get();
+                        if (!adResponseSnapshot.empty) {
+                            const adResponseData = adResponseSnapshot.docs[0].data();
+                            if (adResponseData.message) {
+                                adContext = `--- Información Clave de la Campaña (Contexto Inicial) ---\n${adResponseData.message}\n\n`;
+                                console.log(`🤖 Added ad context for Ad ID: ${finalContactData.adReferral.source_id}`);
+                            }
+                        }
+                    }
+
+                    const prompt = `${botInstructions}\n\n${adContext}--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+                    
+                    const generatedText = await generateGeminiResponse(prompt);
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: generatedText });
+
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID,
+                        status: 'sent',
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id,
+                        text: sentMessageData.textForDb
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                    console.log(`🤖 Bot response sent to ${from}.`);
+
+                } catch (error) {
+                    console.error(`❌ Error in bot logic for ${from}:`, error);
+                }
+            }
+            // --- END: BOT LOGIC ---
+
+            if (isNewContact) {
+                let messageToSend = { text: GENERAL_WELCOME_MESSAGE }; // Objeto de mensaje por defecto
+
+                if (message.referral?.source_type === 'ad') {
+                    const adId = message.referral.source_id;
+                    const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
+                    const adResponseSnapshot = await adResponseRef.get();
+                    
+                    if (!adResponseSnapshot.empty) {
+                        const adResponseData = adResponseSnapshot.docs[0].data();
+                        messageToSend = {
                             text: adResponseData.message,
                             fileUrl: adResponseData.fileUrl,
                             fileType: adResponseData.fileType
-                        });
-                        await contactRef.collection('messages').add({
-                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                            id: sentMessageData.id, text: sentMessageData.textForDb,
-                            fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb
-                        });
-                        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-                        adResponseSent = true;
-                    } catch (error) {
-                        console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
+                        };
+                        console.log(`Mensaje de bienvenida (con posible multimedia) encontrado para el Ad ID: ${adId}`);
+                    } else {
+                        console.log(`No se encontró mensaje de bienvenida para el Ad ID: ${adId}. Usando mensaje general.`);
                     }
-                } else {
-                    console.log(`[LOG] No se encontró una respuesta configurada en la base de datos para el Ad ID: ${adId}. Se enviará el mensaje de bienvenida general.`);
                 }
-            }
-            if (!adResponseSent) {
+                
                 try {
-                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
-                    await contactRef.collection('messages').add({
-                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id, text: sentMessageData.textForDb
-                    });
-                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-                } catch (error) {
-                    console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
-                }
-            }
-        } else {
-            await triggerAutoReplyAI(message, contactRef);
-        }
-    } else if (value && value.statuses) {
-        const statusUpdate = value.statuses[0];
-        const messageId = statusUpdate.id;
-        const recipientId = statusUpdate.recipient_id;
-        const newStatus = statusUpdate.status;
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, messageToSend);
+                    
+                    const messageToSave = {
+                        from: PHONE_NUMBER_ID,
+                        status: 'sent',
+                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id,
+                        text: sentMessageData.textForDb,
+                        fileUrl: sentMessageData.fileUrlForDb,
+                        fileType: sentMessageData.fileTypeForDb
+                    };
+                    
+                    Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
 
-        try {
-            const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
-            const querySnapshot = await messagesRef.where('id', '==', messageId).limit(1).get();
-            
-            if (!querySnapshot.empty) {
-                const messageDoc = querySnapshot.docs[0];
-                const currentStatus = messageDoc.data().status;
-                const statusOrder = { sent: 1, delivered: 2, read: 3 };
-                if ((statusOrder[newStatus] || 0) > (statusOrder[currentStatus] || 0)) {
-                    await messageDoc.ref.update({ status: newStatus });
-                    console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' para ${recipientId}.`);
+                    await contactRef.collection('messages').add(messageToSave);
+                    console.log(`Mensaje de bienvenida enviado a ${from}.`);
+                } catch (error) {
+                    console.error(`Fallo al enviar mensaje de bienvenida a ${from}:`, error);
+                }
+            } else if (!isWithinBusinessHours() && !contactData.botActive) { // Only send away message if bot is off
+                const now = new Date();
+                const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
+                const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
+
+                if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
+                    try {
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
+                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
+                        await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+                        console.log(`Mensaje de ausencia enviado a ${from}.`);
+                    } catch (error) {
+                        console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
+                    }
                 }
             }
-        } catch (error) {
-            console.error(`❌ Error al actualizar estado del mensaje ${messageId}:`, error.message);
+
+            if (isNewContact && newContactData.adReferral) {
+                try {
+                    await sendConversionEvent('Lead', contactInfo, newContactData.adReferral);
+                    await contactRef.update({ leadEventSent: true });
+                } catch (error) { console.error(`Fallo al enviar evento Lead para ${from}:`, error.message); }
+            }
+        }
+
+        if (value.statuses) {
+            const statusUpdate = value.statuses[0];
+            const messagesRef = db.collection('contacts_whatsapp').doc(statusUpdate.recipient_id).collection('messages');
+            const query = messagesRef.where('id', '==', statusUpdate.id).limit(1);
+            try {
+                const snapshot = await query.get();
+                if (!snapshot.empty) {
+                    await snapshot.docs[0].ref.update({ status: statusUpdate.status });
+                    console.log(`Estado del mensaje ${statusUpdate.id} actualizado a '${statusUpdate.status}'.`);
+                }
+            } catch (error) { console.error(`Error al actualizar estado del mensaje ${statusUpdate.id}:`, error); }
         }
     }
-    
     res.sendStatus(200);
 });
-
 
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
@@ -515,53 +478,56 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    let messagePayload, messageToSaveText;
+
     try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-
         if (template) {
-            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
-            if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
-
-            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, { 
-                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } 
-            });
-            const messageId = response.data.messages[0].id;
-            
-            const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
-            await contactRef.collection('messages').add(messageToSave);
-            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-
+            const { payload, messageToSaveText: TplText } = await buildTemplatePayload(contactId, template);
+            messagePayload = payload;
+            messageToSaveText = TplText;
         } else {
-            // Lógica para mensajes manuales y respuestas rápidas
-            if (fileUrl && fileType) {
-                const sentMediaData = await sendAdvancedWhatsAppMessage(contactId, { fileUrl, fileType });
-                const mediaMessageToSave = {
-                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentMediaData.id, text: sentMediaData.textForDb,
-                    fileUrl: sentMediaData.fileUrlForDb, fileType: sentMediaData.fileTypeForDb
-                };
-                if (reply_to_wamid) mediaMessageToSave.context = { id: reply_to_wamid };
-                Object.keys(mediaMessageToSave).forEach(key => mediaMessageToSave[key] == null && delete mediaMessageToSave[key]);
-                await contactRef.collection('messages').add(mediaMessageToSave);
-                await contactRef.update({ lastMessage: sentMediaData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-            }
+            // Reutiliza la lógica de la función avanzada para mensajes manuales
+            const messageContent = { text, fileUrl, fileType };
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, messageContent);
+            
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            let messageToSave = { 
+                from: PHONE_NUMBER_ID, 
+                status: 'sent', 
+                timestamp, 
+                id: sentMessageData.id, 
+                text: sentMessageData.textForDb,
+                fileUrl: sentMessageData.fileUrlForDb,
+                fileType: sentMessageData.fileTypeForDb
+            };
+            
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
+            
+            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+            
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: timestamp, unreadCount: 0 });
 
-            if (text) {
-                if (fileUrl) await new Promise(resolve => setTimeout(resolve, 500)); // Pequeña pausa
-                
-                const sentTextData = await sendAdvancedWhatsAppMessage(contactId, { text });
-                const textMessageToSave = {
-                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentTextData.id, text: sentTextData.textForDb,
-                };
-                // No añadir contexto de respuesta al segundo mensaje para evitar confusión
-                await contactRef.collection('messages').add(textMessageToSave);
-                await contactRef.update({ lastMessage: sentTextData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-            }
+            return res.status(200).json({ success: true, message: 'Mensaje enviado.' });
         }
 
-        res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
+        // Lógica para plantillas
+        if (reply_to_wamid) messagePayload.context = { message_id: reply_to_wamid };
 
+        const response = await axios.post(url, messagePayload, { headers });
+        const messageId = response.data.messages[0].id;
+        
+        const timestamp = admin.firestore.FieldValue.serverTimestamp();
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        let messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText };
+        
+        await contactRef.collection('messages').add(messageToSave);
+        await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
+
+        res.status(200).json({ success: true, message: 'Mensaje enviado.' });
     } catch (error) {
         console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
@@ -951,7 +917,7 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
-// --- START: BOT & SETTINGS ENDPOINTS ---
+// --- START: BOT ENDPOINTS ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
@@ -983,77 +949,7 @@ app.post('/api/bot/toggle', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al actualizar el estado del bot.' });
     }
 });
-
-// --- START: NEW GENERAL SETTINGS ENDPOINTS ---
-app.get('/api/settings/away-message', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        if (!doc.exists) {
-            return res.status(200).json({ success: true, settings: { isActive: true } }); // Default to active
-        }
-        res.status(200).json({ success: true, settings: { isActive: doc.data().awayMessageActive } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración del mensaje de ausencia.' });
-    }
-});
-
-app.post('/api/settings/away-message', async (req, res) => {
-    const { isActive } = req.body;
-    try {
-        await db.collection('crm_settings').doc('general').set({ awayMessageActive: isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Configuración del mensaje de ausencia guardada.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
-    }
-});
-
-app.get('/api/settings/global-bot', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        if (!doc.exists) {
-            return res.status(200).json({ success: true, settings: { isActive: false } }); // Default to inactive
-        }
-        res.status(200).json({ success: true, settings: { isActive: doc.data().globalBotActive } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot global.' });
-    }
-});
-
-app.post('/api/settings/global-bot', async (req, res) => {
-    const { isActive } = req.body;
-    try {
-        await db.collection('crm_settings').doc('general').set({ globalBotActive: isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Configuración del bot global guardada.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar el ajuste del bot global.' });
-    }
-});
-
-// --- AÑADIDO: ENDPOINT PARA GUARDAR GOOGLE SHEET ID ---
-app.get('/api/settings/google-sheet', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        if (!doc.exists || !doc.data().googleSheetId) {
-            return res.status(200).json({ success: true, settings: { googleSheetId: '' } });
-        }
-        res.status(200).json({ success: true, settings: { googleSheetId: doc.data().googleSheetId } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración de Google Sheet.' });
-    }
-});
-
-app.post('/api/settings/google-sheet', async (req, res) => {
-    const { googleSheetId } = req.body;
-    try {
-        await db.collection('crm_settings').doc('general').set({ googleSheetId }, { merge: true });
-        res.status(200).json({ success: true, message: 'ID de Google Sheet guardado.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar la configuración de Google Sheet.' });
-    }
-});
-// --- END: NEW GENERAL SETTINGS ENDPOINTS ---
-
-// --- END: BOT & SETTINGS ENDPOINTS ---
+// --- END: BOT ENDPOINTS ---
 
 // --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
 app.post('/api/knowledge-base', async (req, res) => {
@@ -1109,6 +1005,29 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
 });
 // --- END: KNOWLEDGE BASE ENDPOINTS ---
 
+
+// --- HELPER FUNCTION FOR GEMINI ---
+async function generateGeminiResponse(prompt) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    
+    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+    
+    const result = await geminiResponse.json();
+    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
+    // **FIX:** Remove "Asistente:" prefix if present
+    if (generatedText.startsWith('Asistente:')) {
+        generatedText = generatedText.substring('Asistente:'.length).trim();
+    }
+    
+    return generatedText;
+}
+
 // --- ENDPOINT PARA BOT DE IA (MANUAL) ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
@@ -1116,8 +1035,8 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
-        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\nAsistente:`;
+        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
