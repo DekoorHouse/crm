@@ -305,7 +305,10 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
 // --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
 
 // --- FUNCIÓN DE ENVÍO AVANZADO MODIFICADA ---
-async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
+// =================== INICIO DE LA MODIFICACIÓN 1 ===================
+// Se añade `reply_to_wamid` a los parámetros para poder recibir el ID del mensaje a responder.
+async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
+// =================== FIN DE LA MODIFICACIÓN 1 ===================
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
@@ -334,6 +337,14 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     } else {
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
+    
+    // =================== INICIO DE LA MODIFICACIÓN 2 ===================
+    // Si se proporcionó un `reply_to_wamid`, se añade el objeto `context` al payload.
+    // Esto le dice a la API de WhatsApp que este mensaje es una respuesta a otro.
+    if (reply_to_wamid) {
+        messagePayload.context = { message_id: reply_to_wamid };
+    }
+    // =================== FIN DE LA MODIFICACIÓN 2 ===================
 
     try {
         console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
@@ -617,13 +628,17 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const messageId = response.data.messages[0].id;
             
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
+            if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
             await contactRef.collection('messages').add(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else {
             // Lógica unificada para mensajes manuales y respuestas rápidas
             // 'text' puede ser un mensaje de texto o el subtítulo de un archivo.
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType });
+            // =================== INICIO DE LA MODIFICACIÓN 3 ===================
+            // Ahora pasamos `reply_to_wamid` a la función `sendAdvancedWhatsAppMessage`.
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
+            // =================== FIN DE LA MODIFICACIÓN 3 ===================
     
             const messageToSave = {
                 from: PHONE_NUMBER_ID, 
@@ -635,6 +650,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 fileType: sentMessageData.fileTypeForDb
             };
         
+            // Esta parte guarda el contexto en la base de datos para tu referencia.
             if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
             
