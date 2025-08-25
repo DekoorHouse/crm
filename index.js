@@ -1,4 +1,5 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA Y BOT AUTOMÁTICO
+// index.js - VERSIÓN MEJORADA CON FUNCIONALIDADES DE 4.5
+// Incluye: Gestión de Anuncios, Multimedia, Bot de IA avanzado, y Verificación de Cobertura
 
 require('dotenv').config();
 const express = require('express');
@@ -13,6 +14,7 @@ const path = require('path');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 try {
+    // Para producción, es mejor usar variables de entorno que un archivo JSON.
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
@@ -21,6 +23,8 @@ try {
     console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
 } catch (error) {
     console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
+    // En un caso real, podrías querer que el proceso termine si Firebase no se puede conectar.
+    // process.exit(1); 
 }
 
 const db = admin.firestore();
@@ -30,12 +34,18 @@ const bucket = getStorage().bucket();
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
 
-// --- INICIO: CORRECCIÓN DE CORS ---
-// Se aplica la configuración de CORS más permisiva para evitar errores.
-// Esto permite que cualquier dominio (incluyendo el de Render y localhost) se conecte al servidor.
-app.use(cors());
-// --- FIN: CORRECCIÓN DE CORS ---
-
+// --- MEJORA: CONFIGURACIÓN DE CORS MÁS SEGURA ---
+const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000']; // Agrega aquí los dominios permitidos
+const corsOptions = {
+  origin: function (origin, callback) {
+    if (whitelist.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -49,7 +59,7 @@ const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-// --- CONFIGURACIÓN DE GOOGLE SHEETS ---
+// --- NUEVO: CONFIGURACIÓN DE GOOGLE SHEETS ---
 const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
 
 async function getGoogleSheetsClient() {
@@ -68,7 +78,7 @@ async function getGoogleSheetsClient() {
     }
 }
 
-// --- FUNCIÓN PARA VERIFICAR COBERTURA ---
+// --- NUEVO: FUNCIÓN PARA VERIFICAR COBERTURA ---
 async function checkCoverage(postalCode) {
     if (!postalCode) return null;
     console.log(`[LOG] Iniciando verificación de cobertura para CP: ${postalCode}`);
@@ -88,7 +98,7 @@ async function checkCoverage(postalCode) {
 
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
-            range: 'M:M',
+            range: 'M:M', // Asumiendo que los CPs están en la columna M
         });
         console.log('[LOG] Respuesta de Google Sheets API recibida.');
 
@@ -117,7 +127,8 @@ async function checkCoverage(postalCode) {
     }
 }
 
-// --- HELPER FUNCTION FOR GEMINI ---
+
+// --- FUNCIÓN HELPER PARA GEMINI ---
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     
@@ -139,7 +150,7 @@ async function generateGeminiResponse(prompt) {
 }
 
 
-// --- LÓGICA CENTRAL DEL BOT DE IA ---
+// --- NUEVO: LÓGICA CENTRAL DEL BOT DE IA MEJORADA ---
 async function triggerAutoReplyAI(message, contactRef) {
     const contactId = contactRef.id;
     console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
@@ -155,7 +166,7 @@ async function triggerAutoReplyAI(message, contactRef) {
             console.log(`[AI] Bot global desactivado. No se enviará respuesta.`);
             return;
         }
-        if (contactData.botActive === false) {
+        if (contactData.botActive === false) { // Permitir que el bot actúe si botActive no está definido (es decir, es un contacto nuevo)
             console.log(`[AI] Bot desactivado para el contacto ${contactId}. No se enviará respuesta.`);
             return;
         }
@@ -176,7 +187,7 @@ async function triggerAutoReplyAI(message, contactRef) {
                     });
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                     console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
-                    return; // Termina el proceso aquí
+                    return; // Termina el proceso aquí para no enviar otra respuesta de IA
                 }
             }
         }
@@ -225,7 +236,6 @@ async function triggerAutoReplyAI(message, contactRef) {
     }
 }
 
-
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
 const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] };
 const TIMEZONE = 'America/Mexico_City';
@@ -247,10 +257,10 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
-// --- INICIO: CORRECCIÓN DE BUG CRÍTICO (FUNCIÓN FALTANTE) ---
+// --- FUNCIÓN PARA ENVIAR EVENTOS DE CONVERSIÓN ---
 async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
+        console.log('[CAPI] Pixel ID o Token de Acceso no configurado. Omitiendo evento.');
         return;
     }
 
@@ -260,8 +270,8 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
 
     const userData = {
         "ph": [sha256(contactInfo.wa_id)],
-        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // First name
-        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
+        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // Primer nombre
+        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Apellido(s)
     };
 
     const eventData = {
@@ -285,16 +295,15 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
     };
 
     try {
-        console.log(`[CAPI] Sending event '${eventName}' for ${contactInfo.wa_id}`);
+        console.log(`[CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id}`);
         const response = await axios.post(url, payload);
-        console.log('[CAPI] Event sent successfully:', response.data);
+        console.log('[CAPI] Evento enviado exitosamente:', response.data);
     } catch (error) {
-        console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
+        console.error('[CAPI] Error enviando evento de conversión:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
-// --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
 
-
+// --- FUNCIÓN AVANZADA PARA ENVIAR MENSAJES DE WHATSAPP ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
@@ -335,6 +344,40 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     } catch (error) {
         console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
+    }
+}
+
+// --- FUNCIÓN PARA DESCARGAR Y SUBIR ARCHIVOS MULTIMEDIA ---
+async function downloadAndUploadMedia(mediaId, from) {
+    try {
+        const mediaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        const mediaUrl = mediaUrlResponse.data.url;
+        const mimeType = mediaUrlResponse.data.mime_type;
+        const fileExtension = mimeType.split('/')[1] || 'bin';
+
+        const mediaResponse = await axios.get(mediaUrl, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: 'arraybuffer'
+        });
+        const mediaBuffer = Buffer.from(mediaResponse.data, 'binary');
+
+        const fileName = `whatsapp_media/${from}/${mediaId}.${fileExtension}`;
+        const file = bucket.file(fileName);
+        await file.save(mediaBuffer, {
+            metadata: { contentType: mimeType }
+        });
+
+        await file.makePublic();
+        const publicUrl = file.publicUrl();
+        
+        console.log(`Archivo ${mediaId} subido y disponible en: ${publicUrl}`);
+        return { publicUrl, mimeType };
+
+    } catch (error) {
+        console.error(`❌ Error al procesar el archivo ${mediaId}:`, error.response ? error.response.data : error.message);
+        return null;
     }
 }
 
@@ -380,17 +423,48 @@ app.post('/webhook', async (req, res) => {
             id: message.id,
             type: message.type,
         };
-        if (message.type === 'text') {
-            messageData.text = message.text.body;
-        } else {
-            messageData.text = `Mensaje multimedia (${message.type})`;
+        let lastMessageText = '';
+
+        // Procesar contenido del mensaje
+        switch (message.type) {
+            case 'text':
+                messageData.text = message.text.body;
+                lastMessageText = message.text.body;
+                break;
+            case 'image':
+                lastMessageText = '📷 Imagen';
+                messageData.text = lastMessageText;
+                const imageData = await downloadAndUploadMedia(message.image.id, from);
+                if (imageData) {
+                    messageData.fileUrl = imageData.publicUrl;
+                    messageData.fileType = imageData.mimeType;
+                }
+                break;
+            case 'video':
+                lastMessageText = '🎥 Video';
+                messageData.text = lastMessageText;
+                // Lógica similar a la de imagen si se quiere descargar el video
+                break;
+            case 'audio':
+                 lastMessageText = '🎵 Audio';
+                 messageData.text = lastMessageText;
+                 break;
+            case 'document':
+                 lastMessageText = '📄 Documento';
+                 messageData.text = lastMessageText;
+                 break;
+            default:
+                lastMessageText = `Mensaje multimedia (${message.type})`;
+                messageData.text = lastMessageText;
+                break;
         }
+
         await contactRef.collection('messages').add(messageData);
         
         let contactUpdateData = {
             name: contactInfo.profile.name,
             wa_id: contactInfo.wa_id,
-            lastMessage: messageData.text,
+            lastMessage: lastMessageText,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
@@ -405,7 +479,7 @@ app.post('/webhook', async (req, res) => {
             let adResponseSent = false;
             if (message.referral && message.referral.ad_id) {
                 const adId = message.referral.ad_id;
-                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
@@ -428,7 +502,7 @@ app.post('/webhook', async (req, res) => {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
                 } else {
-                    console.log(`[LOG] No se encontró una respuesta configurada en la base de datos para el Ad ID: ${adId}. Se enviará el mensaje de bienvenida general.`);
+                    console.log(`[LOG] No se encontró respuesta configurada para Ad ID: ${adId}.`);
                 }
             }
             if (!adResponseSent) {
@@ -444,6 +518,7 @@ app.post('/webhook', async (req, res) => {
                 }
             }
         } else {
+            // Para contactos existentes, se activa la IA
             await triggerAutoReplyAI(message, contactRef);
         }
     } else if (value && value.statuses) {
@@ -474,7 +549,7 @@ app.post('/webhook', async (req, res) => {
 });
 
 
-// --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
+// --- FUNCIÓN HELPER PARA CONSTRUIR PAYLOAD DE PLANTILLAS ---
 async function buildTemplatePayload(contactId, template) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     let messageToSaveText = `📄 Plantilla: ${template.name}`; 
@@ -498,7 +573,7 @@ async function buildTemplatePayload(contactId, template) {
     return { payload, messageToSaveText };
 }
 
-// --- ENDPOINT PARA ENVIAR MENSAJES ---
+// --- ENDPOINT PARA ENVIAR MENSAJES MANUALES, RESPUESTAS RÁPIDAS Y PLANTILLAS ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -510,6 +585,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
         if (template) {
+            // Lógica para plantillas
             const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
 
@@ -523,7 +599,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else {
-            // Lógica para mensajes manuales y respuestas rápidas
+            // Lógica para mensajes manuales y respuestas rápidas (texto y/o multimedia)
             if (fileUrl && fileType) {
                 const sentMediaData = await sendAdvancedWhatsAppMessage(contactId, { fileUrl, fileType });
                 const mediaMessageToSave = {
@@ -538,7 +614,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             }
 
             if (text) {
-                if (fileUrl) await new Promise(resolve => setTimeout(resolve, 500)); // Pequeña pausa
+                if (fileUrl) await new Promise(resolve => setTimeout(resolve, 500)); // Pequeña pausa para asegurar el orden de los mensajes
                 
                 const sentTextData = await sendAdvancedWhatsAppMessage(contactId, { text });
                 const textMessageToSave = {
@@ -808,7 +884,6 @@ app.delete('/api/quick-replies/:id', async (req, res) => {
 
 // --- ENDPOINTS PARA ETIQUETAS ---
 app.post('/api/tags', async (req, res) => {
-    // MODIFIED: Accept 'order' field
     const { label, color, key, order } = req.body;
     if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
@@ -817,8 +892,6 @@ app.post('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
 });
 
-// --- FIX: Reordered the routes. The specific route must come before the general one. ---
-// --- NEW ENDPOINT TO HANDLE TAG REORDERING ---
 app.put('/api/tags/order', async (req, res) => {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) {
@@ -843,7 +916,6 @@ app.put('/api/tags/:id', async (req, res) => {
     const { label, color, key } = req.body;
     if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
-        // Note: We don't update 'order' here, it's handled by a separate endpoint
         await db.collection('crm_tags').doc(id).update({ label, color, key });
         res.status(200).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
@@ -942,7 +1014,7 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
-// --- START: BOT & SETTINGS ENDPOINTS ---
+// --- NUEVO: ENDPOINTS PARA CONFIGURACIÓN DEL BOT Y AJUSTES GENERALES ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
@@ -975,34 +1047,11 @@ app.post('/api/bot/toggle', async (req, res) => {
     }
 });
 
-// --- START: NEW GENERAL SETTINGS ENDPOINTS ---
-app.get('/api/settings/away-message', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        if (!doc.exists) {
-            return res.status(200).json({ success: true, settings: { isActive: true } }); // Default to active
-        }
-        res.status(200).json({ success: true, settings: { isActive: doc.data().awayMessageActive } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración del mensaje de ausencia.' });
-    }
-});
-
-app.post('/api/settings/away-message', async (req, res) => {
-    const { isActive } = req.body;
-    try {
-        await db.collection('crm_settings').doc('general').set({ awayMessageActive: isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Configuración del mensaje de ausencia guardada.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
-    }
-});
-
 app.get('/api/settings/global-bot', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
         if (!doc.exists) {
-            return res.status(200).json({ success: true, settings: { isActive: false } }); // Default to inactive
+            return res.status(200).json({ success: true, settings: { isActive: false } }); // Por defecto inactivo
         }
         res.status(200).json({ success: true, settings: { isActive: doc.data().globalBotActive } });
     } catch (error) {
@@ -1020,7 +1069,6 @@ app.post('/api/settings/global-bot', async (req, res) => {
     }
 });
 
-// --- AÑADIDO: ENDPOINT PARA GUARDAR GOOGLE SHEET ID ---
 app.get('/api/settings/google-sheet', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
@@ -1042,48 +1090,34 @@ app.post('/api/settings/google-sheet', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al guardar la configuración de Google Sheet.' });
     }
 });
-// --- END: NEW GENERAL SETTINGS ENDPOINTS ---
 
-// --- END: BOT & SETTINGS ENDPOINTS ---
-
-// --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
+// --- NUEVO: ENDPOINTS PARA BASE DE CONOCIMIENTO DE IA ---
 app.post('/api/knowledge-base', async (req, res) => {
-    const { topic, answer, fileUrl, fileType } = req.body;
+    const { topic, answer } = req.body;
     if (!topic || !answer) {
         return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
     }
     try {
-        const entryData = { 
-            topic, 
-            answer,
-            fileUrl: fileUrl || null,
-            fileType: fileType || null 
-        };
+        const entryData = { topic, answer };
         const newEntry = await db.collection('ai_knowledge_base').add(entryData);
         res.status(201).json({ success: true, id: newEntry.id, data: entryData });
     } catch (error) { 
-        console.error("Error creating knowledge base entry:", error);
+        console.error("Error creando entrada en base de conocimiento:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al crear la entrada.' }); 
     }
 });
 
 app.put('/api/knowledge-base/:id', async (req, res) => {
     const { id } = req.params;
-    const { topic, answer, fileUrl, fileType } = req.body;
+    const { topic, answer } = req.body;
     if (!topic || !answer) {
         return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
     }
     try {
-        const updateData = {
-            topic,
-            answer,
-            fileUrl: fileUrl || null,
-            fileType: fileType || null
-        };
-        await db.collection('ai_knowledge_base').doc(id).update(updateData);
+        await db.collection('ai_knowledge_base').doc(id).update({ topic, answer });
         res.status(200).json({ success: true, message: 'Entrada actualizada.' });
     } catch (error) { 
-        console.error("Error updating knowledge base entry:", error);
+        console.error("Error actualizando entrada en base de conocimiento:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al actualizar la entrada.' }); 
     }
 });
@@ -1094,13 +1128,12 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
         await db.collection('ai_knowledge_base').doc(id).delete();
         res.status(200).json({ success: true, message: 'Entrada eliminada.' });
     } catch (error) { 
-        console.error("Error deleting knowledge base entry:", error);
+        console.error("Error eliminando entrada de base de conocimiento:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' }); 
     }
 });
-// --- END: KNOWLEDGE BASE ENDPOINTS ---
 
-// --- ENDPOINT PARA BOT DE IA (MANUAL) ---
+// --- ENDPOINT PARA GENERAR RESPUESTA MANUAL CON IA ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
@@ -1108,7 +1141,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\nAsistente:`;
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
@@ -1119,7 +1152,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
 });
 
 
-// --- AÑADIDO: Ruta para servir la aplicación frontend ---
+// --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
