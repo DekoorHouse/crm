@@ -22,6 +22,7 @@ try {
     console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
 } catch (error) {
     console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
+    process.exit(1); // Detiene la aplicación si Firebase no puede inicializar
 }
 
 const db = admin.firestore();
@@ -33,10 +34,10 @@ const app = express();
 
 // --- INICIO: CORRECCIÓN DE CORS ---
 // Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
-const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000'];
+const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000', undefined]; // Se añade undefined para permitir pruebas locales sin origen
 const corsOptions = {
   origin: function (origin, callback) {
-    if (whitelist.indexOf(origin) !== -1 || !origin) {
+    if (whitelist.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
       callback(new Error('Not allowed by CORS'));
@@ -236,7 +237,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
-// --- INICIO: CORRECCIÓN DE BUG CRÍTICO (FUNCIÓN FALTANTE) ---
+// --- FUNCIÓN PARA ENVIAR EVENTOS DE CONVERSIÓN A META ---
 async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
@@ -281,49 +282,39 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
-// --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
 
-// --- FUNCIÓN DE ENVÍO AVANZADO MODIFICADA ---
-// =================== INICIO DE LA MODIFICACIÓN 1 ===================
-// Se añade `reply_to_wamid` a los parámetros para poder recibir el ID del mensaje a responder.
+// --- FUNCIÓN DE ENVÍO AVANZADO DE MENSAJES A WHATSAPP ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
-// =================== FIN DE LA MODIFICACIÓN 1 ===================
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
     let messageToSaveText;
 
-    if (fileUrl && fileType) { // Mensaje multimedia (puede tener subtítulo o no)
+    if (fileUrl && fileType) { 
         const type = fileType.startsWith('image/') ? 'image' : 
                      fileType.startsWith('video/') ? 'video' : 
                      fileType.startsWith('audio/') ? 'audio' : 'document';
         
         const mediaObject = { link: fileUrl };
-        if (text) { // Usamos el 'text' como subtítulo
+        if (text) { 
             mediaObject.caption = text;
         }
         
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
-        
-        // El texto para la BD es el subtítulo, o el placeholder si no hay subtítulo.
         messageToSaveText = text || (type === 'image' ? '📷 Imagen' : 
                                      type === 'video' ? '🎥 Video' :
                                      type === 'audio' ? '🎵 Audio' : '📄 Documento');
 
-    } else if (text) { // Mensaje de solo texto
+    } else if (text) { 
         messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
         messageToSaveText = text;
     } else {
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
     
-    // =================== INICIO DE LA MODIFICACIÓN 2 ===================
-    // Si se proporcionó un `reply_to_wamid`, se añade el objeto `context` al payload.
-    // Esto le dice a la API de WhatsApp que este mensaje es una respuesta a otro.
     if (reply_to_wamid) {
         messagePayload.context = { message_id: reply_to_wamid };
     }
-    // =================== FIN DE LA MODIFICACIÓN 2 ===================
 
     try {
         console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
@@ -344,7 +335,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
 }
 
 
-// --- WEBHOOK DE WHATSAPP ---
+// --- WEBHOOK DE WHATSAPP (VERIFICACIÓN) ---
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -357,7 +348,8 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// --- INICIO DE LA CORRECCIÓN ---
+
+// --- FUNCIONES PARA MANEJAR ARCHIVOS MULTIMEDIA ---
 async function getMediaUrl(mediaId) {
     if (!mediaId) return null;
     try {
@@ -374,29 +366,19 @@ async function getMediaUrl(mediaId) {
 async function uploadMediaToStorage(mediaUrl, mimeType) {
     if (!mediaUrl || !mimeType) return null;
     try {
-        // 1. Descargar el archivo desde la URL de Meta
         const response = await axios({
             method: 'get',
             url: mediaUrl,
             responseType: 'arraybuffer',
-            headers: {
-                'Authorization': `Bearer ${WHATSAPP_TOKEN}`
-            }
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
         });
         const buffer = Buffer.from(response.data, 'binary');
 
-        // 2. Subir el archivo a Firebase Storage
         const extension = mimeType.split('/')[1];
         const fileName = `whatsapp_media/${uuidv4()}.${extension}`;
         const file = bucket.file(fileName);
 
-        await file.save(buffer, {
-            metadata: {
-                contentType: mimeType,
-            },
-        });
-
-        // 3. Hacer el archivo público y obtener la URL
+        await file.save(buffer, { metadata: { contentType: mimeType } });
         await file.makePublic();
         return file.publicUrl();
 
@@ -406,7 +388,7 @@ async function uploadMediaToStorage(mediaUrl, mimeType) {
     }
 }
 
-// --- NUEVA FUNCIÓN AUXILIAR PARA ENVIAR Y GUARDAR MENSAJES AUTOMÁTICOS ---
+// --- FUNCIÓN AUXILIAR PARA ENVIAR Y GUARDAR MENSAJES AUTOMÁTICOS ---
 async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
     await contactRef.collection('messages').add({
@@ -426,7 +408,9 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
 }
 
-// --- NUEVA FUNCIÓN PARA MANEJAR CÓDIGOS POSTALES ---
+// =================== INICIO DE LA CORRECCIÓN ===================
+// La función se mueve aquí, ANTES de ser llamada en el webhook.
+// --- FUNCIÓN PARA MANEJAR CÓDIGOS POSTALES ---
 async function handlePostalCodeAuto(message, contactRef, from) {
     if (message.type !== 'text') return false;
 
@@ -451,133 +435,111 @@ async function handlePostalCodeAuto(message, contactRef, from) {
     }
     return false; // No se encontró o no se pudo manejar un CP
 }
+// =================== FIN DE LA CORRECCIÓN ===================
 
 
-// --- LÓGICA DEL WEBHOOK COMPLETA Y CORREGIDA ---
+// --- LÓGICA DEL WEBHOOK PRINCIPAL ---
 app.post('/webhook', async (req, res) => {
-  const entry = req.body.entry?.[0];
-  const change = entry?.changes?.[0];
-  const value = change?.value;
+  try {
+    const entry = req.body.entry?.[0];
+    const change = entry?.changes?.[0];
+    const value = change?.value;
 
-  if (value && value.messages && value.contacts) {
-    const message = value.messages[0];
-    console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
-    const contactInfo = value.contacts[0];
-    const from = message.from;
-    const contactRef = db.collection('contacts_whatsapp').doc(from);
+    if (value && value.messages && value.contacts) {
+      const message = value.messages[0];
+      console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
+      const contactInfo = value.contacts[0];
+      const from = message.from;
+      const contactRef = db.collection('contacts_whatsapp').doc(from);
 
-    // Ignorar eco del propio bot
-    if (message.from === PHONE_NUMBER_ID) {
-      console.log('[LOG] Mensaje saliente ignorado.');
-      return res.sendStatus(200);
-    }
-
-    // 1) Guardar mensaje entrante
-    const messageData = {
-      timestamp: admin.firestore.Timestamp.now(),
-      from,
-      status: 'received',
-      id: message.id,
-      type: message.type,
-      text: message.type === 'text' ? message.text.body : `Mensaje multimedia (${message.type})`
-    };
-    await contactRef.collection('messages').add(messageData);
-
-    // 2) Actualizar contacto
-    const contactUpdateData = {
-      name: contactInfo.profile?.name,
-      wa_id: contactInfo.wa_id,
-      lastMessage: messageData.text,
-      lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-      unreadCount: admin.firestore.FieldValue.increment(1)
-    };
-    if (message.referral) contactUpdateData.adReferral = message.referral;
-
-    const previousDoc = await contactRef.get();
-    const isNewContact = !previousDoc.exists;
-    await contactRef.set(contactUpdateData, { merge: true });
-    console.log(`[LOG] Mensaje de ${from} guardado.`);
-
-    // 3) NUEVO: si el mensaje trae un CP de 5 dígitos, responder cobertura y TERMINAR
-    const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
-    if (cpHandled) {
-        console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
+      if (message.from === PHONE_NUMBER_ID) {
+        console.log('[LOG] Mensaje saliente ignorado.');
         return res.sendStatus(200);
-    }
+      }
 
-    // 4) Respuesta automática: anuncio/bienvenida o IA
-    if (isNewContact) {
-      let adResponseSent = false;
+      const messageData = {
+        timestamp: admin.firestore.Timestamp.now(),
+        from,
+        status: 'received',
+        id: message.id,
+        type: message.type,
+        text: message.type === 'text' ? message.text.body : `Mensaje multimedia (${message.type})`
+      };
+      await contactRef.collection('messages').add(messageData);
 
-      // Si viene de anuncio con source_id, intentar respuesta configurada
-      if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
-        const adId = message.referral.source_id;
-        console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
-        const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+      const contactUpdateData = {
+        name: contactInfo.profile?.name,
+        wa_id: contactInfo.wa_id,
+        lastMessage: messageData.text,
+        lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        unreadCount: admin.firestore.FieldValue.increment(1)
+      };
+      if (message.referral) contactUpdateData.adReferral = message.referral;
 
-        if (!snapshot.empty) {
-          const adResponseData = snapshot.docs[0].data();
-          try {
-            await sendAutoMessage(contactRef, {
-              text: adResponseData.message,
-              fileUrl: adResponseData.fileUrl,
-              fileType: adResponseData.fileType
-            });
-            adResponseSent = true;
-          } catch (error) {
-            console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message);
+      const previousDoc = await contactRef.get();
+      const isNewContact = !previousDoc.exists;
+      await contactRef.set(contactUpdateData, { merge: true });
+      console.log(`[LOG] Mensaje de ${from} guardado.`);
+
+      const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
+      if (cpHandled) {
+          console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
+          return res.sendStatus(200);
+      }
+
+      if (isNewContact) {
+        let adResponseSent = false;
+        if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
+          const adId = message.referral.source_id;
+          console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
+          const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+          if (!snapshot.empty) {
+            const adResponseData = snapshot.docs[0].data();
+            try {
+              await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+              adResponseSent = true;
+            } catch (error) { console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message); }
+          } else { console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`); }
+        }
+
+        if (!adResponseSent) {
+          const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
+          if (!alreadyWelcomed) {
+            try {
+              await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+              await contactRef.update({ welcomed: true });
+            } catch (error) { console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message); }
+          } else { console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`); }
+        }
+      } else {
+        await triggerAutoReplyAI(message, contactRef);
+      }
+    } else if (value && value.statuses) {
+      const statusUpdate = value.statuses[0];
+      const messageId = statusUpdate.id;
+      const recipientId = statusUpdate.recipient_id;
+      const newStatus = statusUpdate.status;
+
+      try {
+        const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
+        const snap = await messagesRef.where('id', '==', messageId).limit(1).get();
+        if (!snap.empty) {
+          const messageDoc = snap.docs[0];
+          const currentStatus = messageDoc.data().status;
+          const order = { sent: 1, delivered: 2, read: 3 };
+          if ((order[newStatus] || 0) > (order[currentStatus] || 0)) {
+            await messageDoc.ref.update({ status: newStatus });
+            console.log(`[LOG] Estado del mensaje ${messageId} -> '${newStatus}' para ${recipientId}.`);
           }
-        } else {
-          console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`);
         }
-      }
-
-      // Bienvenida solo si NO se envió respuesta de anuncio y nunca se saludó
-      if (!adResponseSent) {
-        const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
-        if (!alreadyWelcomed) {
-          try {
-            await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-            await contactRef.update({ welcomed: true }); // marcar que ya se saludó
-          } catch (error) {
-            console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message);
-          }
-        } else {
-          console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`);
-        }
-      }
-    } else {
-      // Contacto existente: delegar a IA (tu función ya maneja casos normales)
-      await triggerAutoReplyAI(message, contactRef);
+      } catch (error) { console.error(`❌ Error al actualizar estado ${messageId}:`, error.message); }
     }
-  } else if (value && value.statuses) {
-    // Actualización de estados (delivered, read)
-    const statusUpdate = value.statuses[0];
-    const messageId = statusUpdate.id;
-    const recipientId = statusUpdate.recipient_id;
-    const newStatus = statusUpdate.status;
-
-    try {
-      const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
-      const snap = await messagesRef.where('id', '==', messageId).limit(1).get();
-      if (!snap.empty) {
-        const messageDoc = snap.docs[0];
-        const currentStatus = messageDoc.data().status;
-        const order = { sent: 1, delivered: 2, read: 3 };
-        if ((order[newStatus] || 0) > (order[currentStatus] || 0)) {
-          await messageDoc.ref.update({ status: newStatus });
-          console.log(`[LOG] Estado del mensaje ${messageId} -> '${newStatus}' para ${recipientId}.`);
-        }
-      }
-    } catch (error) {
-      console.error(`❌ Error al actualizar estado ${messageId}:`, error.message);
-    }
+  } catch (error) {
+    console.error('❌ ERROR CRÍTICO EN EL WEBHOOK:', error);
+  } finally {
+    res.sendStatus(200);
   }
-
-  res.sendStatus(200);
 });
-
-// --- FIN DE LA CORRECCIÓN ---
 
 
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
@@ -604,7 +566,7 @@ async function buildTemplatePayload(contactId, template) {
     return { payload, messageToSaveText };
 }
 
-// --- ENDPOINT PARA ENVIAR MENSAJES MODIFICADO ---
+// --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -630,12 +592,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else {
-            // Lógica unificada para mensajes manuales y respuestas rápidas
-            // 'text' puede ser un mensaje de texto o el subtítulo de un archivo.
-            // =================== INICIO DE LA MODIFICACIÓN 3 ===================
-            // Ahora pasamos `reply_to_wamid` a la función `sendAdvancedWhatsAppMessage`.
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
-            // =================== FIN DE LA MODIFICACIÓN 3 ===================
     
             const messageToSave = {
                 from: PHONE_NUMBER_ID, 
@@ -647,7 +604,6 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 fileType: sentMessageData.fileTypeForDb
             };
         
-            // Esta parte guarda el contexto en la base de datos para tu referencia.
             if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
             
@@ -725,7 +681,7 @@ app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, re
     }
 });
 
-// --- ENDPOINTS PARA ACCIONES MANUALES Y DATOS DE CONTACTO ---
+// --- ENDPOINTS PARA DATOS DE CONTACTO ---
 app.put('/api/contacts/:contactId', async (req, res) => {
     const { contactId } = req.params;
     const { name, email, nickname } = req.body;
@@ -739,7 +695,7 @@ app.put('/api/contacts/:contactId', async (req, res) => {
     }
 });
 
-// --- ENDPOINT PARA REGISTRO ---
+// --- ENDPOINTS PARA EVENTOS DE CONVERSIÓN ---
 app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -762,7 +718,6 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
     }
 });
 
-// --- ENDPOINT PARA COMPRA ---
 app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
     const { contactId } = req.params;
     const { value } = req.body;
@@ -791,7 +746,6 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
     }
 });
 
-// --- ENDPOINT PARA VER CONTENIDO ---
 app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -842,7 +796,7 @@ app.delete('/api/contacts/:contactId/notes/:noteId', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la nota.' }); }
 });
 
-// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS (CON SOPORTE MULTIMEDIA) ---
+// --- ENDPOINTS PARA RESPUESTAS RÁPIDAS ---
 app.post('/api/quick-replies', async (req, res) => {
     const { shortcut, message, fileUrl, fileType } = req.body;
     if (!shortcut || (!message && !fileUrl)) {
@@ -916,7 +870,6 @@ app.delete('/api/quick-replies/:id', async (req, res) => {
 
 // --- ENDPOINTS PARA ETIQUETAS ---
 app.post('/api/tags', async (req, res) => {
-    // MODIFIED: Accept 'order' field
     const { label, color, key, order } = req.body;
     if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
@@ -925,8 +878,6 @@ app.post('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
 });
 
-// --- FIX: Reordered the routes. The specific route must come before the general one. ---
-// --- NEW ENDPOINT TO HANDLE TAG REORDERING ---
 app.put('/api/tags/order', async (req, res) => {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) {
@@ -951,7 +902,6 @@ app.put('/api/tags/:id', async (req, res) => {
     const { label, color, key } = req.body;
     if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
-        // Note: We don't update 'order' here, it's handled by a separate endpoint
         await db.collection('crm_tags').doc(id).update({ label, color, key });
         res.status(200).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
@@ -975,7 +925,7 @@ app.delete('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' }); }
 });
 
-// --- ENDPOINTS PARA RESPUESTAS DE ANUNCIOS (CON SOPORTE MULTIMEDIA) ---
+// --- ENDPOINTS PARA RESPUESTAS DE ANUNCIOS ---
 app.post('/api/ad-responses', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) {
@@ -1050,7 +1000,7 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
-// --- START: BOT & SETTINGS ENDPOINTS ---
+// --- ENDPOINTS PARA AJUSTES DEL BOT Y GENERALES ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
@@ -1083,7 +1033,6 @@ app.post('/api/bot/toggle', async (req, res) => {
     }
 });
 
-// --- START: NEW GENERAL SETTINGS ENDPOINTS ---
 app.get('/api/settings/away-message', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
@@ -1128,7 +1077,6 @@ app.post('/api/settings/global-bot', async (req, res) => {
     }
 });
 
-// --- AÑADIDO: ENDPOINT PARA GUARDAR GOOGLE SHEET ID ---
 app.get('/api/settings/google-sheet', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
@@ -1150,11 +1098,8 @@ app.post('/api/settings/google-sheet', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al guardar la configuración de Google Sheet.' });
     }
 });
-// --- END: NEW GENERAL SETTINGS ENDPOINTS ---
 
-// --- END: BOT & SETTINGS ENDPOINTS ---
-
-// --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
+// --- ENDPOINTS PARA BASE DE CONOCIMIENTO (IA) ---
 app.post('/api/knowledge-base', async (req, res) => {
     const { topic, answer, fileUrl, fileType } = req.body;
     if (!topic || !answer) {
@@ -1206,9 +1151,8 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' }); 
     }
 });
-// --- END: KNOWLEDGE BASE ENDPOINTS ---
 
-// --- ENDPOINT PARA BOT DE IA (MANUAL) ---
+// --- ENDPOINT PARA GENERAR RESPUESTA CON IA (MANUAL) ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
@@ -1227,7 +1171,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
 });
 
 
-// --- AÑADIDO: Ruta para servir la aplicación frontend ---
+// --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
