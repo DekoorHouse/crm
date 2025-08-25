@@ -9,7 +9,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
     <style>
@@ -978,7 +978,8 @@
                 bubbleExtraClass = 'has-image';
                 timeAndStatusHTML = '';
             } else if (message.fileUrl && message.fileType.startsWith('video/')) {
-                content = `<video controls class="rounded-lg max-w-xs"><source src="${message.fileUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
+                const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
+                content = `<video controls class="rounded-lg max-w-xs"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             } else {
                 content = `<p class="break-words">${formatWhatsAppText(message.text)}</p>`;
             }
@@ -1621,6 +1622,7 @@
             renderChatWindow();
         }
         
+        // --- FUNCIÓN DE ENVÍO CORREGIDA ---
         async function handleSendMessage(event) {
             event.preventDefault();
             const input = document.getElementById('message-input');
@@ -1628,58 +1630,57 @@
             const contact = state.contacts.find(c => c.id === state.selectedContactId);
             if (!contact || state.isUploading) return;
 
-            let fileUrl = null;
-            let fileType = null;
+            let quickReplyFileUrl = null;
+            let quickReplyFileType = null;
 
             if (text.startsWith('/')) {
                 const shortcut = text.substring(1);
                 const matchingReply = state.quickReplies.find(reply => reply.shortcut === shortcut);
                 if (matchingReply) {
                     text = matchingReply.message || '';
-                    fileUrl = matchingReply.fileUrl;
-                    fileType = matchingReply.fileType;
+                    quickReplyFileUrl = matchingReply.fileUrl;
+                    quickReplyFileType = matchingReply.fileType;
                 } else {
-                    return; 
+                    return;
                 }
             }
             
-            if (!text && !state.stagedFile && !fileUrl) return;
-            
-            if (text && !contact.isWithin24HourWindow && !fileUrl) {
-                showError("La ventana de 24 horas ha cerrado. Solo puedes enviar plantillas.");
-                return;
-            }
+            const fileToSend = state.stagedFile;
+            if (!text && !fileToSend && !quickReplyFileUrl) return;
 
             input.value = '';
-
-            const messageData = { text, fileUrl, fileType };
-            if (state.replyingToMessage) {
-                messageData.reply_to_wamid = state.replyingToMessage.id;
-            }
+            cancelStagedFile(); // Limpia la vista previa del archivo inmediatamente
 
             try {
-                let response;
-                if (state.stagedFile) {
-                    response = await uploadAndSendFile(state.stagedFile); 
-                    cancelStagedFile();
+                if (fileToSend) {
+                    // Si el usuario adjuntó un archivo, súbelo y envíalo con el texto como subtítulo
+                    const response = await uploadAndSendFile(fileToSend, text);
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Error del servidor.');
+                    }
                 } else {
+                    // Si es un mensaje de texto o una respuesta rápida (con o sin archivo)
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
-                    response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+                    const messageData = { text, fileUrl: quickReplyFileUrl, fileType: quickReplyFileType };
+                    if (state.replyingToMessage) {
+                        messageData.reply_to_wamid = state.replyingToMessage.id;
+                    }
+                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(messageData)
                     });
-                }
-                
-                if (response && !response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.message || 'Error del servidor.');
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Error del servidor.');
+                    }
                 }
                 cancelReply();
             } catch (error) {
                 console.error("Error en el proceso de envío:", error);
                 showError(error.message);
-                if (text && !state.stagedFile) { input.value = text; }
+                if (text && !fileToSend) { input.value = text; } // Restaura el texto si falló el envío
             }
         }
 
@@ -1744,33 +1745,48 @@
 
         function toggleEditNote(noteId) { state.isEditingNote = state.isEditingNote === noteId ? null : noteId; renderNotes(); }
 
-        async function uploadAndSendFile(file) { 
-            if (!file || !state.selectedContactId || state.isUploading) return; 
-            const progressEl = document.getElementById('upload-progress'); 
-            const submitButton = document.querySelector('#message-form button[type="submit"]'); 
-            state.isUploading = true; 
-            progressEl.textContent = 'Subiendo 0%...'; 
-            progressEl.classList.remove('hidden'); 
-            if(submitButton) submitButton.disabled = true; 
+        // --- FUNCIÓN DE SUBIDA DE ARCHIVOS CORREGIDA ---
+        async function uploadAndSendFile(file, textCaption) { // Acepta el subtítulo como argumento
+            if (!file || !state.selectedContactId || state.isUploading) return;
+            const progressEl = document.getElementById('upload-progress');
+            const submitButton = document.querySelector('#message-form button[type="submit"]');
+            state.isUploading = true;
+            progressEl.textContent = 'Subiendo 0%...';
+            progressEl.classList.remove('hidden');
+            if(submitButton) submitButton.disabled = true;
             
             const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
-            const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`; 
+            const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`;
             
-            const fileRef = storage.ref(filePath); 
-            const uploadTask = fileRef.put(file); 
-            return new Promise((resolve, reject) => { 
-                uploadTask.on('state_changed', (snapshot) => { const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; }, (error) => { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; reject(new Error("Falló la subida del archivo.")); }, async () => { 
-                    try { 
-                        const downloadURL = await uploadTask.snapshot.ref.getDownloadURL(); 
-                        const messageData = { fileUrl: downloadURL, fileType: file.type };
-                        if (state.replyingToMessage) {
-                            messageData.reply_to_wamid = state.replyingToMessage.id;
+            const fileRef = storage.ref(filePath);
+            const uploadTask = fileRef.put(file);
+            return new Promise((resolve, reject) => {
+                uploadTask.on('state_changed', 
+                    (snapshot) => { const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; }, 
+                    (error) => { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; reject(new Error("Falló la subida del archivo.")); }, 
+                    async () => {
+                        try {
+                            const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
+                            const messageData = { 
+                                fileUrl: downloadURL, 
+                                fileType: file.type,
+                                text: textCaption // Incluye el subtítulo en la petición
+                            };
+                            if (state.replyingToMessage) {
+                                messageData.reply_to_wamid = state.replyingToMessage.id;
+                            }
+                            const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
+                            resolve(response);
+                        } catch (error) { 
+                            reject(error); 
+                        } finally { 
+                            state.isUploading = false; 
+                            progressEl.classList.add('hidden'); 
+                            if(submitButton) submitButton.disabled = false; 
                         }
-                        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) }); 
-                        resolve(response);
-                    } catch (error) { reject(error); } finally { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; } 
-                }); 
-            }); 
+                    }
+                );
+            });
         }
 
         function handleStatusChange(contactId, newStatus) {
@@ -2888,3 +2904,4 @@
     </script>
 </body>
 </html>
+```
