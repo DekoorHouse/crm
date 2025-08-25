@@ -962,6 +962,7 @@
             `;
         };
         
+        // --- FIX START: Modified the MessageBubbleTemplate function ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -988,11 +989,16 @@
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
+            // Only show copy button if there is text to copy
+            const copyButtonHTML = message.text 
+                ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
+                : '';
+
             const actionsHTML = `
                 <div class="message-actions">
                     <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
                     <button class="message-action-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')" title="Reaccionar"><i class="far fa-thumbs-up"></i></button>
-                    <button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>
+                    ${copyButtonHTML}
                 </div>
             `;
 
@@ -1012,6 +1018,7 @@
                     </div>
                 </div>`;
         };
+        // --- FIX END ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
