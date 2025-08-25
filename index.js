@@ -303,28 +303,33 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
 }
 // --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
 
-
+// --- FUNCIÓN DE ENVÍO AVANZADO MODIFICADA ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
     let messageToSaveText;
 
-    if (text) {
-        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
-        messageToSaveText = text;
-    } else if (fileUrl && fileType) {
+    if (fileUrl && fileType) { // Mensaje multimedia (puede tener subtítulo o no)
         const type = fileType.startsWith('image/') ? 'image' : 
                      fileType.startsWith('video/') ? 'video' : 
                      fileType.startsWith('audio/') ? 'audio' : 'document';
         
-        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: { link: fileUrl } };
+        const mediaObject = { link: fileUrl };
+        if (text) { // Usamos el 'text' como subtítulo
+            mediaObject.caption = text;
+        }
         
-        if (type === 'image') messageToSaveText = '📷 Imagen';
-        else if (type === 'video') messageToSaveText = '🎥 Video';
-        else if (type === 'audio') messageToSaveText = '🎵 Audio';
-        else messageToSaveText = '📄 Documento';
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
+        
+        // El texto para la BD es el subtítulo, o el placeholder si no hay subtítulo.
+        messageToSaveText = text || (type === 'image' ? '📷 Imagen' : 
+                                     type === 'video' ? '🎥 Video' :
+                                     type === 'audio' ? '🎵 Audio' : '📄 Documento');
 
+    } else if (text) { // Mensaje de solo texto
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
     } else {
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
@@ -346,6 +351,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
         throw error;
     }
 }
+
 
 // --- WEBHOOK DE WHATSAPP ---
 app.get('/webhook', (req, res) => {
@@ -510,7 +516,7 @@ async function buildTemplatePayload(contactId, template) {
     return { payload, messageToSaveText };
 }
 
-// --- ENDPOINT PARA ENVIAR MENSAJES ---
+// --- ENDPOINT PARA ENVIAR MENSAJES MODIFICADO ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -535,32 +541,29 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else {
-            // Lógica para mensajes manuales y respuestas rápidas
-            if (fileUrl && fileType) {
-                const sentMediaData = await sendAdvancedWhatsAppMessage(contactId, { fileUrl, fileType });
-                const mediaMessageToSave = {
-                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentMediaData.id, text: sentMediaData.textForDb,
-                    fileUrl: sentMediaData.fileUrlForDb, fileType: sentMediaData.fileTypeForDb
-                };
-                if (reply_to_wamid) mediaMessageToSave.context = { id: reply_to_wamid };
-                Object.keys(mediaMessageToSave).forEach(key => mediaMessageToSave[key] == null && delete mediaMessageToSave[key]);
-                await contactRef.collection('messages').add(mediaMessageToSave);
-                await contactRef.update({ lastMessage: sentMediaData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-            }
-
-            if (text) {
-                if (fileUrl) await new Promise(resolve => setTimeout(resolve, 500)); // Pequeña pausa
-                
-                const sentTextData = await sendAdvancedWhatsAppMessage(contactId, { text });
-                const textMessageToSave = {
-                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentTextData.id, text: sentTextData.textForDb,
-                };
-                // No añadir contexto de respuesta al segundo mensaje para evitar confusión
-                await contactRef.collection('messages').add(textMessageToSave);
-                await contactRef.update({ lastMessage: sentTextData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-            }
+            // Lógica unificada para mensajes manuales y respuestas rápidas
+            // 'text' puede ser un mensaje de texto o el subtítulo de un archivo.
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType });
+    
+            const messageToSave = {
+                from: PHONE_NUMBER_ID, 
+                status: 'sent', 
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: sentMessageData.id, 
+                text: sentMessageData.textForDb,
+                fileUrl: sentMessageData.fileUrlForDb, 
+                fileType: sentMessageData.fileTypeForDb
+            };
+        
+            if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
+            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+            
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ 
+                lastMessage: sentMessageData.textForDb, 
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), 
+                unreadCount: 0 
+            });
         }
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
