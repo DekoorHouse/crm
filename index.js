@@ -10,6 +10,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const path = require('path');
+const { v4: uuidv4 } = require('uuid'); // Necesario para nombres de archivo únicos
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 try {
@@ -373,13 +374,48 @@ async function getMediaUrl(mediaId) {
         const url = `https://graph.facebook.com/v19.0/${mediaId}`;
         const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
         const response = await axios.get(url, { headers });
-        // La URL que devuelve ya es la URL final y temporal del archivo
         return response.data.url; 
     } catch (error) {
         console.error(`❌ Error al obtener la URL del medio ${mediaId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
         return null;
     }
 }
+
+async function uploadMediaToStorage(mediaUrl, mimeType) {
+    if (!mediaUrl || !mimeType) return null;
+    try {
+        // 1. Descargar el archivo desde la URL de Meta
+        const response = await axios({
+            method: 'get',
+            url: mediaUrl,
+            responseType: 'arraybuffer',
+            headers: {
+                'Authorization': `Bearer ${WHATSAPP_TOKEN}`
+            }
+        });
+        const buffer = Buffer.from(response.data, 'binary');
+
+        // 2. Subir el archivo a Firebase Storage
+        const extension = mimeType.split('/')[1];
+        const fileName = `whatsapp_media/${uuidv4()}.${extension}`;
+        const file = bucket.file(fileName);
+
+        await file.save(buffer, {
+            metadata: {
+                contentType: mimeType,
+            },
+        });
+
+        // 3. Hacer el archivo público y obtener la URL
+        await file.makePublic();
+        return file.publicUrl();
+
+    } catch (error) {
+        console.error(`❌ Error al descargar o subir el medio:`, error.message);
+        return null;
+    }
+}
+
 
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
@@ -415,16 +451,16 @@ app.post('/webhook', async (req, res) => {
             messageData.text = message.text.body;
         } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(message.type)) {
             const mediaObject = message[message.type];
-            // Obtenemos la URL final del archivo multimedia
-            const finalMediaUrl = await getMediaUrl(mediaObject.id);
+            const tempMediaUrl = await getMediaUrl(mediaObject.id);
             
-            if (finalMediaUrl) {
-                // Guardamos la URL y el tipo directamente
-                messageData.fileUrl = finalMediaUrl;
-                messageData.fileType = mediaObject.mime_type;
+            if (tempMediaUrl) {
+                const permanentUrl = await uploadMediaToStorage(tempMediaUrl, mediaObject.mime_type);
+                if (permanentUrl) {
+                    messageData.fileUrl = permanentUrl;
+                    messageData.fileType = mediaObject.mime_type;
+                }
             }
             
-            // El texto del mensaje es el caption o un texto genérico si no hay caption
             messageData.text = mediaObject.caption || `Mensaje multimedia (${message.type})`;
         } else {
             messageData.text = `Tipo de mensaje no soportado: ${message.type}`;
