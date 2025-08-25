@@ -202,17 +202,14 @@
 
         .color-picker-label { display: inline-block; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 2px solid var(--color-border); }
         
-        /* --- START: Drag and Drop Styles --- */
         .draggable-row { cursor: grab; }
         .draggable-row:active { cursor: grabbing; }
         .drag-handle { cursor: grab; padding: 0 10px; color: #a0aec0; }
         .drag-handle:active { cursor: grabbing; }
         .sortable-ghost { background-color: #eef2ff; opacity: 0.7; }
         .sortable-drag { background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        /* --- END: Drag and Drop Styles --- */
         
-        /* --- START: Pipeline Styles --- */
-        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; /* Added extra padding */ overflow-x: auto; height: 100%; align-items: flex-start; }
+        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; overflow-x: auto; height: 100%; align-items: flex-start; }
         .pipeline-column { flex: 0 0 300px; width: 300px; background-color: #f1f2f4; border-radius: var(--border-radius-lg); display: flex; flex-direction: column; max-height: 100%; }
         .pipeline-header { padding: 1rem; font-weight: 600; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
         .pipeline-header .tag-color-swatch { flex-shrink: 0; }
@@ -223,26 +220,22 @@
         .pipeline-card .contact-name { font-weight: 600; }
         .pipeline-card .last-message { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .sortable-ghost.pipeline-card { opacity: 0.5; background: #cce5ff; }
-        /* --- END: Pipeline Styles --- */
 
-        /* --- START: Login Styles --- */
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-bg); display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
         .login-container { background-color: var(--color-container-bg); padding: 40px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 25px var(--color-shadow); text-align: center; max-width: 420px; width: 100%; }
         .login-container h1 { margin-bottom: 25px; font-size: 1.8em; color: var(--color-primary); }
         .login-container button { width: 100%; }
         #login-error-message { margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; }
-        /* --- END: Login Styles --- */
 
-        /* --- START: Bot & Settings View Styles --- */
         .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
         .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--color-primary); }
         input:checked + .slider:before { transform: translateX(22px); }
+        
+        /* --- NUEVO: ESTILOS DE AJUSTES --- */
         .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
-        /* --- END: Bot & Settings View Styles --- */
-
     </style>
 </head>
 <body class="antialiased">
@@ -318,6 +311,7 @@
                         <i class="fas fa-robot"></i>
                         <span class="sidebar-text">Respuestas IA</span>
                     </a>
+                    <!-- NUEVO: Enlace a Ajustes -->
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
                         <span class="sidebar-text">Ajustes</span>
@@ -343,7 +337,7 @@
         </div>
     </div>
 
-    <!-- QUICK REPLY MODAL -->
+    <!-- MODALES -->
     <div id="quick-reply-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="quick-reply-modal-title">Añadir Respuesta Rápida</h2>
@@ -375,7 +369,6 @@
         </div>
     </div>
 
-    <!-- AD RESPONSE MODAL -->
     <div id="ad-response-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
@@ -411,7 +404,6 @@
         </div>
     </div>
 
-    <!-- EDIT CONTACT MODAL -->
     <div id="edit-contact-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="edit-contact-modal-title">Editar Contacto</h2>
@@ -437,7 +429,6 @@
         </div>
     </div>
     
-    <!-- TAG MODAL -->
     <div id="tag-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="tag-modal-title">Nueva Etiqueta</h2>
@@ -463,7 +454,6 @@
         </div>
     </div>
 
-    <!-- BOT SETTINGS MODAL -->
     <div id="bot-settings-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="bot-settings-modal-title">Ajustes del Bot</h2>
@@ -480,7 +470,6 @@
         </div>
     </div>
 
-    <!-- KNOWLEDGE BASE MODAL -->
     <div id="knowledge-base-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="kb-modal-title">Añadir Respuesta a la Base de Conocimiento</h2>
@@ -560,9 +549,10 @@
             tags: [],
             knowledgeBase: [],
             botSettings: { instructions: '' },
+            // NUEVOS ESTADOS
             awayMessageSettings: { isActive: true },
             globalBotSettings: { isActive: false },
-            googleSheetSettings: { googleSheetId: '' }, // <-- NUEVO ESTADO
+            googleSheetSettings: { googleSheetId: '' },
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
@@ -653,9 +643,7 @@
 
             return safeText;
         }
-        // --- END: FUNCIÓN AUXILIAR PARA FORMATEAR TEXTO ---
-
-        // --- NUEVA FUNCIÓN PARA COPIAR CON FORMATO ---
+        
         function copyFormattedText(text, buttonElement) {
             const formattedHtml = formatWhatsAppText(text).replace(/<br>/g, '\n');
             const plainText = formattedHtml.replace(/<[^>]+>/g, '');
@@ -857,6 +845,7 @@
             </div>
         `;
 
+        // --- NUEVO: Plantilla de Ajustes ---
         const SettingsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
@@ -886,7 +875,6 @@
                             </label>
                         </div>
                     </div>
-                    <!-- START: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                     <div class="settings-card">
                         <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                         <div>
@@ -898,7 +886,6 @@
                             </div>
                         </div>
                     </div>
-                    <!-- END: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                 </div>
             </div>
         `;
@@ -962,7 +949,6 @@
             `;
         };
         
-        // --- FIX START: Modified the MessageBubbleTemplate function ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -989,7 +975,6 @@
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
-            // Only show copy button if there is text to copy
             const copyButtonHTML = message.text 
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
@@ -1018,7 +1003,6 @@
                     </div>
                 </div>`;
         };
-        // --- FIX END ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -1103,7 +1087,8 @@
             const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
             const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
-            const isBotActiveForContact = contact.botActive !== false;
+            // NUEVO: Lógica para el botón del bot
+            const isBotActiveForContact = contact.botActive !== false; // Activo por defecto si no está definido
             const botToggleHTML = `
                 <button 
                     onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})" 
@@ -1182,32 +1167,9 @@
             `;
         };
         
-        // --- START: FUNCIONES DE FECHA ---
-        function isSameDay(d1, d2) {
-            if (!d1 || !d2) return false;
-            return d1.getFullYear() === d2.getFullYear() &&
-                   d1.getMonth() === d2.getMonth() &&
-                   d1.getDate() === d2.getDate();
-        }
-
-        function formatDateSeparator(date) {
-            const today = new Date();
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-
-            if (isSameDay(date, today)) {
-                return 'Hoy';
-            }
-            if (isSameDay(date, yesterday)) {
-                return 'Ayer';
-            }
-            return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
-        }
-
-        const DateSeparatorTemplate = (dateString) => {
-            return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
-        };
-        // --- END: FUNCIONES DE FECHA ---
+        function isSameDay(d1, d2) { if (!d1 || !d2) return false; return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate(); }
+        function formatDateSeparator(date) { const today = new Date(); const yesterday = new Date(today); yesterday.setDate(yesterday.getDate() - 1); if (isSameDay(date, today)) return 'Hoy'; if (isSameDay(date, yesterday)) return 'Ayer'; return date.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' }); }
+        const DateSeparatorTemplate = (dateString) => `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 
         // --- INICIALIZACIÓN DE LA APP ---
         function startApp() { 
@@ -1219,9 +1181,10 @@
             listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
+            // NUEVO: Llamadas a fetch de ajustes
             fetchAwayMessageSettings();
             fetchGlobalBotSettings();
-            fetchGoogleSheetSettings(); // <-- NUEVA FUNCIÓN
+            fetchGoogleSheetSettings();
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1234,6 +1197,7 @@
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
+            // NUEVO: Resetear estado de ajustes
             state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
@@ -1280,6 +1244,7 @@
                     mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
                     renderKnowledgeBaseView();
                     break;
+                // NUEVO: Caso para la vista de ajustes
                 case 'ajustes':
                     mainViewContainer.innerHTML = SettingsViewTemplate();
                     renderAjustesView();
@@ -1501,7 +1466,7 @@
                     <td class="font-semibold">${contact.name || contact.id}</td>
                     <td>
                         <label class="toggle-switch">
-                            <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive ? 'checked' : ''}>
+                            <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive !== false ? 'checked' : ''}>
                             <span class="slider"></span>
                         </label>
                     </td>
@@ -1509,6 +1474,7 @@
             `).join('');
         }
 
+        // --- NUEVO: Renderizado de Ajustes ---
         function renderAjustesView() {
             if (state.activeView !== 'ajustes') return;
             const awayToggle = document.getElementById('away-message-toggle');
@@ -1519,7 +1485,6 @@
             if (botToggle) {
                 botToggle.checked = state.globalBotSettings.isActive;
             }
-            // START: NUEVA LÓGICA PARA GOOGLE SHEETS
             const sheetIdInput = document.getElementById('google-sheet-id-input');
             if (sheetIdInput) {
                 sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
@@ -1528,7 +1493,6 @@
             if (saveSheetIdBtn) {
                 saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
             }
-            // END: NUEVA LÓGICA PARA GOOGLE SHEETS
         }
 
         function updateCampaignRecipientCount() {
@@ -1548,32 +1512,7 @@
             display.textContent = `Se enviará a ${recipients.length} contactos.`;
         }
 
-        // --- FIX START: Modified the renderMessages function ---
-        function renderMessages() {
-            const contentContainer = document.getElementById('messages-content');
-            if (!contentContainer) return;
-
-            let lastMessageDate = null;
-            let messagesHtml = '';
-
-            state.messages.forEach(message => {
-                // Check for a valid timestamp to create a date separator
-                if (message.timestamp && typeof message.timestamp.seconds === 'number') {
-                    const currentMessageDate = new Date(message.timestamp.seconds * 1000);
-                    if (!isSameDay(currentMessageDate, lastMessageDate)) {
-                        messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate));
-                        lastMessageDate = currentMessageDate;
-                    }
-                }
-                // Always render the message bubble, even if the timestamp is temporarily missing
-                messagesHtml += MessageBubbleTemplate(message);
-            });
-
-            contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>';
-            document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' });
-            handleScroll();
-        }
-        // --- FIX END ---
+        function renderMessages() { const contentContainer = document.getElementById('messages-content'); if (!contentContainer) return; let lastMessageDate = null; let messagesHtml = ''; state.messages.forEach(message => { if (message.timestamp && typeof message.timestamp.seconds === 'number') { const currentMessageDate = new Date(message.timestamp.seconds * 1000); if (!isSameDay(currentMessageDate, lastMessageDate)) { messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate)); lastMessageDate = currentMessageDate; } } messagesHtml += MessageBubbleTemplate(message); }); contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>'; document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' }); handleScroll(); }
         
         function renderNotes() { 
             const contentContainer = document.getElementById('notes-content'); 
@@ -2629,7 +2568,6 @@
             }
         }
 
-        // --- START: Bot & Knowledge Base Functions ---
         function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
@@ -2779,9 +2717,8 @@
                 showError(error.message);
             }
         }
-        // --- END: Bot & Knowledge Base Functions ---
 
-        // --- START: NUEVAS FUNCIONES PARA AJUSTES ---
+        // --- NUEVO: Funciones para Ajustes Generales ---
         async function fetchAwayMessageSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
@@ -2840,7 +2777,6 @@
             }
         }
 
-        // --- START: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
         async function fetchGoogleSheetSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`);
@@ -2875,7 +2811,7 @@
                 });
                 if (!response.ok) throw new Error('No se pudo guardar el ID de Google Sheet.');
                 state.googleSheetSettings.googleSheetId = googleSheetId;
-                showError("¡ID de Google Sheet guardado con éxito!"); // Usamos showError para una notificación verde/amarilla
+                showError("¡ID de Google Sheet guardado con éxito!");
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -2883,7 +2819,6 @@
                 button.textContent = 'Guardar';
             }
         }
-        // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
 
     </script>
 </body>
