@@ -455,6 +455,7 @@ app.post('/webhook', async (req, res) => {
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
         
+        // Ignorar si el mensaje viene del mismo bot
         if (message.from === PHONE_NUMBER_ID) {
             console.log("[LOG] Mensaje saliente ignorado.");
             return res.sendStatus(200);
@@ -463,7 +464,7 @@ app.post('/webhook', async (req, res) => {
         const contactDoc = await contactRef.get();
         const isNewContact = !contactDoc.exists;
 
-        // 1. Guardar el mensaje y actualizar el contacto
+        // 1. Guardar el mensaje en Firestore
         let messageData = { 
             timestamp: admin.firestore.Timestamp.now(), 
             from, 
@@ -491,13 +492,14 @@ app.post('/webhook', async (req, res) => {
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Mensaje de ${from} guardado.`);
 
-        // 2. Lógica de Respuesta Automática (Bienvenida o IA)
+        // 2. Respuesta automática
         if (isNewContact) {
             let adResponseSent = false;
-            // Lógica corregida para que coincida con los datos de Meta
+
+            // --- Si viene de un anuncio ---
             if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
-                const adId = message.referral.source_id; // Usamos source_id
-                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
+                const adId = message.referral.source_id; 
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
@@ -514,22 +516,31 @@ app.post('/webhook', async (req, res) => {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
                 } else {
-                    console.log(`[LOG] No se encontró una respuesta configurada para el Ad ID: ${adId}. Se usará el mensaje de bienvenida general.`);
+                    console.log(`[LOG] No se encontró respuesta configurada para el Ad ID: ${adId}`);
                 }
             }
+
+            // --- Si no es anuncio, o no había respuesta configurada ---
             if (!adResponseSent) {
-                try {
-                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                } catch (error) {
-                    console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
+                const alreadyWelcomed = contactDoc.exists && contactDoc.data().welcomed;
+
+                if (!alreadyWelcomed) {
+                    try {
+                        await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                        await contactRef.update({ welcomed: true }); // 👈 Guardar que ya se saludó
+                    } catch (error) {
+                        console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
+                    }
+                } else {
+                    console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`);
                 }
             }
         } else {
-            // Lógica para contactos existentes (IA)
+            // --- Contactos existentes: delegar a IA ---
             await triggerAutoReplyAI(message, contactRef);
         }
     } else if (value && value.statuses) {
-        // Lógica para manejar actualizaciones de estado (delivered, read)
+        // --- Actualización de estados (delivered, read) ---
         const statusUpdate = value.statuses[0];
         const messageId = statusUpdate.id;
         const recipientId = statusUpdate.recipient_id;
