@@ -373,7 +373,8 @@ async function getMediaUrl(mediaId) {
         const url = `https://graph.facebook.com/v19.0/${mediaId}`;
         const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
         const response = await axios.get(url, { headers });
-        return response.data.url; // Devuelve la URL temporal del archivo
+        // La URL que devuelve ya es la URL final y temporal del archivo
+        return response.data.url; 
     } catch (error) {
         console.error(`❌ Error al obtener la URL del medio ${mediaId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
         return null;
@@ -414,14 +415,16 @@ app.post('/webhook', async (req, res) => {
             messageData.text = message.text.body;
         } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(message.type)) {
             const mediaObject = message[message.type];
-            const mediaUrl = await getMediaUrl(mediaObject.id);
+            // Obtenemos la URL final del archivo multimedia
+            const finalMediaUrl = await getMediaUrl(mediaObject.id);
             
-            if (mediaUrl) {
-                const tempUrlResponse = await axios.get(mediaUrl, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
-                messageData.fileUrl = tempUrlResponse.data.url;
+            if (finalMediaUrl) {
+                // Guardamos la URL y el tipo directamente
+                messageData.fileUrl = finalMediaUrl;
                 messageData.fileType = mediaObject.mime_type;
             }
             
+            // El texto del mensaje es el caption o un texto genérico si no hay caption
             messageData.text = mediaObject.caption || `Mensaje multimedia (${message.type})`;
         } else {
             messageData.text = `Tipo de mensaje no soportado: ${message.type}`;
