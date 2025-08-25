@@ -447,18 +447,21 @@ app.post('/webhook', async (req, res) => {
                     console.log(`[LOG] No se encontró una respuesta configurada para el Ad ID: ${adId}. Se usará el mensaje de bienvenida general.`);
                 }
             }
-            if (!adResponseSent) {
+          if (!adResponseSent) {
                 try {
+                    // 1. Se envía el mensaje al cliente
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
                     
                     // --- CORRECCIÓN AÑADIDA ---
-                    // Esta es la línea que faltaba. Guarda el mensaje de bienvenida en la base de datos.
+                    // 2. Se guarda una copia de ese mensaje en la base de datos.
+                    // ¡Esto es lo que permite que el CRM lo vea!
                     await contactRef.collection('messages').add({
                         from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         id: sentMessageData.id, text: sentMessageData.textForDb
                     });
                     // --- FIN DE LA CORRECCIÓN ---
 
+                    // 3. Se actualiza el resumen del último mensaje.
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                 } catch (error) {
                     console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
