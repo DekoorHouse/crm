@@ -180,10 +180,10 @@ async function triggerAutoReplyAI(message, contactRef) {
                 if (coverageResponse) {
                     const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
                     await contactRef.collection('messages').add({
-                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
-                    });
-                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.Timestamp.now(),
+    id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+});
+await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.Timestamp.now() });
                     console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
                     return; // Termina el proceso aquí
                 }
@@ -388,13 +388,13 @@ app.post('/webhook', async (req, res) => {
         const isNewContact = !contactDoc.exists;
 
         // 1. Guardar el mensaje y actualizar el contacto
-        let messageData = { 
-            timestamp: admin.firestore.FieldValue.serverTimestamp(), 
-            from, 
-            status: 'received', 
-            id: message.id,
-            type: message.type,
-        };
+      let messageData = { 
+    timestamp: admin.firestore.Timestamp.now(), 
+    from, 
+    status: 'received', 
+    id: message.id,
+    type: message.type,
+};
         if (message.type === 'text') {
             messageData.text = message.text.body;
         } else {
