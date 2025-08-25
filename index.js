@@ -170,28 +170,7 @@ async function triggerAutoReplyAI(message, contactRef) {
             return;
         }
 
-        // 2. Lógica especial para Códigos Postales
-        if (message.type === 'text') {
-            const postalCodeRegex = /(?:cp|código postal|codigo postal)\s*:?\s*(\d{5})/i;
-            const match = message.text.body.match(postalCodeRegex);
-            if (match && match[1]) {
-                const postalCode = match[1];
-                console.log(`[AI] Código postal detectado: ${postalCode}. Verificando cobertura.`);
-                const coverageResponse = await checkCoverage(postalCode);
-                if (coverageResponse) {
-                    const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
-                    await contactRef.collection('messages').add({
-                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
-                    });
-                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-                    console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
-                    return; // Termina el proceso aquí
-                }
-            }
-        }
-
-        // 3. Preparar el prompt para Gemini
+        // 2. Preparar el prompt para Gemini
         const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
         const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
 
@@ -427,6 +406,52 @@ async function uploadMediaToStorage(mediaUrl, mimeType) {
     }
 }
 
+// --- NUEVA FUNCIÓN AUXILIAR PARA ENVIAR Y GUARDAR MENSAJES AUTOMÁTICOS ---
+async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
+    const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
+    await contactRef.collection('messages').add({
+        from: PHONE_NUMBER_ID,
+        status: 'sent',
+        timestamp: admin.firestore.FieldValue.serverTimestamp(),
+        id: sentMessageData.id,
+        text: sentMessageData.textForDb,
+        fileUrl: sentMessageData.fileUrlForDb,
+        fileType: sentMessageData.fileTypeForDb,
+        isAutoReply: true
+    });
+    await contactRef.update({
+        lastMessage: sentMessageData.textForDb,
+        lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+    console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
+}
+
+// --- NUEVA FUNCIÓN PARA MANEJAR CÓDIGOS POSTALES ---
+async function handlePostalCodeAuto(message, contactRef, from) {
+    if (message.type !== 'text') return false;
+
+    // Expresión regular para encontrar un CP de 5 dígitos, puede estar precedido por "cp", "código postal", etc.
+    const postalCodeRegex = /(?:cp|código postal|codigo postal|cp:)\s*(\d{5})|(\d{5})/i;
+    const match = message.text.body.match(postalCodeRegex);
+    
+    // Tomamos el primer grupo que no sea nulo (match[1] o match[2])
+    const postalCode = match ? (match[1] || match[2]) : null;
+
+    if (postalCode) {
+        console.log(`[CP] Código postal detectado: ${postalCode} para ${from}.`);
+        try {
+            const coverageResponse = await checkCoverage(postalCode);
+            if (coverageResponse) {
+                await sendAutoMessage(contactRef, { text: coverageResponse });
+                return true; // Indica que el mensaje fue manejado
+            }
+        } catch (error) {
+            console.error(`❌ Fallo al procesar CP para ${from}:`, error.message);
+        }
+    }
+    return false; // No se encontró o no se pudo manejar un CP
+}
+
 
 // --- LÓGICA DEL WEBHOOK COMPLETA Y CORREGIDA ---
 app.post('/webhook', async (req, res) => {
@@ -475,7 +500,10 @@ app.post('/webhook', async (req, res) => {
 
     // 3) NUEVO: si el mensaje trae un CP de 5 dígitos, responder cobertura y TERMINAR
     const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
-    if (cpHandled) return res.sendStatus(200);
+    if (cpHandled) {
+        console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
+        return res.sendStatus(200);
+    }
 
     // 4) Respuesta automática: anuncio/bienvenida o IA
     if (isNewContact) {
