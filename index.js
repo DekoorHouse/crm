@@ -461,7 +461,8 @@ app.post('/webhook', async (req, res) => {
                 }
             }
             
-            messageData.text = mediaObject.caption || `Mensaje multimedia (${message.type})`;
+            // MODIFICACIÓN: Guardar caption o un string vacío.
+            messageData.text = mediaObject.caption || '';
         } else {
             messageData.text = `Tipo de mensaje no soportado: ${message.type}`;
         }
@@ -469,10 +470,24 @@ app.post('/webhook', async (req, res) => {
         // 3. Guardar el mensaje y actualizar el contacto
         await contactRef.collection('messages').add(messageData);
         
+        // Crear un texto descriptivo para la vista de contactos
+        let lastMessagePreview;
+        if (messageData.text) { // Si hay caption, úsalo
+            lastMessagePreview = messageData.text;
+        } else if (messageData.fileType) { // Si no hay caption pero es un archivo
+            if (messageData.fileType.startsWith('image/')) lastMessagePreview = '📷 Imagen';
+            else if (messageData.fileType.startsWith('video/')) lastMessagePreview = '🎥 Video';
+            else if (messageData.fileType.startsWith('audio/')) lastMessagePreview = '🎵 Audio';
+            else if (messageData.fileType.startsWith('sticker/')) lastMessagePreview = '✨ Sticker';
+            else lastMessagePreview = '📄 Documento';
+        } else { // Fallback para mensajes de solo texto
+            lastMessagePreview = messageData.text;
+        }
+
         let contactUpdateData = {
             name: contactInfo.profile.name,
             wa_id: contactInfo.wa_id,
-            lastMessage: messageData.text,
+            lastMessage: lastMessagePreview, // Usar el nuevo texto de previsualización
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
