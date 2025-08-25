@@ -189,6 +189,7 @@ app.get('/webhook', (req, res) => {
     }
 });
 
+// --- FIX START: Corrected Webhook Logic ---
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
@@ -202,62 +203,96 @@ app.post('/webhook', async (req, res) => {
         
         const contactDoc = await contactRef.get();
         const isNewContact = !contactDoc.exists;
-        const contactData = contactDoc.exists ? contactDoc.data() : {};
-        
-        let messageData = { timestamp: admin.firestore.FieldValue.serverTimestamp(), from, status: 'received', id: message.id };
+
+        // 1. Guardar el mensaje y actualizar el contacto
+        let messageData = { 
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), 
+            from, 
+            status: 'received', 
+            id: message.id 
+        };
         if (message.type === 'text') {
             messageData.text = message.text.body;
         } else {
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
         await contactRef.collection('messages').add(messageData);
-        await contactRef.set({ name: contactInfo.profile.name, wa_id: contactInfo.wa_id, lastMessage: messageData.text, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: admin.firestore.FieldValue.increment(1) }, { merge: true });
-        console.log(`[LOG] Mensaje de ${from} guardado.`);
+        
+        let contactUpdateData = {
+            name: contactInfo.profile.name,
+            wa_id: contactInfo.wa_id,
+            lastMessage: messageData.text,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: admin.firestore.FieldValue.increment(1)
+        };
 
-        // --- LÓGICA DE RESPUESTA ---
-        const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
-        const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive;
-        const shouldBotReply = globalBotActive && !isNewContact && contactData.botActive !== false;
-
-        let coverageInfo = null;
-        const postalCodeMatch = messageData.text?.match(/\b\d{5}\b/);
-        if (postalCodeMatch) {
-            const postalCode = postalCodeMatch[0];
-            console.log(`[LOG] Código postal encontrado: ${postalCode}`);
-            coverageInfo = await checkCoverage(postalCode);
-            console.log(`[LOG] Resultado de la verificación de cobertura: ${coverageInfo}`);
-        } else {
-            console.log('[LOG] No se encontró código postal en el mensaje.');
+        // Guardar información del anuncio si existe
+        if (message.referral) {
+            contactUpdateData.adReferral = message.referral;
         }
 
-        if (shouldBotReply) {
-            // Lógica del bot...
-        } else if (coverageInfo) {
-            try {
-                console.log(`[LOG] Bot IA inactivo, intentando enviar respuesta de cobertura simple a ${from}.`);
-                const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: coverageInfo });
-                
-                await contactRef.collection('messages').add({
-                    from: PHONE_NUMBER_ID,
-                    status: 'sent',
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentMessageData.id,
-                    text: sentMessageData.textForDb
-                });
-                await contactRef.update({ 
-                    lastMessage: sentMessageData.textForDb, 
-                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() 
-                });
-                console.log(`[LOG] Respuesta de cobertura simple enviada y guardada para ${from}.`);
-            } catch (error) {
-                console.error(`❌ [LOG] FALLO al enviar respuesta de cobertura simple a ${from}. Error:`, error.message);
+        await contactRef.set(contactUpdateData, { merge: true });
+        console.log(`[LOG] Mensaje de ${from} guardado.`);
+
+        // 2. Lógica de Respuesta Automática
+        if (isNewContact) {
+            let adResponseSent = false;
+            // Prioridad 1: Mensaje de Anuncio
+            if (message.referral && message.referral.ad_id) {
+                const adId = message.referral.ad_id;
+                console.log(`[LOG] Contacto nuevo desde anuncio. Ad ID: ${adId}`);
+                const adResponsesRef = db.collection('ad_responses');
+                const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
+
+                if (!snapshot.empty) {
+                    const adResponseData = snapshot.docs[0].data();
+                    console.log(`[LOG] Encontrada respuesta para Ad ID ${adId}:`, adResponseData.adName);
+                    try {
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, {
+                            text: adResponseData.message,
+                            fileUrl: adResponseData.fileUrl,
+                            fileType: adResponseData.fileType
+                        });
+                        
+                        await contactRef.collection('messages').add({
+                            from: PHONE_NUMBER_ID,
+                            status: 'sent',
+                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMessageData.id,
+                            text: sentMessageData.textForDb,
+                            fileUrl: sentMessageData.fileUrlForDb,
+                            fileType: sentMessageData.fileTypeForDb
+                        });
+                        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                        console.log(`[LOG] Mensaje de anuncio enviado a ${from}.`);
+                        adResponseSent = true;
+                    } catch (error) {
+                        console.error(`❌ [LOG] Fallo al enviar mensaje de anuncio a ${from}. Error:`, error.message);
+                    }
+                } else {
+                    console.log(`[LOG] No se encontró respuesta configurada para Ad ID ${adId}.`);
+                }
             }
-        } else if (isNewContact) {
-            // Lógica de bienvenida...
+
+            // Prioridad 2: Mensaje de bienvenida general (si no se envió uno de anuncio)
+            if (!adResponseSent) {
+                try {
+                    console.log(`[LOG] Enviando mensaje de bienvenida general a ${from}.`);
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                } catch (error) {
+                    console.error(`❌ [LOG] Fallo al enviar mensaje de bienvenida general a ${from}. Error:`, error.message);
+                }
+            }
         }
     }
     res.sendStatus(200);
 });
+// --- FIX END ---
 
 // --- EL RESTO DEL CÓDIGO PERMANECE IGUAL ---
 
