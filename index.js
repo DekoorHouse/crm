@@ -80,7 +80,6 @@ async function checkCoverage(postalCode) {
 
         const response = await sheets.spreadsheets.values.get({
             spreadsheetId: sheetId,
-            // --- CAMBIO REALIZADO AQUÍ ---
             range: 'M:M', // Lee los códigos postales de la columna M
         });
 
@@ -324,7 +323,6 @@ app.post('/webhook', async (req, res) => {
             const isNewContact = !contactDoc.exists;
             const contactData = contactDoc.exists ? contactDoc.data() : {};
             
-            // --- START: SAVE INCOMING MESSAGE FIRST ---
             let messageData = { timestamp, from, status: 'received', id: message.id };
             let lastMessageText = '';
             
@@ -369,40 +367,33 @@ app.post('/webhook', async (req, res) => {
                     ctwa_clid: message.referral.ctwa_clid ?? null,
                     receivedAt: timestamp 
                 };
-                console.log('🔍 Datos del referral completo:', JSON.stringify(message.referral, null, 2));
             }
             
             await contactRef.set(newContactData, { merge: true });
             console.log(`Mensaje (${message.type}) de ${from} guardado.`);
-            // --- END: SAVE INCOMING MESSAGE FIRST ---
 
-            // --- START: BOT & AUTOMATION LOGIC ---
-            // Fetch global settings to determine bot and away message behavior
+            // --- START: LÓGICA DE RESPUESTA AUTOMÁTICA ---
             const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
             const globalBotActive = generalSettingsDoc.exists ? generalSettingsDoc.data().globalBotActive : false;
-            const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive !== false : true; // Default to true
+            const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive !== false : true;
 
-            // The bot replies if the global toggle is ON, the individual contact toggle is not explicitly OFF, AND it's NOT a new contact.
             const shouldBotReply = globalBotActive && (contactData.botActive !== false) && !isNewContact;
-
+            
+            // --- NUEVA LÓGICA: VERIFICACIÓN DE COBERTURA SEPARADA ---
+            let coverageInfo = null;
+            const postalCodeMatch = messageData.text?.match(/\b\d{5}\b/);
+            if (postalCodeMatch) {
+                const postalCode = postalCodeMatch[0];
+                coverageInfo = await checkCoverage(postalCode);
+            }
+            
             if (shouldBotReply) {
                 console.log(`🤖 Bot is active for ${from}. Generating response...`);
                 try {
-                    const randomDelay = Math.floor(Math.random() * 3000) + 2000;
-                    const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-                    await delay(randomDelay);
-
+                    await new Promise(resolve => setTimeout(resolve, 2500)); // Delay
+                    
                     const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
                     let botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual.';
-                    
-                    // --- MODIFICADO: Lógica de Cobertura y Prompt ---
-                    let coverageInfo = '';
-                    const postalCodeMatch = messageData.text.match(/\b\d{5}\b/); // Busca un código postal de 5 dígitos
-                    if (postalCodeMatch) {
-                        const postalCode = postalCodeMatch[0];
-                        coverageInfo = await checkCoverage(postalCode);
-                    }
-
                     botInstructions += "\n\nSi el cliente pregunta por cobertura o proporciona un código postal, usa la 'Información de Cobertura' para responder. Si no hay información de cobertura, amablemente pide al cliente su código postal de 5 dígitos para verificar.";
 
                     const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
@@ -411,31 +402,14 @@ app.post('/webhook', async (req, res) => {
                         return `${d.from === from ? 'Cliente' : 'Asistente'}: ${d.text}`;
                     }).reverse().join('\n');
                     
-                    let adContext = '';
-                    const finalContactData = (await contactRef.get()).data();
-                    if (finalContactData.adReferral && finalContactData.adReferral.source_id) {
-                        const adResponseRef = db.collection('ad_responses').where('adId', '==', finalContactData.adReferral.source_id).limit(1);
-                        const adResponseSnapshot = await adResponseRef.get();
-                        if (!adResponseSnapshot.empty) {
-                            const adResponseData = adResponseSnapshot.docs[0].data();
-                            if (adResponseData.message) {
-                                adContext = `--- Información Clave de la Campaña (Contexto Inicial) ---\n${adResponseData.message}\n\n`;
-                                console.log(`🤖 Added ad context for Ad ID: ${finalContactData.adReferral.source_id}`);
-                            }
-                        }
-                    }
-
-                    const prompt = `${botInstructions}\n\n${adContext}--- Información de Cobertura ---\n${coverageInfo || 'No se ha verificado ninguna cobertura aún.'}\n\n--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+                    const prompt = `${botInstructions}\n\n--- Información de Cobertura ---\n${coverageInfo || 'No se ha verificado ninguna cobertura aún.'}\n\n--- Historial de Conversación ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
                     
                     const generatedText = await generateGeminiResponse(prompt);
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: generatedText });
 
                     await contactRef.collection('messages').add({
-                        from: PHONE_NUMBER_ID,
-                        status: 'sent',
-                        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                        id: sentMessageData.id,
-                        text: sentMessageData.textForDb
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb
                     });
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                     console.log(`🤖 Bot response sent to ${from}.`);
@@ -443,73 +417,45 @@ app.post('/webhook', async (req, res) => {
                 } catch (error) {
                     console.error(`❌ Error in bot logic for ${from}:`, error);
                 }
-            }
-
-            if (isNewContact) {
+            } else if (coverageInfo) {
+                // Si el bot NO está activo, pero SÍ se encontró información de cobertura, enviar respuesta simple
+                console.log(`📦 Enviando respuesta de cobertura simple a ${from}.`);
+                const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: coverageInfo });
+                await contactRef.collection('messages').add({
+                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentMessageData.id, text: sentMessageData.textForDb
+                });
+                await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+            } else if (isNewContact) {
+                // Lógica para nuevos contactos (bienvenida, etc.)
                 const adId = message.referral?.source_id;
                 let adResponseData = null;
 
                 if (adId) {
-                    const adResponseRef = db.collection('ad_responses').where('adId', '==', adId).limit(1);
-                    const adResponseSnapshot = await adResponseRef.get();
+                    const adResponseSnapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
                     if (!adResponseSnapshot.empty) {
                         adResponseData = adResponseSnapshot.docs[0].data();
-                        console.log(`Mensaje de bienvenida encontrado para el Ad ID: ${adId}`);
-                    } else {
-                        console.log(`No se encontró mensaje de bienvenida para el Ad ID: ${adId}. Usando mensaje general.`);
                     }
                 }
 
-                // Send media first if it exists
                 if (adResponseData && adResponseData.fileUrl) {
-                    try {
-                        const sentMediaData = await sendAdvancedWhatsAppMessage(from, { fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-                        const mediaMessageToSave = {
-                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                            id: sentMediaData.id, text: sentMediaData.textForDb, fileUrl: sentMediaData.fileUrlForDb, fileType: sentMediaData.fileTypeForDb
-                        };
-                        Object.keys(mediaMessageToSave).forEach(key => mediaMessageToSave[key] == null && delete mediaMessageToSave[key]);
-                        await contactRef.collection('messages').add(mediaMessageToSave);
-                        console.log(`Archivo multimedia de bienvenida enviado a ${from}.`);
-                    } catch (error) {
-                        console.error(`Fallo al enviar archivo multimedia de bienvenida a ${from}:`, error);
-                    }
+                    await sendAdvancedWhatsAppMessage(from, { fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                    await new Promise(resolve => setTimeout(resolve, 500));
                 }
 
-                // Send text message (either from ad or general welcome)
                 const textToSend = adResponseData?.message || GENERAL_WELCOME_MESSAGE;
                 if (textToSend) {
-                    try {
-                         // Optional delay to ensure messages arrive in order
-                        if (adResponseData && adResponseData.fileUrl) {
-                            await new Promise(resolve => setTimeout(resolve, 500));
-                        }
-                        const sentTextData = await sendAdvancedWhatsAppMessage(from, { text: textToSend });
-                        const textMessageToSave = {
-                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                            id: sentTextData.id, text: sentTextData.textForDb
-                        };
-                        await contactRef.collection('messages').add(textMessageToSave);
-                        console.log(`Mensaje de texto de bienvenida enviado a ${from}.`);
-                    } catch (error) {
-                        console.error(`Fallo al enviar mensaje de texto de bienvenida a ${from}:`, error);
-                    }
+                    await sendAdvancedWhatsAppMessage(from, { text: textToSend });
                 }
-
-            } else if (awayMessageActive && !isWithinBusinessHours() && !shouldBotReply) {
+            } else if (awayMessageActive && !isWithinBusinessHours()) {
+                // Mensaje de ausencia para contactos existentes si aplica
                 const now = new Date();
                 const lastAwayMessageSent = contactData?.lastAwayMessageSent?.toDate();
                 const twelveHoursAgo = new Date(now.getTime() - 12 * 60 * 60 * 1000);
 
                 if (!lastAwayMessageSent || lastAwayMessageSent < twelveHoursAgo) {
-                    try {
-                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
-                        await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: AWAY_MESSAGE });
-                        await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp(), lastMessage: AWAY_MESSAGE, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
-                        console.log(`Mensaje de ausencia enviado a ${from}.`);
-                    } catch (error) {
-                        console.error(`Fallo al enviar mensaje de ausencia a ${from}:`, error);
-                    }
+                    await sendAdvancedWhatsAppMessage(from, { text: AWAY_MESSAGE });
+                    await contactRef.set({ lastAwayMessageSent: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
                 }
             }
 
@@ -1214,3 +1160,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
+s
