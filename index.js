@@ -353,6 +353,9 @@ app.post('/webhook', async (req, res) => {
 
     if (value && value.messages && value.contacts) {
         const message = value.messages[0];
+        // --- INICIO: AÑADIDO LOG DE DEPURACIÓN ADICIONAL ---
+        console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
+        // --- FIN: AÑADIDO LOG DE DEPURACIÓN ADICIONAL ---
         const contactInfo = value.contacts[0];
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
@@ -398,7 +401,6 @@ app.post('/webhook', async (req, res) => {
             let adResponseSent = false;
             if (message.referral && message.referral.ad_id) {
                 const adId = message.referral.ad_id;
-                // --- MODIFICACIÓN: Añadido log para depuración ---
                 console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
@@ -422,7 +424,6 @@ app.post('/webhook', async (req, res) => {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
                 } else {
-                    // --- MODIFICACIÓN: Añadido log para depuración ---
                     console.log(`[LOG] No se encontró una respuesta configurada en la base de datos para el Ad ID: ${adId}. Se enviará el mensaje de bienvenida general.`);
                 }
             }
@@ -1103,7 +1104,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\nAsistente:`;
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
