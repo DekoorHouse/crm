@@ -450,10 +450,15 @@ app.post('/webhook', async (req, res) => {
             if (!adResponseSent) {
                 try {
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
+                    
+                    // --- CORRECCIÓN AÑADIDA ---
+                    // Esta es la línea que faltaba. Guarda el mensaje de bienvenida en la base de datos.
                     await contactRef.collection('messages').add({
                         from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         id: sentMessageData.id, text: sentMessageData.textForDb
                     });
+                    // --- FIN DE LA CORRECCIÓN ---
+
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                 } catch (error) {
                     console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
