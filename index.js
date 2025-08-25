@@ -363,6 +363,46 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         throw error;
     }
 }
+// Detecta CP de 5 dígitos y responde con la cobertura desde Google Sheets.
+// Devuelve true si ya respondió (para cortar el flujo).
+async function handlePostalCodeAuto(message, contactRef, contactId) {
+  try {
+    if (message?.type !== 'text') return false;
+
+    // Detectar cualquier CP de 5 dígitos en el mensaje (ej: "34000", "mi CP 34000", etc.)
+    const match = message.text.body.match(/\b(\d{5})\b/);
+    if (!match) return false;
+
+    const postalCode = match[1];
+    console.log(`[CP] Detectado código postal: ${postalCode}`);
+
+    const coverageResponse = await checkCoverage(postalCode);
+    if (!coverageResponse) return false;
+
+    // Enviar respuesta (solo texto) y registrar en BD
+    const sent = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
+
+    await contactRef.collection('messages').add({
+      from: PHONE_NUMBER_ID,
+      status: 'sent',
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+      id: sent.id,
+      text: sent.textForDb,
+      isAutoReply: true
+    });
+
+    await contactRef.update({
+      lastMessage: sent.textForDb,
+      lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    console.log(`[CP] Respuesta de cobertura enviada para ${postalCode}.`);
+    return true;
+  } catch (e) {
+    console.error('[CP] Error al manejar CP automático:', e.message);
+    return false;
+  }
+}
 
 
 // --- WEBHOOK DE WHATSAPP ---
