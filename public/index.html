@@ -375,7 +375,7 @@
         </div>
     </div>
 
-    <!-- AD RESPONSE MODAL -->
+    <!-- AD RESPONSE MODAL (MERGED AND IMPROVED) -->
     <div id="ad-response-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
@@ -383,7 +383,7 @@
                 <input type="hidden" id="ar-doc-id">
                 <input type="hidden" id="ar-file-url">
                 <input type="hidden" id="ar-file-type">
-                <input type="file" id="ar-file-input" accept="image/*,video/*,application/pdf">
+                <input type="file" id="ar-file-input" accept="image/*,video/*,application/pdf" class="hidden">
 
                 <div>
                     <label for="ar-name">Nombre del Anuncio</label>
@@ -398,10 +398,14 @@
                     <textarea id="ar-message" rows="5" class="!mb-4" placeholder="Escribe el mensaje de bienvenida para este anuncio..."></textarea>
                 </div>
                  <div>
-                    <label for="ar-file-input" class="btn btn-subtle !inline-flex !w-auto">
-                        <i class="fas fa-paperclip mr-2"></i> Adjuntar Archivo
-                    </label>
+                    <label>Archivo Adjunto</label>
+                    <!-- Container for existing file preview and remove button -->
                     <div id="ar-media-preview" class="mt-2"></div>
+
+                    <!-- Button to attach a new file -->
+                    <label for="ar-file-input" class="btn btn-subtle !inline-flex !w-auto mt-2">
+                        <i class="fas fa-paperclip mr-2"></i> <span id="ar-attach-button-text">Adjuntar Archivo</span>
+                    </label>
                 </div>
                 <div class="flex justify-end gap-3 mt-4">
                     <button type="button" onclick="closeAdResponseModal()" class="btn btn-subtle">Cancelar</button>
@@ -524,7 +528,7 @@
             apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg", 
             authDomain: "pedidos-con-gemini.firebaseapp.com", 
             projectId: "pedidos-con-gemini", 
-            storageBucket: "pedidos-con-gemini.firebasestorage.app",
+            storageBucket: "pedidos-con-gemini.appspot.com",
             messagingSenderId: "300825194175", 
             appId: "1:300825194175:web:972fa7b8af195a83e6e00a", 
             measurementId: "G-FTCDCMZB1S" 
@@ -2525,12 +2529,14 @@
             });
         }
 
+        // --- START: AD RESPONSE MODAL LOGIC (IMPROVED) ---
         function openAdResponseModal(responseId = null) {
             const modal = document.getElementById('ad-response-modal');
             const form = document.getElementById('ad-response-form');
             form.reset();
             document.getElementById('ar-media-preview').innerHTML = '';
-            
+            document.getElementById('ar-file-input').value = ''; 
+
             const isEditing = responseId && state.adResponses.some(r => r.id === responseId);
             const response = isEditing ? state.adResponses.find(r => r.id === responseId) : null;
 
@@ -2542,9 +2548,7 @@
             document.getElementById('ar-file-url').value = isEditing ? response.fileUrl || '' : '';
             document.getElementById('ar-file-type').value = isEditing ? response.fileType || '' : '';
             
-            if (isEditing && response.fileUrl) {
-                document.getElementById('ar-media-preview').innerHTML = `<img src="${response.fileUrl}" class="media-preview"/>`;
-            }
+            updateAdResponsePreview(); // Helper function to render the file preview
 
             modal.classList.remove('hidden');
             document.getElementById('ar-name').focus();
@@ -2554,6 +2558,33 @@
                 event.preventDefault();
                 handleSaveAdResponse();
             };
+        }
+
+        function updateAdResponsePreview() {
+            const mediaPreviewEl = document.getElementById('ar-media-preview');
+            const attachButtonTextEl = document.getElementById('ar-attach-button-text');
+            const fileUrl = document.getElementById('ar-file-url').value;
+
+            mediaPreviewEl.innerHTML = ''; // Always start clean
+
+            if (fileUrl) {
+                let previewHTML = `
+                    <div class="relative inline-block p-2 border rounded-md bg-gray-100">
+                        <img src="${fileUrl}" class="media-preview"/>
+                        <button type="button" onclick="removeAdResponseFile()" class="absolute top-0 right-0 -mt-2 -mr-2 bg-red-500 text-white rounded-full h-6 w-6 flex items-center justify-center text-xs font-bold cursor-pointer" title="Eliminar archivo">&times;</button>
+                    </div>`;
+                mediaPreviewEl.innerHTML = previewHTML;
+                attachButtonTextEl.textContent = 'Cambiar Archivo';
+            } else {
+                attachButtonTextEl.textContent = 'Adjuntar Archivo';
+            }
+        }
+
+        function removeAdResponseFile() {
+            document.getElementById('ar-file-url').value = '';
+            document.getElementById('ar-file-type').value = '';
+            document.getElementById('ar-file-input').value = ''; 
+            updateAdResponsePreview();
         }
 
         function closeAdResponseModal() {
@@ -2606,6 +2637,7 @@
                 showError(error.message);
             }
         }
+        // --- END: AD RESPONSE MODAL LOGIC ---
         
         async function handleModalFileUpload(event, prefix) {
             const file = event.target.files[0];
@@ -2630,7 +2662,9 @@
                 urlInput.value = downloadURL;
                 typeInput.value = file.type;
                 
-                if (file.type.startsWith('image/')) {
+                if (prefix === 'ar') {
+                    updateAdResponsePreview();
+                } else if (file.type.startsWith('image/')) {
                     previewEl.innerHTML = `<img src="${downloadURL}" class="media-preview"/>`;
                 } else {
                     previewEl.innerHTML = `<p class="text-sm text-gray-600"><i class="fas fa-check-circle text-green-500 mr-2"></i>Archivo subido: ${file.name}</p>`;
