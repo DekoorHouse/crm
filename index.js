@@ -1,5 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO
-// + CONTROL ANTI-DUPLICADOS EN MENSAJES AUTOMÁTICOS
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA Y BOT AUTOMÁTICO
 
 require('dotenv').config();
 const express = require('express');
@@ -32,6 +31,7 @@ const bucket = getStorage().bucket();
 const app = express();
 
 // --- INICIO: CORRECCIÓN DE CORS ---
+// Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
 const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000'];
 const corsOptions = {
   origin: function (origin, callback) {
@@ -47,6 +47,7 @@ app.use(cors(corsOptions));
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
+
 
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
@@ -146,93 +147,6 @@ async function generateGeminiResponse(prompt) {
     return generatedText;
 }
 
-/* ============================
-   🔁 ANTI-DUPLICADOS (AUTOMÁTICOS)
-   ============================ */
-
-// Normaliza texto para comparar (sin emojis, minúsculas, sin acentos/puntuación, espacios colapsados)
-function normalize(text = '') {
-  const noEmojis = text.replace(/[\p{Emoji_Presentation}\p{Extended_Pictographic}]/gu, '');
-  const lowered = noEmojis.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const noPunct = lowered.replace(/[^\p{L}\p{N}\s]/gu, ' ');
-  const compact = noPunct.replace(/\s+/g, ' ').trim();
-
-  // Mapear frases equivalentes comunes
-  const mappings = [
-    [/un agente te contactara pronto|en breve un agente se pondra en contacto|alguien de nuestro equipo te atiende|un asesor te contactara/i, 'agente_contacto_pronto'],
-    [/gracias quedo al pendiente|me mantengo al pendiente|quedo al pendiente|estare atento/i, 'cliente_pendiente']
-  ];
-  let result = compact;
-  for (const [re, token] of mappings) {
-    if (re.test(compact)) result = token;
-  }
-  return result;
-}
-
-// Devuelve true si el último MENSAJE SALIENTE del bot al contacto es igual o equivalente
-async function isDuplicateOutgoing(contactRef, candidateText, windowSeconds = 120) {
-  if (!candidateText) return false;
-  const normNew = normalize(candidateText);
-  const lastOutgoingSnap = await contactRef
-    .collection('messages')
-    .where('from', '==', PHONE_NUMBER_ID)
-    .orderBy('timestamp', 'desc')
-    .limit(1)
-    .get();
-
-  if (lastOutgoingSnap.empty) return false;
-
-  const lastMsg = lastOutgoingSnap.docs[0].data();
-  const lastText = lastMsg.text || '';
-  const normLast = normalize(lastText);
-
-  // Si son iguales o mapean al mismo token → duplicado
-  if (normNew === normLast) return true;
-
-  // Si son muy parecidos y enviados hace muy poco → duplicado (debounce)
-  const lastTs = lastMsg.timestamp?.toDate ? lastMsg.timestamp.toDate().getTime() : Date.now();
-  const now = Date.now();
-  const recent = (now - lastTs) / 1000 <= windowSeconds;
-
-  if (recent && (normNew.includes(normLast) || normLast.includes(normNew))) return true;
-
-  return false;
-}
-
-// Enviar mensaje AUTOMÁTICO con anti-duplicado + guardado en BD
-async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
-  // Solo deduplicamos cuando hay texto (clave en tu caso)
-  if (text && await isDuplicateOutgoing(contactRef, text)) {
-    console.log('[DEDUP] Mensaje automático bloqueado por duplicado:', text);
-    return { skipped: true };
-  }
-
-  const to = contactRef.id;
-  const sentMessageData = await sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType });
-
-  // Guardar en BD
-  await contactRef.collection('messages').add({
-    from: PHONE_NUMBER_ID,
-    status: 'sent',
-    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-    id: sentMessageData.id,
-    text: sentMessageData.textForDb,
-    fileUrl: sentMessageData.fileUrlForDb || undefined,
-    fileType: sentMessageData.fileTypeForDb || undefined,
-    isAutoReply: true
-  });
-
-  await contactRef.update({
-    lastMessage: sentMessageData.textForDb,
-    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-  });
-
-  return { skipped: false, id: sentMessageData.id };
-}
-
-/* ============================
-   FIN ANTI-DUPLICADOS
-   ============================ */
 
 // --- LÓGICA CENTRAL DEL BOT DE IA ---
 async function triggerAutoReplyAI(message, contactRef) {
@@ -264,7 +178,12 @@ async function triggerAutoReplyAI(message, contactRef) {
                 console.log(`[AI] Código postal detectado: ${postalCode}. Verificando cobertura.`);
                 const coverageResponse = await checkCoverage(postalCode);
                 if (coverageResponse) {
-                    await sendAutoMessage(contactRef, { text: coverageResponse });
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                     console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
                     return; // Termina el proceso aquí
                 }
@@ -301,8 +220,13 @@ async function triggerAutoReplyAI(message, contactRef) {
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResponse = await generateGeminiResponse(prompt);
 
-        // 4. Enviar respuesta y guardar en la base de datos (con anti-duplicado)
-        await sendAutoMessage(contactRef, { text: aiResponse });
+        // 4. Enviar respuesta y guardar en la base de datos
+        const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+        });
+        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
         console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
 
     } catch (error) {
@@ -455,7 +379,6 @@ app.post('/webhook', async (req, res) => {
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
         
-        // Ignorar si el mensaje viene del mismo bot
         if (message.from === PHONE_NUMBER_ID) {
             console.log("[LOG] Mensaje saliente ignorado.");
             return res.sendStatus(200);
@@ -464,9 +387,9 @@ app.post('/webhook', async (req, res) => {
         const contactDoc = await contactRef.get();
         const isNewContact = !contactDoc.exists;
 
-        // 1. Guardar el mensaje en Firestore
+        // 1. Guardar el mensaje y actualizar el contacto
         let messageData = { 
-            timestamp: admin.firestore.Timestamp.now(), 
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), 
             from, 
             status: 'received', 
             id: message.id,
@@ -492,55 +415,64 @@ app.post('/webhook', async (req, res) => {
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Mensaje de ${from} guardado.`);
 
-        // 2. Respuesta automática
+        // 2. Lógica de Respuesta Automática (Bienvenida o IA)
         if (isNewContact) {
             let adResponseSent = false;
-
-            // --- Si viene de un anuncio ---
+            // Lógica corregida para que coincida con los datos de Meta
             if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
-                const adId = message.referral.source_id; 
-                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
+                const adId = message.referral.source_id; // Usamos source_id
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
                     try {
-                        await sendAutoMessage(contactRef, {
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, {
                             text: adResponseData.message,
                             fileUrl: adResponseData.fileUrl,
                             fileType: adResponseData.fileType
                         });
+                        await contactRef.collection('messages').add({
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMessageData.id, text: sentMessageData.textForDb,
+                            fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb
+                        });
+                        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                         adResponseSent = true;
                     } catch (error) {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
                 } else {
-                    console.log(`[LOG] No se encontró respuesta configurada para el Ad ID: ${adId}`);
+                    console.log(`[LOG] No se encontró una respuesta configurada para el Ad ID: ${adId}. Se usará el mensaje de bienvenida general.`);
                 }
             }
+          if (!adResponseSent) {
+                try {
+                    // 1. Se envía el mensaje al cliente
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
+                    
+                    // --- CORRECCIÓN AÑADIDA ---
+                    // 2. Se guarda una copia de ese mensaje en la base de datos.
+                    // ¡Esto es lo que permite que el CRM lo vea!
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb
+                    });
+                    // --- FIN DE LA CORRECCIÓN ---
 
-            // --- Si no es anuncio, o no había respuesta configurada ---
-            if (!adResponseSent) {
-                const alreadyWelcomed = contactDoc.exists && contactDoc.data().welcomed;
-
-                if (!alreadyWelcomed) {
-                    try {
-                        await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                        await contactRef.update({ welcomed: true }); // 👈 Guardar que ya se saludó
-                    } catch (error) {
-                        console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
-                    }
-                } else {
-                    console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`);
+                    // 3. Se actualiza el resumen del último mensaje.
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                } catch (error) {
+                    console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
                 }
             }
         } else {
-            // --- Contactos existentes: delegar a IA ---
+            // Lógica para contactos existentes (IA)
             await triggerAutoReplyAI(message, contactRef);
         }
     } else if (value && value.statuses) {
-        // --- Actualización de estados (delivered, read) ---
+        // Lógica para manejar actualizaciones de estado (delivered, read)
         const statusUpdate = value.statuses[0];
         const messageId = statusUpdate.id;
         const recipientId = statusUpdate.recipient_id;
@@ -617,7 +549,8 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else {
-            // Mensajes manuales del agente (NO deduplicamos aquí a propósito)
+            // Lógica unificada para mensajes manuales y respuestas rápidas
+            // 'text' puede ser un mensaje de texto o el subtítulo de un archivo.
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType });
     
             const messageToSave = {
@@ -1134,6 +1067,8 @@ app.post('/api/settings/google-sheet', async (req, res) => {
 });
 // --- END: NEW GENERAL SETTINGS ENDPOINTS ---
 
+// --- END: BOT & SETTINGS ENDPOINTS ---
+
 // --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
 app.post('/api/knowledge-base', async (req, res) => {
     const { topic, answer, fileUrl, fileType } = req.body;
@@ -1195,8 +1130,8 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
-        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\n\n--- Historial ---\\n${conversationHistory}\n\n--- Tu Respuesta ---\\nAsistente:`;
+        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
