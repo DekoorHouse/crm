@@ -133,17 +133,47 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
-// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN ---
-const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
-    // ... (sin cambios en esta función)
-};
-
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
-    // ... (sin cambios en esta función)
-}
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    let messagePayload;
+    let messageToSaveText;
 
-async function downloadAndUploadImage(mediaId, from) {
-    // ... (sin cambios en esta función)
+    if (text) {
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
+    } else if (fileUrl && fileType) {
+        const type = fileType.startsWith('image/') ? 'image' : 
+                     fileType.startsWith('video/') ? 'video' : 
+                     fileType.startsWith('audio/') ? 'audio' : 'document';
+        
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: { link: fileUrl } };
+        
+        if (type === 'image') messageToSaveText = '📷 Imagen';
+        else if (type === 'video') messageToSaveText = '🎥 Video';
+        else if (type === 'audio') messageToSaveText = '🎵 Audio';
+        else messageToSaveText = '📄 Documento';
+
+    } else {
+        throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
+    }
+
+    try {
+        console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
+        const response = await axios.post(url, messagePayload, { headers });
+        console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
+        const messageId = response.data.messages[0].id;
+        
+        return {
+            id: messageId,
+            textForDb: messageToSaveText,
+            fileUrlForDb: fileUrl || null,
+            fileTypeForDb: fileType || null
+        };
+    } catch (error) {
+        console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw error;
+    }
 }
 
 // --- WEBHOOK DE WHATSAPP ---
@@ -201,24 +231,37 @@ app.post('/webhook', async (req, res) => {
         }
 
         if (shouldBotReply) {
-            console.log(`[LOG] Bot IA está activo para ${from}.`);
             // Lógica del bot...
         } else if (coverageInfo) {
-            console.log(`[LOG] Bot IA inactivo, enviando respuesta de cobertura simple a ${from}.`);
-            await sendAdvancedWhatsAppMessage(from, { text: coverageInfo });
+            try {
+                console.log(`[LOG] Bot IA inactivo, intentando enviar respuesta de cobertura simple a ${from}.`);
+                const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: coverageInfo });
+                
+                await contactRef.collection('messages').add({
+                    from: PHONE_NUMBER_ID,
+                    status: 'sent',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentMessageData.id,
+                    text: sentMessageData.textForDb
+                });
+                await contactRef.update({ 
+                    lastMessage: sentMessageData.textForDb, 
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() 
+                });
+                console.log(`[LOG] Respuesta de cobertura simple enviada y guardada para ${from}.`);
+            } catch (error) {
+                console.error(`❌ [LOG] FALLO al enviar respuesta de cobertura simple a ${from}. Error:`, error.message);
+            }
         } else if (isNewContact) {
-            console.log(`[LOG] Contacto nuevo ${from}, enviando bienvenida.`);
             // Lógica de bienvenida...
-        } else {
-            console.log(`[LOG] No se requiere acción automática para ${from}.`);
         }
     }
     res.sendStatus(200);
 });
 
-// ... (resto del código sin cambios: buildTemplatePayload, endpoints de API, etc.)
-// Asegúrate de que el resto de tu código esté aquí. Este es un extracto para mostrar los cambios.
+// --- EL RESTO DEL CÓDIGO PERMANECE IGUAL ---
 
+// ... (pega aquí el resto de tu archivo .js desde la función buildTemplatePayload hasta el final)
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
