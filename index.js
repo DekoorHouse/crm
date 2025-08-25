@@ -241,6 +241,54 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
+// --- INICIO: CORRECCIÓN DE BUG CRÍTICO (FUNCIÓN FALTANTE) ---
+async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
+    if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
+        console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
+        return;
+    }
+
+    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
+    const event_time = Math.floor(new Date().getTime() / 1000);
+    const event_id = `${eventName}_${contactInfo.wa_id}_${event_time}`;
+
+    const userData = {
+        "ph": [sha256(contactInfo.wa_id)],
+        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // First name
+        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
+    };
+
+    const eventData = {
+        "event_name": eventName,
+        "event_time": event_time,
+        "event_id": event_id,
+        "user_data": userData,
+        "action_source": "whatsapp",
+        "custom_data": customData
+    };
+    
+    if (referral && referral.source_type === 'ad') {
+        eventData.data_processing_options = [];
+        eventData.data_processing_options_country = 0;
+        eventData.data_processing_options_state = 0;
+    }
+
+    const payload = {
+        "data": [eventData],
+        "access_token": META_CAPI_ACCESS_TOKEN
+    };
+
+    try {
+        console.log(`[CAPI] Sending event '${eventName}' for ${contactInfo.wa_id}`);
+        const response = await axios.post(url, payload);
+        console.log('[CAPI] Event sent successfully:', response.data);
+    } catch (error) {
+        console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
+    }
+}
+// --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
+
+
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
@@ -309,7 +357,6 @@ app.post('/webhook', async (req, res) => {
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
         
-        // Ignorar mensajes enviados por el propio bot para evitar bucles
         if (message.from === PHONE_NUMBER_ID) {
             console.log("[LOG] Mensaje saliente ignorado.");
             return res.sendStatus(200);
@@ -324,12 +371,11 @@ app.post('/webhook', async (req, res) => {
             from, 
             status: 'received', 
             id: message.id,
-            type: message.type, // Guardar el tipo de mensaje
+            type: message.type,
         };
         if (message.type === 'text') {
             messageData.text = message.text.body;
         } else {
-            // Aquí se podría añadir lógica para descargar multimedia si fuera necesario
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
         await contactRef.collection('messages').add(messageData);
@@ -352,6 +398,8 @@ app.post('/webhook', async (req, res) => {
             let adResponseSent = false;
             if (message.referral && message.referral.ad_id) {
                 const adId = message.referral.ad_id;
+                // --- MODIFICACIÓN: Añadido log para depuración ---
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
@@ -373,6 +421,9 @@ app.post('/webhook', async (req, res) => {
                     } catch (error) {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
+                } else {
+                    // --- MODIFICACIÓN: Añadido log para depuración ---
+                    console.log(`[LOG] No se encontró una respuesta configurada en la base de datos para el Ad ID: ${adId}. Se enviará el mensaje de bienvenida general.`);
                 }
             }
             if (!adResponseSent) {
@@ -388,15 +439,13 @@ app.post('/webhook', async (req, res) => {
                 }
             }
         } else {
-            // Si no es un contacto nuevo, se activa la IA
             await triggerAutoReplyAI(message, contactRef);
         }
     } else if (value && value.statuses) {
-        // Lógica para manejar actualizaciones de estado (entregado, leído)
         const statusUpdate = value.statuses[0];
         const messageId = statusUpdate.id;
         const recipientId = statusUpdate.recipient_id;
-        const newStatus = statusUpdate.status; // sent, delivered, read
+        const newStatus = statusUpdate.status;
 
         try {
             const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
@@ -404,7 +453,6 @@ app.post('/webhook', async (req, res) => {
             
             if (!querySnapshot.empty) {
                 const messageDoc = querySnapshot.docs[0];
-                // Solo actualiza si el nuevo estado es "más avanzado"
                 const currentStatus = messageDoc.data().status;
                 const statusOrder = { sent: 1, delivered: 2, read: 3 };
                 if ((statusOrder[newStatus] || 0) > (statusOrder[currentStatus] || 0)) {
