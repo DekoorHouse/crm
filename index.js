@@ -111,6 +111,114 @@ async function checkCoverage(postalCode) {
     }
 }
 
+// --- HELPER FUNCTION FOR GEMINI ---
+async function generateGeminiResponse(prompt) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    
+    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+    
+    const result = await geminiResponse.json();
+    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
+    if (generatedText.startsWith('Asistente:')) {
+        generatedText = generatedText.substring('Asistente:'.length).trim();
+    }
+    
+    return generatedText;
+}
+
+
+// --- LÓGICA CENTRAL DEL BOT DE IA ---
+async function triggerAutoReplyAI(message, contactRef) {
+    const contactId = contactRef.id;
+    console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
+
+    try {
+        // 1. Verificar si el bot debe actuar
+        const contactDoc = await contactRef.get();
+        const contactData = contactDoc.data();
+        const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
+        const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
+
+        if (!globalBotActive) {
+            console.log(`[AI] Bot global desactivado. No se enviará respuesta.`);
+            return;
+        }
+        if (contactData.botActive === false) {
+            console.log(`[AI] Bot desactivado para el contacto ${contactId}. No se enviará respuesta.`);
+            return;
+        }
+
+        // 2. Lógica especial para Códigos Postales
+        if (message.type === 'text') {
+            const postalCodeRegex = /(?:cp|código postal|codigo postal)\s*:?\s*(\d{5})/i;
+            const match = message.text.body.match(postalCodeRegex);
+            if (match && match[1]) {
+                const postalCode = match[1];
+                console.log(`[AI] Código postal detectado: ${postalCode}. Verificando cobertura.`);
+                const coverageResponse = await checkCoverage(postalCode);
+                if (coverageResponse) {
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                    console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
+                    return; // Termina el proceso aquí
+                }
+            }
+        }
+
+        // 3. Preparar el prompt para Gemini
+        const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+        const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
+
+        const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
+        const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
+
+        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
+        const conversationHistory = messagesSnapshot.docs.map(doc => {
+            const d = doc.data();
+            return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
+        }).reverse().join('\n');
+
+        const prompt = `
+            **Instrucciones Generales:**
+            ${botInstructions}
+
+            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**
+            ${knowledgeBase || 'No hay información adicional.'}
+
+            **Historial de la Conversación Reciente:**
+            ${conversationHistory}
+
+            **Tarea:**
+            Basado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.
+        `;
+        
+        console.log(`[AI] Generando respuesta para ${contactId}.`);
+        const aiResponse = await generateGeminiResponse(prompt);
+
+        // 4. Enviar respuesta y guardar en la base de datos
+        const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+        });
+        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
+
+    } catch (error) {
+        console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
+    }
+}
+
 
 // --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
 const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] };
@@ -189,18 +297,24 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// --- FIX START: Corrected Webhook Logic ---
+// --- LÓGICA DEL WEBHOOK ACTUALIZADA ---
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    if (value && value.messages) {
+    if (value && value.messages && value.contacts) {
         const message = value.messages[0];
         const contactInfo = value.contacts[0];
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
         
+        // Ignorar mensajes enviados por el propio bot para evitar bucles
+        if (message.from === PHONE_NUMBER_ID) {
+            console.log("[LOG] Mensaje saliente ignorado.");
+            return res.sendStatus(200);
+        }
+
         const contactDoc = await contactRef.get();
         const isNewContact = !contactDoc.exists;
 
@@ -209,11 +323,13 @@ app.post('/webhook', async (req, res) => {
             timestamp: admin.firestore.FieldValue.serverTimestamp(), 
             from, 
             status: 'received', 
-            id: message.id 
+            id: message.id,
+            type: message.type, // Guardar el tipo de mensaje
         };
         if (message.type === 'text') {
             messageData.text = message.text.body;
         } else {
+            // Aquí se podría añadir lógica para descargar multimedia si fuera necesario
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
         await contactRef.collection('messages').add(messageData);
@@ -225,59 +341,42 @@ app.post('/webhook', async (req, res) => {
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
-
-        // Guardar información del anuncio si existe
         if (message.referral) {
             contactUpdateData.adReferral = message.referral;
         }
-
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Mensaje de ${from} guardado.`);
 
-        // 2. Lógica de Respuesta Automática
+        // 2. Lógica de Respuesta Automática (Bienvenida o IA)
         if (isNewContact) {
             let adResponseSent = false;
-            // Prioridad 1: Mensaje de Anuncio
             if (message.referral && message.referral.ad_id) {
                 const adId = message.referral.ad_id;
-                console.log(`[LOG] Contacto nuevo desde anuncio. Ad ID: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
-                    console.log(`[LOG] Encontrada respuesta para Ad ID ${adId}:`, adResponseData.adName);
                     try {
                         const sentMessageData = await sendAdvancedWhatsAppMessage(from, {
                             text: adResponseData.message,
                             fileUrl: adResponseData.fileUrl,
                             fileType: adResponseData.fileType
                         });
-                        
                         await contactRef.collection('messages').add({
-                            from: PHONE_NUMBER_ID,
-                            status: 'sent',
-                            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                            id: sentMessageData.id,
-                            text: sentMessageData.textForDb,
-                            fileUrl: sentMessageData.fileUrlForDb,
-                            fileType: sentMessageData.fileTypeForDb
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMessageData.id, text: sentMessageData.textForDb,
+                            fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb
                         });
                         await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-                        console.log(`[LOG] Mensaje de anuncio enviado a ${from}.`);
                         adResponseSent = true;
                     } catch (error) {
-                        console.error(`❌ [LOG] Fallo al enviar mensaje de anuncio a ${from}. Error:`, error.message);
+                        console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
-                } else {
-                    console.log(`[LOG] No se encontró respuesta configurada para Ad ID ${adId}.`);
                 }
             }
-
-            // Prioridad 2: Mensaje de bienvenida general (si no se envió uno de anuncio)
             if (!adResponseSent) {
                 try {
-                    console.log(`[LOG] Enviando mensaje de bienvenida general a ${from}.`);
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
                     await contactRef.collection('messages').add({
                         from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -285,18 +384,43 @@ app.post('/webhook', async (req, res) => {
                     });
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                 } catch (error) {
-                    console.error(`❌ [LOG] Fallo al enviar mensaje de bienvenida general a ${from}. Error:`, error.message);
+                    console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
                 }
             }
+        } else {
+            // Si no es un contacto nuevo, se activa la IA
+            await triggerAutoReplyAI(message, contactRef);
+        }
+    } else if (value && value.statuses) {
+        // Lógica para manejar actualizaciones de estado (entregado, leído)
+        const statusUpdate = value.statuses[0];
+        const messageId = statusUpdate.id;
+        const recipientId = statusUpdate.recipient_id;
+        const newStatus = statusUpdate.status; // sent, delivered, read
+
+        try {
+            const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
+            const querySnapshot = await messagesRef.where('id', '==', messageId).limit(1).get();
+            
+            if (!querySnapshot.empty) {
+                const messageDoc = querySnapshot.docs[0];
+                // Solo actualiza si el nuevo estado es "más avanzado"
+                const currentStatus = messageDoc.data().status;
+                const statusOrder = { sent: 1, delivered: 2, read: 3 };
+                if ((statusOrder[newStatus] || 0) > (statusOrder[currentStatus] || 0)) {
+                    await messageDoc.ref.update({ status: newStatus });
+                    console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' para ${recipientId}.`);
+                }
+            }
+        } catch (error) {
+            console.error(`❌ Error al actualizar estado del mensaje ${messageId}:`, error.message);
         }
     }
+    
     res.sendStatus(200);
 });
-// --- FIX END ---
 
-// --- EL RESTO DEL CÓDIGO PERMANECE IGUAL ---
 
-// ... (pega aquí el resto de tu archivo .js desde la función buildTemplatePayload hasta el final)
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -922,29 +1046,6 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
     }
 });
 // --- END: KNOWLEDGE BASE ENDPOINTS ---
-
-
-// --- HELPER FUNCTION FOR GEMINI ---
-async function generateGeminiResponse(prompt) {
-    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }] };
-    
-    const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-    if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
-    
-    const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
-    
-    // **FIX:** Remove "Asistente:" prefix if present
-    if (generatedText.startsWith('Asistente:')) {
-        generatedText = generatedText.substring('Asistente:'.length).trim();
-    }
-    
-    return generatedText;
-}
 
 // --- ENDPOINT PARA BOT DE IA (MANUAL) ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
