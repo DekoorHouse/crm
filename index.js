@@ -472,6 +472,9 @@ app.post('/webhook', async (req, res) => {
         id: message.id,
         type: message.type,
         text: message.type === 'text' ? message.text.body : `Mensaje multimedia (${message.type})`
+      ,
+        reply_to: message.context?.id || null,
+        context: message.context || null
       };
       await contactRef.collection('messages').add(messageData);
 
