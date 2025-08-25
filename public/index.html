@@ -89,7 +89,8 @@
         .message-wrapper.sent { align-items: flex-end; }
         .message-wrapper.received { align-items: flex-start; }
         
-        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 70%; /* Aumentado para mejor visualización */ margin-top: 1px; margin-bottom: 1px; }
+        /* --- CAMBIO REALIZADO AQUÍ --- */
+        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 35%; margin-top: 1px; margin-bottom: 1px; }
         .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
         .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
         .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
@@ -99,46 +100,11 @@
         .message-action-btn:hover { color: var(--color-primary); }
         .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .reactions-container.received-reaction { left: 10px; right: auto; }
-
-        /* --- INICIO: Estilos mejorados para la vista previa de respuesta DENTRO de la burbuja --- */
-        .message-bubble .reply-preview {
-            background-color: rgba(0, 0, 0, 0.05);
-            padding: 8px;
-            margin-bottom: 6px;
-            border-left: 3px solid var(--color-primary);
-            border-radius: var(--border-radius-sm);
-        }
-        .message-bubble.sent .reply-preview {
-            border-left-color: #63B3ED; /* Un color diferente para las respuestas en los mensajes enviados */
-        }
-        .message-bubble .reply-preview p {
-            margin: 0;
-            font-size: 0.85rem;
-            line-height: 1.3;
-        }
-        .message-bubble .reply-preview .reply-author {
-            font-weight: 600;
-            color: var(--color-primary);
-        }
-        .message-bubble.sent .reply-preview .reply-author {
-            color: #4299E1;
-        }
-        .message-bubble .reply-preview .reply-text {
-            color: var(--color-text-light);
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: block;
-            max-width: 100%;
-        }
-        /* --- FIN: Estilos mejorados --- */
-
-        /* Estilos para la barra de contexto de respuesta SOBRE el input */
+        .reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 10px 8px; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
+        .reply-preview p { margin: 0; font-size: 0.85rem; }
+        .reply-preview .reply-author { font-weight: 600; color: var(--color-primary); }
+        .reply-preview .reply-text { color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         #reply-context-bar { background-color: #f0f2f5; padding: 8px 16px; border-top: 1px solid var(--color-border); position: relative; }
-        #reply-context-bar .reply-preview { background-color: transparent; padding: 0; margin: 0; border-left: 3px solid var(--color-primary); border-radius: 0; padding-left: 8px; }
-        #reply-context-bar .reply-preview p { margin: 0; font-size: 0.85rem; }
-        #reply-context-bar .reply-author { font-weight: 600; color: var(--color-primary); }
-        #reply-context-bar .reply-text { color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         #cancel-reply-btn { position: absolute; top: 4px; right: 8px; background: none; border: none; font-size: 1.2rem; color: #999; cursor: pointer; }
 
         .message-bubble img, .message-bubble video { border-radius: var(--border-radius-sm); }
@@ -237,14 +203,17 @@
 
         .color-picker-label { display: inline-block; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 2px solid var(--color-border); }
         
+        /* --- START: Drag and Drop Styles --- */
         .draggable-row { cursor: grab; }
         .draggable-row:active { cursor: grabbing; }
         .drag-handle { cursor: grab; padding: 0 10px; color: #a0aec0; }
         .drag-handle:active { cursor: grabbing; }
         .sortable-ghost { background-color: #eef2ff; opacity: 0.7; }
         .sortable-drag { background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        /* --- END: Drag and Drop Styles --- */
         
-        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; overflow-x: auto; height: 100%; align-items: flex-start; }
+        /* --- START: Pipeline Styles --- */
+        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; /* Added extra padding */ overflow-x: auto; height: 100%; align-items: flex-start; }
         .pipeline-column { flex: 0 0 300px; width: 300px; background-color: #f1f2f4; border-radius: var(--border-radius-lg); display: flex; flex-direction: column; max-height: 100%; }
         .pipeline-header { padding: 1rem; font-weight: 600; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
         .pipeline-header .tag-color-swatch { flex-shrink: 0; }
@@ -255,13 +224,17 @@
         .pipeline-card .contact-name { font-weight: 600; }
         .pipeline-card .last-message { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .sortable-ghost.pipeline-card { opacity: 0.5; background: #cce5ff; }
+        /* --- END: Pipeline Styles --- */
 
+        /* --- START: Login Styles --- */
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-bg); display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
         .login-container { background-color: var(--color-container-bg); padding: 40px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 25px var(--color-shadow); text-align: center; max-width: 420px; width: 100%; }
         .login-container h1 { margin-bottom: 25px; font-size: 1.8em; color: var(--color-primary); }
         .login-container button { width: 100%; }
         #login-error-message { margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; }
+        /* --- END: Login Styles --- */
 
+        /* --- START: Bot & Settings View Styles --- */
         .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
@@ -269,6 +242,7 @@
         input:checked + .slider { background-color: var(--color-primary); }
         input:checked + .slider:before { transform: translateX(22px); }
         .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
+        /* --- END: Bot & Settings View Styles --- */
 
     </style>
 </head>
@@ -426,7 +400,10 @@
                 </div>
                  <div>
                     <label>Archivo Adjunto</label>
+                    <!-- Container for existing file preview and remove button -->
                     <div id="ar-media-preview" class="mt-2"></div>
+
+                    <!-- Button to attach a new file -->
                     <label for="ar-file-input" class="btn btn-subtle !inline-flex !w-auto mt-2">
                         <i class="fas fa-paperclip mr-2"></i> <span id="ar-attach-button-text">Adjuntar Archivo</span>
                     </label>
@@ -590,7 +567,7 @@
             botSettings: { instructions: '' },
             awayMessageSettings: { isActive: true },
             globalBotSettings: { isActive: false },
-            googleSheetSettings: { googleSheetId: '' },
+            googleSheetSettings: { googleSheetId: '' }, // <-- NUEVO ESTADO
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
@@ -914,6 +891,7 @@
                             </label>
                         </div>
                     </div>
+                    <!-- START: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                     <div class="settings-card">
                         <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                         <div>
@@ -925,6 +903,7 @@
                             </div>
                         </div>
                     </div>
+                    <!-- END: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                 </div>
             </div>
         `;
@@ -975,19 +954,10 @@
             }
         };
 
-        // --- INICIO DE LA CORRECCIÓN: Plantilla de vista previa de respuesta mejorada ---
         const RepliedMessagePreviewTemplate = (originalMessage) => {
-            if (!originalMessage) {
-                // Fallback si el mensaje original no se encuentra en el estado actual
-                return `
-                <div class="reply-preview">
-                    <p class="reply-author">Mensaje anterior</p>
-                    <p class="reply-text italic text-gray-400">[El contenido no está disponible]</p>
-                </div>
-                `;
-            }
+            if (!originalMessage) return '';
             const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
-            const textPreview = originalMessage.text || (originalMessage.fileType ? `📷 Archivo` : 'Mensaje multimedia');
+            const textPreview = originalMessage.text || (originalMessage.fileType ? `📷 Archivo` : '');
 
             return `
                 <div class="reply-preview">
@@ -997,6 +967,7 @@
             `;
         };
         
+        // --- INICIO DE LA CORRECCIÓN ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -1007,19 +978,22 @@
             let bubbleExtraClass = '';
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
+            // Parte 1: Renderizar el archivo multimedia si existe
             if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
                     contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
-                    timeAndStatusHTML = '';
+                    timeAndStatusHTML = ''; // El tiempo ahora es una superposición en la imagen
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    const videoMarginClass = message.text ? 'mb-2' : '';
+                    const videoMarginClass = message.text ? 'mb-2' : ''; // Añade margen inferior si hay texto
                     contentHTML += `<video controls class="rounded-lg max-w-xs w-full block ${videoMarginClass}"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                 }
             }
 
+            // Parte 2: Renderizar el texto (subtítulo o mensaje normal) si existe
             if (message.text) {
+                // Si es una imagen, la burbuja no tiene padding, así que lo añadimos al div del texto
                 const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
                 contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
@@ -1108,7 +1082,7 @@
             const textPreview = message.text || (message.fileType ? `📷 Archivo` : '');
             return `
                 <button id="cancel-reply-btn" onclick="cancelReply()"><i class="fas fa-times"></i></button>
-                <div class="reply-preview">
+                <div class="reply-preview !p-0 !border-l-2 !m-0">
                     <p class="reply-author">Respondiendo a ${authorName}</p>
                     <p class="reply-text">${textPreview}</p>
                 </div>
@@ -1261,7 +1235,7 @@
             fetchBotSettings();
             fetchAwayMessageSettings();
             fetchGlobalBotSettings();
-            fetchGoogleSheetSettings();
+            fetchGoogleSheetSettings(); // <-- NUEVA FUNCIÓN
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1559,6 +1533,7 @@
             if (botToggle) {
                 botToggle.checked = state.globalBotSettings.isActive;
             }
+            // START: NUEVA LÓGICA PARA GOOGLE SHEETS
             const sheetIdInput = document.getElementById('google-sheet-id-input');
             if (sheetIdInput) {
                 sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
@@ -1567,6 +1542,7 @@
             if (saveSheetIdBtn) {
                 saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
             }
+            // END: NUEVA LÓGICA PARA GOOGLE SHEETS
         }
 
         function updateCampaignRecipientCount() {
@@ -1594,6 +1570,7 @@
             let messagesHtml = '';
 
             state.messages.forEach(message => {
+                // Check for a valid timestamp to create a date separator
                 if (message.timestamp && typeof message.timestamp.seconds === 'number') {
                     const currentMessageDate = new Date(message.timestamp.seconds * 1000);
                     if (!isSameDay(currentMessageDate, lastMessageDate)) {
@@ -1601,6 +1578,7 @@
                         lastMessageDate = currentMessageDate;
                     }
                 }
+                // Always render the message bubble, even if the timestamp is temporarily missing
                 messagesHtml += MessageBubbleTemplate(message);
             });
 
@@ -1655,6 +1633,7 @@
             renderChatWindow();
         }
         
+        // --- FUNCIÓN DE ENVÍO CORREGIDA ---
         async function handleSendMessage(event) {
             event.preventDefault();
             const input = document.getElementById('message-input');
@@ -1681,22 +1660,23 @@
             if (!text && !fileToSend && !quickReplyFileUrl) return;
 
             input.value = '';
-            cancelStagedFile();
+            cancelStagedFile(); // Limpia la vista previa del archivo inmediatamente
 
             try {
-                const messageData = { text, fileUrl: quickReplyFileUrl, fileType: quickReplyFileType };
-                if (state.replyingToMessage) {
-                    messageData.reply_to_wamid = state.replyingToMessage.id;
-                }
-
                 if (fileToSend) {
-                    const response = await uploadAndSendFile(fileToSend, text, messageData.reply_to_wamid);
+                    // Si el usuario adjuntó un archivo, súbelo y envíalo con el texto como subtítulo
+                    const response = await uploadAndSendFile(fileToSend, text);
                     if (!response.ok) {
                         const errorData = await response.json();
                         throw new Error(errorData.message || 'Error del servidor.');
                     }
                 } else {
+                    // Si es un mensaje de texto o una respuesta rápida (con o sin archivo)
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
+                    const messageData = { text, fileUrl: quickReplyFileUrl, fileType: quickReplyFileType };
+                    if (state.replyingToMessage) {
+                        messageData.reply_to_wamid = state.replyingToMessage.id;
+                    }
                     const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -1711,7 +1691,7 @@
             } catch (error) {
                 console.error("Error en el proceso de envío:", error);
                 showError(error.message);
-                if (text && !fileToSend) { input.value = text; }
+                if (text && !fileToSend) { input.value = text; } // Restaura el texto si falló el envío
             }
         }
 
@@ -1776,7 +1756,8 @@
 
         function toggleEditNote(noteId) { state.isEditingNote = state.isEditingNote === noteId ? null : noteId; renderNotes(); }
 
-        async function uploadAndSendFile(file, textCaption, replyToWamid) {
+        // --- FUNCIÓN DE SUBIDA DE ARCHIVOS CORREGIDA ---
+        async function uploadAndSendFile(file, textCaption) { // Acepta el subtítulo como argumento
             if (!file || !state.selectedContactId || state.isUploading) return;
             const progressEl = document.getElementById('upload-progress');
             const submitButton = document.querySelector('#message-form button[type="submit"]');
@@ -1800,10 +1781,10 @@
                             const messageData = { 
                                 fileUrl: downloadURL, 
                                 fileType: file.type,
-                                text: textCaption
+                                text: textCaption // Incluye el subtítulo en la petición
                             };
-                            if (replyToWamid) {
-                                messageData.reply_to_wamid = replyToWamid;
+                            if (state.replyingToMessage) {
+                                messageData.reply_to_wamid = state.replyingToMessage.id;
                             }
                             const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
                             resolve(response);
@@ -2555,6 +2536,7 @@
             });
         }
 
+        // --- START: AD RESPONSE MODAL LOGIC (IMPROVED) ---
         function openAdResponseModal(responseId = null) {
             const modal = document.getElementById('ad-response-modal');
             const form = document.getElementById('ad-response-form');
@@ -2573,7 +2555,7 @@
             document.getElementById('ar-file-url').value = isEditing ? response.fileUrl || '' : '';
             document.getElementById('ar-file-type').value = isEditing ? response.fileType || '' : '';
             
-            updateAdResponsePreview();
+            updateAdResponsePreview(); // Helper function to render the file preview
 
             modal.classList.remove('hidden');
             document.getElementById('ar-name').focus();
@@ -2590,7 +2572,7 @@
             const attachButtonTextEl = document.getElementById('ar-attach-button-text');
             const fileUrl = document.getElementById('ar-file-url').value;
 
-            mediaPreviewEl.innerHTML = '';
+            mediaPreviewEl.innerHTML = ''; // Always start clean
 
             if (fileUrl) {
                 let previewHTML = `
@@ -2662,6 +2644,7 @@
                 showError(error.message);
             }
         }
+        // --- END: AD RESPONSE MODAL LOGIC ---
         
         async function handleModalFileUpload(event, prefix) {
             const file = event.target.files[0];
@@ -2703,6 +2686,7 @@
             }
         }
 
+        // --- START: Bot & Knowledge Base Functions ---
         function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
@@ -2852,7 +2836,9 @@
                 showError(error.message);
             }
         }
+        // --- END: Bot & Knowledge Base Functions ---
 
+        // --- START: NUEVAS FUNCIONES PARA AJUSTES ---
         async function fetchAwayMessageSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
@@ -2911,6 +2897,7 @@
             }
         }
 
+        // --- START: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
         async function fetchGoogleSheetSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`);
@@ -2945,7 +2932,7 @@
                 });
                 if (!response.ok) throw new Error('No se pudo guardar el ID de Google Sheet.');
                 state.googleSheetSettings.googleSheetId = googleSheetId;
-                showError("¡ID de Google Sheet guardado con éxito!");
+                showError("¡ID de Google Sheet guardado con éxito!"); // Usamos showError para una notificación verde/amarilla
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -2953,6 +2940,8 @@
                 button.textContent = 'Guardar';
             }
         }
+        // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
+
     </script>
 </body>
 </html>
