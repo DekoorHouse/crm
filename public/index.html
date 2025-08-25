@@ -964,7 +964,9 @@
         
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
-            const time = message.timestamp ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
+            const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
+                ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+                : '';
             
             let content = '';
             let bubbleExtraClass = '';
@@ -1539,8 +1541,32 @@
             display.textContent = `Se enviará a ${recipients.length} contactos.`;
         }
 
+        // --- FIX START: Modified the renderMessages function ---
+        function renderMessages() {
+            const contentContainer = document.getElementById('messages-content');
+            if (!contentContainer) return;
 
-        function renderMessages() { const contentContainer = document.getElementById('messages-content'); if (!contentContainer) return; let lastMessageDate = null; let messagesHtml = ''; state.messages.forEach(message => { if (!message.timestamp || !message.timestamp.seconds) return; const currentMessageDate = new Date(message.timestamp.seconds * 1000); if (!isSameDay(currentMessageDate, lastMessageDate)) { messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate)); lastMessageDate = currentMessageDate; } messagesHtml += MessageBubbleTemplate(message); }); contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>'; document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' }); handleScroll(); }
+            let lastMessageDate = null;
+            let messagesHtml = '';
+
+            state.messages.forEach(message => {
+                // Check for a valid timestamp to create a date separator
+                if (message.timestamp && typeof message.timestamp.seconds === 'number') {
+                    const currentMessageDate = new Date(message.timestamp.seconds * 1000);
+                    if (!isSameDay(currentMessageDate, lastMessageDate)) {
+                        messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate));
+                        lastMessageDate = currentMessageDate;
+                    }
+                }
+                // Always render the message bubble, even if the timestamp is temporarily missing
+                messagesHtml += MessageBubbleTemplate(message);
+            });
+
+            contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>';
+            document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' });
+            handleScroll();
+        }
+        // --- FIX END ---
         
         function renderNotes() { 
             const contentContainer = document.getElementById('notes-content'); 
