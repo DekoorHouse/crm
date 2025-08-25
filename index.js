@@ -1,5 +1,4 @@
-// index.js - VERSIÓN CORREGIDA Y MEJORADA
-// Gestión completa de mensajes de anuncios, multimedia, y bot automático.
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA Y BOT AUTOMÁTICO
 
 require('dotenv').config();
 const express = require('express');
@@ -11,19 +10,18 @@ const axios = require('axios');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4 } = require('uuid'); // Necesario para nombres de archivo únicos
 
 // --- CONFIGURACIÓN DE FIREBASE ---
 try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET // Usar variable de entorno para el bucket
+      storageBucket: 'pedidos-con-gemini.firebasestorage.app'
     });
     console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
 } catch (error) {
     console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
-    process.exit(1); // Detener la aplicación si Firebase no inicia
 }
 
 const db = admin.firestore();
@@ -32,7 +30,10 @@ const bucket = getStorage().bucket();
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
-const whitelist = process.env.CORS_WHITELIST ? process.env.CORS_WHITELIST.split(',') : [];
+
+// --- INICIO: CORRECCIÓN DE CORS ---
+// Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
+const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000'];
 const corsOptions = {
   origin: function (origin, callback) {
     if (whitelist.indexOf(origin) !== -1 || !origin) {
@@ -43,10 +44,12 @@ const corsOptions = {
   }
 };
 app.use(cors(corsOptions));
+// --- FIN: CORRECCIÓN DE CORS ---
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- VARIABLES DE ENTORNO ---
+
 const PORT = process.env.PORT || 3000;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -58,11 +61,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 // --- CONFIGURACIÓN DE GOOGLE SHEETS ---
 const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
+
 async function getGoogleSheetsClient() {
     try {
         const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS_JSON);
-        const auth = new google.auth.GoogleAuth({ credentials, scopes: SHEETS_SCOPES });
+        const auth = new google.auth.GoogleAuth({
+            credentials,
+            scopes: SHEETS_SCOPES,
+        });
         const client = await auth.getClient();
+        console.log('✅ Autenticación con Google Sheets exitosa.');
         return google.sheets({ version: 'v4', auth: client });
     } catch (error) {
         console.error("❌ Error al autenticar con Google Sheets. Revisa la variable de entorno 'GOOGLE_SHEETS_CREDENTIALS_JSON'.", error.message);
@@ -73,71 +81,123 @@ async function getGoogleSheetsClient() {
 // --- FUNCIÓN PARA VERIFICAR COBERTURA ---
 async function checkCoverage(postalCode) {
     if (!postalCode) return null;
-    console.log(`[LOG] Verificando cobertura para CP: ${postalCode}`);
+    console.log(`[LOG] Iniciando verificación de cobertura para CP: ${postalCode}`);
+
     const sheets = await getGoogleSheetsClient();
     if (!sheets) return "No se pudo verificar la cobertura en este momento.";
 
     try {
         const settingsDoc = await db.collection('crm_settings').doc('general').get();
         const sheetId = settingsDoc.exists ? settingsDoc.data().googleSheetId : null;
-        if (!sheetId) return "La herramienta de cobertura no está configurada.";
 
-        const response = await sheets.spreadsheets.values.get({ spreadsheetId: sheetId, range: 'M:M' });
+        if (!sheetId) {
+            console.warn("[LOG] Advertencia: No se ha configurado un ID de Google Sheet en los ajustes.");
+            return "La herramienta de cobertura no está configurada.";
+        }
+        console.log(`[LOG] Usando Google Sheet ID: ${sheetId}`);
+
+        const response = await sheets.spreadsheets.values.get({
+            spreadsheetId: sheetId,
+            range: 'M:M',
+        });
+        console.log('[LOG] Respuesta de Google Sheets API recibida.');
+
         const rows = response.data.values;
         if (rows && rows.length) {
             const coverageZips = rows.flat();
             if (coverageZips.includes(postalCode.toString())) {
+                console.log(`[LOG] Cobertura ENCONTRADA para ${postalCode}.`);
                 return `✅ ¡Buenas noticias! Sí tenemos cobertura en el código postal ${postalCode}.`;
             } else {
+                console.log(`[LOG] Cobertura NO encontrada para ${postalCode}.`);
                 return `❌ Lo sentimos, por el momento no tenemos cobertura en el código postal ${postalCode}.`;
             }
         }
+        console.log(`[LOG] No se encontraron datos en la hoja para el CP ${postalCode}.`);
         return `No se encontraron datos de cobertura para verificar el código postal ${postalCode}.`;
     } catch (error) {
-        console.error(`❌ [LOG] Error al leer Google Sheets:`, error.message);
-        if (error.code === 404) return "Error: No se encontró la hoja de cálculo. Verifica el ID.";
-        if (error.code === 403) return "Error de permisos. Asegúrate de haber compartido la hoja con el correo de servicio.";
-        return "Hubo un problema al verificar la cobertura. Inténtalo más tarde.";
+        console.error(`❌ [LOG] Error al leer la hoja de Google Sheets. DETALLE:`, error.message);
+        if (error.code === 404) {
+             return "Error: No se encontró la hoja de cálculo. Verifica el ID en los ajustes.";
+        }
+        if (error.code === 403) {
+            return "Error de permisos. Asegúrate de haber compartido la hoja con el correo de servicio y de haber habilitado la API de Google Sheets.";
+        }
+        return "Hubo un problema al verificar la cobertura. Por favor, inténtalo más tarde.";
     }
 }
 
-// --- FUNCIÓN AUXILIAR PARA GEMINI ---
+// --- HELPER FUNCTION FOR GEMINI ---
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
+    
     const result = await geminiResponse.json();
     let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
+    
     return generatedText;
 }
+
 
 // --- LÓGICA CENTRAL DEL BOT DE IA ---
 async function triggerAutoReplyAI(message, contactRef) {
     const contactId = contactRef.id;
     console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
+
     try {
+        // 1. Verificar si el bot debe actuar
         const contactDoc = await contactRef.get();
         const contactData = contactDoc.data();
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
 
-        if (!globalBotActive || contactData.botActive === false) {
-            console.log(`[AI] Bot desactivado (global o para el contacto). No se enviará respuesta.`);
+        if (!globalBotActive) {
+            console.log(`[AI] Bot global desactivado. No se enviará respuesta.`);
+            return;
+        }
+        if (contactData.botActive === false) {
+            console.log(`[AI] Bot desactivado para el contacto ${contactId}. No se enviará respuesta.`);
             return;
         }
 
-        // CORRECCIÓN: La lógica de CP se eliminó de aquí para evitar redundancia. Se maneja en el webhook principal.
+        // 2. Lógica especial para Códigos Postales
+        if (message.type === 'text') {
+            const postalCodeRegex = /(?:cp|código postal|codigo postal)\s*:?\s*(\d{5})/i;
+            const match = message.text.body.match(postalCodeRegex);
+            if (match && match[1]) {
+                const postalCode = match[1];
+                console.log(`[AI] Código postal detectado: ${postalCode}. Verificando cobertura.`);
+                const coverageResponse = await checkCoverage(postalCode);
+                if (coverageResponse) {
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                    console.log(`[AI] Respuesta de cobertura enviada a ${contactId}.`);
+                    return; // Termina el proceso aquí
+                }
+            }
+        }
 
+        // 3. Preparar el prompt para Gemini
         const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
         const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
+
         const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
         const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
+
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
@@ -145,14 +205,23 @@ async function triggerAutoReplyAI(message, contactRef) {
         }).reverse().join('\n');
 
         const prompt = `
-            **Instrucciones Generales:**\n${botInstructions}\n
-            **Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n
-            **Historial de la Conversación:**\n${conversationHistory}\n
-            **Tarea:** Responde al ÚLTIMO mensaje del cliente de manera concisa y útil. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            **Instrucciones Generales:**
+            ${botInstructions}
+
+            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**
+            ${knowledgeBase || 'No hay información adicional.'}
+
+            **Historial de la Conversación Reciente:**
+            ${conversationHistory}
+
+            **Tarea:**
+            Basado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.
+        `;
         
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResponse = await generateGeminiResponse(prompt);
 
+        // 4. Enviar respuesta y guardar en la base de datos
         const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
         await contactRef.collection('messages').add({
             from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -160,143 +229,132 @@ async function triggerAutoReplyAI(message, contactRef) {
         });
         await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
         console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
+
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
     }
 }
 
-// --- FUNCIÓN AUXILIAR PARA EVENTOS DE CONVERSIÓN ---
+
+// --- CONFIGURACIÓN DE HORARIO DE ATENCIÓN Y MENSAJE DE AUSENCIA ---
+const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] };
+const TIMEZONE = 'America/Mexico_City';
+const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
+const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
+
+function isWithinBusinessHours() {
+    const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
+    const day = now.getDay();
+    const hour = now.getHours();
+    const hoursToday = BUSINESS_HOURS[day];
+    if (!hoursToday) return false;
+    const [startHour, endHour] = hoursToday;
+    return hour >= startHour && hour < endHour;
+}
+
 function sha256(data) {
     if (!data) return null;
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
+// --- INICIO: CORRECCIÓN DE BUG CRÍTICO (FUNCIÓN FALTANTE) ---
 async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.log('[CAPI] Pixel ID o Access Token no configurado. Omitiendo evento.');
+        console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
         return;
     }
+
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const event_time = Math.floor(new Date().getTime() / 1000);
     const event_id = `${eventName}_${contactInfo.wa_id}_${event_time}`;
+
     const userData = {
         "ph": [sha256(contactInfo.wa_id)],
-        "fn": [sha256(contactInfo.profile.name.split(' ')[0])],
-        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))]
+        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // First name
+        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
     };
+
     const eventData = {
-        "event_name": eventName, "event_time": event_time, "event_id": event_id,
-        "user_data": userData, "action_source": "whatsapp", "custom_data": customData
+        "event_name": eventName,
+        "event_time": event_time,
+        "event_id": event_id,
+        "user_data": userData,
+        "action_source": "whatsapp",
+        "custom_data": customData
     };
+    
     if (referral && referral.source_type === 'ad') {
         eventData.data_processing_options = [];
         eventData.data_processing_options_country = 0;
         eventData.data_processing_options_state = 0;
     }
-    const payload = { "data": [eventData], "access_token": META_CAPI_ACCESS_TOKEN };
+
+    const payload = {
+        "data": [eventData],
+        "access_token": META_CAPI_ACCESS_TOKEN
+    };
+
     try {
-        console.log(`[CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id}`);
+        console.log(`[CAPI] Sending event '${eventName}' for ${contactInfo.wa_id}`);
         const response = await axios.post(url, payload);
-        console.log('[CAPI] Evento enviado con éxito:', response.data);
+        console.log('[CAPI] Event sent successfully:', response.data);
     } catch (error) {
-        console.error('[CAPI] Error al enviar evento de conversión:', error.response ? JSON.stringify(error.response.data) : error.message);
+        console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
+// --- FIN: CORRECCIÓN DE BUG CRÍTICO ---
 
-// --- FUNCIÓN DE ENVÍO AVANZADO DE MENSAJES ---
-async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
+// --- FUNCIÓN DE ENVÍO AVANZADO MODIFICADA ---
+async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     let messagePayload;
     let messageToSaveText;
 
-    if (fileUrl && fileType) {
+    if (fileUrl && fileType) { // Mensaje multimedia (puede tener subtítulo o no)
         const type = fileType.startsWith('image/') ? 'image' : 
                      fileType.startsWith('video/') ? 'video' : 
                      fileType.startsWith('audio/') ? 'audio' : 'document';
+        
         const mediaObject = { link: fileUrl };
-        if (text) mediaObject.caption = text;
+        if (text) { // Usamos el 'text' como subtítulo
+            mediaObject.caption = text;
+        }
+        
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
-        messageToSaveText = text || (type === 'image' ? '📷 Imagen' : type === 'video' ? '🎥 Video' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
-    } else if (text) {
+        
+        // El texto para la BD es el subtítulo, o el placeholder si no hay subtítulo.
+        messageToSaveText = text || (type === 'image' ? '📷 Imagen' : 
+                                     type === 'video' ? '🎥 Video' :
+                                     type === 'audio' ? '🎵 Audio' : '📄 Documento');
+
+    } else if (text) { // Mensaje de solo texto
         messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
         messageToSaveText = text;
     } else {
-        throw new Error("Se requiere texto o un archivo para enviar un mensaje.");
-    }
-    
-    if (reply_to_wamid) {
-        messagePayload.context = { message_id: reply_to_wamid };
+        throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
 
     try {
-        console.log(`[LOG] Enviando mensaje a ${to}. Payload:`, JSON.stringify(messagePayload));
+        console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
         const response = await axios.post(url, messagePayload, { headers });
+        console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
         const messageId = response.data.messages[0].id;
-        return { id: messageId, textForDb: messageToSaveText, fileUrlForDb: fileUrl || null, fileTypeForDb: fileType || null };
+        
+        return {
+            id: messageId,
+            textForDb: messageToSaveText,
+            fileUrlForDb: fileUrl || null,
+            fileTypeForDb: fileType || null
+        };
     } catch (error) {
-        console.error(`❌ Error al enviar mensaje avanzado a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
     }
 }
 
-// --- GESTIÓN DE CÓDIGOS POSTALES ---
-async function handlePostalCodeAuto(message, contactRef, contactId) {
-  if (message?.type !== 'text') return false;
-  const match = message.text.body.match(/\b(\d{5})\b/);
-  if (!match) return false;
 
-  const postalCode = match[1];
-  console.log(`[CP] Código postal detectado: ${postalCode}`);
-  const coverageResponse = await checkCoverage(postalCode);
-  if (!coverageResponse) return false;
-
-  try {
-    const sent = await sendAdvancedWhatsAppMessage(contactId, { text: coverageResponse });
-    await contactRef.collection('messages').add({
-      from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-      id: sent.id, text: sent.textForDb, isAutoReply: true
-    });
-    await contactRef.update({ lastMessage: sent.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-    console.log(`[CP] Respuesta de cobertura enviada para ${postalCode}.`);
-    return true;
-  } catch (e) {
-    console.error('[CP] Error al manejar CP automático:', e.message);
-    return false;
-  }
-}
-
-// --- **NUEVA FUNCIÓN** PARA GESTIONAR MENSAJES AUTOMÁTICOS ---
-const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
-
-async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
-    const contactId = contactRef.id;
-    try {
-        console.log(`[AUTO] Enviando mensaje automático a ${contactId}.`);
-        const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType });
-        await contactRef.collection('messages').add({
-            from: PHONE_NUMBER_ID,
-            status: 'sent',
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sentMessageData.id,
-            text: sentMessageData.textForDb,
-            fileUrl: sentMessageData.fileUrlForDb,
-            fileType: sentMessageData.fileTypeForDb,
-            isAutoReply: true
-        });
-        await contactRef.update({
-            lastMessage: sentMessageData.textForDb,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-        console.log(`[AUTO] Mensaje automático enviado y guardado para ${contactId}.`);
-    } catch (error) {
-        console.error(`❌ [AUTO] Fallo al enviar mensaje automático a ${contactId}:`, error.message);
-        throw error; // Propagar el error para que el llamador lo sepa
-    }
-}
-
-
-// --- WEBHOOK DE VERIFICACIÓN ---
+// --- WEBHOOK DE WHATSAPP ---
 app.get('/webhook', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -309,13 +367,14 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// --- FUNCIONES DE GESTIÓN DE ARCHIVOS MULTIMEDIA ---
+// --- INICIO DE LA CORRECCIÓN ---
 async function getMediaUrl(mediaId) {
+    if (!mediaId) return null;
     try {
         const url = `https://graph.facebook.com/v19.0/${mediaId}`;
         const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
         const response = await axios.get(url, { headers });
-        return { url: response.data.url, mimeType: response.data.mime_type };
+        return response.data.url; 
     } catch (error) {
         console.error(`❌ Error al obtener la URL del medio ${mediaId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
         return null;
@@ -325,109 +384,166 @@ async function getMediaUrl(mediaId) {
 async function uploadMediaToStorage(mediaUrl, mimeType) {
     if (!mediaUrl || !mimeType) return null;
     try {
-        const response = await axios({ method: 'get', url: mediaUrl, responseType: 'arraybuffer', headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
+        // 1. Descargar el archivo desde la URL de Meta
+        const response = await axios({
+            method: 'get',
+            url: mediaUrl,
+            responseType: 'arraybuffer',
+            headers: {
+                'Authorization': `Bearer ${WHATSAPP_TOKEN}`
+            }
+        });
         const buffer = Buffer.from(response.data, 'binary');
-        const extension = mimeType.split('/')[1] || 'bin';
+
+        // 2. Subir el archivo a Firebase Storage
+        const extension = mimeType.split('/')[1];
         const fileName = `whatsapp_media/${uuidv4()}.${extension}`;
         const file = bucket.file(fileName);
-        await file.save(buffer, { metadata: { contentType: mimeType } });
+
+        await file.save(buffer, {
+            metadata: {
+                contentType: mimeType,
+            },
+        });
+
+        // 3. Hacer el archivo público y obtener la URL
         await file.makePublic();
         return file.publicUrl();
+
     } catch (error) {
         console.error(`❌ Error al descargar o subir el medio:`, error.message);
         return null;
     }
 }
 
-// --- LÓGICA PRINCIPAL DEL WEBHOOK ---
+
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    // Procesa mensajes de usuarios
     if (value && value.messages && value.contacts) {
         const message = value.messages[0];
+        console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
         const contactInfo = value.contacts[0];
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
+        
+        if (message.from === PHONE_NUMBER_ID) {
+            console.log("[LOG] Mensaje saliente ignorado.");
+            return res.sendStatus(200);
+        }
 
-        if (message.from === PHONE_NUMBER_ID) return res.sendStatus(200); // Ignorar eco
+        const contactDoc = await contactRef.get();
+        const isNewContact = !contactDoc.exists;
 
-        console.log('[LOG] Mensaje recibido de:', from, 'Tipo:', message.type);
-
-        // --- 1. PROCESAR Y GUARDAR MENSAJE ENTRANTE ---
-        const messageData = {
-            timestamp: admin.firestore.Timestamp.fromMillis(message.timestamp * 1000),
-            from, status: 'received', id: message.id, type: message.type,
+        // 1. Crear el objeto base del mensaje
+        let messageData = { 
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), 
+            from, 
+            status: 'received', 
+            id: message.id,
+            type: message.type,
         };
 
-        // Extraer contenido según el tipo de mensaje
+        // 2. Procesar el contenido del mensaje
         if (message.type === 'text') {
             messageData.text = message.text.body;
-        } else if (['image', 'video', 'audio', 'document'].includes(message.type)) {
-            const mediaType = message.type;
-            const mediaId = message[mediaType].id;
-            const caption = message[mediaType].caption;
+        } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(message.type)) {
+            const mediaObject = message[message.type];
+            const tempMediaUrl = await getMediaUrl(mediaObject.id);
             
-            messageData.text = caption || `[${mediaType}]`; // Usar caption o placeholder
-            
-            const mediaInfo = await getMediaUrl(mediaId);
-            if (mediaInfo) {
-                const publicUrl = await uploadMediaToStorage(mediaInfo.url, mediaInfo.mimeType);
-                if (publicUrl) {
-                    messageData.fileUrl = publicUrl;
-                    messageData.fileType = mediaInfo.mimeType;
+            if (tempMediaUrl) {
+                const permanentUrl = await uploadMediaToStorage(tempMediaUrl, mediaObject.mime_type);
+                if (permanentUrl) {
+                    messageData.fileUrl = permanentUrl;
+                    messageData.fileType = mediaObject.mime_type;
                 }
             }
+            
+            // MODIFICACIÓN: Guardar caption o un string vacío.
+            messageData.text = mediaObject.caption || '';
         } else {
-            messageData.text = `[Mensaje de tipo '${message.type}' no soportado]`;
+            messageData.text = `Tipo de mensaje no soportado: ${message.type}`;
         }
         
+        // 3. Guardar el mensaje y actualizar el contacto
         await contactRef.collection('messages').add(messageData);
+        
+        // Crear un texto descriptivo para la vista de contactos
+        let lastMessagePreview;
+        if (messageData.text) { // Si hay caption, úsalo
+            lastMessagePreview = messageData.text;
+        } else if (messageData.fileType) { // Si no hay caption pero es un archivo
+            if (messageData.fileType.startsWith('image/')) lastMessagePreview = '📷 Imagen';
+            else if (messageData.fileType.startsWith('video/')) lastMessagePreview = '🎥 Video';
+            else if (messageData.fileType.startsWith('audio/')) lastMessagePreview = '🎵 Audio';
+            else if (messageData.fileType.startsWith('sticker/')) lastMessagePreview = '✨ Sticker';
+            else lastMessagePreview = '📄 Documento';
+        } else { // Fallback para mensajes de solo texto
+            lastMessagePreview = messageData.text;
+        }
 
-        // --- 2. ACTUALIZAR DATOS DEL CONTACTO ---
-        const contactUpdateData = {
-            name: contactInfo.profile?.name, wa_id: contactInfo.wa_id,
-            lastMessage: messageData.text,
+        let contactUpdateData = {
+            name: contactInfo.profile.name,
+            wa_id: contactInfo.wa_id,
+            lastMessage: lastMessagePreview, // Usar el nuevo texto de previsualización
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
-        if (message.referral) contactUpdateData.adReferral = message.referral;
-
-        const previousDoc = await contactRef.get();
-        const isNewContact = !previousDoc.exists;
+        if (message.referral) {
+            contactUpdateData.adReferral = message.referral;
+        }
         await contactRef.set(contactUpdateData, { merge: true });
-        console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
+        console.log(`[LOG] Mensaje de ${from} guardado.`);
 
-        // --- 3. LÓGICA DE RESPUESTAS AUTOMÁTICAS ---
-        // Prioridad 1: Código Postal
-        const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
-        if (cpHandled) return res.sendStatus(200);
-
-        // Prioridad 2: Contacto nuevo
+        // 4. Lógica de Respuesta Automática (Bienvenida o IA)
         if (isNewContact) {
             let adResponseSent = false;
-            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+            if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
-                const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
+                const adResponsesRef = db.collection('ad_responses');
+                const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
+
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
-                    await sendAutoMessage(contactRef, adResponseData);
-                    adResponseSent = true;
+                    try {
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(from, {
+                            text: adResponseData.message,
+                            fileUrl: adResponseData.fileUrl,
+                            fileType: adResponseData.fileType
+                        });
+                        await contactRef.collection('messages').add({
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMessageData.id, text: sentMessageData.textForDb,
+                            fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb
+                        });
+                        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                        adResponseSent = true;
+                    } catch (error) {
+                        console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
+                    }
+                } else {
+                    console.log(`[LOG] No se encontró respuesta para Ad ID: ${adId}.`);
                 }
             }
             if (!adResponseSent) {
-                await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                await contactRef.update({ welcomed: true });
+                try {
+                    const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
+                    await contactRef.collection('messages').add({
+                        from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                        id: sentMessageData.id, text: sentMessageData.textForDb
+                    });
+                    await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+                } catch (error) {
+                    console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
+                }
             }
         } else {
-            // Prioridad 3: Contacto existente -> IA
             await triggerAutoReplyAI(message, contactRef);
         }
-    } 
-    // Procesa actualizaciones de estado (enviado, entregado, leído)
-    else if (value && value.statuses) {
+    } else if (value && value.statuses) {
         const statusUpdate = value.statuses[0];
         const messageId = statusUpdate.id;
         const recipientId = statusUpdate.recipient_id;
@@ -435,98 +551,109 @@ app.post('/webhook', async (req, res) => {
 
         try {
             const messagesRef = db.collection('contacts_whatsapp').doc(recipientId).collection('messages');
-            const snap = await messagesRef.where('id', '==', messageId).limit(1).get();
-            if (!snap.empty) {
-                const messageDoc = snap.docs[0];
-                const order = { sent: 1, delivered: 2, read: 3 };
-                if ((order[newStatus] || 0) > (order[messageDoc.data().status] || 0)) {
+            const querySnapshot = await messagesRef.where('id', '==', messageId).limit(1).get();
+            
+            if (!querySnapshot.empty) {
+                const messageDoc = querySnapshot.docs[0];
+                const currentStatus = messageDoc.data().status;
+                const statusOrder = { sent: 1, delivered: 2, read: 3 };
+                if ((statusOrder[newStatus] || 0) > (statusOrder[currentStatus] || 0)) {
                     await messageDoc.ref.update({ status: newStatus });
-                    console.log(`[LOG] Estado del mensaje ${messageId} -> '${newStatus}' para ${recipientId}.`);
+                    console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' para ${recipientId}.`);
                 }
             }
         } catch (error) {
-            console.error(`❌ Error al actualizar estado ${messageId}:`, error.message);
+            console.error(`❌ Error al actualizar estado del mensaje ${messageId}:`, error.message);
         }
     }
-
+    
     res.sendStatus(200);
 });
-
-// --- ENDPOINT PARA ENVIAR MENSAJES MANUALES DESDE EL CRM ---
-app.post('/api/contacts/:contactId/messages', async (req, res) => {
-    const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
-
-    if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
-    
-    try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        let sentMessageData;
-        let messageToSaveText;
-
-        if (template) {
-            // Lógica para plantillas
-            const { payload, messageToSaveText: templateText } = await buildTemplatePayload(contactId, template);
-            if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
-
-            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, { 
-                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } 
-            });
-            sentMessageData = { id: response.data.messages[0].id };
-            messageToSaveText = templateText;
-        } else {
-            // Lógica para mensajes de texto o multimedia
-            sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
-            messageToSaveText = sentMessageData.textForDb;
-        }
-
-        const messageToSave = {
-            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sentMessageData.id, text: messageToSaveText,
-            fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb
-        };
-        if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
-        Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-        
-        await contactRef.collection('messages').add(messageToSave);
-        await contactRef.update({ 
-            lastMessage: messageToSaveText, 
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), 
-            unreadCount: 0 
-        });
-
-        res.status(200).json({ success: true, message: 'Mensaje enviado.' });
-    } catch (error) {
-        console.error('Error al enviar mensaje vía API:', error.response ? JSON.stringify(error.response.data) : error.message);
-        res.status(500).json({ success: false, message: 'Error al enviar el mensaje.' });
-    }
-});
+// --- FIN DE LA CORRECCIÓN ---
 
 
-// --- FUNCIÓN AUXILIAR PARA CONSTRUIR PAYLOAD DE PLANTILLAS ---
+// --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     let messageToSaveText = `📄 Plantilla: ${template.name}`; 
+
     const payload = {
         messaging_product: 'whatsapp', to: contactId, type: 'template',
         template: { name: template.name, language: { code: template.language }, components: [] }
     };
+
     const bodyComponent = template.components?.find(c => c.type === 'BODY');
     if (bodyComponent?.text?.includes('{{1}}')) {
         const contactDoc = await contactRef.get();
-        const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name.split(' ')[0] : 'Cliente';
+        const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
         payload.template.components.push({ type: 'body', parameters: [{ type: 'text', text: contactName }] });
         messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
     } else if (bodyComponent?.text) {
         messageToSaveText = bodyComponent.text;
     }
+    
     if (payload.template.components.length === 0) delete payload.template.components;
     return { payload, messageToSaveText };
 }
 
-// --- ENDPOINTS DE CAMPAÑAS, PLANTILLAS, REACCIONES, ETC. (Sin cambios, se omiten por brevedad) ---
-// ... (El resto de tus endpoints: /api/campaigns/send-template, /api/whatsapp-templates, etc. van aquí)
-// --- PEGA AQUÍ EL RESTO DE TUS ENDPOINTS DESDE /api/campaigns/send-template HASTA EL FINAL ---
+// --- ENDPOINT PARA ENVIAR MENSAJES MODIFICADO ---
+app.post('/api/contacts/:contactId/messages', async (req, res) => {
+    const { contactId } = req.params;
+    const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
+
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
+    
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+
+        if (template) {
+            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
+
+            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, { 
+                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } 
+            });
+            const messageId = response.data.messages[0].id;
+            
+            const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+
+        } else {
+            // Lógica unificada para mensajes manuales y respuestas rápidas
+            // 'text' puede ser un mensaje de texto o el subtítulo de un archivo.
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType });
+    
+            const messageToSave = {
+                from: PHONE_NUMBER_ID, 
+                status: 'sent', 
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: sentMessageData.id, 
+                text: sentMessageData.textForDb,
+                fileUrl: sentMessageData.fileUrlForDb, 
+                fileType: sentMessageData.fileTypeForDb
+            };
+        
+            if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
+            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+            
+            await contactRef.collection('messages').add(messageToSave);
+            await contactRef.update({ 
+                lastMessage: sentMessageData.textForDb, 
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), 
+                unreadCount: 0 
+            });
+        }
+
+        res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
+
+    } catch (error) {
+        console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
+    }
+});
+
 
 // --- ENDPOINT PARA CAMPAÑAS ---
 app.post('/api/campaigns/send-template', async (req, res) => {
@@ -776,6 +903,7 @@ app.delete('/api/quick-replies/:id', async (req, res) => {
 
 // --- ENDPOINTS PARA ETIQUETAS ---
 app.post('/api/tags', async (req, res) => {
+    // MODIFIED: Accept 'order' field
     const { label, color, key, order } = req.body;
     if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
@@ -784,6 +912,8 @@ app.post('/api/tags', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
 });
 
+// --- FIX: Reordered the routes. The specific route must come before the general one. ---
+// --- NEW ENDPOINT TO HANDLE TAG REORDERING ---
 app.put('/api/tags/order', async (req, res) => {
     const { orderedIds } = req.body;
     if (!Array.isArray(orderedIds)) {
@@ -808,6 +938,7 @@ app.put('/api/tags/:id', async (req, res) => {
     const { label, color, key } = req.body;
     if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
     try {
+        // Note: We don't update 'order' here, it's handled by a separate endpoint
         await db.collection('crm_tags').doc(id).update({ label, color, key });
         res.status(200).json({ success: true });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
@@ -821,21 +952,44 @@ app.delete('/api/tags/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la etiqueta.' }); }
 });
 
-// --- ENDPOINTS PARA RESPUESTAS DE ANUNCIOS ---
+app.delete('/api/tags', async (req, res) => {
+    try {
+        const snapshot = await db.collection('crm_tags').get();
+        const batch = db.batch();
+        snapshot.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        res.status(200).json({ success: true });
+    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' }); }
+});
+
+// --- ENDPOINTS PARA RESPUESTAS DE ANUNCIOS (CON SOPORTE MULTIMEDIA) ---
 app.post('/api/ad-responses', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) {
-        return res.status(400).json({ success: false, message: 'Nombre, ID del anuncio y un mensaje o archivo son obligatorios.' });
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID del anuncio y un mensaje de texto o archivo multimedia son obligatorios.' });
     }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
+    }
+
     try {
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
         if (!existing.empty) {
             return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya tiene un mensaje configurado.` });
         }
-        const responseData = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        
+        const responseData = {
+            adName,
+            adId,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+
         const newResponse = await db.collection('ad_responses').add(responseData);
         res.status(201).json({ success: true, id: newResponse.id, data: responseData });
     } catch (error) {
+        console.error("Error creating ad response:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje.' });
     }
 });
@@ -844,20 +998,33 @@ app.put('/api/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) {
-        return res.status(400).json({ success: false, message: 'Nombre, ID del anuncio y un mensaje o archivo son obligatorios.' });
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID del anuncio y un mensaje de texto o archivo multimedia son obligatorios.' });
+    }
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'Si se incluye un archivo multimedia, se debe especificar su tipo (fileType).' });
     }
     try {
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
         if (!existing.empty && existing.docs[0].id !== id) {
             return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya está en uso.` });
         }
-        const updateData = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        
+        const updateData = {
+            adName,
+            adId,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+
         await db.collection('ad_responses').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
     } catch (error) {
+        console.error("Error updating ad response:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
     }
 });
+
 
 app.delete('/api/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
@@ -865,61 +1032,132 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
         await db.collection('ad_responses').doc(id).delete();
         res.status(200).json({ success: true, message: 'Mensaje de anuncio eliminado.' });
     } catch (error) {
+        console.error("Error deleting ad response:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar.' });
     }
 });
 
-// --- ENDPOINTS DE CONFIGURACIÓN DEL BOT Y GENERALES ---
+// --- START: BOT & SETTINGS ENDPOINTS ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
-        res.status(200).json({ success: true, settings: doc.exists ? doc.data() : { instructions: '' } });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot.' }); }
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { instructions: '' } });
+        }
+        res.status(200).json({ success: true, settings: doc.data() });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot.' });
+    }
 });
 
 app.post('/api/bot/settings', async (req, res) => {
+    const { instructions } = req.body;
     try {
-        await db.collection('crm_settings').doc('bot').set({ instructions: req.body.instructions });
+        await db.collection('crm_settings').doc('bot').set({ instructions });
         res.status(200).json({ success: true, message: 'Configuración del bot guardada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar la configuración del bot.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración del bot.' });
+    }
 });
 
 app.post('/api/bot/toggle', async (req, res) => {
+    const { contactId, isActive } = req.body;
     try {
-        await db.collection('contacts_whatsapp').doc(req.body.contactId).update({ botActive: req.body.isActive });
-        res.status(200).json({ success: true, message: `Bot ${req.body.isActive ? 'activado' : 'desactivado'}.` });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar el estado del bot.' }); }
+        await db.collection('contacts_whatsapp').doc(contactId).update({ botActive: isActive });
+        res.status(200).json({ success: true, message: `Bot ${isActive ? 'activado' : 'desactivado'} para ${contactId}.` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar el estado del bot.' });
+    }
 });
 
-app.get('/api/settings/general', async (req, res) => {
+// --- START: NEW GENERAL SETTINGS ENDPOINTS ---
+app.get('/api/settings/away-message', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
-        const defaults = { globalBotActive: false, googleSheetId: '' };
-        res.status(200).json({ success: true, settings: doc.exists ? { ...defaults, ...doc.data() } : defaults });
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { isActive: true } }); // Default to active
+        }
+        res.status(200).json({ success: true, settings: { isActive: doc.data().awayMessageActive } });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener la configuración general.' });
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del mensaje de ausencia.' });
     }
 });
 
-app.post('/api/settings/general', async (req, res) => {
+app.post('/api/settings/away-message', async (req, res) => {
+    const { isActive } = req.body;
     try {
-        const { globalBotActive, googleSheetId } = req.body;
-        await db.collection('crm_settings').doc('general').set({ globalBotActive, googleSheetId }, { merge: true });
-        res.status(200).json({ success: true, message: 'Configuración general guardada.' });
+        await db.collection('crm_settings').doc('general').set({ awayMessageActive: isActive }, { merge: true });
+        res.status(200).json({ success: true, message: 'Configuración del mensaje de ausencia guardada.' });
     } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar la configuración general.' });
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración.' });
     }
 });
 
-// --- ENDPOINTS DE BASE DE CONOCIMIENTO (KNOWLEDGE BASE) ---
+app.get('/api/settings/global-bot', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        if (!doc.exists) {
+            return res.status(200).json({ success: true, settings: { isActive: false } }); // Default to inactive
+        }
+        res.status(200).json({ success: true, settings: { isActive: doc.data().globalBotActive } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración del bot global.' });
+    }
+});
+
+app.post('/api/settings/global-bot', async (req, res) => {
+    const { isActive } = req.body;
+    try {
+        await db.collection('crm_settings').doc('general').set({ globalBotActive: isActive }, { merge: true });
+        res.status(200).json({ success: true, message: 'Configuración del bot global guardada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar el ajuste del bot global.' });
+    }
+});
+
+// --- AÑADIDO: ENDPOINT PARA GUARDAR GOOGLE SHEET ID ---
+app.get('/api/settings/google-sheet', async (req, res) => {
+    try {
+        const doc = await db.collection('crm_settings').doc('general').get();
+        if (!doc.exists || !doc.data().googleSheetId) {
+            return res.status(200).json({ success: true, settings: { googleSheetId: '' } });
+        }
+        res.status(200).json({ success: true, settings: { googleSheetId: doc.data().googleSheetId } });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener la configuración de Google Sheet.' });
+    }
+});
+
+app.post('/api/settings/google-sheet', async (req, res) => {
+    const { googleSheetId } = req.body;
+    try {
+        await db.collection('crm_settings').doc('general').set({ googleSheetId }, { merge: true });
+        res.status(200).json({ success: true, message: 'ID de Google Sheet guardado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar la configuración de Google Sheet.' });
+    }
+});
+// --- END: NEW GENERAL SETTINGS ENDPOINTS ---
+
+// --- END: BOT & SETTINGS ENDPOINTS ---
+
+// --- START: KNOWLEDGE BASE ENDPOINTS (CORRECCIÓN) ---
 app.post('/api/knowledge-base', async (req, res) => {
     const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    }
     try {
-        const entryData = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
+        const entryData = { 
+            topic, 
+            answer,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null 
+        };
         const newEntry = await db.collection('ai_knowledge_base').add(entryData);
         res.status(201).json({ success: true, id: newEntry.id, data: entryData });
     } catch (error) { 
+        console.error("Error creating knowledge base entry:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al crear la entrada.' }); 
     }
 });
@@ -927,34 +1165,45 @@ app.post('/api/knowledge-base', async (req, res) => {
 app.put('/api/knowledge-base/:id', async (req, res) => {
     const { id } = req.params;
     const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
+    }
     try {
-        const updateData = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
+        const updateData = {
+            topic,
+            answer,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
         await db.collection('ai_knowledge_base').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Entrada actualizada.' });
     } catch (error) { 
+        console.error("Error updating knowledge base entry:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al actualizar la entrada.' }); 
     }
 });
 
 app.delete('/api/knowledge-base/:id', async (req, res) => {
+    const { id } = req.params;
     try {
-        await db.collection('ai_knowledge_base').doc(req.params.id).delete();
+        await db.collection('ai_knowledge_base').doc(id).delete();
         res.status(200).json({ success: true, message: 'Entrada eliminada.' });
     } catch (error) { 
+        console.error("Error deleting knowledge base entry:", error);
         res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' }); 
     }
 });
+// --- END: KNOWLEDGE BASE ENDPOINTS ---
 
-// --- ENDPOINT PARA GENERAR RESPUESTA MANUAL CON IA ---
+// --- ENDPOINT PARA BOT DE IA (MANUAL) ---
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
         const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
-        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\n');
-        const prompt = `Eres un asistente de ventas para un CRM. Responde al último mensaje del cliente de manera concisa y profesional.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+        const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
@@ -964,12 +1213,13 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     }
 });
 
-// --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
+
+// --- AÑADIDO: Ruta para servir la aplicación frontend ---
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// --- INICIAR SERVIDOR ---
+
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
