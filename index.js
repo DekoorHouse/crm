@@ -108,10 +108,18 @@ async function checkCoverage(postalCode) {
             const coverageZips = rows.flat();
             if (coverageZips.includes(postalCode.toString())) {
                 console.log(`[LOG] Cobertura ENCONTRADA para ${postalCode}.`);
-                return `✅ ¡Buenas noticias! Sí tenemos cobertura en el código postal ${postalCode}.`;
+                return `✅ _¡Excelente!_ 🎉
+
+✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨
+
+Mañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨
+
+El ENVIO ES GRATIS y *tu pedido llegará entre 5 y 7 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago  y enviemos la guia de envio. 🚛💨 ${postalCode}.`;
             } else {
                 console.log(`[LOG] Cobertura NO encontrada para ${postalCode}.`);
-                return `❌ Lo sentimos, por el momento no tenemos cobertura en el código postal ${postalCode}.`;
+                return `Disculpa ya has recibido pedidos por paqueteria antes alli? ${postalCode}.
+
+Por cual pauqteria?`;
             }
         }
         console.log(`[LOG] No se encontraron datos en la hoja para el CP ${postalCode}.`);
