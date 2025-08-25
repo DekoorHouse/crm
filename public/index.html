@@ -233,15 +233,14 @@
         #login-error-message { margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; }
         /* --- END: Login Styles --- */
 
-        /* --- START: Bot & Settings View Styles --- */
+        /* --- START: Bot View Styles --- */
         .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
         .slider:before { position: absolute; content: ""; height: 20px; width: 20px; left: 4px; bottom: 4px; background-color: white; transition: .4s; border-radius: 50%; }
         input:checked + .slider { background-color: var(--color-primary); }
         input:checked + .slider:before { transform: translateX(22px); }
-        .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
-        /* --- END: Bot & Settings View Styles --- */
+        /* --- END: Bot View Styles --- */
 
     </style>
 </head>
@@ -317,10 +316,6 @@
                     <a onclick="navigateTo('respuestas-ia')" data-view="respuestas-ia" class="nav-item">
                         <i class="fas fa-robot"></i>
                         <span class="sidebar-text">Respuestas IA</span>
-                    </a>
-                    <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
-                        <i class="fas fa-cog"></i>
-                        <span class="sidebar-text">Ajustes</span>
                     </a>
                 </nav>
                 <div class="mt-auto">
@@ -524,7 +519,7 @@
             apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg", 
             authDomain: "pedidos-con-gemini.firebaseapp.com", 
             projectId: "pedidos-con-gemini", 
-            storageBucket: "pedidos-con-gemini.appspot.com",
+            storageBucket: "pedidos-con-gemini.firebasestorage.app", // <-- ¡CORREGIDO!
             messagingSenderId: "300825194175", 
             appId: "1:300825194175:web:972fa7b8af195a83e6e00a", 
             measurementId: "G-FTCDCMZB1S" 
@@ -560,9 +555,6 @@
             tags: [],
             knowledgeBase: [],
             botSettings: { instructions: '' },
-            awayMessageSettings: { isActive: true },
-            globalBotSettings: { isActive: false },
-            googleSheetSettings: { googleSheetId: '' }, // <-- NUEVO ESTADO
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
@@ -582,7 +574,7 @@
         };
         let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null;
         let ticking = false;
-        let tagsSortable = null;
+        let tagsSortable = null; // Variable to hold the Sortable instance
 
         // --- START: Authentication Logic ---
         auth.onAuthStateChanged(user => {
@@ -654,30 +646,6 @@
             return safeText;
         }
         // --- END: FUNCIÓN AUXILIAR PARA FORMATEAR TEXTO ---
-
-        // --- NUEVA FUNCIÓN PARA COPIAR CON FORMATO ---
-        function copyFormattedText(text, buttonElement) {
-            const formattedHtml = formatWhatsAppText(text).replace(/<br>/g, '\n');
-            const plainText = formattedHtml.replace(/<[^>]+>/g, '');
-
-            const listener = (e) => {
-                e.preventDefault();
-                e.clipboardData.setData('text/html', formattedHtml);
-                e.clipboardData.setData('text/plain', plainText);
-            };
-
-            document.addEventListener('copy', listener);
-            document.execCommand('copy');
-            document.removeEventListener('copy', listener);
-            
-            const originalIconHTML = buttonElement.innerHTML;
-            buttonElement.innerHTML = '<i class="fas fa-check text-green-500"></i>';
-            buttonElement.disabled = true;
-            setTimeout(() => {
-                buttonElement.innerHTML = originalIconHTML;
-                buttonElement.disabled = false;
-            }, 1500);
-        }
 
         // --- PLANTILLAS DE VISTAS ---
 
@@ -842,8 +810,8 @@
                 </div>
 
                 <div>
-                    <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
-                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
+                    <h2 class="text-xl font-bold mb-4">Control del Bot por Contacto</h2>
+                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales.</p>
                     <table class="table">
                         <thead>
                             <tr>
@@ -853,52 +821,6 @@
                         </thead>
                         <tbody id="bot-contacts-table-body"></tbody>
                     </table>
-                </div>
-            </div>
-        `;
-
-        const SettingsViewTemplate = () => `
-            <div class="view-container">
-                <div class="view-header">
-                    <h1>Ajustes Generales</h1>
-                </div>
-                <div class="max-w-2xl space-y-8">
-                    <div class="settings-card">
-                        <h2 class="text-xl font-bold mb-4">Automatización</h2>
-                        <div class="flex items-center justify-between">
-                            <div>
-                                <h3 class="font-semibold">Mensaje de Ausencia</h3>
-                                <p class="text-sm text-gray-500">Enviar una respuesta automática fuera del horario de atención.</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="away-message-toggle" onchange="handleAwayMessageToggle(this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                        <div class="flex items-center justify-between border-t border-gray-200 mt-6 pt-6">
-                            <div>
-                                <h3 class="font-semibold">Bot IA Global</h3>
-                                <p class="text-sm text-gray-500">Activar la inteligencia artificial para todas las conversaciones.</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="global-bot-toggle" onchange="handleGlobalBotToggle(this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <!-- START: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
-                    <div class="settings-card">
-                        <h2 class="text-xl font-bold mb-4">Integraciones</h2>
-                        <div>
-                            <label for="google-sheet-id-input" class="font-semibold">ID de Google Sheet para Cobertura</label>
-                            <p class="text-sm text-gray-500 mb-3">Pega aquí el ID de tu hoja de cálculo con los códigos postales.</p>
-                            <div class="flex items-center gap-3">
-                                <input type="text" id="google-sheet-id-input" class="!mb-0" placeholder="Ej: 1aBcDeFgHiJkLmNoPqRsTuVwXyZ_1234567890">
-                                <button id="save-google-sheet-id-btn" class="btn btn-primary flex-shrink-0">Guardar</button>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- END: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                 </div>
             </div>
         `;
@@ -962,12 +884,9 @@
             `;
         };
         
-        // --- FIX START: Modified the MessageBubbleTemplate function ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
-            const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
-                ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
-                : '';
+            const time = message.timestamp ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '';
             
             let content = '';
             let bubbleExtraClass = '';
@@ -989,16 +908,10 @@
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
-            // Only show copy button if there is text to copy
-            const copyButtonHTML = message.text 
-                ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
-                : '';
-
             const actionsHTML = `
                 <div class="message-actions">
                     <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
                     <button class="message-action-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')" title="Reaccionar"><i class="far fa-thumbs-up"></i></button>
-                    ${copyButtonHTML}
                 </div>
             `;
 
@@ -1018,7 +931,6 @@
                     </div>
                 </div>`;
         };
-        // --- FIX END ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -1103,19 +1015,9 @@
             const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
             const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
-            const isBotActiveForContact = contact.botActive !== false;
-            const botToggleHTML = `
-                <button 
-                    onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})" 
-                    class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isBotActiveForContact ? 'text-green-500' : 'text-gray-400'}" 
-                    title="${isBotActiveForContact ? 'Desactivar IA para este chat' : 'Activar IA para este chat'}">
-                    <i class="fas fa-robot text-xl"></i>
-                </button>
-            `;
-
             return `
                 <div id="drag-drop-overlay" class="drag-overlay hidden"><div class="drag-overlay-content"><i class="fas fa-file-import text-5xl mb-4"></i><p>Suelta el archivo para adjuntarlo</p></div></div>
-                <header class="chat-header p-2 shadow-sm flex items-center space-x-2">
+                <header class="chat-header p-2 shadow-sm flex items-start space-x-2">
                     <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
                     <div class="flex-grow">
                         <h2 class="text-base font-semibold text-gray-800 cursor-pointer" onclick="openContactDetails()">${contact.name}</h2>
@@ -1124,9 +1026,6 @@
                             <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>
                         </div>
                         <div id="contact-status-wrapper" class="mt-1.5"></div>
-                    </div>
-                    <div class="flex items-center pr-2">
-                        ${botToggleHTML}
                     </div>
                 </header>
                 <div class="bg-white border-b border-gray-200 flex">
@@ -1219,9 +1118,6 @@
             listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
-            fetchAwayMessageSettings();
-            fetchGlobalBotSettings();
-            fetchGoogleSheetSettings(); // <-- NUEVA FUNCIÓN
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1234,7 +1130,7 @@
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1279,10 +1175,6 @@
                 case 'respuestas-ia':
                     mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
                     renderKnowledgeBaseView();
-                    break;
-                case 'ajustes':
-                    mainViewContainer.innerHTML = SettingsViewTemplate();
-                    renderAjustesView();
                     break;
                 default:
                     mainViewContainer.innerHTML = `<div class="p-8"><h1 class="text-2xl font-bold">En construcción</h1><p class="mt-4 text-gray-600">Esta sección estará disponible próximamente.</p></div>`;
@@ -1465,6 +1357,7 @@
                 `;
             }).join('');
             
+            // Initialize SortableJS on each column
             document.querySelectorAll('.pipeline-cards').forEach(column => {
                 new Sortable(column, {
                     group: 'pipeline',
@@ -1509,28 +1402,6 @@
             `).join('');
         }
 
-        function renderAjustesView() {
-            if (state.activeView !== 'ajustes') return;
-            const awayToggle = document.getElementById('away-message-toggle');
-            if (awayToggle) {
-                awayToggle.checked = state.awayMessageSettings.isActive;
-            }
-            const botToggle = document.getElementById('global-bot-toggle');
-            if (botToggle) {
-                botToggle.checked = state.globalBotSettings.isActive;
-            }
-            // START: NUEVA LÓGICA PARA GOOGLE SHEETS
-            const sheetIdInput = document.getElementById('google-sheet-id-input');
-            if (sheetIdInput) {
-                sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
-            }
-            const saveSheetIdBtn = document.getElementById('save-google-sheet-id-btn');
-            if (saveSheetIdBtn) {
-                saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
-            }
-            // END: NUEVA LÓGICA PARA GOOGLE SHEETS
-        }
-
         function updateCampaignRecipientCount() {
             const tagSelect = document.getElementById('campaign-tag-select');
             const display = document.getElementById('recipient-count-display');
@@ -1548,32 +1419,8 @@
             display.textContent = `Se enviará a ${recipients.length} contactos.`;
         }
 
-        // --- FIX START: Modified the renderMessages function ---
-        function renderMessages() {
-            const contentContainer = document.getElementById('messages-content');
-            if (!contentContainer) return;
 
-            let lastMessageDate = null;
-            let messagesHtml = '';
-
-            state.messages.forEach(message => {
-                // Check for a valid timestamp to create a date separator
-                if (message.timestamp && typeof message.timestamp.seconds === 'number') {
-                    const currentMessageDate = new Date(message.timestamp.seconds * 1000);
-                    if (!isSameDay(currentMessageDate, lastMessageDate)) {
-                        messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate));
-                        lastMessageDate = currentMessageDate;
-                    }
-                }
-                // Always render the message bubble, even if the timestamp is temporarily missing
-                messagesHtml += MessageBubbleTemplate(message);
-            });
-
-            contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>';
-            document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' });
-            handleScroll();
-        }
-        // --- FIX END ---
+        function renderMessages() { const contentContainer = document.getElementById('messages-content'); if (!contentContainer) return; let lastMessageDate = null; let messagesHtml = ''; state.messages.forEach(message => { if (!message.timestamp || !message.timestamp.seconds) return; const currentMessageDate = new Date(message.timestamp.seconds * 1000); if (!isSameDay(currentMessageDate, lastMessageDate)) { messagesHtml += DateSeparatorTemplate(formatDateSeparator(currentMessageDate)); lastMessageDate = currentMessageDate; } messagesHtml += MessageBubbleTemplate(message); }); contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>'; document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' }); handleScroll(); }
         
         function renderNotes() { 
             const contentContainer = document.getElementById('notes-content'); 
@@ -1591,6 +1438,7 @@
 
         function handleSelectContactFromPipeline(contactId) {
             navigateTo('chats');
+            // A short delay ensures the UI for the chat view is ready before we try to select a contact
             setTimeout(() => {
                 handleSelectContact(contactId);
             }, 100);
@@ -2328,6 +2176,7 @@
 
         function listenForTags() {
             if(unsubscribeTagsListener) unsubscribeTagsListener();
+            // MODIFIED: Order by the 'order' field
             unsubscribeTagsListener = db.collection('crm_tags').orderBy('order').onSnapshot(snapshot => {
                 state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 if(state.activeView === 'chats') {
@@ -2400,6 +2249,7 @@
             }
             
             const key = label.toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_]/g, '');
+            // MODIFIED: Add order property for new tags
             const tagData = { label, color, key };
             if (!id) {
                 tagData.order = state.tags.length;
@@ -2464,19 +2314,22 @@
             }
         }
 
+        // --- START: Drag and Drop Logic for Tags ---
         function initTagsSortable() {
             const tableBody = document.getElementById('tags-table-body');
-            if (tableBody && !tagsSortable) {
+            if (tableBody && !tagsSortable) { // Initialize only once
                 tagsSortable = new Sortable(tableBody, {
                     animation: 150,
-                    handle: '.drag-handle',
+                    handle: '.drag-handle', // Specify the handle element
                     ghostClass: 'sortable-ghost',
                     onEnd: async (evt) => {
                         const rows = Array.from(evt.target.children);
                         const orderedIds = rows.map(row => row.dataset.id);
                         
+                        // Optimistically update state to reflect new order immediately
                         state.tags.sort((a, b) => orderedIds.indexOf(a.id) - orderedIds.indexOf(b.id));
                         
+                        // Send the new order to the backend
                         try {
                             const response = await fetch(`${API_BASE_URL}/api/tags/order`, {
                                 method: 'PUT',
@@ -2489,12 +2342,14 @@
                         } catch (error) {
                             console.error("Error updating tag order:", error);
                             showError("No se pudo guardar el nuevo orden. Intenta de nuevo.");
+                            // Revert to the old order if the API call fails
                             listenForTags();
                         }
                     },
                 });
             }
         }
+        // --- END: Drag and Drop Logic for Tags ---
 
         function listenForAdResponses() {
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
@@ -2679,8 +2534,10 @@
                     body: JSON.stringify({ contactId, isActive })
                 });
                 if (!response.ok) throw new Error('Failed to update bot status.');
+                // The listener will update the UI automatically
             } catch (error) {
                 showError("No se pudo cambiar el estado del bot.");
+                // Revert the toggle on failure
                 const toggle = document.querySelector(`input[onchange="handleBotToggle('${contactId}', this.checked)"]`);
                 if(toggle) toggle.checked = !isActive;
             }
@@ -2780,110 +2637,6 @@
             }
         }
         // --- END: Bot & Knowledge Base Functions ---
-
-        // --- START: NUEVAS FUNCIONES PARA AJUSTES ---
-        async function fetchAwayMessageSettings() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
-                const data = await response.json();
-                if (data.success) {
-                    state.awayMessageSettings.isActive = data.settings.isActive;
-                }
-            } catch (error) {
-                console.error("Error fetching away message settings:", error);
-                showError("No se pudo cargar la configuración del mensaje de ausencia.");
-            }
-        }
-
-        async function handleAwayMessageToggle(isActive) {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/away-message`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ isActive })
-                });
-                if (!response.ok) throw new Error('No se pudo guardar el ajuste.');
-                state.awayMessageSettings.isActive = isActive;
-            } catch (error) {
-                showError(error.message);
-                const toggle = document.getElementById('away-message-toggle');
-                if (toggle) toggle.checked = !isActive;
-            }
-        }
-
-        async function fetchGlobalBotSettings() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/global-bot`);
-                const data = await response.json();
-                if (data.success) {
-                    state.globalBotSettings.isActive = data.settings.isActive;
-                }
-            } catch (error) {
-                console.error("Error fetching global bot settings:", error);
-                showError("No se pudo cargar la configuración del bot global.");
-            }
-        }
-
-        async function handleGlobalBotToggle(isActive) {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/global-bot`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ isActive })
-                });
-                if (!response.ok) throw new Error('No se pudo guardar el ajuste del bot global.');
-                state.globalBotSettings.isActive = isActive;
-            } catch (error) {
-                showError(error.message);
-                const toggle = document.getElementById('global-bot-toggle');
-                if (toggle) toggle.checked = !isActive;
-            }
-        }
-
-        // --- START: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
-        async function fetchGoogleSheetSettings() {
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`);
-                const data = await response.json();
-                if (data.success) {
-                    state.googleSheetSettings.googleSheetId = data.settings.googleSheetId;
-                }
-            } catch (error) {
-                console.error("Error fetching Google Sheet settings:", error);
-                showError("No se pudo cargar la configuración de Google Sheet.");
-            }
-        }
-
-        async function handleSaveGoogleSheetId() {
-            const input = document.getElementById('google-sheet-id-input');
-            const button = document.getElementById('save-google-sheet-id-btn');
-            const googleSheetId = input.value.trim();
-
-            if (!googleSheetId) {
-                showError("El ID de Google Sheet no puede estar vacío.");
-                return;
-            }
-
-            button.disabled = true;
-            button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-            try {
-                const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ googleSheetId })
-                });
-                if (!response.ok) throw new Error('No se pudo guardar el ID de Google Sheet.');
-                state.googleSheetSettings.googleSheetId = googleSheetId;
-                showError("¡ID de Google Sheet guardado con éxito!"); // Usamos showError para una notificación verde/amarilla
-            } catch (error) {
-                showError(error.message);
-            } finally {
-                button.disabled = false;
-                button.textContent = 'Guardar';
-            }
-        }
-        // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
 
     </script>
 </body>
