@@ -978,36 +978,32 @@
             let bubbleExtraClass = '';
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
-            // --- INICIO DEL CAMBIO ---
-            // 1. Añade una variable para el HTML de la vista previa de la respuesta.
-            let replyPreviewHTML = '';
-
-            // 2. Verifica si el mensaje tiene contexto de respuesta.
-            if (message.context && message.context.id) {
-                // Busca el mensaje original en el estado actual de los mensajes.
-                const originalMessage = state.messages.find(m => m.id === message.context.id);
-                // Renderiza la plantilla de vista previa con el mensaje original encontrado.
-                replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
-            }
-            // --- FIN DEL CAMBIO ---
-
+            // Parte 1: Renderizar el archivo multimedia si existe
             if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
                     contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
-                    timeAndStatusHTML = '';
+                    timeAndStatusHTML = ''; // El tiempo ahora es una superposición en la imagen
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    const videoMarginClass = message.text ? 'mb-2' : '';
+                    const videoMarginClass = message.text ? 'mb-2' : ''; // Añade margen inferior si hay texto
                     contentHTML += `<video controls class="rounded-lg max-w-xs w-full block ${videoMarginClass}"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                 }
             }
 
+            // Parte 2: Renderizar el texto (subtítulo o mensaje normal) si existe
             if (message.text) {
+                // Si es una imagen, la burbuja no tiene padding, así que lo añadimos al div del texto
                 const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
                 contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
             
+            let replyPreviewHTML = '';
+            if (message.context && message.context.id) {
+                const originalMessage = state.messages.find(m => m.id === message.context.id);
+                replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
+            }
+
             const copyButtonHTML = message.text 
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
@@ -1029,7 +1025,7 @@
                 <div class="flex my-1 ${bubbleAlignment}">
                     <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                         ${actionsHTML}
-                        ${replyPreviewHTML}  // <!-- 3. Inserta la vista previa aquí.
+                        ${replyPreviewHTML}
                         ${contentHTML}
                         ${timeAndStatusHTML}
                         ${reactionHTML}
