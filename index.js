@@ -366,7 +366,20 @@ app.get('/webhook', (req, res) => {
     }
 });
 
-// --- LÓGICA DEL WEBHOOK COMPLETA Y CORREGIDA ---
+// --- INICIO DE LA CORRECCIÓN ---
+async function getMediaUrl(mediaId) {
+    if (!mediaId) return null;
+    try {
+        const url = `https://graph.facebook.com/v19.0/${mediaId}`;
+        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
+        const response = await axios.get(url, { headers });
+        return response.data.url; // Devuelve la URL temporal del archivo
+    } catch (error) {
+        console.error(`❌ Error al obtener la URL del medio ${mediaId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+        return null;
+    }
+}
+
 app.post('/webhook', async (req, res) => {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
@@ -387,7 +400,7 @@ app.post('/webhook', async (req, res) => {
         const contactDoc = await contactRef.get();
         const isNewContact = !contactDoc.exists;
 
-        // 1. Guardar el mensaje y actualizar el contacto
+        // 1. Crear el objeto base del mensaje
         let messageData = { 
             timestamp: admin.firestore.FieldValue.serverTimestamp(), 
             from, 
@@ -395,11 +408,26 @@ app.post('/webhook', async (req, res) => {
             id: message.id,
             type: message.type,
         };
+
+        // 2. Procesar el contenido del mensaje
         if (message.type === 'text') {
             messageData.text = message.text.body;
+        } else if (['image', 'video', 'audio', 'document', 'sticker'].includes(message.type)) {
+            const mediaObject = message[message.type];
+            const mediaUrl = await getMediaUrl(mediaObject.id);
+            
+            if (mediaUrl) {
+                const tempUrlResponse = await axios.get(mediaUrl, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
+                messageData.fileUrl = tempUrlResponse.data.url;
+                messageData.fileType = mediaObject.mime_type;
+            }
+            
+            messageData.text = mediaObject.caption || `Mensaje multimedia (${message.type})`;
         } else {
-            messageData.text = `Mensaje multimedia (${message.type})`;
+            messageData.text = `Tipo de mensaje no soportado: ${message.type}`;
         }
+        
+        // 3. Guardar el mensaje y actualizar el contacto
         await contactRef.collection('messages').add(messageData);
         
         let contactUpdateData = {
@@ -415,13 +443,12 @@ app.post('/webhook', async (req, res) => {
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Mensaje de ${from} guardado.`);
 
-        // 2. Lógica de Respuesta Automática (Bienvenida o IA)
+        // 4. Lógica de Respuesta Automática (Bienvenida o IA)
         if (isNewContact) {
             let adResponseSent = false;
-            // Lógica corregida para que coincida con los datos de Meta
             if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
-                const adId = message.referral.source_id; // Usamos source_id
-                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID recibido de Meta: ${adId}`);
+                const adId = message.referral.source_id;
+                console.log(`[LOG] Mensaje de nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
                 const adResponsesRef = db.collection('ad_responses');
                 const snapshot = await adResponsesRef.where('adId', '==', adId).limit(1).get();
 
@@ -444,35 +471,25 @@ app.post('/webhook', async (req, res) => {
                         console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}.`, error.message);
                     }
                 } else {
-                    console.log(`[LOG] No se encontró una respuesta configurada para el Ad ID: ${adId}. Se usará el mensaje de bienvenida general.`);
+                    console.log(`[LOG] No se encontró respuesta para Ad ID: ${adId}.`);
                 }
             }
-          if (!adResponseSent) {
+            if (!adResponseSent) {
                 try {
-                    // 1. Se envía el mensaje al cliente
                     const sentMessageData = await sendAdvancedWhatsAppMessage(from, { text: GENERAL_WELCOME_MESSAGE });
-                    
-                    // --- CORRECCIÓN AÑADIDA ---
-                    // 2. Se guarda una copia de ese mensaje en la base de datos.
-                    // ¡Esto es lo que permite que el CRM lo vea!
                     await contactRef.collection('messages').add({
                         from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                         id: sentMessageData.id, text: sentMessageData.textForDb
                     });
-                    // --- FIN DE LA CORRECCIÓN ---
-
-                    // 3. Se actualiza el resumen del último mensaje.
                     await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
                 } catch (error) {
                     console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}.`, error.message);
                 }
             }
         } else {
-            // Lógica para contactos existentes (IA)
             await triggerAutoReplyAI(message, contactRef);
         }
     } else if (value && value.statuses) {
-        // Lógica para manejar actualizaciones de estado (delivered, read)
         const statusUpdate = value.statuses[0];
         const messageId = statusUpdate.id;
         const recipientId = statusUpdate.recipient_id;
@@ -498,6 +515,7 @@ app.post('/webhook', async (req, res) => {
     
     res.sendStatus(200);
 });
+// --- FIN DE LA CORRECCIÓN ---
 
 
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
