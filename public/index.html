@@ -1073,7 +1073,6 @@
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
 
-            // --- INICIO DE LA MODIFICACIÓN DE REACCIONES ---
             const reactionPopoverHTML = `
                 <div class="reaction-popover-container">
                     <button class="message-action-btn" title="Reaccionar"><i class="far fa-smile"></i></button>
@@ -1087,7 +1086,6 @@
                     </div>
                 </div>
             `;
-            // --- FIN DE LA MODIFICACIÓN DE REACCIONES ---
 
             const actionsHTML = `
                 <div class="message-actions">
