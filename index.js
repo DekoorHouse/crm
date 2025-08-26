@@ -578,6 +578,70 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
+// --- START: SIMULATOR ENDPOINT ---
+app.post('/api/test/simulate-ad-message', async (req, res) => {
+    const { from, adId, text } = req.body;
+
+    if (!from || !adId || !text) {
+        return res.status(400).json({ success: false, message: 'Faltan los parámetros: from, adId, text.' });
+    }
+
+    // Construir el payload falso que imita el de Meta
+    const fakePayload = {
+        object: 'whatsapp_business_account',
+        entry: [{
+            id: WHATSAPP_BUSINESS_ACCOUNT_ID,
+            changes: [{
+                value: {
+                    messaging_product: 'whatsapp',
+                    metadata: {
+                        display_phone_number: PHONE_NUMBER_ID.slice(2), // Asume que PHONE_NUMBER_ID tiene código de país
+                        phone_number_id: PHONE_NUMBER_ID
+                    },
+                    contacts: [{
+                        profile: {
+                            name: `Test User ${from.slice(-4)}`
+                        },
+                        wa_id: from
+                    }],
+                    messages: [{
+                        from: from,
+                        id: `wamid.TEST_${uuidv4()}`, // Genera un ID de mensaje falso y único
+                        timestamp: Math.floor(Date.now() / 1000).toString(),
+                        text: {
+                            body: text
+                        },
+                        type: 'text',
+                        referral: {
+                            source_url: `https://fb.me/xxxxxxxx`, // URL genérica
+                            source_type: 'ad',
+                            source_id: adId,
+                            headline: 'Anuncio de Prueba'
+                        }
+                    }]
+                },
+                field: 'messages'
+            }]
+        }]
+    };
+
+    try {
+        console.log(`[SIMULATOR] Recibida simulación para ${from} desde Ad ID ${adId}.`);
+        // Hacer una petición interna al propio webhook para procesar el mensaje
+        await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        console.log(`[SIMULATOR] Simulación para ${from} enviada al webhook con éxito.`);
+        res.status(200).json({ success: true, message: 'Simulación procesada correctamente.' });
+
+    } catch (error) {
+        console.error('❌ ERROR EN EL SIMULADOR AL ENVIAR AL WEBHOOK:', error.response ? error.response.data : error.message);
+        res.status(500).json({ success: false, message: 'Error interno al procesar la simulación.' });
+    }
+});
+// --- END: SIMULATOR ENDPOINT ---
+
 
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
