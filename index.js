@@ -840,8 +840,15 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
         await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral || {});
         
-        await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado".' });
+        // START: MODIFICACIÓN - AÑADIR ETIQUETA DE VENTA
+        await contactRef.update({ 
+            registrationStatus: 'completed', 
+            registrationDate: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'venta' // Asume que la clave de la etiqueta es 'venta'
+        });
+        // END: MODIFICACIÓN
+        
+        res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado" y etiquetado como Venta.' });
     } catch (error) {
         console.error(`Error en mark-as-registration para ${contactId}:`, error.message);
         res.status(500).json({ success: false, message: error.message || 'Error al procesar la solicitud.' });
