@@ -452,7 +452,6 @@ app.post('/webhook', async (req, res) => {
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
         
-        // --- INICIO DE LA MODIFICACIÓN PARA REACCIONES ---
         if (message.type === 'reaction') {
             const originalMessageId = message.reaction.message_id;
             const reactionEmoji = message.reaction.emoji || null;
@@ -469,7 +468,6 @@ app.post('/webhook', async (req, res) => {
                     console.log(`[REACTION] Reacción eliminada para el mensaje ${originalMessageId}.`);
                 }
             }
-        // --- FIN DE LA MODIFICACIÓN PARA REACCIONES ---
         } else if (value.contacts) {
             console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
             const contactInfo = value.contacts[0];
@@ -706,19 +704,48 @@ app.get('/api/whatsapp-templates', async (req, res) => {
     }
 });
 
-// --- ENDPOINT PARA REACCIONES ---
+// --- INICIO DE LA MODIFICACIÓN DE REACCIONES ---
 app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body;
+    const { reaction } = req.body; // reaction puede ser un emoji o null para quitarla
+
     try {
         const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
+        const messageDoc = await messageRef.get();
+
+        if (!messageDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Mensaje no encontrado.' });
+        }
+
+        const messageData = messageDoc.data();
+        const wamid = messageData.id; // ID del mensaje de WhatsApp
+
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: contactId,
+            type: 'reaction',
+            reaction: {
+                message_id: wamid,
+                emoji: reaction || "" // Envía un string vacío para eliminar la reacción
+            }
+        };
+
+        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        
+        // Actualiza Firestore solo después de que la API de WhatsApp confirme
         await messageRef.update({ reaction: reaction || admin.firestore.FieldValue.delete() });
-        res.status(200).json({ success: true, message: 'Reacción actualizada.' });
+        
+        res.status(200).json({ success: true, message: 'Reacción enviada y actualizada.' });
+
     } catch (error) {
-        console.error('Error al actualizar la reacción:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la reacción.' });
+        console.error('Error al enviar o actualizar la reacción:', error.response ? error.response.data : error.message);
+        res.status(500).json({ success: false, message: 'Error del servidor al procesar la reacción.' });
     }
 });
+// --- FIN DE LA MODIFICACIÓN DE REACCIONES ---
+
 
 // --- ENDPOINTS PARA DATOS DE CONTACTO ---
 app.put('/api/contacts/:contactId', async (req, res) => {
@@ -1199,7 +1226,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\nAsistente:`;
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\\\\\nAsistente:`;
         
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
