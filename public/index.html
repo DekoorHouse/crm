@@ -80,8 +80,25 @@
         #chat-panel { background-color: #e5ddd5; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
         .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); }
         .chat-footer { background-color: #f8f9fa; padding: 8px 16px; }
-        #message-input { background-color: var(--color-container-bg); border-radius: 25px; padding: 8px 18px; border: 1px solid var(--color-border); font-size: 0.9rem; }
-        #message-input:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 2px rgba(129, 178, 154, 0.2); }
+        
+        /* START: Styles for the new textarea message input */
+        #message-input { 
+            background-color: var(--color-container-bg); 
+            border-radius: 20px; 
+            padding: 10px 18px; 
+            border: 1px solid var(--color-border); 
+            font-size: 0.9rem; 
+            max-height: 120px; /* Limit growth */
+            overflow-y: auto;
+            resize: none; /* Disable manual resize handle */
+        }
+        #message-input:focus { 
+            outline: none; 
+            border-color: var(--color-primary); 
+            box-shadow: 0 0 0 2px rgba(129, 178, 154, 0.2); 
+        }
+        /* END: Styles for the new textarea message input */
+
         .chat-icon-btn { color: var(--color-text-light); transition: color 0.2s ease; }
         .chat-icon-btn:hover { color: var(--color-primary); }
         
@@ -1204,7 +1221,7 @@
                      <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
                      <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
                      <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
-                     <input id="message-input" type="text" placeholder="Escribe un mensaje o usa / para respuestas rápidas..." class="flex-1 focus:outline-none" autocomplete="off" />
+                     <textarea id="message-input" placeholder="Escribe un mensaje o usa / para respuestas rápidas..." class="flex-1 !p-0 !mb-0" rows="1"></textarea>
                      <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
                 </form>`;
             
@@ -1430,6 +1447,24 @@
                     if (messageInput) { 
                         messageInput.addEventListener('paste', handlePaste); 
                         messageInput.addEventListener('input', handleQuickReplyInput);
+                        
+                        // START: Event listeners for textarea
+                        messageInput.addEventListener('input', () => { // Auto-resize
+                            messageInput.style.height = 'auto';
+                            let newHeight = messageInput.scrollHeight;
+                            if (newHeight > 120) { // Corresponds to max-height in CSS
+                                newHeight = 120;
+                            }
+                            messageInput.style.height = newHeight + 'px';
+                        });
+                        messageInput.addEventListener('keydown', (e) => { // Send on Enter
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                document.getElementById('message-form').requestSubmit();
+                            }
+                        });
+                        // END: Event listeners for textarea
+
                         messageInput.focus(); 
                     } 
                     setupDragAndDrop(); 
@@ -1741,7 +1776,6 @@
             renderChatWindow();
         }
         
-        // --- FUNCIÓN DE ENVÍO CORREGIDA ---
         async function handleSendMessage(event) {
             event.preventDefault();
             const input = document.getElementById('message-input');
@@ -1760,7 +1794,7 @@
                     quickReplyFileUrl = matchingReply.fileUrl;
                     quickReplyFileType = matchingReply.fileType;
                 } else {
-                    return;
+                    return; // Don't send if shortcut is invalid
                 }
             }
             
@@ -1768,18 +1802,17 @@
             if (!text && !fileToSend && !quickReplyFileUrl) return;
 
             input.value = '';
-            cancelStagedFile(); // Limpia la vista previa del archivo inmediatamente
+            input.style.height = 'auto'; // Reset height after sending
+            cancelStagedFile(); 
 
             try {
                 if (fileToSend) {
-                    // Si el usuario adjuntó un archivo, súbelo y envíalo con el texto como subtítulo
                     const response = await uploadAndSendFile(fileToSend, text);
                     if (!response.ok) {
                         const errorData = await response.json();
                         throw new Error(errorData.message || 'Error del servidor.');
                     }
                 } else {
-                    // Si es un mensaje de texto o una respuesta rápida (con o sin archivo)
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
                     const messageData = { text, fileUrl: quickReplyFileUrl, fileType: quickReplyFileType };
                     if (state.replyingToMessage) {
@@ -1799,7 +1832,7 @@
             } catch (error) {
                 console.error("Error en el proceso de envío:", error);
                 showError(error.message);
-                if (text && !fileToSend) { input.value = text; } // Restaura el texto si falló el envío
+                if (text && !fileToSend) { input.value = text; } 
             }
         }
 
@@ -1864,8 +1897,7 @@
 
         function toggleEditNote(noteId) { state.isEditingNote = state.isEditingNote === noteId ? null : noteId; renderNotes(); }
 
-        // --- FUNCIÓN DE SUBIDA DE ARCHIVOS CORREGIDA ---
-        async function uploadAndSendFile(file, textCaption) { // Acepta el subtítulo como argumento
+        async function uploadAndSendFile(file, textCaption) { 
             if (!file || !state.selectedContactId || state.isUploading) return;
             const progressEl = document.getElementById('upload-progress');
             const submitButton = document.querySelector('#message-form button[type="submit"]');
@@ -1889,7 +1921,7 @@
                             const messageData = { 
                                 fileUrl: downloadURL, 
                                 fileType: file.type,
-                                text: textCaption // Incluye el subtítulo en la petición
+                                text: textCaption 
                             };
                             if (state.replyingToMessage) {
                                 messageData.reply_to_wamid = state.replyingToMessage.id;
@@ -2037,33 +2069,69 @@
             let pickerHTML = '';
             if (filteredReplies.length > 0) {
                 pickerHTML = filteredReplies.map(reply => {
-                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message}</span></button>`;
+                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message || 'Archivo adjunto'}</span></button>`;
                 }).join('');
             } else if (searchTerm) {
                 pickerHTML = `<button class="picker-add-btn" onclick="openQuickReplyModal('${searchTerm}')"><i class="fas fa-plus-circle mr-2"></i> Añadir respuesta rápida: /${searchTerm}</button>`;
             } else {
                  pickerHTML = state.quickReplies.map(reply => {
-                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message}</span></button>`;
+                    return `<button class="picker-item" onclick="selectQuickReply('${reply.id}')"><strong>/${reply.shortcut}</strong> - <span class="text-gray-500 truncate">${reply.message || 'Archivo adjunto'}</span></button>`;
                 }).join('');
             }
             picker.innerHTML = pickerHTML;
         }
 
-        function selectQuickReply(replyId) {
+        // START: Corrected selectQuickReply function
+        async function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
-            if (!reply) return;
-
-            const input = document.getElementById('message-input');
-            if (input) {
-                if (reply.message) {
-                    input.value = reply.message;
-                }
-                input.focus();
-            }
+            if (!reply || !state.selectedContactId) return;
 
             state.quickReplyPickerOpen = false;
             renderAllPickers();
+
+            if (reply.fileUrl) {
+                const button = document.querySelector('#message-form button[type="submit"]');
+                if(button) button.disabled = true;
+
+                try {
+                    const messageData = {
+                        text: reply.message || '',
+                        fileUrl: reply.fileUrl,
+                        fileType: reply.fileType
+                    };
+                    if (state.replyingToMessage) {
+                        messageData.reply_to_wamid = state.replyingToMessage.id;
+                    }
+                    
+                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(messageData)
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response.json();
+                        throw new Error(errorData.message || 'Error del servidor al enviar respuesta rápida.');
+                    }
+                    cancelReply();
+                } catch (error) {
+                    console.error("Error sending quick reply with media:", error);
+                    showError(error.message);
+                } finally {
+                     if(button) button.disabled = false;
+                }
+
+            } else {
+                const input = document.getElementById('message-input');
+                if (input) {
+                    input.value = reply.message || '';
+                    input.focus();
+                    const event = new Event('input', { bubbles: true });
+                    input.dispatchEvent(event);
+                }
+            }
         }
+        // END: Corrected selectQuickReply function
         
         function openQuickReplyModal(param = null) {
             const modal = document.getElementById('quick-reply-modal');
@@ -2082,7 +2150,6 @@
             document.getElementById('qr-file-url').value = isEditing ? reply.fileUrl || '' : '';
             document.getElementById('qr-file-type').value = isEditing ? reply.fileType || '' : '';
             
-            // Render preview consistently (image/video/link) with delete X
             updateQuickReplyPreview();
 
             modal.classList.remove('hidden');
