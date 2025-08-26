@@ -1432,11 +1432,21 @@
             }
         }
 
+               // ===== COPIA Y PEGA TODA ESTA FUNCIÓN NUEVA Y DEFINITIVA =====
         function renderChatWindow() { 
             if (state.activeView !== 'chats') return;
             
             const chatPanelEl = document.getElementById('chat-panel');
             if (!chatPanelEl) return;
+
+            // 1. Guardamos lo que el usuario estaba escribiendo.
+            let currentMessageText = '';
+            const oldMessageInput = document.getElementById('message-input');
+            if (oldMessageInput) {
+                currentMessageText = oldMessageInput.value;
+            }
+
+            // (No necesitamos guardar el archivo, porque ya está en `state.stagedFile`)
 
             const contact = state.contacts.find(c => c.id === state.selectedContactId); 
             chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
@@ -1444,34 +1454,49 @@
             if (contact) { 
                 const statusWrapper = document.getElementById('contact-status-wrapper');
                 if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
+                
+                // 2. Buscamos el nuevo campo de texto y restauramos el contenido.
+                const newMessageInput = document.getElementById('message-input');
+                if (newMessageInput && currentMessageText) {
+                    newMessageInput.value = currentMessageText;
+                    newMessageInput.focus();
+                    newMessageInput.selectionStart = newMessageInput.selectionEnd = currentMessageText.length;
+                }
+
+                // 3. ¡NUEVO! Restauramos la vista previa del archivo multimedia.
+                renderFilePreview();
+
+                // Volvemos a configurar todos los eventos para el nuevo HTML
                 if (state.activeTab === 'chat') {
                     renderMessages();
                     const messagesContainer = document.getElementById('messages-container'); 
                     if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
                     
                     const messageForm = document.getElementById('message-form');
-                    const messageInput = document.getElementById('message-input'); 
                     if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
-                    if (messageInput) { 
-                        messageInput.addEventListener('paste', handlePaste); 
-                        messageInput.addEventListener('input', handleQuickReplyInput);
+                    
+                    if (newMessageInput) { 
+                        newMessageInput.addEventListener('paste', handlePaste); 
+                        newMessageInput.addEventListener('input', handleQuickReplyInput);
                         
-                        messageInput.addEventListener('input', () => {
-                            messageInput.style.height = 'auto';
-                            let newHeight = messageInput.scrollHeight;
+                        newMessageInput.addEventListener('input', () => {
+                            newMessageInput.style.height = 'auto';
+                            let newHeight = newMessageInput.scrollHeight;
                             if (newHeight > 120) {
                                 newHeight = 120;
                             }
-                            messageInput.style.height = newHeight + 'px';
+                            newMessageInput.style.height = newHeight + 'px';
                         });
-                        messageInput.addEventListener('keydown', (e) => {
+                        newMessageInput.addEventListener('keydown', (e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
                                 document.getElementById('message-form').requestSubmit();
                             }
                         });
 
-                        messageInput.focus(); 
+                        if (!currentMessageText) {
+                           newMessageInput.focus(); 
+                        }
                     } 
                     setupDragAndDrop(); 
                     
@@ -1481,6 +1506,7 @@
                 }
             } 
         }
+        // ===== FIN DE LA FUNCIÓN NUEVA Y DEFINITIVA =====
 
         function renderTagsView() {
             if (state.activeView !== 'etiquetas') return;
