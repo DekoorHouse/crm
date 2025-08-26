@@ -284,62 +284,77 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
-// --- FUNCIÓN PARA ENVIAR EVENTOS DE CONVERSIÓN A META (CORREGIDA) ---
-async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
+// --- FUNCIÓN GENÉRICA PARA ENVIAR EVENTOS DE CONVERSIÓN (CORREGIDA) ---
+const sendConversionEvent = async (eventName, contactInfo, referralInfo, customData = {}) => {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
+        console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
         return;
+    }
+    if (!contactInfo || !contactInfo.wa_id) {
+        console.error(`❌ Error Crítico: No se puede enviar el evento '${eventName}' porque falta el 'wa_id' del contacto.`);
+        throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
     }
 
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
-    const event_time = Math.floor(new Date().getTime() / 1000);
-    const event_id = `${eventName}_${contactInfo.wa_id}_${event_time}`;
-
-    const userData = {
-        "ph": [sha256(contactInfo.wa_id)],
-        "fn": [sha256(contactInfo.profile.name.split(' ')[0])], // First name
-        "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
-    };
-
-    // AÑADIR CTWA_CLID SI EXISTE (ESTA ES LA CORRECCIÓN)
-    if (referral && referral.ctwa_clid) {
-        userData.ctwa_clid = referral.ctwa_clid;
-        console.log(`[CAPI] Including ctwa_clid: ${referral.ctwa_clid}`);
-    }
-
-    // 1. Definir el objeto eventData con la estructura correcta
-    const eventData = {
-        "event_name": eventName,
-        "event_time": event_time,
-        "event_id": event_id,
-        "user_data": userData,
-        "action_source": "business_messaging", // Valor correcto
-        "messaging_channel": "whatsapp",       // Canal correcto
-        "custom_data": customData
-    };
+    const eventTime = Math.floor(Date.now() / 1000);
+    const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
     
-    // 2. Modificar eventData si es un evento de anuncio (ad)
-    if (referral && referral.source_type === 'ad') {
-        eventData.data_processing_options = [];
-        eventData.data_processing_options_country = 0;
-        eventData.data_processing_options_state = 0;
+    const userData = { ph: [] };
+    try {
+        userData.ph.push(sha256(contactInfo.wa_id));
+        if (contactInfo.profile?.name) {
+            userData.fn = sha256(contactInfo.profile.name);
+        }
+    } catch (hashError) {
+        console.error(`❌ Error al hashear los datos del usuario para el evento '${eventName}':`, hashError);
+        throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // 3. Crear el payload final UNA SOLA VEZ
+    // ✅ IMPORTANTE: Agregar el WhatsApp Business Account ID (requerido por Meta)
+    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
+        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
+
+    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
+    const isAdReferral = referralInfo && referralInfo.ctwa_clid;
+
+    if (isAdReferral) {
+        userData.ctwa_clid = referralInfo.ctwa_clid;
+        // ❌ NO incluir fbc para eventos de WhatsApp - Meta no lo acepta con business_messaging
+        // El fbc solo es para eventos web/Facebook, no para WhatsApp
+    }
+
+    const finalCustomData = {
+        lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
+        ad_headline: isAdReferral ? referralInfo.headline : undefined,
+        ad_id: isAdReferral ? referralInfo.source_id : undefined,
+        ...customData
+    };
+
+    // Limpia cualquier clave 'undefined' que se haya añadido
+    Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
+
     const payload = {
-        "data": [eventData],
-        "access_token": META_CAPI_ACCESS_TOKEN
+        data: [{
+            event_name: eventName,
+            event_time: eventTime,
+            event_id: eventId,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp', 
+            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
+            custom_data: finalCustomData,
+        }],
     };
 
     try {
-        console.log(`[CAPI] Sending event '${eventName}' for ${contactInfo.wa_id}`);
-        const response = await axios.post(url, payload);
-        console.log('[CAPI] Event sent successfully:', response.data);
+        console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
+        await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
+        console.log(`✅ Evento '${eventName}' enviado a Meta.`);
     } catch (error) {
-        console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
+        console.error(`❌ Error al enviar evento '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
-}
-
+};
 
 
 // --- FUNCIÓN DE ENVÍO AVANZADO DE MENSAJES A WHATSAPP ---
