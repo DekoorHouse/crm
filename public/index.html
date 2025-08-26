@@ -1052,6 +1052,8 @@
                 textPreview = '📷 Imagen';
             } else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) {
                 textPreview = '🎥 Video';
+            } else if (originalMessage.type === 'location') {
+                textPreview = '📍 Ubicación';
             } else if (originalMessage.fileType) { // Otros documentos
                 textPreview = '📄 Documento';
             }
@@ -1095,6 +1097,18 @@
                     contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                     if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
                 }
+            // --- START: RENDERIZADO DE UBICACIÓN ---
+            } else if (message.type === 'location' && message.location) {
+                const { latitude, longitude, name, address } = message.location;
+                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+                contentHTML += `
+                    <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline">
+                        <div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>
+                        ${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}
+                        <p class="text-xs mt-1">Toca para ver en el mapa</p>
+                    </a>
+                `;
+            // --- END: RENDERIZADO DE UBICACIÓN ---
             } else if (hasText) {
                  contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
@@ -1794,7 +1808,6 @@
             
             if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
             
-            // --- START: MODIFIED MESSAGE LISTENER FOR OPTIMIZATION ---
             let isInitialMessageLoad = true;
             unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
                 .onSnapshot((snapshot) => {
@@ -1815,7 +1828,6 @@
                                     appendMessage(newMessage);
                                 }
                             }
-                            // You can also handle 'modified' and 'removed' changes here if needed
                         });
                     }
                 }, (error) => {
@@ -1825,7 +1837,6 @@
                     state.messages = [];
                     if (state.activeTab === 'chat') renderMessages();
                 });
-            // --- END: MODIFIED MESSAGE LISTENER ---
             
             if (unsubscribeNotesListener) unsubscribeNotesListener();
             unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
