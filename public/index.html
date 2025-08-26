@@ -1709,6 +1709,27 @@
             display.textContent = `Se enviará a ${recipients.length} contactos.`;
         }
 
+        // --- START: OPTIMIZED MESSAGE RENDERING ---
+        function appendMessage(message) {
+            const contentContainer = document.getElementById('messages-content');
+            if (!contentContainer) return;
+
+            const lastMessage = state.messages[state.messages.length - 2]; // Get message before the new one
+            const lastMessageDate = lastMessage?.timestamp ? new Date(lastMessage.timestamp.seconds * 1000) : null;
+            const currentMessageDate = message.timestamp ? new Date(message.timestamp.seconds * 1000) : null;
+
+            if (currentMessageDate && !isSameDay(currentMessageDate, lastMessageDate)) {
+                const separatorHtml = DateSeparatorTemplate(formatDateSeparator(currentMessageDate));
+                contentContainer.insertAdjacentHTML('beforeend', separatorHtml);
+            }
+
+            const messageHtml = MessageBubbleTemplate(message);
+            contentContainer.insertAdjacentHTML('beforeend', messageHtml);
+
+            const messagesContainer = document.getElementById('messages-container');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+
         function renderMessages() {
             const contentContainer = document.getElementById('messages-content');
             if (!contentContainer) return;
@@ -1727,10 +1748,12 @@
                 messagesHtml += MessageBubbleTemplate(message);
             });
 
-            contentContainer.innerHTML = messagesHtml + '<div id="messages-end"></div>';
-            document.getElementById('messages-end')?.scrollIntoView({ behavior: 'auto' });
+            contentContainer.innerHTML = messagesHtml;
+            const messagesContainer = document.getElementById('messages-container');
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
             handleScroll();
         }
+        // --- END: OPTIMIZED MESSAGE RENDERING ---
         
         function renderNotes() { 
             const contentContainer = document.getElementById('notes-content'); 
@@ -1770,7 +1793,39 @@
             handleSearchContacts(); 
             
             if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
-            unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc').onSnapshot( (snapshot) => { hideError(); state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })); state.loadingMessages = false; if(state.activeTab === 'chat') renderMessages(); }, (error) => { console.error(error); showError(`Error al cargar mensajes.`); state.loadingMessages = false; state.messages = []; if(state.activeTab === 'chat') renderMessages(); } ); 
+            
+            // --- START: MODIFIED MESSAGE LISTENER FOR OPTIMIZATION ---
+            let isInitialMessageLoad = true;
+            unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
+                .onSnapshot((snapshot) => {
+                    hideError();
+                    if (isInitialMessageLoad) {
+                        state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+                        state.loadingMessages = false;
+                        if (state.activeTab === 'chat') {
+                            renderMessages();
+                        }
+                        isInitialMessageLoad = false;
+                    } else {
+                        snapshot.docChanges().forEach((change) => {
+                            if (change.type === "added") {
+                                const newMessage = { docId: change.doc.id, ...change.doc.data() };
+                                state.messages.push(newMessage);
+                                if (state.activeTab === 'chat') {
+                                    appendMessage(newMessage);
+                                }
+                            }
+                            // You can also handle 'modified' and 'removed' changes here if needed
+                        });
+                    }
+                }, (error) => {
+                    console.error(error);
+                    showError(`Error al cargar mensajes.`);
+                    state.loadingMessages = false;
+                    state.messages = [];
+                    if (state.activeTab === 'chat') renderMessages();
+                });
+            // --- END: MODIFIED MESSAGE LISTENER ---
             
             if (unsubscribeNotesListener) unsubscribeNotesListener();
             unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
@@ -2016,13 +2071,11 @@
             unsubscribeContactsListener = db.collection('contacts_whatsapp').onSnapshot((snapshot) => {
                 hideError();
                 
-                // --- START: CORRECCIÓN PARA NO PERDER EL TEXTO ---
                 const messageInput = document.getElementById('message-input');
                 let draftText = '';
                 if (messageInput) {
                     draftText = messageInput.value;
                 }
-                // --- END: CORRECCIÓN ---
 
                 let newContacts = snapshot.docs.map(doc => {
                     const contact = { id: doc.id, ...doc.data() };
@@ -2053,18 +2106,12 @@
                              const contactDetailsPanelEl = document.getElementById('contact-details-panel');
                              if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
                         }
-                        // --- START: CORRECCIÓN PARA NO PERDER EL TEXTO (RENDERIZADO) ---
-                        // No se llama a renderChatWindow() aquí para evitar un re-renderizado completo.
-                        // handleSearchContacts() ya actualiza la lista de la izquierda.
-                        // El chat de la derecha se actualizará con el siguiente listener de mensajes.
-                        // Restauramos el texto después de que la lista de contactos se actualice.
+                        
                         const newMessageInput = document.getElementById('message-input');
                         if (newMessageInput && draftText) {
                             newMessageInput.value = draftText;
                         }
-                        // --- END: CORRECCIÓN ---
                     } else { 
-                        // Si el contacto seleccionado ya no existe, cerramos los detalles.
                         closeContactDetails(); 
                     }
                 }
