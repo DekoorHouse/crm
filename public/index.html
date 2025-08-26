@@ -89,8 +89,7 @@
         .message-wrapper.sent { align-items: flex-end; }
         .message-wrapper.received { align-items: flex-start; }
         
-        /* --- CAMBIO REALIZADO AQUÍ --- */
-        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 35%; margin-top: 1px; margin-bottom: 1px; }
+        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 80%; /* Aumentado para audios */ margin-top: 1px; margin-bottom: 1px; }
         .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
         .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
         .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
@@ -967,7 +966,7 @@
             `;
         };
         
-        // --- INICIO DE LA CORRECCIÓN ---
+        // --- INICIO DE LA MODIFICACIÓN PARA AUDIO ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -979,7 +978,9 @@
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
             // Parte 1: Renderizar el archivo multimedia si existe
-            if (message.fileUrl && message.fileType) {
+            if (message.type === 'audio' && message.mediaProxyUrl) {
+                contentHTML += `<audio controls class="w-full max-w-xs"><source src="${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
+            } else if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
                     contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
@@ -993,9 +994,11 @@
 
             // Parte 2: Renderizar el texto (subtítulo o mensaje normal) si existe
             if (message.text) {
-                // Si es una imagen, la burbuja no tiene padding, así que lo añadimos al div del texto
                 const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
-                contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
+                // No mostrar el texto genérico si ya hemos renderizado un control de audio
+                if (message.type !== 'audio') {
+                    contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
+                }
             }
             
             let replyPreviewHTML = '';
@@ -1004,7 +1007,7 @@
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
-            const copyButtonHTML = message.text 
+            const copyButtonHTML = message.text && message.type !== 'audio'
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
 
@@ -1032,7 +1035,7 @@
                     </div>
                 </div>`;
         };
-        // --- FIN DE LA CORRECCIÓN ---
+        // --- FIN DE LA MODIFICACIÓN PARA AUDIO ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
