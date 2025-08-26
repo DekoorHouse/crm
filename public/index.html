@@ -117,8 +117,8 @@
         .date-separator { text-align: center; margin: 16px auto 12px; padding: 5px 12px; background-color: #e1f3fb; color: var(--color-text); border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); font-size: 0.8rem; font-weight: 600; max-width: fit-content; }
         #sticky-date-header { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out; opacity: 0; pointer-events: none; }
         #sticky-date-header.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
-        .chat-image-preview { width: 250px; height: 250px; object-fit: cover; border-radius: var(--border-radius-sm); cursor: pointer; display: block; }
-        .message-bubble.has-image { padding: 0; background-color: transparent; box-shadow: none; }
+        .chat-image-preview { width: 250px; height: auto; object-fit: cover; border-radius: var(--border-radius-sm); cursor: pointer; display: block; max-width: 100%; }
+        .message-bubble.has-image { padding: 5px; background-color: transparent; box-shadow: none; max-width: 260px; }
         .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
         .time-overlay .fas { color: white !important; }
         .image-modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.75); z-index: 998; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
@@ -953,7 +953,6 @@
             }
         };
 
-        // --- INICIO DE LA MODIFICACIÓN PARA RESPUESTAS ---
         const RepliedMessagePreviewTemplate = (originalMessage) => {
             if (!originalMessage) return '';
             const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
@@ -977,6 +976,7 @@
             `;
         };
         
+        // --- INICIO DE LA MODIFICACIÓN PARA PIES DE FOTO ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -987,35 +987,38 @@
             let bubbleExtraClass = '';
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
+            const hasMedia = message.fileUrl || message.mediaProxyUrl;
+            const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
+
             if (message.type === 'audio' && message.mediaProxyUrl) {
                 contentHTML += `<audio controls class="w-full max-w-xs"><source src="${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
             } else if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
-                    contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
-                    timeAndStatusHTML = '';
+                    const sentBgClass = isSent ? `bg-[${'var(--color-bubble-sent-bg)'}]` : `bg-[${'var(--color-bubble-received-bg)'}]`;
+                    contentHTML += `
+                        <div class="${sentBgClass} rounded-lg overflow-hidden">
+                            <img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')">
+                            ${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}
+                            <div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>
+                        </div>`;
+                    timeAndStatusHTML = ''; // El tiempo ahora es una superposición
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    const videoMarginClass = message.text ? 'mb-2' : '';
-                    contentHTML += `<video controls class="rounded-lg max-w-xs w-full block ${videoMarginClass}"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
+                    contentHTML += `<video controls class="rounded-lg max-w-xs w-full block mb-1"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
+                    if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
                 }
-            }
-
-            if (message.text) {
-                const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
-                if (message.type !== 'audio') {
-                    contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
-                }
+            } else if (hasText) {
+                 contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
             
             let replyPreviewHTML = '';
-            // Lógica para buscar y renderizar el mensaje respondido
             if (message.context && message.context.id) {
                 const originalMessage = state.messages.find(m => m.id === message.context.id);
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
-            const copyButtonHTML = message.text && message.type !== 'audio'
+            const copyButtonHTML = hasText
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
 
@@ -1043,7 +1046,7 @@
                     </div>
                 </div>`;
         };
-        // --- FIN DE LA MODIFICACIÓN PARA RESPUESTAS ---
+        // --- FIN DE LA MODIFICACIÓN PARA PIES DE FOTO ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
