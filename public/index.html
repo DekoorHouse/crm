@@ -28,6 +28,8 @@
             --color-shadow: rgba(93, 92, 97, 0.08);
             --color-danger: #dc3545;
             --color-danger-hover: #c82333;
+            --color-success: #28a745;
+            --color-success-hover: #218838;
             --color-subtle-bg: #f0f0f0;
             --color-subtle-text: #7e7c82;
             --color-subtle-hover-bg: #e0e0e0;
@@ -59,6 +61,8 @@
         .btn-secondary:hover:not(:disabled) { background-color: #d8684a; }
         .btn-danger { background-color: var(--color-danger); color: white; }
         .btn-danger:hover:not(:disabled) { background-color: #c82333; }
+        .btn-success { background-color: var(--color-success); color: white; }
+        .btn-success:hover:not(:disabled) { background-color: var(--color-success-hover); }
         .btn-subtle { background-color: var(--color-subtle-bg); color: var(--color-subtle-text); }
         .btn-subtle:hover { background-color: var(--color-subtle-hover-bg); color: var(--color-primary); }
         input[type="email"], input[type="password"], input[type="text"], input[type="number"], textarea, select { width: 100%; padding: 10px 15px; margin-bottom: 15px; border: 1px solid var(--color-border); border-radius: var(--border-radius-md); font-family: var(--font-body); font-size: 0.95rem; color: var(--color-text); background-color: #f7f9fc; transition: all 0.2s ease; }
@@ -628,7 +632,7 @@
             loadingMessages: false, 
             isUploading: false, 
             stagedFile: null,
-            stagedRemoteFile: null, // <-- NUEVO ESTADO para archivos de respuestas rápidas
+            stagedRemoteFile: null,
             activeFilter: 'all',
             activeTab: 'chat',
             emojiPickerOpen: false,
@@ -1272,6 +1276,20 @@
 
         const ContactDetailsSidebarTemplate = (contact) => {
             if (!contact) return '';
+
+            // START: MODIFICACIÓN LÓGICA DEL BOTÓN
+            const isRegistered = contact.registrationStatus === 'completed';
+            const registrationButtonClass = isRegistered ? 'btn-success' : 'btn-subtle';
+            const registrationButtonIcon = isRegistered ? 'fa-check-circle' : 'fa-user-check';
+
+            const registrationButtonHTML = `
+                <button 
+                    onclick="handleMarkAsRegistration()" 
+                    class="btn ${registrationButtonClass} w-full btn-sm">
+                    <i class="fas ${registrationButtonIcon} mr-2"></i>Línea registrada
+                </button>`;
+            // END: MODIFICACIÓN LÓGICA DEL BOTÓN
+
             return `
                 <div class="h-full flex flex-col">
                     <header class="p-4 flex items-center justify-between border-b border-gray-200">
@@ -1296,7 +1314,7 @@
                         </div>
                         <div class="mt-6 border-t pt-6 space-y-2">
                            <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Marcar como Compra</button>
-                           <button onclick="handleMarkAsRegistration()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-user-check mr-2"></i>Marcar como Registro</button>
+                           ${registrationButtonHTML}
                            <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto'</button>
                         </div>
                     </div>
@@ -2076,8 +2094,7 @@
             }
             picker.innerHTML = pickerHTML;
         }
-
-        // START: Corrected selectQuickReply function
+        
         function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
             if (!reply) return;
@@ -2086,12 +2103,10 @@
             if (input) {
                 input.value = reply.message || '';
                 input.focus();
-                // Trigger the input event to resize the textarea
                 const event = new Event('input', { bubbles: true });
                 input.dispatchEvent(event);
             }
             
-            // Clear any local file and stage the remote file if it exists
             state.stagedFile = null; 
             if (reply.fileUrl) {
                 state.stagedRemoteFile = {
@@ -2107,7 +2122,6 @@
             state.quickReplyPickerOpen = false;
             renderAllPickers();
         }
-        // END: Corrected selectQuickReply function
         
         function openQuickReplyModal(param = null) {
             const modal = document.getElementById('quick-reply-modal');
@@ -2461,24 +2475,33 @@
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
-                alert(result.message);
+                showError(result.message);
             } catch (error) {
                 showError(error.message);
             }
         }
 
+        // START: MODIFICACIÓN FUNCIÓN DE REGISTRO
         async function handleMarkAsRegistration() {
             if (!state.selectedContactId) return;
-            if (!confirm("¿Confirmas que este contacto completó el registro?")) return;
+            
+            const contact = state.contacts.find(c => c.id === state.selectedContactId);
+            if (contact && contact.registrationStatus === 'completed') {
+                showError("Este pedido ya ha sido registrado.");
+                return;
+            }
+
+            if (!confirm("¿Confirmas que quieres registrar esta línea?")) return;
             try {
                 const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/mark-as-registration`, { method: 'POST' });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
-                alert(result.message);
+                showError(result.message); 
             } catch (error) {
                 showError(error.message);
             }
         }
+        // END: MODIFICACIÓN FUNCIÓN DE REGISTRO
 
         async function handleSendViewContent() {
             if (!state.selectedContactId) return;
@@ -2487,7 +2510,7 @@
                 const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/send-view-content`, { method: 'POST' });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.message);
-                alert(result.message);
+                showError(result.message);
             } catch (error) {
                 showError(error.message);
             }
