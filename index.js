@@ -467,22 +467,30 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
 }
 
-// --- LÓGICA DEL WEBHOOK PRINCIPAL ---
+// --- LÓGICA DEL WEBHOOK PRINCIPAL (CORREGIDA) ---
 app.post('/webhook', async (req, res) => {
   try {
     const entry = req.body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    if (value && value.messages) {
+    // Caso 1: Hay un nuevo mensaje entrante
+    if (value && value.messages && value.contacts) {
         const message = value.messages[0];
+        const contactInfo = value.contacts[0];
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
-        
+
+        // Ignorar mensajes que nosotros mismos enviamos
+        if (from === PHONE_NUMBER_ID) {
+            console.log('[LOG] Mensaje saliente ignorado.');
+            return res.sendStatus(200);
+        }
+
+        // Si es una reacción, la procesamos y terminamos
         if (message.type === 'reaction') {
             const originalMessageId = message.reaction.message_id;
             const reactionEmoji = message.reaction.emoji || null;
-
             const messagesQuery = await contactRef.collection('messages').where('id', '==', originalMessageId).limit(1).get();
 
             if (!messagesQuery.empty) {
@@ -495,89 +503,100 @@ app.post('/webhook', async (req, res) => {
                     console.log(`[REACTION] Reacción eliminada para el mensaje ${originalMessageId}.`);
                 }
             }
-        } else if (value.contacts) {
-            console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
-            const contactInfo = value.contacts[0];
+            // Salimos del flujo aquí porque una reacción no debe tratarse como un mensaje nuevo
+            return res.sendStatus(200); 
+        }
 
-            if (from === PHONE_NUMBER_ID) {
-                console.log('[LOG] Mensaje saliente ignorado.');
-                return res.sendStatus(200);
-            }
-            
-            const messageData = {
-                timestamp: admin.firestore.Timestamp.now(),
-                from,
-                status: 'received',
-                id: message.id,
-                type: message.type,
-                reply_to: message.context?.id || null,
-                context: message.context || null
+        // --- INICIA LÓGICA PARA MENSAJES NORMALES (NO REACCIONES) ---
+        console.log('[DEBUG] Mensaje recibido de Meta:', JSON.stringify(message, null, 2));
+
+        const messageData = {
+            timestamp: admin.firestore.Timestamp.fromMillis(parseInt(message.timestamp) * 1000),
+            from,
+            status: 'received',
+            id: message.id,
+            type: message.type,
+            reply_to: message.context?.id || null,
+            context: message.context || null
+        };
+
+        // Asignar el texto del mensaje según el tipo
+        if (message.type === 'text') {
+            messageData.text = message.text.body;
+        } else if (message.type === 'audio' && message.audio && message.audio.id) {
+            messageData.audio = {
+                id: message.audio.id,
+                mime_type: message.audio.mime_type || "audio/ogg",
+                voice: !!message.audio.voice
             };
+            messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+            messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+        } else {
+            messageData.text = `Mensaje multimedia (${message.type})`;
+        }
 
-            if (message.type === 'text') {
-                messageData.text = message.text.body;
-            } else if (message.type === 'audio' && message.audio && message.audio.id) {
-                messageData.audio = {
-                    id: message.audio.id,
-                    mime_type: message.audio.mime_type || "audio/ogg",
-                    voice: !!message.audio.voice
-                };
-                messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
-                messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-            } else {
-                messageData.text = `Mensaje multimedia (${message.type})`;
-            }
+        // Guardar el mensaje en la subcolección
+        await contactRef.collection('messages').add(messageData);
 
-            await contactRef.collection('messages').add(messageData);
+        // Preparar y guardar/actualizar los datos del contacto principal
+        const contactUpdateData = {
+            name: contactInfo.profile?.name,
+            wa_id: contactInfo.wa_id,
+            lastMessage: messageData.text,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: admin.firestore.FieldValue.increment(1)
+        };
+        if (message.referral) {
+            contactUpdateData.adReferral = message.referral;
+        }
 
-            const contactUpdateData = {
-                name: contactInfo.profile?.name,
-                wa_id: contactInfo.wa_id,
-                lastMessage: messageData.text,
-                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-                unreadCount: admin.firestore.FieldValue.increment(1)
-            };
-            if (message.referral) contactUpdateData.adReferral = message.referral;
+        const previousDoc = await contactRef.get();
+        const isNewContact = !previousDoc.exists;
 
-            const previousDoc = await contactRef.get();
-            const isNewContact = !previousDoc.exists;
-            await contactRef.set(contactUpdateData, { merge: true });
-            console.log(`[LOG] Mensaje de ${from} guardado.`);
+        // Esta es la línea clave: set con merge crea el documento si no existe o lo actualiza si ya existe.
+        await contactRef.set(contactUpdateData, { merge: true });
+        console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
 
-            const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
-            if (cpHandled) {
-                console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
-                return res.sendStatus(200);
-            }
+        // --- LÓGICA POST-GUARDADO ---
 
-            if (isNewContact) {
-                let adResponseSent = false;
-                if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
+        // Manejar códigos postales
+        const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
+        if (cpHandled) {
+            console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
+            return res.sendStatus(200);
+        }
+
+        // Si es un contacto nuevo, enviar mensajes de bienvenida o de anuncio
+        if (isNewContact) {
+            let adResponseSent = false;
+            if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
                 console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
                 const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
                     try {
-                    await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-                    adResponseSent = true;
+                        await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                        adResponseSent = true;
                     } catch (error) { console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message); }
                 } else { console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`); }
-                }
+            }
 
-                if (!adResponseSent) {
+            if (!adResponseSent) {
                 const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
                 if (!alreadyWelcomed) {
                     try {
-                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                    await contactRef.update({ welcomed: true });
+                        await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                        await contactRef.update({ welcomed: true });
                     } catch (error) { console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message); }
                 } else { console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`); }
-                }
-            } else {
-                await triggerAutoReplyAI(message, contactRef);
             }
+        } else {
+            // Si es un contacto existente, disparar la IA
+            await triggerAutoReplyAI(message, contactRef);
         }
+
+    // Caso 2: Es una actualización de estado (delivered, read)
     } else if (value && value.statuses) {
       const statusUpdate = value.statuses[0];
       const messageId = statusUpdate.id;
@@ -604,6 +623,7 @@ app.post('/webhook', async (req, res) => {
     res.sendStatus(200);
   }
 });
+
 
 // --- START: SIMULATOR ENDPOINT ---
 app.post('/api/test/simulate-ad-message', async (req, res) => {
