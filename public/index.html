@@ -2015,6 +2015,15 @@
 
             unsubscribeContactsListener = db.collection('contacts_whatsapp').onSnapshot((snapshot) => {
                 hideError();
+                
+                // --- START: CORRECCIÓN PARA NO PERDER EL TEXTO ---
+                const messageInput = document.getElementById('message-input');
+                let draftText = '';
+                if (messageInput) {
+                    draftText = messageInput.value;
+                }
+                // --- END: CORRECCIÓN ---
+
                 let newContacts = snapshot.docs.map(doc => {
                     const contact = { id: doc.id, ...doc.data() };
                     const lastTimestamp = contact.lastMessageTimestamp;
@@ -2036,6 +2045,7 @@
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
+                
                 if (state.selectedContactId) {
                     const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
                     if (updatedContact) {
@@ -2043,10 +2053,26 @@
                              const contactDetailsPanelEl = document.getElementById('contact-details-panel');
                              if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
                         }
-                        renderChatWindow();
-                    } else { closeContactDetails(); }
+                        // --- START: CORRECCIÓN PARA NO PERDER EL TEXTO (RENDERIZADO) ---
+                        // No se llama a renderChatWindow() aquí para evitar un re-renderizado completo.
+                        // handleSearchContacts() ya actualiza la lista de la izquierda.
+                        // El chat de la derecha se actualizará con el siguiente listener de mensajes.
+                        // Restauramos el texto después de que la lista de contactos se actualice.
+                        const newMessageInput = document.getElementById('message-input');
+                        if (newMessageInput && draftText) {
+                            newMessageInput.value = draftText;
+                        }
+                        // --- END: CORRECCIÓN ---
+                    } else { 
+                        // Si el contacto seleccionado ya no existe, cerramos los detalles.
+                        closeContactDetails(); 
+                    }
                 }
-            }, (error) => { console.error(error); showError("No se pudo conectar a los contactos."); if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; });
+            }, (error) => { 
+                console.error(error); 
+                showError("No se pudo conectar a los contactos."); 
+                if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; 
+            });
         }
 
         function listenForQuickReplies() { 
