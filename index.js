@@ -284,7 +284,7 @@ function sha256(data) {
     return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
 }
 
-// --- FUNCIÓN PARA ENVIAR EVENTOS DE CONVERSIÓN A META ---
+// --- FUNCIÓN PARA ENVIAR EVENTOS DE CONVERSIÓN A META (CORREGIDA) ---
 async function sendConversionEvent(eventName, contactInfo, referral, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
         console.log('[CAPI] Pixel ID or Access Token not configured. Skipping event.');
@@ -301,25 +301,25 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
     };
 
-  const payload = {
-        data: [{
-            event_name: eventName,
-            event_time: eventTime,
-            event_id: eventId,
-            action_source: 'business_messaging',
-            messaging_channel: 'whatsapp', 
-            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
-            custom_data: finalCustomData,
-        }],
+    // 1. Definir el objeto eventData con la estructura correcta
+    const eventData = {
+        "event_name": eventName,
+        "event_time": event_time,
+        "event_id": event_id,
+        "user_data": userData,
+        "action_source": "business_messaging", // Valor correcto
+        "messaging_channel": "whatsapp",       // Canal correcto
+        "custom_data": customData
     };
-
     
+    // 2. Modificar eventData si es un evento de anuncio (ad)
     if (referral && referral.source_type === 'ad') {
         eventData.data_processing_options = [];
         eventData.data_processing_options_country = 0;
         eventData.data_processing_options_state = 0;
     }
 
+    // 3. Crear el payload final UNA SOLA VEZ
     const payload = {
         "data": [eventData],
         "access_token": META_CAPI_ACCESS_TOKEN
@@ -333,6 +333,7 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
+
 
 // --- FUNCIÓN DE ENVÍO AVANZADO DE MENSAJES A WHATSAPP ---
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
