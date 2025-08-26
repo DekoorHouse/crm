@@ -540,7 +540,9 @@ app.post('/webhook', async (req, res) => {
 
         // Preparar y guardar/actualizar los datos del contacto principal
         const contactUpdateData = {
-            name: contactInfo.profile?.name,
+            // =============================== INICIO DE LA CORRECCIÓN ===============================
+            name: contactInfo.profile?.name || from, // Si no hay nombre, usa el número de teléfono
+            // ================================ FIN DE LA CORRECCIÓN =================================
             wa_id: contactInfo.wa_id,
             lastMessage: messageData.text,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
