@@ -81,23 +81,21 @@
         .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); }
         .chat-footer { background-color: #f8f9fa; padding: 8px 16px; }
         
-        /* START: Styles for the new textarea message input */
         #message-input { 
             background-color: var(--color-container-bg); 
             border-radius: 20px; 
             padding: 10px 18px; 
             border: 1px solid var(--color-border); 
             font-size: 0.9rem; 
-            max-height: 120px; /* Limit growth */
+            max-height: 120px;
             overflow-y: auto;
-            resize: none; /* Disable manual resize handle */
+            resize: none;
         }
         #message-input:focus { 
             outline: none; 
             border-color: var(--color-primary); 
             box-shadow: 0 0 0 2px rgba(129, 178, 154, 0.2); 
         }
-        /* END: Styles for the new textarea message input */
 
         .chat-icon-btn { color: var(--color-text-light); transition: color 0.2s ease; }
         .chat-icon-btn:hover { color: var(--color-primary); }
@@ -106,7 +104,7 @@
         .message-wrapper.sent { align-items: flex-end; }
         .message-wrapper.received { align-items: flex-start; }
         
-        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 80%; /* Aumentado para audios */ margin-top: 1px; margin-bottom: 1px; }
+        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 80%; margin-top: 1px; margin-bottom: 1px; }
         .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
         .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
         .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
@@ -146,7 +144,7 @@
         .message-bubble video {
             width: 250px;
             height: 250px;
-            object-fit: contain; /* Cambio para videos */
+            object-fit: contain;
             border-radius: var(--border-radius-sm);
             display: block;
             background-color: #000;
@@ -162,7 +160,6 @@
         .image-modal-content img { max-width: 90vw; max-height: 85vh; border-radius: var(--border-radius-md); }
         .image-modal-close { position: absolute; top: -15px; right: -15px; width: 35px; height: 35px; background-color: white; color: black; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
         
-        /* --- INICIO ESTILOS DE REACCIONES --- */
         .reaction-popover-container { position: relative; }
         .reaction-popover {
             position: absolute;
@@ -195,7 +192,6 @@
         .reaction-emoji-btn:hover {
             transform: scale(1.3);
         }
-        /* --- FIN ESTILOS DE REACCIONES --- */
 
         .filter-btn { background-color: #e2e8f0; color: #4a5568; font-weight: 600; padding: 5px 10px; border-radius: 9999px; font-size: 0.75rem; transition: all 0.2s ease; }
         .filter-btn.active { background-color: var(--color-primary); color: white; }
@@ -271,17 +267,14 @@
 
         .color-picker-label { display: inline-block; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; border: 2px solid var(--color-border); }
         
-        /* --- START: Drag and Drop Styles --- */
         .draggable-row { cursor: grab; }
         .draggable-row:active { cursor: grabbing; }
         .drag-handle { cursor: grab; padding: 0 10px; color: #a0aec0; }
         .drag-handle:active { cursor: grabbing; }
         .sortable-ghost { background-color: #eef2ff; opacity: 0.7; }
         .sortable-drag { background-color: #ffffff; box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
-        /* --- END: Drag and Drop Styles --- */
         
-        /* --- START: Pipeline Styles --- */
-        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; /* Added extra padding */ overflow-x: auto; height: 100%; align-items: flex-start; }
+        .pipeline-container { display: flex; gap: 1rem; padding: 1rem; padding-right: 2rem; overflow-x: auto; height: 100%; align-items: flex-start; }
         .pipeline-column { flex: 0 0 300px; width: 300px; background-color: #f1f2f4; border-radius: var(--border-radius-lg); display: flex; flex-direction: column; max-height: 100%; }
         .pipeline-header { padding: 1rem; font-weight: 600; border-bottom: 1px solid var(--color-border); display: flex; align-items: center; gap: 8px; }
         .pipeline-header .tag-color-swatch { flex-shrink: 0; }
@@ -292,17 +285,13 @@
         .pipeline-card .contact-name { font-weight: 600; }
         .pipeline-card .last-message { font-size: 0.8rem; color: var(--color-text-light); margin-top: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .sortable-ghost.pipeline-card { opacity: 0.5; background: #cce5ff; }
-        /* --- END: Pipeline Styles --- */
 
-        /* --- START: Login Styles --- */
         #loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: var(--color-bg); display: flex; justify-content: center; align-items: center; z-index: 9999; transition: opacity 0.5s ease; }
         .login-container { background-color: var(--color-container-bg); padding: 40px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 25px var(--color-shadow); text-align: center; max-width: 420px; width: 100%; }
         .login-container h1 { margin-bottom: 25px; font-size: 1.8em; color: var(--color-primary); }
         .login-container button { width: 100%; }
         #login-error-message { margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; }
-        /* --- END: Login Styles --- */
 
-        /* --- START: Bot & Settings View Styles --- */
         .toggle-switch { position: relative; display: inline-block; width: 50px; height: 28px; }
         .toggle-switch input { opacity: 0; width: 0; height: 0; }
         .slider { position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0; background-color: #ccc; transition: .4s; border-radius: 28px; }
@@ -310,7 +299,6 @@
         input:checked + .slider { background-color: var(--color-primary); }
         input:checked + .slider:before { transform: translateX(22px); }
         .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
-        /* --- END: Bot & Settings View Styles --- */
 
     </style>
 </head>
@@ -635,11 +623,12 @@
             botSettings: { instructions: '' },
             awayMessageSettings: { isActive: true },
             globalBotSettings: { isActive: false },
-            googleSheetSettings: { googleSheetId: '' }, // <-- NUEVO ESTADO
+            googleSheetSettings: { googleSheetId: '' },
             selectedContactId: null, 
             loadingMessages: false, 
             isUploading: false, 
             stagedFile: null,
+            stagedRemoteFile: null, // <-- NUEVO ESTADO para archivos de respuestas rápidas
             activeFilter: 'all',
             activeTab: 'chat',
             emojiPickerOpen: false,
@@ -1179,7 +1168,8 @@
                    </div>`;
         };
 
-        const FilePreviewTemplate = (file) => { const objectURL = URL.createObjectURL(file); const isImage = file.type.startsWith('image/'); const previewElement = isImage ? `<img src="${objectURL}" alt="Vista previa">` : `<video src="${objectURL}" alt="Vista previa"></video>`; return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name}</p> <p>${(file.size / 1024).toFixed(1)} KB</p> </div> </div>`; };
+        const LocalFilePreviewTemplate = (file) => { const objectURL = URL.createObjectURL(file); const isImage = file.type.startsWith('image/'); const previewElement = isImage ? `<img src="${objectURL}" alt="Vista previa">` : `<video src="${objectURL}" alt="Vista previa"></video>`; return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name}</p> <p>${(file.size / 1024).toFixed(1)} KB</p> </div> </div>`; };
+        const RemoteFilePreviewTemplate = (file) => { const isImage = file.type.startsWith('image/'); const previewElement = isImage ? `<img src="${file.url}" alt="Vista previa">` : `<video src="${file.url}" alt="Vista previa"></video>`; return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name || 'Archivo adjunto'}</p></div> </div>`; };
         
         const StatusButtonsTemplate = (contact) => {
             let buttonsHtml = '<div class="status-btn-group">';
@@ -1356,7 +1346,7 @@
             fetchBotSettings();
             fetchAwayMessageSettings();
             fetchGlobalBotSettings();
-            fetchGoogleSheetSettings(); // <-- NUEVA FUNCIÓN
+            fetchGoogleSheetSettings();
             document.addEventListener('click', handleClickOutside);
         }
         
@@ -1369,7 +1359,7 @@
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, stagedRemoteFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1448,22 +1438,20 @@
                         messageInput.addEventListener('paste', handlePaste); 
                         messageInput.addEventListener('input', handleQuickReplyInput);
                         
-                        // START: Event listeners for textarea
-                        messageInput.addEventListener('input', () => { // Auto-resize
+                        messageInput.addEventListener('input', () => {
                             messageInput.style.height = 'auto';
                             let newHeight = messageInput.scrollHeight;
-                            if (newHeight > 120) { // Corresponds to max-height in CSS
+                            if (newHeight > 120) {
                                 newHeight = 120;
                             }
                             messageInput.style.height = newHeight + 'px';
                         });
-                        messageInput.addEventListener('keydown', (e) => { // Send on Enter
+                        messageInput.addEventListener('keydown', (e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
                                 document.getElementById('message-form').requestSubmit();
                             }
                         });
-                        // END: Event listeners for textarea
 
                         messageInput.focus(); 
                     } 
@@ -1680,12 +1668,10 @@
             if (saveSheetIdBtn) {
                 saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
             }
-            // START: NUEVA LÓGICA PARA SIMULADOR
             const simulateAdForm = document.getElementById('simulate-ad-form');
             if (simulateAdForm) {
                 simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
             }
-            // END: NUEVA LÓGICA PARA SIMULADOR
         }
 
         function updateCampaignRecipientCount() {
@@ -1713,7 +1699,6 @@
             let messagesHtml = '';
 
             state.messages.forEach(message => {
-                // Check for a valid timestamp to create a date separator
                 if (message.timestamp && typeof message.timestamp.seconds === 'number') {
                     const currentMessageDate = new Date(message.timestamp.seconds * 1000);
                     if (!isSameDay(currentMessageDate, lastMessageDate)) {
@@ -1721,7 +1706,6 @@
                         lastMessageDate = currentMessageDate;
                     }
                 }
-                // Always render the message bubble, even if the timestamp is temporarily missing
                 messagesHtml += MessageBubbleTemplate(message);
             });
 
@@ -1783,26 +1767,13 @@
             const contact = state.contacts.find(c => c.id === state.selectedContactId);
             if (!contact || state.isUploading) return;
 
-            let quickReplyFileUrl = null;
-            let quickReplyFileType = null;
-
-            if (text.startsWith('/')) {
-                const shortcut = text.substring(1);
-                const matchingReply = state.quickReplies.find(reply => reply.shortcut === shortcut);
-                if (matchingReply) {
-                    text = matchingReply.message || '';
-                    quickReplyFileUrl = matchingReply.fileUrl;
-                    quickReplyFileType = matchingReply.fileType;
-                } else {
-                    return; // Don't send if shortcut is invalid
-                }
-            }
-            
             const fileToSend = state.stagedFile;
-            if (!text && !fileToSend && !quickReplyFileUrl) return;
+            const remoteFileToSend = state.stagedRemoteFile;
+
+            if (!text && !fileToSend && !remoteFileToSend) return;
 
             input.value = '';
-            input.style.height = 'auto'; // Reset height after sending
+            input.style.height = 'auto';
             cancelStagedFile(); 
 
             try {
@@ -1814,7 +1785,11 @@
                     }
                 } else {
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
-                    const messageData = { text, fileUrl: quickReplyFileUrl, fileType: quickReplyFileType };
+                    const messageData = { text };
+                    if (remoteFileToSend) {
+                        messageData.fileUrl = remoteFileToSend.url;
+                        messageData.fileType = remoteFileToSend.type;
+                    }
                     if (state.replyingToMessage) {
                         messageData.reply_to_wamid = state.replyingToMessage.id;
                     }
@@ -1832,7 +1807,7 @@
             } catch (error) {
                 console.error("Error en el proceso de envío:", error);
                 showError(error.message);
-                if (text && !fileToSend) { input.value = text; } 
+                if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
             }
         }
 
@@ -1946,9 +1921,30 @@
             db.collection('contacts_whatsapp').doc(id).update({ status: newStatus }).catch(err => { console.error("Error updating status:", err); showError("No se pudo actualizar la etiqueta."); });
         }
         
-        function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; renderFilePreview(); }
-        function renderFilePreview() { const container = document.getElementById('file-preview-container'); if (container) { if (state.stagedFile) { container.innerHTML = FilePreviewTemplate(state.stagedFile); } else { container.innerHTML = ''; } } }
-        function cancelStagedFile() { if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } state.stagedFile = null; const fileInput = document.getElementById('file-input'); if(fileInput) fileInput.value = null; renderFilePreview(); }
+        function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
+        
+        function renderFilePreview() { 
+            const container = document.getElementById('file-preview-container'); 
+            if (container) { 
+                if (state.stagedFile) { 
+                    container.innerHTML = LocalFilePreviewTemplate(state.stagedFile); 
+                } else if (state.stagedRemoteFile) {
+                    container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);
+                } else { 
+                    container.innerHTML = ''; 
+                } 
+            } 
+        }
+        
+        function cancelStagedFile() { 
+            if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } 
+            state.stagedFile = null; 
+            state.stagedRemoteFile = null;
+            const fileInput = document.getElementById('file-input'); 
+            if(fileInput) fileInput.value = null; 
+            renderFilePreview(); 
+        }
+
         function handleFileInputChange(event) { const file = event.target.files[0]; if (file) stageFile(file); }
         function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
         function setupDragAndDrop() { const chatArea = document.getElementById('chat-panel'); const overlay = document.getElementById('drag-drop-overlay'); if (!chatArea || !overlay) return; const showOverlay = () => overlay.classList.remove('hidden'); const hideOverlay = () => overlay.classList.add('hidden'); chatArea.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) { showOverlay(); } }); chatArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); }); chatArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); if (e.relatedTarget === null || !chatArea.contains(e.relatedTarget)) { hideOverlay(); } }); chatArea.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); hideOverlay(); const files = e.dataTransfer.files; if (files.length > 0) { stageFile(files[0]); } }); }
@@ -2082,54 +2078,34 @@
         }
 
         // START: Corrected selectQuickReply function
-        async function selectQuickReply(replyId) {
+        function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
-            if (!reply || !state.selectedContactId) return;
+            if (!reply) return;
+
+            const input = document.getElementById('message-input');
+            if (input) {
+                input.value = reply.message || '';
+                input.focus();
+                // Trigger the input event to resize the textarea
+                const event = new Event('input', { bubbles: true });
+                input.dispatchEvent(event);
+            }
+            
+            // Clear any local file and stage the remote file if it exists
+            state.stagedFile = null; 
+            if (reply.fileUrl) {
+                state.stagedRemoteFile = {
+                    url: reply.fileUrl,
+                    type: reply.fileType,
+                    name: 'Archivo de respuesta rápida'
+                };
+            } else {
+                state.stagedRemoteFile = null;
+            }
+            renderFilePreview();
 
             state.quickReplyPickerOpen = false;
             renderAllPickers();
-
-            if (reply.fileUrl) {
-                const button = document.querySelector('#message-form button[type="submit"]');
-                if(button) button.disabled = true;
-
-                try {
-                    const messageData = {
-                        text: reply.message || '',
-                        fileUrl: reply.fileUrl,
-                        fileType: reply.fileType
-                    };
-                    if (state.replyingToMessage) {
-                        messageData.reply_to_wamid = state.replyingToMessage.id;
-                    }
-                    
-                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(messageData)
-                    });
-
-                    if (!response.ok) {
-                        const errorData = await response.json();
-                        throw new Error(errorData.message || 'Error del servidor al enviar respuesta rápida.');
-                    }
-                    cancelReply();
-                } catch (error) {
-                    console.error("Error sending quick reply with media:", error);
-                    showError(error.message);
-                } finally {
-                     if(button) button.disabled = false;
-                }
-
-            } else {
-                const input = document.getElementById('message-input');
-                if (input) {
-                    input.value = reply.message || '';
-                    input.focus();
-                    const event = new Event('input', { bubbles: true });
-                    input.dispatchEvent(event);
-                }
-            }
         }
         // END: Corrected selectQuickReply function
         
@@ -2751,7 +2727,6 @@
             });
         }
 
-        // --- START: AD RESPONSE MODAL LOGIC (IMPROVED) ---
         function openAdResponseModal(responseId = null) {
             const modal = document.getElementById('ad-response-modal');
             const form = document.getElementById('ad-response-form');
@@ -2770,7 +2745,7 @@
             document.getElementById('ar-file-url').value = isEditing ? response.fileUrl || '' : '';
             document.getElementById('ar-file-type').value = isEditing ? response.fileType || '' : '';
             
-            updateAdResponsePreview(); // Helper function to render the file preview
+            updateAdResponsePreview();
 
             modal.classList.remove('hidden');
             document.getElementById('ar-name').focus();
@@ -2787,7 +2762,7 @@
             const attachButtonTextEl = document.getElementById('ar-attach-button-text');
             const fileUrl = document.getElementById('ar-file-url').value;
 
-            mediaPreviewEl.innerHTML = ''; // Always start clean
+            mediaPreviewEl.innerHTML = '';
 
             if (fileUrl) {
                 let previewHTML = `
@@ -2859,7 +2834,6 @@
                 showError(error.message);
             }
         }
-        // --- END: AD RESPONSE MODAL LOGIC ---
         
         async function handleModalFileUpload(event, prefix) {
             const file = event.target.files[0];
@@ -2903,7 +2877,6 @@
             }
         }
 
-        // --- START: Bot & Knowledge Base Functions ---
         function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
@@ -3053,9 +3026,7 @@
                 showError(error.message);
             }
         }
-        // --- END: Bot & Knowledge Base Functions ---
-
-        // --- START: AJUSTES GENERALES Y SIMULADOR ---
+        
         async function fetchAwayMessageSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
@@ -3178,7 +3149,6 @@
             button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
 
             try {
-                // This endpoint doesn't exist yet, but we prepare the frontend for it.
                 const response = await fetch(`${API_BASE_URL}/api/test/simulate-ad-message`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3202,7 +3172,6 @@
                 button.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Enviar Simulación';
             }
         }
-        // --- END: AJUSTES GENERALES Y SIMULADOR ---
 
     </script>
     
