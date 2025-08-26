@@ -1012,9 +1012,7 @@
         
         const ContactItemTemplate = (contact, isSelected) => {
             const typingText = contact.lastMessage || 'Sin mensajes.';
-            const unreadBadge = contact.unreadCount > 0 ? `<span class="unread-badge">${contact.unreadCount}</span>` : '';
             
-            // --- START: HORA DEL ÚLTIMO MENSAJE ---
             let timeOrBadgeHTML = '';
             if (contact.unreadCount > 0) {
                 timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
@@ -1025,7 +1023,6 @@
                     : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
                 timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
             }
-            // --- END: HORA DEL ÚLTIMO MENSAJE ---
 
             const mainContent = `
                 <div class="flex-grow overflow-hidden ml-2">
@@ -2011,11 +2008,23 @@
             });
         }
 
-        function handleStatusChange(contactId, newStatus) {
+        // --- START: MODIFICACIÓN PARA DESELECCIONAR ETIQUETA ---
+        function handleStatusChange(contactId, newStatusKey) {
             const id = contactId || state.selectedContactId;
-            if (!id || !newStatus) return;
-            db.collection('contacts_whatsapp').doc(id).update({ status: newStatus }).catch(err => { console.error("Error updating status:", err); showError("No se pudo actualizar la etiqueta."); });
+            if (!id) return;
+
+            const contact = state.contacts.find(c => c.id === id);
+            if (!contact) return;
+
+            // Si la etiqueta actual es la misma que la nueva, la quitamos (null)
+            const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
+
+            db.collection('contacts_whatsapp').doc(id).update({ status: finalStatus }).catch(err => {
+                console.error("Error updating status:", err);
+                showError("No se pudo actualizar la etiqueta.");
+            });
         }
+        // --- END: MODIFICACIÓN ---
         
         function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
         
