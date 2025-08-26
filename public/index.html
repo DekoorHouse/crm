@@ -1432,21 +1432,11 @@
             }
         }
 
-               // ===== COPIA Y PEGA TODA ESTA FUNCIÓN NUEVA Y DEFINITIVA =====
         function renderChatWindow() { 
             if (state.activeView !== 'chats') return;
             
             const chatPanelEl = document.getElementById('chat-panel');
             if (!chatPanelEl) return;
-
-            // 1. Guardamos lo que el usuario estaba escribiendo.
-            let currentMessageText = '';
-            const oldMessageInput = document.getElementById('message-input');
-            if (oldMessageInput) {
-                currentMessageText = oldMessageInput.value;
-            }
-
-            // (No necesitamos guardar el archivo, porque ya está en `state.stagedFile`)
 
             const contact = state.contacts.find(c => c.id === state.selectedContactId); 
             chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
@@ -1454,49 +1444,34 @@
             if (contact) { 
                 const statusWrapper = document.getElementById('contact-status-wrapper');
                 if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
-                
-                // 2. Buscamos el nuevo campo de texto y restauramos el contenido.
-                const newMessageInput = document.getElementById('message-input');
-                if (newMessageInput && currentMessageText) {
-                    newMessageInput.value = currentMessageText;
-                    newMessageInput.focus();
-                    newMessageInput.selectionStart = newMessageInput.selectionEnd = currentMessageText.length;
-                }
-
-                // 3. ¡NUEVO! Restauramos la vista previa del archivo multimedia.
-                renderFilePreview();
-
-                // Volvemos a configurar todos los eventos para el nuevo HTML
                 if (state.activeTab === 'chat') {
                     renderMessages();
                     const messagesContainer = document.getElementById('messages-container'); 
                     if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
                     
                     const messageForm = document.getElementById('message-form');
+                    const messageInput = document.getElementById('message-input'); 
                     if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
-                    
-                    if (newMessageInput) { 
-                        newMessageInput.addEventListener('paste', handlePaste); 
-                        newMessageInput.addEventListener('input', handleQuickReplyInput);
+                    if (messageInput) { 
+                        messageInput.addEventListener('paste', handlePaste); 
+                        messageInput.addEventListener('input', handleQuickReplyInput);
                         
-                        newMessageInput.addEventListener('input', () => {
-                            newMessageInput.style.height = 'auto';
-                            let newHeight = newMessageInput.scrollHeight;
+                        messageInput.addEventListener('input', () => {
+                            messageInput.style.height = 'auto';
+                            let newHeight = messageInput.scrollHeight;
                             if (newHeight > 120) {
                                 newHeight = 120;
                             }
-                            newMessageInput.style.height = newHeight + 'px';
+                            messageInput.style.height = newHeight + 'px';
                         });
-                        newMessageInput.addEventListener('keydown', (e) => {
+                        messageInput.addEventListener('keydown', (e) => {
                             if (e.key === 'Enter' && !e.shiftKey) {
                                 e.preventDefault();
                                 document.getElementById('message-form').requestSubmit();
                             }
                         });
 
-                        if (!currentMessageText) {
-                           newMessageInput.focus(); 
-                        }
+                        messageInput.focus(); 
                     } 
                     setupDragAndDrop(); 
                     
@@ -1506,7 +1481,6 @@
                 }
             } 
         }
-        // ===== FIN DE LA FUNCIÓN NUEVA Y DEFINITIVA =====
 
         function renderTagsView() {
             if (state.activeView !== 'etiquetas') return;
@@ -2062,43 +2036,23 @@
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
-               if (state.selectedContactId) {
-    const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
-    if (updatedContact) {
-        // Si el panel de detalles está abierto, lo actualizamos.
-        if (state.contactDetailsOpen) {
-            const contactDetailsPanelEl = document.getElementById('contact-details-panel');
-            if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
-        }
-
-        // ACTUALIZACIÓN SELECTIVA: En lugar de renderizar toda la ventana,
-        // solo actualizamos los componentes que pueden cambiar, como los botones de estado (etiquetas).
-        const statusWrapper = document.getElementById('contact-status-wrapper');
-        if (statusWrapper) {
-            statusWrapper.innerHTML = StatusButtonsTemplate(updatedContact);
-        }
-
-        // También actualizamos el nombre en la cabecera por si cambia.
-        const chatHeaderName = document.querySelector('.chat-header h2');
-        if (chatHeaderName && chatHeaderName.textContent !== updatedContact.name) {
-            chatHeaderName.textContent = updatedContact.name;
-        }
-
-        // IMPORTANTE: Ya no llamamos a renderChatWindow() aquí, evitando que se borre el input.
-
-    } else {
-        // Si el contacto seleccionado ya no existe, limpiamos la selección.
-        state.selectedContactId = null;
-        renderChatWindow(); // Aquí sí es correcto llamarla para mostrar la pantalla de bienvenida.
-        closeContactDetails();
-    }
+                if (state.selectedContactId) {
+                    const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
+                    if (updatedContact) {
+                        if (state.contactDetailsOpen) {
+                             const contactDetailsPanelEl = document.getElementById('contact-details-panel');
+                             if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
+                        }
+                        renderChatWindow();
+                    } else { closeContactDetails(); }
+                }
             }, (error) => { console.error(error); showError("No se pudo conectar a los contactos."); if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; });
         }
 
         function listenForQuickReplies() { 
             if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener(); 
             unsubscribeQuickRepliesListener = db.collection('quick_replies').orderBy('shortcut').onSnapshot((snapshot) => { 
-                state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
                 if (state.activeView === 'respuestas-rapidas') {
                     renderQuickRepliesView();
                 }
