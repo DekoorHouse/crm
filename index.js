@@ -301,14 +301,18 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
     };
 
-    const eventData = {
-        "event_name": eventName,
-        "event_time": event_time,
-        "event_id": event_id,
-        "user_data": userData,
-        "action_source": "whatsapp",
-        "custom_data": customData
+  const payload = {
+        data: [{
+            event_name: eventName,
+            event_time: eventTime,
+            event_id: eventId,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp', 
+            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
+            custom_data: finalCustomData,
+        }],
     };
+
     
     if (referral && referral.source_type === 'ad') {
         eventData.data_processing_options = [];
