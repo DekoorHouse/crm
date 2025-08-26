@@ -1014,13 +1014,27 @@
             const typingText = contact.lastMessage || 'Sin mensajes.';
             const unreadBadge = contact.unreadCount > 0 ? `<span class="unread-badge">${contact.unreadCount}</span>` : '';
             
-            const mainContent = `<div class="flex-grow overflow-hidden ml-2">
-                                    <h3 class="font-semibold text-sm text-gray-800 truncate flex items-center">${contact.name || 'Desconocido'}</h3>
-                                    <div class="flex justify-between items-center">
-                                        <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                                        <div class="flex items-center gap-2">${unreadBadge}</div>
-                                    </div>
-                                 </div>`;
+            // --- START: HORA DEL ÚLTIMO MENSAJE ---
+            let timeOrBadgeHTML = '';
+            if (contact.unreadCount > 0) {
+                timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
+            } else if (contact.lastMessageTimestamp) {
+                const date = contact.lastMessageTimestamp.toDate();
+                const timeString = isSameDay(new Date(), date)
+                    ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                    : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
+                timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
+            }
+            // --- END: HORA DEL ÚLTIMO MENSAJE ---
+
+            const mainContent = `
+                <div class="flex-grow overflow-hidden ml-2">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-semibold text-sm text-gray-800 truncate">${contact.name || 'Desconocido'}</h3>
+                        ${timeOrBadgeHTML}
+                    </div>
+                    <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
+                </div>`;
 
             const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
 
@@ -1097,7 +1111,6 @@
                     contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                     if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
                 }
-            // --- START: RENDERIZADO DE UBICACIÓN ---
             } else if (message.type === 'location' && message.location) {
                 const { latitude, longitude, name, address } = message.location;
                 const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
@@ -1108,7 +1121,6 @@
                         <p class="text-xs mt-1">Toca para ver en el mapa</p>
                     </a>
                 `;
-            // --- END: RENDERIZADO DE UBICACIÓN ---
             } else if (hasText) {
                  contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
