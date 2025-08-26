@@ -2098,7 +2098,7 @@
         function listenForQuickReplies() { 
             if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener(); 
             unsubscribeQuickRepliesListener = db.collection('quick_replies').orderBy('shortcut').onSnapshot((snapshot) => { 
-                state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+                state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 if (state.activeView === 'respuestas-rapidas') {
                     renderQuickRepliesView();
                 }
