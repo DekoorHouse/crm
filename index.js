@@ -47,32 +47,6 @@ const corsOptions = {
 app.use(cors(corsOptions));
 // --- FIN: CORRECCIÓN DE CORS ---
 
-// === BEGIN: Media proxy for WhatsApp audio/video/docs ===
-app.get("/api/wa/media/:mediaId", async (req, res) => {
-  try {
-    const { mediaId } = req.params;
-    // 1) get temporary URL for media
-    const meta = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-    });
-    const mediaUrl = meta.data && meta.data.url;
-    if (!mediaUrl) return res.status(404).json({ error: "MEDIA_URL_NOT_FOUND" });
-    // 2) stream content
-    const mediaResp = await axios.get(mediaUrl, {
-      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-      responseType: "stream",
-    });
-    res.setHeader("Content-Type", mediaResp.headers["content-type"] || "application/octet-stream");
-    res.setHeader("Cache-Control", "no-store");
-    mediaResp.data.pipe(res);
-  } catch (err) {
-    console.error("MEDIA_FETCH_ERROR:", err?.response?.data || err.message);
-    res.status(500).json({ error: "MEDIA_FETCH_ERROR" });
-  }
-});
-// === END: Media proxy ===
-
-
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -85,6 +59,45 @@ const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+
+// === INICIO: Proxy de Medios para audios, videos y documentos de WhatsApp ===
+app.get("/api/wa/media/:mediaId", async (req, res) => {
+  try {
+    const { mediaId } = req.params;
+    if (!WHATSAPP_TOKEN) {
+        return res.status(500).json({ error: "WhatsApp Token no configurado en el servidor." });
+    }
+    // 1. Obtener la URL temporal del medio desde la API de Meta
+    const metaResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+    });
+
+    const mediaUrl = metaResponse.data?.url;
+    if (!mediaUrl) {
+      return res.status(404).json({ error: "URL del medio no encontrada." });
+    }
+
+    // 2. Hacer streaming del contenido del medio al cliente
+    const mediaContentResponse = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      responseType: "stream",
+    });
+    
+    // Establecer los encabezados de la respuesta para el cliente
+    res.setHeader("Content-Type", mediaContentResponse.headers["content-type"] || "application/octet-stream");
+    res.setHeader("Cache-Control", "no-store"); // No guardar en caché estos medios
+    
+    // Enviar el stream de datos al cliente
+    mediaContentResponse.data.pipe(res);
+
+  } catch (err) {
+    console.error("ERROR EN PROXY DE MEDIOS:", err?.response?.data || err.message);
+    res.status(500).json({ error: "No se pudo obtener el medio." });
+  }
+});
+// === FIN: Proxy de Medios ===
+
 
 // --- CONFIGURACIÓN DE GOOGLE SHEETS ---
 const SHEETS_SCOPES = ['https://www.googleapis.com/auth/spreadsheets.readonly'];
@@ -383,43 +396,28 @@ app.get('/webhook', (req, res) => {
 });
 
 
-// --- FUNCIONES PARA MANEJAR ARCHIVOS MULTIMEDIA ---
-async function getMediaUrl(mediaId) {
-    if (!mediaId) return null;
-    try {
-        const url = `https://graph.facebook.com/v19.0/${mediaId}`;
-        const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` };
-        const response = await axios.get(url, { headers });
-        return response.data.url; 
-    } catch (error) {
-        console.error(`❌ Error al obtener la URL del medio ${mediaId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
-        return null;
+// --- FUNCIÓN PARA MANEJAR CÓDIGOS POSTALES ---
+async function handlePostalCodeAuto(message, contactRef, from) {
+    if (message.type !== 'text') return false;
+
+    const postalCodeRegex = /(?:cp|código postal|codigo postal|cp:)\s*(\d{5})|(\d{5})/i;
+    const match = message.text.body.match(postalCodeRegex);
+    
+    const postalCode = match ? (match[1] || match[2]) : null;
+
+    if (postalCode) {
+        console.log(`[CP] Código postal detectado: ${postalCode} para ${from}.`);
+        try {
+            const coverageResponse = await checkCoverage(postalCode);
+            if (coverageResponse) {
+                await sendAutoMessage(contactRef, { text: coverageResponse });
+                return true; // Indica que el mensaje fue manejado
+            }
+        } catch (error) {
+            console.error(`❌ Fallo al procesar CP para ${from}:`, error.message);
+        }
     }
-}
-
-async function uploadMediaToStorage(mediaUrl, mimeType) {
-    if (!mediaUrl || !mimeType) return null;
-    try {
-        const response = await axios({
-            method: 'get',
-            url: mediaUrl,
-            responseType: 'arraybuffer',
-            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
-        });
-        const buffer = Buffer.from(response.data, 'binary');
-
-        const extension = mimeType.split('/')[1];
-        const fileName = `whatsapp_media/${uuidv4()}.${extension}`;
-        const file = bucket.file(fileName);
-
-        await file.save(buffer, { metadata: { contentType: mimeType } });
-        await file.makePublic();
-        return file.publicUrl();
-
-    } catch (error) {
-        console.error(`❌ Error al descargar o subir el medio:`, error.message);
-        return null;
-    }
+    return false; // No se encontró o no se pudo manejar un CP
 }
 
 // --- FUNCIÓN AUXILIAR PARA ENVIAR Y GUARDAR MENSAJES AUTOMÁTICOS ---
@@ -442,36 +440,6 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
 }
 
-// =================== INICIO DE LA CORRECCIÓN ===================
-// La función se mueve aquí, ANTES de ser llamada en el webhook.
-// --- FUNCIÓN PARA MANEJAR CÓDIGOS POSTALES ---
-async function handlePostalCodeAuto(message, contactRef, from) {
-    if (message.type !== 'text') return false;
-
-    // Expresión regular para encontrar un CP de 5 dígitos, puede estar precedido por "cp", "código postal", etc.
-    const postalCodeRegex = /(?:cp|código postal|codigo postal|cp:)\s*(\d{5})|(\d{5})/i;
-    const match = message.text.body.match(postalCodeRegex);
-    
-    // Tomamos el primer grupo que no sea nulo (match[1] o match[2])
-    const postalCode = match ? (match[1] || match[2]) : null;
-
-    if (postalCode) {
-        console.log(`[CP] Código postal detectado: ${postalCode} para ${from}.`);
-        try {
-            const coverageResponse = await checkCoverage(postalCode);
-            if (coverageResponse) {
-                await sendAutoMessage(contactRef, { text: coverageResponse });
-                return true; // Indica que el mensaje fue manejado
-            }
-        } catch (error) {
-            console.error(`❌ Fallo al procesar CP para ${from}:`, error.message);
-        }
-    }
-    return false; // No se encontró o no se pudo manejar un CP
-}
-// =================== FIN DE LA CORRECCIÓN ===================
-
-
 // --- LÓGICA DEL WEBHOOK PRINCIPAL ---
 app.post('/webhook', async (req, res) => {
   try {
@@ -490,27 +458,35 @@ app.post('/webhook', async (req, res) => {
         console.log('[LOG] Mensaje saliente ignorado.');
         return res.sendStatus(200);
       }
-
+      
+      // --- INICIO DE LA MODIFICACIÓN PARA AUDIO ---
       const messageData = {
         timestamp: admin.firestore.Timestamp.now(),
         from,
         status: 'received',
         id: message.id,
         type: message.type,
-        text: message.type === 'text' ? message.text.body : `Mensaje multimedia (${message.type})`
-      ,
         reply_to: message.context?.id || null,
         context: message.context || null
+      };
+
+      if (message.type === 'text') {
+          messageData.text = message.text.body;
+      } else if (message.type === 'audio' && message.audio && message.audio.id) {
+          messageData.audio = {
+              id: message.audio.id,
+              mime_type: message.audio.mime_type || "audio/ogg",
+              voice: !!message.audio.voice
+          };
+          // Creamos una URL relativa a nuestro servidor para el proxy
+          messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+          messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+      } else {
+          // Manejo para otros tipos de multimedia si es necesario
+          messageData.text = `Mensaje multimedia (${message.type})`;
       }
-      ;
-      if (message.type === "audio" && message.audio && message.audio.id) {
-        messageData.audio = {
-          id: message.audio.id,
-          mime_type: message.audio.mime_type || "audio/ogg",
-          voice: !!message.audio.voice
-        };
-        messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
-      }
+      // --- FIN DE LA MODIFICACIÓN PARA AUDIO ---
+
       await contactRef.collection('messages').add(messageData);
 
       const contactUpdateData = {
