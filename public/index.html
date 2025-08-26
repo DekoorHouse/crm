@@ -371,6 +371,11 @@
                         <i class="fas fa-ad"></i>
                         <span class="sidebar-text">Mensajes Ads</span>
                     </a>
+                    <!-- NUEVO ELEMENTO DE NAVEGACIÓN -->
+                    <a onclick="navigateTo('prompts-ia')" data-view="prompts-ia" class="nav-item">
+                        <i class="fas fa-lightbulb"></i>
+                        <span class="sidebar-text">Prompts IA (Anuncios)</span>
+                    </a>
                     <a onclick="navigateTo('respuestas-rapidas')" data-view="respuestas-rapidas" class="nav-item">
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
@@ -470,6 +475,32 @@
                 </div>
                 <div class="flex justify-end gap-3 mt-4">
                     <button type="button" onclick="closeAdResponseModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NUEVO MODAL: AI AD PROMPT MODAL -->
+    <div id="ai-ad-prompt-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="ai-ad-prompt-modal-title">Añadir Prompt de IA</h2>
+            <form id="ai-ad-prompt-form">
+                <input type="hidden" id="aip-doc-id">
+                <div>
+                    <label for="aip-name">Nombre del Anuncio</label>
+                    <input type="text" id="aip-name" required class="!mb-4" placeholder="Ej: Campaña Verano 2024">
+                </div>
+                <div>
+                    <label for="aip-ad-id">Identificador del Anuncio (Ad ID)</label>
+                    <input type="text" id="aip-ad-id" required class="!mb-4" placeholder="Ej: 120229247610060637">
+                </div>
+                <div>
+                    <label for="aip-prompt">Prompt para la IA</label>
+                    <textarea id="aip-prompt" rows="6" class="!mb-4" placeholder="Escribe las instrucciones que la IA debe seguir para este anuncio..."></textarea>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeAIAdPromptModal()" class="btn btn-subtle">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar</button>
                 </div>
             </form>
@@ -621,6 +652,7 @@
             notes: [],
             quickReplies: [],
             adResponses: [],
+            aiAdPrompts: [], // NUEVO ESTADO
             templates: [],
             tags: [],
             knowledgeBase: [],
@@ -646,7 +678,7 @@
             isTagSidebarOpen: true,
             activeView: 'chats',
         };
-        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null;
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null, unsubscribeAIAdPromptsListener = null; // NUEVO LISTENER
         let ticking = false;
         let tagsSortable = null;
 
@@ -836,6 +868,28 @@
                         </tr>
                     </thead>
                     <tbody id="ad-responses-table-body"></tbody>
+                </table>
+            </div>
+        `;
+
+        // NUEVA PLANTILLA DE VISTA
+        const AIAdPromptsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Prompts de IA por Anuncio</h1>
+                    <button onclick="openAIAdPromptModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Prompt</button>
+                </div>
+                <p class="mb-6 text-gray-600">Asigna instrucciones específicas (prompts) para la IA basadas en el anuncio del que proviene el cliente. Si un anuncio no tiene un prompt aquí, se usarán las instrucciones generales del bot.</p>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Nombre del Anuncio</th>
+                            <th>ID del Anuncio</th>
+                            <th>Prompt</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="ai-ad-prompts-table-body"></tbody>
                 </table>
             </div>
         `;
@@ -1382,6 +1436,7 @@
             listenForQuickReplies();
             listenForTags();
             listenForAdResponses();
+            listenForAIAdPrompts(); // NUEVO
             listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
@@ -1399,8 +1454,9 @@
             if (unsubscribeTagsListener) unsubscribeTagsListener();
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
+            if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener(); // NUEVO
             document.removeEventListener('click', handleClickOutside);
-            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, stagedRemoteFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
+            state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], aiAdPrompts: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, stagedRemoteFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
         }
         
@@ -1437,6 +1493,11 @@
                 case 'mensajes-ads':
                     mainViewContainer.innerHTML = MensajesAdsViewTemplate();
                     renderAdResponsesView();
+                    break;
+                // NUEVO CASE
+                case 'prompts-ia':
+                    mainViewContainer.innerHTML = AIAdPromptsViewTemplate();
+                    renderAIAdPromptsView();
                     break;
                 case 'respuestas-rapidas':
                     mainViewContainer.innerHTML = QuickRepliesViewTemplate();
@@ -1604,6 +1665,30 @@
                     <td class="actions-cell">
                         <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                         <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        // NUEVA FUNCIÓN DE RENDERIZADO
+        function renderAIAdPromptsView() {
+            if (state.activeView !== 'prompts-ia') return;
+            const tableBody = document.getElementById('ai-ad-prompts-table-body');
+            if (!tableBody) return;
+
+            if (state.aiAdPrompts.length === 0) {
+                tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No has agregado ningún prompt de IA todavía.</td></tr>`;
+                return;
+            }
+
+            tableBody.innerHTML = state.aiAdPrompts.map(prompt => `
+                <tr>
+                    <td class="font-semibold">${prompt.adName}</td>
+                    <td class="font-mono text-sm">${prompt.adId}</td>
+                    <td class="text-gray-600 max-w-sm truncate" title="${prompt.prompt}">${prompt.prompt}</td>
+                    <td class="actions-cell">
+                        <button onclick="openAIAdPromptModal('${prompt.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                        <button onclick="handleDeleteAIAdPrompt('${prompt.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -2963,6 +3048,93 @@
             }
         }
         
+        // --- NUEVAS FUNCIONES PARA PROMPTS DE IA POR ANUNCIO ---
+        function listenForAIAdPrompts() {
+            if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
+            unsubscribeAIAdPromptsListener = db.collection('ai_ad_prompts').orderBy('adName').onSnapshot(snapshot => {
+                state.aiAdPrompts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                if (state.activeView === 'prompts-ia') {
+                    renderAIAdPromptsView();
+                }
+            }, error => {
+                console.error("Error al escuchar los prompts de IA:", error);
+                showError("No se pudieron cargar los prompts de IA.");
+            });
+        }
+
+        function openAIAdPromptModal(promptId = null) {
+            const modal = document.getElementById('ai-ad-prompt-modal');
+            const form = document.getElementById('ai-ad-prompt-form');
+            form.reset();
+
+            const isEditing = promptId && state.aiAdPrompts.some(p => p.id === promptId);
+            const prompt = isEditing ? state.aiAdPrompts.find(p => p.id === promptId) : null;
+
+            document.getElementById('ai-ad-prompt-modal-title').textContent = isEditing ? 'Editar Prompt de IA' : 'Añadir Prompt de IA';
+            document.getElementById('aip-doc-id').value = isEditing ? prompt.id : '';
+            document.getElementById('aip-name').value = isEditing ? prompt.adName : '';
+            document.getElementById('aip-ad-id').value = isEditing ? prompt.adId : '';
+            document.getElementById('aip-prompt').value = isEditing ? prompt.prompt : '';
+
+            modal.classList.remove('hidden');
+            document.getElementById('aip-name').focus();
+
+            form.onsubmit = (event) => {
+                event.preventDefault();
+                handleSaveAIAdPrompt();
+            };
+        }
+
+        function closeAIAdPromptModal() {
+            document.getElementById('ai-ad-prompt-modal').classList.add('hidden');
+        }
+
+        async function handleSaveAIAdPrompt() {
+            const id = document.getElementById('aip-doc-id').value;
+            const adName = document.getElementById('aip-name').value.trim();
+            const adId = document.getElementById('aip-ad-id').value.trim();
+            const prompt = document.getElementById('aip-prompt').value.trim();
+
+            if (!adName || !adId || !prompt) {
+                showError("Todos los campos son obligatorios.");
+                return;
+            }
+
+            const data = { adName, adId, prompt };
+            const url = id ? `${API_BASE_URL}/api/ai-ad-prompts/${id}` : `${API_BASE_URL}/api/ai-ad-prompts`;
+            const method = id ? 'PUT' : 'POST';
+
+            try {
+                const response = await fetch(url, {
+                    method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al guardar el prompt.');
+                }
+                closeAIAdPromptModal();
+            } catch (error) {
+                console.error("Error saving AI ad prompt:", error);
+                showError(error.message);
+            }
+        }
+
+        async function handleDeleteAIAdPrompt(id) {
+            if (!window.confirm('¿Estás seguro de que quieres eliminar este prompt?')) return;
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/ai-ad-prompts/${id}`, { method: 'DELETE' });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error al eliminar el prompt.');
+                }
+            } catch (error) {
+                showError(error.message);
+            }
+        }
+        // --- FIN DE NUEVAS FUNCIONES ---
+
         async function handleModalFileUpload(event, prefix) {
             const file = event.target.files[0];
             if (!file) return;
@@ -3005,7 +3177,7 @@
             }
         }
 
-        function openBotSettingsModal() {
+                function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
             document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
@@ -3305,3 +3477,4 @@
     
 </body>
 </html>
+
