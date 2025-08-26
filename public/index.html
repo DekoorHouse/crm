@@ -118,18 +118,22 @@
         #sticky-date-header { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out; opacity: 0; pointer-events: none; }
         #sticky-date-header.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
         
-        /* --- INICIO DE LA MODIFICACIÓN DE TAMAÑO --- */
-        .chat-image-preview, .message-bubble video {
+        .chat-image-preview {
             width: 250px;
             height: 250px;
             object-fit: cover;
             border-radius: var(--border-radius-sm);
             display: block;
-        }
-        .chat-image-preview {
             cursor: pointer;
         }
-        /* --- FIN DE LA MODIFICACIÓN DE TAMAÑO --- */
+        .message-bubble video {
+            width: 250px;
+            height: 250px;
+            object-fit: contain;
+            border-radius: var(--border-radius-sm);
+            display: block;
+            background-color: #000;
+        }
 
         .message-bubble.has-image { padding: 5px; background-color: transparent; box-shadow: none; max-width: 260px; }
         .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
@@ -1966,7 +1970,6 @@
             picker.innerHTML = pickerHTML;
         }
 
-        // --- INICIO DE LA MODIFICACIÓN DE RESPUESTAS RÁPIDAS ---
         function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
             if (!reply) return;
@@ -1982,7 +1985,6 @@
             state.quickReplyPickerOpen = false;
             renderAllPickers();
         }
-        // --- FIN DE LA MODIFICACIÓN DE RESPUESTAS RÁPIDAS ---
         
         function openQuickReplyModal(param = null) {
             const modal = document.getElementById('quick-reply-modal');
