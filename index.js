@@ -520,10 +520,27 @@ app.post('/webhook', async (req, res) => {
             context: message.context || null
         };
 
-        // Asignar el texto del mensaje según el tipo
+      // Asignar el texto y el contenido multimedia del mensaje según el tipo
         if (message.type === 'text') {
             messageData.text = message.text.body;
-        } else if (message.type === 'audio' && message.audio && message.audio.id) {
+        
+        } else if (message.type === 'image' && message.image?.id) {
+            // Si el mensaje es una imagen, creamos un enlace interno para mostrarla
+            messageData.fileUrl = `/api/wa/media/${message.image.id}`;
+            messageData.fileType = message.image.mime_type || 'image/jpeg';
+            // Usamos el pie de foto si existe, si no, un texto genérico
+            messageData.text = message.image.caption || '📷 Imagen';
+            messageData.image = message.image; // Guardamos los datos de la imagen
+
+        } else if (message.type === 'video' && message.video?.id) {
+            // Hacemos lo mismo para los videos
+            messageData.fileUrl = `/api/wa/media/${message.video.id}`;
+            messageData.fileType = message.video.mime_type || 'video/mp4';
+            messageData.text = message.video.caption || '🎥 Video';
+            messageData.video = message.video;
+
+        } else if (message.type === 'audio' && message.audio?.id) {
+            // Tu lógica existente para audios
             messageData.audio = {
                 id: message.audio.id,
                 mime_type: message.audio.mime_type || "audio/ogg",
@@ -531,7 +548,9 @@ app.post('/webhook', async (req, res) => {
             };
             messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
             messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+
         } else {
+            // Para cualquier otro tipo, mantenemos el mensaje genérico
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
 
