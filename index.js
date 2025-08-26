@@ -301,6 +301,12 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         "ln": [sha256(contactInfo.profile.name.split(' ').slice(1).join(' '))] // Last name
     };
 
+    // AÑADIR CTWA_CLID SI EXISTE (ESTA ES LA CORRECCIÓN)
+    if (referral && referral.ctwa_clid) {
+        userData.ctwa_clid = referral.ctwa_clid;
+        console.log(`[CAPI] Including ctwa_clid: ${referral.ctwa_clid}`);
+    }
+
     // 1. Definir el objeto eventData con la estructura correcta
     const eventData = {
         "event_name": eventName,
@@ -333,6 +339,7 @@ async function sendConversionEvent(eventName, contactInfo, referral, customData 
         console.error('[CAPI] Error sending conversion event:', error.response ? JSON.stringify(error.response.data) : error.message);
     }
 }
+
 
 
 // --- FUNCIÓN DE ENVÍO AVANZADO DE MENSAJES A WHATSAPP ---
