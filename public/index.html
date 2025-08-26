@@ -2036,16 +2036,36 @@
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
-                if (state.selectedContactId) {
-                    const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
-                    if (updatedContact) {
-                        if (state.contactDetailsOpen) {
-                             const contactDetailsPanelEl = document.getElementById('contact-details-panel');
-                             if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
-                        }
-                        renderChatWindow();
-                    } else { closeContactDetails(); }
-                }
+               if (state.selectedContactId) {
+    const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
+    if (updatedContact) {
+        // Si el panel de detalles está abierto, lo actualizamos.
+        if (state.contactDetailsOpen) {
+            const contactDetailsPanelEl = document.getElementById('contact-details-panel');
+            if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
+        }
+
+        // ACTUALIZACIÓN SELECTIVA: En lugar de renderizar toda la ventana,
+        // solo actualizamos los componentes que pueden cambiar, como los botones de estado (etiquetas).
+        const statusWrapper = document.getElementById('contact-status-wrapper');
+        if (statusWrapper) {
+            statusWrapper.innerHTML = StatusButtonsTemplate(updatedContact);
+        }
+
+        // También actualizamos el nombre en la cabecera por si cambia.
+        const chatHeaderName = document.querySelector('.chat-header h2');
+        if (chatHeaderName && chatHeaderName.textContent !== updatedContact.name) {
+            chatHeaderName.textContent = updatedContact.name;
+        }
+
+        // IMPORTANTE: Ya no llamamos a renderChatWindow() aquí, evitando que se borre el input.
+
+    } else {
+        // Si el contacto seleccionado ya no existe, limpiamos la selección.
+        state.selectedContactId = null;
+        renderChatWindow(); // Aquí sí es correcto llamarla para mostrar la pantalla de bienvenida.
+        closeContactDetails();
+    }
             }, (error) => { console.error(error); showError("No se pudo conectar a los contactos."); if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; });
         }
 
