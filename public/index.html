@@ -117,7 +117,20 @@
         .date-separator { text-align: center; margin: 16px auto 12px; padding: 5px 12px; background-color: #e1f3fb; color: var(--color-text); border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); font-size: 0.8rem; font-weight: 600; max-width: fit-content; }
         #sticky-date-header { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out; opacity: 0; pointer-events: none; }
         #sticky-date-header.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
-        .chat-image-preview { width: 250px; height: auto; object-fit: cover; border-radius: var(--border-radius-sm); cursor: pointer; display: block; max-width: 100%; }
+        
+        /* --- INICIO DE LA MODIFICACIÓN DE TAMAÑO --- */
+        .chat-image-preview, .message-bubble video {
+            width: 250px;
+            height: 250px;
+            object-fit: cover;
+            border-radius: var(--border-radius-sm);
+            display: block;
+        }
+        .chat-image-preview {
+            cursor: pointer;
+        }
+        /* --- FIN DE LA MODIFICACIÓN DE TAMAÑO --- */
+
         .message-bubble.has-image { padding: 5px; background-color: transparent; box-shadow: none; max-width: 260px; }
         .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
         .time-overlay .fas { color: white !important; }
@@ -976,7 +989,6 @@
             `;
         };
         
-        // --- INICIO DE LA MODIFICACIÓN PARA PIES DE FOTO ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -1005,7 +1017,7 @@
                     timeAndStatusHTML = ''; // El tiempo ahora es una superposición
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    contentHTML += `<video controls class="rounded-lg max-w-xs w-full block mb-1"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
+                    contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                     if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
                 }
             } else if (hasText) {
@@ -1046,7 +1058,6 @@
                     </div>
                 </div>`;
         };
-        // --- FIN DE LA MODIFICACIÓN PARA PIES DE FOTO ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -1955,15 +1966,23 @@
             picker.innerHTML = pickerHTML;
         }
 
+        // --- INICIO DE LA MODIFICACIÓN DE RESPUESTAS RÁPIDAS ---
         function selectQuickReply(replyId) {
             const reply = state.quickReplies.find(r => r.id === replyId);
             if (!reply) return;
-            
+
             const input = document.getElementById('message-input');
-            input.value = `/${reply.shortcut}`;
-            
-            handleSendMessage({ preventDefault: () => {} }); 
+            if (input) {
+                if (reply.message) {
+                    input.value = reply.message;
+                }
+                input.focus();
+            }
+
+            state.quickReplyPickerOpen = false;
+            renderAllPickers();
         }
+        // --- FIN DE LA MODIFICACIÓN DE RESPUESTAS RÁPIDAS ---
         
         function openQuickReplyModal(param = null) {
             const modal = document.getElementById('quick-reply-modal');
