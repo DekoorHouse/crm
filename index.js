@@ -186,15 +186,13 @@ async function generateGeminiResponse(prompt) {
 }
 
 
-// --- LÓGICA CENTRAL DEL BOT DE IA ---
-async function triggerAutoReplyAI(message, contactRef) {
+// --- LÓGICA CENTRAL DEL BOT DE IA (MODIFICADA) ---
+async function triggerAutoReplyAI(message, contactRef, contactData) {
     const contactId = contactRef.id;
     console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
 
     try {
         // 1. Verificar si el bot debe actuar
-        const contactDoc = await contactRef.get();
-        const contactData = contactDoc.data();
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
 
@@ -207,9 +205,28 @@ async function triggerAutoReplyAI(message, contactRef) {
             return;
         }
 
-        // 2. Preparar el prompt para Gemini
-        const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-        const botInstructions = botSettingsDoc.exists ? botSettingsDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
+        // 2. Determinar qué instrucciones usar (específicas del anuncio o generales)
+        let botInstructions = 'Eres un asistente virtual amigable y servicial.'; // Default
+        const adId = contactData.adReferral?.source_id;
+
+        if (adId) {
+            const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
+            if (!adPromptSnapshot.empty) {
+                botInstructions = adPromptSnapshot.docs[0].data().prompt;
+                console.log(`[AI] Usando prompt específico para Ad ID: ${adId}`);
+            } else {
+                console.log(`[AI] No se encontró prompt para Ad ID: ${adId}. Usando instrucciones generales.`);
+                const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+                if (botSettingsDoc.exists) {
+                    botInstructions = botSettingsDoc.data().instructions;
+                }
+            }
+        } else {
+            const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+            if (botSettingsDoc.exists) {
+                botInstructions = botSettingsDoc.data().instructions;
+            }
+        }
 
         const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
         const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
@@ -299,18 +316,14 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
     }
 
-    // ✅ IMPORTANTE: Agregar el WhatsApp Business Account ID (requerido por Meta)
     if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
         userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
     }
 
-    // Solo si 'ctwa_clid' existe, tratamos el evento como proveniente de un anuncio
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
 
     if (isAdReferral) {
         userData.ctwa_clid = referralInfo.ctwa_clid;
-        // ❌ NO incluir fbc para eventos de WhatsApp - Meta no lo acepta con business_messaging
-        // El fbc solo es para eventos web/Facebook, no para WhatsApp
     }
 
     const finalCustomData = {
@@ -320,7 +333,6 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
         ...customData
     };
 
-    // Limpia cualquier clave 'undefined' que se haya añadido
     Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
     const payload = {
@@ -330,7 +342,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_id: eventId,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp', 
-            user_data: userData,  // ✅ ctwa_clid está aquí, SIN fbc
+            user_data: userData,
             custom_data: finalCustomData,
         }],
     };
@@ -463,7 +475,6 @@ app.post('/webhook', async (req, res) => {
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    // Caso 1: Hay un nuevo mensaje entrante
     if (value && value.messages && value.contacts) {
         const message = value.messages[0];
         const contactInfo = value.contacts[0];
@@ -508,11 +519,9 @@ app.post('/webhook', async (req, res) => {
         } else if (message.type === 'audio' && message.audio?.id) {
             messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
             messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-        // --- START: SOPORTE PARA UBICACIÓN ---
         } else if (message.type === 'location') {
-            messageData.location = message.location; // Guardar el objeto completo de ubicación
+            messageData.location = message.location;
             messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
-        // --- END: SOPORTE PARA UBICACIÓN ---
         } else {
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
@@ -535,6 +544,8 @@ app.post('/webhook', async (req, res) => {
 
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
+        
+        const updatedContactData = (await contactRef.get()).data(); // Get the merged data
 
         const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
         if (cpHandled) {
@@ -558,7 +569,7 @@ app.post('/webhook', async (req, res) => {
                 await contactRef.update({ welcomed: true });
             }
         } else {
-            await triggerAutoReplyAI(message, contactRef);
+             await triggerAutoReplyAI(message, contactRef, updatedContactData);
         }
 
     } else if (value && value.statuses) {
@@ -807,7 +818,6 @@ app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, re
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
         });
         
-        // Actualiza Firestore solo después de que la API de WhatsApp confirme
         await messageRef.update({ reaction: reaction || admin.firestore.FieldValue.delete() });
         
         res.status(200).json({ success: true, message: 'Reacción enviada y actualizada.' });
@@ -849,13 +859,11 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
         await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral || {});
         
-        // START: MODIFICACIÓN - AÑADIR ETIQUETA DE VENTA
         await contactRef.update({ 
             registrationStatus: 'completed', 
             registrationDate: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'venta' // Asume que la clave de la etiqueta es 'venta'
+            status: 'venta'
         });
-        // END: MODIFICACIÓN
         
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado" y etiquetado como Venta.' });
     } catch (error) {
@@ -1146,6 +1154,53 @@ app.delete('/api/ad-responses/:id', async (req, res) => {
     }
 });
 
+// --- START: ENDPOINTS PARA PROMPTS DE IA POR ANUNCIO ---
+app.post('/api/ai-ad-prompts', async (req, res) => {
+    const { adName, adId, prompt } = req.body;
+    if (!adName || !adId || !prompt) {
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID y prompt son obligatorios.' });
+    }
+    try {
+        const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
+        if (!existing.empty) {
+            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya tiene un prompt configurado.` });
+        }
+        const newPrompt = await db.collection('ai_ad_prompts').add({ adName, adId, prompt });
+        res.status(201).json({ success: true, id: newPrompt.id });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+app.put('/api/ai-ad-prompts/:id', async (req, res) => {
+    const { id } = req.params;
+    const { adName, adId, prompt } = req.body;
+    if (!adName || !adId || !prompt) {
+        return res.status(400).json({ success: false, message: 'Nombre del anuncio, ID y prompt son obligatorios.' });
+    }
+    try {
+        const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
+        if (!existing.empty && existing.docs[0].id !== id) {
+            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está en uso.` });
+        }
+        await db.collection('ai_ad_prompts').doc(id).update({ adName, adId, prompt });
+        res.status(200).json({ success: true, message: 'Prompt actualizado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
+app.delete('/api/ai-ad-prompts/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('ai_ad_prompts').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Prompt eliminado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+// --- END: ENDPOINTS PARA PROMPTS DE IA POR ANUNCIO ---
+
 // --- ENDPOINTS PARA AJUSTES DEL BOT Y GENERALES ---
 app.get('/api/bot/settings', async (req, res) => {
     try {
@@ -1302,7 +1357,11 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
 app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
-        const messagesSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'desc').limit(10).get();
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        
+        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
         
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
