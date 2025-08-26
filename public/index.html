@@ -89,7 +89,8 @@
         .message-wrapper.sent { align-items: flex-end; }
         .message-wrapper.received { align-items: flex-start; }
         
-        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 70%; margin-top: 1px; margin-bottom: 1px; }
+        /* --- CAMBIO REALIZADO AQUÍ --- */
+        .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 35%; margin-top: 1px; margin-bottom: 1px; }
         .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
         .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
         .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
@@ -966,7 +967,7 @@
             `;
         };
         
-        // =================== INICIO DE LA CORRECCIÓN DE AUDIO ===================
+        // --- INICIO DE LA CORRECCIÓN ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -977,23 +978,22 @@
             let bubbleExtraClass = '';
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
-            // --- Lógica para renderizar contenido ---
-            if (message.type === 'audio' && message.mediaProxyUrl) {
-                contentHTML += `<audio controls class="w-full" src="${API_BASE_URL}${message.mediaProxyUrl}" preload="none"></audio>`;
-                timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
-            } else if (message.fileUrl && message.fileType) {
+            // Parte 1: Renderizar el archivo multimedia si existe
+            if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
                     contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
-                    timeAndStatusHTML = ''; 
+                    timeAndStatusHTML = ''; // El tiempo ahora es una superposición en la imagen
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    const videoMarginClass = message.text ? 'mb-2' : '';
+                    const videoMarginClass = message.text ? 'mb-2' : ''; // Añade margen inferior si hay texto
                     contentHTML += `<video controls class="rounded-lg max-w-xs w-full block ${videoMarginClass}"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                 }
             }
 
-            if (message.text && message.type !== 'audio') { // No mostrar el texto genérico para audios
+            // Parte 2: Renderizar el texto (subtítulo o mensaje normal) si existe
+            if (message.text) {
+                // Si es una imagen, la burbuja no tiene padding, así que lo añadimos al div del texto
                 const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
                 contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
             }
@@ -1004,7 +1004,7 @@
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
             }
 
-            const copyButtonHTML = message.text && message.type !== 'audio'
+            const copyButtonHTML = message.text 
                 ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
                 : '';
 
@@ -1032,7 +1032,7 @@
                     </div>
                 </div>`;
         };
-        // =================== FIN DE LA CORRECCIÓN DE AUDIO ===================
+        // --- FIN DE LA CORRECCIÓN ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -2979,5 +2979,122 @@
         // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
 
     </script>
+
+<!-- Barra que muestra a qué mensaje estoy respondiendo -->
+<div id="reply-context-bar" class="hidden"></div>
+
+<script>
+// ================== RESPONDER MENSAJES ==================
+let currentReplyContext = null; // { id, from, text }
+const PHONE_NUMBER_ID = window.PHONE_NUMBER_ID || (typeof PHONE_NUMBER_ID !== 'undefined' ? PHONE_NUMBER_ID : '');
+
+// Muestra la barrita arriba del input con el mensaje que vas a citar
+function showReplyContextBar(msg) {
+  currentReplyContext = { id: msg.id, from: msg.from, text: msg.text };
+  const bar = document.getElementById('reply-context-bar');
+  if (!bar) return;
+  bar.innerHTML = `
+    <div class="reply-preview">
+      <p class="reply-author">${msg.from === PHONE_NUMBER_ID ? 'Tú' : 'Cliente'}</p>
+      <p class="reply-text">${(msg.text || '').toString()}</p>
+    </div>
+    <button id="cancel-reply-btn" title="Cancelar" onclick="cancelReply()">&times;</button>
+  `;
+  bar.classList.remove('hidden');
+}
+
+function cancelReply() {
+  currentReplyContext = null;
+  const bar = document.getElementById('reply-context-bar');
+  if (!bar) return;
+  bar.classList.add('hidden');
+  bar.innerHTML = '';
+}
+
+// Botones de acción que aparecen al pasar el mouse por la burbuja
+function messageActionsHtml(msg) {
+  const safe = {
+    id: msg.id,
+    from: msg.from,
+    text: (msg.text || '').toString().replace(/"/g, '&quot;')
+  };
+  return `
+    <div class="message-actions">
+      <button class="message-action-btn" title="Responder"
+        onclick='showReplyContextBar({id:"${safe.id}",from:"${safe.from}",text:"${safe.text}"})'>
+        <i class="fas fa-reply"></i>
+      </button>
+    </div>
+  `;
+}
+
+// Render de una burbuja con “quote” si el mensaje es respuesta
+function renderMessageBubble(msg, messageById) {
+  let quote = '';
+  if (msg.reply_to && messageById[msg.reply_to]) {
+    const original = messageById[msg.reply_to];
+    quote = `
+      <div class="reply-preview">
+        <p class="reply-author">${original.from === PHONE_NUMBER_ID ? 'Tú' : 'Cliente'}</p>
+        <p class="reply-text">${(original.text || '').toString()}</p>
+      </div>
+    `;
+  }
+  return `
+    <div class="message-wrapper ${msg.from === PHONE_NUMBER_ID ? 'sent' : 'received'}">
+      <div class="message-bubble ${msg.from === PHONE_NUMBER_ID ? 'sent' : 'received'}">
+        ${messageActionsHtml(msg)}
+        ${quote}
+        <p>${(msg.text || '').toString()}</p>
+      </div>
+    </div>
+  `;
+}
+
+// Llama a esta función con tu arreglo de mensajes para pintar el chat
+function renderChat(messages) {
+  const byId = {};
+  messages.forEach(m => { byId[m.id] = m; });
+  const html = messages.map(m => renderMessageBubble(m, byId)).join('');
+  const container = document.getElementById('chat-messages');
+  if (container) container.innerHTML = html;
+}
+
+// Enviar mensaje (texto/archivo) incluyendo reply_to_wamid
+async function sendMessage() {
+  const input = document.getElementById('message-input');
+  const text = input ? input.value.trim() : '';
+
+  const pendingFileToSend = window.pendingFileToSend || null;
+  if (!text && !pendingFileToSend) return;
+
+  const body = {
+    text,
+    fileUrl: pendingFileToSend?.url || null,
+    fileType: pendingFileToSend?.type || null,
+    reply_to_wamid: currentReplyContext?.id || null
+  };
+
+  const contactId = window.currentContactId || (typeof currentContactId !== 'undefined' ? currentContactId : null);
+  if (!contactId) { alert('No hay contacto seleccionado'); return; }
+
+  const resp = await fetch(`/api/contacts/${contactId}/messages`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body)
+  });
+
+  if (!resp.ok) {
+    try { console.error('Error al enviar:', await resp.json()); } catch {}
+    alert('No se pudo enviar el mensaje.');
+    return;
+  }
+
+  if (input) input.value = '';
+  cancelReply();
+  if (window.clearPendingFilePreview) window.clearPendingFilePreview();
+}
+</script>
+
 </body>
 </html>
