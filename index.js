@@ -459,7 +459,6 @@ app.post('/webhook', async (req, res) => {
         return res.sendStatus(200);
       }
       
-      // --- INICIO DE LA MODIFICACIÓN PARA AUDIO ---
       const messageData = {
         timestamp: admin.firestore.Timestamp.now(),
         from,
@@ -478,14 +477,11 @@ app.post('/webhook', async (req, res) => {
               mime_type: message.audio.mime_type || "audio/ogg",
               voice: !!message.audio.voice
           };
-          // Creamos una URL relativa a nuestro servidor para el proxy
           messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
           messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
       } else {
-          // Manejo para otros tipos de multimedia si es necesario
           messageData.text = `Mensaje multimedia (${message.type})`;
       }
-      // --- FIN DE LA MODIFICACIÓN PARA AUDIO ---
 
       await contactRef.collection('messages').add(messageData);
 
@@ -609,7 +605,9 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const messageId = response.data.messages[0].id;
             
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
-            if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
+            // --- INICIO DE LA CORRECCIÓN ---
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid }; // Cambiado de message_id a id
+            // --- FIN DE LA CORRECCIÓN ---
             await contactRef.collection('messages').add(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
@@ -626,7 +624,9 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 fileType: sentMessageData.fileTypeForDb
             };
         
-            if (reply_to_wamid) messageToSave.context = { message_id: reply_to_wamid };
+            // --- INICIO DE LA CORRECCIÓN ---
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid }; // Cambiado de message_id a id
+            // --- FIN DE LA CORRECCIÓN ---
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
             
             await contactRef.collection('messages').add(messageToSave);
