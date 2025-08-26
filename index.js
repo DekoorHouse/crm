@@ -447,91 +447,112 @@ app.post('/webhook', async (req, res) => {
     const change = entry?.changes?.[0];
     const value = change?.value;
 
-    if (value && value.messages && value.contacts) {
-      const message = value.messages[0];
-      console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
-      const contactInfo = value.contacts[0];
-      const from = message.from;
-      const contactRef = db.collection('contacts_whatsapp').doc(from);
+    if (value && value.messages) {
+        const message = value.messages[0];
+        const from = message.from;
+        const contactRef = db.collection('contacts_whatsapp').doc(from);
+        
+        // --- INICIO DE LA MODIFICACIÓN PARA REACCIONES ---
+        if (message.type === 'reaction') {
+            const originalMessageId = message.reaction.message_id;
+            const reactionEmoji = message.reaction.emoji || null;
 
-      if (message.from === PHONE_NUMBER_ID) {
-        console.log('[LOG] Mensaje saliente ignorado.');
-        return res.sendStatus(200);
-      }
-      
-      const messageData = {
-        timestamp: admin.firestore.Timestamp.now(),
-        from,
-        status: 'received',
-        id: message.id,
-        type: message.type,
-        reply_to: message.context?.id || null,
-        context: message.context || null
-      };
+            const messagesQuery = await contactRef.collection('messages').where('id', '==', originalMessageId).limit(1).get();
 
-      if (message.type === 'text') {
-          messageData.text = message.text.body;
-      } else if (message.type === 'audio' && message.audio && message.audio.id) {
-          messageData.audio = {
-              id: message.audio.id,
-              mime_type: message.audio.mime_type || "audio/ogg",
-              voice: !!message.audio.voice
-          };
-          messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
-          messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-      } else {
-          messageData.text = `Mensaje multimedia (${message.type})`;
-      }
+            if (!messagesQuery.empty) {
+                const messageDocRef = messagesQuery.docs[0].ref;
+                if (reactionEmoji) {
+                    await messageDocRef.update({ reaction: reactionEmoji });
+                    console.log(`[REACTION] Reacción '${reactionEmoji}' guardada para el mensaje ${originalMessageId}.`);
+                } else {
+                    await messageDocRef.update({ reaction: admin.firestore.FieldValue.delete() });
+                    console.log(`[REACTION] Reacción eliminada para el mensaje ${originalMessageId}.`);
+                }
+            }
+        // --- FIN DE LA MODIFICACIÓN PARA REACCIONES ---
+        } else if (value.contacts) {
+            console.log('[DEBUG] Objeto de mensaje completo recibido de Meta:', JSON.stringify(message, null, 2));
+            const contactInfo = value.contacts[0];
 
-      await contactRef.collection('messages').add(messageData);
+            if (from === PHONE_NUMBER_ID) {
+                console.log('[LOG] Mensaje saliente ignorado.');
+                return res.sendStatus(200);
+            }
+            
+            const messageData = {
+                timestamp: admin.firestore.Timestamp.now(),
+                from,
+                status: 'received',
+                id: message.id,
+                type: message.type,
+                reply_to: message.context?.id || null,
+                context: message.context || null
+            };
 
-      const contactUpdateData = {
-        name: contactInfo.profile?.name,
-        wa_id: contactInfo.wa_id,
-        lastMessage: messageData.text,
-        lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-        unreadCount: admin.firestore.FieldValue.increment(1)
-      };
-      if (message.referral) contactUpdateData.adReferral = message.referral;
+            if (message.type === 'text') {
+                messageData.text = message.text.body;
+            } else if (message.type === 'audio' && message.audio && message.audio.id) {
+                messageData.audio = {
+                    id: message.audio.id,
+                    mime_type: message.audio.mime_type || "audio/ogg",
+                    voice: !!message.audio.voice
+                };
+                messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+                messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+            } else {
+                messageData.text = `Mensaje multimedia (${message.type})`;
+            }
 
-      const previousDoc = await contactRef.get();
-      const isNewContact = !previousDoc.exists;
-      await contactRef.set(contactUpdateData, { merge: true });
-      console.log(`[LOG] Mensaje de ${from} guardado.`);
+            await contactRef.collection('messages').add(messageData);
 
-      const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
-      if (cpHandled) {
-          console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
-          return res.sendStatus(200);
-      }
+            const contactUpdateData = {
+                name: contactInfo.profile?.name,
+                wa_id: contactInfo.wa_id,
+                lastMessage: messageData.text,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                unreadCount: admin.firestore.FieldValue.increment(1)
+            };
+            if (message.referral) contactUpdateData.adReferral = message.referral;
 
-      if (isNewContact) {
-        let adResponseSent = false;
-        if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
-          const adId = message.referral.source_id;
-          console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
-          const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
-          if (!snapshot.empty) {
-            const adResponseData = snapshot.docs[0].data();
-            try {
-              await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-              adResponseSent = true;
-            } catch (error) { console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message); }
-          } else { console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`); }
+            const previousDoc = await contactRef.get();
+            const isNewContact = !previousDoc.exists;
+            await contactRef.set(contactUpdateData, { merge: true });
+            console.log(`[LOG] Mensaje de ${from} guardado.`);
+
+            const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
+            if (cpHandled) {
+                console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
+                return res.sendStatus(200);
+            }
+
+            if (isNewContact) {
+                let adResponseSent = false;
+                if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
+                const adId = message.referral.source_id;
+                console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
+                const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+                if (!snapshot.empty) {
+                    const adResponseData = snapshot.docs[0].data();
+                    try {
+                    await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                    adResponseSent = true;
+                    } catch (error) { console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message); }
+                } else { console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`); }
+                }
+
+                if (!adResponseSent) {
+                const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
+                if (!alreadyWelcomed) {
+                    try {
+                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                    await contactRef.update({ welcomed: true });
+                    } catch (error) { console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message); }
+                } else { console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`); }
+                }
+            } else {
+                await triggerAutoReplyAI(message, contactRef);
+            }
         }
-
-        if (!adResponseSent) {
-          const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
-          if (!alreadyWelcomed) {
-            try {
-              await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-              await contactRef.update({ welcomed: true });
-            } catch (error) { console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message); }
-          } else { console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`); }
-        }
-      } else {
-        await triggerAutoReplyAI(message, contactRef);
-      }
     } else if (value && value.statuses) {
       const statusUpdate = value.statuses[0];
       const messageId = statusUpdate.id;
@@ -605,9 +626,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const messageId = response.data.messages[0].id;
             
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
-            // --- INICIO DE LA CORRECCIÓN ---
-            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid }; // Cambiado de message_id a id
-            // --- FIN DE LA CORRECCIÓN ---
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             await contactRef.collection('messages').add(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
@@ -624,9 +643,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
                 fileType: sentMessageData.fileTypeForDb
             };
         
-            // --- INICIO DE LA CORRECCIÓN ---
-            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid }; // Cambiado de message_id a id
-            // --- FIN DE LA CORRECCIÓN ---
+            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
             
             await contactRef.collection('messages').add(messageToSave);
