@@ -47,6 +47,32 @@ const corsOptions = {
 app.use(cors(corsOptions));
 // --- FIN: CORRECCIÓN DE CORS ---
 
+// === BEGIN: Media proxy for WhatsApp audio/video/docs ===
+app.get("/api/wa/media/:mediaId", async (req, res) => {
+  try {
+    const { mediaId } = req.params;
+    // 1) get temporary URL for media
+    const meta = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+    });
+    const mediaUrl = meta.data && meta.data.url;
+    if (!mediaUrl) return res.status(404).json({ error: "MEDIA_URL_NOT_FOUND" });
+    // 2) stream content
+    const mediaResp = await axios.get(mediaUrl, {
+      headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+      responseType: "stream",
+    });
+    res.setHeader("Content-Type", mediaResp.headers["content-type"] || "application/octet-stream");
+    res.setHeader("Cache-Control", "no-store");
+    mediaResp.data.pipe(res);
+  } catch (err) {
+    console.error("MEDIA_FETCH_ERROR:", err?.response?.data || err.message);
+    res.status(500).json({ error: "MEDIA_FETCH_ERROR" });
+  }
+});
+// === END: Media proxy ===
+
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -475,7 +501,16 @@ app.post('/webhook', async (req, res) => {
       ,
         reply_to: message.context?.id || null,
         context: message.context || null
-      };
+      }
+      ;
+      if (message.type === "audio" && message.audio && message.audio.id) {
+        messageData.audio = {
+          id: message.audio.id,
+          mime_type: message.audio.mime_type || "audio/ogg",
+          voice: !!message.audio.voice
+        };
+        messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+      }
       await contactRef.collection('messages').add(messageData);
 
       const contactUpdateData = {
