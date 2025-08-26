@@ -942,7 +942,6 @@
                             </label>
                         </div>
                     </div>
-                    <!-- START: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
                     <div class="settings-card">
                         <h2 class="text-xl font-bold mb-4">Integraciones</h2>
                         <div>
@@ -954,7 +953,34 @@
                             </div>
                         </div>
                     </div>
-                    <!-- END: NUEVA SECCIÓN PARA GOOGLE SHEETS -->
+                    <!-- START: NUEVA SECCIÓN PARA SIMULADOR DE ANUNCIOS -->
+                    <div class="settings-card">
+                        <h2 class="text-xl font-bold mb-4">Herramientas de Prueba</h2>
+                        <form id="simulate-ad-form">
+                            <div>
+                                <label class="font-semibold">Simular Mensaje de Anuncio</label>
+                                <p class="text-sm text-gray-500 mb-3">Prueba cómo responde el sistema a un nuevo mensaje de un anuncio. Usa un número de 12 o 13 dígitos (código de país + número).</p>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
+                                    <div>
+                                        <label for="sim-phone-number" class="text-xs font-bold">Número de Teléfono (Ej: 521618...)</label>
+                                        <input type="text" id="sim-phone-number" class="!mb-0" placeholder="521..." required>
+                                    </div>
+                                    <div>
+                                        <label for="sim-ad-id" class="text-xs font-bold">ID del Anuncio</label>
+                                        <input type="text" id="sim-ad-id" class="!mb-0" placeholder="120..." required>
+                                    </div>
+                                </div>
+                                 <div>
+                                    <label for="sim-message-text" class="text-xs font-bold">Texto del Mensaje</label>
+                                    <input type="text" id="sim-message-text" class="!mb-0" value="Hola, quiero más información." required>
+                                </div>
+                                <button id="simulate-ad-btn" type="submit" class="btn btn-secondary mt-4">
+                                    <i class="fas fa-paper-plane mr-2"></i> Enviar Simulación
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                    <!-- END: NUEVA SECCIÓN PARA SIMULADOR DE ANUNCIOS -->
                 </div>
             </div>
         `;
@@ -1611,7 +1637,6 @@
             if (botToggle) {
                 botToggle.checked = state.globalBotSettings.isActive;
             }
-            // START: NUEVA LÓGICA PARA GOOGLE SHEETS
             const sheetIdInput = document.getElementById('google-sheet-id-input');
             if (sheetIdInput) {
                 sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
@@ -1620,7 +1645,12 @@
             if (saveSheetIdBtn) {
                 saveSheetIdBtn.addEventListener('click', handleSaveGoogleSheetId);
             }
-            // END: NUEVA LÓGICA PARA GOOGLE SHEETS
+            // START: NUEVA LÓGICA PARA SIMULADOR
+            const simulateAdForm = document.getElementById('simulate-ad-form');
+            if (simulateAdForm) {
+                simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
+            }
+            // END: NUEVA LÓGICA PARA SIMULADOR
         }
 
         function updateCampaignRecipientCount() {
@@ -2958,7 +2988,7 @@
         }
         // --- END: Bot & Knowledge Base Functions ---
 
-        // --- START: NUEVAS FUNCIONES PARA AJUSTES ---
+        // --- START: AJUSTES GENERALES Y SIMULADOR ---
         async function fetchAwayMessageSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/away-message`);
@@ -3016,8 +3046,7 @@
                 if (toggle) toggle.checked = !isActive;
             }
         }
-
-        // --- START: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
+        
         async function fetchGoogleSheetSettings() {
             try {
                 const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`);
@@ -3052,7 +3081,7 @@
                 });
                 if (!response.ok) throw new Error('No se pudo guardar el ID de Google Sheet.');
                 state.googleSheetSettings.googleSheetId = googleSheetId;
-                showError("¡ID de Google Sheet guardado con éxito!"); // Usamos showError para una notificación verde/amarilla
+                showError("¡ID de Google Sheet guardado con éxito!"); 
             } catch (error) {
                 showError(error.message);
             } finally {
@@ -3060,7 +3089,53 @@
                 button.textContent = 'Guardar';
             }
         }
-        // --- END: NUEVAS FUNCIONES PARA GOOGLE SHEETS ---
+
+        async function handleSimulateAdMessage(event) {
+            event.preventDefault();
+            const button = document.getElementById('simulate-ad-btn');
+            const phoneNumber = document.getElementById('sim-phone-number').value.trim();
+            const adId = document.getElementById('sim-ad-id').value.trim();
+            const text = document.getElementById('sim-message-text').value.trim();
+
+            if (!phoneNumber || !adId || !text) {
+                showError("Todos los campos de simulación son obligatorios.");
+                return;
+            }
+
+            if (!/^\d{12,13}$/.test(phoneNumber)) {
+                 showError("El número de teléfono debe tener 12 o 13 dígitos (ej. 5216181234567).");
+                return;
+            }
+
+            button.disabled = true;
+            button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
+
+            try {
+                // This endpoint doesn't exist yet, but we prepare the frontend for it.
+                const response = await fetch(`${API_BASE_URL}/api/test/simulate-ad-message`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ from: phoneNumber, adId: adId, text: text })
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.message || 'Error en la simulación.');
+                }
+
+                alert('¡Simulación enviada! Revisa la lista de chats para ver el nuevo mensaje.');
+                document.getElementById('simulate-ad-form').reset();
+
+            } catch (error) {
+                console.error("Error en la simulación:", error);
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Enviar Simulación';
+            }
+        }
+        // --- END: AJUSTES GENERALES Y SIMULADOR ---
 
     </script>
     
