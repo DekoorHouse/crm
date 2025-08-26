@@ -99,7 +99,7 @@
         .message-action-btn:hover { color: var(--color-primary); }
         .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
         .reactions-container.received-reaction { left: 10px; right: auto; }
-        .reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 10px 8px; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
+        .reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 0 8px 0; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
         .reply-preview p { margin: 0; font-size: 0.85rem; }
         .reply-preview .reply-author { font-weight: 600; color: var(--color-primary); }
         .reply-preview .reply-text { color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -953,10 +953,21 @@
             }
         };
 
+        // --- INICIO DE LA MODIFICACIÓN PARA RESPUESTAS ---
         const RepliedMessagePreviewTemplate = (originalMessage) => {
             if (!originalMessage) return '';
             const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
-            const textPreview = originalMessage.text || (originalMessage.fileType ? `📷 Archivo` : '');
+            
+            let textPreview = originalMessage.text || 'Mensaje'; // Valor por defecto
+            if (originalMessage.type === 'audio') {
+                textPreview = '🎤 Mensaje de voz';
+            } else if (originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) {
+                textPreview = '📷 Imagen';
+            } else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) {
+                textPreview = '🎥 Video';
+            } else if (originalMessage.fileType) { // Otros documentos
+                textPreview = '📄 Documento';
+            }
 
             return `
                 <div class="reply-preview">
@@ -966,7 +977,6 @@
             `;
         };
         
-        // --- INICIO DE LA MODIFICACIÓN PARA AUDIO ---
         const MessageBubbleTemplate = (message) => {
             const isSent = message.from !== state.selectedContactId;
             const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -977,31 +987,29 @@
             let bubbleExtraClass = '';
             let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
             
-            // Parte 1: Renderizar el archivo multimedia si existe
             if (message.type === 'audio' && message.mediaProxyUrl) {
                 contentHTML += `<audio controls class="w-full max-w-xs"><source src="${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
             } else if (message.fileUrl && message.fileType) {
                 if (message.fileType.startsWith('image/')) {
                     contentHTML += `<div class="relative"><img src="${message.fileUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${message.fileUrl}')"><div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
                     bubbleExtraClass = 'has-image';
-                    timeAndStatusHTML = ''; // El tiempo ahora es una superposición en la imagen
+                    timeAndStatusHTML = '';
                 } else if (message.fileType.startsWith('video/')) {
                     const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
-                    const videoMarginClass = message.text ? 'mb-2' : ''; // Añade margen inferior si hay texto
+                    const videoMarginClass = message.text ? 'mb-2' : '';
                     contentHTML += `<video controls class="rounded-lg max-w-xs w-full block ${videoMarginClass}"><source src="${videoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
                 }
             }
 
-            // Parte 2: Renderizar el texto (subtítulo o mensaje normal) si existe
             if (message.text) {
                 const captionPadding = bubbleExtraClass === 'has-image' ? 'p-2' : '';
-                // No mostrar el texto genérico si ya hemos renderizado un control de audio
                 if (message.type !== 'audio') {
                     contentHTML += `<div class="${captionPadding}"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
                 }
             }
             
             let replyPreviewHTML = '';
+            // Lógica para buscar y renderizar el mensaje respondido
             if (message.context && message.context.id) {
                 const originalMessage = state.messages.find(m => m.id === message.context.id);
                 replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
@@ -1035,7 +1043,7 @@
                     </div>
                 </div>`;
         };
-        // --- FIN DE LA MODIFICACIÓN PARA AUDIO ---
+        // --- FIN DE LA MODIFICACIÓN PARA RESPUESTAS ---
         
         const NoteItemTemplate = (note) => {
             const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
