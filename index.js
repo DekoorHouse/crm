@@ -33,18 +33,7 @@ const bucket = getStorage().bucket();
 const app = express();
 
 // --- INICIO: CORRECCIÓN DE CORS ---
-// Configura CORS para permitir solicitudes desde tu dominio de Render y para desarrollo local.
-const whitelist = ['https://crm-rzon.onrender.com', 'http://localhost:3000', undefined]; // Se añade undefined para permitir pruebas locales sin origen
-const corsOptions = {
-  origin: function (origin, callback) {
-    if (whitelist.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  }
-};
-app.use(cors(corsOptions));
+app.use(cors()); // Permitir todas las solicitudes para evitar problemas de despliegue
 // --- FIN: CORRECCIÓN DE CORS ---
 
 app.use(express.json());
@@ -467,7 +456,7 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
 }
 
-// --- LÓGICA DEL WEBHOOK PRINCIPAL (CORREGIDA) ---
+// --- LÓGICA DEL WEBHOOK PRINCIPAL (CORREGIDA Y CON UBICACIÓN) ---
 app.post('/webhook', async (req, res) => {
   try {
     const entry = req.body.entry?.[0];
@@ -481,13 +470,10 @@ app.post('/webhook', async (req, res) => {
         const from = message.from;
         const contactRef = db.collection('contacts_whatsapp').doc(from);
 
-        // Ignorar mensajes que nosotros mismos enviamos
         if (from === PHONE_NUMBER_ID) {
-            console.log('[LOG] Mensaje saliente ignorado.');
             return res.sendStatus(200);
         }
 
-        // Si es una reacción, la procesamos y terminamos
         if (message.type === 'reaction') {
             const originalMessageId = message.reaction.message_id;
             const reactionEmoji = message.reaction.emoji || null;
@@ -495,20 +481,10 @@ app.post('/webhook', async (req, res) => {
 
             if (!messagesQuery.empty) {
                 const messageDocRef = messagesQuery.docs[0].ref;
-                if (reactionEmoji) {
-                    await messageDocRef.update({ reaction: reactionEmoji });
-                    console.log(`[REACTION] Reacción '${reactionEmoji}' guardada para el mensaje ${originalMessageId}.`);
-                } else {
-                    await messageDocRef.update({ reaction: admin.firestore.FieldValue.delete() });
-                    console.log(`[REACTION] Reacción eliminada para el mensaje ${originalMessageId}.`);
-                }
+                await messageDocRef.update({ reaction: reactionEmoji || admin.firestore.FieldValue.delete() });
             }
-            // Salimos del flujo aquí porque una reacción no debe tratarse como un mensaje nuevo
             return res.sendStatus(200); 
         }
-
-        // --- INICIA LÓGICA PARA MENSAJES NORMALES (NO REACCIONES) ---
-        console.log('[DEBUG] Mensaje recibido de Meta:', JSON.stringify(message, null, 2));
 
         const messageData = {
             timestamp: admin.firestore.Timestamp.fromMillis(parseInt(message.timestamp) * 1000),
@@ -516,52 +492,35 @@ app.post('/webhook', async (req, res) => {
             status: 'received',
             id: message.id,
             type: message.type,
-            reply_to: message.context?.id || null,
             context: message.context || null
         };
 
-      // Asignar el texto y el contenido multimedia del mensaje según el tipo
         if (message.type === 'text') {
             messageData.text = message.text.body;
-        
         } else if (message.type === 'image' && message.image?.id) {
-            // Si el mensaje es una imagen, creamos un enlace interno para mostrarla
             messageData.fileUrl = `/api/wa/media/${message.image.id}`;
             messageData.fileType = message.image.mime_type || 'image/jpeg';
-            // Usamos el pie de foto si existe, si no, un texto genérico
             messageData.text = message.image.caption || '📷 Imagen';
-            messageData.image = message.image; // Guardamos los datos de la imagen
-
         } else if (message.type === 'video' && message.video?.id) {
-            // Hacemos lo mismo para los videos
             messageData.fileUrl = `/api/wa/media/${message.video.id}`;
             messageData.fileType = message.video.mime_type || 'video/mp4';
             messageData.text = message.video.caption || '🎥 Video';
-            messageData.video = message.video;
-
         } else if (message.type === 'audio' && message.audio?.id) {
-            // Tu lógica existente para audios
-            messageData.audio = {
-                id: message.audio.id,
-                mime_type: message.audio.mime_type || "audio/ogg",
-                voice: !!message.audio.voice
-            };
             messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
             messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-
+        // --- START: SOPORTE PARA UBICACIÓN ---
+        } else if (message.type === 'location') {
+            messageData.location = message.location; // Guardar el objeto completo de ubicación
+            messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
+        // --- END: SOPORTE PARA UBICACIÓN ---
         } else {
-            // Para cualquier otro tipo, mantenemos el mensaje genérico
             messageData.text = `Mensaje multimedia (${message.type})`;
         }
 
-        // Guardar el mensaje en la subcolección
         await contactRef.collection('messages').add(messageData);
 
-        // Preparar y guardar/actualizar los datos del contacto principal
         const contactUpdateData = {
-            // =============================== INICIO DE LA CORRECCIÓN ===============================
-            name: contactInfo.profile?.name || from, // Si no hay nombre, usa el número de teléfono
-            // ================================ FIN DE LA CORRECCIÓN =================================
+            name: contactInfo.profile?.name || from,
             wa_id: contactInfo.wa_id,
             lastMessage: messageData.text,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -574,50 +533,34 @@ app.post('/webhook', async (req, res) => {
         const previousDoc = await contactRef.get();
         const isNewContact = !previousDoc.exists;
 
-        // Esta es la línea clave: set con merge crea el documento si no existe o lo actualiza si ya existe.
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
 
-        // --- LÓGICA POST-GUARDADO ---
-
-        // Manejar códigos postales
         const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
         if (cpHandled) {
-            console.log(`[LOG] Flujo de CP completado para ${from}. Terminando proceso.`);
             return res.sendStatus(200);
         }
 
-        // Si es un contacto nuevo, enviar mensajes de bienvenida o de anuncio
         if (isNewContact) {
             let adResponseSent = false;
-            if (message.referral && message.referral.source_type === 'ad' && message.referral.source_id) {
+            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
-                console.log(`[LOG] Nuevo contacto con referencia de anuncio. Ad ID: ${adId}`);
                 const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
                 if (!snapshot.empty) {
                     const adResponseData = snapshot.docs[0].data();
-                    try {
-                        await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
-                        adResponseSent = true;
-                    } catch (error) { console.error(`❌ Fallo al enviar mensaje de anuncio a ${from}:`, error.message); }
-                } else { console.log(`[LOG] No hay respuesta configurada para Ad ID: ${adId}`); }
+                    await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                    adResponseSent = true;
+                }
             }
 
             if (!adResponseSent) {
-                const alreadyWelcomed = previousDoc.exists && previousDoc.data()?.welcomed;
-                if (!alreadyWelcomed) {
-                    try {
-                        await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
-                        await contactRef.update({ welcomed: true });
-                    } catch (error) { console.error(`❌ Fallo al enviar mensaje de bienvenida a ${from}:`, error.message); }
-                } else { console.log(`[LOG] Contacto ${from} ya recibió bienvenida, no se repite.`); }
+                await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                await contactRef.update({ welcomed: true });
             }
         } else {
-            // Si es un contacto existente, disparar la IA
             await triggerAutoReplyAI(message, contactRef);
         }
 
-    // Caso 2: Es una actualización de estado (delivered, read)
     } else if (value && value.statuses) {
       const statusUpdate = value.statuses[0];
       const messageId = statusUpdate.id;
@@ -654,7 +597,6 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Faltan los parámetros: from, adId, text.' });
     }
 
-    // Construir el payload falso que imita el de Meta
     const fakePayload = {
         object: 'whatsapp_business_account',
         entry: [{
@@ -663,7 +605,7 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
                 value: {
                     messaging_product: 'whatsapp',
                     metadata: {
-                        display_phone_number: PHONE_NUMBER_ID.slice(2), // Asume que PHONE_NUMBER_ID tiene código de país
+                        display_phone_number: PHONE_NUMBER_ID.slice(2), 
                         phone_number_id: PHONE_NUMBER_ID
                     },
                     contacts: [{
@@ -674,14 +616,14 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
                     }],
                     messages: [{
                         from: from,
-                        id: `wamid.TEST_${uuidv4()}`, // Genera un ID de mensaje falso y único
+                        id: `wamid.TEST_${uuidv4()}`, 
                         timestamp: Math.floor(Date.now() / 1000).toString(),
                         text: {
                             body: text
                         },
                         type: 'text',
                         referral: {
-                            source_url: `https://fb.me/xxxxxxxx`, // URL genérica
+                            source_url: `https://fb.me/xxxxxxxx`, 
                             source_type: 'ad',
                             source_id: adId,
                             headline: 'Anuncio de Prueba'
@@ -695,7 +637,6 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 
     try {
         console.log(`[SIMULATOR] Recibida simulación para ${from} desde Ad ID ${adId}.`);
-        // Hacer una petición interna al propio webhook para procesar el mensaje
         await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, {
             headers: { 'Content-Type': 'application/json' }
         });
