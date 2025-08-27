@@ -54,7 +54,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const wsState = new Map(); // chatId -> { lastIds: {askQty:'', hold:'',}, awaitingAgent:false, lastTime:0 }
 
 const askQtyVariants = [
-  "¡Súper! 😄 ¿Cuántas piezas estás pensando?",
+  "¡Súper! � ¿Cuántas piezas estás pensando?",
   "Claro, te apoyo con precio por volumen 🙌 ¿Cuántas unidades te interesan?",
   "Perfecto 👌 Para cotizar mejor, ¿qué cantidad tienes en mente?",
   "Sí manejamos precio por cantidad 😉 ¿Cuántas piezas buscas?",
@@ -976,13 +976,26 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 // =================================================================
 
 
-// --- ENDPOINT PARA OBTENER PLANTILLAS DE WHATSAPP ---
+// --- ENDPOINT PARA OBTENER PLANTILLAS DE WHATSAPP (CORREGIDO) ---
 app.get('/api/whatsapp-templates', async (req, res) => {
     if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
     const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
     try {
         const response = await axios.get(url, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
-        const templates = response.data.data.filter(t => t.status !== 'REJECTED').map(t => ({ name: t.name, language: t.language, status: t.status, category: t.category, components: t.components.map(c => ({ type: c.type, text: c.text })) }));
+        const templates = response.data.data
+            .filter(t => t.status === 'APPROVED') // Solo plantillas aprobadas
+            .map(t => ({ 
+                name: t.name, 
+                language: t.language, 
+                status: t.status, 
+                category: t.category, 
+                // CORRECCIÓN: Mapear correctamente los componentes incluyendo el 'format'
+                components: t.components.map(c => ({ 
+                    type: c.type, 
+                    text: c.text,
+                    format: c.format // Esta línea es la corrección clave
+                })) 
+            }));
         res.status(200).json({ success: true, templates });
     } catch (error) {
         console.error('Error al obtener plantillas de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
