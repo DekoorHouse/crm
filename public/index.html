@@ -914,16 +914,24 @@
                 </div>
                 <div class="max-w-2xl">
                     <div class="campaign-form-section">
-                        <label for="campaign-image-tag-select">1. Enviar a contactos con la etiqueta:</label>
-                        <select id="campaign-image-tag-select" onchange="updateCampaignRecipientCount('image')" class="!mb-2"></select>
-                        <p id="recipient-count-display-image">Se enviará a 0 contactos.</p>
+                        <label class="font-bold">1. Enviar a (elige una opción):</label>
+                        <div class="mt-2 p-4 border rounded-lg bg-gray-50">
+                            <label for="campaign-image-tag-select" class="text-sm font-semibold">Contactos con la etiqueta:</label>
+                            <select id="campaign-image-tag-select" onchange="updateCampaignRecipientCount('image')" class="!mb-2"></select>
+                            <p id="recipient-count-display-image">Se enviará a 0 contactos.</p>
+                        </div>
+                        <p class="text-center my-3 font-bold text-gray-400">Ó</p>
+                        <div class="p-4 border rounded-lg bg-gray-50">
+                            <label for="campaign-image-phone-input" class="text-sm font-semibold">Un número de teléfono específico:</label>
+                            <input type="text" id="campaign-image-phone-input" oninput="updateCampaignRecipientCount('image')" placeholder="Ej: 521..." class="!mb-0">
+                        </div>
                     </div>
                     <div class="campaign-form-section">
-                        <label for="campaign-image-template-select">2. Seleccionar Plantilla de Mensaje (con cabecera de imagen):</label>
+                        <label for="campaign-image-template-select" class="font-bold">2. Seleccionar Plantilla de Mensaje (con cabecera de imagen):</label>
                         <select id="campaign-image-template-select" class="!mb-2"></select>
                     </div>
                     <div class="campaign-form-section">
-                        <label for="campaign-image-url-input">3. URL de la Imagen:</label>
+                        <label for="campaign-image-url-input" class="font-bold">3. URL de la Imagen:</label>
                         <input type="text" id="campaign-image-url-input" placeholder="https://ejemplo.com/imagen.jpg" class="!mb-2">
                     </div>
                     <div class="campaign-form-section">
@@ -2114,8 +2122,24 @@
         function updateCampaignRecipientCount(type = 'text') {
             const prefix = type === 'image' ? 'image-' : '';
             const tagSelect = document.getElementById(`campaign-${prefix}tag-select`);
+            const phoneInput = document.getElementById(`campaign-${prefix}phone-input`);
             const display = document.getElementById(`recipient-count-display-${type === 'image' ? 'image' : ''}`);
-            if (!tagSelect || !display) return;
+            if (!display) return;
+
+            // Si se escribe un número, desactiva la selección de etiquetas
+            if (phoneInput && phoneInput.value.trim()) {
+                if (tagSelect) {
+                    tagSelect.value = 'all'; // Reinicia la selección
+                    tagSelect.disabled = true;
+                }
+                display.textContent = `Se enviará a 1 número.`;
+                return;
+            }
+
+            // Si el campo de número está vacío, reactiva la selección de etiquetas
+            if (tagSelect) {
+                tagSelect.disabled = false;
+            }
 
             const selectedTagKey = tagSelect.value;
             let recipients = [];
@@ -3060,17 +3084,22 @@
         }
 
         // --- INICIO: Nueva función para enviar campañas con imagen ---
-        async function handleSendCampaignWithImage() {
+      async function handleSendCampaignWithImage() {
             const tagSelect = document.getElementById('campaign-image-tag-select');
             const templateSelect = document.getElementById('campaign-image-template-select');
             const imageUrlInput = document.getElementById('campaign-image-url-input');
+            const phoneInput = document.getElementById('campaign-image-phone-input');
             const button = document.getElementById('send-campaign-image-btn');
 
-            const selectedTagKey = tagSelect.value;
             const templateName = templateSelect.value;
             const imageUrl = imageUrlInput.value.trim();
-            
-            if (!templateName) { showError("Por favor, selecciona una plantilla para enviar."); return; }
+            const phoneNumber = phoneInput.value.trim();
+            const selectedTagKey = tagSelect.value;
+
+            // BUSCA EL OBJETO COMPLETO DE LA PLANTILLA EN EL ESTADO
+            const templateObject = state.templates.find(t => t.name === templateName);
+
+            if (!templateObject) { showError("Por favor, selecciona una plantilla válida."); return; }
             if (!imageUrl) { showError("Por favor, ingresa la URL de la imagen."); return; }
 
             let recipients = [];
@@ -3080,18 +3109,30 @@
                 recipients = state.contacts.filter(c => c.status === selectedTagKey);
             }
             
-            if (recipients.length === 0) { showError("No hay contactos en la etiqueta seleccionada para enviar la campaña."); return; }
+            // Valida que haya al menos un destinatario
+            if (recipients.length === 0 && !phoneNumber) {
+                showError("No hay contactos en la etiqueta seleccionada y no se especificó un número de teléfono.");
+                return;
+            }
 
-            const contactIds = recipients.map(c => c.id);
+            const contactIds = phoneNumber ? [] : recipients.map(c => c.id);
 
             button.disabled = true;
             button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...`;
 
             try {
+                // CONSTRUYE EL PAYLOAD CORRECTO
+                const payload = {
+                    contactIds,
+                    templateObject, // Envía el objeto completo
+                    imageUrl,
+                    phoneNumber     // Envía el número de teléfono
+                };
+
                 const response = await fetch(`${API_BASE_URL}/api/campaigns/send-template-with-image`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ contactIds, templateName, imageUrl })
+                    body: JSON.stringify(payload)
                 });
 
                 const result = await response.json();
