@@ -1497,6 +1497,7 @@ app.get('/api/metrics', async (req, res) => {
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
+            .where('from', '!=', PHONE_NUMBER_ID) // CORRECCIÓN: Usar '!=' para filtrar mensajes entrantes
             .get();
 
         // 4. Procesar los mensajes para agruparlos por día y etiqueta
@@ -1504,32 +1505,29 @@ app.get('/api/metrics', async (req, res) => {
 
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
-            // Filtrar solo mensajes entrantes (de clientes)
-            if (message.from !== PHONE_NUMBER_ID) {
-                const timestamp = message.timestamp.toDate();
-                const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+            const timestamp = message.timestamp.toDate();
+            const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
-                // Inicializar el objeto para la fecha si no existe
-                if (!metricsByDate[dateKey]) {
-                    metricsByDate[dateKey] = {
-                        totalMessages: 0,
-                        tags: {}
-                    };
-                }
-
-                // Incrementar el total de mensajes para la fecha
-                metricsByDate[dateKey].totalMessages++;
-
-                // Obtener la etiqueta del contacto que envió el mensaje
-                const contactId = doc.ref.parent.parent.id;
-                const tag = contactTags[contactId] || 'sin_etiqueta';
-
-                // Incrementar el contador para esa etiqueta en esa fecha
-                if (!metricsByDate[dateKey].tags[tag]) {
-                    metricsByDate[dateKey].tags[tag] = 0;
-                }
-                metricsByDate[dateKey].tags[tag]++;
+            // Inicializar el objeto para la fecha si no existe
+            if (!metricsByDate[dateKey]) {
+                metricsByDate[dateKey] = {
+                    totalMessages: 0,
+                    tags: {}
+                };
             }
+
+            // Incrementar el total de mensajes para la fecha
+            metricsByDate[dateKey].totalMessages++;
+
+            // Obtener la etiqueta del contacto que envió el mensaje
+            const contactId = doc.ref.parent.parent.id;
+            const tag = contactTags[contactId] || 'sin_etiqueta';
+
+            // Incrementar el contador para esa etiqueta en esa fecha
+            if (!metricsByDate[dateKey].tags[tag]) {
+                metricsByDate[dateKey].tags[tag] = 0;
+            }
+            metricsByDate[dateKey].tags[tag]++;
         });
 
         // 5. Formatear la salida al formato de array deseado
