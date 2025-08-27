@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO Y LÓGICA DE MAYOREO
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO, LÓGICA DE MAYOREO Y MÉTRICAS
 
 require('dotenv').config();
 const express = require('express');
@@ -1472,6 +1472,80 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     } catch (error) {
         console.error('Error al generar respuesta con IA:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
+    }
+});
+
+// --- NUEVO ENDPOINT PARA MÉTRICAS ---
+app.get('/api/metrics', async (req, res) => {
+    try {
+        // 1. Definir el rango de fechas (últimos 30 días)
+        const endDate = new Date();
+        const startDate = new Date();
+        startDate.setDate(endDate.getDate() - 30);
+
+        const startTimestamp = admin.firestore.Timestamp.fromDate(startDate);
+        const endTimestamp = admin.firestore.Timestamp.fromDate(endDate);
+
+        // 2. Obtener todos los contactos para mapear ID a etiqueta (status)
+        const contactsSnapshot = await db.collection('contacts_whatsapp').get();
+        const contactTags = {};
+        contactsSnapshot.forEach(doc => {
+            contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
+        });
+
+        // 3. Query de grupo para obtener todos los mensajes entrantes en el rango de fechas
+        const messagesSnapshot = await db.collectionGroup('messages')
+            .where('timestamp', '>=', startTimestamp)
+            .where('timestamp', '<=', endTimestamp)
+            .get();
+
+        // 4. Procesar los mensajes para agruparlos por día y etiqueta
+        const metricsByDate = {};
+
+        messagesSnapshot.forEach(doc => {
+            const message = doc.data();
+            // Filtrar solo mensajes entrantes (de clientes)
+            if (message.from !== PHONE_NUMBER_ID) {
+                const timestamp = message.timestamp.toDate();
+                const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
+
+                // Inicializar el objeto para la fecha si no existe
+                if (!metricsByDate[dateKey]) {
+                    metricsByDate[dateKey] = {
+                        totalMessages: 0,
+                        tags: {}
+                    };
+                }
+
+                // Incrementar el total de mensajes para la fecha
+                metricsByDate[dateKey].totalMessages++;
+
+                // Obtener la etiqueta del contacto que envió el mensaje
+                const contactId = doc.ref.parent.parent.id;
+                const tag = contactTags[contactId] || 'sin_etiqueta';
+
+                // Incrementar el contador para esa etiqueta en esa fecha
+                if (!metricsByDate[dateKey].tags[tag]) {
+                    metricsByDate[dateKey].tags[tag] = 0;
+                }
+                metricsByDate[dateKey].tags[tag]++;
+            }
+        });
+
+        // 5. Formatear la salida al formato de array deseado
+        const formattedMetrics = Object.keys(metricsByDate)
+            .map(date => ({
+                date: date,
+                totalMessages: metricsByDate[date].totalMessages,
+                tags: metricsByDate[date].tags
+            }))
+            .sort((a, b) => new Date(a.date) - new Date(b.date)); // Ordenar por fecha
+
+        res.status(200).json({ success: true, data: formattedMetrics });
+
+    } catch (error) {
+        console.error('❌ Error al obtener las métricas:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener las métricas.' });
     }
 });
 
