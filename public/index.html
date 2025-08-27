@@ -3432,7 +3432,7 @@
                 function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
-                        document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
+            document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
             modal.classList.remove('hidden');
             form.onsubmit = handleSaveBotSettings;
         }
