@@ -389,6 +389,12 @@
                         <i class="fas fa-bullhorn"></i>
                         <span class="sidebar-text">Campañas</span>
                     </a>
+                    <!-- INICIO: Nuevo enlace de menú para campañas con imagen -->
+                    <a onclick="navigateTo('campanas-imagen')" data-view="campanas-imagen" class="nav-item">
+                        <i class="fas fa-image"></i>
+                        <span class="sidebar-text">Campaña con Imagen</span>
+                    </a>
+                    <!-- FIN: Nuevo enlace de menú -->
                     <a onclick="navigateTo('mensajes-ads')" data-view="mensajes-ads" class="nav-item">
                         <i class="fas fa-ad"></i>
                         <span class="sidebar-text">Mensajes Ads</span>
@@ -878,7 +884,7 @@
         const CampaignsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
-                    <h1>Crear Campaña</h1>
+                    <h1>Crear Campaña (Solo Texto)</h1>
                 </div>
                 <div class="max-w-2xl">
                     <div class="campaign-form-section">
@@ -900,6 +906,37 @@
             </div>
         `;
         
+        // --- INICIO: Nueva plantilla para campañas con imagen ---
+        const CampaignsWithImageViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Crear Campaña con Imagen</h1>
+                </div>
+                <div class="max-w-2xl">
+                    <div class="campaign-form-section">
+                        <label for="campaign-image-tag-select">1. Enviar a contactos con la etiqueta:</label>
+                        <select id="campaign-image-tag-select" onchange="updateCampaignRecipientCount('image')" class="!mb-2"></select>
+                        <p id="recipient-count-display-image">Se enviará a 0 contactos.</p>
+                    </div>
+                    <div class="campaign-form-section">
+                        <label for="campaign-image-template-select">2. Seleccionar Plantilla de Mensaje (con cabecera de imagen):</label>
+                        <select id="campaign-image-template-select" class="!mb-2"></select>
+                    </div>
+                    <div class="campaign-form-section">
+                        <label for="campaign-image-url-input">3. URL de la Imagen:</label>
+                        <input type="text" id="campaign-image-url-input" placeholder="https://ejemplo.com/imagen.jpg" class="!mb-2">
+                    </div>
+                    <div class="campaign-form-section">
+                        <button id="send-campaign-image-btn" onclick="handleSendCampaignWithImage()" class="btn btn-primary btn-lg">
+                            <i class="fas fa-paper-plane mr-2"></i>
+                            Enviar Campaña con Imagen
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        // --- FIN: Nueva plantilla ---
+
         const MensajesAdsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
@@ -1588,6 +1625,12 @@
                     mainViewContainer.innerHTML = CampaignsViewTemplate();
                     renderCampaignsView();
                     break;
+                // --- INICIO: Nuevo caso para la vista de campañas con imagen ---
+                case 'campanas-imagen':
+                    mainViewContainer.innerHTML = CampaignsWithImageViewTemplate();
+                    renderCampaignsWithImageView();
+                    break;
+                // --- FIN: Nuevo caso ---
                 case 'mensajes-ads':
                     mainViewContainer.innerHTML = MensajesAdsViewTemplate();
                     renderAdResponsesView();
@@ -1734,6 +1777,24 @@
             }
             updateCampaignRecipientCount();
         }
+
+        // --- INICIO: Nueva función para renderizar la vista de campañas con imagen ---
+        function renderCampaignsWithImageView() {
+            if (state.activeView !== 'campanas-imagen') return;
+            const tagSelect = document.getElementById('campaign-image-tag-select');
+            const templateSelect = document.getElementById('campaign-image-template-select');
+
+            if (tagSelect) {
+                tagSelect.innerHTML = '<option value="all">Todos los contactos</option>' + state.tags.map(tag => `<option value="${tag.key}">${tag.label}</option>`).join('');
+            }
+            if (templateSelect) {
+                // Filtramos para mostrar solo plantillas que tengan un componente HEADER de tipo IMAGE
+                const imageTemplates = state.templates.filter(t => t.components.some(c => c.type === 'HEADER' && c.format === 'IMAGE'));
+                templateSelect.innerHTML = '<option value="">-- Selecciona una plantilla --</option>' + imageTemplates.map(t => `<option value='${t.name}'>${t.name} (${t.language})</option>`).join('');
+            }
+            updateCampaignRecipientCount('image');
+        }
+        // --- FIN: Nueva función ---
 
         function renderQuickRepliesView() {
             if (state.activeView !== 'respuestas-rapidas') return;
@@ -2050,9 +2111,10 @@
         }
 
 
-        function updateCampaignRecipientCount() {
-            const tagSelect = document.getElementById('campaign-tag-select');
-            const display = document.getElementById('recipient-count-display');
+        function updateCampaignRecipientCount(type = 'text') {
+            const prefix = type === 'image' ? 'image-' : '';
+            const tagSelect = document.getElementById(`campaign-${prefix}tag-select`);
+            const display = document.getElementById(`recipient-count-display-${type === 'image' ? 'image' : ''}`);
             if (!tagSelect || !display) return;
 
             const selectedTagKey = tagSelect.value;
@@ -2996,6 +3058,56 @@
                 button.innerHTML = `<i class="fas fa-paper-plane mr-2"></i> Enviar Campaña`;
             }
         }
+
+        // --- INICIO: Nueva función para enviar campañas con imagen ---
+        async function handleSendCampaignWithImage() {
+            const tagSelect = document.getElementById('campaign-image-tag-select');
+            const templateSelect = document.getElementById('campaign-image-template-select');
+            const imageUrlInput = document.getElementById('campaign-image-url-input');
+            const button = document.getElementById('send-campaign-image-btn');
+
+            const selectedTagKey = tagSelect.value;
+            const templateName = templateSelect.value;
+            const imageUrl = imageUrlInput.value.trim();
+            
+            if (!templateName) { showError("Por favor, selecciona una plantilla para enviar."); return; }
+            if (!imageUrl) { showError("Por favor, ingresa la URL de la imagen."); return; }
+
+            let recipients = [];
+            if (selectedTagKey === 'all') {
+                recipients = state.contacts;
+            } else {
+                recipients = state.contacts.filter(c => c.status === selectedTagKey);
+            }
+            
+            if (recipients.length === 0) { showError("No hay contactos en la etiqueta seleccionada para enviar la campaña."); return; }
+
+            const contactIds = recipients.map(c => c.id);
+
+            button.disabled = true;
+            button.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...`;
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/campaigns/send-template-with-image`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contactIds, templateName, imageUrl })
+                });
+
+                const result = await response.json();
+                if (!response.ok || !result.success) { throw new Error(result.message || "Ocurrió un error en el servidor."); }
+
+                alert(`Campaña con imagen enviada.\n\nÉxitos: ${result.results.successful.length}\nFallos: ${result.results.failed.length}`);
+                
+            } catch (error) {
+                console.error("Error al enviar la campaña con imagen:", error);
+                showError(error.message);
+            } finally {
+                button.disabled = false;
+                button.innerHTML = `<i class="fas fa-paper-plane mr-2"></i> Enviar Campaña con Imagen`;
+            }
+        }
+        // --- FIN: Nueva función ---
 
         function toggleTagSidebar() {
             state.isTagSidebarOpen = !state.isTagSidebarOpen;
