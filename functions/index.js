@@ -1472,7 +1472,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     }
 });
 
-// --- NUEVO ENDPOINT PARA MÉTRICAS ---
+// --- NUEVO ENDPOINT PARA MÉTRICAS (CORREGIDO) ---
 app.get('/api/metrics', async (req, res) => {
     try {
         // 1. Definir el rango de fechas (últimos 30 días)
@@ -1490,11 +1490,11 @@ app.get('/api/metrics', async (req, res) => {
             contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
         });
 
-        // 3. Query de grupo para obtener todos los mensajes entrantes en el rango de fechas
+        // 3. Query de grupo para obtener TODOS los mensajes en el rango de fechas.
+        //    Se quita el filtro '!=' para evitar errores de índice.
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
-            .where('from', '!=', PHONE_NUMBER_ID) // CORRECCIÓN: Usar '!=' para filtrar mensajes entrantes
             .get();
 
         // 4. Procesar los mensajes para agruparlos por día y etiqueta
@@ -1502,6 +1502,14 @@ app.get('/api/metrics', async (req, res) => {
 
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
+            
+            // >>> INICIO DE LA MODIFICACIÓN CLAVE <<<
+            // 4a. Filtrar los mensajes salientes aquí, en el código.
+            if (message.from === PHONE_NUMBER_ID) {
+                return; // Ignora los mensajes enviados por el bot/agente y continúa con el siguiente
+            }
+            // >>> FIN DE LA MODIFICACIÓN CLAVE <<<
+
             const timestamp = message.timestamp.toDate();
             const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
