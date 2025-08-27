@@ -1493,11 +1493,10 @@ app.get('/api/metrics', async (req, res) => {
             contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
         });
 
-        // 3. Query de grupo para obtener todos los mensajes entrantes en el rango de fechas
+        // 3. Query de grupo para obtener todos los mensajes en el rango de fechas (simplificada)
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
-            .where('from', '!=', PHONE_NUMBER_ID) // CORRECCIÓN: Usar '!=' para filtrar mensajes entrantes
             .get();
 
         // 4. Procesar los mensajes para agruparlos por día y etiqueta
@@ -1505,6 +1504,12 @@ app.get('/api/metrics', async (req, res) => {
 
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
+            
+            // Se filtra aquí en lugar de en la consulta para evitar errores de índice
+            if (message.from === PHONE_NUMBER_ID) {
+                return; // Omitir mensajes salientes
+            }
+
             const timestamp = message.timestamp.toDate();
             const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
 
