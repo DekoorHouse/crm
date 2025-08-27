@@ -11,19 +11,18 @@ const crypto = require('crypto');
 const fetch = require('node-fetch');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid'); // Necesario para nombres de archivo únicos
+const functions = require('firebase-functions'); // Agregado para Firebase
 
 // --- CONFIGURACIÓN DE FIREBASE ---
+// En Firebase Functions, la inicialización es automática si no hay apps previas.
 try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-      storageBucket: 'pedidos-con-gemini.firebasestorage.app'
-    });
-    console.log('✅ Conexión con Firebase (Firestore y Storage) establecida.');
-} catch (error) {
-    console.error('❌ ERROR CRÍTICO: No se pudo inicializar Firebase. Revisa la variable de entorno FIREBASE_SERVICE_ACCOUNT_JSON.', error.message);
-    process.exit(1); // Detiene la aplicación si Firebase no puede inicializar
+    if (!admin.apps.length) {
+        admin.initializeApp();
+    }
+} catch (e) {
+    console.error('Error de inicialización de Firebase Admin:', e);
 }
+
 
 const db = admin.firestore();
 db.settings({ ignoreUndefinedProperties: true });
@@ -31,8 +30,12 @@ const bucket = getStorage().bucket();
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
-app.use(cors());
+// Usar cors({ origin: true }) es importante en Cloud Functions para permitir peticiones
+app.use(cors({ origin: true }));
 app.use(express.json());
+
+// Esta línea es para servir archivos estáticos. En un entorno de Cloud Functions,
+// el frontend se sirve generalmente con Firebase Hosting, por lo que esta ruta podría no funcionar como se espera.
 app.use(express.static(path.join(__dirname, 'public')));
 
 
@@ -224,18 +227,10 @@ async function checkCoverage(postalCode) {
             const coverageZips = rows.flat();
             if (coverageZips.includes(postalCode.toString())) {
                 console.log(`[LOG] Cobertura ENCONTRADA para ${postalCode}.`);
-                return `✅ _¡Excelente!_ 🎉
-
-✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨
-
-Mañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨
-
-El ENVIO ES GRATIS y *tu pedido llegará entre 5 y 7 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago  y enviemos la guia de envio. 🚛💨 ${postalCode}.`;
+                return `✅ _¡Excelente!_ 🎉\n\n✅ *¡Ya hemos enviado varias veces a tu zona!* 📦✨\n\nMañana te enviaremos la foto de tu pedido personalizado para que puedas realizar tu pago y enviarlo.✨\n\nEl ENVIO ES GRATIS y *tu pedido llegará entre 5 y 7 días hábiles* (sin contar sábados ni domingos) después de que recibamos tu pago  y enviemos la guia de envio. 🚛💨 ${postalCode}.`;
             } else {
                 console.log(`[LOG] Cobertura NO encontrada para ${postalCode}.`);
-                return `Disculpa ya has recibido pedidos por paqueteria antes alli? ${postalCode}.
-
-Por cual pauqteria?`;
+                return `Disculpa ya has recibido pedidos por paqueteria antes alli? ${postalCode}.\n\nPor cual pauqteria?`;
             }
         }
         console.log(`[LOG] No se encontraron datos en la hoja para el CP ${postalCode}.`);
@@ -748,6 +743,8 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 
     try {
         console.log(`[SIMULATOR] Recibida simulación para ${from} desde Ad ID ${adId}.`);
+        // En un entorno de Functions, no puedes llamar a localhost. La función se llamaría a sí misma.
+        // Esto es principalmente para pruebas locales. Para producción, este endpoint podría no ser necesario.
         await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, {
             headers: { 'Content-Type': 'application/json' }
         });
@@ -1475,7 +1472,7 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
     }
 });
 
-// --- NUEVO ENDPOINT PARA MÉTRICAS ---
+// --- NUEVO ENDPOINT PARA MÉTRICAS (CORREGIDO) ---
 app.get('/api/metrics', async (req, res) => {
     try {
         // 1. Definir el rango de fechas (últimos 30 días)
@@ -1493,7 +1490,8 @@ app.get('/api/metrics', async (req, res) => {
             contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
         });
 
-        // 3. Query de grupo para obtener todos los mensajes en el rango de fechas (simplificada)
+        // 3. Query de grupo para obtener TODOS los mensajes en el rango de fechas.
+        //    Se quita el filtro '!=' para evitar errores de índice.
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
@@ -1505,10 +1503,12 @@ app.get('/api/metrics', async (req, res) => {
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
             
-            // Se filtra aquí en lugar de en la consulta para evitar errores de índice
+            // >>> INICIO DE LA MODIFICACIÓN CLAVE <<<
+            // 4a. Filtrar los mensajes salientes aquí, en el código.
             if (message.from === PHONE_NUMBER_ID) {
-                return; // Omitir mensajes salientes
+                return; // Ignora los mensajes enviados por el bot/agente y continúa con el siguiente
             }
+            // >>> FIN DE LA MODIFICACIÓN CLAVE <<<
 
             const timestamp = message.timestamp.toDate();
             const dateKey = timestamp.toISOString().split('T')[0]; // 'YYYY-MM-DD'
@@ -1554,11 +1554,14 @@ app.get('/api/metrics', async (req, res) => {
 
 
 // --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
+// Esta ruta probablemente no funcionará como se espera en una Cloud Function,
+// ya que las funciones no están diseñadas para servir sitios web completos.
+// Se recomienda usar Firebase Hosting para el frontend.
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 
-app.listen(PORT, () => {
-  console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
-});
+// --- EXPORTAR LA APP PARA FIREBASE FUNCTIONS ---
+// Esta línea reemplaza a app.listen(...) y permite que Firebase maneje el servidor.
+exports.api = functions.https.onRequest(app);
