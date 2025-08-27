@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA Y BOT AUTOMÁTICO
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO Y LÓGICA DE MAYOREO
 
 require('dotenv').config();
 const express = require('express');
@@ -26,16 +26,12 @@ try {
 }
 
 const db = admin.firestore();
-db.settings({ ignoreUndefinedProperties: true }); 
+db.settings({ ignoreUndefinedProperties: true });
 const bucket = getStorage().bucket();
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
-
-// --- INICIO: CORRECCIÓN DE CORS ---
-app.use(cors()); // Permitir todas las solicitudes para evitar problemas de despliegue
-// --- FIN: CORRECCIÓN DE CORS ---
-
+app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -48,6 +44,98 @@ const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+
+
+// =================================================================
+// === INICIO: LÓGICA DE MAYOREO (CÓDIGO FUSIONADO) ================
+// =================================================================
+
+// Estado por conversación (guárdalo en tu store por chatId)
+const wsState = new Map(); // chatId -> { lastIds: {askQty:'', hold:'',}, awaitingAgent:false, lastTime:0 }
+
+const askQtyVariants = [
+  "¡Súper! 😄 ¿Cuántas piezas estás pensando?",
+  "Claro, te apoyo con precio por volumen 🙌 ¿Cuántas unidades te interesan?",
+  "Perfecto 👌 Para cotizar mejor, ¿qué cantidad tienes en mente?",
+  "Sí manejamos precio por cantidad 😉 ¿Cuántas piezas buscas?",
+  "De lujo ✨ ¿Sobre cuántas piezas estaríamos hablando?",
+  "Con gusto 💬 ¿Cuántas unidades te gustaría pedir?"
+];
+
+const holdVariants = [
+  "¡Perfecto! 🙌 Dame un momento para checar el costo 💻.",
+  "Genial, lo reviso y te confirmo en un momento ⏳.",
+  "Gracias, verifico el precio y te escribo enseguida 🧮.",
+  "Excelente, déjame consultar el costo y regreso contigo ✍️."
+];
+
+function chooseVariant(list, avoid) {
+  const pool = list.filter(v => v !== avoid);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function hasWholesaleIntent(text) {
+  const t = text.toLowerCase();
+  return /(mayoreo|precio de mayoreo|al por mayor|varias piezas|precio por cantidad|descuento por volumen)/i.test(t);
+}
+
+function extractQuantity(text) {
+  // números como “50”, “120”, “2”, “20-30”
+  const m = text.match(/\b(\d{1,5})(?:\s*-\s*\d{1,5})?\b/);
+  return m ? m[0] : null;
+}
+
+function handleWholesaleMessage(chatId, userText, isAgentMessage=false) {
+  const now = Date.now();
+  const state = wsState.get(chatId) || { lastIds:{askQty:'', hold:''}, awaitingAgent:false, lastTime:0 };
+
+  // Si escribe un agente, desbloquear
+  if (isAgentMessage) {
+    state.awaitingAgent = false;
+    wsState.set(chatId, state);
+    return null; // la IA no responde; sigue el agente
+  }
+
+  // Si estamos en pausa, no responder
+  if (state.awaitingAgent) return null;
+
+  // 1) Detectar intención de mayoreo
+  if (hasWholesaleIntent(userText)) {
+    const qty = extractQuantity(userText);
+
+    // Caso: preguntan “¿cuántas piezas es mayoreo?”
+    if (/cu[aá]ntas piezas.*mayoreo/i.test(userText)) {
+      const msg = chooseVariant(askQtyVariants, state.lastIds.askQty);
+      state.lastIds.askQty = msg;
+      wsState.set(chatId, state);
+      return msg.replace("¿Cuántas piezas estás pensando?", "¿Cuántas piezas tienes en mente?");
+    }
+
+    // 2) Si no hay cantidad aún → preguntar cantidad (con variación)
+    if (!qty) {
+      const msg = chooseVariant(askQtyVariants, state.lastIds.askQty);
+      state.lastIds.askQty = msg;
+      wsState.set(chatId, state);
+      return msg;
+    }
+
+    // 3) Si ya hay cantidad → mandar “hold” y pausar
+    const hold = chooseVariant(holdVariants, state.lastIds.hold);
+    state.lastIds.hold = hold;
+    state.awaitingAgent = true;
+    state.lastTime = now;
+    wsState.set(chatId, state);
+    return hold;
+  }
+
+  // Si no es mayoreo, deja que el flujo normal (tu LLM) responda
+  wsState.set(chatId, state);
+  return undefined; // continúa con tu lógica estándar
+}
+
+// =================================================================
+// === FIN: LÓGICA DE MAYOREO ======================================
+// =================================================================
 
 
 // === INICIO: Proxy de Medios para audios, videos y documentos de WhatsApp ===
@@ -72,11 +160,11 @@ app.get("/api/wa/media/:mediaId", async (req, res) => {
       headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
       responseType: "stream",
     });
-    
+
     // Establecer los encabezados de la respuesta para el cliente
     res.setHeader("Content-Type", mediaContentResponse.headers["content-type"] || "application/octet-stream");
     res.setHeader("Cache-Control", "no-store"); // No guardar en caché estos medios
-    
+
     // Enviar el stream de datos al cliente
     mediaContentResponse.data.pipe(res);
 
@@ -167,21 +255,21 @@ Por cual pauqteria?`;
 // --- HELPER FUNCTION FOR GEMINI ---
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    
+
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }] };
-    
+
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
-    
+
     const result = await geminiResponse.json();
     let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
-    
+
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
-    
+
     return generatedText;
 }
 
@@ -250,7 +338,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             **Tarea:**
             Basado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.
         `;
-        
+
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResponse = await generateGeminiResponse(prompt);
 
@@ -304,7 +392,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
     const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
-    
+
     const userData = { ph: [] };
     try {
         userData.ph.push(sha256(contactInfo.wa_id));
@@ -341,7 +429,7 @@ const sendConversionEvent = async (eventName, contactInfo, referralInfo, customD
             event_time: eventTime,
             event_id: eventId,
             action_source: 'business_messaging',
-            messaging_channel: 'whatsapp', 
+            messaging_channel: 'whatsapp',
             user_data: userData,
             custom_data: finalCustomData,
         }],
@@ -365,28 +453,28 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     let messagePayload;
     let messageToSaveText;
 
-    if (fileUrl && fileType) { 
-        const type = fileType.startsWith('image/') ? 'image' : 
-                     fileType.startsWith('video/') ? 'video' : 
+    if (fileUrl && fileType) {
+        const type = fileType.startsWith('image/') ? 'image' :
+                     fileType.startsWith('video/') ? 'video' :
                      fileType.startsWith('audio/') ? 'audio' : 'document';
-        
+
         const mediaObject = { link: fileUrl };
-        if (text) { 
+        if (text) {
             mediaObject.caption = text;
         }
-        
+
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
-        messageToSaveText = text || (type === 'image' ? '📷 Imagen' : 
+        messageToSaveText = text || (type === 'image' ? '📷 Imagen' :
                                      type === 'video' ? '🎥 Video' :
                                      type === 'audio' ? '🎵 Audio' : '📄 Documento');
 
-    } else if (text) { 
+    } else if (text) {
         messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
         messageToSaveText = text;
     } else {
         throw new Error("Se requiere texto o un archivo (fileUrl y fileType) para enviar un mensaje.");
     }
-    
+
     if (reply_to_wamid) {
         messagePayload.context = { message_id: reply_to_wamid };
     }
@@ -396,7 +484,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         const response = await axios.post(url, messagePayload, { headers });
         console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
         const messageId = response.data.messages[0].id;
-        
+
         return {
             id: messageId,
             textForDb: messageToSaveText,
@@ -430,7 +518,7 @@ async function handlePostalCodeAuto(message, contactRef, from) {
 
     const postalCodeRegex = /(?:cp|código postal|codigo postal|cp:)\s*(\d{5})|(\d{5})/i;
     const match = message.text.body.match(postalCodeRegex);
-    
+
     const postalCode = match ? (match[1] || match[2]) : null;
 
     if (postalCode) {
@@ -494,7 +582,7 @@ app.post('/webhook', async (req, res) => {
                 const messageDocRef = messagesQuery.docs[0].ref;
                 await messageDocRef.update({ reaction: reactionEmoji || admin.firestore.FieldValue.delete() });
             }
-            return res.sendStatus(200); 
+            return res.sendStatus(200);
         }
 
         const messageData = {
@@ -544,8 +632,20 @@ app.post('/webhook', async (req, res) => {
 
         await contactRef.set(contactUpdateData, { merge: true });
         console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
-        
+
         const updatedContactData = (await contactRef.get()).data(); // Get the merged data
+
+        // --- INICIO: INTEGRACIÓN DE LÓGICA DE MAYOREO ---
+        if (message.type === 'text') {
+            const wholesaleResponse = handleWholesaleMessage(from, message.text.body);
+            if (wholesaleResponse) {
+                console.log(`[MAYOREO] Respuesta generada para ${from}: "${wholesaleResponse}"`);
+                await sendAutoMessage(contactRef, { text: wholesaleResponse });
+                return res.sendStatus(200); // Detiene el flujo aquí
+            }
+        }
+        // --- FIN: INTEGRACIÓN DE LÓGICA DE MAYOREO ---
+
 
         const cpHandled = await handlePostalCodeAuto(message, contactRef, from);
         if (cpHandled) {
@@ -616,7 +716,7 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
                 value: {
                     messaging_product: 'whatsapp',
                     metadata: {
-                        display_phone_number: PHONE_NUMBER_ID.slice(2), 
+                        display_phone_number: PHONE_NUMBER_ID.slice(2),
                         phone_number_id: PHONE_NUMBER_ID
                     },
                     contacts: [{
@@ -627,14 +727,14 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
                     }],
                     messages: [{
                         from: from,
-                        id: `wamid.TEST_${uuidv4()}`, 
+                        id: `wamid.TEST_${uuidv4()}`,
                         timestamp: Math.floor(Date.now() / 1000).toString(),
                         text: {
                             body: text
                         },
                         type: 'text',
                         referral: {
-                            source_url: `https://fb.me/xxxxxxxx`, 
+                            source_url: `https://fb.me/xxxxxxxx`,
                             source_type: 'ad',
                             source_id: adId,
                             headline: 'Anuncio de Prueba'
@@ -651,7 +751,7 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
         await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, {
             headers: { 'Content-Type': 'application/json' }
         });
-        
+
         console.log(`[SIMULATOR] Simulación para ${from} enviada al webhook con éxito.`);
         res.status(200).json({ success: true, message: 'Simulación procesada correctamente.' });
 
@@ -666,7 +766,7 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 // --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
 async function buildTemplatePayload(contactId, template) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    let messageToSaveText = `📄 Plantilla: ${template.name}`; 
+    let messageToSaveText = `📄 Plantilla: ${template.name}`;
 
     const payload = {
         messaging_product: 'whatsapp', to: contactId, type: 'template',
@@ -682,7 +782,7 @@ async function buildTemplatePayload(contactId, template) {
     } else if (bodyComponent?.text) {
         messageToSaveText = bodyComponent.text;
     }
-    
+
     if (payload.template.components.length === 0) delete payload.template.components;
     return { payload, messageToSaveText };
 }
@@ -694,7 +794,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
-    
+
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
@@ -702,11 +802,11 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
 
-            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, { 
-                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } 
+            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
+                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
             const messageId = response.data.messages[0].id;
-            
+
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             await contactRef.collection('messages').add(messageToSave);
@@ -714,25 +814,25 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 
         } else {
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
-    
+
             const messageToSave = {
-                from: PHONE_NUMBER_ID, 
-                status: 'sent', 
+                from: PHONE_NUMBER_ID,
+                status: 'sent',
                 timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                id: sentMessageData.id, 
+                id: sentMessageData.id,
                 text: sentMessageData.textForDb,
-                fileUrl: sentMessageData.fileUrlForDb, 
+                fileUrl: sentMessageData.fileUrlForDb,
                 fileType: sentMessageData.fileTypeForDb
             };
-        
+
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-            
+
             await contactRef.collection('messages').add(messageToSave);
-            await contactRef.update({ 
-                lastMessage: sentMessageData.textForDb, 
-                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), 
-                unreadCount: 0 
+            await contactRef.update({
+                lastMessage: sentMessageData.textForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                unreadCount: 0
             });
         }
 
@@ -817,9 +917,9 @@ app.post('/api/contacts/:contactId/messages/:messageDocId/react', async (req, re
         await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
         });
-        
+
         await messageRef.update({ reaction: reaction || admin.firestore.FieldValue.delete() });
-        
+
         res.status(200).json({ success: true, message: 'Reacción enviada y actualizada.' });
 
     } catch (error) {
@@ -851,20 +951,20 @@ app.post('/api/contacts/:contactId/mark-as-registration', async (req, res) => {
     try {
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        
+
         const contactData = contactDoc.data();
         if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
         await sendConversionEvent('CompleteRegistration', contactInfoForEvent, contactData.adReferral || {});
-        
-        await contactRef.update({ 
-            registrationStatus: 'completed', 
+
+        await contactRef.update({
+            registrationStatus: 'completed',
             registrationDate: admin.firestore.FieldValue.serverTimestamp(),
             status: 'venta'
         });
-        
+
         res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado" y etiquetado como Venta.' });
     } catch (error) {
         console.error(`Error en mark-as-registration para ${contactId}:`, error.message);
@@ -882,16 +982,16 @@ app.post('/api/contacts/:contactId/mark-as-purchase', async (req, res) => {
     try {
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        
+
         const contactData = contactDoc.data();
         if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
         const contactInfoForEvent = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
         const customPurchaseData = { value: parseFloat(value), currency };
-        
+
         await sendConversionEvent('Purchase', contactInfoForEvent, contactData.adReferral || {}, customPurchaseData);
-        
+
         await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: currency, purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
         res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
     } catch (error) {
@@ -906,7 +1006,7 @@ app.post('/api/contacts/:contactId/send-view-content', async (req, res) => {
     try {
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        
+
         const contactData = contactDoc.data();
         if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
 
@@ -965,19 +1065,19 @@ app.post('/api/quick-replies', async (req, res) => {
         if (!existing.empty) {
             return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
         }
-        
-        const replyData = { 
-            shortcut, 
+
+        const replyData = {
+            shortcut,
             message: message || null,
             fileUrl: fileUrl || null,
-            fileType: fileType || null 
+            fileType: fileType || null
         };
 
         const newReply = await db.collection('quick_replies').add(replyData);
         res.status(201).json({ success: true, id: newReply.id, data: replyData });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error creating quick reply:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear la respuesta rápida.' }); 
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la respuesta rápida.' });
     }
 });
 
@@ -1007,9 +1107,9 @@ app.put('/api/quick-replies/:id', async (req, res) => {
 
         await db.collection('quick_replies').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Respuesta rápida actualizada.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error updating quick reply:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la respuesta rápida.' }); 
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la respuesta rápida.' });
     }
 });
 
@@ -1094,7 +1194,7 @@ app.post('/api/ad-responses', async (req, res) => {
         if (!existing.empty) {
             return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya tiene un mensaje configurado.` });
         }
-        
+
         const responseData = {
             adName,
             adId,
@@ -1125,7 +1225,7 @@ app.put('/api/ad-responses/:id', async (req, res) => {
         if (!existing.empty && existing.docs[0].id !== id) {
             return res.status(409).json({ success: false, message: `El ID de anuncio '${adId}' ya está en uso.` });
         }
-        
+
         const updateData = {
             adName,
             adId,
@@ -1307,17 +1407,17 @@ app.post('/api/knowledge-base', async (req, res) => {
         return res.status(400).json({ success: false, message: 'El tema y la respuesta son obligatorios.' });
     }
     try {
-        const entryData = { 
-            topic, 
+        const entryData = {
+            topic,
             answer,
             fileUrl: fileUrl || null,
-            fileType: fileType || null 
+            fileType: fileType || null
         };
         const newEntry = await db.collection('ai_knowledge_base').add(entryData);
         res.status(201).json({ success: true, id: newEntry.id, data: entryData });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error creating knowledge base entry:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear la entrada.' }); 
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la entrada.' });
     }
 });
 
@@ -1336,9 +1436,9 @@ app.put('/api/knowledge-base/:id', async (req, res) => {
         };
         await db.collection('ai_knowledge_base').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Entrada actualizada.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error updating knowledge base entry:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la entrada.' }); 
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la entrada.' });
     }
 });
 
@@ -1347,9 +1447,9 @@ app.delete('/api/knowledge-base/:id', async (req, res) => {
     try {
         await db.collection('ai_knowledge_base').doc(id).delete();
         res.status(200).json({ success: true, message: 'Entrada eliminada.' });
-    } catch (error) { 
+    } catch (error) {
         console.error("Error deleting knowledge base entry:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' }); 
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la entrada.' });
     }
 });
 
@@ -1360,13 +1460,13 @@ app.post('/api/contacts/:contactId/generate-reply', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        
+
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación.' });
-        
+
         const conversationHistory = messagesSnapshot.docs.map(doc => { const d = doc.data(); return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`; }).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\\\\\\nAsistente:`;
-        
+        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes. A continuación se presenta el historial de una conversación. Responde al último mensaje del cliente de manera concisa, profesional y útil.\\n\\n--- Historial ---\\n${conversationHistory}\\n\\n--- Tu Respuesta ---\\\nAsistente:`;
+
         const suggestion = await generateGeminiResponse(prompt);
         res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
     } catch (error) {
