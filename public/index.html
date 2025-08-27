@@ -11,6 +11,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" xintegrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegovlnee1c9QX4TctnWMn13TZye+giMm8e2LwA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <!-- Agregada la librería Chart.js para los gráficos -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
     <style>
         :root {
@@ -305,6 +307,25 @@
         input:checked + .slider:before { transform: translateX(22px); }
         .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
 
+        /* Estilos para la vista de métricas */
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 2rem;
+        }
+        .chart-container {
+            background-color: #fff;
+            padding: 1.5rem;
+            border-radius: var(--border-radius-lg);
+            box-shadow: 0 4px 12px var(--color-shadow);
+        }
+        .chart-container h2 {
+            margin-top: 0;
+            margin-bottom: 1.5rem;
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
     </style>
 </head>
 <body class="antialiased">
@@ -402,6 +423,12 @@
                         </div>
                     </div>
                     <!-- END: Menú Desplegable de IA -->
+
+                    <!-- NUEVO: Enlace a Métricas -->
+                    <a onclick="navigateTo('metricas')" data-view="metricas" class="nav-item">
+                        <i class="fas fa-chart-line"></i>
+                        <span class="sidebar-text">Métricas</span>
+                    </a>
 
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
@@ -700,6 +727,9 @@
         let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null, unsubscribeAIAdPromptsListener = null;
         let ticking = false;
         let tagsSortable = null;
+        let dailyMessagesChart = null;
+        let tagsDistributionChart = null;
+
 
         // --- START: Authentication Logic ---
         auth.onAuthStateChanged(user => {
@@ -1076,6 +1106,31 @@
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        // NUEVA PLANTILLA PARA MÉTRICAS
+        const MetricsViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Métricas de Mensajes</h1>
+                </div>
+                <div id="metrics-loading" class="text-center p-8">
+                    <i class="fas fa-spinner fa-spin text-4xl text-gray-400"></i>
+                    <p class="mt-4 text-gray-600">Cargando datos...</p>
+                </div>
+                <div id="metrics-content" class="hidden">
+                    <div class="metrics-grid">
+                        <div class="chart-container">
+                            <h2>Mensajes Recibidos por Día (Últimos 30 días)</h2>
+                            <canvas id="daily-messages-chart"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h2>Distribución de Mensajes por Etiqueta</h2>
+                            <canvas id="tags-distribution-chart"></canvas>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -1553,6 +1608,10 @@
                     mainViewContainer.innerHTML = AjustesIAViewTemplate();
                     renderAjustesIAView();
                     break;
+                case 'metricas':
+                    mainViewContainer.innerHTML = MetricsViewTemplate();
+                    renderMetricsView();
+                    break;
                 case 'ajustes':
                     mainViewContainer.innerHTML = SettingsViewTemplate();
                     renderAjustesView();
@@ -1852,6 +1911,144 @@
                 simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
             }
         }
+
+        // --- NUEVA FUNCIÓN PARA RENDERIZAR LA VISTA DE MÉTRICAS ---
+        async function renderMetricsView() {
+            if (state.activeView !== 'metricas') return;
+
+            const loadingEl = document.getElementById('metrics-loading');
+            const contentEl = document.getElementById('metrics-content');
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/metrics`);
+                if (!response.ok) {
+                    throw new Error('No se pudieron cargar los datos de métricas.');
+                }
+                const result = await response.json();
+                const metricsData = result.data;
+
+                loadingEl.classList.add('hidden');
+                contentEl.classList.remove('hidden');
+                
+                renderDailyMessagesChart(metricsData);
+                renderTagsDistributionChart(metricsData);
+
+            } catch (error) {
+                console.error("Error fetching metrics:", error);
+                showError(error.message);
+                loadingEl.innerHTML = `<p class="text-red-500">${error.message}</p>`;
+            }
+        }
+
+        function renderDailyMessagesChart(data) {
+            const ctx = document.getElementById('daily-messages-chart')?.getContext('2d');
+            if (!ctx) return;
+
+            if (dailyMessagesChart) {
+                dailyMessagesChart.destroy();
+            }
+
+            const labels = data.map(d => new Date(d.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }));
+            const totalMessages = data.map(d => d.totalMessages);
+
+            dailyMessagesChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Mensajes Recibidos',
+                        data: totalMessages,
+                        backgroundColor: 'rgba(129, 178, 154, 0.6)',
+                        borderColor: 'rgba(129, 178, 154, 1)',
+                        borderWidth: 1,
+                        borderRadius: 5,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                stepSize: 1
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderTagsDistributionChart(data) {
+            const ctx = document.getElementById('tags-distribution-chart')?.getContext('2d');
+            if (!ctx) return;
+
+            if (tagsDistributionChart) {
+                tagsDistributionChart.destroy();
+            }
+
+            const tagCounts = {};
+            data.forEach(dailyData => {
+                for (const tagKey in dailyData.tags) {
+                    if (!tagCounts[tagKey]) {
+                        tagCounts[tagKey] = 0;
+                    }
+                    tagCounts[tagKey] += dailyData.tags[tagKey];
+                }
+            });
+
+            const tagInfoMap = state.tags.reduce((acc, tag) => {
+                acc[tag.key] = { label: tag.label, color: tag.color };
+                return acc;
+            }, {});
+            tagInfoMap['sin_etiqueta'] = { label: 'Sin Etiqueta', color: '#a0aec0' };
+
+            const labels = Object.keys(tagCounts).map(key => tagInfoMap[key]?.label || key);
+            const counts = Object.values(tagCounts);
+            const backgroundColors = Object.keys(tagCounts).map(key => tagInfoMap[key]?.color || '#a0aec0');
+
+            tagsDistributionChart = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Distribución por Etiqueta',
+                        data: counts,
+                        backgroundColor: backgroundColors,
+                        hoverOffset: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    let label = context.label || '';
+                                    if (label) {
+                                        label += ': ';
+                                    }
+                                    if (context.parsed !== null) {
+                                        label += context.parsed;
+                                    }
+                                    return label;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
 
         function updateCampaignRecipientCount() {
             const tagSelect = document.getElementById('campaign-tag-select');
@@ -3235,7 +3432,7 @@
                 function openBotSettingsModal() {
             const modal = document.getElementById('bot-settings-modal');
             const form = document.getElementById('bot-settings-form');
-            document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
+                        document.getElementById('bot-instructions').value = state.botSettings.instructions || '';
             modal.classList.remove('hidden');
             form.onsubmit = handleSaveBotSettings;
         }
