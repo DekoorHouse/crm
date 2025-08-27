@@ -238,13 +238,14 @@
         
         #main-sidebar { background-color: var(--color-sidebar-bg); border-right: 1px solid var(--color-border); width: 280px; transition: width 0.3s ease-in-out; flex-shrink: 0; }
         #main-sidebar.collapsed { width: 80px; }
-        #main-sidebar.collapsed .sidebar-text { display: none; }
+        #main-sidebar.collapsed .sidebar-text, #main-sidebar.collapsed #ia-menu-chevron { display: none; }
         #main-sidebar.collapsed .nav-item { justify-content: center; }
         .nav-item { display: flex; align-items: center; padding: 12px 16px; border-radius: var(--border-radius-md); margin-bottom: 6px; transition: background-color 0.2s ease, color 0.2s ease; cursor: pointer; font-weight: 600; color: var(--color-text-light); }
         .nav-item:hover { background-color: #f0f2f5; color: var(--color-text); }
         .nav-item.active { background-color: #eef2ff; color: #4338ca; }
         .nav-item i { width: 24px; text-align: center; margin-right: 12px; font-size: 1.1rem; }
         #main-sidebar.collapsed .nav-item i { margin-right: 0; }
+        .rotate-180 { transform: rotate(180deg); }
 
         .view-container { padding: 2rem; background-color: white; height: 100%; overflow-y: auto; }
         .view-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 2rem; }
@@ -371,22 +372,40 @@
                         <i class="fas fa-ad"></i>
                         <span class="sidebar-text">Mensajes Ads</span>
                     </a>
-                    <!-- NUEVO ELEMENTO DE NAVEGACIÓN -->
-                    <a onclick="navigateTo('prompts-ia')" data-view="prompts-ia" class="nav-item">
-                        <i class="fas fa-lightbulb"></i>
-                        <span class="sidebar-text">Prompts IA (Anuncios)</span>
-                    </a>
                     <a onclick="navigateTo('respuestas-rapidas')" data-view="respuestas-rapidas" class="nav-item">
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
                     </a>
-                    <a onclick="navigateTo('respuestas-ia')" data-view="respuestas-ia" class="nav-item">
-                        <i class="fas fa-robot"></i>
-                        <span class="sidebar-text">Respuestas IA</span>
-                    </a>
+                    
+                    <!-- START: Menú Desplegable de IA -->
+                    <div id="ia-menu">
+                        <a onclick="toggleIAMenu()" class="nav-item justify-between">
+                            <div class="flex items-center">
+                                <i class="fas fa-robot"></i>
+                                <span class="sidebar-text">Inteligencia Artificial</span>
+                            </div>
+                            <i id="ia-menu-chevron" class="fas fa-chevron-down sidebar-text transition-transform"></i>
+                        </a>
+                        <div id="ia-submenu" class="hidden pl-4">
+                            <a onclick="navigateTo('prompts-ia')" data-view="prompts-ia" class="nav-item !py-2">
+                                <i class="fas fa-lightbulb w-6"></i>
+                                <span class="sidebar-text">Prompts de Anuncios</span>
+                            </a>
+                            <a onclick="navigateTo('respuestas-ia')" data-view="respuestas-ia" class="nav-item !py-2">
+                                <i class="fas fa-book w-6"></i>
+                                <span class="sidebar-text">Base de Conocimiento</span>
+                            </a>
+                            <a onclick="navigateTo('ajustes-ia')" data-view="ajustes-ia" class="nav-item !py-2">
+                                <i class="fas fa-cogs w-6"></i>
+                                <span class="sidebar-text">Ajustes de IA</span>
+                            </a>
+                        </div>
+                    </div>
+                    <!-- END: Menú Desplegable de IA -->
+
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
-                        <span class="sidebar-text">Ajustes</span>
+                        <span class="sidebar-text">Ajustes Generales</span>
                     </a>
                 </nav>
                 <div class="mt-auto">
@@ -565,7 +584,7 @@
             <h2 id="bot-settings-modal-title">Ajustes del Bot</h2>
             <form id="bot-settings-form">
                 <div>
-                    <label for="bot-instructions">Instrucciones para </label>
+                    <label for="bot-instructions">Instrucciones para el Bot (Prompt General)</label>
                     <textarea id="bot-instructions" rows="8" class="!mb-4" placeholder="Ej: Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas de los clientes."></textarea>
                 </div>
                 <div class="flex justify-end gap-3 mt-4">
@@ -652,7 +671,7 @@
             notes: [],
             quickReplies: [],
             adResponses: [],
-            aiAdPrompts: [], // NUEVO ESTADO
+            aiAdPrompts: [], 
             templates: [],
             tags: [],
             knowledgeBase: [],
@@ -678,7 +697,7 @@
             isTagSidebarOpen: true,
             activeView: 'chats',
         };
-        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null, unsubscribeAIAdPromptsListener = null; // NUEVO LISTENER
+        let unsubscribeMessagesListener = null, unsubscribeContactsListener = null, unsubscribeNotesListener = null, unsubscribeQuickRepliesListener = null, unsubscribeTagsListener = null, unsubscribeAdResponsesListener = null, unsubscribeKnowledgeBaseListener = null, unsubscribeAIAdPromptsListener = null;
         let ticking = false;
         let tagsSortable = null;
 
@@ -872,7 +891,6 @@
             </div>
         `;
 
-        // NUEVA PLANTILLA DE VISTA
         const AIAdPromptsViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
@@ -939,40 +957,66 @@
         const KnowledgeBaseViewTemplate = () => `
             <div class="view-container">
                 <div class="view-header">
-                    <h1>Respuestas IA</h1>
-                    <div>
-                        <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-cog mr-2"></i>Ajustes del Bot</button>
-                        <button onclick="openKnowledgeBaseModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
-                    </div>
+                    <h1>Base de Conocimiento de IA</h1>
+                    <button onclick="openKnowledgeBaseModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
                 </div>
-                
-                <div class="mb-8">
-                    <h2 class="text-xl font-bold mb-4">Base de Conocimiento</h2>
-                    <p class="mb-4 text-gray-600">Aquí puedes añadir respuestas a preguntas frecuentes. El bot usará esta información para contestar automáticamente.</p>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Tema / Palabras Clave</th>
-                                <th>Respuesta Base</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="kb-table-body"></tbody>
-                    </table>
+                <p class="mb-6 text-gray-600">Aquí puedes añadir respuestas a preguntas frecuentes. El bot usará esta información para contestar automáticamente.</p>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Tema / Palabras Clave</th>
+                            <th>Respuesta Base</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="kb-table-body"></tbody>
+                </table>
+            </div>
+        `;
+        
+        // --- NUEVA VISTA PARA AJUSTES DE IA ---
+        const AjustesIAViewTemplate = () => `
+            <div class="view-container">
+                <div class="view-header">
+                    <h1>Ajustes de Inteligencia Artificial</h1>
                 </div>
 
-                <div>
-                    <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
-                    <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Contacto</th>
-                                <th>Bot Activo</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bot-contacts-table-body"></tbody>
-                    </table>
+                <div class="max-w-4xl space-y-8">
+                    <div class="settings-card">
+                        <h2 class="text-xl font-bold mb-4">Automatización Global</h2>
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <h3 class="font-semibold">Bot IA Global</h3>
+                                <p class="text-sm text-gray-500">Activar la inteligencia artificial para todas las conversaciones nuevas.</p>
+                            </div>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="global-bot-toggle" onchange="handleGlobalBotToggle(this.checked)">
+                                <span class="slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="settings-card">
+                        <h2 class="text-xl font-bold mb-4">Instrucciones del Bot</h2>
+                        <p class="mb-4 text-gray-600">Define el comportamiento general del bot. Estas instrucciones se usarán a menos que un prompt de anuncio específico las anule.</p>
+                        <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-pencil-alt mr-2"></i>Editar Prompt General</button>
+                    </div>
+                
+                    <div class="settings-card">
+                        <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
+                        <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
+                        <div class="max-h-96 overflow-y-auto">
+                            <table class="table">
+                                <thead>
+                                    <tr>
+                                        <th>Contacto</th>
+                                        <th>Bot Activo</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="bot-contacts-table-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         `;
@@ -995,16 +1039,6 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <div class="flex items-center justify-between border-t border-gray-200 mt-6 pt-6">
-                            <div>
-                                <h3 class="font-semibold">Bot IA Global</h3>
-                                <p class="text-sm text-gray-500">Activar la inteligencia artificial para todas las conversaciones.</p>
-                            </div>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="global-bot-toggle" onchange="handleGlobalBotToggle(this.checked)">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
                     </div>
                     <div class="settings-card">
                         <h2 class="text-xl font-bold mb-4">Integraciones</h2>
@@ -1017,7 +1051,6 @@
                             </div>
                         </div>
                     </div>
-                    <!-- START: NUEVA SECCIÓN PARA SIMULADOR DE ANUNCIOS -->
                     <div class="settings-card">
                         <h2 class="text-xl font-bold mb-4">Herramientas de Prueba</h2>
                         <form id="simulate-ad-form">
@@ -1044,7 +1077,6 @@
                             </div>
                         </form>
                     </div>
-                    <!-- END: NUEVA SECCIÓN PARA SIMULADOR DE ANUNCIOS -->
                 </div>
             </div>
         `;
@@ -1354,7 +1386,6 @@
         const ContactDetailsSidebarTemplate = (contact) => {
             if (!contact) return '';
 
-            // START: MODIFICACIÓN LÓGICA DEL BOTÓN
             const isRegistered = contact.registrationStatus === 'completed';
             const registrationButtonClass = isRegistered ? 'btn-success' : 'btn-subtle';
             const registrationButtonIcon = isRegistered ? 'fa-check-circle' : 'fa-user-check';
@@ -1365,7 +1396,6 @@
                     class="btn ${registrationButtonClass} w-full btn-sm">
                     <i class="fas ${registrationButtonIcon} mr-2"></i>Aquí no se le pica
                 </button>`;
-            // END: MODIFICACIÓN LÓGICA DEL BOTÓN
 
             return `
                 <div class="h-full flex flex-col">
@@ -1436,7 +1466,7 @@
             listenForQuickReplies();
             listenForTags();
             listenForAdResponses();
-            listenForAIAdPrompts(); // NUEVO
+            listenForAIAdPrompts();
             listenForKnowledgeBase();
             fetchTemplates();
             fetchBotSettings();
@@ -1454,7 +1484,7 @@
             if (unsubscribeTagsListener) unsubscribeTagsListener();
             if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
             if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
-            if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener(); // NUEVO
+            if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
             document.removeEventListener('click', handleClickOutside);
             state = { contacts: [], messages: [], notes: [], quickReplies: [], adResponses: [], aiAdPrompts: [], templates: [], tags: [], knowledgeBase: [], botSettings: { instructions: '' }, awayMessageSettings: { isActive: true }, globalBotSettings: { isActive: false }, googleSheetSettings: { googleSheetId: '' }, selectedContactId: null, loadingMessages: false, isUploading: false, stagedFile: null, stagedRemoteFile: null, activeFilter: 'all', activeTab: 'chat', emojiPickerOpen: false, quickReplyPickerOpen: false, templatePickerOpen: false, contactDetailsOpen: false, isEditingNote: null, replyingToMessage: null, campaignMode: false, selectedContactIdsForCampaign: [], isTagSidebarOpen: true, activeView: 'chats' }; 
             mainViewContainer.innerHTML = '';
@@ -1464,9 +1494,22 @@
         function navigateTo(viewName) {
             state.activeView = viewName;
 
+            const iaSubmenuViews = ['prompts-ia', 'respuestas-ia', 'ajustes-ia'];
+
             document.querySelectorAll('#main-sidebar .nav-item').forEach(item => {
-                item.classList.toggle('active', item.dataset.view === viewName);
+                const isDirectMatch = item.dataset.view === viewName;
+                item.classList.toggle('active', isDirectMatch);
             });
+
+            const iaMenu = document.getElementById('ia-menu')?.querySelector('.nav-item');
+            if (iaMenu) {
+                const isIAViewActive = iaSubmenuViews.includes(viewName);
+                iaMenu.classList.toggle('active', isIAViewActive);
+                if (isIAViewActive) {
+                    document.getElementById('ia-submenu').classList.remove('hidden');
+                    document.getElementById('ia-menu-chevron').classList.add('rotate-180');
+                }
+            }
 
             switch (viewName) {
                 case 'chats':
@@ -1494,7 +1537,6 @@
                     mainViewContainer.innerHTML = MensajesAdsViewTemplate();
                     renderAdResponsesView();
                     break;
-                // NUEVO CASE
                 case 'prompts-ia':
                     mainViewContainer.innerHTML = AIAdPromptsViewTemplate();
                     renderAIAdPromptsView();
@@ -1506,6 +1548,10 @@
                 case 'respuestas-ia':
                     mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
                     renderKnowledgeBaseView();
+                    break;
+                case 'ajustes-ia':
+                    mainViewContainer.innerHTML = AjustesIAViewTemplate();
+                    renderAjustesIAView();
                     break;
                 case 'ajustes':
                     mainViewContainer.innerHTML = SettingsViewTemplate();
@@ -1670,7 +1716,6 @@
             `).join('');
         }
 
-        // NUEVA FUNCIÓN DE RENDERIZADO
         function renderAIAdPromptsView() {
             if (state.activeView !== 'prompts-ia') return;
             const tableBody = document.getElementById('ai-ad-prompts-table-body');
@@ -1749,8 +1794,7 @@
         function renderKnowledgeBaseView() {
             if (state.activeView !== 'respuestas-ia') return;
             const kbTableBody = document.getElementById('kb-table-body');
-            const botContactsTableBody = document.getElementById('bot-contacts-table-body');
-            if (!kbTableBody || !botContactsTableBody) return;
+            if (!kbTableBody) return;
 
             kbTableBody.innerHTML = state.knowledgeBase.map(entry => `
                 <tr>
@@ -1762,18 +1806,30 @@
                     </td>
                 </tr>
             `).join('');
+        }
+        
+        function renderAjustesIAView() {
+            if (state.activeView !== 'ajustes-ia') return;
+            
+            const botToggle = document.getElementById('global-bot-toggle');
+            if (botToggle) {
+                botToggle.checked = state.globalBotSettings.isActive;
+            }
 
-            botContactsTableBody.innerHTML = state.contacts.map(contact => `
-                <tr>
-                    <td class="font-semibold">${contact.name || contact.id}</td>
-                    <td>
-                        <label class="toggle-switch">
-                            <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive ? 'checked' : ''}>
-                            <span class="slider"></span>
-                        </label>
-                    </td>
-                </tr>
-            `).join('');
+            const botContactsTableBody = document.getElementById('bot-contacts-table-body');
+            if(botContactsTableBody) {
+                botContactsTableBody.innerHTML = state.contacts.map(contact => `
+                    <tr>
+                        <td class="font-semibold">${contact.name || contact.id}</td>
+                        <td>
+                            <label class="toggle-switch">
+                                <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive !== false ? 'checked' : ''}>
+                                <span class="slider"></span>
+                            </label>
+                        </td>
+                    </tr>
+                `).join('');
+            }
         }
 
         function renderAjustesView() {
@@ -1782,10 +1838,7 @@
             if (awayToggle) {
                 awayToggle.checked = state.awayMessageSettings.isActive;
             }
-            const botToggle = document.getElementById('global-bot-toggle');
-            if (botToggle) {
-                botToggle.checked = state.globalBotSettings.isActive;
-            }
+            
             const sheetIdInput = document.getElementById('google-sheet-id-input');
             if (sheetIdInput) {
                 sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
@@ -2093,7 +2146,6 @@
             });
         }
 
-        // --- START: MODIFICACIÓN PARA DESELECCIONAR ETIQUETA ---
         function handleStatusChange(contactId, newStatusKey) {
             const id = contactId || state.selectedContactId;
             if (!id) return;
@@ -2101,7 +2153,6 @@
             const contact = state.contacts.find(c => c.id === id);
             if (!contact) return;
 
-            // Si la etiqueta actual es la misma que la nueva, la quitamos (null)
             const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
 
             db.collection('contacts_whatsapp').doc(id).update({ status: finalStatus }).catch(err => {
@@ -2109,7 +2160,6 @@
                 showError("No se pudo actualizar la etiqueta.");
             });
         }
-        // --- END: MODIFICACIÓN ---
         
         function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
         
@@ -2210,8 +2260,8 @@
                     renderContactsView();
                 } else if (state.activeView === 'pipeline') {
                     renderPipelineView();
-                } else if (state.activeView === 'respuestas-ia') {
-                    renderKnowledgeBaseView();
+                } else if (state.activeView === 'ajustes-ia') {
+                    renderAjustesIAView();
                 }
 
                 if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
@@ -2671,7 +2721,6 @@
             }
         }
 
-        // START: MODIFICACIÓN FUNCIÓN DE REGISTRO
         async function handleMarkAsRegistration() {
             if (!state.selectedContactId) return;
             
@@ -2691,7 +2740,6 @@
                 showError(error.message);
             }
         }
-        // END: MODIFICACIÓN FUNCIÓN DE REGISTRO
 
         async function handleSendViewContent() {
             if (!state.selectedContactId) return;
@@ -3048,7 +3096,6 @@
             }
         }
         
-        // --- NUEVAS FUNCIONES PARA PROMPTS DE IA POR ANUNCIO ---
         function listenForAIAdPrompts() {
             if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
             unsubscribeAIAdPromptsListener = db.collection('ai_ad_prompts').orderBy('adName').onSnapshot(snapshot => {
@@ -3133,7 +3180,15 @@
                 showError(error.message);
             }
         }
-        // --- FIN DE NUEVAS FUNCIONES ---
+        
+        // --- START: FUNCIONES DEL MENÚ DE IA ---
+        function toggleIAMenu() {
+            const submenu = document.getElementById('ia-submenu');
+            const chevron = document.getElementById('ia-menu-chevron');
+            submenu.classList.toggle('hidden');
+            chevron.classList.toggle('rotate-180');
+        }
+        // --- END: FUNCIONES DEL MENÚ DE IA ---
 
         async function handleModalFileUpload(event, prefix) {
             const file = event.target.files[0];
@@ -3142,7 +3197,7 @@
             const previewEl = document.getElementById(`${prefix}-media-preview`);
             const urlInput = document.getElementById(`${prefix}-file-url`);
             const typeInput = document.getElementById(`${prefix}-file-type`);
-            const submitButton = event.target.form.querySelector('button[type="submit"]');
+                        const submitButton = event.target.form.querySelector('button[type="submit"]');
 
             previewEl.innerHTML = `<i class="fas fa-spinner fa-spin mr-2"></i> Subiendo...`;
             submitButton.disabled = true;
@@ -3477,4 +3532,3 @@
     
 </body>
 </html>
-
