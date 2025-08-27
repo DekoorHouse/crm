@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO, LÓGICA DE MAYOREO Y MÉTRICAS
+// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO, LÓGICA DE MAYOREO, MÉTRICAS Y PLANTILLAS CON IMAGEN
 
 require('dotenv').config();
 const express = require('express');
@@ -873,6 +873,108 @@ app.post('/api/campaigns/send-template', async (req, res) => {
     outcomes.forEach(o => o.status === 'fulfilled' ? results.successful.push(o.value) : results.failed.push(o.reason));
     res.status(200).json({ success: true, message: `Campaña procesada. Enviados: ${results.successful.length}. Fallidos: ${results.failed.length}.`, results });
 });
+
+// =================================================================
+// === INICIO: NUEVO ENDPOINT PARA PLANTILLAS CON IMAGEN DINÁMICA ===
+// =================================================================
+app.post('/api/campaigns/send-template-with-image', async (req, res) => {
+    const { contactIds, templateName, imageUrl } = req.body;
+
+    // Validación de entrada
+    if (!contactIds?.length || !templateName || !imageUrl) {
+        return res.status(400).json({ success: false, message: 'Se requieren IDs de contacto, nombre de plantilla y una URL de imagen.' });
+    }
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
+    }
+
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    const results = { successful: [], failed: [] };
+
+    const promises = contactIds.map(async (contactId) => {
+        try {
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            const contactDoc = await contactRef.get();
+            const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
+
+            // Construir el payload de la API de WhatsApp
+            const payload = {
+                messaging_product: 'whatsapp',
+                to: contactId,
+                type: 'template',
+                template: {
+                    name: templateName,
+                    language: { code: 'es' }, // Asumimos español, se puede hacer dinámico si es necesario
+                    components: [
+                        {
+                            type: 'header',
+                            parameters: [
+                                {
+                                    type: 'image',
+                                    image: {
+                                        link: imageUrl
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            type: 'body',
+                            parameters: [
+                                {
+                                    type: 'text',
+                                    text: contactName
+                                }
+                            ]
+                        }
+                    ]
+                }
+            };
+            
+            // Enviar el mensaje
+            const response = await axios.post(url, payload, { headers });
+            const messageId = response.data.messages[0].id;
+            const timestamp = admin.firestore.FieldValue.serverTimestamp();
+            
+            // Guardar el mensaje en Firestore
+            const messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+            await contactRef.collection('messages').add({
+                from: PHONE_NUMBER_ID,
+                status: 'sent',
+                timestamp,
+                id: messageId,
+                text: messageToSaveText,
+                fileUrl: imageUrl, // Guardamos la URL de la imagen para referencia
+                fileType: 'image/external'
+            });
+
+            // Actualizar el último mensaje del contacto
+            await contactRef.update({
+                lastMessage: messageToSaveText,
+                lastMessageTimestamp: timestamp,
+                unreadCount: 0
+            });
+
+            return { status: 'fulfilled', value: contactId };
+        } catch (error) {
+            console.error(`❌ Fallo al enviar plantilla con imagen a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
+        }
+    });
+
+    const outcomes = await Promise.all(promises);
+    outcomes.forEach(o => o.status === 'fulfilled' ? results.successful.push(o.value) : results.failed.push(o.reason));
+    
+    res.status(200).json({ 
+        success: true, 
+        message: `Campaña con imagen procesada. Enviados: ${results.successful.length}. Fallidos: ${results.failed.length}.`, 
+        results 
+    });
+});
+// =================================================================
+// === FIN: NUEVO ENDPOINT =========================================
+// =================================================================
+
 
 // --- ENDPOINT PARA OBTENER PLANTILLAS DE WHATSAPP ---
 app.get('/api/whatsapp-templates', async (req, res) => {
