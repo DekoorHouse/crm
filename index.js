@@ -54,7 +54,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const wsState = new Map(); // chatId -> { lastIds: {askQty:'', hold:'',}, awaitingAgent:false, lastTime:0 }
 
 const askQtyVariants = [
-  "¡Súper! � ¿Cuántas piezas estás pensando?",
+  "¡Súper! 🙌 ¿Cuántas piezas estás pensando?",
   "Claro, te apoyo con precio por volumen 🙌 ¿Cuántas unidades te interesan?",
   "Perfecto 👌 Para cotizar mejor, ¿qué cantidad tienes en mente?",
   "Sí manejamos precio por cantidad 😉 ¿Cuántas piezas buscas?",
@@ -875,84 +875,90 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 });
 
 // =================================================================
-// === INICIO: NUEVO ENDPOINT PARA PLANTILLAS CON IMAGEN DINÁMICA ===
+// === INICIO: ENDPOINT MODIFICADO PARA PLANTILLAS CON IMAGEN Y NÚMERO INDIVIDUAL ===
 // =================================================================
 app.post('/api/campaigns/send-template-with-image', async (req, res) => {
-    const { contactIds, templateName, imageUrl } = req.body;
+    // AHORA SE ESPERA UN OBJETO DE PLANTILLA COMPLETO, NO SOLO EL NOMBRE
+    const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;
 
-    // Validación de entrada
-    if (!contactIds?.length || !templateName || !imageUrl) {
-        return res.status(400).json({ success: false, message: 'Se requieren IDs de contacto, nombre de plantilla y una URL de imagen.' });
+    // Validación de entrada mejorada
+    if ((!contactIds || !contactIds.length) && !phoneNumber) {
+        return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs de contacto o un número de teléfono.' });
+    }
+    // AHORA SE VALIDA EL OBJETO DE LA PLANTILLA
+    if (!templateObject || !templateObject.name || !imageUrl) {
+        return res.status(400).json({ success: false, message: 'Se requieren el objeto de la plantilla y una URL de imagen.' });
     }
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
     }
 
+    const templateName = templateObject.name;
+    const targets = phoneNumber ? [phoneNumber] : contactIds;
+
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     const results = { successful: [], failed: [] };
 
-    const promises = contactIds.map(async (contactId) => {
+    const promises = targets.map(async (contactId) => {
         try {
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
             const contactDoc = await contactRef.get();
             const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
 
-            // Construir el payload de la API de WhatsApp
+            // --- LÓGICA CONDICIONAL PARA LOS COMPONENTES ---
+            const components = [
+                {
+                    type: 'header',
+                    parameters: [{ type: 'image', image: { link: imageUrl } }]
+                }
+            ];
+
+            // Buscar el componente del cuerpo en la plantilla recibida
+            const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
+
+            // Si el cuerpo existe y contiene una variable, añadir el parámetro
+            if (bodyComponent && bodyComponent.text && bodyComponent.text.includes('{{1}}')) {
+                components.push({
+                    type: 'body',
+                    parameters: [{ type: 'text', text: contactName }]
+                });
+            }
+            
             const payload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: 'template',
                 template: {
                     name: templateName,
-                    language: { code: 'es' }, // Asumimos español, se puede hacer dinámico si es necesario
-                    components: [
-                        {
-                            type: 'header',
-                            parameters: [
-                                {
-                                    type: 'image',
-                                    image: {
-                                        link: imageUrl
-                                    }
-                                }
-                            ]
-                        },
-                        {
-                            type: 'body',
-                            parameters: [
-                                {
-                                    type: 'text',
-                                    text: contactName
-                                }
-                            ]
-                        }
-                    ]
+                    language: { code: 'es' },
+                    components: components // Usar los componentes construidos dinámicamente
                 }
             };
             
-            // Enviar el mensaje
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             
-            // Guardar el mensaje en Firestore
             const messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+            
+            if (!contactDoc.exists) {
+                await contactRef.set({ 
+                    name: 'Nuevo Contacto (Campaña)',
+                    wa_id: contactId,
+                    lastMessage: messageToSaveText,
+                    lastMessageTimestamp: timestamp,
+                    unreadCount: 0
+                }, { merge: true });
+            }
+
             await contactRef.collection('messages').add({
-                from: PHONE_NUMBER_ID,
-                status: 'sent',
-                timestamp,
-                id: messageId,
-                text: messageToSaveText,
-                fileUrl: imageUrl, // Guardamos la URL de la imagen para referencia
-                fileType: 'image/external'
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId,
+                text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external'
             });
 
-            // Actualizar el último mensaje del contacto
             await contactRef.update({
-                lastMessage: messageToSaveText,
-                lastMessageTimestamp: timestamp,
-                unreadCount: 0
+                lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0
             });
 
             return { status: 'fulfilled', value: contactId };
@@ -972,7 +978,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     });
 });
 // =================================================================
-// === FIN: NUEVO ENDPOINT =========================================
+// === FIN: ENDPOINT MODIFICADO ====================================
 // =================================================================
 
 
