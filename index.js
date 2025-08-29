@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON DIAGNÓSTICO FINAL PARA OBJETOS DE PLANTILLA
+// index.js - VERSIÓN CON SOLUCIÓN FINAL PARA PLANTILLAS ESTÁTICAS Y DINÁMICAS
 
 require('dotenv').config();
 const express = require('express');
@@ -764,10 +764,9 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 
 
 // ====================================================================================
-// === INICIO: FUNCIÓN UNIFICADA PARA CONSTRUIR PAYLOADS DE PLANTILLAS (MODIFICADA) ===
+// === INICIO: FUNCIÓN UNIFICADA PARA CONSTRUIR PAYLOADS DE PLANTILLAS (CORREGIDA) ===
 // ====================================================================================
 async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
-    // LOG DE DIAGNÓSTICO AÑADIDO
     console.log('[DIAGNÓSTICO] Objeto de plantilla recibido por buildAdvancedTemplatePayload:', JSON.stringify(templateObject, null, 2));
 
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -794,21 +793,24 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         }
     }
 
-    // 2. Procesar Cuerpo (BODY)
+    // 2. Procesar Cuerpo (BODY) - CORREGIDO
     const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
     if (bodyComponent) {
-        const bodyPayload = { type: 'body', parameters: [] };
         const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
         
         if (bodyVars.length > 0) {
-            bodyPayload.parameters.push({ type: 'text', text: contactName });
+            // Caso: El cuerpo tiene variables
+            const bodyPayload = { 
+                type: 'body', 
+                parameters: [{ type: 'text', text: contactName }] // Asume {{1}} es el nombre
+            };
+            components.push(bodyPayload);
             messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
         } else {
-             messageToSaveText = bodyComponent.text || messageToSaveText;
-        }
-
-        if (bodyPayload.parameters.length > 0) {
-            components.push(bodyPayload);
+            // Caso: El cuerpo NO tiene variables (es estático)
+            // No se necesita añadir un componente para un cuerpo estático,
+            // pero sí actualizamos el texto que se guardará en la DB.
+            messageToSaveText = bodyComponent.text || messageToSaveText;
         }
     }
 
@@ -838,6 +840,7 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         }
     };
     
+    // Solo añade la clave 'components' si hemos construido algún componente dinámico
     if (components.length > 0) {
         payload.template.components = components;
     }
