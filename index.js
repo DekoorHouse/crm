@@ -784,16 +784,16 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 
     // 1. Process HEADER
     if (headerDef && headerDef.format === 'IMAGE') {
-        if (imageUrl) {
-            payloadComponents.push({
-                type: 'header',
-                parameters: [{ type: 'image', image: { link: imageUrl } }]
-            });
-            messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
-        } else {
-            console.warn(`[Advertencia] La plantilla '${templateName}' requiere una imagen, pero no se proporcionó una URL. La cabecera no se enviará, lo que probablemente causará un fallo.`);
-        }
+    if (imageUrl) {
+        payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'image', image: { link: imageUrl } }]
+        });
+        messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+    } else {
+        throw new Error(`La plantilla '${templateName}' requiere una imagen. Proporciona el parámetro 'imageUrl'.`);
     }
+}
     // Add logic for TEXT header with variable if needed
     if (headerDef && headerDef.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
          payloadComponents.push({
