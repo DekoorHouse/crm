@@ -935,7 +935,6 @@ app.post('/api/campaigns/send-template', async (req, res) => {
             console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(url, payload, { headers });
-            console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
