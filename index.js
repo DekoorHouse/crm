@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON GESTIÓN DE MENSAJES DE ANUNCIOS, MULTIMEDIA, BOT AUTOMÁTICO, LÓGICA DE MAYOREO, MÉTRICAS Y PLANTILLAS CON IMAGEN
+// index.js - VERSIÓN CORREGIDA CON GESTIÓN DINÁMICA DE COMPONENTES DE PLANTILLA
 
 require('dotenv').config();
 const express = require('express');
@@ -875,17 +875,14 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 });
 
 // =================================================================
-// === INICIO: ENDPOINT MODIFICADO PARA PLANTILLAS CON IMAGEN Y NÚMERO INDIVIDUAL ===
+// === INICIO: ENDPOINT CORREGIDO PARA PLANTILLAS CON IMAGEN      ===
 // =================================================================
 app.post('/api/campaigns/send-template-with-image', async (req, res) => {
-    // AHORA SE ESPERA UN OBJETO DE PLANTILLA COMPLETO, NO SOLO EL NOMBRE
     const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;
 
-    // Validación de entrada mejorada
     if ((!contactIds || !contactIds.length) && !phoneNumber) {
         return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs de contacto o un número de teléfono.' });
     }
-    // AHORA SE VALIDA EL OBJETO DE LA PLANTILLA
     if (!templateObject || !templateObject.name || !imageUrl) {
         return res.status(400).json({ success: false, message: 'Se requieren el objeto de la plantilla y una URL de imagen.' });
     }
@@ -906,37 +903,40 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             const contactDoc = await contactRef.get();
             const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Se construye la base de los componentes, siempre con la cabecera (imagen).
-            const components = [
-                {
+            // --- LÓGICA DE CONSTRUCCIÓN DINÁMICA DE COMPONENTES ---
+            const components = [];
+            let messageToSaveText = `📄 Plantilla: ${templateName}`;
+
+            // 1. Revisar si la plantilla tiene cabecera de imagen
+            const headerComponent = templateObject.components?.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
+            if (headerComponent) {
+                components.push({
                     type: 'header',
                     parameters: [{ type: 'image', image: { link: imageUrl } }]
-                }
-            ];
+                });
+                messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+            }
 
-            // Se busca el componente del cuerpo en la plantilla que viene del frontend.
+            // 2. Revisar si la plantilla tiene cuerpo
             const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
-
-            // Si la plantilla tiene un cuerpo (casi todas lo tienen), se añade al payload.
             if (bodyComponent) {
                 const bodyPayload = { type: 'body', parameters: [] };
-
-                // Si el texto del cuerpo tiene una variable {{1}}, se añade el parámetro con el nombre.
+                // Si el cuerpo tiene una variable, añadir el parámetro
                 if (bodyComponent.text && bodyComponent.text.includes('{{1}}')) {
                     bodyPayload.parameters.push({ type: 'text', text: contactName });
+                    // Actualizar el texto para guardarlo en la BD con el nombre real
+                    messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
+                } else if (bodyComponent.text) {
+                    // Si no hay variable, el texto a guardar es el de la plantilla
+                    messageToSaveText = bodyComponent.text;
                 }
 
-                // Si después de revisar no hay parámetros (porque el texto es estático),
-                // se elimina el array 'parameters' para que la API de Meta no lo rechace.
+                // Si no se añadieron parámetros, eliminar el array vacío para evitar errores
                 if (bodyPayload.parameters.length === 0) {
                     delete bodyPayload.parameters;
                 }
-                
-                // Se añade el componente de cuerpo (con o sin parámetros) a la lista final.
                 components.push(bodyPayload);
             }
-            // --- FIN DE LA CORRECCIÓN ---
             
             const payload = {
                 messaging_product: 'whatsapp',
@@ -944,19 +944,19 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 type: 'template',
                 template: {
                     name: templateName,
-                    // --- INICIO DE LA SEGUNDA CORRECCIÓN ---
-                    // Se usa el código de idioma del objeto de la plantilla, en lugar de "es" fijo.
                     language: { code: templateObject.language },
-                    // --- FIN DE LA SEGUNDA CORRECCIÓN ---
-                    components: components // Usar los componentes construidos dinámicamente
+                    components: components
                 }
             };
+            
+            // Si no se generó ningún componente, eliminar la propiedad para evitar errores
+            if (payload.template.components.length === 0) {
+                delete payload.template.components;
+            }
             
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
-            
-            const messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
             
             if (!contactDoc.exists) {
                 await contactRef.set({ 
@@ -970,7 +970,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId,
-                text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external'
+                text: messageToSaveText, fileUrl: headerComponent ? imageUrl : null, fileType: headerComponent ? 'image/external' : null
             });
 
             await contactRef.update({
@@ -994,7 +994,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     });
 });
 // =================================================================
-// === FIN: ENDPOINT MODIFICADO ====================================
+// === FIN: ENDPOINT CORREGIDO =====================================
 // =================================================================
 
 
