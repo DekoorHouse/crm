@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CORREGIDA CON GESTIÓN DINÁMICA DE COMPONENTES DE PLANTILLA (INCLUYENDO BOTONES)
+// index.js - VERSIÓN CON LOGS MEJORADOS PARA DIAGNÓSTICO DE PLANTILLAS
 
 require('dotenv').config();
 const express = require('express');
@@ -801,6 +801,9 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         if (template) {
             const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
+            
+            // LOG AÑADIDO
+            console.log(`[LOG DETALLADO] Enviando plantilla individual a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
@@ -857,6 +860,10 @@ app.post('/api/campaigns/send-template', async (req, res) => {
     const promises = contactIds.map(contactId => (async () => {
         try {
             const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            
+            // LOG AÑADIDO
+            console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
+
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
@@ -880,6 +887,14 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;
 
+    // LOG AÑADIDO
+    console.log('\n--- INICIANDO ENVÍO DE CAMPAÑA CON IMAGEN ---');
+    console.log('Contacto(s) objetivo:', phoneNumber ? [phoneNumber] : contactIds);
+    console.log('Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
+    console.log('URL de imagen recibida:', imageUrl);
+    console.log('--------------------------------------------\n');
+
+
     if ((!contactIds || !contactIds.length) && !phoneNumber) {
         return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs de contacto o un número de teléfono.' });
     }
@@ -898,6 +913,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     const results = { successful: [], failed: [] };
 
     const promises = targets.map(async (contactId) => {
+        let payload; // Declarar payload aquí para que esté disponible en el catch
         try {
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
             const contactDoc = await contactRef.get();
@@ -912,7 +928,6 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             if (headerComponent) {
                 if (headerComponent.format === 'IMAGE') {
                     if (!imageUrl) {
-                        // Si la plantilla requiere imagen pero no se proveyó una URL, marcamos error para este contacto.
                         throw new Error(`La plantilla '${templateName}' requiere una imagen, pero no se proporcionó URL.`);
                     }
                     components.push({
@@ -921,7 +936,6 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                     });
                     messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
                 }
-                // NOTA: Aquí se podrían añadir 'else if' para otros formatos de cabecera (VIDEO, DOCUMENT, TEXT) si se necesitaran en el futuro.
             }
 
             // 2. Procesar Cuerpo (BODY)
@@ -931,15 +945,12 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
                 
                 if (bodyVars.length > 0) {
-                    // Por ahora, solo reemplazamos la primera variable {{1}} con el nombre del contacto.
-                    // Una implementación más avanzada requeriría pasar más datos desde el frontend para {{2}}, {{3}}, etc.
                     bodyPayload.parameters.push({ type: 'text', text: contactName });
                     messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
                 } else {
                      messageToSaveText = bodyComponent.text || messageToSaveText;
                 }
 
-                // Solo se añade el componente de cuerpo si tiene parámetros. Si es estático, no se necesita.
                 if (bodyPayload.parameters.length > 0) {
                     components.push(bodyPayload);
                 }
@@ -949,29 +960,19 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             const buttonsComponent = templateObject.components?.find(c => c.type === 'BUTTONS');
             if (buttonsComponent && buttonsComponent.buttons) {
                 buttonsComponent.buttons.forEach((button, index) => {
-                    // Se enfoca en botones de URL dinámicos que contienen {{1}}
                     if (button.type === 'URL' && button.url?.includes('{{1}}')) {
-                         // Asumimos que la variable del botón es el ID del contacto para un enlace personalizado.
-                         // Esta es una suposición común y podría necesitar ajustarse si se usan otras variables.
                         const buttonPayload = {
                             type: 'button',
                             sub_type: 'url',
-                            index: index.toString(), // El índice debe ser un string
-                            parameters: [
-                                {
-                                    type: 'text',
-                                    // La variable para la URL del botón se asume que es el ID del contacto.
-                                    // Por ejemplo: https://misitio.com/oferta/{{1}} -> https://misitio.com/oferta/521...
-                                    text: contactId
-                                }
-                            ]
+                            index: index.toString(),
+                            parameters: [ { type: 'text', text: contactId } ]
                         };
                         components.push(buttonPayload);
                     }
                 });
             }
             
-            const payload = {
+            payload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: 'template',
@@ -981,10 +982,12 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 }
             };
             
-            // Solo se añade la propiedad 'components' al payload si hemos construido algún componente dinámico.
             if (components.length > 0) {
                 payload.template.components = components;
             }
+            
+            // LOG AÑADIDO
+            console.log(`[LOG DETALLADO] Payload final para ${contactId}:`, JSON.stringify(payload, null, 2));
             
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
@@ -1011,7 +1014,12 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
-            console.error(`❌ Fallo al enviar plantilla con imagen a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            // LOG AÑADIDO EN CASO DE ERROR
+            console.error(`❌ [FALLO DETALLADO] Fallo al enviar plantilla a ${contactId}.`);
+            if(payload) {
+                console.error('Payload que falló:', JSON.stringify(payload, null, 2));
+            }
+            console.error('Respuesta de Meta:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
             return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
         }
     });
