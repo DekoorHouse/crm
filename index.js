@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON LÓGICA DE PLANTILLAS UNIFICADA Y MEJORADA
+// index.js - VERSIÓN CON DIAGNÓSTICO FINAL PARA OBJETOS DE PLANTILLA
 
 require('dotenv').config();
 const express = require('express');
@@ -767,6 +767,9 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 // === INICIO: FUNCIÓN UNIFICADA PARA CONSTRUIR PAYLOADS DE PLANTILLAS (MODIFICADA) ===
 // ====================================================================================
 async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
+    // LOG DE DIAGNÓSTICO AÑADIDO
+    console.log('[DIAGNÓSTICO] Objeto de plantilla recibido por buildAdvancedTemplatePayload:', JSON.stringify(templateObject, null, 2));
+
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     const contactDoc = await contactRef.get();
     const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
@@ -779,8 +782,6 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     const headerComponent = templateObject.components?.find(c => c.type === 'HEADER');
     if (headerComponent) {
         if (headerComponent.format === 'IMAGE') {
-            // Para envíos desde el chat, no tenemos una URL de imagen, así que este bloque no se ejecutará.
-            // Se deja la lógica por si se reutiliza la función desde campañas.
             if (imageUrl) {
                 components.push({
                     type: 'header',
@@ -788,12 +789,9 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
                 });
                 messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
             } else {
-                 // Si la plantilla requiere una imagen pero no se provee, es mejor no enviar el header
-                 // para evitar un error seguro. Meta descartará el mensaje si el componente está mal formado.
                  console.warn(`[Advertencia Plantilla] La plantilla '${templateName}' requiere una imagen de cabecera, pero no se proporcionó una. No se incluirá la cabecera.`);
             }
         }
-        // Aquí se podrían añadir otros formatos de cabecera (TEXT, VIDEO, etc.) si es necesario.
     }
 
     // 2. Procesar Cuerpo (BODY)
@@ -803,7 +801,6 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
         
         if (bodyVars.length > 0) {
-            // Asumimos que {{1}} siempre es el nombre del contacto.
             bodyPayload.parameters.push({ type: 'text', text: contactName });
             messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
         } else {
@@ -824,14 +821,13 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
                     type: 'button',
                     sub_type: 'url',
                     index: index.toString(),
-                    parameters: [ { type: 'text', text: contactId } ] // Asumimos que la variable es el ID del contacto
+                    parameters: [ { type: 'text', text: contactId } ]
                 };
                 components.push(buttonPayload);
             }
         });
     }
     
-    // Construcción final del payload
     const payload = {
         messaging_product: 'whatsapp',
         to: contactId,
@@ -856,7 +852,6 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 // --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE (MODIFICADO) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    // El 'template' que llega aquí es el objeto completo de la plantilla desde el frontend
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
@@ -865,9 +860,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
-        // --- LÓGICA DE PLANTILLAS MEJORADA ---
         if (template) {
-            // Usamos la nueva función unificada. Como no pasamos imageUrl, manejará solo body y buttons.
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
             
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
@@ -884,7 +877,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.collection('messages').add(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
-        } else { // --- Lógica para mensajes normales (sin cambios) ---
+        } else { 
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
 
             const messageToSave = {
@@ -928,7 +921,6 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 
     const promises = contactIds.map(contactId => (async () => {
         try {
-            // Usamos la nueva función unificada
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
             
             console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
@@ -981,7 +973,6 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     const promises = targets.map(async (contactId) => {
         let payload; 
         try {
-            // Usamos la nueva función unificada, esta vez SÍ pasamos la imageUrl
             const { payload: generatedPayload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, templateObject, imageUrl);
             payload = generatedPayload;
             
