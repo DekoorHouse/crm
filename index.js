@@ -804,18 +804,23 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 
 
     // 2. Process BODY
-    if (bodyDef) {
-        const bodyVars = bodyDef.text?.match(/\{\{\d\}\}/g) || [];
-        if (bodyVars.length > 0) {
-            payloadComponents.push({
-                type: 'body',
-                parameters: [{ type: 'text', text: contactName }] // Assumes {{1}} is contact name
-            });
-            messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
-        } else {
-            messageToSaveText = bodyDef.text || messageToSaveText;
-        }
+   if (bodyDef) {
+    const bodyVars = bodyDef.text?.match(/\{\{\d\}\}/g) || [];
+    if (bodyVars.length > 0) {
+        payloadComponents.push({
+            type: 'body',
+            parameters: [{ type: 'text', text: contactName }]
+        });
+        messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
+    } else {
+        // CORRECCIÓN: Agregar el componente body incluso sin variables
+        payloadComponents.push({
+            type: 'body',
+            parameters: []
+        });
+        messageToSaveText = bodyDef.text || messageToSaveText;
     }
+}
 
     // 3. Process BUTTONS
     if (buttonsDef && buttonsDef.buttons) {
