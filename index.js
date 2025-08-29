@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CORREGIDA CON GESTIÓN DINÁMICA DE COMPONENTES DE PLANTILLA
+// index.js - VERSIÓN CORREGIDA CON GESTIÓN DINÁMICA DE COMPONENTES DE PLANTILLA (INCLUYENDO BOTONES)
 
 require('dotenv').config();
 const express = require('express');
@@ -883,8 +883,8 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     if ((!contactIds || !contactIds.length) && !phoneNumber) {
         return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs de contacto o un número de teléfono.' });
     }
-    if (!templateObject || !templateObject.name || !imageUrl) {
-        return res.status(400).json({ success: false, message: 'Se requieren el objeto de la plantilla y una URL de imagen.' });
+    if (!templateObject || !templateObject.name) {
+        return res.status(400).json({ success: false, message: 'Se requiere el objeto de la plantilla.' });
     }
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
@@ -903,39 +903,72 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             const contactDoc = await contactRef.get();
             const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
 
-            // --- LÓGICA DE CONSTRUCCIÓN DINÁMICA DE COMPONENTES ---
+            // --- LÓGICA DE CONSTRUCCIÓN DINÁMICA DE COMPONENTES MEJORADA ---
             const components = [];
             let messageToSaveText = `📄 Plantilla: ${templateName}`;
 
-            // 1. Revisar si la plantilla tiene cabecera de imagen
-            const headerComponent = templateObject.components?.find(c => c.type === 'HEADER' && c.format === 'IMAGE');
+            // 1. Procesar Cabecera (HEADER)
+            const headerComponent = templateObject.components?.find(c => c.type === 'HEADER');
             if (headerComponent) {
-                components.push({
-                    type: 'header',
-                    parameters: [{ type: 'image', image: { link: imageUrl } }]
-                });
-                messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+                if (headerComponent.format === 'IMAGE') {
+                    if (!imageUrl) {
+                        // Si la plantilla requiere imagen pero no se proveyó una URL, marcamos error para este contacto.
+                        throw new Error(`La plantilla '${templateName}' requiere una imagen, pero no se proporcionó URL.`);
+                    }
+                    components.push({
+                        type: 'header',
+                        parameters: [{ type: 'image', image: { link: imageUrl } }]
+                    });
+                    messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+                }
+                // NOTA: Aquí se podrían añadir 'else if' para otros formatos de cabecera (VIDEO, DOCUMENT, TEXT) si se necesitaran en el futuro.
             }
 
-            // 2. Revisar si la plantilla tiene cuerpo
+            // 2. Procesar Cuerpo (BODY)
             const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
             if (bodyComponent) {
                 const bodyPayload = { type: 'body', parameters: [] };
-                // Si el cuerpo tiene una variable, añadir el parámetro
-                if (bodyComponent.text && bodyComponent.text.includes('{{1}}')) {
+                const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
+                
+                if (bodyVars.length > 0) {
+                    // Por ahora, solo reemplazamos la primera variable {{1}} con el nombre del contacto.
+                    // Una implementación más avanzada requeriría pasar más datos desde el frontend para {{2}}, {{3}}, etc.
                     bodyPayload.parameters.push({ type: 'text', text: contactName });
-                    // Actualizar el texto para guardarlo en la BD con el nombre real
-                    messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
-                } else if (bodyComponent.text) {
-                    // Si no hay variable, el texto a guardar es el de la plantilla
-                    messageToSaveText = bodyComponent.text;
+                    messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
+                } else {
+                     messageToSaveText = bodyComponent.text || messageToSaveText;
                 }
 
-                // Si no se añadieron parámetros, eliminar el array vacío para evitar errores
-                if (bodyPayload.parameters.length === 0) {
-                    delete bodyPayload.parameters;
+                // Solo se añade el componente de cuerpo si tiene parámetros. Si es estático, no se necesita.
+                if (bodyPayload.parameters.length > 0) {
+                    components.push(bodyPayload);
                 }
-                components.push(bodyPayload);
+            }
+
+            // 3. Procesar Botones (BUTTONS)
+            const buttonsComponent = templateObject.components?.find(c => c.type === 'BUTTONS');
+            if (buttonsComponent && buttonsComponent.buttons) {
+                buttonsComponent.buttons.forEach((button, index) => {
+                    // Se enfoca en botones de URL dinámicos que contienen {{1}}
+                    if (button.type === 'URL' && button.url?.includes('{{1}}')) {
+                         // Asumimos que la variable del botón es el ID del contacto para un enlace personalizado.
+                         // Esta es una suposición común y podría necesitar ajustarse si se usan otras variables.
+                        const buttonPayload = {
+                            type: 'button',
+                            sub_type: 'url',
+                            index: index.toString(), // El índice debe ser un string
+                            parameters: [
+                                {
+                                    type: 'text',
+                                    // La variable para la URL del botón se asume que es el ID del contacto.
+                                    // Por ejemplo: https://misitio.com/oferta/{{1}} -> https://misitio.com/oferta/521...
+                                    text: contactId
+                                }
+                            ]
+                        };
+                        components.push(buttonPayload);
+                    }
+                });
             }
             
             const payload = {
@@ -945,13 +978,12 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 template: {
                     name: templateName,
                     language: { code: templateObject.language },
-                    components: components
                 }
             };
             
-            // Si no se generó ningún componente, eliminar la propiedad para evitar errores
-            if (payload.template.components.length === 0) {
-                delete payload.template.components;
+            // Solo se añade la propiedad 'components' al payload si hemos construido algún componente dinámico.
+            if (components.length > 0) {
+                payload.template.components = components;
             }
             
             const response = await axios.post(url, payload, { headers });
@@ -970,7 +1002,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId,
-                text: messageToSaveText, fileUrl: headerComponent ? imageUrl : null, fileType: headerComponent ? 'image/external' : null
+                text: messageToSaveText, fileUrl: (headerComponent && imageUrl) ? imageUrl : null, fileType: (headerComponent && imageUrl) ? 'image/external' : null
             });
 
             await contactRef.update({
@@ -1015,7 +1047,8 @@ app.get('/api/whatsapp-templates', async (req, res) => {
                 components: t.components.map(c => ({ 
                     type: c.type, 
                     text: c.text,
-                    format: c.format // Esta línea es la corrección clave
+                    format: c.format, // Esta línea es la corrección clave
+                    buttons: c.buttons // Se añade para poder inspeccionar los botones
                 })) 
             }));
         res.status(200).json({ success: true, templates });
