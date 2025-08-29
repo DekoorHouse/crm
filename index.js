@@ -944,7 +944,10 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 type: 'template',
                 template: {
                     name: templateName,
-                    language: { code: 'es' },
+                    // --- INICIO DE LA SEGUNDA CORRECCIÓN ---
+                    // Se usa el código de idioma del objeto de la plantilla, en lugar de "es" fijo.
+                    language: { code: templateObject.language },
+                    // --- FIN DE LA SEGUNDA CORRECCIÓN ---
                     components: components // Usar los componentes construidos dinámicamente
                 }
             };
