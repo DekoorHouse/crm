@@ -906,7 +906,8 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             const contactDoc = await contactRef.get();
             const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
 
-            // --- LÓGICA CONDICIONAL PARA LOS COMPONENTES ---
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Se construye la base de los componentes, siempre con la cabecera (imagen).
             const components = [
                 {
                     type: 'header',
@@ -914,16 +915,28 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
                 }
             ];
 
-            // Buscar el componente del cuerpo en la plantilla recibida
+            // Se busca el componente del cuerpo en la plantilla que viene del frontend.
             const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
 
-            // Si el cuerpo existe y contiene una variable, añadir el parámetro
-            if (bodyComponent && bodyComponent.text && bodyComponent.text.includes('{{1}}')) {
-                components.push({
-                    type: 'body',
-                    parameters: [{ type: 'text', text: contactName }]
-                });
+            // Si la plantilla tiene un cuerpo (casi todas lo tienen), se añade al payload.
+            if (bodyComponent) {
+                const bodyPayload = { type: 'body', parameters: [] };
+
+                // Si el texto del cuerpo tiene una variable {{1}}, se añade el parámetro con el nombre.
+                if (bodyComponent.text && bodyComponent.text.includes('{{1}}')) {
+                    bodyPayload.parameters.push({ type: 'text', text: contactName });
+                }
+
+                // Si después de revisar no hay parámetros (porque el texto es estático),
+                // se elimina el array 'parameters' para que la API de Meta no lo rechace.
+                if (bodyPayload.parameters.length === 0) {
+                    delete bodyPayload.parameters;
+                }
+                
+                // Se añade el componente de cuerpo (con o sin parámetros) a la lista final.
+                components.push(bodyPayload);
             }
+            // --- FIN DE LA CORRECCIÓN ---
             
             const payload = {
                 messaging_product: 'whatsapp',
