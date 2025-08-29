@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON SOLUCIÓN FINAL PARA PLANTILLAS ESTÁTICAS Y DINÁMICAS
+// index.js - VERSIÓN CON SOLUCIÓN FINAL PARA PLANTILLAS ESTÁTicas Y DINÁMICAS
 
 require('dotenv').config();
 const express = require('express');
@@ -774,62 +774,64 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
     const templateName = templateObject.name;
 
-    const components = [];
+    const payloadComponents = [];
     let messageToSaveText = `📄 Plantilla: ${templateName}`;
 
-    // 1. Procesar Cabecera (HEADER)
-    const headerComponent = templateObject.components?.find(c => c.type === 'HEADER');
-    if (headerComponent) {
-        if (headerComponent.format === 'IMAGE') {
-            if (imageUrl) {
-                components.push({
-                    type: 'header',
-                    parameters: [{ type: 'image', image: { link: imageUrl } }]
-                });
-                messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
-            } else {
-                 console.warn(`[Advertencia Plantilla] La plantilla '${templateName}' requiere una imagen de cabecera, pero no se proporcionó una. No se incluirá la cabecera.`);
-            }
-        }
-    }
+    // Find components from the template definition
+    const headerDef = templateObject.components?.find(c => c.type === 'HEADER');
+    const bodyDef = templateObject.components?.find(c => c.type === 'BODY');
+    const buttonsDef = templateObject.components?.find(c => c.type === 'BUTTONS');
 
-    // 2. Procesar Cuerpo (BODY) - CORREGIDO
-    const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
-    if (bodyComponent) {
-        const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
-        
-        if (bodyVars.length > 0) {
-            // Caso: El cuerpo tiene variables
-            const bodyPayload = { 
-                type: 'body', 
-                parameters: [{ type: 'text', text: contactName }] // Asume {{1}} es el nombre
-            };
-            components.push(bodyPayload);
-            messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
+    // 1. Process HEADER
+    if (headerDef && headerDef.format === 'IMAGE') {
+        if (imageUrl) {
+            payloadComponents.push({
+                type: 'header',
+                parameters: [{ type: 'image', image: { link: imageUrl } }]
+            });
+            messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
         } else {
-            // Caso: El cuerpo NO tiene variables (es estático)
-            // No se necesita añadir un componente para un cuerpo estático,
-            // pero sí actualizamos el texto que se guardará en la DB.
-            messageToSaveText = bodyComponent.text || messageToSaveText;
+            console.warn(`[Advertencia] La plantilla '${templateName}' requiere una imagen, pero no se proporcionó una URL. La cabecera no se enviará, lo que probablemente causará un fallo.`);
+        }
+    }
+    // Add logic for TEXT header with variable if needed
+    if (headerDef && headerDef.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
+         payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'text', text: "Valor de cabecera" }] // NOTE: Needs a value source
+        });
+    }
+
+
+    // 2. Process BODY
+    if (bodyDef) {
+        const bodyVars = bodyDef.text?.match(/\{\{\d\}\}/g) || [];
+        if (bodyVars.length > 0) {
+            payloadComponents.push({
+                type: 'body',
+                parameters: [{ type: 'text', text: contactName }] // Assumes {{1}} is contact name
+            });
+            messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
+        } else {
+            messageToSaveText = bodyDef.text || messageToSaveText;
         }
     }
 
-    // 3. Procesar Botones (BUTTONS)
-    const buttonsComponent = templateObject.components?.find(c => c.type === 'BUTTONS');
-    if (buttonsComponent && buttonsComponent.buttons) {
-        buttonsComponent.buttons.forEach((button, index) => {
+    // 3. Process BUTTONS
+    if (buttonsDef && buttonsDef.buttons) {
+        buttonsDef.buttons.forEach((button, index) => {
             if (button.type === 'URL' && button.url?.includes('{{1}}')) {
-                const buttonPayload = {
+                payloadComponents.push({
                     type: 'button',
                     sub_type: 'url',
                     index: index.toString(),
-                    parameters: [ { type: 'text', text: contactId } ]
-                };
-                components.push(buttonPayload);
+                    parameters: [{ type: 'text', text: contactId }] // Assumes button variable is contactId
+                });
             }
         });
     }
-    
+
+    // Final payload assembly
     const payload = {
         messaging_product: 'whatsapp',
         to: contactId,
@@ -839,10 +841,9 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
             language: { code: templateObject.language },
         }
     };
-    
-    // Solo añade la clave 'components' si hemos construido algún componente dinámico
-    if (components.length > 0) {
-        payload.template.components = components;
+
+    if (payloadComponents.length > 0) {
+        payload.template.components = payloadComponents;
     }
 
     return { payload, messageToSaveText };
