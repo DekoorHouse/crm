@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON LOGS MEJORADOS PARA DIAGNÓSTICO DE PLANTILLAS
+// index.js - VERSIÓN CON LÓGICA DE PLANTILLAS UNIFICADA Y MEJORADA
 
 require('dotenv').config();
 const express = require('express');
@@ -763,33 +763,100 @@ app.post('/api/test/simulate-ad-message', async (req, res) => {
 // --- END: SIMULATOR ENDPOINT ---
 
 
-// --- HELPER FUNCTION TO BUILD TEMPLATE PAYLOAD AND TEXT ---
-async function buildTemplatePayload(contactId, template) {
+// ====================================================================================
+// === INICIO: FUNCIÓN UNIFICADA PARA CONSTRUIR PAYLOADS DE PLANTILLAS (MODIFICADA) ===
+// ====================================================================================
+async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    let messageToSaveText = `📄 Plantilla: ${template.name}`;
+    const contactDoc = await contactRef.get();
+    const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
+    const templateName = templateObject.name;
 
-    const payload = {
-        messaging_product: 'whatsapp', to: contactId, type: 'template',
-        template: { name: template.name, language: { code: template.language }, components: [] }
-    };
+    const components = [];
+    let messageToSaveText = `📄 Plantilla: ${templateName}`;
 
-    const bodyComponent = template.components?.find(c => c.type === 'BODY');
-    if (bodyComponent?.text?.includes('{{1}}')) {
-        const contactDoc = await contactRef.get();
-        const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
-        payload.template.components.push({ type: 'body', parameters: [{ type: 'text', text: contactName }] });
-        messageToSaveText = bodyComponent.text.replace('{{1}}', contactName);
-    } else if (bodyComponent?.text) {
-        messageToSaveText = bodyComponent.text;
+    // 1. Procesar Cabecera (HEADER)
+    const headerComponent = templateObject.components?.find(c => c.type === 'HEADER');
+    if (headerComponent) {
+        if (headerComponent.format === 'IMAGE') {
+            // Para envíos desde el chat, no tenemos una URL de imagen, así que este bloque no se ejecutará.
+            // Se deja la lógica por si se reutiliza la función desde campañas.
+            if (imageUrl) {
+                components.push({
+                    type: 'header',
+                    parameters: [{ type: 'image', image: { link: imageUrl } }]
+                });
+                messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+            } else {
+                 // Si la plantilla requiere una imagen pero no se provee, es mejor no enviar el header
+                 // para evitar un error seguro. Meta descartará el mensaje si el componente está mal formado.
+                 console.warn(`[Advertencia Plantilla] La plantilla '${templateName}' requiere una imagen de cabecera, pero no se proporcionó una. No se incluirá la cabecera.`);
+            }
+        }
+        // Aquí se podrían añadir otros formatos de cabecera (TEXT, VIDEO, etc.) si es necesario.
     }
 
-    if (payload.template.components.length === 0) delete payload.template.components;
+    // 2. Procesar Cuerpo (BODY)
+    const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
+    if (bodyComponent) {
+        const bodyPayload = { type: 'body', parameters: [] };
+        const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
+        
+        if (bodyVars.length > 0) {
+            // Asumimos que {{1}} siempre es el nombre del contacto.
+            bodyPayload.parameters.push({ type: 'text', text: contactName });
+            messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
+        } else {
+             messageToSaveText = bodyComponent.text || messageToSaveText;
+        }
+
+        if (bodyPayload.parameters.length > 0) {
+            components.push(bodyPayload);
+        }
+    }
+
+    // 3. Procesar Botones (BUTTONS)
+    const buttonsComponent = templateObject.components?.find(c => c.type === 'BUTTONS');
+    if (buttonsComponent && buttonsComponent.buttons) {
+        buttonsComponent.buttons.forEach((button, index) => {
+            if (button.type === 'URL' && button.url?.includes('{{1}}')) {
+                const buttonPayload = {
+                    type: 'button',
+                    sub_type: 'url',
+                    index: index.toString(),
+                    parameters: [ { type: 'text', text: contactId } ] // Asumimos que la variable es el ID del contacto
+                };
+                components.push(buttonPayload);
+            }
+        });
+    }
+    
+    // Construcción final del payload
+    const payload = {
+        messaging_product: 'whatsapp',
+        to: contactId,
+        type: 'template',
+        template: {
+            name: templateName,
+            language: { code: templateObject.language },
+        }
+    };
+    
+    if (components.length > 0) {
+        payload.template.components = components;
+    }
+
     return { payload, messageToSaveText };
 }
+// ====================================================================================
+// === FIN: FUNCIÓN UNIFICADA =======================================================
+// ====================================================================================
 
-// --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE ---
+
+// --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE (MODIFICADO) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
+    // El 'template' que llega aquí es el objeto completo de la plantilla desde el frontend
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
 
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
@@ -798,11 +865,13 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
+        // --- LÓGICA DE PLANTILLAS MEJORADA ---
         if (template) {
-            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            // Usamos la nueva función unificada. Como no pasamos imageUrl, manejará solo body y buttons.
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+            
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
             
-            // LOG AÑADIDO
             console.log(`[LOG DETALLADO] Enviando plantilla individual a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
@@ -815,7 +884,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.collection('messages').add(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
-        } else {
+        } else { // --- Lógica para mensajes normales (sin cambios) ---
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
 
             const messageToSave = {
@@ -848,7 +917,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
 });
 
 
-// --- ENDPOINT PARA CAMPAÑAS ---
+// --- ENDPOINT PARA CAMPAÑAS (MODIFICADO PARA USAR LA NUEVA FUNCIÓN) ---
 app.post('/api/campaigns/send-template', async (req, res) => {
     const { contactIds, template } = req.body;
     if (!contactIds?.length || !template) return res.status(400).json({ success: false, message: 'Se requieren IDs y una plantilla.' });
@@ -859,9 +928,9 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 
     const promises = contactIds.map(contactId => (async () => {
         try {
-            const { payload, messageToSaveText } = await buildTemplatePayload(contactId, template);
+            // Usamos la nueva función unificada
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
             
-            // LOG AÑADIDO
             console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(url, payload, { headers });
@@ -882,12 +951,11 @@ app.post('/api/campaigns/send-template', async (req, res) => {
 });
 
 // =================================================================
-// === INICIO: ENDPOINT CORREGIDO PARA PLANTILLAS CON IMAGEN      ===
+// === ENDPOINT PARA PLANTILLAS CON IMAGEN (MODIFICADO)         ===
 // =================================================================
 app.post('/api/campaigns/send-template-with-image', async (req, res) => {
     const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;
 
-    // LOG AÑADIDO
     console.log('\n--- INICIANDO ENVÍO DE CAMPAÑA CON IMAGEN ---');
     console.log('Contacto(s) objetivo:', phoneNumber ? [phoneNumber] : contactIds);
     console.log('Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
@@ -905,94 +973,26 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
     }
 
-    const templateName = templateObject.name;
     const targets = phoneNumber ? [phoneNumber] : contactIds;
-
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
     const results = { successful: [], failed: [] };
 
     const promises = targets.map(async (contactId) => {
-        let payload; // Declarar payload aquí para que esté disponible en el catch
+        let payload; 
         try {
-            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-            const contactDoc = await contactRef.get();
-            const contactName = contactDoc.exists && contactDoc.data().name ? contactDoc.data().name : 'Cliente';
-
-            // --- LÓGICA DE CONSTRUCCIÓN DINÁMICA DE COMPONENTES MEJORADA ---
-            const components = [];
-            let messageToSaveText = `📄 Plantilla: ${templateName}`;
-
-            // 1. Procesar Cabecera (HEADER)
-            const headerComponent = templateObject.components?.find(c => c.type === 'HEADER');
-            if (headerComponent) {
-                if (headerComponent.format === 'IMAGE') {
-                    if (!imageUrl) {
-                        throw new Error(`La plantilla '${templateName}' requiere una imagen, pero no se proporcionó URL.`);
-                    }
-                    components.push({
-                        type: 'header',
-                        parameters: [{ type: 'image', image: { link: imageUrl } }]
-                    });
-                    messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
-                }
-            }
-
-            // 2. Procesar Cuerpo (BODY)
-            const bodyComponent = templateObject.components?.find(c => c.type === 'BODY');
-            if (bodyComponent) {
-                const bodyPayload = { type: 'body', parameters: [] };
-                const bodyVars = bodyComponent.text?.match(/\{\{\d\}\}/g) || [];
-                
-                if (bodyVars.length > 0) {
-                    bodyPayload.parameters.push({ type: 'text', text: contactName });
-                    messageToSaveText = bodyComponent.text.replace(/\{\{1\}\}/g, contactName);
-                } else {
-                     messageToSaveText = bodyComponent.text || messageToSaveText;
-                }
-
-                if (bodyPayload.parameters.length > 0) {
-                    components.push(bodyPayload);
-                }
-            }
-
-            // 3. Procesar Botones (BUTTONS)
-            const buttonsComponent = templateObject.components?.find(c => c.type === 'BUTTONS');
-            if (buttonsComponent && buttonsComponent.buttons) {
-                buttonsComponent.buttons.forEach((button, index) => {
-                    if (button.type === 'URL' && button.url?.includes('{{1}}')) {
-                        const buttonPayload = {
-                            type: 'button',
-                            sub_type: 'url',
-                            index: index.toString(),
-                            parameters: [ { type: 'text', text: contactId } ]
-                        };
-                        components.push(buttonPayload);
-                    }
-                });
-            }
+            // Usamos la nueva función unificada, esta vez SÍ pasamos la imageUrl
+            const { payload: generatedPayload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, templateObject, imageUrl);
+            payload = generatedPayload;
             
-            payload = {
-                messaging_product: 'whatsapp',
-                to: contactId,
-                type: 'template',
-                template: {
-                    name: templateName,
-                    language: { code: templateObject.language },
-                }
-            };
-            
-            if (components.length > 0) {
-                payload.template.components = components;
-            }
-            
-            // LOG AÑADIDO
             console.log(`[LOG DETALLADO] Payload final para ${contactId}:`, JSON.stringify(payload, null, 2));
             
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            const contactDoc = await contactRef.get();
             if (!contactDoc.exists) {
                 await contactRef.set({ 
                     name: 'Nuevo Contacto (Campaña)',
@@ -1005,7 +1005,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId,
-                text: messageToSaveText, fileUrl: (headerComponent && imageUrl) ? imageUrl : null, fileType: (headerComponent && imageUrl) ? 'image/external' : null
+                text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external'
             });
 
             await contactRef.update({
@@ -1014,7 +1014,6 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
-            // LOG AÑADIDO EN CASO DE ERROR
             console.error(`❌ [FALLO DETALLADO] Fallo al enviar plantilla a ${contactId}.`);
             if(payload) {
                 console.error('Payload que falló:', JSON.stringify(payload, null, 2));
