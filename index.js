@@ -879,6 +879,9 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
+            // INICIO DE LA MODIFICACIÓN
+            console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
+            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
 
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
@@ -913,7 +916,9 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
 
     } catch (error) {
-        console.error('Error al enviar mensaje vía WhatsApp API:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        // INICIO DE LA MODIFICACIÓN
+        console.error('❌ Error al enviar plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        // FIN DE LA MODIFICACIÓN
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
@@ -935,6 +940,9 @@ app.post('/api/campaigns/send-template', async (req, res) => {
             console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(url, payload, { headers });
+            // INICIO DE LA MODIFICACIÓN
+            console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
+            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -942,6 +950,9 @@ app.post('/api/campaigns/send-template', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
+            // INICIO DE LA MODIFICACIÓN
+            console.error(`❌ Error al enviar plantilla a ${contactId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+            // FIN DE LA MODIFICACIÓN
             return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
         }
     })());
@@ -988,6 +999,9 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             console.log(`[LOG DETALLADO] Payload final para ${contactId}:`, JSON.stringify(payload, null, 2));
             
             const response = await axios.post(url, payload, { headers });
+            // INICIO DE LA MODIFICACIÓN
+            console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
+            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             
@@ -1014,11 +1028,13 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
+            // INICIO DE LA MODIFICACIÓN
             console.error(`❌ [FALLO DETALLADO] Fallo al enviar plantilla a ${contactId}.`);
             if(payload) {
                 console.error('Payload que falló:', JSON.stringify(payload, null, 2));
             }
             console.error('Respuesta de Meta:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+            // FIN DE LA MODIFICACIÓN
             return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
         }
     });
