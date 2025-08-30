@@ -1,4 +1,4 @@
-// index.js - VERSIÓN CON SOLUCIÓN FINAL PARA PLANTILLAS ESTÁTicas Y DINÁMICAS
+// index.js - VERSIÓN CON SOLUCIÓN FINAL PARA PLANTILLAS ESTÁTicas Y DINÁMICAS Y VALIDACIÓN DE 24H
 
 require('dotenv').config();
 const express = require('express');
@@ -858,7 +858,7 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 // ====================================================================================
 
 
-// --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE (MODIFICADO) ---
+// --- ENDPOINT PARA ENVIAR MENSAJES MANUALMENTE (MODIFICADO CON VALIDACIÓN DE 24H) ---
 app.post('/api/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
@@ -870,6 +870,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
         if (template) {
+            // La lógica de plantillas no necesita la validación de 24h
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
             
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
@@ -879,9 +880,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
-            // INICIO DE LA MODIFICACIÓN
             console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
-            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
 
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
@@ -890,6 +889,35 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
 
         } else { 
+            // --- INICIO DE LA VALIDACIÓN DE 24 HORAS ---
+            const lastUserMessageQuery = await contactRef.collection('messages')
+                .where('from', '==', contactId)
+                .orderBy('timestamp', 'desc')
+                .limit(1)
+                .get();
+
+            if (!lastUserMessageQuery.empty) {
+                const lastUserMessageTimestamp = lastUserMessageQuery.docs[0].data().timestamp;
+                const now = admin.firestore.Timestamp.now();
+                const hoursSinceLastMessage = (now.toMillis() - lastUserMessageTimestamp.toMillis()) / 3600000; // Milisegundos en una hora
+
+                if (hoursSinceLastMessage > 24) {
+                    console.warn(`[VALIDACIÓN 24H] Bloqueado envío de mensaje a ${contactId}. La ventana de 24h ha cerrado.`);
+                    return res.status(403).json({
+                        success: false,
+                        message: 'No se puede enviar un mensaje libre después de 24 horas desde la última respuesta del cliente. Por favor, use una plantilla aprobada.'
+                    });
+                }
+            } else {
+                 console.warn(`[VALIDACIÓN 24H] Bloqueado envío a ${contactId}. No hay mensajes previos del usuario para abrir la ventana.`);
+                 return res.status(403).json({
+                    success: false,
+                    message: 'No se puede iniciar una conversación con un mensaje libre. Por favor, use una plantilla aprobada.'
+                 });
+            }
+            // --- FIN DE LA VALIDACIÓN DE 24 HORAS ---
+
+            // Si la validación pasa, se envía el mensaje
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
 
             const messageToSave = {
@@ -916,9 +944,7 @@ app.post('/api/contacts/:contactId/messages', async (req, res) => {
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
 
     } catch (error) {
-        // INICIO DE LA MODIFICACIÓN
-        console.error('❌ Error al enviar plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        // FIN DE LA MODIFICACIÓN
+        console.error('❌ Error al enviar mensaje de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
@@ -940,9 +966,7 @@ app.post('/api/campaigns/send-template', async (req, res) => {
             console.log(`[LOG DETALLADO] Enviando plantilla de campaña (solo texto) a ${contactId}. Payload:`, JSON.stringify(payload, null, 2));
 
             const response = await axios.post(url, payload, { headers });
-            // INICIO DE LA MODIFICACIÓN
             console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
-            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -950,9 +974,7 @@ app.post('/api/campaigns/send-template', async (req, res) => {
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
-            // INICIO DE LA MODIFICACIÓN
             console.error(`❌ Error al enviar plantilla a ${contactId}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-            // FIN DE LA MODIFICACIÓN
             return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
         }
     })());
@@ -999,9 +1021,7 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
             console.log(`[LOG DETALLADO] Payload final para ${contactId}:`, JSON.stringify(payload, null, 2));
             
             const response = await axios.post(url, payload, { headers });
-            // INICIO DE LA MODIFICACIÓN
             console.log('[RESPUESTA WhatsApp]:', JSON.stringify(response.data, null, 2));
-            // FIN DE LA MODIFICACIÓN
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             
@@ -1028,13 +1048,11 @@ app.post('/api/campaigns/send-template-with-image', async (req, res) => {
 
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
-            // INICIO DE LA MODIFICACIÓN
             console.error(`❌ [FALLO DETALLADO] Fallo al enviar plantilla a ${contactId}.`);
             if(payload) {
                 console.error('Payload que falló:', JSON.stringify(payload, null, 2));
             }
             console.error('Respuesta de Meta:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-            // FIN DE LA MODIFICACIÓN
             return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
         }
     });
