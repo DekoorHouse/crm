@@ -2290,34 +2290,30 @@
             input.style.height = 'auto';
             cancelStagedFile(); 
 
-                     try {
+            try {
                 if (fileToSend) {
                     const response = await uploadAndSendFile(fileToSend, text);
                     if (!response.ok) {
                         const errorData = await response.json();
-                        // MODIFICACIÓN INICIA AQUÍ
-                        if (response.status === 403) {
-                             // Específicamente atrapa el error de la ventana de 24h
-                            throw new Error(errorData.message || 'La ventana de 24 horas para responder ha cerrado.');
-                        }
-                        // FIN DE LA MODIFICACIÓN
                         throw new Error(errorData.message || 'Error del servidor.');
                     }
                 } else {
                     await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
                     const messageData = { text };
                     if (remoteFileToSend) {
-// ... existing code ...
+                        messageData.fileUrl = remoteFileToSend.url;
+                        messageData.fileType = remoteFileToSend.type;
+                    }
+                    if (state.replyingToMessage) {
+                        messageData.reply_to_wamid = state.replyingToMessage.id;
+                    }
+                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify(messageData)
                     });
                     if (!response.ok) {
                         const errorData = await response.json();
-                        // MODIFICACIÓN INICIA AQUÍ
-                        if (response.status === 403) {
-                             // Específicamente atrapa el error de la ventana de 24h
-                            throw new Error(errorData.message || 'La ventana de 24 horas para responder ha cerrado.');
-                        }
-                        // FIN DE LA MODIFICACIÓN
                         throw new Error(errorData.message || 'Error del servidor.');
                     }
                 }
