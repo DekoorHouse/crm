@@ -160,7 +160,7 @@
                 <input type="hidden" id="qr-doc-id">
                 <input type="hidden" id="qr-file-url">
                 <input type="hidden" id="qr-file-type">
-                <input type="file" id="qr-file-input" accept="image/*,video/*,application/pdf">
+                <input type="file" id="qr-file-input" accept="image/*,video/*,application/pdf" class="hidden">
                 
                 <div>
                     <label for="qr-shortcut">Atajo (sin "/")</label>
@@ -172,7 +172,7 @@
                 </div>
                 <div>
                     <label for="qr-file-input" class="btn btn-subtle !inline-flex !w-auto">
-                        <i class="fas fa-paperclip mr-2"></i> Adjuntar Archivo
+                        <i class="fas fa-paperclip mr-2"></i> <span id="qr-attach-button-text">Adjuntar Archivo</span>
                     </label>
                     <div id="qr-media-preview" class="mt-2"></div>
                 </div>
@@ -318,7 +318,7 @@
                 <input type="hidden" id="kb-doc-id">
                 <input type="hidden" id="kb-file-url">
                 <input type="hidden" id="kb-file-type">
-                <input type="file" id="kb-file-input" accept="image/*,video/*,application/pdf">
+                <input type="file" id="kb-file-input" accept="image/*,video/*,application/pdf" class="hidden">
                 
                 <div>
                     <label for="kb-topic">Tema / Palabras Clave</label>
@@ -349,7 +349,8 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
     <!-- Lógica de la Aplicación -->
-    <script src="app.js"></script>
+    <script src="ui_templates.js"></script>
+    <script src="app_logic.js"></script>
     
 </body>
 </html>
