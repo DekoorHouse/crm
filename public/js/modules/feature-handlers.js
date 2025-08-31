@@ -406,3 +406,148 @@ async function handleGlobalBotToggle(isActive) {
         if (toggle) toggle.checked = !isActive;
     }
 }
+
+
+// --- START: ADDED FUNCTIONS TO FIX ERRORS ---
+
+/**
+ * Initializes the drag-and-drop sorting functionality for the tags table.
+ */
+function initTagsSortable() {
+    const tableBody = document.getElementById('tags-table-body');
+    if (tableBody && !tagsSortable) { // Use global `tagsSortable` from state.js
+        tagsSortable = new Sortable(tableBody, {
+            animation: 150,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            onEnd: async (evt) => {
+                const orderedIds = Array.from(tableBody.querySelectorAll('tr')).map(row => row.dataset.id);
+                try {
+                    const response = await fetch(`${API_BASE_URL}/api/tags/order`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ orderedIds })
+                    });
+                    if (!response.ok) throw new Error('No se pudo guardar el nuevo orden.');
+                } catch (error) {
+                    showError(error.message);
+                    renderTagsView(); // Re-render to revert visual change on failure
+                }
+            }
+        });
+    }
+}
+
+/**
+ * Updates the recipient count display on the campaign pages based on selections.
+ * @param {string} type - 'text' or 'image' to distinguish between campaign views.
+ */
+function updateCampaignRecipientCount(type = 'text') {
+    const suffix = type === 'image' ? '-image' : '';
+    const tagSelect = document.getElementById(`campaign${suffix}-tag-select`);
+    const phoneInput = document.getElementById(`campaign-image-phone-input`);
+    const countDisplay = document.getElementById(`recipient-count-display${suffix}`);
+
+    if (!tagSelect || !countDisplay) return;
+
+    let count = 0;
+    const selectedTagKey = tagSelect.value;
+    
+    // For the image campaign, a phone number overrides the tag selection
+    if (type === 'image' && phoneInput && phoneInput.value.trim()) {
+        count = 1;
+        tagSelect.value = 'all'; // Reset tag selection if phone is entered
+    } else if (selectedTagKey === 'all') {
+        count = state.contacts.length;
+    } else {
+        count = state.contacts.filter(c => c.status === selectedTagKey).length;
+    }
+
+    countDisplay.textContent = `Se enviará a ${count} contacto(s).`;
+}
+
+/**
+ * Toggles the visibility of the IA submenu in the sidebar.
+ */
+function toggleIAMenu() {
+    const submenu = document.getElementById('ia-submenu');
+    const chevron = document.getElementById('ia-menu-chevron');
+    if (submenu && chevron) {
+        submenu.classList.toggle('hidden');
+        chevron.classList.toggle('rotate-180');
+    }
+}
+
+/**
+ * Handles saving the Google Sheet ID from the settings page.
+ */
+async function handleSaveGoogleSheetId() {
+    const input = document.getElementById('google-sheet-id-input');
+    const button = document.getElementById('save-google-sheet-id-btn');
+    if (!input || !button) return;
+
+    const googleSheetId = input.value.trim();
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/settings/google-sheet`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ googleSheetId })
+        });
+        if (!response.ok) throw new Error('No se pudo guardar el ID.');
+        state.googleSheetSettings.googleSheetId = googleSheetId;
+        showError("ID de Google Sheet guardado con éxito."); // Using showError for feedback
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Guardar';
+    }
+}
+
+/**
+ * Handles the submission of the ad simulation form from the settings page.
+ * @param {Event} event The form submission event.
+ */
+async function handleSimulateAdMessage(event) {
+    event.preventDefault();
+    const phoneInput = document.getElementById('sim-phone-number');
+    const adIdInput = document.getElementById('sim-ad-id');
+    const textInput = document.getElementById('sim-message-text');
+    const button = document.getElementById('simulate-ad-btn');
+
+    const from = phoneInput.value.trim();
+    const adId = adIdInput.value.trim();
+    const text = textInput.value.trim();
+
+    if (!from || !adId || !text) {
+        showError("Por favor, completa todos los campos de simulación.");
+        return;
+    }
+
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Enviando...';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/test/simulate-ad-message`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from, adId, text })
+        });
+        const result = await response.json();
+        if (!response.ok) {
+            throw new Error(result.message || 'Error en la simulación.');
+        }
+        alert('Simulación enviada con éxito. Revisa la lista de chats para ver el nuevo contacto/mensaje.');
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-paper-plane mr-2"></i> Enviar Simulación';
+    }
+}
+
+// --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
