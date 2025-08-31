@@ -703,56 +703,20 @@ function closeContactDetails() {
 }
 
 /**
- * Muestra u oculta el selector de plantillas de mensajes.
+ * Renderiza la vista previa de un archivo adjunto (local o remoto).
  */
-function toggleTemplatePicker() {
-    state.templatePickerOpen = !state.templatePickerOpen;
-    if (state.templatePickerOpen) {
-        state.quickReplyPickerOpen = false;
-        state.emojiPickerOpen = false;
-        renderTemplatePicker();
+function renderFilePreview() {
+    const container = document.getElementById('file-preview-container');
+    if (!container) return;
+
+    if (state.stagedFile) {
+        container.innerHTML = LocalFilePreviewTemplate(state.stagedFile);
+        container.classList.remove('hidden');
+    } else if (state.stagedRemoteFile) {
+        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);
+        container.classList.remove('hidden');
+    } else {
+        container.innerHTML = '';
+        container.classList.add('hidden');
     }
-    renderAllPickers();
 }
-
-/**
- * Muestra u oculta el selector de emojis.
- */
-function toggleEmojiPicker() {
-    state.emojiPickerOpen = !state.emojiPickerOpen;
-    if (state.emojiPickerOpen) {
-        state.quickReplyPickerOpen = false;
-        state.templatePickerOpen = false;
-        renderEmojiPicker();
-    }
-    renderAllPickers();
-}
-
-/**
- * Renderiza el contenido del selector de plantillas.
- */
-function renderTemplatePicker() {
-    const picker = document.getElementById('template-picker');
-    if (!picker) return;
-
-    if (state.templates.length === 0) {
-        picker.innerHTML = '<div class="p-4 text-center text-sm text-gray-500">No hay plantillas aprobadas disponibles.</div>';
-        return;
-    }
-
-    picker.innerHTML = state.templates.map(template => `
-        <div class="picker-item template-item" onclick='handleSendTemplate(${JSON.stringify(template)})'>
-            <div class="flex justify-between items-center">
-                <span class="font-semibold">${template.name}</span>
-                <span class="template-category">${template.category}</span>
-            </div>
-        </div>
-    `).join('');
-}
-
-/**
- * Renderiza el contenido del selector de respuestas rápidas.
- * @param {string} searchTerm El término de búsqueda para filtrar las respuestas.
- */
-function renderQuickReplyPicker(searchTerm = '') {
-
