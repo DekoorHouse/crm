@@ -339,3 +339,122 @@ async function handleSelectReaction(event, messageDocId, emoji) {
         showError(error.message);
     }
 }
+
+// --- START: Picker Management (ADDED CODE) ---
+
+function toggleEmojiPicker() {
+    state.emojiPickerOpen = !state.emojiPickerOpen;
+    if (state.emojiPickerOpen) {
+        state.templatePickerOpen = false;
+        state.quickReplyPickerOpen = false;
+    }
+    renderAllPickers();
+}
+
+function toggleTemplatePicker() {
+    state.templatePickerOpen = !state.templatePickerOpen;
+    if (state.templatePickerOpen) {
+        state.emojiPickerOpen = false;
+        state.quickReplyPickerOpen = false;
+    }
+    renderAllPickers();
+}
+
+function renderAllPickers() {
+    const qrPicker = document.getElementById('quick-reply-picker');
+    const templatePicker = document.getElementById('template-picker');
+    const emojiPicker = document.getElementById('emoji-picker');
+
+    if (qrPicker) qrPicker.classList.toggle('hidden', !state.quickReplyPickerOpen);
+    if (templatePicker) templatePicker.classList.toggle('hidden', !state.templatePickerOpen);
+    if (emojiPicker) emojiPicker.classList.toggle('hidden', !state.emojiPickerOpen);
+
+    if (state.templatePickerOpen) renderTemplatePicker();
+    if (state.emojiPickerOpen) renderEmojiPicker();
+    // renderQuickReplyPicker es llamado desde handleQuickReplyInput con un término de búsqueda
+}
+
+function renderQuickReplyPicker(searchTerm = '') {
+    const picker = document.getElementById('quick-reply-picker');
+    if (!picker) return;
+
+    const filteredReplies = state.quickReplies.filter(r => r.shortcut.toLowerCase().includes(searchTerm.toLowerCase()));
+
+    if (filteredReplies.length > 0) {
+        picker.innerHTML = filteredReplies.map(reply => `
+            <div class="picker-item" onclick="selectQuickReply('${reply.id}')">
+                <strong>/${reply.shortcut}</strong> - <span class="text-gray-500">${(reply.message || '').substring(0, 50)}...</span>
+            </div>
+        `).join('');
+    } else {
+        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay respuestas rápidas que coincidan.</div>`;
+    }
+     picker.innerHTML += `<div class="picker-add-btn" onclick="navigateTo('respuestas-rapidas')"><i class="fas fa-plus-circle mr-2"></i>Añadir nueva respuesta</div>`;
+}
+
+function renderTemplatePicker() {
+    const picker = document.getElementById('template-picker');
+    if (!picker) return;
+
+    if (state.templates && state.templates.length > 0) {
+        picker.innerHTML = state.templates.map(template => {
+            const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
+            return `
+                <div class="picker-item template-item" onclick="handleSendTemplate(${templateString})">
+                    <div class="flex justify-between items-center">
+                        <span class="font-semibold">${template.name}</span>
+                        <span class="template-category">${template.category}</span>
+                    </div>
+                </div>
+            `;
+        }).join('');
+    } else {
+        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles.</div>`;
+    }
+}
+
+function renderEmojiPicker() {
+    const picker = document.getElementById('emoji-picker');
+    if (!picker) return;
+
+    const emojis = {
+        'Smileys & People': ['😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '😊', '🤔', '😢'],
+        'Objects': ['💼', '💻', '📱', '💰', '📦', '📄', '📅', '⏰'],
+    };
+
+    let pickerHTML = '<div class="picker-content">';
+    for (const category in emojis) {
+        pickerHTML += `<div class="emoji-category">${category}</div>`;
+        pickerHTML += emojis[category].map(emoji => `<span class="emoji" onclick="selectEmoji('${emoji}')">${emoji}</span>`).join('');
+    }
+    pickerHTML += '</div>';
+    picker.innerHTML = pickerHTML;
+}
+
+// Movido desde feature-handlers.js y corregido
+async function handleSendTemplate(templateObject) {
+    if (!state.selectedContactId) return;
+
+    const templateData = {
+        template: templateObject
+    };
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(templateData)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
+        }
+        
+        toggleTemplatePicker(); // Esto ahora funcionará
+    } catch (error) {
+        console.error("Error al enviar la plantilla:", error);
+        showError(error.message);
+    }
+}
+// --- END: Picker Management ---
