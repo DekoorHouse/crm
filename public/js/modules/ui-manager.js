@@ -88,6 +88,30 @@ function navigateTo(viewName) {
 
 // --- Component & Specific View Renderers ---
 
+/**
+ * **NUEVA FUNCIÓN**
+ * Dibuja los botones de filtro por etiquetas en la vista de chats.
+ */
+function renderTagFilters() {
+    if (state.activeView !== 'chats') return;
+    const container = document.getElementById('tag-filters-container');
+    if (!container) return;
+
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    
+    state.tags.forEach(tag => {
+        buttonsHtml += `<button 
+                            id="filter-${tag.key}" 
+                            class="filter-btn ${state.activeFilter === tag.key ? 'active' : ''}" 
+                            onclick="setFilter('${tag.key}')"
+                        >
+                            ${tag.label}
+                        </button>`;
+    });
+
+    container.innerHTML = buttonsHtml;
+}
+
 function renderChatWindow() { 
     if (state.activeView !== 'chats') return;
     
