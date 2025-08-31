@@ -86,6 +86,17 @@ function navigateTo(viewName) {
     }
 }
 
+/**
+ * Muestra u oculta la barra lateral principal.
+ */
+function toggleTagSidebar() {
+    const sidebar = document.getElementById('main-sidebar');
+    if (sidebar) {
+        sidebar.classList.toggle('collapsed');
+        state.isTagSidebarOpen = !sidebar.classList.contains('collapsed');
+    }
+}
+
 // --- Component & Specific View Renderers ---
 
 /**
@@ -653,3 +664,23 @@ function closeContactDetails() {
     }
     state.contactDetailsOpen = false; 
 }
+
+/**
+ * Renderiza la vista previa de un archivo adjunto (local o remoto).
+ */
+function renderFilePreview() {
+    const container = document.getElementById('file-preview-container');
+    if (!container) return;
+
+    if (state.stagedFile) {
+        container.innerHTML = LocalFilePreviewTemplate(state.stagedFile);
+        container.classList.remove('hidden');
+    } else if (state.stagedRemoteFile) {
+        container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);
+        container.classList.remove('hidden');
+    } else {
+        container.innerHTML = '';
+        container.classList.add('hidden');
+    }
+}
+
