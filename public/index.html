@@ -348,17 +348,17 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-storage.js"></script>
 
-    <!-- Lógica de la Aplicación (Refactorizada) -->
+    <!-- Lógica de la Aplicación (Refactorizada y en orden correcto) -->
     <script src="js/modules/firebase-init.js"></script>
     <script src="js/modules/state.js"></script>
     <script src="js/modules/utils.js"></script>
-    <script src="js/ui_templates.js"></script> <!-- Plantillas de UI existentes -->
+    <script src="js/ui_templates.js"></script> 
     <script src="js/modules/api-service.js"></script>
     <script src="js/modules/ui-manager.js"></script>
-    <script src="js/modules/auth.js"></script>
     <script src="js/modules/chat-handlers.js"></script>
     <script src="js/modules/feature-handlers.js"></script>
-    <script src="js/modules/main.js"></script> <!-- Punto de entrada principal -->
+    <script src="js/modules/main.js"></script> <!-- Carga main.js antes que auth.js -->
+    <script src="js/modules/auth.js"></script> <!-- auth.js ahora puede encontrar startApp -->
     
 </body>
 </html>
