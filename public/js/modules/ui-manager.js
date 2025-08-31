@@ -618,6 +618,43 @@ function renderNotes() {
     contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); 
 }
 
+/**
+ * Muestra una cabecera de fecha flotante mientras el usuario se desplaza
+ * por la lista de mensajes.
+ */
+function handleScroll() {
+    const messagesContainer = document.getElementById('messages-container');
+    const stickyHeader = document.getElementById('sticky-date-header');
+    if (!messagesContainer || !stickyHeader) return;
+
+    const dateSeparators = messagesContainer.querySelectorAll('.date-separator-anchor');
+    if (dateSeparators.length === 0) {
+        stickyHeader.classList.remove('visible');
+        return;
+    }
+
+    let topVisibleSeparator = null;
+    for (let i = dateSeparators.length - 1; i >= 0; i--) {
+        const separator = dateSeparators[i];
+        const rect = separator.getBoundingClientRect();
+        const containerRect = messagesContainer.getBoundingClientRect();
+
+        // Check if the separator is above the top of the container view
+        if (rect.top < containerRect.top) {
+            topVisibleSeparator = separator;
+            break;
+        }
+    }
+
+    if (topVisibleSeparator) {
+        stickyHeader.textContent = topVisibleSeparator.textContent;
+        stickyHeader.classList.add('visible');
+    } else {
+        stickyHeader.classList.remove('visible');
+    }
+}
+
+
 // --- UI Helpers & Modals ---
 
 function showError(message) { 
@@ -683,4 +720,5 @@ function renderFilePreview() {
         container.classList.add('hidden');
     }
 }
+
 
