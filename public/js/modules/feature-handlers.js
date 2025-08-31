@@ -122,32 +122,6 @@ async function handleSendViewContent() {
 }
 
 // --- Campaigns Handlers ---
-async function handleSendTemplate(templateObject) {
-    if (!state.selectedContactId) return;
-
-    const templateData = {
-        template: templateObject
-    };
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(templateData)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
-        }
-        
-        toggleTemplatePicker();
-    } catch (error) {
-        console.error("Error al enviar la plantilla:", error);
-        showError(error.message);
-    }
-}
-
 async function handleSendCampaign() {
     const tagSelect = document.getElementById('campaign-tag-select');
     const templateSelect = document.getElementById('campaign-template-select');
