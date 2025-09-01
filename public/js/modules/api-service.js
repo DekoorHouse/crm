@@ -21,16 +21,20 @@ async function fetchInitialContacts() {
         const contactsLoadingEl = document.getElementById('contacts-loading');
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
 
+        // Reseteamos el estado de paginación para una carga limpia
+        state.pagination.lastVisibleId = null;
+        state.pagination.hasMore = true;
+
         const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30`);
         if (!response.ok) throw new Error('Error al cargar contactos iniciales.');
         
         const data = await response.json();
         
-        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
         state.contacts = processContacts(data.contacts);
 
-        state.lastContactDoc = data.lastDocId;
-        state.hasMoreContacts = data.contacts.length > 0;
+        // CORRECCIÓN 1: Usar la variable correcta 'lastVisibleId' de la respuesta de la API.
+        state.pagination.lastVisibleId = data.lastVisibleId;
+        state.pagination.hasMore = data.contacts.length > 0;
 
         handleSearchContacts();
 
@@ -43,23 +47,29 @@ async function fetchInitialContacts() {
 
 
 async function fetchMoreContacts() {
-    if (state.isLoadingMore || !state.hasMoreContacts) return;
-    state.isLoadingMore = true;
+    // CORRECCIÓN: Usar las variables de estado correctas para la paginación
+    if (state.pagination.isLoadingMore || !state.pagination.hasMore || !state.pagination.lastVisibleId) return;
+    state.pagination.isLoadingMore = true;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfter=${state.lastContactDoc}`);
+        // CORRECCIÓN 2: Usar el nombre de parámetro correcto 'startAfterId' que el backend espera.
+        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`);
         if (!response.ok) throw new Error('Error al cargar más contactos.');
 
         const data = await response.json();
         
-        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
         const newContacts = processContacts(data.contacts);
 
         if (newContacts.length > 0) {
-            state.contacts.push(...newContacts);
-            state.lastContactDoc = data.lastDocId;
+            // Añadir nuevos contactos a la lista existente
+            const existingIds = new Set(state.contacts.map(c => c.id));
+            const filteredNewContacts = newContacts.filter(c => !existingIds.has(c.id));
+            state.contacts.push(...filteredNewContacts);
+
+            // CORRECCIÓN 3: Actualizar el ID del último documento visible.
+            state.pagination.lastVisibleId = data.lastVisibleId;
         } else {
-            state.hasMoreContacts = false;
+            state.pagination.hasMore = false;
         }
 
         handleSearchContacts();
@@ -67,14 +77,14 @@ async function fetchMoreContacts() {
         console.error(error);
         showError(error.message);
     } finally {
-        state.isLoadingMore = false;
+        state.pagination.isLoadingMore = false;
     }
 }
 
 
 async function searchContactsAPI(query) {
     if (!query) {
-        fetchInitialContacts(); // Si la búsqueda está vacía, vuelve a la lista normal
+        fetchInitialContacts(); // Si la búsqueda está vacía, vuelve a la lista normal paginada
         return;
     }
 
@@ -84,12 +94,11 @@ async function searchContactsAPI(query) {
 
         const data = await response.json();
         
-        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
         state.contacts = processContacts(data.contacts);
         
         // En modo búsqueda, no hay paginación, así que reseteamos estos valores
-        state.hasMoreContacts = false; 
-        state.lastContactDoc = null;
+        state.pagination.hasMore = false; 
+        state.pagination.lastVisibleId = null;
 
         handleSearchContacts();
     } catch (error) {
