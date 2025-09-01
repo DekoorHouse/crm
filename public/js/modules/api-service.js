@@ -2,84 +2,106 @@
 // Este archivo maneja toda la comunicación con Firebase (listeners en tiempo real)
 // y con el backend (peticiones fetch a la API).
 
-// --- LÓGICA DE CARGA DE CONTACTOS (MODIFICADA PARA PAGINACIÓN) ---
-async function fetchInitialContacts() {
-    state.pagination.isLoadingMore = true;
-    const contactsLoadingEl = document.getElementById('contacts-loading');
-    if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
+// --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
 
+async function fetchInitialContacts() {
     try {
+        const contactsLoadingEl = document.getElementById('contacts-loading');
+        if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
+
         const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30`);
+        if (!response.ok) throw new Error('Error al cargar contactos iniciales.');
+        
         const data = await response.json();
-        if (data.success) {
-            state.contacts = data.contacts;
-            state.pagination.lastVisibleId = data.lastVisibleId;
-            state.pagination.hasMore = !!data.lastVisibleId;
-            handleSearchContacts(); // Renderiza la lista inicial
-        }
+        
+        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
+        state.contacts = data.contacts.map(contact => {
+            if (contact.lastMessageTimestamp) {
+                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
+            }
+            return contact;
+        });
+
+        state.lastContactDoc = data.lastDocId;
+        state.hasMoreContacts = data.contacts.length > 0;
+
+        handleSearchContacts();
+
+        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
     } catch (error) {
         console.error(error);
-        showError("No se pudo conectar a los contactos.");
-    } finally {
-        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
-        state.pagination.isLoadingMore = false;
+        showError(error.message);
     }
 }
+
 
 async function fetchMoreContacts() {
-    if (state.pagination.isLoadingMore || !state.pagination.hasMore) return;
-    state.pagination.isLoadingMore = true;
-    
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`);
-        const data = await response.json();
+    if (state.isLoadingMore || !state.hasMoreContacts) return;
+    state.isLoadingMore = true;
 
-        if (data.success && data.contacts.length > 0) {
-            state.contacts = [...state.contacts, ...data.contacts];
-            state.pagination.lastVisibleId = data.lastVisibleId;
-            state.pagination.hasMore = !!data.lastVisibleId;
-            handleSearchContacts(); // Vuelve a renderizar la lista con los nuevos contactos
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfter=${state.lastContactDoc}`);
+        if (!response.ok) throw new Error('Error al cargar más contactos.');
+
+        const data = await response.json();
+        
+        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
+        const newContacts = data.contacts.map(contact => {
+            if (contact.lastMessageTimestamp) {
+                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
+            }
+            return contact;
+        });
+
+        if (newContacts.length > 0) {
+            state.contacts.push(...newContacts);
+            state.lastContactDoc = data.lastDocId;
         } else {
-            state.pagination.hasMore = false;
+            state.hasMoreContacts = false;
         }
+
+        handleSearchContacts();
     } catch (error) {
         console.error(error);
-        showError("Error al cargar más contactos.");
+        showError(error.message);
     } finally {
-        state.pagination.isLoadingMore = false;
+        state.isLoadingMore = false;
     }
 }
 
+
 async function searchContactsAPI(query) {
-    // Si la búsqueda está vacía, resetea el estado y carga la lista inicial paginada
     if (!query) {
-        state.pagination.lastVisibleId = null;
-        state.pagination.hasMore = true;
-        fetchInitialContacts();
+        fetchInitialContacts(); // Si la búsqueda está vacía, vuelve a la lista normal
         return;
     }
-    
-    const contactsLoadingEl = document.getElementById('contacts-loading');
-    if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
 
     try {
         const response = await fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`);
+        if (!response.ok) throw new Error('Error en la búsqueda.');
+
         const data = await response.json();
-        if (data.success) {
-            state.contacts = data.contacts;
-            state.pagination.hasMore = false; // Desactivamos el scroll infinito durante una búsqueda
-            handleSearchContacts(); // Renderiza los resultados de la búsqueda
-        }
+        
+        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
+        state.contacts = data.contacts.map(contact => {
+            if (contact.lastMessageTimestamp) {
+                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
+            }
+            return contact;
+        });
+        
+        // En modo búsqueda, no hay paginación, así que reseteamos estos valores
+        state.hasMoreContacts = false; 
+        state.lastContactDoc = null;
+
+        handleSearchContacts();
     } catch (error) {
         console.error(error);
-        showError("Error al realizar la búsqueda.");
-    } finally {
-        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
+        showError(error.message);
     }
 }
 
-
-// --- OTROS LISTENERS (SIN CAMBIOS POR AHORA) ---
+// --- LISTENERS EN TIEMPO REAL (PARA DATOS MÁS PEQUEÑOS) ---
 
 function listenForQuickReplies() { 
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener(); 
@@ -97,7 +119,7 @@ function listenForTags() {
         state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(state.activeView === 'chats') {
             renderTagFilters();
-            // Ya no llamamos a handleSearchContacts aquí para evitar re-renderizados innecesarios
+            handleSearchContacts(); 
         }
         if(state.activeView === 'etiquetas') {
             renderTagsView();
