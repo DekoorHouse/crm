@@ -124,7 +124,7 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template } = req.body;
+    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // 1. Aceptar el ID temporal
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     
@@ -142,14 +142,18 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const messageId = response.data.messages[0].id;
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
-            await contactRef.collection('messages').add(messageToSave);
+            // 2. Usar el ID temporal para guardar el documento, asegurando la continuidad con el frontend
+            const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
+            await messageRef.set(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
         } else {
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: sentMessageData.textForDb, fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb };
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-            await contactRef.collection('messages').add(messageToSave);
+            // 3. Usar el ID temporal aquí también
+            const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
+            await messageRef.set(messageToSave);
             await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
         }
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
@@ -677,3 +681,4 @@ router.get('/metrics', async (req, res) => {
 });
 
 module.exports = router;
+
