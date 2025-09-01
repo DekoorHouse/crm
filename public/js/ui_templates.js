@@ -368,7 +368,8 @@ const ContactItemTemplate = (contact, isSelected) => {
     if (contact.unreadCount > 0) {
         timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
     } else if (contact.lastMessageTimestamp) {
-        const date = contact.lastMessageTimestamp.toDate();
+        // CORRECCIÓN: Se elimina .toDate() porque `lastMessageTimestamp` ya es un objeto Date.
+        const date = contact.lastMessageTimestamp;
         const timeString = isSameDay(new Date(), date)
             ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
