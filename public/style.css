@@ -314,3 +314,29 @@ input:checked + .slider:before { transform: translateX(22px); }
     font-size: 1.25rem;
     font-weight: 600;
 }
+
+.session-expired-banner {
+    background-color: #fffbeb; /* yellow-100 */
+    color: #92400e; /* yellow-800 */
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: center;
+    border-bottom: 1px solid #fef3c7; /* yellow-200 */
+}
+
+/* Styles for disabled chat input elements */
+textarea:disabled {
+    background-color: #f3f4f6; /* gray-100 */
+    cursor: not-allowed;
+}
+
+.disabled-icon {
+    color: #d1d5db !important; /* gray-300 */
+    cursor: not-allowed;
+}
+
+label.disabled-icon {
+    pointer-events: none;
+}
+
