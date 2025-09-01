@@ -752,6 +752,7 @@ app.get('/api/contacts', async (req, res) => {
 // --- ENDPOINT PARA BÚSQUEDA DE CONTACTOS ---
 app.get('/api/contacts/search', async (req, res) => {
     const { query } = req.query;
+    console.log(`[SEARCH] Iniciando búsqueda para: "${query}"`); // Log para depuración
     if (!query) {
         return res.status(400).json({ success: false, message: 'Se requiere un término de búsqueda.' });
     }
@@ -762,6 +763,7 @@ app.get('/api/contacts/search', async (req, res) => {
         // 1. Buscar por número de teléfono (ID del documento)
         const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
         if (phoneDoc.exists) {
+            console.log(`[SEARCH] Encontrado por ID exacto: ${phoneDoc.id}`);
             searchResults.push({ id: phoneDoc.id, ...phoneDoc.data() });
         }
 
@@ -772,6 +774,7 @@ app.get('/api/contacts/search', async (req, res) => {
                                      .limit(20)
                                      .get();
         
+        console.log(`[SEARCH] Encontrados ${nameSnapshot.size} resultados por nombre.`);
         nameSnapshot.forEach(doc => {
             // Evitar duplicados si el ID ya fue encontrado
             if (!searchResults.some(contact => contact.id === doc.id)) {
@@ -779,6 +782,22 @@ app.get('/api/contacts/search', async (req, res) => {
             }
         });
 
+        // 3. NUEVO: Buscar por número de teléfono parcial (ID del documento que empieza con...)
+        const partialPhoneSnapshot = await db.collection('contacts_whatsapp')
+                                             .where(admin.firestore.FieldPath.documentId(), '>=', query)
+                                             .where(admin.firestore.FieldPath.documentId(), '<=', query + '\uf8ff')
+                                             .limit(20)
+                                             .get();
+
+        console.log(`[SEARCH] Encontrados ${partialPhoneSnapshot.size} resultados por ID parcial.`);
+        partialPhoneSnapshot.forEach(doc => {
+            // Evitar duplicados de las búsquedas anteriores
+            if (!searchResults.some(contact => contact.id === doc.id)) {
+                searchResults.push({ id: doc.id, ...doc.data() });
+            }
+        });
+
+        console.log(`[SEARCH] Total de resultados únicos encontrados: ${searchResults.length}`);
         res.status(200).json({ success: true, contacts: searchResults });
 
     } catch (error) {
@@ -1848,3 +1867,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
+
