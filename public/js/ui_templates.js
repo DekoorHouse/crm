@@ -396,6 +396,7 @@ const MessageStatusIconTemplate = (status) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
     switch (status) {
+        case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`; // MODIFICADO
         case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
         case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
         case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
@@ -511,7 +512,7 @@ const MessageBubbleTemplate = (message) => {
     const bubbleClasses = isSent ? 'sent' : 'received';
     
     return `
-        <div class="flex my-1 ${bubbleAlignment}">
+        <div class="flex my-1 ${bubbleAlignment}" data-doc-id="${message.docId}">
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                 ${actionsHTML}
                 ${replyPreviewHTML}
