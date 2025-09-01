@@ -32,7 +32,7 @@ let state = {
     campaignMode: false,
     selectedContactIdsForCampaign: [],
     isTagSidebarOpen: true, 
-    activeView: 'chats',
+    activeView: null, // CORRECCIÓN: Iniciar sin vista activa para forzar la carga inicial
 
     // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
     pagination: {
