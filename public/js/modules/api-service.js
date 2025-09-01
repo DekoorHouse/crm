@@ -2,67 +2,84 @@
 // Este archivo maneja toda la comunicación con Firebase (listeners en tiempo real)
 // y con el backend (peticiones fetch a la API).
 
-// --- Real-time Listeners ---
+// --- LÓGICA DE CARGA DE CONTACTOS (MODIFICADA PARA PAGINACIÓN) ---
+async function fetchInitialContacts() {
+    state.pagination.isLoadingMore = true;
+    const contactsLoadingEl = document.getElementById('contacts-loading');
+    if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
 
-function listenForContacts() {
-    if (unsubscribeContactsListener) unsubscribeContactsListener();
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30`);
+        const data = await response.json();
+        if (data.success) {
+            state.contacts = data.contacts;
+            state.pagination.lastVisibleId = data.lastVisibleId;
+            state.pagination.hasMore = !!data.lastVisibleId;
+            handleSearchContacts(); // Renderiza la lista inicial
+        }
+    } catch (error) {
+        console.error(error);
+        showError("No se pudo conectar a los contactos.");
+    } finally {
+        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
+        state.pagination.isLoadingMore = false;
+    }
+}
+
+async function fetchMoreContacts() {
+    if (state.pagination.isLoadingMore || !state.pagination.hasMore) return;
+    state.pagination.isLoadingMore = true;
+    
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`);
+        const data = await response.json();
+
+        if (data.success && data.contacts.length > 0) {
+            state.contacts = [...state.contacts, ...data.contacts];
+            state.pagination.lastVisibleId = data.lastVisibleId;
+            state.pagination.hasMore = !!data.lastVisibleId;
+            handleSearchContacts(); // Vuelve a renderizar la lista con los nuevos contactos
+        } else {
+            state.pagination.hasMore = false;
+        }
+    } catch (error) {
+        console.error(error);
+        showError("Error al cargar más contactos.");
+    } finally {
+        state.pagination.isLoadingMore = false;
+    }
+}
+
+async function searchContactsAPI(query) {
+    // Si la búsqueda está vacía, resetea el estado y carga la lista inicial paginada
+    if (!query) {
+        state.pagination.lastVisibleId = null;
+        state.pagination.hasMore = true;
+        fetchInitialContacts();
+        return;
+    }
     
     const contactsLoadingEl = document.getElementById('contacts-loading');
     if (contactsLoadingEl) contactsLoadingEl.style.display = 'block';
 
-    unsubscribeContactsListener = db.collection('contacts_whatsapp').onSnapshot((snapshot) => {
-        hideError();
-        
-        const messageInput = document.getElementById('message-input');
-        let draftText = '';
-        if (messageInput) {
-            draftText = messageInput.value;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`);
+        const data = await response.json();
+        if (data.success) {
+            state.contacts = data.contacts;
+            state.pagination.hasMore = false; // Desactivamos el scroll infinito durante una búsqueda
+            handleSearchContacts(); // Renderiza los resultados de la búsqueda
         }
-
-        let newContacts = snapshot.docs.map(doc => {
-            const contact = { id: doc.id, ...doc.data() };
-            const lastTimestamp = contact.lastMessageTimestamp;
-            if (!lastTimestamp) { contact.isWithin24HourWindow = false; }
-            else { const diffHours = (new Date().getTime() - lastTimestamp.toDate().getTime()) / 3600000; contact.isWithin24HourWindow = diffHours <= 24; }
-            return contact;
-        });
-        newContacts.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
-        state.contacts = newContacts;
-        
-        if (state.activeView === 'chats') {
-            handleSearchContacts();
-        } else if (state.activeView === 'contacts') {
-            renderContactsView();
-        } else if (state.activeView === 'pipeline') {
-            renderPipelineView();
-        } else if (state.activeView === 'ajustes-ia') {
-            renderAjustesIAView();
-        }
-
+    } catch (error) {
+        console.error(error);
+        showError("Error al realizar la búsqueda.");
+    } finally {
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'none';
-        
-        if (state.selectedContactId) {
-            const updatedContact = newContacts.find(c => c.id === state.selectedContactId);
-            if (updatedContact) {
-                if (state.contactDetailsOpen) {
-                     const contactDetailsPanelEl = document.getElementById('contact-details-panel');
-                     if(contactDetailsPanelEl) contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(updatedContact);
-                }
-                
-                const newMessageInput = document.getElementById('message-input');
-                if (newMessageInput && draftText) {
-                    newMessageInput.value = draftText;
-                }
-            } else { 
-                closeContactDetails(); 
-            }
-        }
-    }, (error) => { 
-        console.error(error); 
-        showError("No se pudo conectar a los contactos."); 
-        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; 
-    });
+    }
 }
+
+
+// --- OTROS LISTENERS (SIN CAMBIOS POR AHORA) ---
 
 function listenForQuickReplies() { 
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener(); 
@@ -80,7 +97,7 @@ function listenForTags() {
         state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         if(state.activeView === 'chats') {
             renderTagFilters();
-            handleSearchContacts(); 
+            // Ya no llamamos a handleSearchContacts aquí para evitar re-renderizados innecesarios
         }
         if(state.activeView === 'etiquetas') {
             renderTagsView();
