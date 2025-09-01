@@ -797,6 +797,25 @@ app.get('/api/contacts/search', async (req, res) => {
             }
         });
 
+        // 4. BÚSQUEDA MEJORADA: Si la búsqueda es un número, intentar también con el prefijo 521
+        if (/^\d+$/.test(query) && query.length >= 3) {
+            const prefixedQuery = "521" + query;
+            console.log(`[SEARCH] La búsqueda es un número, intentando también con el prefijo: "${prefixedQuery}"`);
+            const prefixedSnapshot = await db.collection('contacts_whatsapp')
+                                             .where(admin.firestore.FieldPath.documentId(), '>=', prefixedQuery)
+                                             .where(admin.firestore.FieldPath.documentId(), '<=', prefixedQuery + '\uf8ff')
+                                             .limit(20)
+                                             .get();
+
+            console.log(`[SEARCH] Encontrados ${prefixedSnapshot.size} resultados con el prefijo.`);
+            prefixedSnapshot.forEach(doc => {
+                if (!searchResults.some(contact => contact.id === doc.id)) {
+                    searchResults.push({ id: doc.id, ...doc.data() });
+                }
+            });
+        }
+
+
         console.log(`[SEARCH] Total de resultados únicos encontrados: ${searchResults.length}`);
         res.status(200).json({ success: true, contacts: searchResults });
 
@@ -1867,4 +1886,5 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
+
 
