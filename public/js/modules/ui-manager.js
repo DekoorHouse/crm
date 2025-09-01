@@ -6,9 +6,9 @@ let ticking = false; // For scroll event throttling
 let tagsSortable = null;
 
 // --- Navigation & Main View Rendering ---
-function navigateTo(viewName) {
-    // AÑADIDO: Si ya estamos en la vista, no hacer nada para evitar recargas innecesarias.
-    if (state.activeView === viewName) {
+function navigateTo(viewName, force = false) { // AÑADIDO: Parámetro 'force'
+    // AÑADIDO: La comprobación ahora respeta el parámetro 'force'.
+    if (state.activeView === viewName && !force) {
         return;
     }
     
