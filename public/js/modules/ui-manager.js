@@ -30,6 +30,7 @@ function navigateTo(viewName) {
     switch (viewName) {
         case 'chats':
             mainViewContainer.innerHTML = ChatViewTemplate();
+            renderTagFilters(); // SE AÑADE ESTA LÍNEA
             renderChatWindow(); 
             listenForContacts(); 
             break;
@@ -720,3 +721,4 @@ function renderFilePreview() {
         container.classList.add('hidden');
     }
 }
+
