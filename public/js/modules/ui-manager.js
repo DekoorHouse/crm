@@ -7,6 +7,11 @@ let tagsSortable = null;
 
 // --- Navigation & Main View Rendering ---
 function navigateTo(viewName) {
+    // AÑADIDO: Si ya estamos en la vista, no hacer nada para evitar recargas innecesarias.
+    if (state.activeView === viewName) {
+        return;
+    }
+    
     state.activeView = viewName;
 
     const iaSubmenuViews = ['prompts-ia', 'respuestas-ia', 'ajustes-ia'];
@@ -32,8 +37,6 @@ function navigateTo(viewName) {
             mainViewContainer.innerHTML = ChatViewTemplate();
             renderChatWindow();
             renderTagFilters(); 
-            // AÑADIDO: Activar el listener para el scroll infinito de la lista de chats
-            // tan pronto como la vista es creada. Esta es la corrección principal.
             setupChatListEventListeners();
             break;
         case 'pipeline':
