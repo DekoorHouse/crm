@@ -104,9 +104,18 @@ async function handleSelectContact(contactId) {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === "added") {
                         const newMessage = { docId: change.doc.id, ...change.doc.data() };
-                        state.messages.push(newMessage);
-                        if (state.activeTab === 'chat') {
-                            appendMessage(newMessage);
+                        // 1. Revisar si un mensaje pendiente con este ID ya existe
+                        const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
+
+                        if (existingIndex > -1) {
+                            // Si existe, es nuestro mensaje optimista. Reemplazarlo con el real de Firestore.
+                            state.messages[existingIndex] = newMessage;
+                            // Volver a renderizar la lista para actualizar el ícono de estado de pendiente a enviado.
+                            if (state.activeTab === 'chat') renderMessages(); 
+                        } else {
+                            // Si no existe, es un nuevo mensaje entrante del contacto. Añadirlo.
+                            state.messages.push(newMessage);
+                            if (state.activeTab === 'chat') appendMessage(newMessage);
                         }
                     }
                      if (change.type === "modified") {
@@ -171,7 +180,8 @@ async function handleSendMessage(event) {
             }
         } else {
             await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
-            const messageData = { text };
+            // 2. Pasar el ID temporal al backend
+            const messageData = { text, tempId };
             if (remoteFileToSend) {
                 messageData.fileUrl = remoteFileToSend.url;
                 messageData.fileType = remoteFileToSend.type;
