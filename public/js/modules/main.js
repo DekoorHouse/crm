@@ -5,7 +5,10 @@
  * Inicia la aplicación después de que el usuario se ha autenticado.
  */
 function startApp() { 
-    navigateTo(state.activeView);
+    // CORRECCIÓN: Forzar la navegación a la vista de chats para asegurar la carga inicial.
+    // El segundo parámetro 'true' indica que debe renderizar la vista incluso si el estado ya es 'chats'.
+    navigateTo('chats', true); 
+
     // Start all data listeners
     fetchInitialContacts(); // MODIFICADO: Llama a la nueva función de carga inicial paginada
     listenForQuickReplies();
@@ -70,4 +73,3 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
-
