@@ -31,11 +31,19 @@ let state = {
     replyingToMessage: null, 
     campaignMode: false,
     selectedContactIdsForCampaign: [],
-    isTagSidebarOpen: true,
+    isTagSidebarOpen: true, 
     activeView: 'chats',
+
+    // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
+    pagination: {
+        lastVisibleId: null, // Guarda el ID del último contacto cargado
+        isLoadingMore: false, // Previene cargas múltiples simultáneas
+        hasMore: true // Indica si quedan más contactos por cargar
+    }
 };
 
 // --- Listener Unsubscribers ---
+// Nota: unsubscribeContactsListener será eliminado eventualmente.
 let unsubscribeMessagesListener = null, 
     unsubscribeContactsListener = null, 
     unsubscribeNotesListener = null, 
