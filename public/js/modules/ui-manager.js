@@ -32,7 +32,9 @@ function navigateTo(viewName) {
             mainViewContainer.innerHTML = ChatViewTemplate();
             renderChatWindow();
             renderTagFilters(); 
-            // ELIMINADO: listenForContacts() ya no se llama aquí. La carga la inicia main.js
+            // AÑADIDO: Activar el listener para el scroll infinito de la lista de chats
+            // tan pronto como la vista es creada. Esta es la corrección principal.
+            setupChatListEventListeners();
             break;
         case 'pipeline':
             mainViewContainer.innerHTML = PipelineViewTemplate();
@@ -170,8 +172,6 @@ function renderChatWindow() {
 
                 messageInput.focus(); 
             } 
-            // MODIFICADO: Se llama a la nueva función que engloba scroll y drag/drop
-            setupChatListEventListeners();
             
         } else if (state.activeTab === 'notes') {
             renderNotes();
