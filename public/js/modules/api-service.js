@@ -2,6 +2,18 @@
 // Este archivo maneja toda la comunicación con Firebase (listeners en tiempo real)
 // y con el backend (peticiones fetch a la API).
 
+// --- Helper function to convert Firestore timestamp from API ---
+function processContacts(contacts) {
+    return contacts.map(contact => {
+        // Correctly convert from Firestore's serialized format to a JS Date object
+        if (contact.lastMessageTimestamp && typeof contact.lastMessageTimestamp === 'object' && contact.lastMessageTimestamp._seconds) {
+            contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp._seconds * 1000);
+        }
+        return contact;
+    });
+}
+
+
 // --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
 
 async function fetchInitialContacts() {
@@ -14,13 +26,8 @@ async function fetchInitialContacts() {
         
         const data = await response.json();
         
-        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
-        state.contacts = data.contacts.map(contact => {
-            if (contact.lastMessageTimestamp) {
-                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
-            }
-            return contact;
-        });
+        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
+        state.contacts = processContacts(data.contacts);
 
         state.lastContactDoc = data.lastDocId;
         state.hasMoreContacts = data.contacts.length > 0;
@@ -45,13 +52,8 @@ async function fetchMoreContacts() {
 
         const data = await response.json();
         
-        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
-        const newContacts = data.contacts.map(contact => {
-            if (contact.lastMessageTimestamp) {
-                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
-            }
-            return contact;
-        });
+        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
+        const newContacts = processContacts(data.contacts);
 
         if (newContacts.length > 0) {
             state.contacts.push(...newContacts);
@@ -82,13 +84,8 @@ async function searchContactsAPI(query) {
 
         const data = await response.json();
         
-        // CORRECCIÓN: Convertir el string de fecha a un objeto Date
-        state.contacts = data.contacts.map(contact => {
-            if (contact.lastMessageTimestamp) {
-                contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp);
-            }
-            return contact;
-        });
+        // CORRECCIÓN: Usar la función helper para procesar las fechas correctamente.
+        state.contacts = processContacts(data.contacts);
         
         // En modo búsqueda, no hay paginación, así que reseteamos estos valores
         state.hasMoreContacts = false; 
