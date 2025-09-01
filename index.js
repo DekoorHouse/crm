@@ -618,6 +618,7 @@ app.post('/webhook', async (req, res) => {
 
         const contactUpdateData = {
             name: contactInfo.profile?.name || from,
+            name_lowercase: (contactInfo.profile?.name || from).toLowerCase(), // NUEVO: Campo para búsqueda insensible
             wa_id: contactInfo.wa_id,
             lastMessage: messageData.text,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -759,6 +760,7 @@ app.get('/api/contacts/search', async (req, res) => {
 
     try {
         const searchResults = [];
+        const lowercaseQuery = query.toLowerCase(); // NUEVO: Convertir la búsqueda a minúsculas
 
         // 1. Buscar por número de teléfono (ID del documento)
         const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
@@ -767,10 +769,10 @@ app.get('/api/contacts/search', async (req, res) => {
             searchResults.push({ id: phoneDoc.id, ...phoneDoc.data() });
         }
 
-        // 2. Buscar por coincidencia de nombre (sensible a mayúsculas)
+        // 2. Buscar por coincidencia de nombre (ahora insensible a mayúsculas)
         const nameSnapshot = await db.collection('contacts_whatsapp')
-                                     .where('name', '>=', query)
-                                     .where('name', '<=', query + '\uf8ff')
+                                     .where('name_lowercase', '>=', lowercaseQuery)
+                                     .where('name_lowercase', '<=', lowercaseQuery + '\uf8ff')
                                      .limit(20)
                                      .get();
         
@@ -816,7 +818,15 @@ app.get('/api/contacts/search', async (req, res) => {
         }
 
 
-        console.log(`[SEARCH] Total de resultados únicos encontrados: ${searchResults.length}`);
+        // NUEVO: Ordenar todos los resultados por la fecha del último mensaje (más reciente primero)
+        searchResults.sort((a, b) => {
+            // Asignar un valor muy antiguo si no hay timestamp para que queden al final
+            const timeA = a.lastMessageTimestamp ? a.lastMessageTimestamp.toMillis() : 0;
+            const timeB = b.lastMessageTimestamp ? b.lastMessageTimestamp.toMillis() : 0;
+            return timeB - timeA; // Orden descendente
+        });
+
+        console.log(`[SEARCH] Total de resultados únicos encontrados y ordenados: ${searchResults.length}`);
         res.status(200).json({ success: true, contacts: searchResults });
 
     } catch (error) {
@@ -1265,7 +1275,12 @@ app.put('/api/contacts/:contactId', async (req, res) => {
     const { name, email, nickname } = req.body;
     if (!name) return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
     try {
-        await db.collection('contacts_whatsapp').doc(contactId).update({ name, email: email || null, nickname: nickname || null });
+        await db.collection('contacts_whatsapp').doc(contactId).update({ 
+            name, 
+            email: email || null, 
+            nickname: nickname || null,
+            name_lowercase: name.toLowerCase() // NUEVO: Actualizar el campo en minúsculas
+        });
         res.status(200).json({ success: true, message: 'Contacto actualizado.' });
     } catch (error) {
         console.error('Error al actualizar el contacto:', error);
@@ -1886,5 +1901,7 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
+
+
 
 
