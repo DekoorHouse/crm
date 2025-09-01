@@ -7,7 +7,7 @@
 function startApp() { 
     navigateTo(state.activeView);
     // Start all data listeners
-    listenForContacts(); 
+    fetchInitialContacts(); // MODIFICADO: Llama a la nueva función de carga inicial paginada
     listenForQuickReplies();
     listenForTags();
     listenForAdResponses();
@@ -29,7 +29,7 @@ function startApp() {
  */
 function stopApp() { 
     // Unsubscribe from all listeners
-    if (unsubscribeContactsListener) unsubscribeContactsListener(); 
+    // ELIMINADO: El listener de contactos ya no existe en tiempo real
     if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
     if (unsubscribeNotesListener) unsubscribeNotesListener();
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
