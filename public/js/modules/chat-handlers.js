@@ -1,6 +1,64 @@
 // --- START: Event Handlers for the Chat View ---
-// Este archivo contiene toda la lógica y los manejadores de eventos
-// específicos de la vista principal de chat.
+
+// --- NUEVA LÓGICA DE BÚSQUEDA Y SCROLL ---
+
+// Variable y función "debounce" para no sobrecargar el servidor con búsquedas
+let searchTimeout;
+function debounceSearch(query) {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => {
+        searchContactsAPI(query);
+    }, 300); // Espera 300ms después de que el usuario deja de escribir
+}
+
+// Nuevo manejador para el input de búsqueda que llama al debounce
+function handleSearchInput(event) {
+    const searchTerm = event.target.value.trim();
+    debounceSearch(searchTerm);
+}
+
+// Modificada: Ya no filtra. Solo renderiza los contactos que están en el estado.
+// La lógica de filtrado/búsqueda/paginación ya ocurrió en el servidor y api-service.js
+function handleSearchContacts() {
+    const contactsToRender = state.contacts; 
+    
+    // Si es una carga inicial o una búsqueda, se reemplaza todo el contenido.
+    // Si es "cargar más", deberíamos añadir en lugar de reemplazar.
+    // Por simplicidad, por ahora reemplazamos. La virtualización lo manejará mejor.
+    const contactsListEl = document.getElementById('contacts-list');
+    if (contactsListEl) {
+        contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
+    }
+}
+
+// Nueva función que configura el scroll infinito y el drag & drop
+function setupChatListEventListeners() {
+    const contactsList = document.getElementById('contacts-list');
+    if (!contactsList) return;
+
+    // Lógica de Scroll Infinito
+    contactsList.addEventListener('scroll', () => {
+        const { scrollTop, scrollHeight, clientHeight } = contactsList;
+        // Si el scroll está cerca del final (a menos de 200px), carga más
+        if (scrollHeight - scrollTop - clientHeight < 200) {
+            fetchMoreContacts();
+        }
+    });
+    
+    // La lógica de Drag & Drop para archivos se mantiene
+    const chatArea = document.getElementById('chat-panel');
+    const overlay = document.getElementById('drag-drop-overlay');
+    if (!chatArea || !overlay) return;
+    const showOverlay = () => overlay.classList.remove('hidden');
+    const hideOverlay = () => overlay.classList.add('hidden');
+    chatArea.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) { showOverlay(); } });
+    chatArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
+    chatArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); if (e.relatedTarget === null || !chatArea.contains(e.relatedTarget)) { hideOverlay(); } });
+    chatArea.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); hideOverlay(); const files = e.dataTransfer.files; if (files.length > 0) { stageFile(files[0]); } });
+}
+
+
+// --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
 
 async function handleSelectContact(contactId) { 
     if (state.campaignMode) return;
@@ -11,48 +69,57 @@ async function handleSelectContact(contactId) {
     closeContactDetails();
     cancelStagedFile(); 
     cancelReply();
+
+    // Actualizamos el contador de no leídos localmente para una respuesta de UI más rápida
+    const contactIdx = state.contacts.findIndex(c => c.id === contactId);
+    if (contactIdx > -1) {
+        state.contacts[contactIdx].unreadCount = 0;
+    }
+    
+    // La actualización en la base de datos sigue siendo importante
     db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err)); 
+    
     state.selectedContactId = contactId; 
     state.loadingMessages = true; 
     state.activeTab = 'chat';
     state.isEditingNote = null;
+    
+    // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
     handleSearchContacts(); 
     
     if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
     
-    // MODIFICADO: Se usa una lógica de reconstrucción completa en cada actualización
-    // para manejar correctamente los mensajes pendientes y las actualizaciones de estado.
+    let isInitialMessageLoad = true;
     unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
         .onSnapshot((snapshot) => {
             hideError();
-            
-            // Conserva los mensajes pendientes que aún no han sido confirmados por el servidor
-            const pendingMessages = state.messages.filter(m => m.status === 'pending');
-            // Obtiene los mensajes confirmados desde el servidor
-            state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
-
-            // Revisa si alguno de los mensajes pendientes ya fue confirmado
-            pendingMessages.forEach(pm => {
-                const isConfirmed = state.messages.some(sm =>
-                    sm.from !== state.selectedContactId &&
-                    sm.text === pm.text &&
-                    sm.timestamp && pm.timestamp &&
-                    Math.abs(sm.timestamp.toMillis() - pm.timestamp.toMillis()) < 15000 // 15s window
-                );
-                // Si no está confirmado, lo mantiene en la lista para que siga visible
-                if (!isConfirmed) {
-                    state.messages.push(pm);
+            if (isInitialMessageLoad) {
+                state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+                state.loadingMessages = false;
+                if (state.activeTab === 'chat') {
+                    renderMessages();
                 }
-            });
-
-            // Reordena por si acaso
-            state.messages.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
-
-            state.loadingMessages = false;
-            if (state.activeTab === 'chat') {
-                renderMessages();
+                isInitialMessageLoad = false;
+            } else {
+                snapshot.docChanges().forEach((change) => {
+                    if (change.type === "added") {
+                        const newMessage = { docId: change.doc.id, ...change.doc.data() };
+                        state.messages.push(newMessage);
+                        if (state.activeTab === 'chat') {
+                            appendMessage(newMessage);
+                        }
+                    }
+                     if (change.type === "modified") {
+                        const updatedMessageIndex = state.messages.findIndex(m => m.docId === change.doc.id);
+                        if (updatedMessageIndex > -1) {
+                            state.messages[updatedMessageIndex] = { docId: change.doc.id, ...change.doc.data() };
+                            if (state.activeTab === 'chat') {
+                                renderMessages(); 
+                            }
+                        }
+                    }
+                });
             }
-
         }, (error) => {
             console.error(error);
             showError(`Error al cargar mensajes.`);
@@ -79,25 +146,21 @@ async function handleSendMessage(event) {
 
     if (!text && !fileToSend && !remoteFileToSend) return;
     
-    // --- INICIO: MODIFICACIÓN PARA UI OPTIMISTA ---
-    const tempId = `pending_${Date.now()}`;
-    const optimisticMessage = {
+    const tempId = `temp_${Date.now()}`;
+    const pendingMessage = {
         docId: tempId,
-        from: 'user_sent', // Placeholder para identificarlo como mensaje enviado
+        from: 'me', // Un identificador para nosotros
         status: 'pending',
-        text: text,
-        timestamp: firebase.firestore.Timestamp.now(),
-        fileUrl: fileToSend ? URL.createObjectURL(fileToSend) : (remoteFileToSend ? remoteFileToSend.url : null),
-        fileType: fileToSend ? fileToSend.type : (remoteFileToSend ? remoteFileToSend.type : null)
+        timestamp: { seconds: Math.floor(Date.now() / 1000) },
+        text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
     };
-    
-    state.messages.push(optimisticMessage);
-    appendMessage(optimisticMessage);
-    // --- FIN: MODIFICACIÓN PARA UI OPTIMISTA ---
+
+    state.messages.push(pendingMessage);
+    appendMessage(pendingMessage);
 
     input.value = '';
     input.style.height = 'auto';
-    cancelStagedFile(); 
+    cancelStagedFile();
 
     try {
         if (fileToSend) {
@@ -130,20 +193,12 @@ async function handleSendMessage(event) {
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
         showError(error.message);
-        
-        // --- INICIO: MANEJO DE ERROR PARA UI OPTIMISTA ---
-        // Si el envío falla, elimina el mensaje pendiente del estado y del DOM.
+        // Si falla el envío, eliminamos el mensaje pendiente
         state.messages = state.messages.filter(m => m.docId !== tempId);
-        const failedMessageEl = document.querySelector(`[data-doc-id="${tempId}"]`);
-        if (failedMessageEl) {
-            failedMessageEl.parentElement.remove();
-        }
-        // --- FIN: MANEJO DE ERROR PARA UI OPTIMISTA ---
-
+        renderMessages();
         if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
     }
 }
-
 
 async function handleSaveNote(event) {
     event.preventDefault();
@@ -251,30 +306,12 @@ function handleFileInputChange(event) { const file = event.target.files[0]; if (
 
 function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
 
-function setupDragAndDrop() { const chatArea = document.getElementById('chat-panel'); const overlay = document.getElementById('drag-drop-overlay'); if (!chatArea || !overlay) return; const showOverlay = () => overlay.classList.remove('hidden'); const hideOverlay = () => overlay.classList.add('hidden'); chatArea.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) { showOverlay(); } }); chatArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); }); chatArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); if (e.relatedTarget === null || !chatArea.contains(e.relatedTarget)) { hideOverlay(); } }); chatArea.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); hideOverlay(); const files = e.dataTransfer.files; if (files.length > 0) { stageFile(files[0]); } }); }
-
-function handleSearchContacts() {
-    const searchInput = document.getElementById('search-contacts-input');
-    const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
-    
-    let filteredContacts = state.contacts;
-    if (state.activeFilter !== 'all') {
-        filteredContacts = state.contacts.filter(c => c.status === state.activeFilter);
-    }
-
-    const contactsToRender = searchTerm ? filteredContacts.filter(c => (c.name || '').toLowerCase().includes(searchTerm) || c.id.includes(searchTerm) || (c.lastMessage || '').toLowerCase().includes(searchTerm)) : filteredContacts;
-    
-    const contactsListEl = document.getElementById('contacts-list');
-    if (contactsListEl) {
-        contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
-    }
-}
-
 function setFilter(filter) { 
     state.activeFilter = filter; 
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
     document.getElementById(`filter-${filter}`).classList.add('active'); 
-    handleSearchContacts(); 
+    // La búsqueda/filtrado ahora se maneja en el servidor, aquí solo actualizamos la UI del filtro.
+    // Podríamos añadir una llamada a la API aquí si los filtros fuesen por servidor también.
 }
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
@@ -487,3 +524,4 @@ async function handleSendTemplate(templateObject) {
     }
 }
 // --- END: Picker Management ---
+
