@@ -38,6 +38,9 @@ function navigateTo(viewName, force = false) { // AÑADIDO: Parámetro 'force'
             renderChatWindow();
             renderTagFilters(); 
             setupChatListEventListeners();
+            // AÑADIDO: Vuelve a dibujar la lista de contactos usando los datos del estado actual.
+            // Esta es la corrección para el problema de navegación.
+            handleSearchContacts();
             break;
         case 'pipeline':
             mainViewContainer.innerHTML = PipelineViewTemplate();
