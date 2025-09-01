@@ -716,6 +716,78 @@ app.post('/webhook', async (req, res) => {
 });
 
 
+// --- ENDPOINT PARA CONTACTOS PAGINADOS ---
+app.get('/api/contacts', async (req, res) => {
+    try {
+        const { limit = 30, startAfterId } = req.query;
+        let query = db.collection('contacts_whatsapp')
+                      .orderBy('lastMessageTimestamp', 'desc')
+                      .limit(Number(limit));
+
+        if (startAfterId) {
+            const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
+            if (lastDoc.exists) {
+                query = query.startAfter(lastDoc);
+            }
+        }
+
+        const snapshot = await query.get();
+        const contacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        const lastVisibleId = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null;
+
+        res.status(200).json({ 
+            success: true, 
+            contacts,
+            lastVisibleId // El ID del último contacto, para pedir la siguiente página
+        });
+
+    } catch (error) {
+        console.error('Error fetching paginated contacts:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener contactos.' });
+    }
+});
+
+
+// --- ENDPOINT PARA BÚSQUEDA DE CONTACTOS ---
+app.get('/api/contacts/search', async (req, res) => {
+    const { query } = req.query;
+    if (!query) {
+        return res.status(400).json({ success: false, message: 'Se requiere un término de búsqueda.' });
+    }
+
+    try {
+        const searchResults = [];
+
+        // 1. Buscar por número de teléfono (ID del documento)
+        const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
+        if (phoneDoc.exists) {
+            searchResults.push({ id: phoneDoc.id, ...phoneDoc.data() });
+        }
+
+        // 2. Buscar por coincidencia de nombre (sensible a mayúsculas)
+        const nameSnapshot = await db.collection('contacts_whatsapp')
+                                     .where('name', '>=', query)
+                                     .where('name', '<=', query + '\uf8ff')
+                                     .limit(20)
+                                     .get();
+        
+        nameSnapshot.forEach(doc => {
+            // Evitar duplicados si el ID ya fue encontrado
+            if (!searchResults.some(contact => contact.id === doc.id)) {
+                searchResults.push({ id: doc.id, ...doc.data() });
+            }
+        });
+
+        res.status(200).json({ success: true, contacts: searchResults });
+
+    } catch (error) {
+        console.error('Error searching contacts:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al buscar contactos.' });
+    }
+});
+
+
 // --- START: SIMULATOR ENDPOINT ---
 app.post('/api/test/simulate-ad-message', async (req, res) => {
     const { from, adId, text } = req.body;
