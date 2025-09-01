@@ -30,9 +30,9 @@ function navigateTo(viewName) {
     switch (viewName) {
         case 'chats':
             mainViewContainer.innerHTML = ChatViewTemplate();
-            renderTagFilters(); // SE AÑADE ESTA LÍNEA
-            renderChatWindow(); 
-            listenForContacts(); 
+            renderChatWindow();
+            renderTagFilters(); 
+            // ELIMINADO: listenForContacts() ya no se llama aquí. La carga la inicia main.js
             break;
         case 'pipeline':
             mainViewContainer.innerHTML = PipelineViewTemplate();
@@ -101,7 +101,6 @@ function toggleTagSidebar() {
 // --- Component & Specific View Renderers ---
 
 /**
- * **NUEVA FUNCIÓN**
  * Dibuja los botones de filtro por etiquetas en la vista de chats.
  */
 function renderTagFilters() {
@@ -132,6 +131,12 @@ function renderChatWindow() {
 
     const contact = state.contacts.find(c => c.id === state.selectedContactId); 
     chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+
+    // AÑADIDO: Conectar el manejador de búsqueda con debounce al input
+    const searchInput = document.getElementById('search-contacts-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearchInput);
+    }
     
     if (contact) { 
         const statusWrapper = document.getElementById('contact-status-wrapper');
@@ -165,7 +170,8 @@ function renderChatWindow() {
 
                 messageInput.focus(); 
             } 
-            setupDragAndDrop(); 
+            // MODIFICADO: Se llama a la nueva función que engloba scroll y drag/drop
+            setupChatListEventListeners();
             
         } else if (state.activeTab === 'notes') {
             renderNotes();
@@ -395,7 +401,9 @@ function renderAjustesIAView() {
 
     const botContactsTableBody = document.getElementById('bot-contacts-table-body');
     if(botContactsTableBody) {
-        botContactsTableBody.innerHTML = state.contacts.map(contact => `
+        // Esta vista necesitaría ser paginada también en una implementación a gran escala
+        const contactsToDisplay = state.contacts.slice(0, 100); // Mostramos solo los primeros 100
+        botContactsTableBody.innerHTML = contactsToDisplay.map(contact => `
             <tr>
                 <td class="font-semibold">${contact.name || contact.id}</td>
                 <td>
