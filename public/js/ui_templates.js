@@ -584,15 +584,39 @@ const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
+    // --- Lógica para verificar la ventana de 24 horas ---
+    const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contact.id);
+    let isSessionExpired = false;
+
+    if (lastUserMessage && lastUserMessage.timestamp) {
+        const lastMessageTimestamp = lastUserMessage.timestamp.seconds * 1000;
+        const now = new Date().getTime();
+        const hoursDiff = (now - lastMessageTimestamp) / (1000 * 60 * 60);
+        isSessionExpired = hoursDiff > 24;
+    } else if (state.messages.length > 0) {
+        // Si hay historial pero ningún mensaje del usuario, la sesión está cerrada para mensajes de formato libre.
+        isSessionExpired = true;
+    }
+    // Si no hay mensajes, es un chat nuevo y la sesión se considera abierta para el primer mensaje.
+
+    const sessionExpiredNotification = isSessionExpired
+        ? `<div class="session-expired-banner">
+             <i class="fas fa-lock mr-2"></i> Chat cerrado. Han pasado más de 24 horas.
+           </div>`
+        : '';
+    
+    const isInputDisabled = isSessionExpired ? 'disabled' : '';
+    // --- Fin de la lógica ---
+
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
-             <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
-             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*">
-             <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
+             <label for="file-input" class="cursor-pointer p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}"><i class="fas fa-paperclip text-xl"></i></label>
+             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*" ${isInputDisabled}>
+             <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}" ${isInputDisabled}><i class="far fa-smile text-xl"></i></button>
              <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
-             <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
-             <textarea id="message-input" placeholder="Escribe un mensaje o usa / para respuestas rápidas..." class="flex-1 !p-0 !mb-0" rows="1"></textarea>
-             <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
+             <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}" title="Contestar con IA" ${isInputDisabled}><i class="fas fa-magic"></i></button>
+             <textarea id="message-input" placeholder="${isSessionExpired ? 'Solo puedes enviar plantillas' : 'Escribe un mensaje o usa / para respuestas rápidas...'}" class="flex-1 !p-0 !mb-0" rows="1" ${isInputDisabled}></textarea>
+             <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0" ${isInputDisabled}><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
     
     const mainContent = state.activeTab === 'chat'
@@ -641,6 +665,7 @@ const ChatWindowTemplate = (contact) => {
         ${mainContent}
         <div id="file-preview-container"></div>
         <footer class="chat-footer relative">
+            ${sessionExpiredNotification}
             ${replyContextBarHTML}
             <div id="quick-reply-picker" class="picker-container hidden"></div>
             <div id="template-picker" class="picker-container hidden"></div>
@@ -702,3 +727,4 @@ const ContactDetailsSidebarTemplate = (contact) => {
 const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
+
