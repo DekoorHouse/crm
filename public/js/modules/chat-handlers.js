@@ -20,37 +20,39 @@ async function handleSelectContact(contactId) {
     
     if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
     
-    let isInitialMessageLoad = true;
+    // MODIFICADO: Se usa una lógica de reconstrucción completa en cada actualización
+    // para manejar correctamente los mensajes pendientes y las actualizaciones de estado.
     unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
         .onSnapshot((snapshot) => {
             hideError();
-            if (isInitialMessageLoad) {
-                state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
-                state.loadingMessages = false;
-                if (state.activeTab === 'chat') {
-                    renderMessages();
+            
+            // Conserva los mensajes pendientes que aún no han sido confirmados por el servidor
+            const pendingMessages = state.messages.filter(m => m.status === 'pending');
+            // Obtiene los mensajes confirmados desde el servidor
+            state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+
+            // Revisa si alguno de los mensajes pendientes ya fue confirmado
+            pendingMessages.forEach(pm => {
+                const isConfirmed = state.messages.some(sm =>
+                    sm.from !== state.selectedContactId &&
+                    sm.text === pm.text &&
+                    sm.timestamp && pm.timestamp &&
+                    Math.abs(sm.timestamp.toMillis() - pm.timestamp.toMillis()) < 15000 // 15s window
+                );
+                // Si no está confirmado, lo mantiene en la lista para que siga visible
+                if (!isConfirmed) {
+                    state.messages.push(pm);
                 }
-                isInitialMessageLoad = false;
-            } else {
-                snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added") {
-                        const newMessage = { docId: change.doc.id, ...change.doc.data() };
-                        state.messages.push(newMessage);
-                        if (state.activeTab === 'chat') {
-                            appendMessage(newMessage);
-                        }
-                    }
-                     if (change.type === "modified") {
-                        const updatedMessageIndex = state.messages.findIndex(m => m.docId === change.doc.id);
-                        if (updatedMessageIndex > -1) {
-                            state.messages[updatedMessageIndex] = { docId: change.doc.id, ...change.doc.data() };
-                            if (state.activeTab === 'chat') {
-                                renderMessages(); 
-                            }
-                        }
-                    }
-                });
+            });
+
+            // Reordena por si acaso
+            state.messages.sort((a, b) => (a.timestamp?.toMillis() || 0) - (b.timestamp?.toMillis() || 0));
+
+            state.loadingMessages = false;
+            if (state.activeTab === 'chat') {
+                renderMessages();
             }
+
         }, (error) => {
             console.error(error);
             showError(`Error al cargar mensajes.`);
@@ -76,6 +78,22 @@ async function handleSendMessage(event) {
     const remoteFileToSend = state.stagedRemoteFile;
 
     if (!text && !fileToSend && !remoteFileToSend) return;
+    
+    // --- INICIO: MODIFICACIÓN PARA UI OPTIMISTA ---
+    const tempId = `pending_${Date.now()}`;
+    const optimisticMessage = {
+        docId: tempId,
+        from: 'user_sent', // Placeholder para identificarlo como mensaje enviado
+        status: 'pending',
+        text: text,
+        timestamp: firebase.firestore.Timestamp.now(),
+        fileUrl: fileToSend ? URL.createObjectURL(fileToSend) : (remoteFileToSend ? remoteFileToSend.url : null),
+        fileType: fileToSend ? fileToSend.type : (remoteFileToSend ? remoteFileToSend.type : null)
+    };
+    
+    state.messages.push(optimisticMessage);
+    appendMessage(optimisticMessage);
+    // --- FIN: MODIFICACIÓN PARA UI OPTIMISTA ---
 
     input.value = '';
     input.style.height = 'auto';
@@ -112,9 +130,20 @@ async function handleSendMessage(event) {
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
         showError(error.message);
+        
+        // --- INICIO: MANEJO DE ERROR PARA UI OPTIMISTA ---
+        // Si el envío falla, elimina el mensaje pendiente del estado y del DOM.
+        state.messages = state.messages.filter(m => m.docId !== tempId);
+        const failedMessageEl = document.querySelector(`[data-doc-id="${tempId}"]`);
+        if (failedMessageEl) {
+            failedMessageEl.parentElement.remove();
+        }
+        // --- FIN: MANEJO DE ERROR PARA UI OPTIMISTA ---
+
         if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
     }
 }
+
 
 async function handleSaveNote(event) {
     event.preventDefault();
