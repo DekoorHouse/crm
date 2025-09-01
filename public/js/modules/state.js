@@ -2,13 +2,13 @@
 // Este archivo define el objeto de estado global de la aplicación
 // y las variables para manejar las suscripciones en tiempo real.
 
-let state = { 
-    contacts: [], 
-    messages: [], 
+let state = {
+    contacts: [],
+    messages: [],
     notes: [],
     quickReplies: [],
     adResponses: [],
-    aiAdPrompts: [], 
+    aiAdPrompts: [],
     templates: [],
     tags: [],
     knowledgeBase: [],
@@ -16,9 +16,9 @@ let state = {
     awayMessageSettings: { isActive: true },
     globalBotSettings: { isActive: false },
     googleSheetSettings: { googleSheetId: '' },
-    selectedContactId: null, 
-    loadingMessages: false, 
-    isUploading: false, 
+    selectedContactId: null,
+    loadingMessages: false,
+    isUploading: false,
     stagedFile: null,
     stagedRemoteFile: null,
     activeFilter: 'all',
@@ -28,11 +28,11 @@ let state = {
     templatePickerOpen: false,
     contactDetailsOpen: false,
     isEditingNote: null,
-    replyingToMessage: null, 
+    replyingToMessage: null,
     campaignMode: false,
     selectedContactIdsForCampaign: [],
-    isTagSidebarOpen: true, 
-    activeView: null, // CORRECCIÓN: Iniciar sin vista activa para forzar la carga inicial
+    isTagSidebarOpen: true,
+    activeView: 'chats', // La vista inicial vuelve a ser 'chats' por defecto.
 
     // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
     pagination: {
@@ -44,15 +44,16 @@ let state = {
 
 // --- Listener Unsubscribers ---
 // Nota: unsubscribeContactsListener será eliminado eventualmente.
-let unsubscribeMessagesListener = null, 
-    unsubscribeContactsListener = null, 
-    unsubscribeNotesListener = null, 
-    unsubscribeQuickRepliesListener = null, 
-    unsubscribeTagsListener = null, 
-    unsubscribeAdResponsesListener = null, 
-    unsubscribeKnowledgeBaseListener = null, 
+let unsubscribeMessagesListener = null,
+    unsubscribeContactsListener = null,
+    unsubscribeNotesListener = null,
+    unsubscribeQuickRepliesListener = null,
+    unsubscribeTagsListener = null,
+    unsubscribeAdResponsesListener = null,
+    unsubscribeKnowledgeBaseListener = null,
     unsubscribeAIAdPromptsListener = null;
 
 // --- Chart instances ---
 let dailyMessagesChart = null;
 let tagsDistributionChart = null;
+
