@@ -9,6 +9,12 @@ const PORT = process.env.PORT || 3000;
 app.use('/webhook', whatsappRouter);
 app.use('/api', apiRouter);
 
+// --- RUTA NUEVA PARA LA PÁGINA DE PEDIDOS ---
+// Esta ruta específica debe ir ANTES de la ruta genérica '*' para que funcione.
+app.get('/pedidos', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'pedidos.html'));
+});
+
 // --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
