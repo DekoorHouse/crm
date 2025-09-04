@@ -15,4 +15,7 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-const API_BASE_URL = 'https://crm-rzon.onrender.com';
+// Se actualiza la URL base para que apunte a la nueva ruta relativa.
+// Ya no se necesita el dominio completo de Render, ya que el reverse proxy se encargará de ello.
+const API_BASE_URL = '/crm';
+
