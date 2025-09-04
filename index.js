@@ -1,4 +1,5 @@
 const { app } = require('./config');
+const express = require('express'); // <-- LÍNEA AÑADIDA
 const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const path = require('path');
