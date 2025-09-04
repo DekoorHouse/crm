@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Pedidos - CRM</title>
+    
+    <!-- Librerías Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Nunito Sans', sans-serif;
+            background-color: #f8f9fa;
+        }
+        .container {
+            max-width: 1200px;
+            margin: auto;
+            padding: 2rem;
+        }
+        .table {
+            width: 100%;
+            border-collapse: collapse;
+            background-color: white;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .table th, .table td {
+            padding: 12px 16px;
+            text-align: left;
+            border-bottom: 1px solid #EAE6E1;
+        }
+        .table th {
+            background-color: #f1f2f4;
+            font-family: 'Poppins', sans-serif;
+            font-weight: 600;
+            color: #5D5C61;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        .table tr:hover {
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <div class="container">
+        <header class="mb-8 text-center">
+            <h1 class="text-4xl font-bold text-gray-800"><i class="fas fa-box-open text-green-500"></i> Registro de Pedidos</h1>
+            <p class="text-gray-500 mt-2">Aquí se muestran todos los contactos que han realizado una compra.</p>
+        </header>
+
+        <div id="loading" class="text-center p-8">
+            <i class="fas fa-spinner fa-spin text-4xl text-gray-400"></i>
+            <p class="mt-4 text-gray-600">Cargando pedidos...</p>
+        </div>
+
+        <div id="orders-table-container" class="hidden">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Cliente</th>
+                        <th>WhatsApp</th>
+                        <th>Fecha de Compra</th>
+                        <th>Valor</th>
+                        <th>Moneda</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-table-body"></tbody>
+            </table>
+        </div>
+        <p id="no-orders" class="text-center p-8 bg-white rounded-lg shadow hidden">No se encontraron pedidos registrados.</p>
+    </div>
+
+    <!-- Scripts de Firebase -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+
+    <script type="module">
+        // --- START: Firebase Configuration ---
+        const firebaseConfig = { 
+            apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg", 
+            authDomain: "pedidos-con-gemini.firebaseapp.com", 
+            projectId: "pedidos-con-gemini", 
+            storageBucket: "pedidos-con-gemini.firebasestorage.app",
+            messagingSenderId: "300825194175", 
+            appId: "1:300825194175:web:972fa7b8af195a83e6e00a", 
+            measurementId: "G-FTCDCMZB1S" 
+        };
+        firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        // --- START: Fetch and Render Logic ---
+        async function fetchAndRenderOrders() {
+            const loadingEl = document.getElementById('loading');
+            const tableContainerEl = document.getElementById('orders-table-container');
+            const tableBodyEl = document.getElementById('orders-table-body');
+            const noOrdersEl = document.getElementById('no-orders');
+
+            try {
+                // Autenticación anónima para poder leer datos si las reglas lo requieren
+                await auth.signInAnonymously();
+
+                const ordersQuery = db.collection('contacts_whatsapp').where('purchaseStatus', '==', 'completed').orderBy('purchaseDate', 'desc');
+                const snapshot = await ordersQuery.get();
+                
+                if (snapshot.empty) {
+                    noOrdersEl.classList.remove('hidden');
+                } else {
+                    const ordersHtml = snapshot.docs.map(doc => {
+                        const order = doc.data();
+                        const purchaseDate = order.purchaseDate 
+                            ? new Date(order.purchaseDate.seconds * 1000).toLocaleString('es-MX') 
+                            : 'Fecha no disponible';
+                        const value = new Intl.NumberFormat('es-MX', { style: 'currency', currency: order.purchaseCurrency || 'MXN' }).format(order.purchaseValue || 0);
+
+                        return `
+                            <tr>
+                                <td class="font-semibold">${order.name || 'Desconocido'}</td>
+                                <td>${doc.id}</td>
+                                <td>${purchaseDate}</td>
+                                <td>${value}</td>
+                                <td>${order.purchaseCurrency || 'MXN'}</td>
+                            </tr>
+                        `;
+                    }).join('');
+                    
+                    tableBodyEl.innerHTML = ordersHtml;
+                    tableContainerEl.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Error al cargar los pedidos:", error);
+                noOrdersEl.textContent = 'Error al cargar los pedidos. Revisa la consola para más detalles.';
+                noOrdersEl.classList.remove('hidden');
+            } finally {
+                loadingEl.classList.add('hidden');
+            }
+        }
+        
+        // Cargar los pedidos cuando la página esté lista
+        document.addEventListener('DOMContentLoaded', fetchAndRenderOrders);
+    </script>
+</body>
+</html>
