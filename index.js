@@ -12,6 +12,8 @@ app.use('/api', apiRouter);
 // --- RUTA NUEVA PARA LA PÁGINA DE PEDIDOS ---
 // Esta ruta específica debe ir ANTES de la ruta genérica '*' para que funcione.
 app.get('/pedidos', (req, res) => {
+    // CORRECCIÓN: Se añade el tipo de contenido para que el navegador lo interprete como HTML.
+    res.setHeader('Content-Type', 'text/html');
     res.sendFile(path.join(__dirname, 'public', 'pedidos.html'));
 });
 
@@ -25,3 +27,4 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Servidor escuchando en el puerto ${PORT}`);
 });
+
