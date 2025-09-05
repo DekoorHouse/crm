@@ -442,8 +442,13 @@ const MessageBubbleTemplate = (message) => {
     const hasMedia = message.fileUrl || message.mediaProxyUrl;
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
+    // --- START: MODIFICATION FOR AUDIO ---
     if (message.type === 'audio' && message.mediaProxyUrl) {
-        contentHTML += `<audio controls class="w-full max-w-xs"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
+        contentHTML += `<audio controls class="chat-audio-player"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta la reproducción de audio.</audio>`;
+    } else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
+        // Fallback for audio messages where the URL might be missing but the text indicator is present
+        contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
+    // --- END: MODIFICATION FOR AUDIO ---
     } else if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
@@ -916,4 +921,3 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
-
