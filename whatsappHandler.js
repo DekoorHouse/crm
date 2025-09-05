@@ -354,38 +354,49 @@ router.post('/', async (req, res) => {
     }
 });
 
+// --- INICIO DE LA CORRECCIÓN PARA AUDIO ---
 // Proxy de Medios para audios, videos y documentos de WhatsApp
 router.get("/wa/media/:mediaId", async (req, res) => {
     try {
         const { mediaId } = req.params;
-        if (!WHATSAPP_TOKEN) return res.status(500).json({ error: "WhatsApp Token no configurado." });
+        if (!WHATSAPP_TOKEN) {
+            return res.status(500).json({ error: "WhatsApp Token no configurado." });
+        }
         
-        const metaResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+        // 1. Obtener la URL del medio desde Meta
+        const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
 
-        const mediaUrl = metaResponse.data?.url;
-        if (!mediaUrl) return res.status(404).json({ error: "URL del medio no encontrada." });
+        const mediaUrl = metaUrlResponse.data?.url;
+        if (!mediaUrl) {
+            return res.status(404).json({ error: "URL del medio no encontrada." });
+        }
 
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se cambia 'stream' por 'arraybuffer' para descargar el archivo completo.
-        // Esto es más robusto para los reproductores de audio de los navegadores.
-        const mediaContentResponse = await axios.get(mediaUrl, {
+        // 2. Hacer la petición a la URL del medio como un stream
+        const mediaResponse = await axios.get(mediaUrl, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-            responseType: "arraybuffer",
+            responseType: "stream", // ¡Importante! Usar 'stream' en lugar de 'arraybuffer'
         });
 
-        res.setHeader("Content-Type", mediaContentResponse.headers["content-type"] || "application/octet-stream");
-        res.setHeader("Content-Length", mediaContentResponse.headers["content-length"]);
-        res.send(mediaContentResponse.data);
-        // --- FIN DE LA CORRECCIÓN ---
+        // 3. Pasar las cabeceras de la respuesta de Meta a nuestra respuesta
+        //    Esto le da al navegador la información que necesita (tipo y tamaño del archivo)
+        res.setHeader("Content-Type", mediaResponse.headers["content-type"]);
+        if (mediaResponse.headers["content-length"]) {
+            res.setHeader("Content-Length", mediaResponse.headers["content-length"]);
+        }
+
+        // 4. "Tubear" (pipe) el stream directamente a la respuesta.
+        //    Esto envía los datos al navegador a medida que se descargan de Meta,
+        //    sin guardar el archivo completo en la memoria del servidor.
+        mediaResponse.data.pipe(res);
 
     } catch (err) {
         console.error("ERROR EN PROXY DE MEDIOS:", err?.response?.data || err.message);
         res.status(500).json({ error: "No se pudo obtener el medio." });
     }
 });
+// --- FIN DE LA CORRECCIÓN PARA AUDIO ---
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
-
