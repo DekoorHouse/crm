@@ -71,6 +71,10 @@
                         <i class="fas fa-stream"></i>
                         <span class="sidebar-text">Pipeline</span>
                     </a>
+                     <a onclick="navigateTo('difusion')" data-view="difusion" class="nav-item">
+                        <i class="fas fa-rocket"></i>
+                        <span class="sidebar-text">Difusión Masiva</span>
+                    </a>
                     <a onclick="navigateTo('contacts')" data-view="contacts" class="nav-item">
                         <i class="fas fa-address-book"></i>
                         <span class="sidebar-text">Contactos</span>
@@ -86,10 +90,6 @@
                     <a onclick="navigateTo('campanas-imagen')" data-view="campanas-imagen" class="nav-item">
                         <i class="fas fa-image"></i>
                         <span class="sidebar-text">Campaña con Imagen</span>
-                    </a>
-                    <a onclick="navigateTo('difusion')" data-view="difusion" class="nav-item">
-                        <i class="fas fa-rocket"></i>
-                        <span class="sidebar-text">Difusión Masiva</span>
                     </a>
                     <a onclick="navigateTo('mensajes-ads')" data-view="mensajes-ads" class="nav-item">
                         <i class="fas fa-ad"></i>
@@ -360,11 +360,13 @@
     <script src="js/modules/utils.js"></script>
     <script src="js/ui_templates.js"></script> 
     <script src="js/modules/api-service.js"></script>
+    <script src="js/modules/difusion-handlers.js"></script> <!-- AÑADIDO -->
     <script src="js/modules/ui-manager.js"></script>
     <script src="js/modules/chat-handlers.js"></script>
     <script src="js/modules/feature-handlers.js"></script>
-    <script src="js/modules/main.js"></script> <!-- Carga main.js antes que auth.js -->
-    <script src="js/modules/auth.js"></script> <!-- auth.js ahora puede encontrar startApp -->
+    <script src="js/modules/main.js"></script> 
+    <script src="js/modules/auth.js"></script>
     
 </body>
 </html>
+
