@@ -367,14 +367,18 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         const mediaUrl = metaResponse.data?.url;
         if (!mediaUrl) return res.status(404).json({ error: "URL del medio no encontrada." });
 
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se cambia 'stream' por 'arraybuffer' para descargar el archivo completo.
+        // Esto es más robusto para los reproductores de audio de los navegadores.
         const mediaContentResponse = await axios.get(mediaUrl, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-            responseType: "stream",
+            responseType: "arraybuffer",
         });
 
         res.setHeader("Content-Type", mediaContentResponse.headers["content-type"] || "application/octet-stream");
-        res.setHeader("Cache-Control", "no-store");
-        mediaContentResponse.data.pipe(res);
+        res.setHeader("Content-Length", mediaContentResponse.headers["content-length"]);
+        res.send(mediaContentResponse.data);
+        // --- FIN DE LA CORRECCIÓN ---
 
     } catch (err) {
         console.error("ERROR EN PROXY DE MEDIOS:", err?.response?.data || err.message);
