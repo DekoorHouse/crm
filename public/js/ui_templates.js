@@ -896,7 +896,7 @@ const DifusionViewTemplate = () => `
                     <thead>
                         <tr class="bg-gray-50">
                             <th class="w-12 text-center">#</th>
-                            <th class="w-48">No. Pedido (Ej: DH1025)</th>
+                            <th class="w-48">No. Pedido o Teléfono</th>
                             <th>Cliente</th>
                             <th class="text-center">Foto del Pedido</th>
                             <th>Estatus</th>
@@ -923,3 +923,4 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
+
