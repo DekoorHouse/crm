@@ -140,6 +140,12 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
     display: block;
     background-color: #000;
 }
+/* --- START: NEW AUDIO PLAYER STYLES --- */
+.chat-audio-player {
+    width: 250px;
+    height: 45px;
+}
+/* --- END: NEW AUDIO PLAYER STYLES --- */
 
 .message-bubble.has-image { padding: 5px; background-color: transparent; box-shadow: none; max-width: 260px; }
 .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
@@ -507,4 +513,3 @@ label.disabled-icon {
     margin-top: 8px;
 }
 /* --- END: STYLES FOR NEW ORDER MODAL --- */
-
