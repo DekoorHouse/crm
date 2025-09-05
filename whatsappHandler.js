@@ -225,6 +225,19 @@ router.post('/', async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Asegura que el contacto exista antes de intentar añadir un mensaje.
+            const contactDoc = await contactRef.get();
+            if (!contactDoc.exists) {
+                 console.log(`[WEBHOOK] Mensaje de un número nuevo ${from}. Creando contacto.`);
+                 await contactRef.set({
+                    name: contactInfo.profile?.name || from,
+                    wa_id: contactInfo.wa_id,
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                 }, { merge: true });
+            }
+            // --- FIN DE LA CORRECCIÓN ---
+
             const messageData = {
                 timestamp: admin.firestore.Timestamp.fromMillis(parseInt(message.timestamp) * 1000),
                 from, status: 'received', id: message.id, type: message.type, context: message.context || null
@@ -368,4 +381,5 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
 
