@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
-const { db, admin } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI } = require('./services');
+const { db, admin } = require('../config/config'); // Ruta actualizada
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI } = require('../services/services'); // Ruta actualizada
 
 const router = express.Router();
 
@@ -265,3 +265,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
