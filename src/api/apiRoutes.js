@@ -1,8 +1,8 @@
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const { db, admin } = require('./config');
-const { sendConversionEvent, generateGeminiResponse } = require('./services');
+const { db, admin } = require('../config/config'); // Ruta actualizada para subir un nivel
+const { sendConversionEvent, generateGeminiResponse } = require('../services/services'); // Ruta actualizada para subir un nivel
 
 const router = express.Router();
 
@@ -129,7 +129,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     
     // Se importa dinámicamente para evitar dependencias circulares
-    const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
+    const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler'); // Esta ruta es correcta porque están en la misma carpeta
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
