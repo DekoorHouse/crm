@@ -859,11 +859,29 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 }
 
                 const bodyParams = [job.orderId];
-                const { payload } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl, bodyParams);
+                const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl, bodyParams);
                 
-                await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
+                const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                     headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
                 });
+
+                // --- INICIO DE LA CORRECCIÓN ---
+                // Guardar una copia del mensaje de plantilla enviado en la base de datos
+                const messageId = response.data.messages[0].id;
+                const messageToSave = {
+                    from: PHONE_NUMBER_ID,
+                    status: 'sent',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: messageId,
+                    text: messageToSaveText, // Este texto ya viene formateado desde buildAdvancedTemplatePayload
+                    isAutoReply: true
+                };
+                await contactRef.collection('messages').add(messageToSave);
+                await contactRef.update({
+                    lastMessage: messageToSaveText,
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+                // --- FIN DE LA CORRECCIÓN ---
                 
                 await db.collection('contingentSends').add({
                     contactId: job.contactId,
@@ -888,6 +906,7 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
 
 
 
