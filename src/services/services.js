@@ -2,7 +2,7 @@ const { google } = require('googleapis');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const axios = require('axios');
-const { db } = require('./config');
+const { db } = require('../config/config'); // Ruta actualizada para subir un nivel
 
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
@@ -206,7 +206,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         const aiResponse = await generateGeminiResponse(prompt);
         
         // Se importa dinámicamente para evitar dependencias circulares
-        const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
+        const { sendAdvancedWhatsAppMessage } = require('../api/whatsappHandler'); // Ruta actualizada para subir un nivel
         const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
         
         await contactRef.collection('messages').add({
@@ -290,3 +290,4 @@ module.exports = {
     triggerAutoReplyAI,
     sendConversionEvent
 };
+
