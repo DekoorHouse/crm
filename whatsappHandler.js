@@ -116,6 +116,51 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     }
 }
 
+async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
+    console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
+    const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+    const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
+    const { name: templateName, components: templateComponents, language } = templateObject;
+    const payloadComponents = [];
+    let messageToSaveText = `📄 Plantilla: ${templateName}`;
+
+    const headerDef = templateComponents?.find(c => c.type === 'HEADER');
+    if (headerDef?.format === 'IMAGE') {
+        if (!imageUrl) throw new Error(`La plantilla '${templateName}' requiere una imagen.`);
+        payloadComponents.push({ type: 'header', parameters: [{ type: 'image', image: { link: imageUrl } }] });
+        messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+    }
+    if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
+        payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: "Valor de cabecera" }] });
+    }
+
+    const bodyDef = templateComponents?.find(c => c.type === 'BODY');
+    if (bodyDef) {
+        if (bodyDef.text?.match(/\{\{\d\}\}/g)) {
+            payloadComponents.push({ type: 'body', parameters: [{ type: 'text', text: contactName }] });
+            messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
+        } else {
+            payloadComponents.push({ type: 'body', parameters: [] });
+            messageToSaveText = bodyDef.text || messageToSaveText;
+        }
+    }
+
+    const buttonsDef = templateComponents?.find(c => c.type === 'BUTTONS');
+    buttonsDef?.buttons?.forEach((button, index) => {
+        if (button.type === 'URL' && button.url?.includes('{{1}}')) {
+            payloadComponents.push({ type: 'button', sub_type: 'url', index: index.toString(), parameters: [{ type: 'text', text: contactId }] });
+        }
+    });
+
+    const payload = {
+        messaging_product: 'whatsapp', to: contactId, type: 'template',
+        template: { name: templateName, language: { code: language } }
+    };
+    if (payloadComponents.length > 0) payload.template.components = payloadComponents;
+    console.log(`[DIAGNÓSTICO] Payload final construido para ${contactId}:`, JSON.stringify(payload, null, 2));
+    return { payload, messageToSaveText };
+}
+
 async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
     await contactRef.collection('messages').add({
@@ -317,4 +362,5 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 });
 
 
-module.exports = { router, sendAdvancedWhatsAppMessage };
+module.exports = { router, sendAdvancedWhatsAppMessage, buildAdvancedTemplatePayload };
+
