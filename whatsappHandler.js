@@ -116,7 +116,12 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     }
 }
 
-async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
+async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
+        throw error;
+    }
+}
+
+async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null, bodyParams = []) {
     console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
     const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
     const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
@@ -131,15 +136,29 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
     }
     if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
-        payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: "Valor de cabecera" }] });
+        // Asumiendo que el parámetro del encabezado es siempre el nombre del contacto por simplicidad
+        payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: contactName }] });
     }
 
     const bodyDef = templateComponents?.find(c => c.type === 'BODY');
     if (bodyDef) {
-        if (bodyDef.text?.match(/\{\{\d\}\}/g)) {
-            payloadComponents.push({ type: 'body', parameters: [{ type: 'text', text: contactName }] });
-            messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
+        const matches = bodyDef.text?.match(/\{\{\d\}\}/g);
+        if (matches) {
+            // El primer parámetro es siempre el nombre del contacto.
+            const allParams = [contactName, ...bodyParams];
+            const parameters = allParams.slice(0, matches.length).map(param => ({ type: 'text', text: String(param) })); // Asegurarse de que sea string
+            
+            payloadComponents.push({ type: 'body', parameters });
+            
+            // Para guardar en la BD, se reemplazan las variables en el texto
+            let tempText = bodyDef.text;
+            parameters.forEach((param, index) => {
+                tempText = tempText.replace(`{{${index + 1}}}`, param.text);
+            });
+            messageToSaveText = tempText;
+
         } else {
+            // El cuerpo no tiene variables
             payloadComponents.push({ type: 'body', parameters: [] });
             messageToSaveText = bodyDef.text || messageToSaveText;
         }
@@ -363,4 +382,5 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage, buildAdvancedTemplatePayload };
+
 
