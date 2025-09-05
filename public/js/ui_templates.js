@@ -687,8 +687,9 @@ const ContactDetailsSidebarTemplate = (contact) => {
     const registrationButtonHTML = `
         <button 
             onclick="handleMarkAsRegistration()" 
-            class="btn ${registrationButtonClass} w-full btn-sm">
-            <i class="fas ${registrationButtonIcon} mr-2"></i>Aquí no se le pica
+            class="btn ${registrationButtonClass} w-full btn-sm"
+            ${isRegistered ? 'disabled' : ''}>
+            <i class="fas ${registrationButtonIcon} mr-2"></i>${isRegistered ? 'Registrado' : 'Marcar como Registrado'}
         </button>`;
 
     return `
@@ -714,9 +715,10 @@ const ContactDetailsSidebarTemplate = (contact) => {
                     </div>
                 </div>
                 <div class="mt-6 border-t pt-6 space-y-2">
-                   <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Aquí se le pica si registras el pedido</button>
+                   <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra</button>
                    ${registrationButtonHTML}
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto'</button>
+                   <button onclick="openNewOrderModal()" class="btn btn-primary w-full btn-sm"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
                 </div>
             </div>
             <footer class="p-4 border-t border-gray-200">
@@ -730,3 +732,93 @@ const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
 
+const NewOrderModalTemplate = (contactPhone) => `
+<div id="new-order-modal" class="modal-backdrop">
+    <div class="modal-content !max-w-3xl">
+        <button onclick="closeNewOrderModal()" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600 text-2xl">&times;</button>
+        <div>
+             <h2 id="order-modal-title" class="text-xl font-bold mb-4"><i class="fas fa-pencil-alt mr-2"></i> Registrar Nuevo Pedido</h2>
+             <form id="new-order-form">
+                
+                 <div class="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4 max-h-[70vh] overflow-y-auto pr-2">
+                     
+                     <div class="md:col-span-1">
+                         <label for="order-product-select" class="block text-sm font-medium text-gray-700">Producto (*):</label>
+                         <select id="order-product-select" required class="mt-1">
+                            <option value="Modelo 7">Modelo 7</option>
+                            <option value="Portallaves">Portallaves</option>
+                            <option value="Calendario">Calendario</option>
+                            <option value="Placa de perro">Placa de perro</option>
+                            <option value="Otro">Otro</option>
+                         </select>
+                         <input type="text" id="order-product-other" class="mt-2 hidden" placeholder="Nombre del producto">
+                     </div>
+
+                     <div class="md:col-span-1">
+                         <label for="order-phone" class="block text-sm font-medium text-gray-700">Teléfono (*):</label>
+                         <input type="tel" id="order-phone" placeholder="Ej: 521..." value="${contactPhone || ''}" required class="mt-1">
+                     </div>
+
+                     <div class="md:col-span-1">
+                          <label for="order-price" class="block text-sm font-medium text-gray-700">Precio (MXN):</label>
+                          <input type="number" id="order-price" step="0.01" placeholder="Ej: 275.00" value="275" class="mt-1">
+                      </div>
+
+                      <div class="md:col-span-2">
+                           <label for="order-photo-file" class="block text-sm font-medium text-gray-700">Fotos del Pedido:</label>
+                           <div id="order-file-input-container-product" class="mt-1 p-4 border-2 border-dashed rounded-md">
+                               <input type="file" id="order-photo-file" accept="image/*" multiple class="hidden">
+                               <div class="flex items-center space-x-3">
+                                   <label for="order-photo-file" class="btn btn-subtle btn-sm cursor-pointer">
+                                       <i class="fas fa-upload"></i> Seleccionar
+                                   </label>
+                                   <span class="text-sm text-gray-500">o arrastra y suelta imágenes aquí</span>
+                               </div>
+                               <div id="order-photos-preview-container" class="mt-3 flex flex-wrap gap-3"></div>
+                           </div>
+                      </div>
+
+                     <div class="md:col-span-2">
+                         <label for="order-product-details" class="block text-sm font-medium text-gray-700">Detalles del Producto:</label>
+                         <textarea id="order-product-details" placeholder="Describe los detalles específicos del producto solicitado..." class="mt-1" rows="3"></textarea>
+                     </div>
+
+                     <div class="md:col-span-2">
+                        <label for="order-promo-photo-file" class="block text-sm font-medium text-gray-700">Fotos de la Promoción:</label>
+                        <div id="order-same-photo-container" class="hidden items-center gap-3 my-2 text-sm">
+                            <input type="checkbox" id="order-same-photo-checkbox" class="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary">
+                            <label for="order-same-photo-checkbox" class="text-gray-600">Usar la(s) misma(s) foto(s) del pedido</label>
+                        </div>
+                        <div id="order-file-input-container-promo" class="p-4 border-2 border-dashed rounded-md">
+                            <input type="file" id="order-promo-photo-file" accept="image/*" multiple class="hidden">
+                            <div class="flex items-center space-x-3">
+                                <label for="order-promo-photo-file" class="btn btn-subtle btn-sm cursor-pointer">
+                                    <i class="fas fa-upload"></i> Seleccionar
+                                </label>
+                                <span class="text-sm text-gray-500">o arrastra y suelta imágenes aquí</span>
+                            </div>
+                            <div id="order-promo-photos-preview-container" class="mt-3 flex flex-wrap gap-3"></div>
+                        </div>
+                    </div>
+
+                    <div class="md:col-span-2">
+                        <label for="order-promo-details" class="block text-sm font-medium text-gray-700">Detalles de la Promoción:</label>
+                        <textarea id="order-promo-details" placeholder="Describe la promoción aplicada, si existe..." class="mt-1" rows="2"></textarea>
+                    </div>
+
+                    <div class="md:col-span-2">
+                           <label for="order-comments" class="block text-sm font-medium text-gray-700">Comentarios Adicionales:</label>
+                           <textarea id="order-comments" placeholder="Añade cualquier otra nota relevante sobre el pedido..." class="mt-1" rows="2"></textarea>
+                    </div>
+
+                 </div>
+                 <div id="order-error-message" class="text-red-600 text-sm mt-2 min-h-[1.25rem]"></div>
+                 <div class="flex justify-end gap-3 mt-4 pt-4 border-t">
+                      <button type="button" onclick="closeNewOrderModal()" class="btn btn-subtle"><i class="fas fa-times mr-2"></i> Cancelar</button>
+                      <button type="submit" id="order-save-btn" class="btn btn-primary"><i class="fas fa-save mr-2"></i> Guardar Pedido</button>
+                 </div>
+             </form>
+        </div>
+    </div>
+</div>
+`;
