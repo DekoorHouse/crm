@@ -47,7 +47,8 @@ const corsOptions = {
 
 app.use(cors(corsOptions)); // Usa la nueva configuración de CORS
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+// La ruta ahora sube dos niveles desde 'src/config' para encontrar 'public'
+app.use(express.static(path.join(__dirname, '..', '..', 'public')));
 
 module.exports = { app, db, bucket, admin };
 
