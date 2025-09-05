@@ -16,6 +16,53 @@ const TIMEZONE = 'America/Mexico_City';
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
+// --- NUEVA FUNCIÓN: MANEJAR ENVÍOS DE CONTINGENCIA ---
+async function handleContingentSend(contactId) {
+    const contingentQuery = db.collection('contingentSends')
+        .where('contactId', '==', contactId)
+        .where('status', '==', 'pending')
+        .limit(1);
+
+    const snapshot = await contingentQuery.get();
+    if (snapshot.empty) {
+        return false; // No hay envío pendiente para este contacto
+    }
+
+    const contingentDoc = snapshot.docs[0];
+    const contingentData = contingentDoc.data();
+    const { payload } = contingentData;
+
+    console.log(`[CONTINGENT] Envío pendiente encontrado para ${contactId}. Ejecutando ahora.`);
+
+    try {
+        // Enviar la secuencia de mensajes primero
+        if (payload.messageSequence && payload.messageSequence.length > 0) {
+            for (const qr of payload.messageSequence) {
+                await sendAdvancedWhatsAppMessage(contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
+                await new Promise(resolve => setTimeout(resolve, 500)); // Pequeño retraso entre mensajes
+            }
+        }
+
+        // Enviar el mensaje final con la foto
+        await sendAdvancedWhatsAppMessage(contactId, {
+            text: `¡Tu pedido ${payload.orderId} está listo! ✨`,
+            fileUrl: payload.photoUrl,
+            fileType: 'image/jpeg' // Asumimos jpeg, se podría mejorar
+        });
+
+        // Marcar como completado
+        await contingentDoc.ref.update({ status: 'completed', completedAt: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[CONTINGENT] Envío pendiente para ${contactId} completado exitosamente.`);
+        return true;
+
+    } catch (error) {
+        console.error(`[CONTINGENT] Error al ejecutar el envío pendiente para ${contactId}:`, error);
+        await contingentDoc.ref.update({ status: 'failed', error: error.message });
+        return false;
+    }
+}
+
+
 // --- FUNCIONES AUXILIARES DEL WEBHOOK ---
 
 function isWithinBusinessHours() {
@@ -179,6 +226,12 @@ router.post('/', async (req, res) => {
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
             const updatedContactData = (await contactRef.get()).data();
+            
+            // --- NUEVA LÓGICA: Comprobar envíos de contingencia ANTES de otras automatizaciones ---
+            const contingentSent = await handleContingentSend(from);
+            if (contingentSent) {
+                console.log(`[LOGIC] Envío de contingencia manejado para ${from}. El flujo regular continúa.`);
+            }
 
             if (message.type === 'text') {
                 const wholesaleResponse = handleWholesaleMessage(from, message.text.body);
