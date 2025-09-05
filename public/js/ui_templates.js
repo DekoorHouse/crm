@@ -430,6 +430,11 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
 };
 
 const MessageBubbleTemplate = (message) => {
+    // LOG 7: Ver el objeto 'message' que recibe la plantilla para renderizar un audio.
+    if (message.type === 'audio') {
+        console.log('[DIAGNÓSTICO Frontend] Renderizando burbuja de mensaje de audio. Objeto del mensaje:', JSON.parse(JSON.stringify(message)));
+    }
+
     const isSent = message.from !== state.selectedContactId;
     const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
         ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
@@ -443,12 +448,17 @@ const MessageBubbleTemplate = (message) => {
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
     if (message.type === 'audio' && message.mediaProxyUrl) {
-        // Añadir preload="metadata" para que el navegador solo pida los metadatos primero.
-        // Se elimina el timestamp para evitar posibles interferencias.
-        contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta la reproducción de audio.</audio>`;
+        const audioSrc = `${API_BASE_URL}${message.mediaProxyUrl}`;
+        const mimeType = message.audio?.mime_type || 'audio/ogg';
+        const audioHTML = `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${mimeType}">Tu navegador no soporta la reproducción de audio.</audio>`;
+        
+        // LOG 8: Ver el HTML final que se está generando para el reproductor de audio.
+        console.log('[DIAGNÓSTICO Frontend] HTML del reproductor de audio generado:', audioHTML);
+        
+        contentHTML += audioHTML;
+
     } 
     else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
-        // Fallback for audio messages where the URL might be missing but the text indicator is present
         contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
     } else if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
@@ -922,4 +932,3 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
-
