@@ -27,6 +27,7 @@
     --border-radius-lg: 15px;
 }
 body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; }
+body.modal-open { overflow: hidden; }
 h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); color: var(--color-text); }
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
@@ -341,10 +342,14 @@ label.disabled-icon {
 }
 
 /* --- START: STYLES FOR NEW ORDER MODAL --- */
+#new-order-modal .modal-content {
+    max-width: 750px; /* Wider modal */
+    padding: 30px 40px;
+}
 #new-order-modal .modal-content h2 {
     text-align: center;
     font-size: 1.5em;
-    color: var(--color-primary);
+    color: var(--color-primary); /* Green title */
     margin-bottom: 25px;
 }
 #new-order-form .form-grid {
@@ -362,9 +367,24 @@ label.disabled-icon {
     padding-top: 20px;
     border-top: 1px solid var(--color-border);
 }
+#new-order-modal .modal-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 15px;
+    background: transparent;
+    border: none;
+    font-size: 2.5rem;
+    font-weight: 300;
+    color: var(--color-text-light);
+    cursor: pointer;
+}
+#new-order-modal .modal-close-btn:hover {
+    color: var(--color-secondary);
+}
+
 
 /* Photo Upload Styling */
-.file-input-container {
+#new-order-modal .file-input-container {
     border: 2px dashed var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 15px;
@@ -372,71 +392,58 @@ label.disabled-icon {
     transition: all 0.3s ease;
     outline: none;
 }
-.file-input-container:focus-within {
-    border-color: var(--color-primary); /* Use primary instead of secondary for consistency */
+#new-order-modal .file-input-container:focus-within {
+    border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2);
 }
-.file-input-container.drag-over {
+#new-order-modal .file-input-container.drag-over {
     border-color: var(--color-primary);
     background-color: rgba(129, 178, 154, 0.1);
 }
-.file-input-header {
+#new-order-modal .file-input-header {
     display: flex;
     align-items: center;
     gap: 15px;
     margin-bottom: 15px;
 }
-.custom-file-upload {
-    display: inline-block;
-    background-color: var(--color-secondary);
+#new-order-modal .custom-file-upload {
+    background-color: var(--color-primary);
     color: white;
-    padding: 10px 20px;
-    border-radius: var(--border-radius-md);
-    cursor: pointer;
-    font-family: var(--font-heading);
-    font-weight: 600;
-    font-size: 1rem;
-    transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 8px;
 }
-.custom-file-upload:hover {
-    background-color: #d8684a; /* Darker secondary */
-    transform: translateY(-1px);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+#new-order-modal .custom-file-upload:hover {
+    background-color: #70a087; /* Darker primary */
 }
-.previews-container {
+#new-order-modal .previews-container {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     min-height: 50px;
 }
-.preview-thumbnail {
+#new-order-modal .preview-thumbnail {
     position: relative;
     width: 100px;
     height: 100px;
     border-radius: var(--border-radius-md);
     overflow: hidden;
     border: 2px solid transparent;
-    background-color: var(--color-bg);
+    background-color: #f0f2f5;
     cursor: grab;
     transition: border-color 0.2s ease, opacity 0.2s ease;
 }
-.preview-thumbnail.dragging {
+#new-order-modal .preview-thumbnail.dragging {
     opacity: 0.4;
     cursor: grabbing;
 }
-.preview-thumbnail.selected {
-    border-color: var(--color-secondary); /* Use secondary color for selection */
+#new-order-modal .preview-thumbnail.selected {
+    border-color: var(--color-secondary);
     box-shadow: 0 0 8px var(--color-secondary);
 }
-.preview-thumbnail img {
+#new-order-modal .preview-thumbnail img {
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
-.preview-thumbnail .delete-photo-btn {
+#new-order-modal .preview-thumbnail .delete-photo-btn {
     position: absolute;
     top: 5px;
     right: 5px;
@@ -455,24 +462,24 @@ label.disabled-icon {
     padding: 0;
     z-index: 2;
 }
-.preview-thumbnail .delete-photo-btn:hover {
+#new-order-modal .preview-thumbnail .delete-photo-btn:hover {
     background-color: var(--color-danger);
      transform: scale(1.1);
 }
 
 /* Checkbox Style */
-.checkbox-container {
+#new-order-modal .checkbox-container {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
 }
-.checkbox-container input[type="checkbox"] {
+#new-order-modal .checkbox-container input[type="checkbox"] {
     width: auto;
     margin-bottom: 0;
     flex-shrink: 0;
 }
-.checkbox-container label {
+#new-order-modal .checkbox-container label {
     margin-bottom: 0;
     font-weight: normal;
     font-size: 0.9em;
@@ -487,7 +494,14 @@ label.disabled-icon {
     min-height: 1.2em;
     text-align: center;
     font-size: 0.9em;
+    background-color: rgba(220, 53, 69, 0.1);
+    border-radius: var(--border-radius-sm);
+    padding: 8px;
 }
+#order-error-message:empty {
+    display: none;
+}
+
 
 #order-product-other {
     margin-top: 8px;
