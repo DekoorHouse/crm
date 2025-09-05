@@ -17,18 +17,22 @@ function handleSearchInput(event) {
     debounceSearch(searchTerm);
 }
 
-// Modificada: Ya no filtra. Solo renderiza los contactos que están en el estado.
-// La lógica de filtrado/búsqueda/paginación ya ocurrió en el servidor y api-service.js
+// CORREGIDO: Ahora también se encarga de ocultar el mensaje de "Cargando..."
 function handleSearchContacts() {
     const contactsToRender = state.contacts; 
-    
-    // Si es una carga inicial o una búsqueda, se reemplaza todo el contenido.
-    // Si es "cargar más", deberíamos añadir en lugar de reemplazar.
-    // Por simplicidad, por ahora reemplazamos. La virtualización lo manejará mejor.
     const contactsListEl = document.getElementById('contacts-list');
+    const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
+
     if (contactsListEl) {
         contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
     }
+
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Ocultar el mensaje de "Cargando..." después de que la lista de contactos ha sido renderizada.
+    if (contactsLoadingEl) {
+        contactsLoadingEl.style.display = 'none';
+    }
+    // --- FIN DE LA CORRECCIÓN ---
 }
 
 // Nueva función que configura el scroll infinito y el drag & drop
@@ -534,4 +538,3 @@ async function handleSendTemplate(templateObject) {
     }
 }
 // --- END: Picker Management ---
-
