@@ -199,6 +199,67 @@ router.get('/whatsapp-templates', async (req, res) => {
     }
 });
 
+// --- RUTA PARA CREAR PEDIDOS ---
+router.post('/pedidos', async (req, res) => {
+    try {
+        const { 
+            contactId, producto, vendedor, telefono, fotoUrls, fotoPromocionUrls, 
+            comentarios, datosProducto, datosPromocion, precio 
+        } = req.body;
+
+        if (!contactId || !producto || !telefono) {
+            return res.status(400).json({ success: false, message: 'Faltan datos obligatorios (contactId, producto, telefono).' });
+        }
+
+        // 1. Get new order number
+        const orderCounterRef = db.collection("counters").doc("orders");
+        const newOrderNumber = await db.runTransaction(async (transaction) => {
+            const counterDoc = await transaction.get(orderCounterRef);
+            let currentCounter = counterDoc.exists ? counterDoc.data().lastOrderNumber || 0 : 0;
+            const nextOrderNumber = (currentCounter < 1000) ? 1001 : currentCounter + 1;
+            transaction.set(orderCounterRef, { lastOrderNumber: nextOrderNumber }, { merge: true });
+            return nextOrderNumber;
+        });
+
+        // 2. Create new 'pedido' document
+        const pedidosCollectionRef = db.collection("pedidos");
+        const nuevoPedido = {
+            consecutiveOrderNumber: newOrderNumber,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            producto: producto,
+            vendedor: vendedor || 'CRM',
+            telefono: telefono,
+            fotoUrls: fotoUrls || [],
+            fotoPromocionUrls: fotoPromocionUrls || [],
+            comentarios: comentarios || '',
+            datosProducto: datosProducto || '',
+            datosPromocion: datosPromocion || '',
+            precio: Number(precio) || 0,
+            estatus: "Sin estatus",
+            telefonoVerificado: false,
+            estatusVerificado: false,
+            createdBy: 'CRM' 
+        };
+        const newPedidoRef = await pedidosCollectionRef.add(nuevoPedido);
+
+        // 3. Update the contact in 'contacts_whatsapp' collection
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        await contactRef.update({
+            pedidos: admin.firestore.FieldValue.arrayUnion({
+                pedidoRefId: newPedidoRef.id,
+                pedidoNumero: `DH${newOrderNumber}`,
+                fecha: new Date()
+            })
+        });
+
+        res.status(201).json({ success: true, message: 'Pedido creado exitosamente.', newOrderNumber: `DH${newOrderNumber}` });
+
+    } catch (error) {
+        console.error('Error creando nuevo pedido desde CRM:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear el pedido.' });
+    }
+});
+
 
 // --- RUTAS DE CAMPAÑAS ---
 router.post('/campaigns/send-template', async (req, res) => {
@@ -681,4 +742,3 @@ router.get('/metrics', async (req, res) => {
 });
 
 module.exports = router;
-
