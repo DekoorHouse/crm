@@ -444,7 +444,10 @@ const MessageBubbleTemplate = (message) => {
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
     if (message.type === 'audio' && message.mediaProxyUrl) {
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Usar la información de mime_type guardada para asegurar la compatibilidad.
         contentHTML += `<audio controls class="w-full max-w-xs"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
+        // --- FIN DE LA CORRECCIÓN ---
     } else if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
