@@ -368,7 +368,6 @@ const ContactItemTemplate = (contact, isSelected) => {
     if (contact.unreadCount > 0) {
         timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
     } else if (contact.lastMessageTimestamp) {
-        // CORRECCIÓN: Se elimina .toDate() porque `lastMessageTimestamp` ya es un objeto Date.
         const date = contact.lastMessageTimestamp;
         const timeString = isSameDay(new Date(), date)
             ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
@@ -397,7 +396,7 @@ const MessageStatusIconTemplate = (status) => {
     const sentColor = '#9ca3af';
     const readColor = '#53bdeb';
     switch (status) {
-        case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`; // MODIFICADO
+        case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
         case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
         case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
         case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
@@ -409,7 +408,7 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
     if (!originalMessage) return '';
     const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
     
-    let textPreview = originalMessage.text || 'Mensaje'; // Valor por defecto
+    let textPreview = originalMessage.text || 'Mensaje';
     if (originalMessage.type === 'audio') {
         textPreview = '🎤 Mensaje de voz';
     } else if (originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) {
@@ -418,7 +417,7 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
         textPreview = '🎥 Video';
     } else if (originalMessage.type === 'location') {
         textPreview = '📍 Ubicación';
-    } else if (originalMessage.fileType) { // Otros documentos
+    } else if (originalMessage.fileType) {
         textPreview = '📄 Documento';
     }
 
@@ -444,10 +443,7 @@ const MessageBubbleTemplate = (message) => {
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
     if (message.type === 'audio' && message.mediaProxyUrl) {
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Usar la información de mime_type guardada para asegurar la compatibilidad.
         contentHTML += `<audio controls class="w-full max-w-xs"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta audios.</audio>`;
-        // --- FIN DE LA CORRECCIÓN ---
     } else if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
@@ -589,7 +585,6 @@ const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
-    // --- Lógica para verificar la ventana de 24 horas ---
     const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contact.id);
     let isSessionExpired = false;
 
@@ -599,11 +594,9 @@ const ChatWindowTemplate = (contact) => {
         const hoursDiff = (now - lastMessageTimestamp) / (1000 * 60 * 60);
         isSessionExpired = hoursDiff > 24;
     } else if (state.messages.length > 0) {
-        // Si hay historial pero ningún mensaje del usuario, la sesión está cerrada para mensajes de formato libre.
         isSessionExpired = true;
     }
-    // Si no hay mensajes, es un chat nuevo y la sesión se considera abierta para el primer mensaje.
-
+    
     const sessionExpiredNotification = isSessionExpired
         ? `<div class="session-expired-banner">
              <i class="fas fa-lock mr-2"></i> Chat cerrado. Han pasado más de 24 horas.
@@ -611,7 +604,6 @@ const ChatWindowTemplate = (contact) => {
         : '';
     
     const isInputDisabled = isSessionExpired ? 'disabled' : '';
-    // --- Fin de la lógica ---
 
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
@@ -723,7 +715,6 @@ const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
 
-// --- NUEVA PLANTILLA PARA EL MODAL DE PEDIDOS ---
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-backdrop">
         <div class="modal-content">
@@ -806,7 +797,6 @@ const NewOrderModalTemplate = () => `
     </div>
 `;
 
-// --- NUEVA PLANTILLA PARA LA VISTA DE DIFUSIÓN MASIVA ---
 const DifusionViewTemplate = () => `
     <div class="view-container p-4 sm:p-8">
         <style>
