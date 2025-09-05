@@ -54,14 +54,25 @@ function setupEventListeners() {
     if (bulkTableBody) {
         bulkTableBody.addEventListener('click', handleTableClick);
         bulkTableBody.addEventListener('change', handleTableChange);
-        bulkTableBody.addEventListener('input', debounce(handleTableInput, 300));
+        bulkTableBody.addEventListener('input', debounce(handleTableInput, 500));
         setupDragAndDrop(bulkTableBody);
     }
 
     // Cerrar dropdown si se hace clic fuera
     document.addEventListener('click', (e) => {
-        if (!addMessageBtn.contains(e.target) && !quickReplyDropdown.contains(e.target)) {
-            toggleQuickReplyDropdown(false);
+        // Se añade una guarda para asegurar que el código solo se ejecute en la vista de difusión
+        if (state.activeView !== 'difusion') {
+            return;
+        }
+
+        const addMessageBtn = document.getElementById('add-message-btn');
+        const quickReplyDropdown = document.getElementById('quick-reply-dropdown');
+        
+        // Comprobamos si los elementos existen antes de usarlos
+        if (addMessageBtn && quickReplyDropdown) {
+            if (!addMessageBtn.contains(e.target) && !quickReplyDropdown.contains(e.target)) {
+                toggleQuickReplyDropdown(false);
+            }
         }
     });
 
@@ -431,8 +442,10 @@ function updateJobCounter() {
 function updateSendAllButtonState() {
     const sendAllBtn = document.getElementById('send-all-btn');
     const readyJobs = difusionState.jobs.filter(job => job.status === 'ready').length;
-    sendAllBtn.disabled = readyJobs === 0;
-    sendAllBtn.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar ${readyJobs > 0 ? `(${readyJobs})` : ''}`;
+    if (sendAllBtn) {
+        sendAllBtn.disabled = readyJobs === 0;
+        sendAllBtn.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar ${readyJobs > 0 ? `(${readyJobs})` : ''}`;
+    }
 }
 
 function checkJobReady(jobId) {
@@ -453,6 +466,10 @@ function checkJobReady(jobId) {
 
 function toggleQuickReplyDropdown(forceState) {
     const dropdown = document.getElementById('quick-reply-dropdown');
+    // Se añade una guarda para evitar el error si el elemento no existe
+    if (!dropdown) {
+        return;
+    }
     const isHidden = dropdown.classList.contains('hidden');
     if (typeof forceState === 'boolean') {
         dropdown.classList.toggle('hidden', !forceState);
@@ -502,6 +519,7 @@ function setupDragAndDrop(container) {
         }
     });
 }
+
 
 
 
