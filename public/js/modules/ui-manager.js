@@ -62,6 +62,10 @@ function navigateTo(viewName, force = false) { // AÑADIDO: Parámetro 'force'
             mainViewContainer.innerHTML = CampaignsWithImageViewTemplate();
             renderCampaignsWithImageView();
             break;
+        case 'difusion':
+            mainViewContainer.innerHTML = DifusionViewTemplate();
+            renderDifusionView();
+            break;
         case 'mensajes-ads':
             mainViewContainer.innerHTML = MensajesAdsViewTemplate();
             renderAdResponsesView();
@@ -263,6 +267,30 @@ function renderCampaignsWithImageView() {
         templateSelect.innerHTML = '<option value="">-- Selecciona una plantilla --</option>' + imageTemplates.map(t => `<option value='${t.name}'>${t.name} (${t.language})</option>`).join('');
     }
     updateCampaignRecipientCount('image');
+}
+
+function renderDifusionView() {
+    if (state.activeView !== 'difusion') return;
+
+    // Poblar las respuestas rápidas para el secuenciador de mensajes
+    const quickReplyDropdown = document.getElementById('quick-reply-dropdown');
+    if (quickReplyDropdown) {
+        quickReplyDropdown.innerHTML = state.quickReplies.map(qr => 
+            `<a href="#" data-id="${qr.id}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 quick-reply-item"><strong>/${qr.shortcut}</strong>: ${qr.message || 'Adjunto'}</a>`
+        ).join('');
+    }
+
+    // Poblar las plantillas para el plan de contingencia
+    const contingencyTemplateSelect = document.getElementById('contingency-template-select');
+    if (contingencyTemplateSelect) {
+        contingencyTemplateSelect.innerHTML = '<option value="">-- Seleccionar plantilla --</option>' + state.templates
+            .map(t => `<option value='${JSON.stringify(t)}'>${t.name} (${t.category})</option>`)
+            .join('');
+    }
+
+    // Llamar a la función que configurará todos los event listeners para esta vista.
+    // Esta función se definirá en el nuevo archivo: `difusion-handlers.js`
+    initializeDifusionHandlers();
 }
 
 function renderQuickRepliesView() {
