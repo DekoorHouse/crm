@@ -746,4 +746,110 @@ router.get('/metrics', async (req, res) => {
     }
 });
 
+// --- NUEVAS RUTAS DE DIFUSIÓN ---
+
+// Verificar un número de pedido y obtener datos del cliente
+router.get('/orders/verify/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+    const match = orderId.match(/(\d+)/);
+    if (!match) {
+        return res.status(400).json({ success: false, message: 'Formato de ID de pedido inválido. Se esperaba "DH" seguido de números.' });
+    }
+    const consecutiveOrderNumber = parseInt(match[1], 10);
+
+    try {
+        const ordersQuery = db.collection('pedidos').where('consecutiveOrderNumber', '==', consecutiveOrderNumber).limit(1);
+        const snapshot = await ordersQuery.get();
+
+        if (snapshot.empty) {
+            return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        }
+
+        const pedidoData = snapshot.docs[0].data();
+        const contactId = pedidoData.telefono;
+
+        if (!contactId) {
+            return res.status(404).json({ success: false, message: 'El pedido no tiene un número de teléfono asociado.' });
+        }
+
+        const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+        const customerName = contactDoc.exists ? contactDoc.data().name : 'Cliente no en CRM';
+
+        res.status(200).json({ success: true, contactId, customerName });
+
+    } catch (error) {
+        console.error(`Error al verificar el pedido ${orderId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al verificar el pedido.' });
+    }
+});
+
+// Enviar una campaña de difusión masiva
+router.post('/difusion/bulk-send', async (req, res) => {
+    const { jobs, messageSequence, contingencyTemplate } = req.body;
+    
+    if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
+        return res.status(400).json({ success: false, message: 'La lista de trabajos de envío es inválida.' });
+    }
+    
+    const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
+    const results = { successful: [], failed: [], contingent: [] };
+
+    for (const job of jobs) {
+        if (job.status !== 'ready' || !job.contactId) continue;
+
+        try {
+            const contactRef = db.collection('contacts_whatsapp').doc(job.contactId);
+            const contactDoc = await contactRef.get();
+
+            if (!contactDoc.exists) {
+                results.failed.push({ orderId: job.orderId, reason: 'Contacto no encontrado.' });
+                continue;
+            }
+
+            const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(1).get();
+            
+            let isWithin24Hours = true;
+            if (!messagesSnapshot.empty) {
+                const lastMessageTimestamp = messagesSnapshot.docs[0].data().timestamp.toMillis();
+                const now = Date.now();
+                const hoursDiff = (now - lastMessageTimestamp) / (1000 * 60 * 60);
+                if (hoursDiff > 24) isWithin24Hours = false;
+            }
+
+            if (isWithin24Hours) {
+                for (const qr of messageSequence) {
+                    await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                await sendAdvancedWhatsAppMessage(job.contactId, { text: `¡Tu pedido ${job.orderId} está listo! ✨`, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
+                results.successful.push({ orderId: job.orderId });
+            } else {
+                if (!contingencyTemplate || !contingencyTemplate.name) {
+                    results.failed.push({ orderId: job.orderId, reason: 'Fuera de 24h, sin plantilla de contingencia.' });
+                    continue;
+                }
+
+                const { payload } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate);
+                await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
+                    headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+                });
+                
+                await db.collection('contingentSends').add({
+                    contactId: job.contactId,
+                    status: 'pending',
+                    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+                    payload: { messageSequence, photoUrl: job.photoUrl, orderId: job.orderId }
+                });
+                results.contingent.push({ orderId: job.orderId });
+            }
+        } catch (error) {
+            console.error(`Error procesando ${job.orderId}:`, error.response ? error.response.data : error.message);
+            results.failed.push({ orderId: job.orderId, reason: error.message || 'Error desconocido' });
+        }
+    }
+
+    res.status(200).json({ success: true, message: 'Proceso de envío masivo completado.', results });
+});
+
+
 module.exports = router;
