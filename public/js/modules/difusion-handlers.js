@@ -167,6 +167,18 @@ async function verifyOrderId(orderId, jobId) {
         return;
     }
 
+    // Primero, verificar si es un número de teléfono para evitar una llamada a la API innecesaria.
+    const isPhoneNumber = /^\d{10,}$/.test(orderId.replace(/\D/g, ''));
+    if (isPhoneNumber) {
+        job.verificationStatus = 'verified';
+        job.customerName = 'N/A'; // No se puede obtener el nombre solo con el teléfono
+        job.phoneNumber = orderId;
+        job.contactId = orderId;
+        updateRowUI(job);
+        checkJobReady(jobId);
+        return; // Salir de la función si es un número de teléfono
+    }
+
     job.verificationStatus = 'verifying';
     updateRowUI(job);
 
@@ -185,16 +197,9 @@ async function verifyOrderId(orderId, jobId) {
 
     } catch (error) {
         console.error("Error al verificar el pedido:", error);
-        const isPhoneNumber = /^\d{10,}$/.test(orderId.replace(/\D/g, ''));
-        if (isPhoneNumber) {
-            job.verificationStatus = 'verified'; // Asumimos que es un número válido si la API falla
-            job.customerName = 'N/A'; // No podemos saber el nombre
-            job.phoneNumber = orderId;
-            job.contactId = orderId;
-        } else {
-            job.verificationStatus = 'error';
-            job.customerName = 'No encontrado';
-        }
+        // Este bloque ahora solo se ejecutará si la API falla para un ID que no es un número de teléfono.
+        job.verificationStatus = 'error';
+        job.customerName = 'No encontrado';
     } finally {
         updateRowUI(job);
         checkJobReady(jobId);
@@ -425,4 +430,5 @@ function setupDragAndDrop(container) {
         }
     });
 }
+
 
