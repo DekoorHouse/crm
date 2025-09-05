@@ -245,6 +245,16 @@ router.post('/', async (req, res) => {
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
+            } else if (message.type === 'interactive' && message.interactive) {
+                // --- INICIO DE LA CORRECCIÓN ---
+                // Maneja cuando un usuario hace clic en un botón de respuesta rápida.
+                if (message.interactive.type === 'button_reply') {
+                    messageData.text = message.interactive.button_reply.title;
+                } else {
+                    // Maneja otros tipos de mensajes interactivos si es necesario en el futuro.
+                    messageData.text = `Respuesta interactiva (${message.interactive.type})`;
+                }
+                // --- FIN DE LA CORRECCIÓN ---
             } else {
                 messageData.text = `Mensaje multimedia (${message.type})`;
             }
