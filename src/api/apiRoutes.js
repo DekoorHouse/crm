@@ -720,13 +720,10 @@ router.get('/metrics', async (req, res) => {
         contactsSnapshot.forEach(doc => { contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; });
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp).where('timestamp', '<=', endTimestamp)
-            .get();
+            .where('from', '!=', PHONE_NUMBER_ID).get();
         const metricsByDate = {};
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
-            // Filtramos aquí en el servidor en lugar de en la consulta de Firestore
-            if (message.from === PHONE_NUMBER_ID) return; 
-
             const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
             if (!metricsByDate[dateKey]) metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
             metricsByDate[dateKey].totalMessages++;
@@ -745,4 +742,3 @@ router.get('/metrics', async (req, res) => {
 });
 
 module.exports = router;
-
