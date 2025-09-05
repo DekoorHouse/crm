@@ -354,7 +354,6 @@ router.post('/', async (req, res) => {
     }
 });
 
-// --- INICIO DE LA CORRECCIÓN PARA AUDIO ---
 // Proxy de Medios para audios, videos y documentos de WhatsApp
 router.get("/wa/media/:mediaId", async (req, res) => {
     try {
@@ -396,7 +395,7 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         res.status(500).json({ error: "No se pudo obtener el medio." });
     }
 });
-// --- FIN DE LA CORRECCIÓN PARA AUDIO ---
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
