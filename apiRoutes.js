@@ -258,6 +258,72 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
     res.status(200).json({ success: true, message: `Campaña con imagen procesada.`, results: { successful, failed } });
 });
 
+// --- RUTAS DE PEDIDOS ---
+router.post('/orders', async (req, res) => {
+    const { 
+        contactId,
+        producto,
+        telefono,
+        precio,
+        datosProducto,
+        datosPromocion,
+        comentarios,
+        fotoUrls,
+        fotoPromocionUrls 
+    } = req.body;
+
+    if (!contactId || !producto || !telefono) {
+        return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: contactId, producto y teléfono.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const orderCounterRef = db.collection('counters').doc('orders');
+
+        const newOrderNumber = await db.runTransaction(async (transaction) => {
+            const counterDoc = await transaction.get(orderCounterRef);
+            let currentCounter = counterDoc.exists ? counterDoc.data().lastOrderNumber || 0 : 0;
+            const nextOrderNumber = (currentCounter < 1000) ? 1001 : currentCounter + 1;
+            transaction.set(orderCounterRef, { lastOrderNumber: nextOrderNumber }, { merge: true });
+            return nextOrderNumber;
+        });
+
+        const nuevoPedido = {
+            contactId,
+            producto,
+            telefono,
+            precio: precio || 0,
+            datosProducto: datosProducto || '',
+            datosPromocion: datosPromocion || '',
+            comentarios: comentarios || '',
+            fotoUrls: fotoUrls || [],
+            fotoPromocionUrls: fotoPromocionUrls || [],
+            consecutiveOrderNumber: newOrderNumber,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            estatus: "Sin estatus",
+            telefonoVerificado: false,
+            estatusVerificado: false
+        };
+
+        await db.collection('pedidos').add(nuevoPedido);
+        
+        await contactRef.update({
+            lastOrderNumber: newOrderNumber,
+            lastOrderDate: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        res.status(201).json({ 
+            success: true, 
+            message: 'Pedido registrado con éxito.', 
+            orderNumber: `DH${newOrderNumber}` 
+        });
+
+    } catch (error) {
+        console.error('Error al registrar el nuevo pedido:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al registrar el pedido.' });
+    }
+});
+
 
 // --- RUTAS DE EVENTOS DE CONVERSIÓN ---
 router.post('/contacts/:contactId/mark-as-registration', async (req, res) => {
@@ -681,4 +747,3 @@ router.get('/metrics', async (req, res) => {
 });
 
 module.exports = router;
-
