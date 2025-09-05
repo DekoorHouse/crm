@@ -258,24 +258,18 @@ router.post('/', async (req, res) => {
                 messageData.fileType = message.video.mime_type || 'video/mp4';
                 messageData.text = message.video.caption || '🎥 Video';
             } else if (message.type === 'audio' && message.audio?.id) {
-                // --- INICIO DE LA CORRECCIÓN ---
                 messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-                // Añadir el mime_type al objeto 'audio' para guardarlo en la base de datos.
                 messageData.audio = { mime_type: message.audio.mime_type || 'audio/ogg' };
-                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
             } else if (message.type === 'button' && message.button) {
-                // Maneja cuando un usuario hace clic en un botón de una plantilla.
                 messageData.text = message.button.text;
             } else if (message.type === 'interactive' && message.interactive) {
-                // Maneja cuando un usuario hace clic en un botón de respuesta rápida.
                 if (message.interactive.type === 'button_reply') {
                     messageData.text = message.interactive.button_reply.title;
                 } else {
-                    // Maneja otros tipos de mensajes interactivos si es necesario en el futuro.
                     messageData.text = `Respuesta interactiva (${message.interactive.type})`;
                 }
             } else {
@@ -299,11 +293,10 @@ router.post('/', async (req, res) => {
             console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
             const updatedContactData = (await contactRef.get()).data();
             
-            // --- NUEVA LÓGICA: Comprobar envíos de contingencia ANTES de otras automatizaciones ---
             const contingentSent = await handleContingentSend(from);
             if (contingentSent) {
                 console.log(`[LOGIC] Envío de contingencia manejado para ${from}. El flujo regular se detiene aquí.`);
-                return res.sendStatus(200); // Detener para no enviar más mensajes automáticos
+                return res.sendStatus(200);
             }
 
             if (message.type === 'text') {
