@@ -840,16 +840,9 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 if (hoursDiff <= 24) {
                     isWithin24Hours = true;
                 }
-            }
-
-            if (isWithin24Hours) {
-                if (messageSequence && messageSequence.length > 0) {
-                    for (const qr of messageSequence) {
-                        await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
-                        await new Promise(resolve => setTimeout(resolve, 500));
-                    }
-                }
-                await sendAdvancedWhatsAppMessage(job.contactId, { text: `¡Tu pedido ${job.orderId} está listo! ✨`, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
+                // Si la secuencia de mensajes está vacía, envía solo la foto sin caption
+                const finalMessageText = messageSequence.length > 0 ? `¡Tu pedido ${job.orderId} está listo! ✨` : null;
+                await sendAdvancedWhatsAppMessage(job.contactId, { text: finalMessageText, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
                 results.successful.push({ orderId: job.orderId });
             } else {
                 if (!contingencyTemplate || !contingencyTemplate.name) {
@@ -887,5 +880,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
-
