@@ -54,7 +54,7 @@ function setupEventListeners() {
     if (bulkTableBody) {
         bulkTableBody.addEventListener('click', handleTableClick);
         bulkTableBody.addEventListener('change', handleTableChange);
-        bulkTableBody.addEventListener('input', debounce(handleTableInput, 500));
+        bulkTableBody.addEventListener('input', debounce(handleTableInput, 300));
         setupDragAndDrop(bulkTableBody);
     }
 
@@ -86,6 +86,8 @@ function handleAddRow() {
         id: `job_${Date.now()}`,
         orderId: '',
         customerName: 'N/A',
+        phoneNumber: '',
+        contactId: null,
         photoUrl: null,
         status: 'pending', // pending, verifying, ready, error, sending, sent
         verificationStatus: 'idle', // idle, verifying, verified, error
@@ -122,13 +124,25 @@ function handleTableChange(e) {
 
 function handleTableInput(e) {
     const target = e.target;
+    const row = target.closest('tr');
+    if (!row) return;
+    const jobId = row.dataset.id;
+    const job = difusionState.jobs.find(j => j.id === jobId);
+    if (!job) return;
+
     if (target.matches('.order-id-input')) {
         const row = target.closest('tr');
         if (row) {
             verifyOrderId(target.value.trim(), row.dataset.id);
         }
+    } else if (target.matches('.phone-number-input')) {
+        const phoneNumber = target.value.trim();
+        job.phoneNumber = phoneNumber;
+        job.contactId = phoneNumber; // El número de teléfono es el ID de contacto para WhatsApp
+        checkJobReady(jobId);
     }
 }
+
 
 // --- LÓGICA PRINCIPAL DE LA HERRAMIENTA ---
 
@@ -141,29 +155,50 @@ async function verifyOrderId(orderId, jobId) {
     const job = difusionState.jobs.find(j => j.id === jobId);
     if (!job) return;
 
+    job.orderId = orderId;
+
     if (!orderId) {
         job.verificationStatus = 'idle';
         job.customerName = 'N/A';
+        job.phoneNumber = '';
+        job.contactId = null;
         updateRowUI(job);
+        checkJobReady(jobId);
         return;
     }
 
     job.verificationStatus = 'verifying';
     updateRowUI(job);
 
-    // --- Placeholder para la llamada a la API ---
-    // En el futuro, aquí se hará la llamada a `apiRoutes.js`
-    setTimeout(() => {
-        if (orderId.toLowerCase() === 'dh1025' || orderId.toLowerCase() === 'dh1026') {
-            job.verificationStatus = 'verified';
-            job.customerName = orderId.toLowerCase() === 'dh1025' ? 'Juan Pérez' : 'Ana García';
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/orders/verify/${orderId}`);
+        const data = await response.json();
+
+        if (!response.ok || !data.success) {
+            throw new Error(data.message || 'Error de verificación');
+        }
+        
+        job.verificationStatus = 'verified';
+        job.customerName = data.customerName;
+        job.phoneNumber = data.contactId;
+        job.contactId = data.contactId;
+
+    } catch (error) {
+        console.error("Error al verificar el pedido:", error);
+        const isPhoneNumber = /^\d{10,}$/.test(orderId.replace(/\D/g, ''));
+        if (isPhoneNumber) {
+            job.verificationStatus = 'verified'; // Asumimos que es un número válido si la API falla
+            job.customerName = 'N/A'; // No podemos saber el nombre
+            job.phoneNumber = orderId;
+            job.contactId = orderId;
         } else {
             job.verificationStatus = 'error';
             job.customerName = 'No encontrado';
         }
+    } finally {
         updateRowUI(job);
         checkJobReady(jobId);
-    }, 1000); // Simula un retraso de red
+    }
 }
 
 async function handlePhotoUpload(file, jobId) {
@@ -173,18 +208,12 @@ async function handlePhotoUpload(file, jobId) {
     job.status = 'uploading';
     updateRowUI(job);
 
-    // --- Placeholder para la subida a Firebase Storage ---
-    // En el futuro, usaremos la lógica real de subida
     try {
-        // Simulación de subida
-        const uploadPromise = new Promise(resolve => {
-            setTimeout(() => {
-                const fakeUrl = URL.createObjectURL(file);
-                resolve(fakeUrl);
-            }, 1500);
-        });
-        
-        const downloadURL = await uploadPromise;
+        const filePath = `difusion/${Date.now()}_${file.name}`;
+        const fileRef = storage.ref(filePath);
+        const uploadTask = await fileRef.put(file);
+        const downloadURL = await uploadTask.ref.getDownloadURL();
+
         job.photoUrl = downloadURL;
         checkJobReady(jobId);
 
@@ -218,9 +247,10 @@ function renderTable() {
 
     if (difusionState.jobs.length === 0) {
         tableBody.innerHTML = '';
-        tableBody.appendChild(emptyStateRow);
+        if (emptyStateRow) tableBody.appendChild(emptyStateRow);
     } else {
-        if (emptyStateRow) emptyStateRow.remove();
+        const existingEmptyRow = tableBody.querySelector('#empty-state-row');
+        if (existingEmptyRow) existingEmptyRow.remove();
         tableBody.innerHTML = difusionState.jobs.map((job, index) => jobRowTemplate(job, index)).join('');
     }
     updateJobCounter();
@@ -247,9 +277,11 @@ function updateRowUI(job) {
     customerCell.textContent = job.customerName;
 
     // Actualizar celda de foto
-    photoIcon.style.display = job.photoUrl ? 'none' : 'flex';
-    photoPreview.style.display = job.photoUrl ? 'block' : 'none';
-    if (job.photoUrl) photoPreview.src = job.photoUrl;
+    const hasPhoto = !!job.photoUrl;
+    photoIcon.style.display = hasPhoto ? 'none' : 'flex';
+    photoPreview.style.display = hasPhoto ? 'block' : 'none';
+    if(hasPhoto) photoPreview.src = job.photoUrl;
+
 
     // Actualizar estatus
     statusCell.innerHTML = getStatusTag(job.status);
@@ -271,15 +303,14 @@ function jobRowTemplate(job, index) {
         <tr data-id="${job.id}">
             <td class="text-center font-semibold text-gray-500">${index + 1}</td>
             <td>
-                <input type="text" class="table-input order-id-input" placeholder="Escribe aquí..." value="${job.orderId}">
+                <input type="text" class="table-input order-id-input" placeholder="DH1025 o 521..." value="${job.orderId || ''}">
             </td>
             <td class="customer-name-cell">${job.customerName}</td>
             <td class="photo-cell">
                 <label class="photo-uploader">
                     <input type="file" class="photo-file-input" accept="image/*">
                     <i class="fas fa-camera"></i>
-                    <img src="" class="preview-img" style="display: none;">
-                    <button class="delete-btn" style="display: none;"><i class="fas fa-times"></i></button>
+                    <img src="${job.photoUrl || ''}" class="preview-img" style="display: ${job.photoUrl ? 'block' : 'none'};">
                 </label>
             </td>
             <td class="status-cell">${getStatusTag(job.status)}</td>
@@ -289,6 +320,7 @@ function jobRowTemplate(job, index) {
         </tr>
     `;
 }
+
 
 function getStatusTag(status) {
     const statuses = {
@@ -330,11 +362,12 @@ function checkJobReady(jobId) {
     const job = difusionState.jobs.find(j => j.id === jobId);
     if (!job) return;
 
-    if (job.verificationStatus === 'verified' && job.photoUrl) {
+    // A job is ready if it has a contact ID (phone number) and a photo URL.
+    if (job.contactId && job.photoUrl) {
         job.status = 'ready';
     } else if (job.verificationStatus === 'error') {
         job.status = 'error';
-    } else {
+    } else if (job.status !== 'uploading') {
         job.status = 'pending';
     }
     updateRowUI(job);
@@ -392,3 +425,4 @@ function setupDragAndDrop(container) {
         }
     });
 }
+
