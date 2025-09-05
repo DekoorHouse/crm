@@ -86,8 +86,6 @@ function handleAddRow() {
         id: `job_${Date.now()}`,
         orderId: '',
         customerName: 'N/A',
-        phoneNumber: '',
-        contactId: null,
         photoUrl: null,
         status: 'pending', // pending, verifying, ready, error, sending, sent
         verificationStatus: 'idle', // idle, verifying, verified, error
@@ -96,10 +94,84 @@ function handleAddRow() {
     renderTable();
 }
 
-function handleSendAll() {
-    console.log("Preparando para enviar los siguientes trabajos:", difusionState);
-    alert("Funcionalidad de envío aún no implementada. Revisa la consola para ver los datos preparados.");
-    // Aquí irá la lógica para enviar `difusionState` al backend
+async function handleSendAll() {
+    const sendAllBtn = document.getElementById('send-all-btn');
+    const readyJobs = difusionState.jobs.filter(job => job.status === 'ready');
+
+    if (readyJobs.length === 0) {
+        alert("No hay pedidos listos para enviar. Asegúrate de que cada fila tenga un pedido verificado y una foto subida.");
+        return;
+    }
+
+    if (!confirm(`¿Estás seguro de que quieres enviar ${readyJobs.length} mensaje(s)?`)) {
+        return;
+    }
+
+    sendAllBtn.disabled = true;
+    sendAllBtn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Enviando...`;
+
+    // Actualizar el estado de la UI para los trabajos que se están enviando
+    readyJobs.forEach(job => {
+        job.status = 'sending';
+        updateRowUI(job);
+    });
+
+    try {
+        const payload = {
+            jobs: readyJobs,
+            messageSequence: difusionState.messageSequence,
+            contingencyTemplate: difusionState.contingencyTemplate,
+        };
+
+        const response = await fetch(`${API_BASE_URL}/api/difusion/bulk-send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "Ocurrió un error en el servidor.");
+        }
+        
+        // Actualizar UI con los resultados del backend
+        result.results.successful.forEach(item => {
+            const job = difusionState.jobs.find(j => j.orderId === item.orderId);
+            if (job) job.status = 'sent';
+        });
+        result.results.contingent.forEach(item => {
+            const job = difusionState.jobs.find(j => j.orderId === item.orderId);
+            if (job) job.status = 'sent'; // Marcar como 'sent' en la UI, aunque sea contingente
+        });
+        result.results.failed.forEach(item => {
+            const job = difusionState.jobs.find(j => j.orderId === item.orderId);
+            if (job) job.status = 'error';
+        });
+        renderTable(); // Re-renderizar la tabla completa para mostrar los nuevos estados
+
+        // Mostrar resumen
+        let summary = `Proceso de envío completado:\n\n`;
+        summary += `✅ Éxitosos: ${result.results.successful.length}\n`;
+        summary += `⏳ Contingentes (esperando respuesta): ${result.results.contingent.length}\n`;
+        summary += `❌ Fallidos: ${result.results.failed.length}\n`;
+        if (result.results.failed.length > 0) {
+            summary += `\nErrores:\n` + result.results.failed.map(f => `- ${f.orderId}: ${f.reason}`).join('\n');
+        }
+        alert(summary);
+
+    } catch (error) {
+        console.error("Error al enviar masivamente:", error);
+        alert(`Error: ${error.message}`);
+        // Revertir el estado de los trabajos a 'ready' si la llamada a la API falla
+        readyJobs.forEach(job => {
+            job.status = 'ready';
+        });
+        renderTable();
+    } finally {
+        sendAllBtn.disabled = false;
+        updateSendAllButtonState(); // Actualizará el texto y el estado del botón
+    }
 }
 
 function handleTableClick(e) {
@@ -430,5 +502,6 @@ function setupDragAndDrop(container) {
         }
     });
 }
+
 
 
