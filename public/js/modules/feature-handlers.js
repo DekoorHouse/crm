@@ -121,6 +121,98 @@ async function handleSendViewContent() {
     }
 }
 
+// --- START: New Order Logic ---
+async function handleSaveOrder(event) {
+    event.preventDefault();
+    const form = document.getElementById('new-order-form');
+    const saveButton = document.getElementById('order-save-btn');
+    const errorMessageEl = document.getElementById('order-error-message');
+    
+    if (!state.selectedContactId) {
+        showError("No se ha seleccionado un contacto.");
+        return;
+    }
+    
+    // --- 1. Collect form data ---
+    let productoFinal = document.getElementById('order-product-select').value;
+    if (productoFinal === 'Otro') {
+        productoFinal = document.getElementById('order-product-other').value.trim();
+        if (!productoFinal) {
+            errorMessageEl.textContent = 'El nombre del producto (Otro) es obligatorio.';
+            return;
+        }
+    }
+    const telefono = document.getElementById('order-phone').value.trim();
+    if (!telefono) {
+        errorMessageEl.textContent = 'El número de teléfono es obligatorio.';
+        return;
+    }
+
+    const orderData = {
+        contactId: state.selectedContactId,
+        producto: productoFinal,
+        telefono: telefono,
+        precio: Number(document.getElementById('order-price').value) || 0,
+        datosProducto: document.getElementById('order-product-details').value.trim(),
+        datosPromocion: document.getElementById('order-promo-details').value.trim(),
+        comentarios: document.getElementById('order-comments').value.trim(),
+    };
+
+    // --- 2. Disable form and show loading state ---
+    saveButton.disabled = true;
+    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
+    errorMessageEl.textContent = '';
+
+    try {
+        // --- 3. Handle photo uploads ---
+        async function uploadPhotos(photoManager, storagePath) {
+            const uploadPromises = photoManager.map(photo => {
+                if (photo.isNew) {
+                    const filePath = `${storagePath}/${Date.now()}_${photo.file.name}`;
+                    const storageRef = storage.ref(filePath);
+                    return storageRef.put(photo.file).then(snapshot => snapshot.ref.getDownloadURL());
+                }
+                return Promise.resolve(photo.url); // Return existing URL
+            });
+            return await Promise.all(uploadPromises);
+        }
+
+        saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
+        
+        // These managers are global in ui-manager.js
+        const finalOrderPhotoUrls = await uploadPhotos(orderPhotosManager, 'pedidos');
+        const finalPromoPhotoUrls = await uploadPhotos(promoPhotosManager, 'promociones');
+
+        orderData.fotoUrls = finalOrderPhotoUrls;
+        orderData.fotoPromocionUrls = finalPromoPhotoUrls;
+
+        // --- 4. Send data to backend ---
+        saveButton.innerHTML = '<i class="fas fa-database mr-2"></i> Creando registro...';
+        const response = await fetch(`${API_BASE_URL}/api/orders`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(orderData)
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "Ocurrió un error en el servidor.");
+        }
+
+        // --- 5. Handle success ---
+        closeNewOrderModal();
+        showError(`Pedido ${result.orderNumber} registrado con éxito.`, 'success'); 
+        
+    } catch (error) {
+        console.error("Error al guardar el pedido:", error);
+        errorMessageEl.textContent = error.message;
+    } finally {
+        saveButton.disabled = false;
+        saveButton.innerHTML = '<i class="fas fa-save mr-2"></i> Guardar Pedido';
+    }
+}
+// --- END: New Order Logic ---
+
 // --- Campaigns Handlers ---
 async function handleSendCampaign() {
     const tagSelect = document.getElementById('campaign-tag-select');
@@ -550,4 +642,3 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
-
