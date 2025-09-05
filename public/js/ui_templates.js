@@ -442,13 +442,11 @@ const MessageBubbleTemplate = (message) => {
     const hasMedia = message.fileUrl || message.mediaProxyUrl;
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
-    // --- INICIO DE LA MODIFICACIÓN PARA EL CACHÉ DEL AUDIO ---
     if (message.type === 'audio' && message.mediaProxyUrl) {
-        // Añadir un timestamp a la URL para evitar el caché del navegador
-        const audioUrlWithCacheBuster = `${API_BASE_URL}${message.mediaProxyUrl}?t=${Date.now()}`;
-        contentHTML += `<audio controls class="chat-audio-player"><source src="${audioUrlWithCacheBuster}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta la reproducción de audio.</audio>`;
+        // Añadir preload="metadata" para que el navegador solo pida los metadatos primero.
+        // Se elimina el timestamp para evitar posibles interferencias.
+        contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${API_BASE_URL}${message.mediaProxyUrl}" type="${message.audio?.mime_type || 'audio/ogg'}">Tu navegador no soporta la reproducción de audio.</audio>`;
     } 
-    // --- FIN DE LA MODIFICACIÓN PARA EL CACHÉ DEL AUDIO ---
     else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
         // Fallback for audio messages where the URL might be missing but the text indicator is present
         contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
@@ -924,3 +922,4 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
+
