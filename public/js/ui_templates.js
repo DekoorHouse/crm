@@ -688,14 +688,8 @@ const ContactDetailsSidebarTemplate = (contact) => {
         <button 
             onclick="handleMarkAsRegistration()" 
             class="btn ${registrationButtonClass} w-full btn-sm">
-            <i class="fas ${registrationButtonIcon} mr-2"></i>Marcar Registro (Evento Meta)
+            <i class="fas ${registrationButtonIcon} mr-2"></i>Aquí no se le pica
         </button>`;
-
-    const pedidosHTML = (contact.pedidos && contact.pedidos.length > 0)
-        ? contact.pedidos.sort((a,b) => b.fecha.seconds - a.fecha.seconds).map(p => 
-            `<a href="/pedidos.html" target="_blank" class="text-sm text-blue-600 hover:underline">${p.pedidoNumero || 'Ver Pedido'}</a>`
-          ).join('<br>')
-        : '<p class="text-sm text-gray-500">No tiene pedidos registrados.</p>';
 
     return `
         <div class="h-full flex flex-col">
@@ -718,16 +712,11 @@ const ContactDetailsSidebarTemplate = (contact) => {
                         <p class="font-semibold text-gray-400">Apodo</p>
                         <p>${contact.nickname || 'No especificado'}</p>
                     </div>
-                    <div>
-                        <p class="font-semibold text-gray-400 mt-4">Pedidos Registrados</p>
-                        ${pedidosHTML}
-                    </div>
                 </div>
                 <div class="mt-6 border-t pt-6 space-y-2">
-                   <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-dollar-sign mr-2"></i>Marcar Compra (Evento Meta)</button>
+                   <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Aquí se le pica si registras el pedido</button>
                    ${registrationButtonHTML}
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto'</button>
-                   <button onclick="handleOpenRegisterOrderModal()" class="btn btn-primary w-full btn-sm"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
                 </div>
             </div>
             <footer class="p-4 border-t border-gray-200">
@@ -740,104 +729,3 @@ const ContactDetailsSidebarTemplate = (contact) => {
 const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
-
-// --- START: NEW MODAL TEMPLATES ---
-
-const RegisterOrderModalTemplate = () => `
-<div id="crm-modalNuevoPedido" class="modal-overlay" style="display: none;">
-    <div class="modal-content" id="crm-modalContentNuevoPedido">
-        <button id="crm-btnCerrarModal" class="modal-close-btn" title="Cerrar">×</button>
-        <div id="crm-nuevoPedidoContainer">
-             <h2 id="crm-modalTitle"><i class="fas fa-pencil-alt"></i> Registrar Nuevo Pedido desde CRM</h2>
-             <form id="crm-formularioNuevoPedido">
-                 <div class="form-grid">
-                     <div class="form-item">
-                         <label for="crm-pedidoProductoSelect">Producto (*):</label>
-                         <select id="crm-pedidoProductoSelect" required>
-                            <option value="Modelo 7" selected>Modelo 7</option>
-                            <option value="Portallaves">Portallaves</option>
-                            <option value="Calendario">Calendario</option>
-                            <option value="Placa de perro">Placa de perro</option>
-                            <option value="Otro">Otro</option>
-                         </select>
-                         <input type="text" id="crm-pedidoProductoOtro" style="display: none;" placeholder="Nombre del producto">
-                     </div>
-                     <div class="form-item">
-                         <label for="crm-pedidoTelefono">Teléfono (*):</label>
-                         <input type="tel" id="crm-pedidoTelefono" placeholder="Ej: 521..." required>
-                     </div>
-                     <div class="form-item">
-                          <label for="crm-pedidoPrecio">Precio (MXN):</label>
-                          <input type="number" id="crm-pedidoPrecio" step="0.01" value="275" placeholder="Ej: 275.00">
-                      </div>
-
-                      <div class="form-item form-item-full">
-                           <label for="crm-pedidoFotoFile">Fotos del Pedido:</label>
-                           <div class="file-input-container" id="crm-fileInputContainerProducto" tabindex="0">
-                               <input type="file" id="crm-pedidoFotoFile" accept="image/*" multiple>
-                               <div class="file-input-header">
-                                   <label for="crm-pedidoFotoFile" class="custom-file-upload">
-                                       <i class="fas fa-upload"></i> Seleccionar
-                                   </label>
-                                   <span>O arrastra y suelta imágenes aquí</span>
-                               </div>
-                               <div class="previews-container" id="crm-fotosPreviewContainer"></div>
-                           </div>
-                      </div>
-                     <div class="form-item form-item-full">
-                         <label for="crm-pedidoDatosProducto">Detalles del Producto:</label>
-                         <textarea id="crm-pedidoDatosProducto" placeholder="Describe los detalles específicos del producto solicitado..."></textarea>
-                     </div>
-
-                     <div class="form-item form-item-full">
-                        <label for="crm-pedidoFotoPromocionFile">Fotos de la Promoción:</label>
-                        <div class="checkbox-container" id="crm-mismaFotoContainer" style="display: none;">
-                            <input type="checkbox" id="crm-mismaFotoCheckbox">
-                            <label for="crm-mismaFotoCheckbox">Usar la(s) misma(s) foto(s) del pedido</label>
-                        </div>
-                        <div class="file-input-container" id="crm-fileInputContainerPromocion" tabindex="0">
-                            <input type="file" id="crm-pedidoFotoPromocionFile" accept="image/*" multiple>
-                            <div class="file-input-header">
-                                <label for="crm-pedidoFotoPromocionFile" class="custom-file-upload">
-                                    <i class="fas fa-upload"></i> Seleccionar
-                                </label>
-                                <span>O arrastra y suelta imágenes aquí</span>
-                            </div>
-                            <div class="previews-container" id="crm-promoFotosPreviewContainer"></div>
-                        </div>
-                    </div>
-                    <div class="form-item form-item-full">
-                        <label for="crm-pedidoDatosPromocion">Detalles de la Promoción:</label>
-                        <textarea id="crm-pedidoDatosPromocion" placeholder="Describe la promoción aplicada, si existe..."></textarea>
-                    </div>
-
-                    <div class="form-item form-item-full">
-                           <label for="crm-pedidoComentarios">Comentarios Adicionales:</label>
-                           <textarea id="crm-pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
-                    </div>
-                 </div>
-                 <div id="crm-mensajeErrorPedido"></div>
-                 <div class="form-actions">
-                      <button type="button" id="crm-btnCancelarPedido" class="btn btn-subtle"><i class="fas fa-times"></i> Cancelar</button>
-                      <button type="submit" id="crm-btnGuardarPedido" class="btn btn-primary"><i class="fas fa-save"></i> Guardar Pedido</button>
-                 </div>
-             </form>
-        </div>
-    </div>
-</div>
-`;
-
-const RegisterOrderConfirmationModalTemplate = (numeroPedido) => `
-<div id="crm-modalConfirmacionRegistro" class="modal-overlay" style="display: flex;">
-    <div class="modal-content">
-        <h3><i class="fas fa-check-circle" style="color: var(--color-success)"></i> Pedido Registrado Correctamente</h3>
-        <div>
-            <span id="crm-numeroPedidoConfirmacion" class="font-bold text-2xl text-primary">${numeroPedido}</span>
-            <button id="crm-btnCopiarNumeroPedidoConfirmacion" title="Copiar número de pedido" class="btn btn-subtle btn-sm ml-2"><i class="fas fa-copy"></i></button>
-        </div>
-        <div class="form-actions" style="border-top: none; padding-top: 15px;">
-            <button type="button" id="crm-btnCerrarModalConfirmacionRegistro" class="btn btn-primary"><i class="fas fa-check"></i> ¡Genial!</button>
-        </div>
-    </div>
-</div>
-`;
