@@ -736,3 +736,54 @@ function renderFilePreview() {
     }
 }
 
+// --- START: New Order Modal ---
+// Functions to manage the new order modal, including photo previews and drag & drop.
+let orderPhotosManager = [];
+let promoPhotosManager = [];
+
+function openNewOrderModal() {
+    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    if (!contact) {
+        showError("Por favor, selecciona un contacto para registrar un pedido.");
+        return;
+    }
+
+    const modalContainer = document.getElementById('new-order-modal-container');
+    if (!modalContainer) return;
+
+    modalContainer.innerHTML = NewOrderModalTemplate(contact.id);
+    
+    // Reset photo managers
+    orderPhotosManager = [];
+    promoPhotosManager = [];
+
+    // Setup event listeners for the new modal
+    document.getElementById('new-order-form').addEventListener('submit', handleSaveOrder);
+    
+    const productSelect = document.getElementById('order-product-select');
+    const productOtherInput = document.getElementById('order-product-other');
+    if(productSelect && productOtherInput) {
+        productSelect.addEventListener('change', () => {
+            const isOther = productSelect.value === 'Otro';
+            productOtherInput.classList.toggle('hidden', !isOther);
+            productOtherInput.required = isOther;
+            if(isOther) productOtherInput.focus();
+        });
+    }
+
+    // The logic to handle photo previews and drag & drop will be added in feature-handlers.js
+    // For now, we just ensure the modal opens.
+    // Example placeholder calls:
+    // setupPhotoHandlingForNewOrder(); 
+}
+
+function closeNewOrderModal() {
+    const modalContainer = document.getElementById('new-order-modal-container');
+    if (modalContainer) {
+        modalContainer.innerHTML = '';
+    }
+    // Clean up photo managers
+    orderPhotosManager = [];
+    promoPhotosManager = [];
+}
+// --- END: New Order Modal ---
