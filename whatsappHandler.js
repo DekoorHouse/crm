@@ -258,8 +258,12 @@ router.post('/', async (req, res) => {
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
-            } else if (message.type === 'interactive' && message.interactive) {
+            } else if (message.type === 'button' && message.button) {
                 // --- INICIO DE LA CORRECCIÓN ---
+                // Maneja cuando un usuario hace clic en un botón de una plantilla.
+                messageData.text = message.button.text;
+                // --- FIN DE LA CORRECCIÓN ---
+            } else if (message.type === 'interactive' && message.interactive) {
                 // Maneja cuando un usuario hace clic en un botón de respuesta rápida.
                 if (message.interactive.type === 'button_reply') {
                     messageData.text = message.interactive.button_reply.title;
@@ -381,5 +385,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
 
 
