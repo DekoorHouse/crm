@@ -821,11 +821,16 @@ router.post('/difusion/bulk-send', async (req, res) => {
             const contactDoc = await contactRef.get();
 
             if (!contactDoc.exists) {
-                results.failed.push({ orderId: job.orderId, reason: 'Contacto no encontrado en la base de datos.' });
-                continue;
+                // AGREGADO: Crear el contacto si no existe para poder guardar los mensajes.
+                await contactRef.set({ 
+                    name: `Cliente ${job.contactId.slice(-4)}`,
+                    wa_id: job.contactId,
+                    lastMessage: 'Contacto creado por difusión masiva.',
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                 }, { merge: true });
+                console.log(`[DIFUSIÓN] Contacto ${job.contactId} no existía y fue creado.`);
             }
 
-            // CORRECCIÓN: Buscar el último mensaje enviado POR EL CLIENTE.
             const messagesSnapshot = await contactRef.collection('messages')
                 .where('from', '==', job.contactId)
                 .orderBy('timestamp', 'desc')
@@ -843,15 +848,44 @@ router.post('/difusion/bulk-send', async (req, res) => {
             }
 
             if (isWithin24Hours) {
+                let lastMessageText = '';
+                // --- INICIO DE LA CORRECCIÓN ---
                 if (messageSequence && messageSequence.length > 0) {
                     for (const qr of messageSequence) {
-                        await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
+                        const sentMessageData = await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
+                        
+                        // AGREGADO: Guardar mensaje de la secuencia en la BD
+                        const messageToSave = {
+                            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                            id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+                        };
+                        await contactRef.collection('messages').add(messageToSave);
+                        lastMessageText = sentMessageData.textForDb;
+                        
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 }
-                // Enviar la foto siempre sin pie de foto. El texto debe ir en la secuencia.
-                await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
+                
+                const sentPhotoData = await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
+                
+                // AGREGADO: Guardar mensaje de la foto en la BD
+                const photoMessageToSave = {
+                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb, 
+                    fileType: sentPhotoData.fileTypeForDb, isAutoReply: true
+                };
+                Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]);
+                await contactRef.collection('messages').add(photoMessageToSave);
+                lastMessageText = sentPhotoData.textForDb;
+
+                // AGREGADO: Actualizar el último mensaje del contacto
+                await contactRef.update({
+                    lastMessage: lastMessageText,
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+
                 results.successful.push({ orderId: job.orderId });
+                // --- FIN DE LA CORRECCIÓN ---
             } else {
                 if (!contingencyTemplate || !contingencyTemplate.name) {
                     results.failed.push({ orderId: job.orderId, reason: 'Fuera de 24h y no se proporcionó plantilla de contingencia.' });
@@ -865,23 +899,16 @@ router.post('/difusion/bulk-send', async (req, res) => {
                     headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
                 });
 
-                // --- INICIO DE LA CORRECCIÓN ---
-                // Guardar una copia del mensaje de plantilla enviado en la base de datos
                 const messageId = response.data.messages[0].id;
                 const messageToSave = {
-                    from: PHONE_NUMBER_ID,
-                    status: 'sent',
-                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: messageId,
-                    text: messageToSaveText, // Este texto ya viene formateado desde buildAdvancedTemplatePayload
-                    isAutoReply: true
+                    from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: messageId, text: messageToSaveText, isAutoReply: true
                 };
                 await contactRef.collection('messages').add(messageToSave);
                 await contactRef.update({
                     lastMessage: messageToSaveText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
-                // --- FIN DE LA CORRECCIÓN ---
                 
                 await db.collection('contingentSends').add({
                     contactId: job.contactId,
@@ -906,8 +933,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
-
-
-
-
