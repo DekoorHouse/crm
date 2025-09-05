@@ -22,6 +22,24 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     let messagePayload;
     let messageToSaveText;
 
+    // --- INICIO DE LA CORRECCIÓN ---
+    // Asegurarse de que el contacto exista antes de enviar el mensaje.
+    const contactRef = db.collection('contacts_whatsapp').doc(to);
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) {
+        console.log(`[LOG] El contacto ${to} no existe. Creando uno nuevo antes de enviar el mensaje.`);
+        const contactUpdateData = {
+            name: `Nuevo Contacto (${to.slice(-4)})`,
+            name_lowercase: `nuevo contacto (${to.slice(-4)})`,
+            wa_id: to,
+            lastMessage: "Contacto creado por envío saliente.",
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: 0
+        };
+        await contactRef.set(contactUpdateData, { merge: true });
+    }
+    // --- FIN DE LA CORRECCIÓN ---
+
     if (fileUrl && fileType) {
         const type = fileType.startsWith('image/') ? 'image' :
                      fileType.startsWith('video/') ? 'video' :
@@ -225,19 +243,6 @@ router.post('/', async (req, res) => {
                 return res.sendStatus(200);
             }
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Asegura que el contacto exista antes de intentar añadir un mensaje.
-            const contactDoc = await contactRef.get();
-            if (!contactDoc.exists) {
-                 console.log(`[WEBHOOK] Mensaje de un número nuevo ${from}. Creando contacto.`);
-                 await contactRef.set({
-                    name: contactInfo.profile?.name || from,
-                    wa_id: contactInfo.wa_id,
-                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-                 }, { merge: true });
-            }
-            // --- FIN DE LA CORRECCIÓN ---
-
             const messageData = {
                 timestamp: admin.firestore.Timestamp.fromMillis(parseInt(message.timestamp) * 1000),
                 from, status: 'received', id: message.id, type: message.type, context: message.context || null
@@ -253,16 +258,18 @@ router.post('/', async (req, res) => {
                 messageData.fileType = message.video.mime_type || 'video/mp4';
                 messageData.text = message.video.caption || '🎥 Video';
             } else if (message.type === 'audio' && message.audio?.id) {
+                // --- INICIO DE LA CORRECCIÓN ---
                 messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+                // Añadir el mime_type al objeto 'audio' para guardarlo en la base de datos.
+                messageData.audio = { mime_type: message.audio.mime_type || 'audio/ogg' };
+                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
             } else if (message.type === 'button' && message.button) {
-                // --- INICIO DE LA CORRECCIÓN ---
                 // Maneja cuando un usuario hace clic en un botón de una plantilla.
                 messageData.text = message.button.text;
-                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'interactive' && message.interactive) {
                 // Maneja cuando un usuario hace clic en un botón de respuesta rápida.
                 if (message.interactive.type === 'button_reply') {
@@ -271,7 +278,6 @@ router.post('/', async (req, res) => {
                     // Maneja otros tipos de mensajes interactivos si es necesario en el futuro.
                     messageData.text = `Respuesta interactiva (${message.interactive.type})`;
                 }
-                // --- FIN DE LA CORRECCIÓN ---
             } else {
                 messageData.text = `Mensaje multimedia (${message.type})`;
             }
@@ -385,6 +391,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
-
-
 
