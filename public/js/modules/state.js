@@ -34,6 +34,10 @@ let state = {
     isTagSidebarOpen: true,
     activeView: 'chats', // La vista inicial vuelve a ser 'chats' por defecto.
 
+    // --- NUEVO ESTADO PARA MODAL DE PEDIDOS ---
+    crmOrderPhotosManager: [],
+    crmPromoPhotosManager: [],
+
     // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
     pagination: {
         lastVisibleId: null, // Guarda el ID del último contacto cargado
@@ -56,4 +60,3 @@ let unsubscribeMessagesListener = null,
 // --- Chart instances ---
 let dailyMessagesChart = null;
 let tagsDistributionChart = null;
-
