@@ -362,7 +362,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(500).json({ error: "WhatsApp Token no configurado." });
         }
         
-        // 1. Obtener la URL del medio desde Meta
         const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
@@ -372,23 +371,21 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(404).json({ error: "URL del medio no encontrada." });
         }
 
-        // 2. Hacer la petición a la URL del medio como un stream
+        // --- INICIO DE LA CORRECCIÓN ROBUSTA ---
         const mediaResponse = await axios.get(mediaUrl, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
-            responseType: "stream", // ¡Importante! Usar 'stream' en lugar de 'arraybuffer'
+            responseType: "stream",
         });
 
-        // 3. Pasar las cabeceras de la respuesta de Meta a nuestra respuesta
-        //    Esto le da al navegador la información que necesita (tipo y tamaño del archivo)
+        // Pasar las cabeceras importantes de Meta a nuestra respuesta.
+        // 'Accept-Ranges' le indica al navegador que puede solicitar partes del archivo.
         res.setHeader("Content-Type", mediaResponse.headers["content-type"]);
-        if (mediaResponse.headers["content-length"]) {
-            res.setHeader("Content-Length", mediaResponse.headers["content-length"]);
-        }
+        res.setHeader("Content-Length", mediaResponse.headers["content-length"]);
+        res.setHeader("Accept-Ranges", "bytes");
 
-        // 4. "Tubear" (pipe) el stream directamente a la respuesta.
-        //    Esto envía los datos al navegador a medida que se descargan de Meta,
-        //    sin guardar el archivo completo en la memoria del servidor.
+        // Pipe el stream de datos directamente a la respuesta del cliente.
         mediaResponse.data.pipe(res);
+        // --- FIN DE LA CORRECCIÓN ROBUSTA ---
 
     } catch (err) {
         console.error("ERROR EN PROXY DE MEDIOS:", err?.response?.data || err.message);
