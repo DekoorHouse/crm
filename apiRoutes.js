@@ -3,6 +3,8 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { db, admin } = require('./config');
 const { sendConversionEvent, generateGeminiResponse } = require('./services');
+// Se importa dinámicamente para evitar dependencias circulares
+const { sendAdvancedWhatsAppMessage, buildAdvancedTemplatePayload } = require('./whatsappHandler');
 
 const router = express.Router();
 
@@ -77,64 +79,16 @@ router.put('/contacts/:contactId', async (req, res) => {
 
 
 // --- RUTAS DE MENSAJES Y PLANTILLAS ---
-async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null) {
-    console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
-    const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
-    const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
-    const { name: templateName, components: templateComponents, language } = templateObject;
-    const payloadComponents = [];
-    let messageToSaveText = `📄 Plantilla: ${templateName}`;
-
-    const headerDef = templateComponents?.find(c => c.type === 'HEADER');
-    if (headerDef?.format === 'IMAGE') {
-        if (!imageUrl) throw new Error(`La plantilla '${templateName}' requiere una imagen.`);
-        payloadComponents.push({ type: 'header', parameters: [{ type: 'image', image: { link: imageUrl } }] });
-        messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
-    }
-    if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
-        payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: "Valor de cabecera" }] });
-    }
-
-    const bodyDef = templateComponents?.find(c => c.type === 'BODY');
-    if (bodyDef) {
-        if (bodyDef.text?.match(/\{\{\d\}\}/g)) {
-            payloadComponents.push({ type: 'body', parameters: [{ type: 'text', text: contactName }] });
-            messageToSaveText = bodyDef.text.replace(/\{\{1\}\}/g, contactName);
-        } else {
-            payloadComponents.push({ type: 'body', parameters: [] });
-            messageToSaveText = bodyDef.text || messageToSaveText;
-        }
-    }
-
-    const buttonsDef = templateComponents?.find(c => c.type === 'BUTTONS');
-    buttonsDef?.buttons?.forEach((button, index) => {
-        if (button.type === 'URL' && button.url?.includes('{{1}}')) {
-            payloadComponents.push({ type: 'button', sub_type: 'url', index: index.toString(), parameters: [{ type: 'text', text: contactId }] });
-        }
-    });
-
-    const payload = {
-        messaging_product: 'whatsapp', to: contactId, type: 'template',
-        template: { name: templateName, language: { code: language } }
-    };
-    if (payloadComponents.length > 0) payload.template.components = payloadComponents;
-    console.log(`[DIAGNÓSTICO] Payload final construido para ${contactId}:`, JSON.stringify(payload, null, 2));
-    return { payload, messageToSaveText };
-}
-
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // 1. Aceptar el ID temporal
+    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body;
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     
-    // Se importa dinámicamente para evitar dependencias circulares
-    const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
-
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         if (template) {
-            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []); // Usar la función importada
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
@@ -142,7 +96,6 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const messageId = response.data.messages[0].id;
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
-            // 2. Usar el ID temporal para guardar el documento, asegurando la continuidad con el frontend
             const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
             await messageRef.set(messageToSave);
             await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
@@ -151,7 +104,6 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: sentMessageData.textForDb, fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb };
             if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
             Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-            // 3. Usar el ID temporal aquí también
             const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
             await messageRef.set(messageToSave);
             await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
@@ -796,7 +748,6 @@ router.post('/difusion/bulk-send', async (req, res) => {
         return res.status(400).json({ success: false, message: 'La lista de trabajos de envío es inválida.' });
     }
     
-    const { sendAdvancedWhatsAppMessage, buildAdvancedTemplatePayload } = require('./whatsappHandler');
     const results = { successful: [], failed: [], contingent: [] };
 
     for (const job of jobs) {
@@ -840,7 +791,9 @@ router.post('/difusion/bulk-send', async (req, res) => {
                     continue;
                 }
 
-                const { payload } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl);
+                const bodyParams = [job.orderId];
+                const { payload } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl, bodyParams);
+                
                 await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                     headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
                 });
@@ -868,5 +821,6 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
 
 
