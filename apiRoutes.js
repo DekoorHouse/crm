@@ -825,7 +825,13 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 continue;
             }
 
-            const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(1).get();
+            // CORRECCIÓN: Buscar el último mensaje enviado POR EL CLIENTE.
+            const messagesSnapshot = await contactRef.collection('messages')
+                .where('from', '==', job.contactId)
+                .orderBy('timestamp', 'desc')
+                .limit(1)
+                .get();
+
             let isWithin24Hours = false;
             if (!messagesSnapshot.empty) {
                 const lastMessageTimestamp = messagesSnapshot.docs[0].data().timestamp.toMillis();
@@ -881,4 +887,5 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
 
