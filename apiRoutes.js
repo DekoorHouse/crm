@@ -255,9 +255,20 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-            await contactRef.set({ name: 'Nuevo Contacto (Campaña)', wa_id: contactId }, { merge: true });
+
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Se combina la creación y actualización en un solo paso para manejar contactos nuevos.
+            await contactRef.set({
+                name: `Nuevo Contacto (${contactId.slice(-4)})`,
+                wa_id: contactId,
+                lastMessage: messageToSaveText,
+                lastMessageTimestamp: timestamp,
+                unreadCount: 0
+            }, { merge: true });
+            // --- FIN DE LA CORRECCIÓN ---
+
             await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external' });
-            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
+            
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
             console.error(`Error en campaña con imagen a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
@@ -820,17 +831,22 @@ router.post('/difusion/bulk-send', async (req, res) => {
             const contactRef = db.collection('contacts_whatsapp').doc(job.contactId);
             const contactDoc = await contactRef.get();
 
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Si el contacto no existe, lo crea en lugar de fallar.
             if (!contactDoc.exists) {
-                // AGREGADO: Crear el contacto si no existe para poder guardar los mensajes.
-                await contactRef.set({ 
-                    name: `Cliente ${job.contactId.slice(-4)}`,
+                console.log(`[DIFUSION] El contacto ${job.contactId} no existe. Creando nuevo registro.`);
+                await contactRef.set({
+                    name: `Nuevo Contacto (${job.contactId.slice(-4)})`,
                     wa_id: job.contactId,
-                    lastMessage: 'Contacto creado por difusión masiva.',
-                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-                 }, { merge: true });
-                console.log(`[DIFUSIÓN] Contacto ${job.contactId} no existía y fue creado.`);
+                    lastMessage: 'Inicio de conversación por difusión.',
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+                console.log(`[DIFUSION] Contacto ${job.contactId} creado.`);
             }
+            // --- FIN DE LA CORRECCIÓN ---
 
+
+            // CORRECCIÓN: Buscar el último mensaje enviado POR EL CLIENTE.
             const messagesSnapshot = await contactRef.collection('messages')
                 .where('from', '==', job.contactId)
                 .orderBy('timestamp', 'desc')
@@ -933,3 +949,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
