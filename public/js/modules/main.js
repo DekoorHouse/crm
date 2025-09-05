@@ -24,6 +24,13 @@ function startApp() {
     fetchGoogleSheetSettings();
     // Setup global event listeners
     document.addEventListener('click', handleClickOutside);
+
+    // Add listener for the new order button
+    document.body.addEventListener('click', function(event) {
+        if (event.target.matches('[onclick="handleOpenRegisterOrderModal()"]')) {
+            handleOpenRegisterOrderModal();
+        }
+    });
 }
 
 /**
@@ -72,4 +79,13 @@ function handleClickOutside(event) {
     if (state.templatePickerOpen && templatePicker && templateToggleBtn && !templatePicker.contains(event.target) && !templateToggleBtn.contains(event.target)) {
         toggleTemplatePicker();
     }
+
+    const crmOrderModal = document.getElementById('crm-modalNuevoPedido');
+    if (crmOrderModal && crmOrderModal.style.display === 'flex') {
+        const modalContent = document.getElementById('crm-modalContentNuevoPedido');
+        if (modalContent && !modalContent.contains(event.target)) {
+            closeRegisterOrderModal();
+        }
+    }
 }
+
