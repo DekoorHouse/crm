@@ -300,18 +300,6 @@ router.post('/', async (req, res) => {
                 messageData.fileUrl = `/api/wa/media/${message.video.id}`;
                 messageData.fileType = message.video.mime_type || 'video/mp4';
                 messageData.text = message.video.caption || '🎥 Video';
-            } else if (message.type === 'sticker' && message.sticker?.id) {
-                try {
-                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.sticker.id, from);
-                    messageData.fileUrl = publicUrl;
-                    messageData.fileType = mimeType; // Será 'image/webp'
-                    console.log(`[STICKER] Sticker ${message.sticker.id} guardado en Storage. URL: ${publicUrl}`);
-                } catch (uploadError) {
-                    console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Usando proxy. Error: ${uploadError.message}`);
-                    messageData.mediaProxyUrl = `/api/wa/media/${message.sticker.id}`;
-                    messageData.fileType = message.sticker.mime_type || 'image/webp';
-                }
-                messageData.text = 'Sticker';
             } else if (message.type === 'audio' && message.audio?.id) {
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
@@ -494,5 +482,3 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
-
-
