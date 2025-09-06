@@ -489,15 +489,15 @@ const MessageBubbleTemplate = (message) => {
                     <i class="fas fa-file-alt document-icon"></i>
                     <span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span>
                 </a>`;
-        } else if (message.type === 'sticker' && message.fileUrl) {
-            const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+        } else if (message.type === 'sticker' && (message.fileUrl || message.mediaProxyUrl)) {
+            const isPermanentLink = !!message.fileUrl;
+            const fullStickerUrl = isPermanentLink ? message.fileUrl : `${API_BASE_URL}${message.mediaProxyUrl}`;
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
-        }
-    } else if (message.type === 'location' && message.location) {
-        const { latitude, longitude, name, address } = message.location;
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
-        contentHTML += `
-            <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline">
+            timeAndStatusHTML = ''; // Ocultamos el tiempo para que se vea más limpio, como en WhatsApp
+        } else if (message.type === 'location' && message.location) {
+            const { latitude, longitude, name, address } = message.location;
+            const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+            contentHTML += `
                 <div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>
                 ${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}
                 <p class="text-xs mt-1">Toca para ver en el mapa</p>
@@ -947,5 +947,6 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
+
 
 
