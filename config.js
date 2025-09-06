@@ -28,7 +28,9 @@ const app = express();
 // --- INICIO DE LA CORRECCIÓN DE CORS ---
 // Define los orígenes permitidos explícitamente.
 const allowedOrigins = [
+    'https://dekoormx.onrender.com', // AÑADIDO: Tu nuevo dominio de frontend
     'https://crm-rzon.onrender.com', // Tu dominio principal en Render
+    'https://dekoor.onrender.com',   // El subdominio de Render anterior (por si acaso)
     'http://localhost:3000',        // Para pruebas locales
     'http://127.0.0.1:5500',         // Para desarrollo con Live Server
     // Si tienes otros subdominios o dominios personalizados, añádelos aquí.
@@ -53,3 +55,4 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 module.exports = { app, db, bucket, admin };
+
