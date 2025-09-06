@@ -354,14 +354,17 @@ router.post('/', async (req, res) => {
     }
 });
 
-// Proxy de Medios para audios, videos y documentos de WhatsApp
+// =========================================================================
+// === INICIO DE LA CORRECCIÓN: Proxy de Medios con Soporte para Rangos ===
+// =========================================================================
 router.get("/wa/media/:mediaId", async (req, res) => {
     try {
         const { mediaId } = req.params;
         if (!WHATSAPP_TOKEN) {
             return res.status(500).json({ error: "WhatsApp Token no configurado." });
         }
-        
+
+        // 1. Obtener la URL real del medio desde Meta
         const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
@@ -371,23 +374,60 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(404).json({ error: "URL del medio no encontrada." });
         }
 
-        const mediaResponse = await axios.get(mediaUrl, {
+        // 2. Preparar la solicitud a Meta, incluyendo la cabecera Range si existe
+        const range = req.headers.range;
+        const axiosConfig = {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
             responseType: "stream",
-        });
+        };
 
-        res.setHeader("Content-Type", mediaResponse.headers["content-type"]);
-        res.setHeader("Content-Length", mediaResponse.headers["content-length"]);
-        res.setHeader("Accept-Ranges", "bytes");
+        if (range) {
+            axiosConfig.headers['Range'] = range;
+            console.log(`[PROXY] Solicitud de rango detectada: ${range}`);
+        }
 
+        // 3. Realizar la solicitud a la URL de Meta
+        const mediaResponse = await axios.get(mediaUrl, axiosConfig);
+
+        // 4. Construir la respuesta al cliente
+        const headers = mediaResponse.headers;
+        const status = mediaResponse.status;
+
+        // Si Meta respondió con contenido parcial, ajustamos nuestras cabeceras
+        if (status === 206) {
+            res.writeHead(206, {
+                "Content-Range": headers["content-range"],
+                "Accept-Ranges": "bytes",
+                "Content-Length": headers["content-length"],
+                "Content-Type": headers["content-type"],
+            });
+        } else {
+            // Si no, enviamos la respuesta completa como antes
+            res.setHeader("Content-Type", headers["content-type"]);
+            res.setHeader("Content-Length", headers["content-length"]);
+            res.setHeader("Accept-Ranges", "bytes");
+        }
+
+        // 5. Enviar los datos (el stream) al cliente
         mediaResponse.data.pipe(res);
 
     } catch (err) {
-        console.error("ERROR EN PROXY DE MEDIOS:", err?.response?.data || err.message);
-        res.status(500).json({ error: "No se pudo obtener el medio." });
+        // Manejo de errores mejorado para ver qué falló
+        if (err.response) {
+            console.error("ERROR EN PROXY DE MEDIOS (Respuesta del servidor):", err.response.status, err.response.data);
+            res.status(err.response.status).json({ error: "No se pudo obtener el medio desde el origen.", details: err.response.data });
+        } else if (err.request) {
+            console.error("ERROR EN PROXY DE MEDIOS (Sin respuesta):", err.request);
+            res.status(504).json({ error: "No se recibió respuesta del servidor de medios." });
+        } else {
+            console.error("ERROR EN PROXY DE MEDIOS (Configuración):", err.message);
+            res.status(500).json({ error: "Error al configurar la solicitud del medio." });
+        }
     }
 });
+// =========================================================================
+// === FIN DE LA CORRECCIÓN ================================================
+// =========================================================================
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
-
