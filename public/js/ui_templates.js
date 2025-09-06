@@ -482,7 +482,7 @@ const MessageBubbleTemplate = (message) => {
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${fullVideoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
-        } else if (message.fileType && message.fileType.startsWith('application/')) { // Manejo de PDF y otros documentos
+        } else if (message.type === 'document' || (message.fileType && message.fileType.startsWith('application/'))) { // Manejo de PDF y otros documentos
             const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `
                 <a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link">
@@ -947,4 +947,5 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
+
 
