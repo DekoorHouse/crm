@@ -25,27 +25,30 @@ const bucket = getStorage().bucket();
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
 
-// --- CONFIGURACIÓN DE CORS (ACTUALIZADO PARA DOMINIO PERSONALIZADO) ---
-// Define los orígenes permitidos.
+// --- INICIO DE LA CORRECCIÓN DE CORS ---
+// Define los orígenes permitidos explícitamente.
 const allowedOrigins = [
-    'https://dekoormx.onrender.com', // Tu nuevo dominio personalizado
-    'https://dekoor.onrender.com',   // El subdominio de Render anterior
+    'https://crm-rzon.onrender.com', // Tu dominio principal en Render
     'http://localhost:3000',        // Para pruebas locales
-    'http://127.0.0.1:5500'         // Para desarrollo con Live Server
+    'http://127.0.0.1:5500',         // Para desarrollo con Live Server
+    // Si tienes otros subdominios o dominios personalizados, añádelos aquí.
 ];
 
 const corsOptions = {
     origin: function (origin, callback) {
-        // Permite peticiones sin origen (como Postman) o si el origen está en la lista blanca.
+        // Permite peticiones sin 'origin' (como Postman o apps móviles) o si el origen está en la lista blanca.
         if (!origin || allowedOrigins.indexOf(origin) !== -1) {
             callback(null, true);
         } else {
+            console.warn(`CORS: Se bloqueó una solicitud del origen no permitido: ${origin}`);
             callback(new Error('No permitido por CORS'));
         }
     }
 };
 
 app.use(cors(corsOptions)); // Usa la nueva configuración de CORS
+// --- FIN DE LA CORRECCIÓN DE CORS ---
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
