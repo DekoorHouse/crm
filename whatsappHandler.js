@@ -80,8 +80,6 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     let messagePayload;
     let messageToSaveText;
 
-    // --- INICIO DE LA CORRECCIÓN ---
-    // Asegurarse de que el contacto exista antes de enviar el mensaje.
     const contactRef = db.collection('contacts_whatsapp').doc(to);
     const contactDoc = await contactRef.get();
     if (!contactDoc.exists) {
@@ -96,7 +94,6 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         };
         await contactRef.set(contactUpdateData, { merge: true });
     }
-    // --- FIN DE LA CORRECCIÓN ---
 
     if (fileUrl && fileType) {
         const type = fileType.startsWith('image/') ? 'image' :
@@ -133,8 +130,6 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     }
 }
 
-
-// --- NUEVA FUNCIÓN: MANEJAR ENVÍOS DE CONTINGENCIA ---
 async function handleContingentSend(contactId) {
     const contingentQuery = db.collection('contingentSends')
         .where('contactId', '==', contactId)
@@ -143,7 +138,7 @@ async function handleContingentSend(contactId) {
 
     const snapshot = await contingentQuery.get();
     if (snapshot.empty) {
-        return false; // No hay envío pendiente para este contacto
+        return false;
     }
 
     const contingentDoc = snapshot.docs[0];
@@ -156,7 +151,6 @@ async function handleContingentSend(contactId) {
     try {
         let lastMessageText = '';
 
-        // Enviar la secuencia de mensajes primero
         if (payload.messageSequence && payload.messageSequence.length > 0) {
             for (const qr of payload.messageSequence) {
                 const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
@@ -175,13 +169,12 @@ async function handleContingentSend(contactId) {
                 await contactRef.collection('messages').add(messageToSave);
                 lastMessageText = sentMessageData.textForDb;
 
-                await new Promise(resolve => setTimeout(resolve, 500)); // Pequeño retraso entre mensajes
+                await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
 
-        // Enviar el mensaje final con la foto
         const sentPhotoData = await sendAdvancedWhatsAppMessage(contactId, {
-            text: null, // No se envía caption, el texto debe ir en la secuencia
+            text: null,
             fileUrl: payload.photoUrl,
             fileType: 'image/jpeg'
         });
@@ -199,10 +192,8 @@ async function handleContingentSend(contactId) {
         await contactRef.collection('messages').add(photoMessageToSave);
         lastMessageText = sentPhotoData.textForDb;
 
-        // Marcar como completado
         await contingentDoc.ref.update({ status: 'completed', completedAt: admin.firestore.FieldValue.serverTimestamp() });
         
-        // Actualizar el lastMessage del contacto con el último mensaje enviado
         await contactRef.update({
             lastMessage: lastMessageText,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
@@ -217,9 +208,6 @@ async function handleContingentSend(contactId) {
         return false;
     }
 }
-
-
-// --- FUNCIONES AUXILIARES DEL WEBHOOK ---
 
 function isWithinBusinessHours() {
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
@@ -262,9 +250,6 @@ async function handlePostalCodeAuto(message, contactRef, from) {
     return false;
 }
 
-// --- RUTAS DEL WEBHOOK ---
-
-// Verificación del Webhook
 router.get('/', (req, res) => {
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
@@ -277,7 +262,6 @@ router.get('/', (req, res) => {
     }
 });
 
-// Manejador principal de eventos de WhatsApp
 router.post('/', async (req, res) => {
     try {
         const entry = req.body.entry?.[0];
@@ -306,8 +290,9 @@ router.post('/', async (req, res) => {
                 from, status: 'received', id: message.id, type: message.type, context: message.context || null
             };
 
-            if (message.type === 'text') messageData.text = message.text.body;
-            else if (message.type === 'image' && message.image?.id) {
+            if (message.type === 'text') {
+                messageData.text = message.text.body;
+            } else if (message.type === 'image' && message.image?.id) {
                 messageData.fileUrl = `/api/wa/media/${message.image.id}`;
                 messageData.fileType = message.image.mime_type || 'image/jpeg';
                 messageData.text = message.image.caption || '📷 Imagen';
@@ -317,18 +302,30 @@ router.post('/', async (req, res) => {
                 messageData.text = message.video.caption || '🎥 Video';
             } else if (message.type === 'audio' && message.audio?.id) {
                 try {
-                    // NUEVO: Descargar, subir y obtener la URL permanente
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
-                    messageData.fileUrl = publicUrl; // La URL pública y permanente
+                    messageData.fileUrl = publicUrl;
                     messageData.fileType = mimeType;
                     console.log(`[AUDIO] Audio ${message.audio.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
-                    console.error(`[AUDIO] FALLBACK: No se pudo guardar el audio ${message.audio.id} en Storage. Se usará un enlace proxy temporal. Error: ${uploadError.message}`);
-                    // Fallback al método anterior si la subida falla
+                    console.error(`[AUDIO] FALLBACK: No se pudo guardar el audio ${message.audio.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
                     messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
                     messageData.fileType = message.audio.mime_type || 'audio/ogg';
                 }
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
+            } else if (message.type === 'document' && message.document?.id) {
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.document.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    messageData.document = { filename: message.document.filename };
+                    console.log(`[DOCUMENT] Documento ${message.document.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[DOCUMENT] FALLBACK: No se pudo guardar el documento ${message.document.id}. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.document.id}`;
+                    messageData.fileType = message.document.mime_type || 'application/pdf';
+                    messageData.document = { filename: message.document.filename };
+                }
+                messageData.text = message.document.caption || message.document.filename || '📄 Documento';
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
@@ -422,9 +419,6 @@ router.post('/', async (req, res) => {
     }
 });
 
-// =========================================================================
-// === INICIO DE LA CORRECCIÓN: Proxy de Medios con Soporte para Rangos ===
-// =========================================================================
 router.get("/wa/media/:mediaId", async (req, res) => {
     try {
         const { mediaId } = req.params;
@@ -432,7 +426,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(500).json({ error: "WhatsApp Token no configurado." });
         }
 
-        // 1. Obtener la URL real del medio desde Meta
         const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
@@ -442,7 +435,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(404).json({ error: "URL del medio no encontrada." });
         }
 
-        // 2. Preparar la solicitud a Meta, incluyendo la cabecera Range si el navegador la envió
         const range = req.headers.range;
         const axiosConfig = {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
@@ -454,14 +446,11 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             console.log(`[PROXY] Solicitud de rango detectada: ${range}`);
         }
 
-        // 3. Realizar la solicitud a la URL de Meta
         const mediaResponse = await axios.get(mediaUrl, axiosConfig);
 
-        // 4. Construir la respuesta al cliente, respetando la respuesta de Meta
         const headers = mediaResponse.headers;
         const status = mediaResponse.status;
 
-        // Si Meta respondió con contenido parcial (206), replicamos ese comportamiento
         if (status === 206) {
             res.writeHead(206, {
                 "Content-Range": headers["content-range"],
@@ -470,17 +459,14 @@ router.get("/wa/media/:mediaId", async (req, res) => {
                 "Content-Type": headers["content-type"],
             });
         } else {
-            // Si no, enviamos la respuesta completa como antes, pero indicando que aceptamos rangos
             res.setHeader("Content-Type", headers["content-type"]);
             res.setHeader("Content-Length", headers["content-length"]);
-            res.setHeader("Accept-Ranges", "bytes"); // Informar al navegador que soportamos rangos
+            res.setHeader("Accept-Ranges", "bytes");
         }
 
-        // 5. Enviar los datos (el stream) desde Meta directamente al cliente
         mediaResponse.data.pipe(res);
 
     } catch (err) {
-        // Manejo de errores mejorado para ver qué falló
         if (err.response) {
             console.error("ERROR EN PROXY DE MEDIOS (Respuesta del servidor):", err.response.status, err.response.data);
             res.status(err.response.status).json({ error: "No se pudo obtener el medio desde el origen.", details: err.response.data });
@@ -493,9 +479,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         }
     }
 });
-// =========================================================================
-// === FIN DE LA CORRECCIÓN ================================================
-// =========================================================================
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
