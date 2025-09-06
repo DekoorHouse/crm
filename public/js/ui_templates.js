@@ -444,10 +444,13 @@ const MessageBubbleTemplate = (message) => {
 
     if (message.type === 'audio' && message.mediaProxyUrl) {
         const audioSrc = `${API_BASE_URL}${message.mediaProxyUrl}`;
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Limpiamos el mime_type para mejorar la compatibilidad con navegadores.
         let mimeType = message.audio?.mime_type || 'audio/ogg';
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
         }
+        // --- FIN DE LA CORRECCIÓN ---
         contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${mimeType}">Tu navegador no soporta la reproducción de audio.</audio>`;
     } 
     else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
@@ -469,6 +472,16 @@ const MessageBubbleTemplate = (message) => {
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${fullVideoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
+        } else if (message.fileType && message.fileType.startsWith('application/')) { // Manejo de PDF y otros documentos
+            const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+            contentHTML += `
+                <a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link">
+                    <i class="fas fa-file-alt document-icon"></i>
+                    <span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span>
+                </a>`;
+        } else if (message.type === 'sticker' && message.fileUrl) {
+            const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+            contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
     } else if (message.type === 'location' && message.location) {
         const { latitude, longitude, name, address } = message.location;
