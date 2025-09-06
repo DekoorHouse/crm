@@ -503,6 +503,8 @@ const MessageBubbleTemplate = (message) => {
                 <p class="text-xs mt-1">Toca para ver en el mapa</p>
             </a>
         `;
+    } else if (message.type === 'sticker' && !message.fileUrl) {
+        contentHTML += `<div class="sticker-fallback"><i class="far fa-sticky-note"></i><span>Sticker</span></div>`;
     } else if (hasText) {
          contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
     }
@@ -947,3 +949,4 @@ const DifusionViewTemplate = () => `
         </div>
     </div>
 `;
+
