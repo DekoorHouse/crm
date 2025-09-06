@@ -226,9 +226,6 @@ router.post('/', async (req, res) => {
         const change = entry?.changes?.[0];
         const value = change?.value;
 
-        // LOG 1: Ver el objeto completo que manda Meta.
-        console.log('[DIAGNÓSTICO] Objeto de valor recibido del webhook:', JSON.stringify(value, null, 2));
-
         if (value && value.messages && value.contacts) {
             const message = value.messages[0];
             const contactInfo = value.contacts[0];
@@ -261,8 +258,6 @@ router.post('/', async (req, res) => {
                 messageData.fileType = message.video.mime_type || 'video/mp4';
                 messageData.text = message.video.caption || '🎥 Video';
             } else if (message.type === 'audio' && message.audio?.id) {
-                // LOG 2: Ver el objeto de audio específico que llega.
-                console.log('[DIAGNÓSTICO] Mensaje de audio detectado:', JSON.stringify(message.audio, null, 2));
                 messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
                 messageData.audio = { mime_type: message.audio.mime_type || 'audio/ogg' };
@@ -279,11 +274,6 @@ router.post('/', async (req, res) => {
                 }
             } else {
                 messageData.text = `Mensaje multimedia (${message.type})`;
-            }
-            
-            // LOG 3: Ver qué datos se van a guardar en Firestore.
-            if (message.type === 'audio') {
-                console.log('[DIAGNÓSTICO] Datos del mensaje de audio para guardar en Firestore:', JSON.stringify(messageData, null, 2));
             }
 
             await contactRef.collection('messages').add(messageData);
@@ -368,8 +358,6 @@ router.post('/', async (req, res) => {
 router.get("/wa/media/:mediaId", async (req, res) => {
     try {
         const { mediaId } = req.params;
-        // LOG 4: Ver si el proxy se está llamando correctamente.
-        console.log(`[PROXY DE MEDIOS] Solicitud recibida para mediaId: ${mediaId}`);
         if (!WHATSAPP_TOKEN) {
             return res.status(500).json({ error: "WhatsApp Token no configurado." });
         }
@@ -382,9 +370,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         if (!mediaUrl) {
             return res.status(404).json({ error: "URL del medio no encontrada." });
         }
-        
-        // LOG 5: Verificar que obtuvimos una URL de Meta.
-        console.log(`[PROXY DE MEDIOS] URL de Meta obtenida: ${mediaUrl}`);
 
         const mediaResponse = await axios.get(mediaUrl, {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
@@ -394,12 +379,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         res.setHeader("Content-Type", mediaResponse.headers["content-type"]);
         res.setHeader("Content-Length", mediaResponse.headers["content-length"]);
         res.setHeader("Accept-Ranges", "bytes");
-
-        // LOG 6: Confirmar las cabeceras que se envían al navegador.
-        console.log('[PROXY DE MEDIOS] Enviando audio al cliente con las cabeceras:', {
-            'Content-Type': mediaResponse.headers['content-type'],
-            'Content-Length': mediaResponse.headers['content-length']
-        });
 
         mediaResponse.data.pipe(res);
 
@@ -411,3 +390,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
