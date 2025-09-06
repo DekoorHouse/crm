@@ -374,7 +374,7 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             return res.status(404).json({ error: "URL del medio no encontrada." });
         }
 
-        // 2. Preparar la solicitud a Meta, incluyendo la cabecera Range si existe
+        // 2. Preparar la solicitud a Meta, incluyendo la cabecera Range si el navegador la envió
         const range = req.headers.range;
         const axiosConfig = {
             headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
@@ -389,11 +389,11 @@ router.get("/wa/media/:mediaId", async (req, res) => {
         // 3. Realizar la solicitud a la URL de Meta
         const mediaResponse = await axios.get(mediaUrl, axiosConfig);
 
-        // 4. Construir la respuesta al cliente
+        // 4. Construir la respuesta al cliente, respetando la respuesta de Meta
         const headers = mediaResponse.headers;
         const status = mediaResponse.status;
 
-        // Si Meta respondió con contenido parcial, ajustamos nuestras cabeceras
+        // Si Meta respondió con contenido parcial (206), replicamos ese comportamiento
         if (status === 206) {
             res.writeHead(206, {
                 "Content-Range": headers["content-range"],
@@ -402,13 +402,13 @@ router.get("/wa/media/:mediaId", async (req, res) => {
                 "Content-Type": headers["content-type"],
             });
         } else {
-            // Si no, enviamos la respuesta completa como antes
+            // Si no, enviamos la respuesta completa como antes, pero indicando que aceptamos rangos
             res.setHeader("Content-Type", headers["content-type"]);
             res.setHeader("Content-Length", headers["content-length"]);
-            res.setHeader("Accept-Ranges", "bytes");
+            res.setHeader("Accept-Ranges", "bytes"); // Informar al navegador que soportamos rangos
         }
 
-        // 5. Enviar los datos (el stream) al cliente
+        // 5. Enviar los datos (el stream) desde Meta directamente al cliente
         mediaResponse.data.pipe(res);
 
     } catch (err) {
