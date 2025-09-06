@@ -453,7 +453,7 @@ const MessageBubbleTemplate = (message) => {
             mimeType = mimeType.split(';')[0];
         }
         
-        console.log(`[AUDIO] Renderizando audio. Fuente: ${audioSrc}, Tipo: ${mimeType}, Permanente: ${isPermanentLink}`);
+        // console.log(`[AUDIO] Renderizando audio. Fuente: ${audioSrc}, Tipo: ${mimeType}, Permanente: ${isPermanentLink}`);
 
         const onErrorHandler = `console.error('[AUDIO] Error al cargar el audio. URL: ${audioSrc}', event.target.error)`;
 
