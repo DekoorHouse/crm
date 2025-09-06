@@ -326,6 +326,17 @@ router.post('/', async (req, res) => {
                     messageData.document = { filename: message.document.filename };
                 }
                 messageData.text = message.document.caption || message.document.filename || '📄 Documento';
+            } else if (message.type === 'sticker' && message.sticker?.id) { // --- INICIO DE LA CORRECCIÓN ---
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.sticker.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    messageData.text = 'Sticker'; // Texto descriptivo para la base de datos
+                    console.log(`[STICKER] Sticker ${message.sticker.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Error: ${uploadError.message}`);
+                    messageData.text = 'Mensaje multimedia (sticker)';
+                } // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
