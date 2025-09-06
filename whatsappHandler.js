@@ -1,6 +1,6 @@
 const express = require('express');
 const axios = require('axios');
-const { db, admin } = require('./config');
+const { db, admin, bucket } = require('./config');
 const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI } = require('./services');
 
 const router = express.Router();
@@ -15,6 +15,64 @@ const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 
 const TIMEZONE = 'America/Mexico_City';
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
+
+/**
+ * Descarga un archivo multimedia desde la URL temporal de Meta y lo sube a Firebase Storage.
+ * @param {string} mediaId El ID del medio de WhatsApp.
+ * @param {string} from El número de teléfono del remitente, para organizar el almacenamiento.
+ * @returns {Promise<{publicUrl: string, mimeType: string}>} Una promesa que resuelve con la URL pública y el tipo MIME.
+ */
+async function downloadAndUploadMedia(mediaId, from) {
+    try {
+        console.log(`[MEDIA] Iniciando descarga para mediaId: ${mediaId}`);
+        // 1. Obtener URL temporal de Meta
+        const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+        });
+
+        const mediaUrl = metaUrlResponse.data?.url;
+        if (!mediaUrl) {
+            throw new Error(`No se pudo obtener la URL del medio para el ID: ${mediaId}`);
+        }
+        const mimeType = metaUrlResponse.data?.mime_type || 'application/octet-stream';
+        const fileExtension = mimeType.split('/')[1] || 'bin';
+
+        // 2. Descargar el archivo como stream desde Meta
+        const mediaResponse = await axios.get(mediaUrl, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: "stream",
+        });
+
+        // 3. Subir el stream a Firebase Storage
+        const filePath = `whatsapp_media/${from}/${mediaId}.${fileExtension}`;
+        const file = bucket.file(filePath);
+        const stream = file.createWriteStream({
+            metadata: {
+                contentType: mimeType,
+            },
+        });
+
+        return new Promise((resolve, reject) => {
+            mediaResponse.data.pipe(stream)
+                .on('finish', async () => {
+                    console.log(`[MEDIA] Archivo ${filePath} subido a Firebase Storage.`);
+                    await file.makePublic();
+                    const publicUrl = file.publicUrl();
+                    console.log(`[MEDIA] URL pública generada: ${publicUrl}`);
+                    resolve({ publicUrl, mimeType });
+                })
+                .on('error', (error) => {
+                    console.error(`[MEDIA] Error al subir el archivo a Firebase Storage:`, error);
+                    reject(error);
+                });
+        });
+
+    } catch (error) {
+        console.error(`[MEDIA] Falló el proceso de descarga y subida para mediaId ${mediaId}:`, error.response ? error.response.data : error.message);
+        throw error;
+    }
+}
+
 
 async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
@@ -258,9 +316,19 @@ router.post('/', async (req, res) => {
                 messageData.fileType = message.video.mime_type || 'video/mp4';
                 messageData.text = message.video.caption || '🎥 Video';
             } else if (message.type === 'audio' && message.audio?.id) {
-                messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+                try {
+                    // NUEVO: Descargar, subir y obtener la URL permanente
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
+                    messageData.fileUrl = publicUrl; // La URL pública y permanente
+                    messageData.fileType = mimeType;
+                    console.log(`[AUDIO] Audio ${message.audio.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[AUDIO] FALLBACK: No se pudo guardar el audio ${message.audio.id} en Storage. Se usará un enlace proxy temporal. Error: ${uploadError.message}`);
+                    // Fallback al método anterior si la subida falla
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+                    messageData.fileType = message.audio.mime_type || 'audio/ogg';
+                }
                 messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio";
-                messageData.audio = { mime_type: message.audio.mime_type || 'audio/ogg' };
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
@@ -431,3 +499,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router, sendAdvancedWhatsAppMessage };
+
