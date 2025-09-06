@@ -915,30 +915,6 @@ const DifusionViewTemplate = () => `
                 </div>
             </div>
 
-            <div class="overflow-x-auto border-t pt-6">
-                <table class="table w-full">
-                    <thead>
-                        <tr class="bg-gray-50">
-                            <th class="w-12 text-center">#</th>
-                            <th class="w-48">No. Pedido o Teléfono</th>
-                            <th>Cliente</th>
-                            <th class="text-center">Foto del Pedido</th>
-                            <th>Estatus</th>
-                            <th class="w-16"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="bulk-table-body">
-                        <tr id="empty-state-row">
-                            <td colspan="6" class="text-center text-gray-400 py-12">
-                                <i class="fas fa-images text-4xl mb-4"></i>
-                                <p class="font-semibold">Aún no hay pedidos en la lista.</p>
-                                <p>Usa el botón "Agregar Fila" para empezar.</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
             <div class="mt-6 flex justify-start">
                 <button id="add-row-btn" class="btn btn-subtle">
                     <i class="fas fa-plus-circle"></i> Agregar Fila
@@ -948,5 +924,5 @@ const DifusionViewTemplate = () => `
     </div>
 `;
 
-
+}
 
