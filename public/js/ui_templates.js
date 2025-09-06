@@ -442,31 +442,28 @@ const MessageBubbleTemplate = (message) => {
     const hasMedia = message.fileUrl || message.mediaProxyUrl;
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
-    if (message.type === 'audio' && message.mediaProxyUrl) {
-        // --- INICIO DE LOGS DE DIAGNÓSTICO ---
-        console.log("[DIAGNÓSTICO AUDIO] Renderizando burbuja de audio. Objeto del mensaje:", JSON.parse(JSON.stringify(message)));
-
-        const audioSrc = `${API_BASE_URL}${message.mediaProxyUrl}`;
-        let mimeType = message.audio?.mime_type || 'audio/ogg';
+    if (message.type === 'audio' && (message.fileUrl || message.mediaProxyUrl)) {
+        // --- INICIO DE LA CORRECCIÓN DE AUDIO ---
+        const isPermanentLink = !!message.fileUrl;
+        // Usa la URL permanente si existe, si no, usa el proxy como fallback para mensajes antiguos.
+        const audioSrc = isPermanentLink ? message.fileUrl : `${API_BASE_URL}${message.mediaProxyUrl}`;
+        let mimeType = message.fileType || 'audio/ogg'; // Usa el fileType guardado
         
-        // Limpiamos el mime_type para mejorar la compatibilidad
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
         }
+        
+        console.log(`[AUDIO] Renderizando audio. Fuente: ${audioSrc}, Tipo: ${mimeType}, Permanente: ${isPermanentLink}`);
 
-        console.log(`[DIAGNÓSTICO AUDIO] URL final del audio: ${audioSrc}`);
-        console.log(`[DIAGNÓSTICO AUDIO] MIME Type final: ${mimeType}`);
-
-        // Agregamos un manejador de errores directamente en la etiqueta de audio
-        const onErrorHandler = `console.error('[DIAGNÓSTICO AUDIO] Error al cargar el audio. Código de error: ' + event.target.error.code + '. URL: ${audioSrc}', event.target.error)`;
+        const onErrorHandler = `console.error('[AUDIO] Error al cargar el audio. URL: ${audioSrc}', event.target.error)`;
 
         contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}">
                             <source src="${audioSrc}" type="${mimeType}">
                             Tu navegador no soporta la reproducción de audio.
                         </audio>`;
-        // --- FIN DE LOGS DE DIAGNÓSTICO ---
+        // --- FIN DE LA CORRECCIÓN DE AUDIO ---
     } 
-    else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
+    else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl && !message.fileUrl) {
         contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
     } else if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
