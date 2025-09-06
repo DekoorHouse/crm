@@ -443,15 +443,28 @@ const MessageBubbleTemplate = (message) => {
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
     if (message.type === 'audio' && message.mediaProxyUrl) {
+        // --- INICIO DE LOGS DE DIAGNÓSTICO ---
+        console.log("[DIAGNÓSTICO AUDIO] Renderizando burbuja de audio. Objeto del mensaje:", JSON.parse(JSON.stringify(message)));
+
         const audioSrc = `${API_BASE_URL}${message.mediaProxyUrl}`;
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Limpiamos el mime_type para mejorar la compatibilidad con navegadores.
         let mimeType = message.audio?.mime_type || 'audio/ogg';
+        
+        // Limpiamos el mime_type para mejorar la compatibilidad
         if (mimeType.includes(';')) {
             mimeType = mimeType.split(';')[0];
         }
-        // --- FIN DE LA CORRECCIÓN ---
-        contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${mimeType}">Tu navegador no soporta la reproducción de audio.</audio>`;
+
+        console.log(`[DIAGNÓSTICO AUDIO] URL final del audio: ${audioSrc}`);
+        console.log(`[DIAGNÓSTICO AUDIO] MIME Type final: ${mimeType}`);
+
+        // Agregamos un manejador de errores directamente en la etiqueta de audio
+        const onErrorHandler = `console.error('[DIAGNÓSTICO AUDIO] Error al cargar el audio. Código de error: ' + event.target.error.code + '. URL: ${audioSrc}', event.target.error)`;
+
+        contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}">
+                            <source src="${audioSrc}" type="${mimeType}">
+                            Tu navegador no soporta la reproducción de audio.
+                        </audio>`;
+        // --- FIN DE LOGS DE DIAGNÓSTICO ---
     } 
     else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl) {
         contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
