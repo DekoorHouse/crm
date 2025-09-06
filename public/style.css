@@ -124,28 +124,10 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 #sticky-date-header { position: absolute; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 10; transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out; opacity: 0; pointer-events: none; }
 #sticky-date-header.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-.chat-image-preview {
-    width: 250px;
-    height: 250px;
-    object-fit: cover;
-    border-radius: var(--border-radius-sm);
-    display: block;
-    cursor: pointer;
-}
-.message-bubble video {
-    width: 250px;
-    height: 250px;
-    object-fit: contain;
-    border-radius: var(--border-radius-sm);
-    display: block;
-    background-color: #000;
-}
-/* --- START: NEW AUDIO PLAYER STYLES --- */
-.chat-audio-player {
-    width: 250px;
-    height: 45px;
-}
-/* --- END: NEW AUDIO PLAYER STYLES --- */
+.chat-image-preview { width: 250px; height: 250px; object-fit: cover; border-radius: var(--border-radius-sm); display: block; cursor: pointer; }
+.chat-sticker-preview { width: 150px; height: 150px; object-fit: contain; }
+.message-bubble video { width: 250px; height: 250px; object-fit: contain; border-radius: var(--border-radius-sm); display: block; background-color: #000; }
+.chat-audio-player { width: 250px; min-width: 250px; height: 45px; }
 
 .message-bubble.has-image { padding: 5px; background-color: transparent; box-shadow: none; max-width: 260px; }
 .time-overlay { position: absolute; bottom: 5px; right: 8px; background-color: rgba(0, 0, 0, 0.4); color: white !important; padding: 1px 6px; border-radius: 10px; font-size: 0.7rem; display: inline-flex; align-items: center; gap: 4px; }
@@ -156,44 +138,15 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .image-modal-backdrop.visible .image-modal-content { transform: scale(1); }
 .image-modal-content img { max-width: 90vw; max-height: 85vh; border-radius: var(--border-radius-md); }
 .image-modal-close { position: absolute; top: -15px; right: -15px; width: 35px; height: 35px; background-color: white; color: black; border-radius: 50%; border: none; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-
+.document-link { display: flex; align-items: center; gap: 10px; color: var(--color-text); padding: 8px; text-decoration: none; }
+.document-icon { font-size: 1.8rem; color: var(--color-primary); }
+.document-text { font-weight: 600; }
 .reaction-popover-container { position: relative; }
-.reaction-popover {
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%) translateY(-8px);
-    background-color: white;
-    border-radius: 20px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    display: flex;
-    padding: 4px;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.2s ease;
-    z-index: 20;
-}
-.message-bubble.sent .reaction-popover {
-    left: auto;
-    right: 0;
-    transform: translateY(-8px);
-}
-.reaction-popover-container:hover .reaction-popover {
-    opacity: 1;
-    visibility: visible;
-    transform: translateX(-50%) translateY(-4px);
-}
-.reaction-emoji-btn {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1.2rem;
-    padding: 6px;
-    transition: transform 0.1s ease;
-}
-.reaction-emoji-btn:hover {
-    transform: scale(1.3);
-}
+.reaction-popover { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-8px); background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; padding: 4px; opacity: 0; visibility: hidden; transition: all 0.2s ease; z-index: 20; }
+.message-bubble.sent .reaction-popover { left: auto; right: 0; transform: translateY(-8px); }
+.reaction-popover-container:hover .reaction-popover { opacity: 1; visibility: visible; transform: translateX(-50%) translateY(-4px); }
+.reaction-emoji-btn { background: none; border: none; cursor: pointer; font-size: 1.2rem; padding: 6px; transition: transform 0.1s ease; }
+.reaction-emoji-btn:hover { transform: scale(1.3); }
 
 .filter-btn { background-color: #e2e8f0; color: #4a5568; font-weight: 600; padding: 5px 10px; border-radius: 9999px; font-size: 0.75rem; transition: all 0.2s ease; }
 .filter-btn.active { background-color: var(--color-primary); color: white; }
