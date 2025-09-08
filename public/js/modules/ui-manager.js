@@ -816,3 +816,12 @@ function closeNewOrderModal() {
 }
 // --- END: New Order Modal ---
 
+// --- START: Conversation Preview Modal ---
+function closeConversationPreviewModal() {
+    const modalContainer = document.getElementById('conversation-preview-modal-container');
+    if (modalContainer) {
+        modalContainer.innerHTML = '';
+    }
+    document.body.classList.remove('modal-open');
+}
+// --- END: Conversation Preview Modal ---
