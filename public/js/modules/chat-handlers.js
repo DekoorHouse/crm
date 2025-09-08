@@ -13,9 +13,14 @@ function debounceSearch(query) {
 
 // Nuevo manejador para el input de búsqueda que llama al debounce
 function handleSearchInput(event) {
-    const searchTerm = event.target.value.trim();
-    debounceSearch(searchTerm);
+    const searchTerm = event.target.value;
+    const clearButton = document.getElementById('clear-search-btn');
+    if (clearButton) {
+        clearButton.classList.toggle('hidden', searchTerm.length === 0);
+    }
+    debounceSearch(searchTerm.trim());
 }
+
 
 // CORREGIDO: Ahora también se encarga de ocultar el mensaje de "Cargando..."
 function handleSearchContacts() {
@@ -27,12 +32,10 @@ function handleSearchContacts() {
         contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
     }
 
-    // --- INICIO DE LA CORRECCIÓN ---
     // Ocultar el mensaje de "Cargando..." después de que la lista de contactos ha sido renderizada.
     if (contactsLoadingEl) {
         contactsLoadingEl.style.display = 'none';
     }
-    // --- FIN DE LA CORRECCIÓN ---
 }
 
 // Nueva función que configura el scroll infinito y el drag & drop
@@ -52,6 +55,25 @@ function setupChatListEventListeners() {
     // La lógica de Drag & Drop para archivos se mantiene
     const chatArea = document.getElementById('chat-panel');
     const overlay = document.getElementById('drag-drop-overlay');
+    
+    // --- INICIO DE LA SOLUCIÓN ---
+    const searchInput = document.getElementById('search-contacts-input');
+    const clearSearchBtn = document.getElementById('clear-search-btn');
+
+    if (searchInput && clearSearchBtn) {
+        searchInput.addEventListener('input', handleSearchInput);
+        clearSearchBtn.addEventListener('click', () => {
+            searchInput.value = '';
+            // Disparamos el evento 'input' para que la lógica de búsqueda se actualice
+            searchInput.dispatchEvent(new Event('input')); 
+            searchInput.focus();
+        });
+
+        // Mostrar/ocultar el botón al inicio
+        clearSearchBtn.classList.toggle('hidden', searchInput.value.length === 0);
+    }
+    // --- FIN DE LA SOLUCIÓN ---
+
     if (!chatArea || !overlay) return;
     const showOverlay = () => overlay.classList.remove('hidden');
     const hideOverlay = () => overlay.classList.add('hidden');
@@ -108,16 +130,12 @@ async function handleSelectContact(contactId) {
                 snapshot.docChanges().forEach((change) => {
                     if (change.type === "added") {
                         const newMessage = { docId: change.doc.id, ...change.doc.data() };
-                        // 1. Revisar si un mensaje pendiente con este ID ya existe
                         const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
 
                         if (existingIndex > -1) {
-                            // Si existe, es nuestro mensaje optimista. Reemplazarlo con el real de Firestore.
                             state.messages[existingIndex] = newMessage;
-                            // Volver a renderizar la lista para actualizar el ícono de estado de pendiente a enviado.
                             if (state.activeTab === 'chat') renderMessages(); 
                         } else {
-                            // Si no existe, es un nuevo mensaje entrante del contacto. Añadirlo.
                             state.messages.push(newMessage);
                             if (state.activeTab === 'chat') appendMessage(newMessage);
                         }
@@ -162,7 +180,7 @@ async function handleSendMessage(event) {
     const tempId = `temp_${Date.now()}`;
     const pendingMessage = {
         docId: tempId,
-        from: 'me', // Un identificador para nosotros
+        from: 'me',
         status: 'pending',
         timestamp: { seconds: Math.floor(Date.now() / 1000) },
         text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
@@ -184,7 +202,6 @@ async function handleSendMessage(event) {
             }
         } else {
             await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
-            // 2. Pasar el ID temporal al backend
             const messageData = { text, tempId };
             if (remoteFileToSend) {
                 messageData.fileUrl = remoteFileToSend.url;
@@ -207,7 +224,6 @@ async function handleSendMessage(event) {
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
         showError(error.message);
-        // Si falla el envío, eliminamos el mensaje pendiente
         state.messages = state.messages.filter(m => m.docId !== tempId);
         renderMessages();
         if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
@@ -324,8 +340,6 @@ function setFilter(filter) {
     state.activeFilter = filter; 
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
     document.getElementById(`filter-${filter}`).classList.add('active'); 
-    // La búsqueda/filtrado ahora se maneja en el servidor, aquí solo actualizamos la UI del filtro.
-    // Podríamos añadir una llamada a la API aquí si los filtros fuesen por servidor también.
 }
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
@@ -451,7 +465,6 @@ function renderAllPickers() {
 
     if (state.templatePickerOpen) renderTemplatePicker();
     if (state.emojiPickerOpen) renderEmojiPicker();
-    // renderQuickReplyPicker es llamado desde handleQuickReplyInput con un término de búsqueda
 }
 
 function renderQuickReplyPicker(searchTerm = '') {
@@ -511,7 +524,6 @@ function renderEmojiPicker() {
     picker.innerHTML = pickerHTML;
 }
 
-// Movido desde feature-handlers.js y corregido
 async function handleSendTemplate(templateObject) {
     if (!state.selectedContactId) return;
 
@@ -531,10 +543,11 @@ async function handleSendTemplate(templateObject) {
             throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
         }
         
-        toggleTemplatePicker(); // Esto ahora funcionará
+        toggleTemplatePicker();
     } catch (error) {
         console.error("Error al enviar la plantilla:", error);
         showError(error.message);
     }
 }
 // --- END: Picker Management ---
+
