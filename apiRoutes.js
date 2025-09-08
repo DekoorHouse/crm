@@ -473,6 +473,39 @@ router.delete('/contacts/:contactId/notes/:noteId', async (req, res) => {
 });
 
 
+// --- NUEVA RUTA PARA HISTORIAL DE PEDIDOS DE UN CONTACTO ---
+router.get('/contacts/:contactId/orders', async (req, res) => {
+    const { contactId } = req.params; // contactId es el número de teléfono
+    try {
+        const ordersSnapshot = await db.collection('pedidos')
+            .where('telefono', '==', contactId)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        if (ordersSnapshot.empty) {
+            return res.status(200).json({ success: true, orders: [] });
+        }
+
+        const orders = ordersSnapshot.docs.map(doc => {
+            const data = doc.data();
+            // Asegurarse de que el timestamp se pueda serializar
+            if (data.createdAt && typeof data.createdAt.toDate === 'function') {
+                data.createdAt = data.createdAt.toDate();
+            }
+            return {
+                id: doc.id,
+                ...data
+            };
+        });
+
+        res.status(200).json({ success: true, orders });
+    } catch (error) {
+        console.error(`Error fetching order history for ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener el historial de pedidos.' });
+    }
+});
+
+
 // --- RUTAS DE RESPUESTAS RÁPIDAS (QUICK REPLIES) ---
 router.post('/quick-replies', async (req, res) => {
     const { shortcut, message, fileUrl, fileType } = req.body;
@@ -985,3 +1018,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
