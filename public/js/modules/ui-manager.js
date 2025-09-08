@@ -741,33 +741,35 @@ async function openContactDetails() {
     if (ordersListEl) {
         ordersListEl.innerHTML = `<div class="order-history-item loading"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</div>`;
         
-        try {
-            const orders = await fetchContactOrders(contact.id);
-            
-            if (orders && orders.length > 0) {
-                ordersListEl.innerHTML = orders.map(order => {
-                    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
-                        day: '2-digit', month: 'short'
-                    }) : '';
-                    
-                    const estatus = order.estatus || 'Sin estatus';
-                    const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
+        // --- INICIO DE LA CORRECCIÓN: Usar el listener en tiempo real ---
+        // Se reemplaza la llamada a fetchContactOrders por listenForContactOrders.
+        // La función de callback se ejecutará cada vez que haya un cambio en los pedidos.
+        listenForContactOrders(contact.id, (orders) => {
+            if (ordersListEl.closest('.open')) { // Asegurarse que el panel sigue abierto
+                if (orders && orders.length > 0) {
+                    ordersListEl.innerHTML = orders.map(order => {
+                        const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
+                            day: '2-digit', month: 'short'
+                        }) : '';
+                        
+                        const estatus = order.estatus || 'Sin estatus';
+                        const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
 
-                    return `
-                        <div class="order-history-item">
-                            <span class="order-number">DH${order.consecutiveOrderNumber}</span>
-                            <span class="order-product" title="${order.producto}">${order.producto}</span>
-                            <span class="order-history-status ${statusClassName}">${estatus}</span>
-                            <span class="order-date">${orderDate}</span>
-                        </div>
-                    `;
-                }).join('');
-            } else {
-                ordersListEl.innerHTML = `<div class="order-history-item empty">No hay pedidos anteriores.</div>`;
+                        return `
+                            <div class="order-history-item">
+                                <span class="order-number">DH${order.consecutiveOrderNumber}</span>
+                                <span class="order-product" title="${order.producto}">${order.producto}</span>
+                                <span class="order-history-status ${statusClassName}">${estatus}</span>
+                                <span class="order-date">${orderDate}</span>
+                            </div>
+                        `;
+                    }).join('');
+                } else {
+                    ordersListEl.innerHTML = `<div class="order-history-item empty">No hay pedidos anteriores.</div>`;
+                }
             }
-        } catch (error) {
-            ordersListEl.innerHTML = `<div class="order-history-item empty">Error al cargar pedidos.</div>`;
-        }
+        });
+        // --- FIN DE LA CORRECCIÓN ---
     }
 }
 
@@ -778,6 +780,11 @@ function closeContactDetails() {
         contactDetailsPanelEl.innerHTML = ''; 
     }
     state.contactDetailsOpen = false; 
+    // Detener el listener de pedidos cuando se cierra el panel
+    if (unsubscribeOrdersListener) {
+        unsubscribeOrdersListener();
+        unsubscribeOrdersListener = null;
+    }
 }
 
 /**
@@ -814,7 +821,13 @@ function openNewOrderModal() {
     const modalContainer = document.getElementById('new-order-modal-container');
     if (!modalContainer) return;
 
-    modalContainer.innerHTML = NewOrderModalTemplate(contact.id);
+    modalContainer.innerHTML = NewOrderModalTemplate();
+    
+    // Set phone number from contact
+    const phoneInput = document.getElementById('order-phone');
+    if (phoneInput) {
+        phoneInput.value = contact.id;
+    }
     
     // Reset photo managers
     orderPhotosManager = [];
@@ -828,16 +841,37 @@ function openNewOrderModal() {
     if(productSelect && productOtherInput) {
         productSelect.addEventListener('change', () => {
             const isOther = productSelect.value === 'Otro';
-            productOtherInput.classList.toggle('hidden', !isOther);
+            productOtherInput.style.display = isOther ? 'block' : 'none';
             productOtherInput.required = isOther;
             if(isOther) productOtherInput.focus();
         });
     }
 
-    // The logic to handle photo previews and drag & drop will be added in feature-handlers.js
-    // For now, we just ensure the modal opens.
-    // Example placeholder calls:
-    // setupPhotoHandlingForNewOrder(); 
+    const orderPhotoContainer = document.getElementById('order-file-input-container-product');
+    const orderPhotoInput = document.getElementById('order-photo-file');
+    const orderPreviewContainer = document.getElementById('order-photos-preview-container');
+    setupPhotoManager(orderPhotoContainer, orderPhotoInput, orderPreviewContainer, orderPhotosManager, 'order');
+    
+    const promoPhotoContainer = document.getElementById('order-file-input-container-promo');
+    const promoPhotoInput = document.getElementById('order-promo-photo-file');
+    const promoPreviewContainer = document.getElementById('order-promo-photos-preview-container');
+    setupPhotoManager(promoPhotoContainer, promoPhotoInput, promoPreviewContainer, promoPhotosManager, 'promo');
+
+    const samePhotoCheckbox = document.getElementById('order-same-photo-checkbox');
+    const samePhotoContainer = document.getElementById('order-same-photo-container');
+
+    if(samePhotoCheckbox && samePhotoContainer) {
+        samePhotoCheckbox.addEventListener('change', (e) => {
+            if (e.target.checked) {
+                promoPhotosManager = [...orderPhotosManager];
+                renderPhotoPreviews(promoPreviewContainer, promoPhotosManager, 'promo');
+                promoPhotoContainer.classList.add('hidden');
+            } else {
+                promoPhotoContainer.classList.remove('hidden');
+            }
+        });
+    }
+
 }
 
 function closeNewOrderModal() {
