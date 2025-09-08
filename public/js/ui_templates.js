@@ -727,14 +727,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
                     <p class="text-gray-500">+${contact.id}</p>
                 </div>
                 <div class="space-y-4 text-sm">
-                    <div>
-                        <p class="font-semibold text-gray-400">Correo Electrónico</p>
-                        <p>${contact.email || 'No especificado'}</p>
-                    </div>
-                    <div>
-                        <p class="font-semibold text-gray-400">Apodo</p>
-                        <p>${contact.nickname || 'No especificado'}</p>
-                    </div>
+                    <!-- SECCIÓN ELIMINADA -->
                 </div>
 
                 <!-- --- NUEVA SECCIÓN PARA EL HISTORIAL DE PEDIDOS --- -->
