@@ -287,3 +287,20 @@ async function fetchGoogleSheetSettings() {
         showError("No se pudo cargar la configuración de Google Sheet.");
     }
 }
+
+
+async function fetchContactOrders(contactId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/orders`);
+        if (!response.ok) {
+            throw new Error('Error al cargar el historial de pedidos.');
+        }
+        const data = await response.json();
+        return data.orders || [];
+    } catch (error) {
+        console.error(error);
+        showError(error.message);
+        return [];
+    }
+}
+
