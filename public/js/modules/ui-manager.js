@@ -6,8 +6,7 @@ let ticking = false; // For scroll event throttling
 let tagsSortable = null;
 
 // --- Navigation & Main View Rendering ---
-function navigateTo(viewName, force = false) { // AÑADIDO: Parámetro 'force'
-    // AÑADIDO: La comprobación ahora respeta el parámetro 'force'.
+function navigateTo(viewName, force = false) {
     if (state.activeView === viewName && !force) {
         return;
     }
@@ -38,8 +37,6 @@ function navigateTo(viewName, force = false) { // AÑADIDO: Parámetro 'force'
             renderChatWindow();
             renderTagFilters(); 
             setupChatListEventListeners();
-            // AÑADIDO: Vuelve a dibujar la lista de contactos usando los datos del estado actual.
-            // Esta es la corrección para el problema de navegación.
             handleSearchContacts();
             break;
         case 'pipeline':
@@ -144,7 +141,6 @@ function renderChatWindow() {
     const contact = state.contacts.find(c => c.id === state.selectedContactId); 
     chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
 
-    // AÑADIDO: Conectar el manejador de búsqueda con debounce al input
     const searchInput = document.getElementById('search-contacts-input');
     if (searchInput) {
         searchInput.addEventListener('input', handleSearchInput);
@@ -703,14 +699,18 @@ function handleScroll() {
 function showError(message) { 
     const errorMessageEl = document.getElementById('error-message');
     const errorContainerEl = document.getElementById('error-container');
-    errorMessageEl.textContent = message; 
-    errorContainerEl.classList.remove('hidden'); 
-    setTimeout(() => hideError(), 5000); 
+    if(errorMessageEl && errorContainerEl) {
+        errorMessageEl.textContent = message; 
+        errorContainerEl.classList.remove('hidden'); 
+        setTimeout(() => hideError(), 5000); 
+    }
 }
 
 function hideError() { 
     const errorContainerEl = document.getElementById('error-container');
-    errorContainerEl.classList.add('hidden'); 
+    if(errorContainerEl) {
+        errorContainerEl.classList.add('hidden'); 
+    }
 }
 
 function openImageModal(imageUrl) { 
@@ -747,13 +747,17 @@ async function openContactDetails() {
             if (orders && orders.length > 0) {
                 ordersListEl.innerHTML = orders.map(order => {
                     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
-                        day: '2-digit', month: 'short', year: 'numeric'
-                    }) : 'Fecha no disp.';
+                        day: '2-digit', month: 'short'
+                    }) : '';
                     
+                    const estatus = order.estatus || 'Sin estatus';
+                    const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
+
                     return `
                         <div class="order-history-item">
                             <span class="order-number">DH${order.consecutiveOrderNumber}</span>
-                            <span class="order-product">${order.producto}</span>
+                            <span class="order-product" title="${order.producto}">${order.producto}</span>
+                            <span class="order-history-status ${statusClassName}">${estatus}</span>
                             <span class="order-date">${orderDate}</span>
                         </div>
                     `;
