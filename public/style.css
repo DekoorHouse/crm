@@ -565,6 +565,7 @@ label.disabled-icon {
     background-color: #f7f9fc;
     border-radius: var(--border-radius-md);
     font-size: 0.85rem;
+    gap: 8px;
 }
 .order-history-item.loading, .order-history-item.empty {
     justify-content: center;
@@ -578,7 +579,7 @@ label.disabled-icon {
 .order-history-item .order-product {
     color: var(--color-text);
     flex-grow: 1;
-    margin: 0 12px;
+    margin: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -586,6 +587,28 @@ label.disabled-icon {
 .order-history-item .order-date {
     font-size: 0.8rem;
     color: var(--color-text-light);
+    flex-shrink: 0;
 }
+
+.order-history-status {
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-align: center;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+.order-history-item .status-pagado { background-color: #d4edda; color: #155724; }
+.order-history-item .status-foto-enviada { background-color: #cce5ff; color: #004085; }
+.order-history-item .status-cancelado { background-color: #f8d7da; color: #721c24; }
+.order-history-item .status-esperando-pago { background-color: #fff3cd; color: #856404; }
+.order-history-item .status-corregir { background-color: #ffecb3; color: #664d03; }
+.order-history-item .status-corregido { background-color: #d1e7dd; color: #0f5132; }
+.order-history-item .status-mns-amenazador { background-color: #f5c6cb; color: #721c24; }
+.order-history-item .status-fabricar { background-color: #d1ecf1; color: #0c5460; }
+.order-history-item .status-diseñado { background-color: #e2d9f3; color: #4b0082; }
+.order-history-item .status-sin-estatus { background-color: #e9ecef; color: #495057; }
+.order-history-item .status-default { background-color: #f0f0f0; color: var(--color-text-light); }
 /* --- END: Order History Styles --- */
 
