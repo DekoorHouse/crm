@@ -199,7 +199,17 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .template-item .template-category { font-size: 0.75rem; background-color: var(--color-subtle-bg); color: var(--color-subtle-text); padding: 2px 6px; border-radius: 9999px; text-transform: uppercase; font-weight: 600; }
 
 .modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
-.modal-content { background-color: white; padding: 25px; border-radius: var(--border-radius-lg); box-shadow: 0 5px 20px rgba(0,0,0,0.2); width: 90%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+.modal-content {
+    background-color: white;
+    padding: 25px;
+    border-radius: var(--border-radius-lg);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    position: relative; /* <-- FIX: Added this line */
+}
 .modal-content h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; }
 .modal-content label { display: block; font-weight: 600; margin-bottom: 8px; }
 .media-preview { margin-top: 10px; max-height: 100px; border-radius: var(--border-radius-md); }
@@ -611,4 +621,3 @@ label.disabled-icon {
 .order-history-item .status-sin-estatus { background-color: #e9ecef; color: #495057; }
 .order-history-item .status-default { background-color: #f0f0f0; color: var(--color-text-light); }
 /* --- END: Order History Styles --- */
-
