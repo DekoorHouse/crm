@@ -137,6 +137,38 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 });
 
+// --- RUTA CORREGIDA PARA HISTORIAL DE PEDIDOS ---
+router.get('/contacts/:contactId/orders', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+        const ordersRef = db.collection('pedidos');
+        // Usamos el contactId, que es el número de teléfono, para buscar en la colección de pedidos
+        const q = query(ordersRef, where('telefono', '==', contactId), orderBy('createdAt', 'desc'));
+        
+        const snapshot = await q.get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, orders: [] });
+        }
+
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                // Convierte el timestamp de Firestore a un formato más amigable para JS
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+            };
+        });
+
+        res.status(200).json({ success: true, orders });
+    } catch (error) {
+        console.error(`Error al obtener el historial de pedidos para ${req.params.contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener el historial de pedidos.' });
+    }
+});
+
 
 // --- RUTAS DE MENSAJES Y PLANTILLAS ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
@@ -470,39 +502,6 @@ router.delete('/contacts/:contactId/notes/:noteId', async (req, res) => {
         await db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId).delete();
         res.status(200).json({ success: true, message: 'Nota eliminada.' });
     } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la nota.' }); }
-});
-
-
-// --- NUEVA RUTA PARA HISTORIAL DE PEDIDOS DE UN CONTACTO ---
-router.get('/contacts/:contactId/orders', async (req, res) => {
-    const { contactId } = req.params; // contactId es el número de teléfono
-    try {
-        const ordersSnapshot = await db.collection('pedidos')
-            .where('telefono', '==', contactId)
-            .orderBy('createdAt', 'desc')
-            .get();
-
-        if (ordersSnapshot.empty) {
-            return res.status(200).json({ success: true, orders: [] });
-        }
-
-        const orders = ordersSnapshot.docs.map(doc => {
-            const data = doc.data();
-            // Asegurarse de que el timestamp se pueda serializar
-            if (data.createdAt && typeof data.createdAt.toDate === 'function') {
-                data.createdAt = data.createdAt.toDate();
-            }
-            return {
-                id: doc.id,
-                ...data
-            };
-        });
-
-        res.status(200).json({ success: true, orders });
-    } catch (error) {
-        console.error(`Error fetching order history for ${contactId}:`, error);
-        res.status(500).json({ success: false, message: 'Error del servidor al obtener el historial de pedidos.' });
-    }
 });
 
 
