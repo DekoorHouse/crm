@@ -2,16 +2,25 @@
 // Este archivo maneja toda la comunicación con Firebase (listeners en tiempo real)
 // y con el backend (peticiones fetch a la API).
 
-// --- Helper function to convert Firestore timestamp from API ---
+// --- INICIO DE LA CORRECCIÓN: Función robusta para procesar timestamps ---
 function processContacts(contacts) {
     return contacts.map(contact => {
-        // Correctly convert from Firestore's serialized format to a JS Date object
-        if (contact.lastMessageTimestamp && typeof contact.lastMessageTimestamp === 'object' && contact.lastMessageTimestamp._seconds) {
-            contact.lastMessageTimestamp = new Date(contact.lastMessageTimestamp._seconds * 1000);
+        const ts = contact.lastMessageTimestamp;
+        if (ts) {
+            // Caso 1: Maneja el Timestamp en tiempo real de Firestore (tiene el método toDate)
+            if (typeof ts.toDate === 'function') {
+                contact.lastMessageTimestamp = ts.toDate();
+            } 
+            // Caso 2: Maneja el timestamp serializado que viene de la API
+            else if (typeof ts === 'object' && ts._seconds) {
+                contact.lastMessageTimestamp = new Date(ts._seconds * 1000);
+            }
+            // Si ya es un objeto Date de JS, no hace nada.
         }
         return contact;
     });
 }
+// --- FIN DE LA CORRECCIÓN ---
 
 
 // --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
@@ -101,21 +110,16 @@ async function searchContactsAPI(query) {
     }
 }
 
-// --- INICIO DE LA SOLUCIÓN: LISTENER PARA ACTUALIZACIONES EN TIEMPO REAL ---
-/**
- * Escucha los cambios recientes en los contactos (nuevos mensajes)
- * que ocurren después de la carga inicial de la aplicación.
- */
+// --- LISTENER PARA ACTUALIZACIONES EN TIEMPO REAL ---
 function listenForContactUpdates() {
     if (unsubscribeContactUpdatesListener) unsubscribeContactUpdatesListener();
 
-    // Solo escucha cambios que ocurrieron DESPUÉS de que la app se cargó
     const q = db.collection('contacts_whatsapp')
         .where('lastMessageTimestamp', '>', state.appLoadTimestamp);
 
     unsubscribeContactUpdatesListener = q.onSnapshot(snapshot => {
         if (snapshot.empty) {
-            return; // No hay cambios nuevos
+            return;
         }
 
         console.log(`[Real-time] Se detectaron ${snapshot.docChanges().length} cambios en los contactos.`);
@@ -125,18 +129,14 @@ function listenForContactUpdates() {
             const existingContactIndex = state.contacts.findIndex(c => c.id === updatedContactData.id);
 
             if (existingContactIndex > -1) {
-                // Si el contacto ya está en la lista local, lo actualizamos
                 state.contacts[existingContactIndex] = updatedContactData;
             } else {
-                // Si es un contacto que no estaba en la lista (raro, pero posible), lo añadimos
                 state.contacts.unshift(updatedContactData);
             }
         });
 
-        // Reordenamos toda la lista para asegurar que el más reciente esté arriba
         state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
 
-        // Volvemos a renderizar la lista de contactos con los datos actualizados y reordenados
         handleSearchContacts();
 
     }, error => {
@@ -144,7 +144,6 @@ function listenForContactUpdates() {
         showError("Se perdió la conexión en tiempo real. Recarga la página.");
     });
 }
-// --- FIN DE LA SOLUCIÓN ---
 
 
 // --- LISTENERS EN TIEMPO REAL (PARA DATOS MÁS PEQUEÑOS) ---
