@@ -101,19 +101,42 @@ router.get('/contacts/search', async (req, res) => {
     try {
         const searchResults = [];
         const lowercaseQuery = query.toLowerCase();
+
+        // --- INICIO DE MODIFICACIÓN: Búsqueda por número de pedido ---
+        if (lowercaseQuery.startsWith('dh') && /dh\d+/.test(lowercaseQuery)) {
+            const orderNumber = parseInt(lowercaseQuery.replace('dh', ''), 10);
+            if (!isNaN(orderNumber)) {
+                const orderSnapshot = await db.collection('pedidos').where('consecutiveOrderNumber', '==', orderNumber).limit(1).get();
+                if (!orderSnapshot.empty) {
+                    const orderData = orderSnapshot.docs[0].data();
+                    const contactId = orderData.telefono;
+                    if (contactId) {
+                        const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+                        if (contactDoc.exists && !searchResults.some(c => c.id === contactDoc.id)) {
+                            searchResults.push({ id: contactDoc.id, ...contactDoc.data() });
+                        }
+                    }
+                }
+            }
+        }
+        // --- FIN DE MODIFICACIÓN ---
+
         const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
-        if (phoneDoc.exists) {
+        if (phoneDoc.exists && !searchResults.some(c => c.id === phoneDoc.id)) {
             searchResults.push({ id: phoneDoc.id, ...phoneDoc.data() });
         }
         const nameSnapshot = await db.collection('contacts_whatsapp').where('name_lowercase', '>=', lowercaseQuery).where('name_lowercase', '<=', lowercaseQuery + '\uf8ff').limit(20).get();
         nameSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
+        
         const partialPhoneSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', query).where(admin.firestore.FieldPath.documentId(), '<=', query + '\uf8ff').limit(20).get();
         partialPhoneSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
+        
         if (/^\d+$/.test(query) && query.length >= 3) {
             const prefixedQuery = "521" + query;
             const prefixedSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', prefixedQuery).where(admin.firestore.FieldPath.documentId(), '<=', prefixedQuery + '\uf8ff').limit(20).get();
             prefixedSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
         }
+        
         searchResults.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
         res.status(200).json({ success: true, contacts: searchResults });
     } catch (error) {
@@ -352,6 +375,21 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
 });
 
 // --- RUTAS DE PEDIDOS ---
+router.get('/orders/:orderId', async (req, res) => {
+    try {
+        const { orderId } = req.params;
+        const docRef = db.collection('pedidos').doc(orderId);
+        const doc = await docRef.get();
+        if (!doc.exists) {
+            return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        }
+        res.status(200).json({ success: true, order: { id: doc.id, ...doc.data() } });
+    } catch (error) {
+        console.error('Error fetching single order:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor.' });
+    }
+});
+
 router.post('/orders', async (req, res) => {
     const { 
         contactId,
@@ -1019,5 +1057,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
-
