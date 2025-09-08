@@ -607,8 +607,16 @@ async function loadMorePreviewMessages() {
         if (spinner) spinner.style.display = 'none';
 
         if (data.messages.length > 0) {
-            // CORRECCIÓN: La API devuelve [nuevo..viejo], lo invertimos para tener [viejo..nuevo]
-            const chronologicalMessages = data.messages.reverse();
+            // CORRECCIÓN: Convertir timestamps de la API al formato que espera la plantilla
+            const processedMessages = data.messages.map(msg => {
+                if (msg.timestamp && typeof msg.timestamp._seconds === 'number') {
+                    return { ...msg, timestamp: { seconds: msg.timestamp._seconds, nanoseconds: msg.timestamp._nanoseconds } };
+                }
+                return msg;
+            });
+
+            // La API devuelve [nuevo..viejo], lo invertimos para tener [viejo..nuevo]
+            const chronologicalMessages = processedMessages.reverse();
 
             // El `state.selectedContactId` se usa globalmente en MessageBubbleTemplate, 
             // así que lo seteamos temporalmente para que renderice correctamente
@@ -676,4 +684,5 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
 
