@@ -547,3 +547,120 @@ async function handleSendTemplate(templateObject) {
 }
 // --- END: Picker Management ---
 
+// --- START: Conversation Preview Logic ---
+
+// Estado local para el modal de previsualización
+let previewState = {
+    contactId: null,
+    messages: [],
+    lastMessageTimestamp: null,
+    hasMore: true,
+    isLoading: false
+};
+
+async function openConversationPreview(event, contactId) {
+    event.stopPropagation(); // Evita que se seleccione el chat al hacer clic en el ojo
+
+    const contact = state.contacts.find(c => c.id === contactId);
+    if (!contact) return;
+
+    // Resetear el estado de la previsualización
+    previewState = {
+        contactId: contactId,
+        messages: [],
+        lastMessageTimestamp: null,
+        hasMore: true,
+        isLoading: false
+    };
+
+    const modalContainer = document.getElementById('conversation-preview-modal-container');
+    modalContainer.innerHTML = ConversationPreviewModalTemplate(contact);
+    document.body.classList.add('modal-open');
+
+    const messagesContainer = document.getElementById('preview-messages-container');
+    messagesContainer.addEventListener('scroll', handlePreviewScroll);
+
+    await loadMorePreviewMessages();
+}
+
+async function loadMorePreviewMessages() {
+    if (previewState.isLoading || !previewState.hasMore) return;
+
+    previewState.isLoading = true;
+
+    const spinner = document.getElementById('preview-loading-spinner');
+    if (spinner) spinner.style.display = 'flex';
+    
+    try {
+        // La URL del endpoint que crearemos más adelante
+        let url = `${API_BASE_URL}/api/contacts/${previewState.contactId}/messages-paginated?limit=30`;
+        if (previewState.lastMessageTimestamp) {
+            // Pide mensajes *anteriores* al último que ya tenemos
+            url += `&before=${previewState.lastMessageTimestamp}`;
+        }
+        
+        const response = await fetch(url);
+        if (!response.ok) throw new Error('No se pudieron cargar los mensajes.');
+        
+        const data = await response.json();
+
+        if (spinner) spinner.style.display = 'none';
+
+        if (data.messages.length > 0) {
+            // El `state.selectedContactId` se usa globalmente en MessageBubbleTemplate, 
+            // así que lo seteamos temporalmente para que renderice correctamente
+            const originalSelectedId = state.selectedContactId;
+            state.selectedContactId = previewState.contactId;
+
+            const newMessagesHtml = data.messages.map(MessageBubbleTemplate).join('');
+            
+            state.selectedContactId = originalSelectedId; // Lo restauramos
+
+            const contentDiv = document.getElementById('preview-messages-content');
+            const container = document.getElementById('preview-messages-container');
+            const isFirstLoad = previewState.messages.length === 0;
+            
+            // Guardamos la altura del scroll antes de añadir contenido nuevo
+            const oldScrollHeight = container.scrollHeight;
+            
+            contentDiv.insertAdjacentHTML('afterbegin', newMessagesHtml);
+            previewState.messages.unshift(...data.messages);
+            
+            const lastMsg = data.messages[data.messages.length - 1];
+            previewState.lastMessageTimestamp = lastMsg.timestamp.seconds;
+
+            if (isFirstLoad) {
+                // Si es la primera carga, hacemos scroll hasta el final
+                container.scrollTop = container.scrollHeight;
+            } else {
+                // Si no, mantenemos la posición del scroll
+                container.scrollTop = container.scrollHeight - oldScrollHeight;
+            }
+        }
+
+        if (data.messages.length < 30) {
+            previewState.hasMore = false;
+            // Opcional: mostrar un mensaje de "Fin de la conversación"
+        }
+
+    } catch (error) {
+        console.error("Error cargando mensajes de previsualización:", error);
+        const contentDiv = document.getElementById('preview-messages-content');
+        if (contentDiv && previewState.messages.length === 0) {
+            if(spinner) spinner.style.display = 'none';
+            contentDiv.innerHTML = `<p class="p-4 text-red-500 text-center">${error.message}</p>`;
+        }
+    } finally {
+        previewState.isLoading = false;
+    }
+}
+
+
+function handlePreviewScroll() {
+    const container = document.getElementById('preview-messages-container');
+    // Cargar más cuando el usuario llega a la parte superior del scroll
+    if (container.scrollTop === 0 && previewState.hasMore && !previewState.isLoading) {
+        loadMorePreviewMessages();
+    }
+}
+// --- END: Conversation Preview Logic ---
