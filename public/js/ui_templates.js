@@ -378,11 +378,21 @@ const ContactItemTemplate = (contact, isSelected) => {
         timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
     }
 
+    // --- MODIFICACIÓN: Añadir el ícono del ojo ---
+    const previewIconHTML = `
+        <button onclick="openConversationPreview(event, '${contact.id}')" class="preview-icon" title="Previsualizar conversación">
+            <i class="fas fa-eye"></i>
+        </button>
+    `;
+
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
                 <h3 class="font-semibold text-sm text-gray-800 truncate">${contact.name || 'Desconocido'}</h3>
-                ${timeOrBadgeHTML}
+                <div class="flex items-center space-x-2 contact-meta">
+                    ${previewIconHTML}
+                    ${timeOrBadgeHTML}
+                </div>
             </div>
             <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
         </div>`;
@@ -951,3 +961,35 @@ const DifusionViewTemplate = () => `
     </div>
 `;
 
+
+// --- NUEVA PLANTILLA PARA EL MODAL DE PREVISUALIZACIÓN ---
+const ConversationPreviewModalTemplate = (contact) => {
+    if (!contact) return '';
+
+    return `
+    <div id="conversation-preview-modal" class="modal-backdrop" onclick="closeConversationPreview()">
+        <div class="modal-content !max-w-2xl !p-0" onclick="event.stopPropagation()">
+            <header class="chat-header p-3 shadow-sm flex items-center justify-between sticky top-0 bg-white z-10 rounded-t-lg">
+                <div class="flex items-center space-x-3">
+                    ${UserIcon(contact)}
+                    <div>
+                        <h2 class="text-base font-semibold text-gray-800">${contact.name}</h2>
+                        <p class="text-xs text-gray-500">+${contact.id}</p>
+                    </div>
+                </div>
+                <button onclick="closeConversationPreview()" class="text-gray-500 hover:text-gray-800 text-2xl w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100">
+                    <i class="fas fa-times"></i>
+                </button>
+            </header>
+            <main id="preview-messages-container" class="bg-gray-100 p-4 overflow-y-auto" style="height: 70vh;">
+                <div id="preview-messages-content">
+                    <div id="preview-loading-spinner" class="text-center p-8">
+                        <i class="fas fa-spinner fa-spin text-3xl text-gray-400"></i>
+                        <p class="mt-2 text-gray-500">Cargando conversación...</p>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+    `;
+};
