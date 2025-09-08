@@ -142,10 +142,8 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
         const { contactId } = req.params;
         
-        // CORRECCIÓN: Se usa la sintaxis del Admin SDK de Firebase
         const snapshot = await db.collection('pedidos')
                                  .where('telefono', '==', contactId)
-                                 .orderBy('createdAt', 'desc')
                                  .get();
 
         if (snapshot.empty) {
@@ -158,11 +156,13 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
                 id: doc.id,
                 consecutiveOrderNumber: data.consecutiveOrderNumber,
                 producto: data.producto,
-                // Convierte el timestamp de Firestore a un formato más amigable para JS
                 createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
                 estatus: data.estatus || 'Sin estatus'
             };
         });
+
+        // Sort orders in memory after fetching
+        orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         res.status(200).json({ success: true, orders });
     } catch (error) {
@@ -1019,4 +1019,5 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
 
