@@ -737,14 +737,14 @@ const ContactDetailsSidebarTemplate = (contact) => {
                     </div>
                 </div>
 
-                {/* --- NUEVA SECCIÓN PARA EL HISTORIAL DE PEDIDOS --- */}
+                <!-- --- NUEVA SECCIÓN PARA EL HISTORIAL DE PEDIDOS --- -->
                 <div id="order-history-container" class="mt-4 border-t pt-4">
                      <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Historial de Pedidos</h4>
                      <div id="contact-orders-list" class="space-y-2">
-                        {/* El contenido se cargará dinámicamente */}
+                        <!-- El contenido se cargará dinámicamente -->
                      </div>
                 </div>
-                {/* --- FIN DE LA NUEVA SECCIÓN --- */}
+                <!-- --- FIN DE LA NUEVA SECCIÓN --- -->
 
                 <div class="mt-6 border-t pt-6 space-y-2">
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
