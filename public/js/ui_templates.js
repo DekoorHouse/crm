@@ -756,8 +756,8 @@ const DateSeparatorTemplate = (dateString) => {
 
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-backdrop">
-        <div class="modal-content">
-            <button onclick="closeNewOrderModal()" class="modal-close-btn" title="Cerrar">&times;</button>
+        <div class="modal-content relative">
+            <button onclick="closeNewOrderModal()" class="absolute top-4 right-6 text-gray-400 hover:text-gray-600 text-3xl" title="Cerrar">&times;</button>
             <h2 class="!text-xl !font-bold !text-primary"><i class="fas fa-pencil-alt mr-2"></i> Registrar Nuevo Pedido</h2>
             <form id="new-order-form">
                  <div class="form-grid">
@@ -983,4 +983,3 @@ const ConversationPreviewModalTemplate = (contact) => `
         </div>
     </div>
 `;
-
