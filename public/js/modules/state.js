@@ -1,58 +1,38 @@
-// --- State Management ---
-// Este archivo define el objeto de estado global de la aplicación
-// y las variables para manejar las suscripciones en tiempo real.
+// ... existing code ...
+    });
+}
+// --- FIN DE LA CORRECCIÓN ---
 
-let state = {
-    contacts: [],
-    messages: [],
-    notes: [],
-    quickReplies: [],
-    adResponses: [],
-    aiAdPrompts: [],
-    templates: [],
-    tags: [],
-    knowledgeBase: [],
-    botSettings: { instructions: '' },
-    awayMessageSettings: { isActive: true },
-    globalBotSettings: { isActive: false },
-    googleSheetSettings: { googleSheetId: '' },
-    selectedContactId: null,
-    loadingMessages: false,
-    isUploading: false,
-    stagedFile: null,
-    stagedRemoteFile: null,
-    activeFilter: 'all',
-    activeTab: 'chat',
-    emojiPickerOpen: false,
-    quickReplyPickerOpen: false,
-    templatePickerOpen: false,
-    contactDetailsOpen: false,
-    isEditingNote: null,
-    replyingToMessage: null,
-    campaignMode: false,
-    selectedContactIdsForCampaign: [],
-    isTagSidebarOpen: false, // <-- CAMBIO: De 'true' a 'false'
-    activeView: 'chats',
-    appLoadTimestamp: null,
 
-    // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
-    pagination: {
-        lastVisibleId: null, // Guarda el ID del último contacto cargado
-        isLoadingMore: false, // Previene cargas múltiples simultáneas
-        hasMore: true // Indica si quedan más contactos por cargar
-    }
-};
+// --- NUEVO LISTENER PARA PEDIDOS EN TIEMPO REAL ---
+function listenForContactOrders(contactId, callback) {
+    if (unsubscribeOrdersListener) unsubscribeOrdersListener();
 
-// --- Listener Unsubscribers ---
-let unsubscribeMessagesListener = null,
-    unsubscribeContactUpdatesListener = null,
-    unsubscribeNotesListener = null,
-    unsubscribeQuickRepliesListener = null,
-    unsubscribeTagsListener = null,
-    unsubscribeAdResponsesListener = null,
-    unsubscribeKnowledgeBaseListener = null,
-    unsubscribeAIAdPromptsListener = null;
+    const q = db.collection('pedidos').where('telefono', '==', contactId);
 
-// --- Chart instances ---
-let dailyMessagesChart = null;
-let tagsDistributionChart = null;
+    unsubscribeOrdersListener = q.onSnapshot(snapshot => {
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+                estatus: data.estatus || 'Sin estatus'
+            };
+        });
+        orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        callback(orders);
+    }, error => {
+        console.error(`Error escuchando pedidos para ${contactId}:`, error);
+        showError("Error al actualizar el historial de pedidos en tiempo real.");
+        callback([]); // Enviar array vacío en caso de error
+    });
+}
+// --- FIN DEL NUEVO LISTENER ---
+
+
+// --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
+
+async function fetchInitialContacts() {
+// ... existing code ...
