@@ -480,3 +480,67 @@ label.disabled-icon {
 }
 /* --- END: STYLES FOR NEW ORDER MODAL --- */
 
+/* --- START: Conversation Preview Modal Styles --- */
+
+/* Estilo para el ícono del ojo en la lista de contactos */
+.contact-item .preview-icon {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-light);
+    padding: 4px;
+    border-radius: 50%;
+    opacity: 0; /* Oculto por defecto */
+    transition: opacity 0.2s ease-in-out, background-color 0.2s ease-in-out;
+    margin-right: 4px; /* Espacio entre el ojo y la hora */
+}
+
+.contact-item:hover .preview-icon {
+    opacity: 1; /* Visible al pasar el mouse sobre el item */
+}
+
+.contact-item .preview-icon:hover {
+    background-color: #e2e8f0; /* Un fondo sutil al pasar el mouse sobre el ícono */
+    color: var(--color-primary);
+}
+
+.contact-item .contact-meta {
+    min-width: 60px; /* Asegura espacio para que aparezca el ícono sin empujar la hora */
+    display: flex;
+    justify-content: flex-end;
+    align-items: center;
+}
+
+
+/* Estilos para el modal de previsualización */
+#conversation-preview-modal .modal-content {
+    display: flex;
+    flex-direction: column;
+    height: 85vh; /* Altura del modal */
+    max-height: 800px;
+}
+
+#preview-messages-container {
+    background-color: #e5ddd5; /* Fondo tipo WhatsApp */
+    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+}
+
+/* El spinner de carga dentro del modal */
+#preview-loading-spinner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+}
+
+/* Usamos las mismas burbujas de mensaje que el chat principal, pero dentro del contenedor del preview */
+#preview-messages-content .message-bubble {
+    max-width: 80%; /* Un poco más anchas en el modal */
+}
+
+#preview-messages-content .message-bubble .message-actions {
+    display: none; /* Ocultar acciones de responder/reaccionar en la previsualización */
+}
+
+/* --- END: Conversation Preview Modal Styles --- */
