@@ -1071,4 +1071,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
