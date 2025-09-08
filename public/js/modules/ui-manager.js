@@ -696,14 +696,22 @@ function handleScroll() {
 
 // --- UI Helpers & Modals ---
 
-function showError(message) { 
-    const errorMessageEl = document.getElementById('error-message');
-    const errorContainerEl = document.getElementById('error-container');
-    if(errorMessageEl && errorContainerEl) {
-        errorMessageEl.textContent = message; 
-        errorContainerEl.classList.remove('hidden'); 
-        setTimeout(() => hideError(), 5000); 
+function showError(message, type = 'error') { 
+    const container = document.getElementById('error-container');
+    const messageEl = document.getElementById('error-message');
+    if (!container || !messageEl) return;
+
+    container.classList.remove('bg-yellow-200', 'text-yellow-800', 'bg-green-200', 'text-green-800');
+    if (type === 'success') {
+        container.classList.add('bg-green-200', 'text-green-800');
+        messageEl.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+    } else {
+        container.classList.add('bg-yellow-200', 'text-yellow-800');
+        messageEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
     }
+    
+    container.classList.remove('hidden'); 
+    setTimeout(() => hideError(), 5000); 
 }
 
 function hideError() { 
@@ -742,28 +750,11 @@ async function openContactDetails() {
         ordersListEl.innerHTML = `<div class="order-history-item loading"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</div>`;
         
         // --- INICIO DE LA CORRECCIÓN: Usar el listener en tiempo real ---
-        // Se reemplaza la llamada a fetchContactOrders por listenForContactOrders.
-        // La función de callback se ejecutará cada vez que haya un cambio en los pedidos.
         listenForContactOrders(contact.id, (orders) => {
             if (ordersListEl.closest('.open')) { // Asegurarse que el panel sigue abierto
                 if (orders && orders.length > 0) {
-                    ordersListEl.innerHTML = orders.map(order => {
-                        const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
-                            day: '2-digit', month: 'short'
-                        }) : '';
-                        
-                        const estatus = order.estatus || 'Sin estatus';
-                        const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
-
-                        return `
-                            <div class="order-history-item">
-                                <span class="order-number">DH${order.consecutiveOrderNumber}</span>
-                                <span class="order-product" title="${order.producto}">${order.producto}</span>
-                                <span class="order-history-status ${statusClassName}">${estatus}</span>
-                                <span class="order-date">${orderDate}</span>
-                            </div>
-                        `;
-                    }).join('');
+                    // --- MODIFICACIÓN: Usar la nueva plantilla para cada item ---
+                    ordersListEl.innerHTML = orders.map(OrderHistoryItemTemplate).join('');
                 } else {
                     ordersListEl.innerHTML = `<div class="order-history-item empty">No hay pedidos anteriores.</div>`;
                 }
@@ -894,4 +885,68 @@ function closeConversationPreviewModal() {
     document.body.classList.remove('modal-open');
 }
 // --- END: Conversation Preview Modal ---
+
+// --- INICIO DE MODIFICACIÓN: Funciones para el modal de detalles de pedido ---
+
+/**
+ * Abre el modal con los detalles de un pedido específico.
+ * @param {string} orderId - El ID del documento del pedido a mostrar.
+ */
+async function openOrderDetailsModal(orderId) {
+    const modalContainer = document.getElementById('order-details-modal-container');
+    if (!modalContainer) return;
+
+    // Mostrar un estado de carga
+    modalContainer.innerHTML = `<div class="modal-backdrop flex items-center justify-center"><i class="fas fa-spinner fa-spin text-4xl text-white"></i></div>`;
+
+    try {
+        const orderData = await fetchSingleOrder(orderId);
+        modalContainer.innerHTML = OrderDetailsModalTemplate(orderData);
+    } catch (error) {
+        console.error("Error al abrir detalles del pedido:", error);
+        showError("No se pudieron cargar los detalles del pedido.");
+        modalContainer.innerHTML = ''; // Limpiar en caso de error
+    }
+}
+
+/**
+ * Cierra el modal de detalles del pedido.
+ */
+function closeOrderDetailsModal() {
+    const modalContainer = document.getElementById('order-details-modal-container');
+    if (modalContainer) {
+        modalContainer.innerHTML = '';
+    }
+}
+
+/**
+ * Guarda los cambios realizados en el modal de detalles del pedido.
+ * @param {string} orderId - El ID del documento del pedido a actualizar.
+ */
+async function handleSaveChangesOnOrderDetails(orderId) {
+    const statusSelect = document.getElementById('modal-order-status');
+    if (!statusSelect) return;
+
+    const newStatus = statusSelect.value;
+    const saveButton = document.querySelector('#order-details-modal button.btn-primary');
+    const originalButtonText = saveButton.innerHTML;
+
+    saveButton.disabled = true;
+    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+
+    try {
+        const orderRef = db.collection('pedidos').doc(orderId);
+        await orderRef.update({ estatus: newStatus });
+
+        showError('Estatus actualizado con éxito.', 'success');
+        closeOrderDetailsModal();
+    } catch (error) {
+        console.error("Error al guardar cambios del pedido:", error);
+        showError("No se pudieron guardar los cambios.");
+        saveButton.disabled = false;
+        saveButton.innerHTML = originalButtonText;
+    }
+}
+
+// --- FIN DE MODIFICACIÓN ---
 
