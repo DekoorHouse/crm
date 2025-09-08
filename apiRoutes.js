@@ -175,6 +175,42 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     }
 });
 
+// --- NUEVA RUTA PARA MENSAJES PAGINADOS (PREVISUALIZACIÓN) ---
+router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+        const { limit = 30, before } = req.query;
+
+        let query = db.collection('contacts_whatsapp')
+                      .doc(contactId)
+                      .collection('messages')
+                      .orderBy('timestamp', 'desc')
+                      .limit(Number(limit));
+
+        if (before) {
+            // 'before' es un timestamp Unix en segundos del último mensaje que tiene el cliente
+            const firestoreTimestamp = admin.firestore.Timestamp.fromMillis(parseInt(before) * 1000);
+            // Buscamos mensajes ANTERIORES a ese timestamp
+            query = query.where('timestamp', '<', firestoreTimestamp);
+        }
+
+        const snapshot = await query.get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, messages: [] });
+        }
+
+        const messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+
+        res.status(200).json({ success: true, messages });
+
+    } catch (error) {
+        console.error(`Error al obtener mensajes paginados para ${req.params.contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener mensajes.' });
+    }
+});
+
+
 router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
     const { reaction } = req.body;
@@ -949,4 +985,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
