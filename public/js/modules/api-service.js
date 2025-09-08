@@ -23,6 +23,34 @@ function processContacts(contacts) {
 // --- FIN DE LA CORRECCIÓN ---
 
 
+// --- NUEVO LISTENER PARA PEDIDOS EN TIEMPO REAL ---
+function listenForContactOrders(contactId, callback) {
+    if (unsubscribeOrdersListener) unsubscribeOrdersListener();
+
+    const q = db.collection('pedidos').where('telefono', '==', contactId);
+
+    unsubscribeOrdersListener = q.onSnapshot(snapshot => {
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+                estatus: data.estatus || 'Sin estatus'
+            };
+        });
+        orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+        callback(orders);
+    }, error => {
+        console.error(`Error escuchando pedidos para ${contactId}:`, error);
+        showError("Error al actualizar el historial de pedidos en tiempo real.");
+        callback([]); // Enviar array vacío en caso de error
+    });
+}
+// --- FIN DEL NUEVO LISTENER ---
+
+
 // --- NUEVAS FUNCIONES DE CARGA PAGINADA ---
 
 async function fetchInitialContacts() {
@@ -285,22 +313,6 @@ async function fetchGoogleSheetSettings() {
     } catch (error) {
         console.error("Error fetching Google Sheet settings:", error);
         showError("No se pudo cargar la configuración de Google Sheet.");
-    }
-}
-
-
-async function fetchContactOrders(contactId) {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/orders`);
-        if (!response.ok) {
-            throw new Error('Error al cargar el historial de pedidos.');
-        }
-        const data = await response.json();
-        return data.orders || [];
-    } catch (error) {
-        console.error(error);
-        showError(error.message);
-        return [];
     }
 }
 
