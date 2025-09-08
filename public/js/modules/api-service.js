@@ -32,7 +32,6 @@ async function fetchInitialContacts() {
         
         state.contacts = processContacts(data.contacts);
 
-        // CORRECCIÓN 1: Usar la variable correcta 'lastVisibleId' de la respuesta de la API.
         state.pagination.lastVisibleId = data.lastVisibleId;
         state.pagination.hasMore = data.contacts.length > 0;
 
@@ -47,12 +46,10 @@ async function fetchInitialContacts() {
 
 
 async function fetchMoreContacts() {
-    // CORRECCIÓN: Usar las variables de estado correctas para la paginación
     if (state.pagination.isLoadingMore || !state.pagination.hasMore || !state.pagination.lastVisibleId) return;
     state.pagination.isLoadingMore = true;
 
     try {
-        // CORRECCIÓN 2: Usar el nombre de parámetro correcto 'startAfterId' que el backend espera.
         const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`);
         if (!response.ok) throw new Error('Error al cargar más contactos.');
 
@@ -61,12 +58,10 @@ async function fetchMoreContacts() {
         const newContacts = processContacts(data.contacts);
 
         if (newContacts.length > 0) {
-            // Añadir nuevos contactos a la lista existente
             const existingIds = new Set(state.contacts.map(c => c.id));
             const filteredNewContacts = newContacts.filter(c => !existingIds.has(c.id));
             state.contacts.push(...filteredNewContacts);
 
-            // CORRECCIÓN 3: Actualizar el ID del último documento visible.
             state.pagination.lastVisibleId = data.lastVisibleId;
         } else {
             state.pagination.hasMore = false;
@@ -96,7 +91,6 @@ async function searchContactsAPI(query) {
         
         state.contacts = processContacts(data.contacts);
         
-        // En modo búsqueda, no hay paginación, así que reseteamos estos valores
         state.pagination.hasMore = false; 
         state.pagination.lastVisibleId = null;
 
@@ -106,6 +100,52 @@ async function searchContactsAPI(query) {
         showError(error.message);
     }
 }
+
+// --- INICIO DE LA SOLUCIÓN: LISTENER PARA ACTUALIZACIONES EN TIEMPO REAL ---
+/**
+ * Escucha los cambios recientes en los contactos (nuevos mensajes)
+ * que ocurren después de la carga inicial de la aplicación.
+ */
+function listenForContactUpdates() {
+    if (unsubscribeContactUpdatesListener) unsubscribeContactUpdatesListener();
+
+    // Solo escucha cambios que ocurrieron DESPUÉS de que la app se cargó
+    const q = db.collection('contacts_whatsapp')
+        .where('lastMessageTimestamp', '>', state.appLoadTimestamp);
+
+    unsubscribeContactUpdatesListener = q.onSnapshot(snapshot => {
+        if (snapshot.empty) {
+            return; // No hay cambios nuevos
+        }
+
+        console.log(`[Real-time] Se detectaron ${snapshot.docChanges().length} cambios en los contactos.`);
+
+        snapshot.docChanges().forEach(change => {
+            const updatedContactData = processContacts([{ id: change.doc.id, ...change.doc.data() }])[0];
+            const existingContactIndex = state.contacts.findIndex(c => c.id === updatedContactData.id);
+
+            if (existingContactIndex > -1) {
+                // Si el contacto ya está en la lista local, lo actualizamos
+                state.contacts[existingContactIndex] = updatedContactData;
+            } else {
+                // Si es un contacto que no estaba en la lista (raro, pero posible), lo añadimos
+                state.contacts.unshift(updatedContactData);
+            }
+        });
+
+        // Reordenamos toda la lista para asegurar que el más reciente esté arriba
+        state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
+
+        // Volvemos a renderizar la lista de contactos con los datos actualizados y reordenados
+        handleSearchContacts();
+
+    }, error => {
+        console.error("Error en el listener de actualizaciones de contactos:", error);
+        showError("Se perdió la conexión en tiempo real. Recarga la página.");
+    });
+}
+// --- FIN DE LA SOLUCIÓN ---
+
 
 // --- LISTENERS EN TIEMPO REAL (PARA DATOS MÁS PEQUEÑOS) ---
 
