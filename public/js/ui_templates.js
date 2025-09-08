@@ -725,7 +725,6 @@ const ContactDetailsSidebarTemplate = (contact) => {
                     ${UserIcon(contact, 'h-24 w-24')}
                     <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
                     <p class="text-gray-500">+${contact.id}</p>
-                     ${contact.lastOrderNumber ? `<p class="text-sm mt-2 text-blue-500 font-semibold">Último Pedido: #${contact.lastOrderNumber}</p>` : ''}
                 </div>
                 <div class="space-y-4 text-sm">
                     <div>
@@ -737,6 +736,16 @@ const ContactDetailsSidebarTemplate = (contact) => {
                         <p>${contact.nickname || 'No especificado'}</p>
                     </div>
                 </div>
+
+                {/* --- NUEVA SECCIÓN PARA EL HISTORIAL DE PEDIDOS --- */}
+                <div id="order-history-container" class="mt-4 border-t pt-4">
+                     <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Historial de Pedidos</h4>
+                     <div id="contact-orders-list" class="space-y-2">
+                        {/* El contenido se cargará dinámicamente */}
+                     </div>
+                </div>
+                {/* --- FIN DE LA NUEVA SECCIÓN --- */}
+
                 <div class="mt-6 border-t pt-6 space-y-2">
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
@@ -756,8 +765,8 @@ const DateSeparatorTemplate = (dateString) => {
 
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-backdrop">
-        <div class="modal-content relative">
-            <button onclick="closeNewOrderModal()" class="absolute top-4 right-6 text-gray-400 hover:text-gray-600 text-3xl" title="Cerrar">&times;</button>
+        <div class="modal-content">
+            <button onclick="closeNewOrderModal()" class="modal-close-btn" title="Cerrar">&times;</button>
             <h2 class="!text-xl !font-bold !text-primary"><i class="fas fa-pencil-alt mr-2"></i> Registrar Nuevo Pedido</h2>
             <form id="new-order-form">
                  <div class="form-grid">
@@ -983,3 +992,4 @@ const ConversationPreviewModalTemplate = (contact) => `
         </div>
     </div>
 `;
+
