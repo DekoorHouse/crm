@@ -544,3 +544,37 @@ label.disabled-icon {
 }
 
 /* --- END: Conversation Preview Modal Styles --- */
+
+/* --- START: Order History Styles --- */
+.order-history-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: #f7f9fc;
+    border-radius: var(--border-radius-md);
+    font-size: 0.85rem;
+}
+.order-history-item.loading, .order-history-item.empty {
+    justify-content: center;
+    font-style: italic;
+    color: var(--color-text-light);
+}
+.order-history-item .order-number {
+    font-weight: 600;
+    color: var(--color-primary);
+}
+.order-history-item .order-product {
+    color: var(--color-text);
+    flex-grow: 1;
+    margin: 0 12px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.order-history-item .order-date {
+    font-size: 0.8rem;
+    color: var(--color-text-light);
+}
+/* --- END: Order History Styles --- */
+
