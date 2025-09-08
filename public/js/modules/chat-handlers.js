@@ -84,10 +84,17 @@ function setupChatListEventListeners() {
 
 async function handleSelectContact(contactId) { 
     if (state.campaignMode) return;
-    // MODIFICADO: Se elimina la condición que evitaba la recarga si el mismo contacto estaba seleccionado
     
     cancelStagedFile(); 
     cancelReply();
+
+    // Desuscribirse de los listeners del contacto anterior
+    if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
+    if (unsubscribeNotesListener) unsubscribeNotesListener();
+    if (unsubscribeOrdersListener) {
+        unsubscribeOrdersListener();
+        unsubscribeOrdersListener = null;
+    }
 
     // Actualizamos el contador de no leídos localmente para una respuesta de UI más rápida
     const contactIdx = state.contacts.findIndex(c => c.id === contactId);
@@ -105,8 +112,6 @@ async function handleSelectContact(contactId) {
     
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
     handleSearchContacts(); 
-    
-    if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
     
     let isInitialMessageLoad = true;
     unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
@@ -152,12 +157,10 @@ async function handleSelectContact(contactId) {
             if (state.activeTab === 'chat') renderMessages();
         });
     
-    if (unsubscribeNotesListener) unsubscribeNotesListener();
     unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
     
     renderChatWindow();
     
-    // <-- CAMBIO: Abrir el panel de detalles automáticamente
     openContactDetails();
 }
 
@@ -684,5 +687,4 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
-
 
