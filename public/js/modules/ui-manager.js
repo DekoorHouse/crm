@@ -727,15 +727,46 @@ function closeImageModal() {
     setTimeout(() => { modalImage.src = ''; }, 300); 
 }
 
-function openContactDetails() { 
+async function openContactDetails() {
     const contactDetailsPanelEl = document.getElementById('contact-details-panel');
-    if (!state.selectedContactId || !contactDetailsPanelEl) return; 
-    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
-    if (!contact) return; 
-    contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(contact); 
-    contactDetailsPanelEl.classList.add('open'); 
-    state.contactDetailsOpen = true; 
+    if (!state.selectedContactId || !contactDetailsPanelEl) return;
+    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    if (!contact) return;
+    
+    contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(contact);
+    contactDetailsPanelEl.classList.add('open');
+    state.contactDetailsOpen = true;
+
+    const ordersListEl = document.getElementById('contact-orders-list');
+    if (ordersListEl) {
+        ordersListEl.innerHTML = `<div class="order-history-item loading"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</div>`;
+        
+        try {
+            const orders = await fetchContactOrders(contact.id);
+            
+            if (orders && orders.length > 0) {
+                ordersListEl.innerHTML = orders.map(order => {
+                    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
+                        day: '2-digit', month: 'short', year: 'numeric'
+                    }) : 'Fecha no disp.';
+                    
+                    return `
+                        <div class="order-history-item">
+                            <span class="order-number">DH${order.consecutiveOrderNumber}</span>
+                            <span class="order-product">${order.producto}</span>
+                            <span class="order-date">${orderDate}</span>
+                        </div>
+                    `;
+                }).join('');
+            } else {
+                ordersListEl.innerHTML = `<div class="order-history-item empty">No hay pedidos anteriores.</div>`;
+            }
+        } catch (error) {
+            ordersListEl.innerHTML = `<div class="order-history-item empty">Error al cargar pedidos.</div>`;
+        }
+    }
 }
+
 function closeContactDetails() { 
     const contactDetailsPanelEl = document.getElementById('contact-details-panel');
     if(contactDetailsPanelEl) {
@@ -825,3 +856,4 @@ function closeConversationPreviewModal() {
     document.body.classList.remove('modal-open');
 }
 // --- END: Conversation Preview Modal ---
+
