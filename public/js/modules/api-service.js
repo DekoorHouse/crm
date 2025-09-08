@@ -248,6 +248,23 @@ function listenForKnowledgeBase() {
     });
 }
 
+// --- FUNCIÓN AÑADIDA PARA CORREGIR EL ERROR ---
+async function fetchContactOrders(contactId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/orders`);
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'No se pudo cargar el historial de pedidos.');
+        }
+        const data = await response.json();
+        return data.orders; // Devuelve el array de pedidos
+    } catch (error) {
+        console.error(`Error fetching orders for ${contactId}:`, error);
+        // Lanza el error para que el bloque catch en ui-manager.js lo maneje
+        throw error;
+    }
+}
+
 // --- API Fetchers ---
 
 async function fetchTemplates() {
@@ -315,4 +332,3 @@ async function fetchGoogleSheetSettings() {
         showError("No se pudo cargar la configuración de Google Sheet.");
     }
 }
-
