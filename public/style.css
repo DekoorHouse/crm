@@ -68,6 +68,17 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .contact-item.campaign-mode { cursor: default; }
 .contact-item.campaign-mode:hover { background-color: transparent; }
 .unread-badge { background-color: var(--color-primary); color: white; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 12px; min-width: 20px; text-align: center; line-height: 1.2; }
+
+.order-badge {
+    background-color: var(--color-accent);
+    color: var(--color-text);
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
 #chat-panel { background-color: #e5ddd5; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
 .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); }
 .chat-footer { background-color: #f8f9fa; padding: 8px 16px; }
