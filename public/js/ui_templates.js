@@ -6,8 +6,11 @@
 const ChatViewTemplate = () => `
     <div id="chat-view">
         <aside id="contacts-panel" class="w-full md:w-1/3 lg:w-1/4 h-full flex flex-col">
-            <div class="p-4 border-b border-gray-200">
-                <input type="text" id="search-contacts-input" oninput="handleSearchContacts()" placeholder="Buscar o iniciar un nuevo chat..." class="w-full">
+            <div class="p-4 border-b border-gray-200 relative">
+                <input type="text" id="search-contacts-input" placeholder="Buscar o iniciar un nuevo chat..." class="w-full pr-8">
+                <button id="clear-search-btn" class="absolute right-6 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 hidden">
+                    <i class="fas fa-times-circle"></i>
+                </button>
             </div>
             <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-gray-200 bg-white items-center"></div>
             <div id="contacts-loading" class="p-4 text-center text-gray-400">Cargando contactos...</div>
@@ -453,8 +456,6 @@ const MessageBubbleTemplate = (message) => {
             mimeType = mimeType.split(';')[0];
         }
         
-        // console.log(`[AUDIO] Renderizando audio. Fuente: ${audioSrc}, Tipo: ${mimeType}, Permanente: ${isPermanentLink}`);
-
         const onErrorHandler = `console.error('[AUDIO] Error al cargar el audio. URL: ${audioSrc}', event.target.error)`;
 
         contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}">
