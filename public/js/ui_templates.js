@@ -377,6 +377,12 @@ const ContactItemTemplate = (contact, isSelected) => {
             : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
         timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
     }
+    
+    // --- INICIO DE LA MODIFICACIÓN ---
+    const orderBadgeHTML = contact.lastOrderNumber 
+        ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>` 
+        : '';
+    // --- FIN DE LA MODIFICACIÓN ---
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -389,7 +395,10 @@ const ContactItemTemplate = (contact, isSelected) => {
                      </button>
                 </div>
             </div>
-            <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
+            <div class="flex justify-between items-center">
+                <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
+                ${orderBadgeHTML}
+            </div>
         </div>`;
 
     const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
