@@ -854,12 +854,24 @@ router.get('/metrics', async (req, res) => {
         const contactsSnapshot = await db.collection('contacts_whatsapp').get();
         const contactTags = {};
         contactsSnapshot.forEach(doc => { contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; });
+        
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se elimina el filtro '!=' que causa el error en Firestore.
+        // El filtrado se hará en el código después de obtener los datos.
         const messagesSnapshot = await db.collectionGroup('messages')
-            .where('timestamp', '>=', startTimestamp).where('timestamp', '<=', endTimestamp)
-            .where('from', '!=', PHONE_NUMBER_ID).get();
+            .where('timestamp', '>=', startTimestamp)
+            .where('timestamp', '<=', endTimestamp)
+            .get();
+        
         const metricsByDate = {};
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
+            
+            // Se añade la condición aquí para excluir los mensajes enviados por el CRM
+            if (message.from === PHONE_NUMBER_ID) {
+                return; // Saltar este mensaje
+            }
+
             const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
             if (!metricsByDate[dateKey]) metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
             metricsByDate[dateKey].totalMessages++;
@@ -867,6 +879,8 @@ router.get('/metrics', async (req, res) => {
             if (!metricsByDate[dateKey].tags[tag]) metricsByDate[dateKey].tags[tag] = 0;
             metricsByDate[dateKey].tags[tag]++;
         });
+        // --- FIN DE LA CORRECCIÓN ---
+
         const formattedMetrics = Object.keys(metricsByDate)
             .map(date => ({ date, totalMessages: metricsByDate[date].totalMessages, tags: metricsByDate[date].tags }))
             .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -1057,3 +1071,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
