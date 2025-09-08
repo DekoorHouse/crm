@@ -34,6 +34,9 @@ let state = {
     isTagSidebarOpen: true,
     activeView: 'chats', // La vista inicial vuelve a ser 'chats' por defecto.
 
+    // --- AÑADIDO: Timestamp para el listener de actualizaciones ---
+    appLoadTimestamp: null,
+
     // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
     pagination: {
         lastVisibleId: null, // Guarda el ID del último contacto cargado
@@ -43,9 +46,9 @@ let state = {
 };
 
 // --- Listener Unsubscribers ---
-// Nota: unsubscribeContactsListener será eliminado eventualmente.
 let unsubscribeMessagesListener = null,
-    unsubscribeContactsListener = null,
+    // --- AÑADIDO: Listener para actualizaciones de contactos en tiempo real ---
+    unsubscribeContactUpdatesListener = null, 
     unsubscribeNotesListener = null,
     unsubscribeQuickRepliesListener = null,
     unsubscribeTagsListener = null,
@@ -56,4 +59,3 @@ let unsubscribeMessagesListener = null,
 // --- Chart instances ---
 let dailyMessagesChart = null;
 let tagsDistributionChart = null;
-
