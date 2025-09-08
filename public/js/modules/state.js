@@ -31,10 +31,8 @@ let state = {
     replyingToMessage: null,
     campaignMode: false,
     selectedContactIdsForCampaign: [],
-    isTagSidebarOpen: true,
-    activeView: 'chats', // La vista inicial vuelve a ser 'chats' por defecto.
-
-    // --- AÑADIDO: Timestamp para el listener de actualizaciones ---
+    isTagSidebarOpen: false, // <-- CAMBIO: De 'true' a 'false'
+    activeView: 'chats',
     appLoadTimestamp: null,
 
     // --- NUEVAS VARIABLES PARA PAGINACIÓN ---
@@ -47,8 +45,7 @@ let state = {
 
 // --- Listener Unsubscribers ---
 let unsubscribeMessagesListener = null,
-    // --- AÑADIDO: Listener para actualizaciones de contactos en tiempo real ---
-    unsubscribeContactUpdatesListener = null, 
+    unsubscribeContactUpdatesListener = null,
     unsubscribeNotesListener = null,
     unsubscribeQuickRepliesListener = null,
     unsubscribeTagsListener = null,
