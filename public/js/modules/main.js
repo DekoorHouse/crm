@@ -5,23 +5,33 @@
  * Inicia la aplicación después de que el usuario se ha autenticado.
  */
 function startApp() { 
-    // CORRECCIÓN: Forzar la navegación a la vista de chats para asegurar la carga inicial.
-    // El segundo parámetro 'true' indica que debe renderizar la vista incluso si el estado ya es 'chats'.
+    // --- INICIO DE LA SOLUCIÓN: Guardar el timestamp de carga ---
+    state.appLoadTimestamp = new Date();
+    // --- FIN DE LA SOLUCIÓN ---
+
+    // Forzar la navegación a la vista de chats para asegurar la carga inicial.
     navigateTo('chats', true); 
 
     // Start all data listeners
-    fetchInitialContacts(); // MODIFICADO: Llama a la nueva función de carga inicial paginada
+    fetchInitialContacts(); // Carga inicial paginada
+    
+    // --- INICIO DE LA SOLUCIÓN: Activar el listener de actualizaciones ---
+    listenForContactUpdates(); // Escucha cambios en tiempo real
+    // --- FIN DE LA SOLUCIÓN ---
+
     listenForQuickReplies();
     listenForTags();
     listenForAdResponses();
     listenForAIAdPrompts();
     listenForKnowledgeBase();
+    
     // Fetch initial non-realtime data
     fetchTemplates();
     fetchBotSettings();
     fetchAwayMessageSettings();
     fetchGlobalBotSettings();
     fetchGoogleSheetSettings();
+    
     // Setup global event listeners
     document.addEventListener('click', handleClickOutside);
 }
@@ -32,7 +42,9 @@ function startApp() {
  */
 function stopApp() { 
     // Unsubscribe from all listeners
-    // ELIMINADO: El listener de contactos ya no existe en tiempo real
+    // --- INICIO DE LA SOLUCIÓN: Detener el nuevo listener ---
+    if (unsubscribeContactUpdatesListener) unsubscribeContactUpdatesListener(); 
+    // --- FIN DE LA SOLUCIÓN ---
     if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
     if (unsubscribeNotesListener) unsubscribeNotesListener();
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
@@ -40,8 +52,10 @@ function stopApp() {
     if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
     if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
     if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
+    
     // Remove global listeners
     document.removeEventListener('click', handleClickOutside);
+    
     // Reset state
     // (A new state object is created on the next login)
     document.getElementById('main-view-container').innerHTML = '';
@@ -73,4 +87,3 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
-
