@@ -56,7 +56,6 @@ function setupChatListEventListeners() {
     const chatArea = document.getElementById('chat-panel');
     const overlay = document.getElementById('drag-drop-overlay');
     
-    // --- INICIO DE LA SOLUCIÓN ---
     const searchInput = document.getElementById('search-contacts-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
 
@@ -64,15 +63,12 @@ function setupChatListEventListeners() {
         searchInput.addEventListener('input', handleSearchInput);
         clearSearchBtn.addEventListener('click', () => {
             searchInput.value = '';
-            // Disparamos el evento 'input' para que la lógica de búsqueda se actualice
             searchInput.dispatchEvent(new Event('input')); 
             searchInput.focus();
         });
 
-        // Mostrar/ocultar el botón al inicio
         clearSearchBtn.classList.toggle('hidden', searchInput.value.length === 0);
     }
-    // --- FIN DE LA SOLUCIÓN ---
 
     if (!chatArea || !overlay) return;
     const showOverlay = () => overlay.classList.remove('hidden');
@@ -88,11 +84,8 @@ function setupChatListEventListeners() {
 
 async function handleSelectContact(contactId) { 
     if (state.campaignMode) return;
-    if (state.selectedContactId === contactId && !state.contactDetailsOpen) {
-        if (state.activeTab !== 'chat') { setActiveTab('chat'); }
-        return;
-    }
-    closeContactDetails();
+    // MODIFICADO: Se elimina la condición que evitaba la recarga si el mismo contacto estaba seleccionado
+    
     cancelStagedFile(); 
     cancelReply();
 
@@ -163,6 +156,9 @@ async function handleSelectContact(contactId) {
     unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
     
     renderChatWindow();
+    
+    // <-- CAMBIO: Abrir el panel de detalles automáticamente
+    openContactDetails();
 }
 
 async function handleSendMessage(event) {
