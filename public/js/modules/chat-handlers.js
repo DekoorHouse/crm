@@ -607,12 +607,15 @@ async function loadMorePreviewMessages() {
         if (spinner) spinner.style.display = 'none';
 
         if (data.messages.length > 0) {
+            // CORRECCIÓN: La API devuelve [nuevo..viejo], lo invertimos para tener [viejo..nuevo]
+            const chronologicalMessages = data.messages.reverse();
+
             // El `state.selectedContactId` se usa globalmente en MessageBubbleTemplate, 
             // así que lo seteamos temporalmente para que renderice correctamente
             const originalSelectedId = state.selectedContactId;
             state.selectedContactId = previewState.contactId;
 
-            const newMessagesHtml = data.messages.map(MessageBubbleTemplate).join('');
+            const newMessagesHtml = chronologicalMessages.map(MessageBubbleTemplate).join('');
             
             state.selectedContactId = originalSelectedId; // Lo restauramos
 
@@ -623,24 +626,33 @@ async function loadMorePreviewMessages() {
             // Guardamos la altura del scroll antes de añadir contenido nuevo
             const oldScrollHeight = container.scrollHeight;
             
-            contentDiv.insertAdjacentHTML('afterbegin', newMessagesHtml);
-            previewState.messages.unshift(...data.messages);
+            if (isFirstLoad) {
+                contentDiv.innerHTML = newMessagesHtml;
+            } else {
+                contentDiv.insertAdjacentHTML('afterbegin', newMessagesHtml);
+            }
+
+            previewState.messages.unshift(...chronologicalMessages);
             
-            const lastMsg = data.messages[data.messages.length - 1];
-            previewState.lastMessageTimestamp = lastMsg.timestamp.seconds;
+            // El timestamp para la siguiente página es el del mensaje MÁS ANTIGUO que acabamos de recibir
+            const oldestNewMsg = chronologicalMessages[0];
+            previewState.lastMessageTimestamp = oldestNewMsg.timestamp.seconds;
 
             if (isFirstLoad) {
-                // Si es la primera carga, hacemos scroll hasta el final
+                // Si es la primera carga, hacemos scroll hasta el final para ver los mensajes más recientes
                 container.scrollTop = container.scrollHeight;
             } else {
-                // Si no, mantenemos la posición del scroll
+                // Si no, mantenemos la posición del scroll relativa al contenido que había antes
                 container.scrollTop = container.scrollHeight - oldScrollHeight;
             }
         }
 
         if (data.messages.length < 30) {
             previewState.hasMore = false;
-            // Opcional: mostrar un mensaje de "Fin de la conversación"
+            const contentDiv = document.getElementById('preview-messages-content');
+            if (contentDiv) {
+                contentDiv.insertAdjacentHTML('afterbegin', `<div class="date-separator">Inicio de la conversación</div>`);
+            }
         }
 
     } catch (error) {
@@ -664,3 +676,4 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
