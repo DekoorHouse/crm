@@ -995,25 +995,21 @@ const ConversationPreviewModalTemplate = (contact) => `
     </div>
 `;
 
-
-// --- INICIO DE MODIFICACIONES ---
+// --- INICIO DE MODIFICACIÓN: Plantillas para el nuevo modal de detalles de pedido ---
 
 /**
- * Plantilla para un solo item en el historial de pedidos del panel de detalles.
- * @param {object} order - El objeto del pedido con id, consecutiveOrderNumber, etc.
- * @returns {string} - El HTML del item del pedido.
+ * Genera el HTML para un solo pedido en la lista del historial del contacto.
+ * @param {object} order - El objeto del pedido.
+ * @returns {string} El string HTML del elemento del pedido.
  */
 const OrderHistoryItemTemplate = (order) => {
-    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', {
-        day: '2-digit', month: 'short'
-    }) : '';
-    
+    const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
     const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
 
     return `
         <div class="order-history-item">
-            <button class="order-number font-semibold text-primary hover:underline" onclick="openOrderDetailsModal('${order.id}')">
+            <button class="order-number" onclick="openOrderDetailsModal('${order.id}')">
                 DH${order.consecutiveOrderNumber}
             </button>
             <span class="order-product" title="${order.producto}">${order.producto}</span>
@@ -1024,87 +1020,74 @@ const OrderHistoryItemTemplate = (order) => {
 };
 
 /**
- * Plantilla para el modal de detalles del pedido.
+ * Genera el HTML para el modal de detalles del pedido.
  * @param {object} order - El objeto completo del pedido.
- * @returns {string} - El HTML del modal.
+ * @returns {string} El string HTML del modal.
  */
 const OrderDetailsModalTemplate = (order) => {
     if (!order) return '';
 
-    const orderDate = order.createdAt && order.createdAt.seconds 
-        ? new Date(order.createdAt.seconds * 1000).toLocaleString('es-ES', { dateStyle: 'long', timeStyle: 'short' }) 
-        : 'N/A';
-    
-    // Lista de todos los posibles estatus de la app de pedidos
-    const allStatusOptions = [
-        "Sin estatus", "Foto enviada", "Esperando pago", "Pagado", "Diseñado",
-        "Fabricar", "Corregir", "Corregido", "Mns Amenazador", "Cancelado"
-    ];
-    
-    const statusOptionsHTML = allStatusOptions.map(status =>
-        `<option value="${status}" ${order.estatus === status ? 'selected' : ''}>${status}</option>`
-    ).join('');
+    const orderPhotos = order.fotoUrls || [];
+    const promoPhotos = order.fotoPromocionUrls || [];
 
-    const renderPhotos = (urls, title) => {
-        if (!urls || urls.length === 0) return '';
+    const statusOptionsHTML = state.tags
+        .map(tag => `<option value="${tag.key}" ${order.estatus === tag.key ? 'selected' : ''}>${tag.label}</option>`)
+        .join('');
+
+    const photoGrid = (photos, title) => {
+        if (photos.length === 0) return '';
         return `
             <div class="mt-4">
                 <h4 class="text-sm font-semibold text-gray-500 mb-2">${title}</h4>
                 <div class="flex flex-wrap gap-2">
-                    ${urls.map(url => `<a href="${url}" target="_blank"><img src="${url}" class="w-20 h-20 object-cover rounded-md border hover:border-primary transition" alt="Foto"></a>`).join('')}
+                    ${photos.map(url => `<img src="${url}" class="w-20 h-20 object-cover rounded-md border cursor-pointer" onclick="openImageModal('${url}')">`).join('')}
                 </div>
-            </div>
-        `;
-    };
-
-    const renderDetailSection = (title, content) => {
-        if (!content) return '';
-        return `
-            <div class="mt-4">
-                <h4 class="text-sm font-semibold text-gray-500 mb-1">${title}</h4>
-                <p class="text-sm p-3 bg-gray-50 rounded-md whitespace-pre-wrap border">${content}</p>
             </div>
         `;
     };
 
     return `
-    <div id="order-details-modal" class="modal-backdrop">
-        <div class="modal-content !max-w-2xl">
-            <button onclick="closeOrderDetailsModal()" class="modal-close-btn">&times;</button>
-            <div class="flex items-center gap-4 pb-4 border-b">
-                <i class="fas fa-receipt text-3xl text-primary"></i>
-                <div>
-                    <h2 class="text-2xl font-bold">Pedido DH${order.consecutiveOrderNumber}</h2>
-                    <p class="text-sm text-gray-500">${order.producto}</p>
+        <div id="order-details-modal" class="modal-backdrop" onclick="closeOrderDetailsModal()">
+            <div class="modal-content !max-w-2xl" onclick="event.stopPropagation()">
+                <button onclick="closeOrderDetailsModal()" class="modal-close-btn">&times;</button>
+                <div class="flex items-start justify-between mb-4">
+                    <div>
+                        <h2 class="text-2xl font-bold text-primary">Pedido DH${order.consecutiveOrderNumber}</h2>
+                        <p class="text-sm text-gray-500">${order.producto}</p>
+                    </div>
+                    <div class="text-right">
+                        <label for="modal-order-status" class="text-xs font-semibold text-gray-500 block">Estatus:</label>
+                        <select id="modal-order-status" class="!mb-0 !p-2 !text-sm">
+                           ${statusOptionsHTML}
+                        </select>
+                    </div>
                 </div>
-            </div>
 
-            <div class="py-4 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4 text-sm">
-                <div><strong class="text-gray-500">Teléfono:</strong> ${order.telefono}</div>
-                <div><strong class="text-gray-500">Precio:</strong> ${new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(order.precio)}</div>
-                <div class="md:col-span-2"><strong class="text-gray-500">Fecha:</strong> ${orderDate}</div>
-                <div class="md:col-span-2">
-                    <label for="modal-order-status" class="font-semibold text-gray-600 block mb-2">Estatus del Pedido:</label>
-                    <select id="modal-order-status" class="!mb-0">
-                        ${statusOptionsHTML}
-                    </select>
+                <div class="space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                    ${photoGrid(orderPhotos, 'Fotos del Pedido')}
+                    ${photoGrid(promoPhotos, 'Fotos de la Promoción')}
+
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-2">Detalles del Producto</h4>
+                        <p class="text-gray-700 whitespace-pre-wrap">${order.datosProducto || 'N/A'}</p>
+                    </div>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-2">Detalles de la Promoción</h4>
+                        <p class="text-gray-700 whitespace-pre-wrap">${order.datosPromocion || 'N/A'}</p>
+                    </div>
+                    <div class="mt-4 border-t pt-4">
+                        <h4 class="text-sm font-semibold text-gray-500 mb-2">Comentarios Adicionales</h4>
+                        <p class="text-gray-700 whitespace-pre-wrap">${order.comentarios || 'N/A'}</p>
+                    </div>
                 </div>
-            </div>
 
-            <div class="border-t pt-4">
-                ${renderDetailSection('Detalles del Producto', order.datosProducto)}
-                ${renderDetailSection('Detalles de la Promoción', order.datosPromocion)}
-                ${renderDetailSection('Comentarios', order.comentarios)}
-                ${renderPhotos(order.fotoUrls, 'Fotos del Pedido')}
-                ${renderPhotos(order.fotoPromocionUrls, 'Fotos de la Promoción')}
-            </div>
-            
-            <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
-                <button onclick="closeOrderDetailsModal()" class="btn btn-subtle">Cerrar</button>
-                <button onclick="handleSaveChangesOnOrderDetails('${order.id}')" class="btn btn-primary">Guardar Cambios</button>
+                <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+                    <button type="button" onclick="closeOrderDetailsModal()" class="btn btn-subtle">Cerrar</button>
+                    <button type="button" onclick="handleSaveChangesOnOrderDetails('${order.id}')" class="btn btn-primary">Guardar Cambios</button>
+                </div>
             </div>
         </div>
-    </div>
     `;
 };
-// --- FIN DE MODIFICACIONES ---
+// --- FIN DE MODIFICACIÓN ---
+
