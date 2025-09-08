@@ -141,11 +141,12 @@ router.put('/contacts/:contactId', async (req, res) => {
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
         const { contactId } = req.params;
-        const ordersRef = db.collection('pedidos');
-        // Usamos el contactId, que es el número de teléfono, para buscar en la colección de pedidos
-        const q = query(ordersRef, where('telefono', '==', contactId), orderBy('createdAt', 'desc'));
         
-        const snapshot = await q.get();
+        // CORRECCIÓN: Se usa la sintaxis del Admin SDK de Firebase
+        const snapshot = await db.collection('pedidos')
+                                 .where('telefono', '==', contactId)
+                                 .orderBy('createdAt', 'desc')
+                                 .get();
 
         if (snapshot.empty) {
             return res.status(200).json({ success: true, orders: [] });
