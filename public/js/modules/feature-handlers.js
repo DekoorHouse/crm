@@ -325,7 +325,8 @@ async function handleSendCampaignWithImage() {
 
 // --- All other handlers (Tags, Quick Replies, Ad Responses, Settings etc.) ---
 
-async function handleSaveQuickReply() {
+async function handleSaveQuickReply(event) {
+    event.preventDefault(); // <-- AÑADIDO: Previene la recarga de la página
     const id = document.getElementById('qr-doc-id').value;
     const shortcut = document.getElementById('qr-shortcut').value.trim();
     const message = document.getElementById('qr-message').value.trim();
@@ -373,7 +374,8 @@ async function handleDeleteQuickReply(replyId) {
     }
 }
 
-async function handleSaveAdResponse() {
+async function handleSaveAdResponse(event) {
+    event.preventDefault(); // <-- AÑADIDO: Previene la recarga de la página
     const id = document.getElementById('ar-doc-id').value;
     const adName = document.getElementById('ar-name').value.trim();
     const adId = document.getElementById('ar-ad-id').value.trim();
@@ -642,3 +644,4 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
