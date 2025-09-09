@@ -1019,5 +1019,71 @@ function closeAdResponseModal() {
         modal.classList.add('hidden');
     }
 }
+
+// --- AÑADIDO: Funciones para el modal de Respuestas Rápidas ---
+function openQuickReplyModal(replyId = null) {
+    const modal = document.getElementById('quick-reply-modal');
+    if (!modal) return;
+
+    const form = document.getElementById('quick-reply-form');
+    const titleEl = document.getElementById('quick-reply-modal-title');
+    const docIdInput = document.getElementById('qr-doc-id');
+    const shortcutInput = document.getElementById('qr-shortcut');
+    const messageTextarea = document.getElementById('qr-message');
+    const fileUrlInput = document.getElementById('qr-file-url');
+    const fileTypeInput = document.getElementById('qr-file-type');
+    const mediaPreview = document.getElementById('qr-media-preview');
+    const attachButtonText = document.getElementById('qr-attach-button-text');
+    const fileInput = document.getElementById('qr-file-input');
+
+    // Reset form
+    form.reset();
+    docIdInput.value = '';
+    fileUrlInput.value = '';
+    fileTypeInput.value = '';
+    mediaPreview.innerHTML = '';
+    attachButtonText.textContent = 'Adjuntar Archivo';
+
+    if (replyId) {
+        // Edit mode
+        const reply = state.quickReplies.find(r => r.id === replyId);
+        if (reply) {
+            titleEl.textContent = 'Editar Respuesta Rápida';
+            docIdInput.value = reply.id;
+            shortcutInput.value = reply.shortcut || '';
+            messageTextarea.value = reply.message || '';
+            fileUrlInput.value = reply.fileUrl || '';
+            fileTypeInput.value = reply.fileType || '';
+            
+            if (reply.fileUrl) {
+                mediaPreview.innerHTML = `<a href="${reply.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
+                attachButtonText.textContent = 'Reemplazar Archivo';
+            }
+        }
+    } else {
+        // Add mode
+        titleEl.textContent = 'Añadir Respuesta Rápida';
+    }
+
+    // Listener para el input de archivo
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            fileUrlInput.value = ''; // Limpiar URL previa
+            fileTypeInput.value = file.type;
+            mediaPreview.innerHTML = `<span class="text-sm text-gray-600">Seleccionado: <strong>${file.name}</strong></span>`;
+            attachButtonText.textContent = 'Cambiar Archivo';
+        }
+    };
+
+    modal.classList.remove('hidden');
+}
+
+function closeQuickReplyModal() {
+    const modal = document.getElementById('quick-reply-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
 // --- FIN DE LA SOLUCIÓN ---
 
