@@ -330,8 +330,50 @@ async function handleSaveQuickReply(event) {
     const id = document.getElementById('qr-doc-id').value;
     const shortcut = document.getElementById('qr-shortcut').value.trim();
     const message = document.getElementById('qr-message').value.trim();
-    const fileUrl = document.getElementById('qr-file-url').value.trim();
-    const fileType = document.getElementById('qr-file-type').value.trim();
+    const fileUrlInput = document.getElementById('qr-file-url');
+    let fileUrl = fileUrlInput.value.trim();
+    const fileTypeInput = document.getElementById('qr-file-type');
+    let fileType = fileTypeInput.value.trim();
+    const fileInput = document.getElementById('qr-file-input');
+
+    // --- INICIO DE LA SOLUCIÓN: Lógica de subida de archivo para Respuestas Rápidas ---
+    if (fileInput.files[0]) {
+        const file = fileInput.files[0];
+        try {
+            showError('Subiendo archivo...', 'info');
+            
+            // 1. Obtener URL firmada del backend
+            const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    contentType: file.type,
+                    pathPrefix: 'quick_replies' // Carpeta diferente
+                })
+            });
+            if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
+            const { signedUrl, publicUrl } = await signedUrlResponse.json();
+            
+            // 2. Subir el archivo a la URL firmada
+            await fetch(signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            
+            // 3. Usar la URL pública para guardar en Firestore
+            fileUrl = publicUrl;
+            fileType = file.type;
+            
+            hideError();
+        } catch (error) {
+            console.error("Error al subir archivo para Quick Reply:", error);
+            showError("Error al subir el archivo. Inténtalo de nuevo.");
+            return;
+        }
+    }
+    // --- FIN DE LA SOLUCIÓN ---
 
     if (!shortcut || (!message && !fileUrl)) {
         showError("El atajo y un mensaje o archivo son obligatorios.");
@@ -382,7 +424,8 @@ async function handleSaveAdResponse(event) {
     const message = document.getElementById('ar-message').value.trim();
     const fileUrlInput = document.getElementById('ar-file-url');
     let fileUrl = fileUrlInput.value.trim();
-    const fileType = document.getElementById('ar-file-type').value.trim();
+    const fileTypeInput = document.getElementById('ar-file-type');
+    let fileType = fileTypeInput.value.trim();
     const fileInput = document.getElementById('ar-file-input');
 
     // --- INICIO DE LA SOLUCIÓN: Lógica de subida de archivo ---
@@ -390,11 +433,36 @@ async function handleSaveAdResponse(event) {
         const file = fileInput.files[0];
         try {
             // Muestra un estado de carga al usuario
-            showError('Subiendo archivo...', 'info'); // Puedes crear un nuevo tipo 'info' o usar 'success'
-            const filePath = `ad_responses/${Date.now()}_${file.name}`;
-            const storageRef = storage.ref(filePath);
-            const uploadTask = await storageRef.put(file);
-            fileUrl = await uploadTask.ref.getDownloadURL();
+            showError('Subiendo archivo...', 'info');
+            
+            // 1. Obtener URL firmada del backend
+            const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    contentType: file.type,
+                    pathPrefix: 'ad_responses' // Especificar la carpeta
+                })
+            });
+
+            if (!signedUrlResponse.ok) {
+                throw new Error('No se pudo preparar la subida del archivo.');
+            }
+
+            const { signedUrl, publicUrl } = await signedUrlResponse.json();
+
+            // 2. Subir el archivo directamente a Google Cloud Storage usando la URL firmada
+            await fetch(signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+
+            // 3. Usar la URL pública para guardar en Firestore
+            fileUrl = publicUrl;
+            fileType = file.type;
+            
             hideError();
         } catch (error) {
             console.error("Error al subir archivo para Ad Response:", error);
@@ -666,5 +734,6 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
 
 
