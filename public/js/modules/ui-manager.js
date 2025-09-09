@@ -965,6 +965,7 @@ function openAdResponseModal(responseId = null) {
     const fileTypeInput = document.getElementById('ar-file-type');
     const mediaPreview = document.getElementById('ar-media-preview');
     const attachButtonText = document.getElementById('ar-attach-button-text');
+    const fileInput = document.getElementById('ar-file-input');
 
     // Reset form
     form.reset();
@@ -996,6 +997,19 @@ function openAdResponseModal(responseId = null) {
         titleEl.textContent = 'Añadir Mensaje de Anuncio';
     }
 
+    // AÑADIDO: Listener para el input de archivo
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            // Aquí puedes añadir lógica para subir el archivo y obtener la URL,
+            // por ahora, solo mostraremos el nombre como feedback.
+            fileUrlInput.value = ''; // Limpiar URL previa si la había
+            fileTypeInput.value = file.type;
+            mediaPreview.innerHTML = `<span class="text-sm text-gray-600">Archivo seleccionado: <strong>${file.name}</strong></span>`;
+            attachButtonText.textContent = 'Cambiar Archivo';
+        }
+    };
+
     modal.classList.remove('hidden');
 }
 
@@ -1006,3 +1020,4 @@ function closeAdResponseModal() {
     }
 }
 // --- FIN DE LA SOLUCIÓN ---
+
