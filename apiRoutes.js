@@ -669,6 +669,17 @@ router.post('/ad-responses', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
     try {
+        // SOLUCIÓN: Hacer público el archivo en GCS si existe una URL.
+        if (fileUrl && fileUrl.includes(bucket.name)) {
+            try {
+                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
+                await bucket.file(filePath).makePublic();
+                console.log(`[GCS] Archivo ${filePath} hecho público con éxito.`);
+            } catch (gcsError) {
+                console.error(`[GCS] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+            }
+        }
+        
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
         if (!existing.empty) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya existe.` });
         const data = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
@@ -682,6 +693,17 @@ router.put('/ad-responses/:id', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
     try {
+        // SOLUCIÓN: Hacer público el archivo en GCS si existe una URL.
+        if (fileUrl && fileUrl.includes(bucket.name)) {
+            try {
+                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
+                await bucket.file(filePath).makePublic();
+                console.log(`[GCS] Archivo ${filePath} hecho público con éxito.`);
+            } catch (gcsError) {
+                console.error(`[GCS] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+            }
+        }
+
         const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
         if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está en uso.` });
         const data = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
@@ -1104,4 +1126,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
