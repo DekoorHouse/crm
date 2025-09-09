@@ -1,7 +1,7 @@
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
-const { db, admin } = require('./config');
+const { db, admin, bucket } = require('./config');
 const { sendConversionEvent, generateGeminiResponse } = require('./services');
 // Se importa dinámicamente para evitar dependencias circulares
 const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
@@ -373,6 +373,39 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
     const failed = outcomes.filter(o => o.status === 'rejected').map(o => o.reason);
     res.status(200).json({ success: true, message: `Campaña con imagen procesada.`, results: { successful, failed } });
 });
+
+// --- RUTA PARA GENERAR URLS DE SUBIDA SEGURAS ---
+router.post('/storage/generate-signed-url', async (req, res) => {
+    const { fileName, contentType, pathPrefix } = req.body;
+    if (!fileName || !contentType || !pathPrefix) {
+        return res.status(400).json({ success: false, message: 'Faltan fileName, contentType o pathPrefix.' });
+    }
+
+    const filePath = `${pathPrefix}/${Date.now()}_${fileName.replace(/\s/g, '_')}`;
+    const file = bucket.file(filePath);
+
+    const options = {
+        version: 'v4',
+        action: 'write',
+        expires: Date.now() + 15 * 60 * 1000, // 15 minutos de validez
+        contentType: contentType,
+    };
+
+    try {
+        const [signedUrl] = await file.getSignedUrl(options);
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+
+        res.status(200).json({
+            success: true,
+            signedUrl,
+            publicUrl,
+        });
+    } catch (error) {
+        console.error('Error al generar la URL firmada:', error);
+        res.status(500).json({ success: false, message: 'No se pudo generar la URL para la subida.' });
+    }
+});
+
 
 // --- RUTAS DE PEDIDOS ---
 router.get('/orders/:orderId', async (req, res) => {
@@ -1071,3 +1104,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
