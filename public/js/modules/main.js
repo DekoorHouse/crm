@@ -67,6 +67,19 @@ function stopApp() {
  */
 document.addEventListener('DOMContentLoaded', () => {
     setupAuthEventListeners();
+
+    // --- INICIO DE LA SOLUCIÓN ---
+    // Adjuntar listeners para los formularios de los modales que existen al cargar la página
+    const adResponseForm = document.getElementById('ad-response-form');
+    if (adResponseForm) {
+        adResponseForm.addEventListener('submit', handleSaveAdResponse);
+    }
+
+    const quickReplyForm = document.getElementById('quick-reply-form');
+    if (quickReplyForm) {
+        quickReplyForm.addEventListener('submit', handleSaveQuickReply);
+    }
+    // --- FIN DE LA SOLUCIÓN ---
 });
 
 /**
@@ -87,3 +100,4 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
+
