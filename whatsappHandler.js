@@ -293,13 +293,33 @@ router.post('/', async (req, res) => {
             if (message.type === 'text') {
                 messageData.text = message.text.body;
             } else if (message.type === 'image' && message.image?.id) {
-                messageData.fileUrl = `/api/wa/media/${message.image.id}`;
-                messageData.fileType = message.image.mime_type || 'image/jpeg';
+                // --- INICIO DE LA CORRECCIÓN: Usar descarga permanente para imágenes ---
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.image.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    console.log(`[IMAGE] Imagen ${message.image.id} guardada en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[IMAGE] FALLBACK: No se pudo guardar la imagen ${message.image.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.image.id}`;
+                    messageData.fileType = message.image.mime_type || 'image/jpeg';
+                }
                 messageData.text = message.image.caption || '📷 Imagen';
+                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'video' && message.video?.id) {
-                messageData.fileUrl = `/api/wa/media/${message.video.id}`;
-                messageData.fileType = message.video.mime_type || 'video/mp4';
+                 // --- INICIO DE LA CORRECCIÓN: Usar descarga permanente para videos ---
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.video.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    console.log(`[VIDEO] Video ${message.video.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[VIDEO] FALLBACK: No se pudo guardar el video ${message.video.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.video.id}`;
+                    messageData.fileType = message.video.mime_type || 'video/mp4';
+                }
                 messageData.text = message.video.caption || '🎥 Video';
+                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'audio' && message.audio?.id) {
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
@@ -326,17 +346,17 @@ router.post('/', async (req, res) => {
                     messageData.document = { filename: message.document.filename };
                 }
                 messageData.text = message.document.caption || message.document.filename || '📄 Documento';
-            } else if (message.type === 'sticker' && message.sticker?.id) { // --- INICIO DE LA CORRECCIÓN ---
+            } else if (message.type === 'sticker' && message.sticker?.id) {
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.sticker.id, from);
                     messageData.fileUrl = publicUrl;
                     messageData.fileType = mimeType;
-                    messageData.text = 'Sticker'; // Texto descriptivo para la base de datos
+                    messageData.text = 'Sticker';
                     console.log(`[STICKER] Sticker ${message.sticker.id} guardado en Storage. URL: ${publicUrl}`);
                 } catch (uploadError) {
                     console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Error: ${uploadError.message}`);
                     messageData.text = 'Mensaje multimedia (sticker)';
-                } // --- FIN DE LA CORRECCIÓN ---
+                }
             } else if (message.type === 'location') {
                 messageData.location = message.location;
                 messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
