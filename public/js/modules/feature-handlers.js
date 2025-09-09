@@ -380,8 +380,30 @@ async function handleSaveAdResponse(event) {
     const adName = document.getElementById('ar-name').value.trim();
     const adId = document.getElementById('ar-ad-id').value.trim();
     const message = document.getElementById('ar-message').value.trim();
-    const fileUrl = document.getElementById('ar-file-url').value.trim();
+    const fileUrlInput = document.getElementById('ar-file-url');
+    let fileUrl = fileUrlInput.value.trim();
     const fileType = document.getElementById('ar-file-type').value.trim();
+    const fileInput = document.getElementById('ar-file-input');
+
+    // --- INICIO DE LA SOLUCIÓN: Lógica de subida de archivo ---
+    if (fileInput.files[0]) {
+        const file = fileInput.files[0];
+        try {
+            // Muestra un estado de carga al usuario
+            showError('Subiendo archivo...', 'info'); // Puedes crear un nuevo tipo 'info' o usar 'success'
+            const filePath = `ad_responses/${Date.now()}_${file.name}`;
+            const storageRef = storage.ref(filePath);
+            const uploadTask = await storageRef.put(file);
+            fileUrl = await uploadTask.ref.getDownloadURL();
+            hideError();
+        } catch (error) {
+            console.error("Error al subir archivo para Ad Response:", error);
+            showError("Error al subir el archivo. Inténtalo de nuevo.");
+            return; // Detiene la ejecución si la subida falla
+        }
+    }
+    // --- FIN DE LA SOLUCIÓN ---
+
 
     if (!adName || !adId || (!message && !fileUrl)) {
         showError("Nombre, ID de anuncio y un mensaje o archivo son obligatorios.");
@@ -644,4 +666,5 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
 
