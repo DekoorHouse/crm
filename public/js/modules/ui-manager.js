@@ -950,3 +950,59 @@ async function handleSaveChangesOnOrderDetails(orderId) {
 
 // --- FIN DE MODIFICACIÓN ---
 
+// --- INICIO DE LA SOLUCIÓN: Funciones para el modal de Mensajes de Anuncios ---
+function openAdResponseModal(responseId = null) {
+    const modal = document.getElementById('ad-response-modal');
+    if (!modal) return;
+
+    const form = document.getElementById('ad-response-form');
+    const titleEl = document.getElementById('ad-response-modal-title');
+    const docIdInput = document.getElementById('ar-doc-id');
+    const nameInput = document.getElementById('ar-name');
+    const adIdInput = document.getElementById('ar-ad-id');
+    const messageTextarea = document.getElementById('ar-message');
+    const fileUrlInput = document.getElementById('ar-file-url');
+    const fileTypeInput = document.getElementById('ar-file-type');
+    const mediaPreview = document.getElementById('ar-media-preview');
+    const attachButtonText = document.getElementById('ar-attach-button-text');
+
+    // Reset form
+    form.reset();
+    docIdInput.value = '';
+    fileUrlInput.value = '';
+    fileTypeInput.value = '';
+    mediaPreview.innerHTML = '';
+    attachButtonText.textContent = 'Adjuntar Archivo';
+
+    if (responseId) {
+        // Edit mode
+        const adResponse = state.adResponses.find(r => r.id === responseId);
+        if (adResponse) {
+            titleEl.textContent = 'Editar Mensaje de Anuncio';
+            docIdInput.value = adResponse.id;
+            nameInput.value = adResponse.adName || '';
+            adIdInput.value = adResponse.adId || '';
+            messageTextarea.value = adResponse.message || '';
+            fileUrlInput.value = adResponse.fileUrl || '';
+            fileTypeInput.value = adResponse.fileType || '';
+            
+            if (adResponse.fileUrl) {
+                mediaPreview.innerHTML = `<a href="${adResponse.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
+                attachButtonText.textContent = 'Reemplazar Archivo';
+            }
+        }
+    } else {
+        // Add mode
+        titleEl.textContent = 'Añadir Mensaje de Anuncio';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeAdResponseModal() {
+    const modal = document.getElementById('ad-response-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+// --- FIN DE LA SOLUCIÓN ---
