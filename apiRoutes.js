@@ -584,6 +584,20 @@ router.post('/quick-replies', async (req, res) => {
     if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
     if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
     try {
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Hacer público el archivo en GCS si se subió uno nuevo.
+        if (fileUrl && fileUrl.includes(bucket.name)) {
+            try {
+                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
+                await bucket.file(filePath).makePublic();
+                console.log(`[GCS-QR] Archivo ${filePath} hecho público con éxito.`);
+            } catch (gcsError) {
+                console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+                // No se detiene el proceso, pero se advierte del posible error.
+            }
+        }
+        // --- FIN DE LA CORRECCIÓN ---
+
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
         if (!existing.empty) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
         const replyData = { shortcut, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
@@ -598,6 +612,19 @@ router.put('/quick-replies/:id', async (req, res) => {
     if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
     if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
     try {
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Hacer público el archivo en GCS si se subió uno nuevo.
+        if (fileUrl && fileUrl.includes(bucket.name)) {
+            try {
+                const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
+                await bucket.file(filePath).makePublic();
+                console.log(`[GCS-QR] Archivo ${filePath} hecho público con éxito.`);
+            } catch (gcsError) {
+                console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+            }
+        }
+        // --- FIN DE LA CORRECCIÓN ---
+
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
         if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
         const updateData = { shortcut, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
