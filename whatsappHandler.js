@@ -404,7 +404,10 @@ router.post('/', async (req, res) => {
                 }
             }
 
-            if (await handlePostalCodeAuto(message, contactRef, from)) return res.sendStatus(200);
+            // --- INICIO DE LA MODIFICACIÓN ---
+            // Se comenta la siguiente línea para desactivar la respuesta automática a códigos postales.
+            // if (await handlePostalCodeAuto(message, contactRef, from)) return res.sendStatus(200);
+            // --- FIN DE LA MODIFICACIÓN ---
 
             if (isNewContact) {
                 let adResponseSent = false;
