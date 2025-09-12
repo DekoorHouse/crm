@@ -180,6 +180,62 @@ export async function saveSueldosDataToFirestore(dataToSave) {
     }
 }
 
+export async function saveAdjustment(employeeId, type, adjustmentData) {
+    saveStateToHistory('sueldos'); 
+    try {
+        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
+        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
+
+        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
+        const employee = updatedEmployees[employeeIndex];
+        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
+        
+        if (!employee[collectionName]) employee[collectionName] = [];
+        employee[collectionName].push(adjustmentData);
+        
+        recalculatePayment(employee);
+
+        await saveSueldosDataToFirestore(updatedEmployees);
+        showModal({ show: false });
+    } catch (error) {
+        console.error(`Error al guardar ${type}:`, error);
+        actionHistory.pop(); 
+        showModal({ title: 'Error', body: `No se pudo guardar el ${type}. Inténtalo de nuevo.`, showCancel: false });
+    }
+}
+
+export async function deleteAdjustment(employeeId, type, adjustmentIndex) {
+    saveStateToHistory('sueldos');
+    try {
+        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
+        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
+
+        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
+        const employee = updatedEmployees[employeeIndex];
+        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
+
+        if (employee[collectionName] && employee[collectionName][adjustmentIndex]) {
+            employee[collectionName].splice(adjustmentIndex, 1);
+            recalculatePayment(employee);
+            await saveSueldosDataToFirestore(updatedEmployees);
+            showModal({ show: false });
+        } else {
+            throw new Error("Ajuste no encontrado para eliminar.");
+        }
+    } catch (error) {
+        console.error(`Error al eliminar ${type}:`, error);
+        actionHistory.pop();
+        showModal({ title: 'Error', body: `No se pudo eliminar el ${type}.`, showCancel: false });
+    }
+}
+
+
+// --- OPERACIONES EN LOTE (BULK) ---
+
+/**
+ * Guarda un lote de nuevos gastos en Firestore.
+ * @param {Array<object>} expenses - Un array de objetos de gasto para guardar.
+ */
 export async function saveBulkExpenses(expenses) {
     if (!expenses || expenses.length === 0) return;
     saveStateToHistory();
@@ -306,55 +362,6 @@ export async function deleteSueldosData() {
         showModal({ title: 'Éxito', body: 'Datos de sueldos eliminados.', showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error deleting payroll data:", error);
-    }
-}
-
-export async function saveAdjustment(employeeId, type, adjustmentData) {
-    saveStateToHistory('sueldos'); 
-    try {
-        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
-        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
-
-        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
-        const employee = updatedEmployees[employeeIndex];
-        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
-        
-        if (!employee[collectionName]) employee[collectionName] = [];
-        employee[collectionName].push(adjustmentData);
-        
-        recalculatePayment(employee);
-
-        await saveSueldosDataToFirestore(updatedEmployees);
-        showModal({ show: false });
-    } catch (error) {
-        console.error(`Error al guardar ${type}:`, error);
-        actionHistory.pop(); 
-        showModal({ title: 'Error', body: `No se pudo guardar el ${type}. Inténtalo de nuevo.`, showCancel: false });
-    }
-}
-
-export async function deleteAdjustment(employeeId, type, adjustmentIndex) {
-    saveStateToHistory('sueldos');
-    try {
-        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
-        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
-
-        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
-        const employee = updatedEmployees[employeeIndex];
-        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
-
-        if (employee[collectionName] && employee[collectionName][adjustmentIndex]) {
-            employee[collectionName].splice(adjustmentIndex, 1);
-            recalculatePayment(employee);
-            await saveSueldosDataToFirestore(updatedEmployees);
-            showModal({ show: false });
-        } else {
-            throw new Error("Ajuste no encontrado para eliminar.");
-        }
-    } catch (error) {
-        console.error(`Error al eliminar ${type}:`, error);
-        actionHistory.pop();
-        showModal({ title: 'Error', body: `No se pudo eliminar el ${type}.`, showCancel: false });
     }
 }
 
