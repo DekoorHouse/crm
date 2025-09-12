@@ -226,14 +226,21 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
     try {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
-        if (!globalBotActive) {
-            console.log(`[AI] Bot global desactivado. No se enviará respuesta.`);
+
+        // --- INICIO DE MODIFICACIÓN: Lógica de activación del Bot ---
+        // El bot se activa si el interruptor global está encendido (y no está anulado para este contacto),
+        // O si está activado individualmente para este contacto específico.
+        const isIndividuallyActive = contactData.botActive === true;
+        const isIndividuallyDeactivated = contactData.botActive === false;
+        
+        const shouldRun = (globalBotActive && !isIndividuallyDeactivated) || isIndividuallyActive;
+
+        if (!shouldRun) {
+            console.log(`[AI] El bot no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). No se enviará respuesta.`);
             return;
         }
-        if (contactData.botActive === false) {
-            console.log(`[AI] Bot desactivado para el contacto ${contactId}. No se enviará respuesta.`);
-            return;
-        }
+        // --- FIN DE MODIFICACIÓN ---
+
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         const adId = contactData.adReferral?.source_id;
         if (adId) {
@@ -265,7 +272,6 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResponse = await generateGeminiResponse(prompt);
         
-        // SE CORRIGIÓ: Se llama a la función directamente ya que fue movida a este archivo.
         const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
         
         await contactRef.collection('messages').add({
@@ -350,4 +356,3 @@ module.exports = {
     sendConversionEvent,
     sendAdvancedWhatsAppMessage
 };
-
