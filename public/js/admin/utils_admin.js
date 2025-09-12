@@ -155,60 +155,98 @@ export function recalculatePayment(employee) {
 
 /**
  * Parsea los datos de sueldos desde un array JSON (proveniente de una hoja de cálculo).
+ * Adaptado para leer un formato de bloques por empleado en lugar de una tabla tradicional.
  * @param {Array<Array<string>>} jsonData - Los datos crudos de la hoja.
  * @returns {Array<object>} Un array de objetos de empleado.
  */
 export function parseSueldosData(jsonData) {
     const employees = [];
-    if (jsonData.length < 2) return employees;
-
-    const headers = jsonData[0].map(h => h.trim());
-    const nameIndex = headers.findIndex(h => h.toLowerCase().includes('nombre'));
-    
-    if (nameIndex === -1) {
-        throw new Error("La columna 'Nombre' no se encontró en el archivo de sueldos.");
+    if (!jsonData || jsonData.length < 4) {
+        return employees;
     }
-    
-    const dayColumns = headers.map((header, index) => {
-        const dayMatch = header.match(/(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)/i);
-        if (dayMatch) {
-            return { day: dayMatch[0], index };
+
+    let startDate = null;
+    const dateCell = jsonData[2] ? jsonData[2][3] : null; 
+    if (dateCell && typeof dateCell === 'string' && dateCell.includes('~')) {
+        const startDateString = dateCell.split('~')[0].trim();
+        const dateParts = startDateString.split('-').map(Number);
+        if (dateParts.length === 3) {
+            startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
         }
-        return null;
-    }).filter(Boolean);
+    }
 
-    for (let i = 1; i < jsonData.length; i++) {
+    if (!startDate) {
+        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda D3 (formato esperado: 'YYYY-MM-DD ~ YYYY-MM-DD').");
+    }
+
+    const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+
+    for (let i = 0; i < jsonData.length; i++) {
         const row = jsonData[i];
-        const name = row[nameIndex];
-        if (!name) continue;
+        if (!Array.isArray(row)) continue;
 
-        const employeeId = name.toLowerCase().replace(/\s+/g, '_');
-        const employee = {
-            id: employeeId,
-            name: name,
-            registros: [],
-            bonos: [],
-            descuentos: [],
-            paymentHistory: []
-        };
-        
-        dayColumns.forEach(col => {
-            const entryExit = row[col.index];
-            if (entryExit && typeof entryExit === 'string' && entryExit.includes('-')) {
-                const [entrada, salida] = entryExit.split('-').map(s => s.trim());
-                if (entrada && salida) {
-                    employee.registros.push({
-                        day: col.day,
-                        entrada: entrada,
-                        salida: salida
-                    });
+        let name = null;
+
+        for (let j = 0; j < row.length; j++) {
+            if (typeof row[j] === 'string' && row[j].toLowerCase().includes('nombre')) {
+                name = row[j + 1];
+                break;
+            }
+        }
+
+        if (name) {
+            const employeeId = String(name).toLowerCase().replace(/\s+/g, '_');
+            const employee = {
+                id: employeeId,
+                name: String(name),
+                registros: [],
+                bonos: [],
+                descuentos: [],
+                paymentHistory: []
+            };
+
+            const dayHeaderRow = jsonData[i - 1];
+            const attendanceRow = jsonData[i + 1];
+
+            if (dayHeaderRow && attendanceRow) {
+                for (let k = 0; k < dayHeaderRow.length; k++) {
+                    const dayNumber = dayHeaderRow[k];
+                    if (typeof dayNumber === 'number' && dayNumber >= 1 && dayNumber <= 31) {
+                        
+                        const recordDate = new Date(startDate.getTime());
+                        recordDate.setUTCDate(startDate.getUTCDate() + dayNumber - 1);
+                        const dayName = dayNames[recordDate.getUTCDay()];
+
+                        const timesCell = attendanceRow[k];
+                        if (timesCell && typeof timesCell === 'string') {
+                            const times = timesCell.split('\n').map(t => t.trim()).filter(t => /\d{1,2}:\d{2}/.test(t));
+                            
+                            if (times.length > 0) {
+                                times.sort(); 
+                                const entrada = times[0];
+                                const salida = times[times.length - 1];
+                                
+                                employee.registros.push({
+                                    day: dayName,
+                                    entrada: entrada,
+                                    salida: salida
+                                });
+                            }
+                        }
+                    }
                 }
             }
-        });
-        
-        recalculatePayment(employee);
-        employees.push(employee);
+            
+            recalculatePayment(employee);
+            employees.push(employee);
+            i += 1; 
+        }
     }
+
+    if (employees.length === 0) {
+        throw new Error("No se encontraron empleados en el archivo. Verifica que el formato incluya filas con 'Nombre :' seguido por el nombre del empleado.");
+    }
+    
     return employees;
 }
 
@@ -327,4 +365,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
