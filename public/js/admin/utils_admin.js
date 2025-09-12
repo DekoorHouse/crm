@@ -175,7 +175,8 @@ export function parseSueldosData(jsonData) {
     }
 
     let startDate = null;
-    const dateCell = jsonData[2] ? jsonData[2][4] : null;
+    // FIX: Changed cell reference from E3 (jsonData[2][4]) to C3 (jsonData[2][2])
+    const dateCell = jsonData[2] ? jsonData[2][2] : null;
 
     if (typeof dateCell === 'number') {
         startDate = convertExcelDate(dateCell);
@@ -191,7 +192,8 @@ export function parseSueldosData(jsonData) {
     }
 
     if (!startDate || isNaN(startDate.getTime())) {
-        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda E3 (formato esperado: 'YYYY-MM-DD' o formato de fecha de Excel).");
+        // FIX: Updated error message to reflect the correct cell C3.
+        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda C3 (formato esperado: 'YYYY-MM-DD' o formato de fecha de Excel).");
     }
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -355,8 +357,8 @@ export function addManualEmployees() {
 export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
     if (!start || !end) {
-        // CORRECCIÓN: Se corrigió el error tipográfico de 'sueldsosData' a 'sueldosData'.
-        return state.sueldosData; // Return all data if no filter is set
+        // FIX: Corrected typo from 'sueldsosData' to 'sueldosData'.
+        return state.sueldsosData; // Return all data if no filter is set
     }
 
     const filtered = JSON.parse(JSON.stringify(state.sueldosData));
@@ -381,4 +383,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
