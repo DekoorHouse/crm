@@ -119,3 +119,159 @@ export function autoCategorizeWithRulesOnly(concept) {
     }
     return 'SinCategorizar';
 }
+
+/**
+ * Recalcula el pago total de un empleado basándose en sus registros de horas, bonos y gastos.
+ * Modifica el objeto del empleado directamente.
+ * @param {object} employee - El objeto del empleado a recalcular.
+ */
+export function recalculatePayment(employee) {
+    if (!employee || !employee.registros) return;
+
+    let totalMinutes = 0;
+    employee.registros.forEach(registro => {
+        const minutes = calculateMinutesFromEntryExit(registro.entrada, registro.salida);
+        registro.minutos = minutes;
+        registro.horas = (minutes / 60).toFixed(2);
+        totalMinutes += minutes;
+    });
+
+    const totalHours = totalMinutes / 60;
+    employee.totalMinutes = totalMinutes;
+    employee.totalHours = totalHours;
+    employee.totalHoursFormatted = totalHours.toFixed(2);
+
+    const rate = employee.ratePerHour || 70; // Default rate
+    const subtotal = totalHours * rate;
+    const totalBonos = (employee.bonos || []).reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
+    const totalGastos = (employee.descuentos || []).reduce((sum, g) => sum + (parseFloat(g.amount) || 0), 0);
+    
+    employee.subtotal = subtotal;
+    employee.totalBonos = totalBonos;
+    employee.totalGastos = totalGastos;
+    employee.pago = subtotal + totalBonos - totalGastos;
+}
+
+
+/**
+ * Parsea los datos de sueldos desde un array JSON (proveniente de una hoja de cálculo).
+ * @param {Array<Array<string>>} jsonData - Los datos crudos de la hoja.
+ * @returns {Array<object>} Un array de objetos de empleado.
+ */
+export function parseSueldosData(jsonData) {
+    const employees = [];
+    if (jsonData.length < 2) return employees;
+
+    const headers = jsonData[0].map(h => h.trim());
+    const nameIndex = headers.findIndex(h => h.toLowerCase().includes('nombre'));
+    
+    if (nameIndex === -1) {
+        throw new Error("La columna 'Nombre' no se encontró en el archivo de sueldos.");
+    }
+    
+    const dayColumns = headers.map((header, index) => {
+        const dayMatch = header.match(/(Lunes|Martes|Miércoles|Jueves|Viernes|Sábado|Domingo)/i);
+        if (dayMatch) {
+            return { day: dayMatch[0], index };
+        }
+        return null;
+    }).filter(Boolean);
+
+    for (let i = 1; i < jsonData.length; i++) {
+        const row = jsonData[i];
+        const name = row[nameIndex];
+        if (!name) continue;
+
+        const employeeId = name.toLowerCase().replace(/\s+/g, '_');
+        const employee = {
+            id: employeeId,
+            name: name,
+            registros: [],
+            bonos: [],
+            descuentos: [],
+            paymentHistory: []
+        };
+        
+        dayColumns.forEach(col => {
+            const entryExit = row[col.index];
+            if (entryExit && typeof entryExit === 'string' && entryExit.includes('-')) {
+                const [entrada, salida] = entryExit.split('-').map(s => s.trim());
+                if (entrada && salida) {
+                    employee.registros.push({
+                        day: col.day,
+                        entrada: entrada,
+                        salida: salida
+                    });
+                }
+            }
+        });
+        
+        recalculatePayment(employee);
+        employees.push(employee);
+    }
+    return employees;
+}
+
+
+/**
+ * Genera un mensaje de texto formateado para WhatsApp con el resumen de pago de un empleado.
+ * @param {object} employee - El objeto del empleado.
+ * @returns {string} El mensaje formateado.
+ */
+export function generateWhatsAppMessage(employee) {
+    if (!employee) return "Error: No se proporcionaron datos del empleado.";
+
+    let message = `*Resumen de Pago para ${employee.name}*\n\n`;
+    message += `*Horas trabajadas:* ${employee.totalHoursFormatted || '0.00'} hrs\n`;
+    message += `*Tarifa por hora:* ${formatCurrency(employee.ratePerHour || 70)}\n`;
+    message += `*Subtotal:* ${formatCurrency(employee.subtotal || 0)}\n\n`;
+
+    if (employee.bonos && employee.bonos.length > 0) {
+        message += "*Bonos:*\n";
+        employee.bonos.forEach(bono => {
+            message += `- ${bono.concept}: ${formatCurrency(bono.amount)}\n`;
+        });
+        message += `*Total Bonos:* ${formatCurrency(employee.totalBonos)}\n\n`;
+    }
+
+    if (employee.descuentos && employee.descuentos.length > 0) {
+        message += "*Gastos/Descuentos:*\n";
+        employee.descuentos.forEach(gasto => {
+            message += `- ${gasto.concept}: ${formatCurrency(gasto.amount)}\n`;
+        });
+        message += `*Total Gastos:* ${formatCurrency(employee.totalGastos)}\n\n`;
+    }
+
+    message += `*TOTAL A PAGAR:* *${formatCurrency(employee.pago || 0)}*`;
+
+    return message;
+}
+
+/**
+ * Filtra la lista global de gastos basándose en los filtros de fecha y categoría activos.
+ * @param {boolean} includeFinancial - Si es true, se ignoran los filtros y se devuelven todos los gastos.
+ * @returns {Array<object>} Un array de gastos filtrados.
+ */
+export function getFilteredExpenses(includeFinancial = false) {
+    if (includeFinancial) {
+        return [...state.expenses];
+    }
+    const { start, end } = state.dateFilter;
+    const category = state.categoryFilter;
+
+    return state.expenses.filter(expense => {
+        // Match date
+        const expenseDate = new Date(expense.date);
+        expenseDate.setUTCHours(0, 0, 0, 0);
+        const dateMatch = (!start || expenseDate >= start) && (!end || expenseDate <= end);
+        if (!dateMatch) return false;
+
+        // Match category
+        if (category && category !== 'all') {
+            const expenseCategory = expense.category || 'SinCategorizar';
+            return expenseCategory === category;
+        }
+
+        return true; // If category is 'all'
+    });
+}
