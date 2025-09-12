@@ -1,4 +1,4 @@
-import { elements, state } from './state_admin.js';
+import { elements, state, charts } from './state_admin.js';
 import { formatCurrency } from './utils_admin.js';
 
 /**
@@ -32,16 +32,16 @@ export function updateAllCharts(getFilteredExpenses) {
     const colors = labels.map(label => getComputedStyle(document.documentElement).getPropertyValue(`--c-${label.toLowerCase().replace(/ /g, '')}`).trim() || '#9ca3af');
     
     if (elements.chartContexts.pie) {
-        if (state.charts.pieChart) state.charts.pieChart.destroy();
-        state.charts.pieChart = new Chart(elements.chartContexts.pie, getChartConfig('pie', labels, values, colors, 'Distribución de Gastos Operativos', totalIncome));
+        if (charts.pieChart) charts.pieChart.destroy();
+        charts.pieChart = new Chart(elements.chartContexts.pie, getChartConfig('pie', labels, values, colors, 'Distribución de Gastos Operativos', totalIncome));
     }
     if (elements.chartContexts.category) {
-        if (state.charts.categoryChart) state.charts.categoryChart.destroy();
-         state.charts.categoryChart = new Chart(elements.chartContexts.category, getChartConfig('bar', labels, values, colors, 'Gastos Operativos por Categoría'));
+        if (charts.categoryChart) charts.categoryChart.destroy();
+         charts.categoryChart = new Chart(elements.chartContexts.category, getChartConfig('bar', labels, values, colors, 'Gastos Operativos por Categoría'));
     }
     if (elements.chartContexts.compare) {
-        if (state.charts.compareChart) state.charts.compareChart.destroy();
-        state.charts.compareChart = new Chart(elements.chartContexts.compare, getCompareChartConfig(categories['Alex'] || 0, categories['Chris'] || 0));
+        if (charts.compareChart) charts.compareChart.destroy();
+        charts.compareChart = new Chart(elements.chartContexts.compare, getCompareChartConfig(categories['Alex'] || 0, categories['Chris'] || 0));
     }
 }
 
@@ -194,8 +194,8 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
  */
 export function updateLeadsTrendChart() {
     if (!elements.chartContexts.leadsTrend) return;
-    if (state.charts.leadsTrendChart) {
-        state.charts.leadsTrendChart.destroy();
+    if (charts.leadsTrendChart) {
+        charts.leadsTrendChart.destroy();
     }
     
     const allOrders = state.financials.allOrders || [];
@@ -241,7 +241,7 @@ export function updateLeadsTrendChart() {
     const leadsData = sortedLabels.map(label => leadsByTime[label] || 0);
     const paidData = sortedLabels.map(label => paidByTime[label] || 0);
 
-    state.charts.leadsTrendChart = new Chart(elements.chartContexts.leadsTrend, {
+    charts.leadsTrendChart = new Chart(elements.chartContexts.leadsTrend, {
         type: 'bar',
         data: {
             labels: sortedLabels,
@@ -279,3 +279,4 @@ export function updateLeadsTrendChart() {
     });
     elements.leadsChartTitle.textContent = title;
 }
+
