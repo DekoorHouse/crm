@@ -152,11 +152,20 @@ export function recalculatePayment(employee) {
     employee.pago = subtotal + totalBonos - totalGastos;
 }
 
+/**
+ * Convierte un número de serie de fecha de Excel a un objeto Date de JavaScript.
+ * @param {number} excelDate - El número de serie de la fecha de Excel.
+ * @returns {Date} El objeto Date correspondiente.
+ */
+function convertExcelDate(excelDate) {
+    const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+    return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
+}
 
 /**
  * Parsea los datos de sueldos desde un array JSON (proveniente de una hoja de cálculo).
- * Adaptado para leer un formato de bloques por empleado en lugar de una tabla tradicional.
- * @param {Array<Array<string>>} jsonData - Los datos crudos de la hoja.
+ * Adaptado para leer un formato de bloques por empleado y manejar fechas numéricas de Excel.
+ * @param {Array<Array<string|number>>} jsonData - Los datos crudos de la hoja.
  * @returns {Array<object>} Un array de objetos de empleado.
  */
 export function parseSueldosData(jsonData) {
@@ -166,10 +175,11 @@ export function parseSueldosData(jsonData) {
     }
 
     let startDate = null;
-    // CORRECCIÓN: Se cambia el índice de la columna de 3 (D) a 4 (E).
-    const dateCell = jsonData[2] ? jsonData[2][4] : null; 
-    if (dateCell && typeof dateCell === 'string' && dateCell.includes('-')) {
-        // Se asume que la primera parte es la fecha de inicio.
+    const dateCell = jsonData[2] ? jsonData[2][4] : null;
+
+    if (typeof dateCell === 'number') {
+        startDate = convertExcelDate(dateCell);
+    } else if (typeof dateCell === 'string' && dateCell.includes('-')) {
         const startDateString = dateCell.split(' ')[0].trim();
         const dateParts = startDateString.split('-').map(Number);
         if (dateParts.length === 3) {
@@ -177,8 +187,8 @@ export function parseSueldosData(jsonData) {
         }
     }
 
-    if (!startDate) {
-        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda E3 (formato esperado: 'YYYY-MM-DD').");
+    if (!startDate || isNaN(startDate.getTime())) {
+        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda E3 (formato esperado: 'YYYY-MM-DD' o formato de fecha de Excel).");
     }
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -342,7 +352,7 @@ export function addManualEmployees() {
 export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
     if (!start || !end) {
-        return state.sueldosData; // Return all data if no filter is set
+        return state.sueldsosData; // Return all data if no filter is set
     }
 
     const filtered = JSON.parse(JSON.stringify(state.sueldosData));
