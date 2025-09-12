@@ -630,6 +630,58 @@ async function handleGlobalBotToggle(isActive) {
     }
 }
 
+// --- INICIO DE MODIFICACIÓN: Nueva función para manejar el interruptor de IA por contacto ---
+/**
+ * Activa o desactiva el bot de IA para un contacto específico.
+ * @param {string} contactId - El ID del contacto a modificar.
+ * @param {boolean} isActive - El nuevo estado del bot (true para activado, false para desactivado).
+ */
+async function handleBotToggle(contactId, isActive) {
+    if (!contactId) return;
+
+    // --- 1. Actualización optimista de la UI ---
+    // Actualiza el estado local primero para una respuesta instantánea.
+    const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+    let originalState = null;
+    if (contactIndex > -1) {
+        originalState = state.contacts[contactIndex].botActive;
+        state.contacts[contactIndex].botActive = isActive;
+        
+        // Si el chat de este contacto está abierto, vuelve a dibujarlo para mostrar el cambio.
+        if(state.selectedContactId === contactId) {
+            renderChatWindow();
+        }
+    }
+
+    // --- 2. Llamada a la API ---
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/bot/toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contactId, isActive })
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al actualizar el estado del bot.');
+        }
+        // El listener de Firestore se encargará de sincronizar el estado real,
+        // por lo que no es necesario hacer más nada si la llamada es exitosa.
+    } catch (error) {
+        console.error("Error al cambiar el estado del bot:", error);
+        showError(error.message);
+        
+        // --- 3. Revertir la UI en caso de fallo ---
+        if (contactIndex > -1 && originalState !== null) {
+            state.contacts[contactIndex].botActive = originalState;
+            if(state.selectedContactId === contactId) {
+                renderChatWindow();
+            }
+        }
+    }
+}
+// --- FIN DE MODIFICACIÓN ---
+
+
 // --- AÑADIDO: Handlers for AI Ad Prompts ---
 async function handleSaveAIAdPrompt(event) {
     event.preventDefault();
@@ -844,4 +896,3 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
-
