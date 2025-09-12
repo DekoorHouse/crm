@@ -203,11 +203,17 @@ export function parseSueldosData(jsonData) {
 
         for (let j = 0; j < row.length; j++) {
             // FIX: Se hizo la búsqueda del nombre más robusta.
-            // Ahora elimina espacios al inicio/final y verifica que la celda *comience* con "nombre",
-            // lo cual es más seguro que solo buscar si lo contiene.
+            // Ahora busca la celda que contiene "Nombre" y luego busca en las celdas siguientes
+            // el primer valor no vacío para asignarlo como el nombre.
             if (typeof row[j] === 'string' && row[j].trim().toLowerCase().startsWith('nombre')) {
-                name = row[j + 1];
-                break;
+                // Buscar en las siguientes celdas de la misma fila
+                for (let k = j + 1; k < row.length; k++) {
+                    if (row[k] && String(row[k]).trim() !== '') {
+                        name = String(row[k]).trim();
+                        break; // Salir del bucle interior una vez que se encuentra el nombre
+                    }
+                }
+                if (name) break; // Salir del bucle principal si ya se encontró el nombre
             }
         }
 
@@ -383,3 +389,4 @@ export function filterSueldos() {
         return employee;
     });
 }
+
