@@ -221,16 +221,13 @@ export function initEventListeners() {
         }
     });
 
-    elements.sueldosTableContainer.addEventListener('change', (e) => {
+    // FIX: Changed event from 'change' to 'input' for instant recalculation.
+    elements.sueldosTableContainer.addEventListener('input', (e) => {
         if (e.target.classList.contains('hourly-rate-input')) {
             const employeeId = e.target.closest('.employee-card').dataset.employeeId;
             const newRate = parseFloat(e.target.value);
-            const employee = state.sueldosData.find(emp => emp.id === employeeId);
-            if (!isNaN(newRate) && newRate >= 0) {
-                updateEmployeeRate(employeeId, newRate);
-            } else if (employee) {
-                e.target.value = employee.ratePerHour || 70;
-            }
+            // No need to check for NaN, updateEmployeeRate will handle it
+            updateEmployeeRate(employeeId, newRate);
         }
     });
 
@@ -320,7 +317,59 @@ function sendWhatsAppMessage(employee) {
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
 }
-function updateSchedule(cell) { console.log('Schedule updated'); }
+
+/**
+ * Handles updates when a user finishes editing an entry/exit time cell.
+ * @param {HTMLElement} cell - The TD element that was edited.
+ */
+function updateSchedule(cell) {
+    const day = cell.closest('tr').cells[0].textContent;
+    const type = cell.dataset.type; // 'entrada' or 'salida'
+    const newValue = cell.textContent.trim();
+    const employeeId = cell.closest('.employee-card').dataset.employeeId;
+
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) return;
+
+    let registro = employee.registros.find(r => r.day === day);
+    if (!registro) {
+        // If the day doesn't exist in records, create it
+        registro = { day: day, entrada: '', salida: '', horas: '0.00' };
+        employee.registros.push(registro);
+    }
+    
+    // Update the value
+    registro[type] = newValue;
+
+    // Recalculate everything for this employee
+    recalculatePayment(employee);
+
+    // Update UI for this employee card
+    const employeeCard = elements.sueldosTableContainer.querySelector(`.employee-card[data-employee-id="${employeeId}"]`);
+    if (employeeCard) {
+        // Find the specific row for the day and update its hours
+        const row = Array.from(employeeCard.querySelectorAll('tbody tr')).find(r => r.cells[0].textContent === day);
+        if (row) {
+            const updatedRegistro = employee.registros.find(r => r.day === day);
+            if (updatedRegistro) {
+                row.cells[3].textContent = updatedRegistro.horas; // Update hours cell
+            }
+        }
+        
+        // Update the summary values
+        const totalHoursEl = employeeCard.querySelector('.payment-value-total-hours');
+        const subtotalEl = employeeCard.querySelector('.payment-value-subtotal');
+        const finalPaymentEl = employeeCard.querySelector('.payment-value-final');
+        
+        if (totalHoursEl) totalHoursEl.textContent = employee.totalHoursFormatted || '0.00';
+        if (subtotalEl) subtotalEl.textContent = formatCurrency(employee.subtotal || 0);
+        if (finalPaymentEl) finalPaymentEl.textContent = formatCurrency(employee.pago || 0);
+    }
+
+    // Save all data to Firestore
+    services.saveSueldosDataToFirestore(state.sueldosData);
+}
+
 
 /**
  * Updates an employee's hourly rate, recalculates their payment, updates the UI, and saves to Firestore.
@@ -330,9 +379,12 @@ function updateSchedule(cell) { console.log('Schedule updated'); }
 function updateEmployeeRate(employeeId, newRate) {
     const employee = state.sueldosData.find(emp => emp.id === employeeId);
     if (!employee) return;
+    
+    // If the input is empty or not a valid number, use the previous rate or default
+    const validRate = (!isNaN(newRate)) ? newRate : (employee.ratePerHour || 70);
 
     // 1. Update the rate in the application state
-    employee.ratePerHour = newRate;
+    employee.ratePerHour = validRate;
 
     // 2. Recalculate payment using the logic from the utils module
     recalculatePayment(employee);
