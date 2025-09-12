@@ -275,3 +275,56 @@ export function getFilteredExpenses(includeFinancial = false) {
         return true; // If category is 'all'
     });
 }
+
+/**
+ * Placeholder function to handle potential future data migrations for payroll.
+ * This was added to prevent a runtime error as it was called but not defined.
+ */
+export function migrateSueldosDataStructure() {
+    // Currently no migration logic is needed. This is a placeholder.
+    // console.log("Checking sueldos data structure...");
+}
+
+/**
+ * Placeholder function to add manually tracked employees to the payroll data.
+ * This was added to prevent a runtime error as it was called but not defined.
+ */
+export function addManualEmployees() {
+    // Logic to add employees not present in the uploaded file can be added here.
+    // console.log("Checking for manual employees to add...");
+}
+
+/**
+ * Filters the payroll data based on the selected date range in the state.
+ * It filters adjustments (bonuses, expenses) but keeps all weekly hour records.
+ * @returns {Array<object>} An array of employee objects with filtered adjustments.
+ */
+export function filterSueldos() {
+    const { start, end } = state.sueldosDateFilter;
+    if (!start || !end) {
+        return state.sueldosData; // Return all data if no filter is set
+    }
+
+    const filtered = JSON.parse(JSON.stringify(state.sueldosData));
+
+    return filtered.map(employee => {
+        // Filter bonuses by the selected date range
+        employee.bonos = (employee.bonos || []).filter(bono => {
+            if (!bono.date) return false;
+            const bonoDate = new Date(bono.date);
+            return bonoDate >= start && bonoDate <= end;
+        });
+
+        // Filter expenses/discounts by the selected date range
+        employee.descuentos = (employee.descuentos || []).filter(gasto => {
+            if (!gasto.date) return false;
+            const gastoDate = new Date(gasto.date);
+            return gastoDate >= start && gastoDate <= end;
+        });
+        
+        // Recalculate payment based on the filtered adjustments
+        recalculatePayment(employee);
+        return employee;
+    });
+}
+
