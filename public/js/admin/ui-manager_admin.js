@@ -588,11 +588,15 @@ export function renderSueldosData(employees, isFiltered) {
                     </div>
                     <div class="adjustments-list">
                         <h6>Bonos</h6>
-                        ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
+                        <div class="adjustments-list-content">
+                            ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
+                        </div>
                     </div>
                     <div class="adjustments-list">
                         <h6>Gastos/Descuentos</h6>
-                        ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
+                        <div class="adjustments-list-content">
+                            ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
+                        </div>
                     </div>
                     <div class="employee-payment-summary">
                          <div class="payment-row final-payment"><span>Pago Final:</span><span class="payment-value-final">${formatCurrency(employee.pago || 0)}</span></div>
