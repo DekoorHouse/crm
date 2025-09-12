@@ -96,15 +96,31 @@ export function parseExpensesData(jsonData, fileType) {
         } else if (typeof dateRaw === 'number') {
             date = convertExcelDate(dateRaw).toISOString().split('T')[0];
         } else if (typeof dateRaw === 'string') {
-            const parts = dateRaw.match(/(\d+)/g);
-            if (parts && parts.length >= 3) {
-                 const year = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
-                 const month = parts[0] > 12 ? parts[1] : parts[0];
-                 const day = parts[0] > 12 ? parts[0] : parts[1];
-                 date = new Date(`${year}-${month}-${day}`).toISOString().split('T')[0];
-            } else {
-                 date = new Date().toISOString().split('T')[0];
+            // --- INICIO DE LA CORRECCIÓN: Lógica de fecha mejorada ---
+            // Intenta interpretar formatos como DD/MM/AAAA, MM/DD/AAAA, YYYY-MM-DD
+            const parts = dateRaw.match(/\d+/g);
+            let parsedDate = null;
+            if (parts && parts.length === 3) {
+                const [p1, p2, p3] = parts.map(Number);
+                const year = p3 > 1000 ? p3 : 2000 + p3;
+                // Intenta DD/MM/YYYY primero
+                if (p1 <= 31 && p2 <= 12) {
+                    parsedDate = new Date(year, p2 - 1, p1);
+                } 
+                // Si falla, intenta MM/DD/YYYY
+                else if (p1 <= 12 && p2 <= 31) {
+                    parsedDate = new Date(year, p1 - 1, p2);
+                }
             }
+            // Si el parseo fue exitoso y es una fecha válida, la usamos.
+            if (parsedDate && !isNaN(parsedDate)) {
+                 // Ajustar por la zona horaria para obtener la fecha correcta en formato ISO
+                 parsedDate.setMinutes(parsedDate.getMinutes() + parsedDate.getTimezoneOffset());
+                 date = parsedDate.toISOString().split('T')[0];
+            } else {
+                 date = new Date().toISOString().split('T')[0]; // Fallback a hoy si no se puede parsear
+            }
+            // --- FIN DE LA CORRECCIÓN ---
         } else {
             date = new Date().toISOString().split('T')[0];
         }
@@ -411,4 +427,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
