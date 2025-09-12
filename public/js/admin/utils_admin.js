@@ -61,10 +61,7 @@ export function hashCode(str) {
  * @returns {Date} El objeto Date correspondiente.
  */
 function convertExcelDate(excelDate) {
-    // La fecha base de Excel es 1900-01-01, pero tiene un bug que cuenta 1900 como año bisiesto.
-    // Restamos 25569 que es el offset entre la época de Excel y la de Unix (1970-01-01).
     const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    // Se ajusta la zona horaria para evitar que la fecha cambie al día anterior.
     return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
 }
 
@@ -76,47 +73,56 @@ function convertExcelDate(excelDate) {
  */
 export function parseExpensesData(jsonData, fileType) {
     return jsonData.map(item => {
-        const dateRaw = item['Fecha'] || item['fecha'];
-        const concept = item['Concepto'] || item['concepto'] || item['Descripción'] || 'Sin concepto';
-        const charge = item['Cargo'] || item['cargo'] || 0;
-        const credit = item['Abono'] || item['abono'] || item['Ingreso'] || item['ingreso'] || 0;
+        // Busca las cabeceras sin importar mayúsculas/minúsculas o acentos
+        const findKey = (keys) => {
+            const lowerKeys = keys.map(k => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+            for (const itemKey in item) {
+                const lowerItemKey = itemKey.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+                if (lowerKeys.includes(lowerItemKey)) {
+                    return item[itemKey];
+                }
+            }
+            return undefined;
+        };
+
+        const dateRaw = findKey(['fecha']);
+        const concept = findKey(['concepto', 'descripcion']) || 'Sin concepto';
+        const charge = findKey(['cargo']) || 0;
+        const credit = findKey(['abono', 'ingreso']) || 0;
         
         let date;
         if (dateRaw instanceof Date) {
             date = dateRaw.toISOString().split('T')[0];
         } else if (typeof dateRaw === 'number') {
-            // Si la fecha es un número, es formato de serie de Excel.
             date = convertExcelDate(dateRaw).toISOString().split('T')[0];
         } else if (typeof dateRaw === 'string') {
             const parts = dateRaw.match(/(\d+)/g);
             if (parts && parts.length >= 3) {
-                 // Intenta adivinar el formato (DD/MM/YYYY o MM/DD/YYYY)
                  const year = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
-                 const month = parts[0] > 12 ? parts[1] : parts[0]; // Si el primer número es > 12, es el día.
+                 const month = parts[0] > 12 ? parts[1] : parts[0];
                  const day = parts[0] > 12 ? parts[0] : parts[1];
                  date = new Date(`${year}-${month}-${day}`).toISOString().split('T')[0];
             } else {
-                 date = new Date().toISOString().split('T')[0]; // fallback
+                 date = new Date().toISOString().split('T')[0];
             }
         } else {
-            date = new Date().toISOString().split('T')[0]; // fallback
+            date = new Date().toISOString().split('T')[0];
         }
 
         const expense = {
             date: date,
             concept: String(concept),
-            charge: parseFloat(charge) || 0,
-            credit: parseFloat(credit) || 0,
+            charge: parseFloat(String(charge).replace(/[^0-9.-]+/g,"")) || 0,
+            credit: parseFloat(String(credit).replace(/[^0-9.-]+/g,"")) || 0,
             type: 'operativo',
             source: fileType,
             channel: ''
         };
 
-        // Asignar categoría solo si es un cargo
         expense.category = expense.charge > 0 ? autoCategorize(expense.concept) : '';
 
         return expense;
-    }).filter(e => e.charge > 0 || e.credit > 0); // Filtra filas sin montos.
+    }).filter(e => e.concept !== 'Sin concepto' && (e.charge > 0 || e.credit > 0));
 }
 
 
