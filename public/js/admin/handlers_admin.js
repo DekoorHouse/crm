@@ -1,5 +1,5 @@
 import { elements, state, app } from './state_admin.js';
-import { getFilteredExpenses, parseSueldosData, recalculatePayment, generateWhatsAppMessage } from './utils_admin.js';
+import { getFilteredExpenses, parseSueldosData, recalculatePayment, generateWhatsAppMessage, formatCurrency } from './utils_admin.js';
 import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
 
@@ -321,6 +321,35 @@ function sendWhatsAppMessage(employee) {
     window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
 }
 function updateSchedule(cell) { console.log('Schedule updated'); }
-function updateEmployeeRate(id, rate) { console.log(`Rate updated for ${id}`); }
+
+/**
+ * Updates an employee's hourly rate, recalculates their payment, updates the UI, and saves to Firestore.
+ * @param {string} employeeId - The ID of the employee to update.
+ * @param {number} newRate - The new hourly rate.
+ */
+function updateEmployeeRate(employeeId, newRate) {
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) return;
+
+    // 1. Update the rate in the application state
+    employee.ratePerHour = newRate;
+
+    // 2. Recalculate payment using the logic from the utils module
+    recalculatePayment(employee);
+
+    // 3. Update the UI for this specific employee card without a full re-render
+    const employeeCard = elements.sueldosTableContainer.querySelector(`.employee-card[data-employee-id="${employeeId}"]`);
+    if (employeeCard) {
+        const subtotalEl = employeeCard.querySelector('.payment-value-subtotal');
+        const finalPaymentEl = employeeCard.querySelector('.payment-value-final');
+        
+        if (subtotalEl) subtotalEl.textContent = formatCurrency(employee.subtotal || 0);
+        if (finalPaymentEl) finalPaymentEl.textContent = formatCurrency(employee.pago || 0);
+    }
+    
+    // 4. Save the entire updated payroll data to Firestore
+    services.saveSueldosDataToFirestore(state.sueldosData);
+}
+
 function confirmDeleteAdjustment(empId, adjId, type) { console.log('Delete adjustment'); }
 
