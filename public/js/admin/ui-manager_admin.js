@@ -549,6 +549,9 @@ export function renderSueldosData(employees, isFiltered) {
                         <span>/hr</span>
                     </div>
                 </div>
+                <button class="toggle-details-btn" aria-expanded="true">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
             </div>
             <div class="employee-body">
                 <div class="table-container">
