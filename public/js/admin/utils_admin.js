@@ -166,9 +166,11 @@ export function parseSueldosData(jsonData) {
     }
 
     let startDate = null;
-    const dateCell = jsonData[2] ? jsonData[2][3] : null; 
-    if (dateCell && typeof dateCell === 'string' && dateCell.includes('~')) {
-        const startDateString = dateCell.split('~')[0].trim();
+    // CORRECCIÓN: Se cambia el índice de la columna de 3 (D) a 4 (E).
+    const dateCell = jsonData[2] ? jsonData[2][4] : null; 
+    if (dateCell && typeof dateCell === 'string' && dateCell.includes('-')) {
+        // Se asume que la primera parte es la fecha de inicio.
+        const startDateString = dateCell.split(' ')[0].trim();
         const dateParts = startDateString.split('-').map(Number);
         if (dateParts.length === 3) {
             startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
@@ -176,7 +178,7 @@ export function parseSueldosData(jsonData) {
     }
 
     if (!startDate) {
-        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda D3 (formato esperado: 'YYYY-MM-DD ~ YYYY-MM-DD').");
+        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda E3 (formato esperado: 'YYYY-MM-DD').");
     }
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -365,3 +367,4 @@ export function filterSueldos() {
         return employee;
     });
 }
+
