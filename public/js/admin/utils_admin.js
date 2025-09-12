@@ -358,7 +358,7 @@ export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
     if (!start || !end) {
         // FIX: Corrected typo from 'sueldsosData' to 'sueldosData'.
-        return state.sueldsosData; // Return all data if no filter is set
+        return state.sueldosData; // Return all data if no filter is set
     }
 
     const filtered = JSON.parse(JSON.stringify(state.sueldosData));
@@ -383,3 +383,4 @@ export function filterSueldos() {
         return employee;
     });
 }
+
