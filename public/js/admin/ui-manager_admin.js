@@ -84,6 +84,7 @@ export function renderTable(expenses) {
     
     sorted.forEach(expense => {
         const tr = document.createElement('tr');
+        tr.dataset.id = expense.id;
         const charge = parseFloat(expense.charge) || 0;
         const credit = parseFloat(expense.credit) || 0;
         
@@ -117,7 +118,6 @@ export function renderTable(expenses) {
             </td>
         `;
         
-        // Los event listeners se añadirán en `handlers_admin.js`
         elements.dataTableBody.appendChild(tr);
     });
 }
@@ -181,7 +181,6 @@ export function updateSummary(getFilteredExpenses) {
         if (key.startsWith('Total') || value > 0) {
             const isClickable = !key.startsWith('Total');
             const card = createSummaryCard(key, value, isClickable);
-            // El event listener se añadirá en `handlers_admin.js`
             elements.summarySection.appendChild(card);
         }
     });
@@ -207,7 +206,7 @@ export function createSummaryCard(title, amount, isClickable) {
       if (title === 'TotalCargos') displayTitle = 'Cargos Operativos';
       
       card.className = `summary-card ${title.replace(" ", "")} ${isClickable ? 'clickable' : ''}`;
-      card.dataset.category = title; // Se añade para el handler
+      card.dataset.category = title;
       card.innerHTML = `
         <div class="icon-container"><i class="${icons[title] || 'fas fa-tag'}"></i></div>
         <div> <div class="summary-card-title">${displayTitle}</div> <div class="summary-card-value">${formatCurrency(amount)}</div> </div>`;
@@ -276,7 +275,6 @@ export function openExpenseModal(expense = {}) {
     showModal({
         title: title,
         body: `<form id="expense-form" style="display: grid; gap: 15px;">
-                    <!-- Form fields -->
                     <div class="form-group">
                         <label for="expense-date">Fecha</label>
                         <input type="date" id="expense-date" class="modal-input" value="${expense.date || new Date().toISOString().split('T')[0]}" required>
