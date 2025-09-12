@@ -580,7 +580,7 @@ export function renderSueldosData(employees, isFiltered) {
                 </div>
                 <div>
                     <div class="employee-payment-summary">
-                        <div class="payment-row"><span>Total Horas:</span><span>${employee.totalHoursFormatted || '0.00'}</span></div>
+                        <div class="payment-row"><span>Total Horas:</span><span class="payment-value-total-hours">${employee.totalHoursFormatted || '0.00'}</span></div>
                         <div class="payment-row"><span>Subtotal:</span><span class="payment-value-subtotal">${formatCurrency(employee.subtotal || 0)}</span></div>
                     </div>
                     <div class="adjustments-list">
