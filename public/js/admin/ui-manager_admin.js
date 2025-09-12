@@ -581,7 +581,7 @@ export function renderSueldosData(employees, isFiltered) {
                 <div>
                     <div class="employee-payment-summary">
                         <div class="payment-row"><span>Total Horas:</span><span>${employee.totalHoursFormatted || '0.00'}</span></div>
-                        <div class="payment-row"><span>Subtotal:</span><span>${formatCurrency(employee.subtotal || 0)}</span></div>
+                        <div class="payment-row"><span>Subtotal:</span><span class="payment-value-subtotal">${formatCurrency(employee.subtotal || 0)}</span></div>
                     </div>
                     <div class="adjustments-list">
                         <h6>Bonos</h6>
@@ -592,7 +592,7 @@ export function renderSueldosData(employees, isFiltered) {
                         ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
                     </div>
                     <div class="employee-payment-summary">
-                         <div class="payment-row final-payment"><span>Pago Final:</span><span>${formatCurrency(employee.pago || 0)}</span></div>
+                         <div class="payment-row final-payment"><span>Pago Final:</span><span class="payment-value-final">${formatCurrency(employee.pago || 0)}</span></div>
                     </div>
                      <div class="btn-group" style="margin-top: 15px;">
                         <button class="btn btn-sm add-bono-btn"><i class="fas fa-plus"></i> Bono</button>
