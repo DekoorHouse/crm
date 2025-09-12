@@ -512,12 +512,51 @@ async function handleDeleteAdResponse(id) {
     }
 }
 
-async function handleSaveKnowledgeBaseEntry() {
+async function handleSaveKnowledgeBaseEntry(event) {
+    event.preventDefault();
+
     const id = document.getElementById('kb-doc-id').value;
     const topic = document.getElementById('kb-topic').value.trim();
     const answer = document.getElementById('kb-answer').value.trim();
-    const fileUrl = document.getElementById('kb-file-url').value.trim();
-    const fileType = document.getElementById('kb-file-type').value.trim();
+    const fileUrlInput = document.getElementById('kb-file-url');
+    let fileUrl = fileUrlInput.value.trim();
+    const fileTypeInput = document.getElementById('kb-file-type');
+    let fileType = fileTypeInput.value.trim();
+    const fileInput = document.getElementById('kb-file-input');
+
+    if (fileInput.files[0]) {
+        const file = fileInput.files[0];
+        try {
+            showError('Subiendo archivo...', 'info');
+            
+            const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    fileName: file.name,
+                    contentType: file.type,
+                    pathPrefix: 'knowledge_base'
+                })
+            });
+            if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
+            const { signedUrl, publicUrl } = await signedUrlResponse.json();
+            
+            await fetch(signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+            
+            fileUrl = publicUrl;
+            fileType = file.type;
+            
+            hideError();
+        } catch (error) {
+            console.error("Error al subir archivo para Knowledge Base:", error);
+            showError("Error al subir el archivo. Inténtalo de nuevo.");
+            return;
+        }
+    }
 
     if (!topic || !answer) {
         showError("El tema y la respuesta base son obligatorios.");
@@ -734,6 +773,3 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
-
-
-
