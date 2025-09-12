@@ -65,3 +65,11 @@ export function setOrdersUnsubscribe(newUnsubscribe) {
  * @type {Array<object>}
  */
 export const actionHistory = [];
+
+// FIX: Export the 'app' object to resolve the import error in other modules.
+/**
+ * The main application object, to be populated by the main script.
+ * @type {object}
+ */
+export const app = {};
+
