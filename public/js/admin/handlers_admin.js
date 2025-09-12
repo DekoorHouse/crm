@@ -53,6 +53,94 @@ function exportToExcel() {
 }
 
 /**
+ * Procesa el archivo de sueldos cargado por el usuario.
+ * Lee la segunda hoja del excel, la parsea y la guarda en Firestore.
+ * @param {Event} e - El evento 'change' del input de archivo.
+ */
+async function handleSueldosFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    ui.showModal({
+        title: "Procesando Archivo...",
+        body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se procesa el archivo de sueldos.</p>',
+        showConfirm: false,
+        showCancel: false
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            // El usuario especificó que los datos están en la segunda hoja.
+            if (workbook.SheetNames.length < 2) {
+                throw new Error("El archivo Excel no tiene una segunda hoja. Asegúrate de que los datos de asistencia estén en la segunda hoja del archivo.");
+            }
+            const sheetName = workbook.SheetNames[1];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (jsonData.length < 2) { // Debe tener al menos encabezados y una fila de datos
+                throw new Error("La segunda hoja del archivo está vacía o no tiene el formato correcto.");
+            }
+
+            // Parsear los datos usando la utilidad
+            const newEmployees = utils.parseSueldosData(jsonData);
+
+            // Combinar con datos existentes (actualizar o agregar)
+            const existingEmployees = state.sueldosData || [];
+            const mergedEmployees = [...existingEmployees];
+
+            newEmployees.forEach(newEmp => {
+                const existingIndex = mergedEmployees.findIndex(emp => emp.id === newEmp.id);
+                if (existingIndex > -1) {
+                    // Actualizar los registros del empleado existente
+                    mergedEmployees[existingIndex].registros = newEmp.registros;
+                    utils.recalculatePayment(mergedEmployees[existingIndex]);
+                } else {
+                    // Agregar como un nuevo empleado
+                    mergedEmployees.push(newEmp);
+                }
+            });
+
+            // Guardar los datos combinados en Firestore
+            await services.saveSueldosDataToFirestore(mergedEmployees);
+
+            ui.showModal({
+                title: 'Éxito',
+                body: `Se cargaron y procesaron correctamente los datos de ${newEmployees.length} empleados.`,
+                confirmText: 'Entendido',
+                showCancel: false
+            });
+
+        } catch (error) {
+            console.error("Error procesando el archivo de sueldos:", error);
+            ui.showModal({
+                title: 'Error al Cargar',
+                body: `No se pudo procesar el archivo. <br><br><strong>Detalle:</strong> ${error.message}`,
+                confirmText: 'Cerrar',
+                showCancel: false
+            });
+        } finally {
+            // Limpiar el input para permitir volver a subir el mismo archivo
+            e.target.value = '';
+        }
+    };
+    reader.onerror = (error) => {
+         ui.showModal({
+            title: 'Error de Lectura',
+            body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+        e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+/**
  * Inicializa todos los event listeners de la aplicación.
  */
 export function initEventListeners() {
@@ -216,9 +304,17 @@ function confirmDeleteExpense(id) {
         onConfirm: () => services.deleteExpense(id)
     });
 }
-function handleSueldosFileUpload(e) { console.log('Sueldos file upload handled'); }
+
 function confirmCloseWeek() { console.log('Confirm close week'); }
-function confirmDeleteSueldosData() { services.deleteSueldosData(); }
+function confirmDeleteSueldosData() { 
+    ui.showModal({
+        title: "Confirmar Eliminación",
+        body: "¿Estás seguro de que quieres borrar TODOS los datos de sueldos? Esta acción es irreversible.",
+        confirmText: "Sí, Borrar Todo",
+        confirmClass: "btn-danger",
+        onConfirm: () => services.deleteSueldosData()
+    });
+}
 function sendWhatsAppMessage(employee) {
     const message = generateWhatsAppMessage(employee);
     const encodedMessage = encodeURIComponent(message);
