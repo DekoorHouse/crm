@@ -243,28 +243,39 @@ export async function saveSueldosDataToFirestore(dataToSave) {
  * @param {object} adjustmentData - The data for the new adjustment.
  */
 export async function saveAdjustment(employeeId, type, adjustmentData) {
-    const employee = state.sueldosData.find(emp => emp.id === employeeId);
-    if (!employee) {
-        showModal({ title: 'Error', body: 'Empleado no encontrado.' });
-        return;
+    saveStateToHistory();
+    try {
+        const employee = state.sueldosData.find(emp => emp.id === employeeId);
+        if (!employee) {
+            throw new Error('Empleado no encontrado.');
+        }
+
+        if (type === 'bono') {
+            if (!employee.bonos) employee.bonos = [];
+            employee.bonos.push(adjustmentData);
+        } else if (type === 'gasto') {
+            if (!employee.descuentos) employee.descuentos = [];
+            employee.descuentos.push(adjustmentData);
+        }
+
+        // Recalculate totals for the employee
+        recalculatePayment(employee);
+        
+        // Save the entire sueldos data back to Firestore
+        await saveSueldosDataToFirestore();
+
+        // Close the modal and the UI will update via the realtime listener
+        showModal({ show: false });
+    } catch (error) {
+        console.error(`Error saving adjustment for employee ${employeeId}:`, error);
+        actionHistory.pop(); // Revert history on failure
+        showModal({ 
+            title: 'Error al Guardar', 
+            body: `No se pudo guardar el ajuste. Detalles: ${error.message}`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
     }
-
-    if (type === 'bono') {
-        if (!employee.bonos) employee.bonos = [];
-        employee.bonos.push(adjustmentData);
-    } else if (type === 'gasto') {
-        if (!employee.descuentos) employee.descuentos = [];
-        employee.descuentos.push(adjustmentData);
-    }
-
-    // Recalculate totals for the employee
-    recalculatePayment(employee);
-    
-    // Save the entire sueldos data back to Firestore
-    await saveSueldosDataToFirestore();
-
-    // Close the modal and the UI will update via the realtime listener
-    showModal({ show: false });
 }
 
 
@@ -495,3 +506,4 @@ export async function undoLastAction() {
         showModal({ title: 'Error', body: 'No se pudo deshacer la acción.', showCancel: false, confirmText: 'Entendido' });
     }
 }
+
