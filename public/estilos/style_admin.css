@@ -477,6 +477,7 @@
       margin: 0;
       font-size: 16px;
       line-height: 1.2;
+      flex-grow: 1;
     }
     .employee-details {
       font-size: 12px;
@@ -487,6 +488,11 @@
         display: flex;
         align-items: center;
         gap: 8px;
+        transition: opacity 0.3s ease-in-out;
+    }
+    .employee-card.collapsed .employee-header-rate {
+        opacity: 0;
+        pointer-events: none;
     }
     .employee-header-rate label {
         font-size: 12px;
@@ -532,12 +538,14 @@
       gap: 20px;
       max-height: 500px; /* Give it a max-height for transition */
       overflow: hidden;
-      transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+      transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out, opacity 0.3s ease-in-out;
+      opacity: 1;
     }
     .employee-card.collapsed .employee-body {
         max-height: 0;
         padding-top: 0;
         padding-bottom: 0;
+        opacity: 0;
         overflow: hidden;
     }
     .employee-body .table-container {
@@ -740,4 +748,4 @@
      @media (max-width: 768px) {
         .employee-body { grid-template-columns: 1fr; }
     }
-```
+
