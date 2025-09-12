@@ -1087,3 +1087,65 @@ function closeQuickReplyModal() {
 }
 // --- FIN DE LA SOLUCIÓN ---
 
+// --- AÑADIDO: Funciones para el modal de Base de Conocimiento ---
+function openKnowledgeBaseModal(entryId = null) {
+    const modal = document.getElementById('knowledge-base-modal');
+    if (!modal) return;
+
+    const form = document.getElementById('kb-form');
+    const titleEl = document.getElementById('kb-modal-title');
+    const docIdInput = document.getElementById('kb-doc-id');
+    const topicInput = document.getElementById('kb-topic');
+    const answerTextarea = document.getElementById('kb-answer');
+    const fileUrlInput = document.getElementById('kb-file-url');
+    const fileTypeInput = document.getElementById('kb-file-type');
+    const mediaPreview = document.getElementById('kb-media-preview');
+    const fileInput = document.getElementById('kb-file-input');
+
+    // Reset form
+    form.reset();
+    docIdInput.value = '';
+    fileUrlInput.value = '';
+    fileTypeInput.value = '';
+    mediaPreview.innerHTML = '';
+    
+    if (entryId) {
+        // Edit mode
+        const entry = state.knowledgeBase.find(e => e.id === entryId);
+        if (entry) {
+            titleEl.textContent = 'Editar Entrada de Conocimiento';
+            docIdInput.value = entry.id;
+            topicInput.value = entry.topic || '';
+            answerTextarea.value = entry.answer || '';
+            fileUrlInput.value = entry.fileUrl || '';
+            fileTypeInput.value = entry.fileType || '';
+            
+            if (entry.fileUrl) {
+                mediaPreview.innerHTML = `<a href="${entry.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
+            }
+        }
+    } else {
+        // Add mode
+        titleEl.textContent = 'Añadir Respuesta a la Base de Conocimiento';
+    }
+
+    // Listener para el input de archivo
+    fileInput.onchange = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            fileUrlInput.value = ''; // Limpiar URL previa
+            fileTypeInput.value = file.type;
+            mediaPreview.innerHTML = `<span class="text-sm text-gray-600">Seleccionado: <strong>${file.name}</strong></span>`;
+        }
+    };
+
+    modal.classList.remove('hidden');
+}
+
+function closeKnowledgeBaseModal() {
+    const modal = document.getElementById('knowledge-base-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
