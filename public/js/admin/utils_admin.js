@@ -56,6 +56,19 @@ export function hashCode(str) {
 }
 
 /**
+ * Convierte un número de serie de fecha de Excel a un objeto Date de JavaScript.
+ * @param {number} excelDate - El número de serie de la fecha de Excel.
+ * @returns {Date} El objeto Date correspondiente.
+ */
+function convertExcelDate(excelDate) {
+    // La fecha base de Excel es 1900-01-01, pero tiene un bug que cuenta 1900 como año bisiesto.
+    // Restamos 25569 que es el offset entre la época de Excel y la de Unix (1970-01-01).
+    const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
+    // Se ajusta la zona horaria para evitar que la fecha cambie al día anterior.
+    return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
+}
+
+/**
  * Parsea los datos de gastos desde un array JSON (proveniente de una hoja de cálculo).
  * @param {Array<object>} jsonData - Los datos crudos de la hoja.
  * @param {string} fileType - La extensión del archivo ('xls' o 'xlsx').
@@ -71,14 +84,19 @@ export function parseExpensesData(jsonData, fileType) {
         let date;
         if (dateRaw instanceof Date) {
             date = dateRaw.toISOString().split('T')[0];
+        } else if (typeof dateRaw === 'number') {
+            // Si la fecha es un número, es formato de serie de Excel.
+            date = convertExcelDate(dateRaw).toISOString().split('T')[0];
         } else if (typeof dateRaw === 'string') {
-            // Intenta parsear formatos comunes, ej. DD/MM/YYYY
             const parts = dateRaw.match(/(\d+)/g);
-            if (parts && parts.length === 3) {
-                // Asumiendo DD/MM/YYYY o MM/DD/YYYY y dejando que el constructor de Date decida
-                date = new Date(parts[2], parts[1] - 1, parts[0]).toISOString().split('T')[0];
+            if (parts && parts.length >= 3) {
+                 // Intenta adivinar el formato (DD/MM/YYYY o MM/DD/YYYY)
+                 const year = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
+                 const month = parts[0] > 12 ? parts[1] : parts[0]; // Si el primer número es > 12, es el día.
+                 const day = parts[0] > 12 ? parts[0] : parts[1];
+                 date = new Date(`${year}-${month}-${day}`).toISOString().split('T')[0];
             } else {
-                date = new Date().toISOString().split('T')[0]; // fallback
+                 date = new Date().toISOString().split('T')[0]; // fallback
             }
         } else {
             date = new Date().toISOString().split('T')[0]; // fallback
@@ -98,7 +116,7 @@ export function parseExpensesData(jsonData, fileType) {
         expense.category = expense.charge > 0 ? autoCategorize(expense.concept) : '';
 
         return expense;
-    });
+    }).filter(e => e.charge > 0 || e.credit > 0); // Filtra filas sin montos.
 }
 
 
@@ -197,16 +215,6 @@ export function recalculatePayment(employee) {
     employee.totalBonos = totalBonos;
     employee.totalGastos = totalGastos;
     employee.pago = subtotal + totalBonos - totalGastos;
-}
-
-/**
- * Convierte un número de serie de fecha de Excel a un objeto Date de JavaScript.
- * @param {number} excelDate - El número de serie de la fecha de Excel.
- * @returns {Date} El objeto Date correspondiente.
- */
-function convertExcelDate(excelDate) {
-    const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
 }
 
 /**
