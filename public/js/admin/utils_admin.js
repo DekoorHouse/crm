@@ -175,14 +175,12 @@ export function parseSueldosData(jsonData) {
     }
 
     let startDate = null;
-    // FIX: Changed cell reference from E3 (jsonData[2][4]) to C3 (jsonData[2][2])
     const dateCell = jsonData[2] ? jsonData[2][2] : null;
 
     if (typeof dateCell === 'number') {
         startDate = convertExcelDate(dateCell);
     } else if (typeof dateCell === 'string') {
-        // CORRECCIÓN MEJORADA: Se extrae la primera fecha del rango para evitar errores.
-        const match = dateCell.match(/(\d{4}-\d{2}-\d{2})/); // Busca el patrón YYYY-MM-DD
+        const match = dateCell.match(/(\d{4}-\d{2}-\d{2})/);
         const cleanedDateString = match ? match[0] : null; 
         
         if (cleanedDateString) {
@@ -192,7 +190,6 @@ export function parseSueldosData(jsonData) {
     }
 
     if (!startDate || isNaN(startDate.getTime())) {
-        // FIX: Updated error message to reflect the correct cell C3.
         throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda C3 (formato esperado: 'YYYY-MM-DD' o formato de fecha de Excel).");
     }
 
@@ -205,7 +202,10 @@ export function parseSueldosData(jsonData) {
         let name = null;
 
         for (let j = 0; j < row.length; j++) {
-            if (typeof row[j] === 'string' && row[j].toLowerCase().includes('nombre')) {
+            // FIX: Se hizo la búsqueda del nombre más robusta.
+            // Ahora elimina espacios al inicio/final y verifica que la celda *comience* con "nombre",
+            // lo cual es más seguro que solo buscar si lo contiene.
+            if (typeof row[j] === 'string' && row[j].trim().toLowerCase().startsWith('nombre')) {
                 name = row[j + 1];
                 break;
             }
@@ -383,4 +383,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
