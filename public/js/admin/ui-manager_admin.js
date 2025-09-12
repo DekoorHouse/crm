@@ -9,6 +9,72 @@ import { saveExpense, saveFinancialTransaction } from './services_admin.js'; // 
  */
 
 /**
+ * Almacena en caché los elementos del DOM en el objeto 'elements'.
+ */
+export function cacheElements() {
+    elements.uploadBtn = document.getElementById('upload-btn');
+    elements.uploadInput = document.getElementById('file-upload-input');
+    elements.dataTableBody = document.querySelector('#data-table tbody');
+    elements.dataTableFooter = document.querySelector('#data-table tfoot');
+    elements.emptyState = document.getElementById('empty-state');
+    elements.summarySection = document.querySelector('.summary-section');
+    elements.modal = document.getElementById('modal');
+    elements.modalTitle = document.getElementById('modal-title');
+    elements.modalBody = document.getElementById('modal-body');
+    elements.modalConfirmBtn = document.getElementById('modal-confirm-btn');
+    elements.modalCancelBtn = document.getElementById('modal-cancel-btn');
+    elements.tabs = document.querySelectorAll('.tab');
+    elements.tabContents = document.querySelectorAll('.tab-content');
+    elements.addManualBtn = document.getElementById('add-manual-btn');
+    elements.addFinancialBtn = document.getElementById('add-financial-btn');
+    elements.deleteDataBtn = document.getElementById('delete-data-btn');
+    elements.deleteCurrentMonthBtn = document.getElementById('delete-current-month-btn');
+    elements.deletePreviousMonthBtn = document.getElementById('delete-previous-month-btn');
+    elements.exportBtn = document.getElementById('export-btn');
+    elements.removeDuplicatesBtn = document.getElementById('remove-duplicates-btn');
+    elements.dateRangeFilter = document.getElementById('date-range-filter');
+    elements.categoryFilter = document.getElementById('category-filter');
+    elements.actionsContainer = document.getElementById('actions-container');
+    elements.dataTableContainer = document.getElementById('data-table-container');
+    elements.chartContexts = {
+        pie: document.getElementById("pieChart")?.getContext("2d"),
+        category: document.getElementById("categoryChart")?.getContext("2d"),
+        compare: document.getElementById("compareChart")?.getContext("2d"),
+        leadsTrend: document.getElementById("leadsTrendChart")?.getContext("2d"),
+    };
+    
+    // Sueldos tab elements
+    elements.addEmployeeBtn = document.getElementById('add-employee-btn');
+    elements.sueldosUploadBtn = document.getElementById('sueldos-upload-btn');
+    elements.sueldosUploadInput = document.getElementById('sueldos-file-upload-input');
+    elements.sueldosTableContainer = document.getElementById('sueldos-table-container');
+    elements.sueldosEmptyState = document.getElementById('sueldos-empty-state');
+    elements.sueldosFilterCard = document.getElementById('sueldos-filter-card');
+    elements.sueldosDateRangeFilter = document.getElementById('sueldos-date-range-filter');
+    elements.resetSueldosFilterBtn = document.getElementById('reset-sueldos-filter-btn');
+    elements.closeWeekBtn = document.getElementById('close-week-btn');
+    elements.deleteSueldosBtn = document.getElementById('delete-sueldos-btn');
+
+    // Financial Health elements
+    elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
+    elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
+    elements.leadsChartToggle = document.getElementById('leads-chart-toggle');
+    elements.leadsChartTitle = document.getElementById('leads-chart-title');
+    elements.thermometerBar = document.getElementById('thermometer-bar');
+    elements.thermometerPercentage = document.getElementById('thermometer-percentage');
+    elements.kpiTotalRevenue = document.getElementById('kpi-total-revenue');
+    elements.kpiSalesRevenue = document.getElementById('kpi-sales-revenue');
+    elements.kpiCosts = document.getElementById('kpi-costs');
+    elements.kpiOperatingProfit = document.getElementById('kpi-operating-profit');
+    elements.kpiOwnerDraw = document.getElementById('kpi-owner-draw');
+    elements.kpiNetProfit = document.getElementById('kpi-net-profit');
+    elements.kpiLeads = document.getElementById('kpi-leads');
+    elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
+    elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
+    elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
+}
+
+/**
  * Renderiza la tabla principal de gastos con los datos filtrados.
  * @param {Array<object>} expenses - Un array de objetos de gastos para mostrar.
  */
@@ -385,3 +451,159 @@ export function populateCategoryFilter() {
     });
     elements.categoryFilter.value = currentCategory;
 }
+
+// --- Litepicker Initialization ---
+export function initDateRangePicker(callback) {
+    if (elements.dateRangeFilter) {
+        return new Litepicker({
+            element: elements.dateRangeFilter,
+            singleMode: false,
+            format: 'MMM D, YYYY',
+            plugins: ['ranges'],
+            setup: (picker) => {
+                picker.on('selected', (date1, date2) => {
+                    callback();
+                });
+            }
+        });
+    }
+}
+
+export function initHealthDateRangePicker(callback) {
+    if (elements.healthDateRangeFilter) {
+        return new Litepicker({
+            element: elements.healthDateRangeFilter,
+            singleMode: false,
+            format: 'MMM D, YYYY',
+            plugins: ['ranges'],
+            setup: (picker) => {
+                picker.on('selected', (date1, date2) => {
+                    callback();
+                });
+            }
+        });
+    }
+}
+
+export function initSueldosDateRangePicker(callback) {
+    if (elements.sueldosDateRangeFilter) {
+        return new Litepicker({
+            element: elements.sueldosDateRangeFilter,
+            singleMode: false,
+            format: 'MMM D, YYYY',
+            plugins: ['ranges'],
+            setup: (picker) => {
+                picker.on('selected', (date1, date2) => {
+                    callback();
+                });
+            }
+        });
+    }
+}
+
+export function renderSueldosData(employees, isFiltered) {
+    elements.sueldosTableContainer.innerHTML = '';
+    if (employees.length === 0 && isFiltered) {
+        elements.sueldosTableContainer.innerHTML = '<p>No se encontraron registros para el rango de fechas seleccionado.</p>';
+        return;
+    }
+    
+    employees.forEach(employee => {
+        const card = document.createElement('div');
+        card.className = 'employee-card';
+        card.dataset.employeeId = employee.id;
+
+        const bonosHtml = (employee.bonos || []).map((bono, index) => `
+            <div class="adjustment-item bono">
+                <span class="date">${bono.date || ''}</span>
+                <span class="concept">${bono.concept}</span>
+                <span class="amount">${formatCurrency(bono.amount)}</span>
+                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="bono" title="Eliminar">&times;</button>
+            </div>
+        `).join('');
+
+        const gastosHtml = (employee.descuentos || []).map((gasto, index) => `
+            <div class="adjustment-item gasto">
+                 <span class="date">${gasto.date || ''}</span>
+                <span class="concept">${gasto.concept}</span>
+                <span class="amount">-${formatCurrency(gasto.amount)}</span>
+                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="gasto" title="Eliminar">&times;</button>
+            </div>
+        `).join('');
+
+        const historyHtml = (employee.paymentHistory || []).map(p => `
+            <tr>
+                <td>${p.week}</td>
+                <td>${p.hours.toFixed(2)}</td>
+                <td>${formatCurrency(p.payment)}</td>
+            </tr>
+        `).join('');
+
+        card.innerHTML = `
+            <div class="employee-header">
+                <h3>${employee.name}</h3>
+                <div class="employee-header-rate">
+                    <div class="rate-input-wrapper">
+                        <span class="rate-input-symbol">$</span>
+                        <input type="number" class="hourly-rate-input" value="${employee.ratePerHour || 70}" min="0">
+                        <span>/hr</span>
+                    </div>
+                </div>
+            </div>
+            <div class="employee-body">
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Hrs</th></tr></thead>
+                        <tbody>
+                            ${['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(day => {
+                                const registro = employee.registros?.find(r => r.day === day) || { entrada: '', salida: '', horas: '0.00' };
+                                return `
+                                    <tr>
+                                        <td>${day}</td>
+                                        <td contenteditable="true" data-type="entrada">${registro.entrada}</td>
+                                        <td contenteditable="true" data-type="salida">${registro.salida}</td>
+                                        <td>${registro.horas}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="payment-history-container">
+                    <h6>Historial de Pagos</h6>
+                    <div class="table-container" style="max-height: 200px;">
+                        <table>
+                            <thead><tr><th>Semana</th><th>Horas</th><th>Pago</th></tr></thead>
+                            <tbody>${historyHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="employee-payment-summary">
+                        <div class="payment-row"><span>Total Horas:</span><span>${employee.totalHoursFormatted || '0.00'}</span></div>
+                        <div class="payment-row"><span>Subtotal:</span><span>${formatCurrency(employee.subtotal || 0)}</span></div>
+                    </div>
+                    <div class="adjustments-list">
+                        <h6>Bonos</h6>
+                        ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
+                    </div>
+                    <div class="adjustments-list">
+                        <h6>Gastos/Descuentos</h6>
+                        ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
+                    </div>
+                    <div class="employee-payment-summary">
+                         <div class="payment-row final-payment"><span>Pago Final:</span><span>${formatCurrency(employee.pago || 0)}</span></div>
+                    </div>
+                     <div class="btn-group" style="margin-top: 15px;">
+                        <button class="btn btn-sm add-bono-btn"><i class="fas fa-plus"></i> Bono</button>
+                        <button class="btn btn-sm add-gasto-btn"><i class="fas fa-minus"></i> Gasto</button>
+                        <button class="btn btn-sm btn-outline share-text-btn"><i class="fab fa-whatsapp"></i></button>
+                        <button class="btn btn-sm btn-outline download-pdf-btn"><i class="fas fa-file-pdf"></i></button>
+                    </div>
+                </div>
+            </div>
+        `;
+        elements.sueldosTableContainer.appendChild(card);
+    });
+}
+
