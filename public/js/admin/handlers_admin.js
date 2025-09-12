@@ -87,7 +87,7 @@ async function handleSueldosFileUpload(e) {
             }
 
             // Parsear los datos usando la utilidad
-            const newEmployees = utils.parseSueldosData(jsonData);
+            const newEmployees = parseSueldosData(jsonData);
 
             // Combinar con datos existentes (actualizar o agregar)
             const existingEmployees = state.sueldosData || [];
@@ -98,7 +98,7 @@ async function handleSueldosFileUpload(e) {
                 if (existingIndex > -1) {
                     // Actualizar los registros del empleado existente
                     mergedEmployees[existingIndex].registros = newEmp.registros;
-                    utils.recalculatePayment(mergedEmployees[existingIndex]);
+                    recalculatePayment(mergedEmployees[existingIndex]);
                 } else {
                     // Agregar como un nuevo empleado
                     mergedEmployees.push(newEmp);
@@ -323,3 +323,4 @@ function sendWhatsAppMessage(employee) {
 function updateSchedule(cell) { console.log('Schedule updated'); }
 function updateEmployeeRate(id, rate) { console.log(`Rate updated for ${id}`); }
 function confirmDeleteAdjustment(empId, adjId, type) { console.log('Delete adjustment'); }
+
