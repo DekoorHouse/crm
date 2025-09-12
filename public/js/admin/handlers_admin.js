@@ -219,6 +219,9 @@ export function initEventListeners() {
             const { adjustmentId, adjustmentType } = e.target.closest('.delete-adjustment-btn').dataset;
             confirmDeleteAdjustment(employeeId, adjustmentId, adjustmentType);
         }
+        if (e.target.closest('.toggle-details-btn')) {
+            toggleEmployeeCard(employeeCard);
+        }
     });
 
     // FIX: Changed event from 'change' to 'input' for instant recalculation.
@@ -402,6 +405,30 @@ function updateEmployeeRate(employeeId, newRate) {
     // 4. Save the entire updated payroll data to Firestore
     services.saveSueldosDataToFirestore(state.sueldosData);
 }
+
+/**
+ * Toggles the visibility of an employee card's body.
+ * @param {HTMLElement} cardElement - The employee card element.
+ */
+function toggleEmployeeCard(cardElement) {
+    const body = cardElement.querySelector('.employee-body');
+    const button = cardElement.querySelector('.toggle-details-btn');
+    const icon = button.querySelector('i');
+    const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
+    if (isExpanded) {
+        body.style.display = 'none';
+        button.setAttribute('aria-expanded', 'false');
+        icon.classList.remove('fa-chevron-up');
+        icon.classList.add('fa-chevron-down');
+    } else {
+        body.style.display = 'grid';
+        button.setAttribute('aria-expanded', 'true');
+        icon.classList.remove('fa-chevron-down');
+        icon.classList.add('fa-chevron-up');
+    }
+}
+
 
 function confirmDeleteAdjustment(empId, adjId, type) { console.log('Delete adjustment'); }
 
