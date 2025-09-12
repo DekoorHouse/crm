@@ -13,11 +13,6 @@ import { showModal } from './ui-manager_admin.js';
 
 // --- LISTENERS EN TIEMPO REAL ---
 
-/**
- * Configura un listener en tiempo real para la colección 'expenses'.
- * Actualiza el estado de la aplicación cuando hay cambios.
- * @param {Function} onDataChange - Callback que se ejecuta cuando los datos cambian.
- */
 export function listenForExpenses(onDataChange) {
     return onSnapshot(collection(db, "expenses"), (snapshot) => {
         state.expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -25,10 +20,6 @@ export function listenForExpenses(onDataChange) {
     }, (error) => console.error("Expenses Listener Error:", error));
 }
 
-/**
- * Configura un listener en tiempo real para las categorías manuales.
- * @param {Function} onDataChange - Callback que se ejecuta cuando los datos cambian.
- */
 export function listenForManualCategories(onDataChange) {
     return onSnapshot(collection(db, "manualCategories"), (snapshot) => {
         state.manualCategories.clear();
@@ -40,10 +31,6 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
-/**
- * Configura un listener en tiempo real para los datos de sueldos.
- * @param {Function} onDataChange - Callback que se ejecuta cuando los datos cambian.
- */
 export function listenForSueldos(onDataChange) {
      return onSnapshot(doc(db, "sueldos", "main"), (docSnap) => {
         if (docSnap.exists()) {
@@ -55,23 +42,14 @@ export function listenForSueldos(onDataChange) {
     }, (error) => console.error("Payroll Listener Error:", error));
 }
 
-
-/**
- * Configura o reconfigura el listener para la colección de pedidos, aplicando los filtros de fecha actuales.
- * @param {Function} onDataChange - Callback que se ejecuta al recibir nuevos datos de pedidos.
- */
 export function setupOrdersListener(onDataChange) {
-    // Si ya hay un listener activo, lo cancelamos para crear uno nuevo con los filtros actualizados.
     if (typeof ordersUnsubscribe === 'function') {
         ordersUnsubscribe();
     }
 
     const { start, end } = state.financials.dateFilter;
-    const queries = [];
-
-    if (start) {
-        queries.push(where("createdAt", ">=", Timestamp.fromDate(start)));
-    }
+    let queries = [];
+    if (start) queries.push(where("createdAt", ">=", Timestamp.fromDate(start)));
     if (end) {
         const endOfDay = new Date(end);
         endOfDay.setHours(23, 59, 59, 999);
@@ -92,19 +70,12 @@ export function setupOrdersListener(onDataChange) {
         onDataChange();
     }, (error) => console.error("Orders Listener Error:", error));
     
-    // Guardamos la nueva función de cancelación.
     setOrdersUnsubscribe(newUnsubscribe);
 }
 
 
 // --- OPERACIONES CRUD ---
 
-/**
- * Guarda un nuevo gasto o actualiza uno existente en Firestore.
- * También gestiona las categorías manuales.
- * @param {object} expenseData - Los datos del gasto a guardar.
- * @param {string} originalCategory - La categoría original antes de la edición.
- */
 export async function saveExpense(expenseData, originalCategory) {
     saveStateToHistory();
     try {
@@ -116,15 +87,12 @@ export async function saveExpense(expenseData, originalCategory) {
         if (isCharge && newCategory && newCategory !== 'SinCategorizar' && (categoryChanged || !expenseData.id)) {
             const ruleBasedCategory = autoCategorizeWithRulesOnly(concept);
             if (newCategory !== ruleBasedCategory) {
-                const docId = hashCode(concept);
-                const manualCategoryRef = doc(db, "manualCategories", docId);
-                await setDoc(manualCategoryRef, { concept: concept, category: newCategory });
+                await setDoc(doc(db, "manualCategories", hashCode(concept)), { concept: concept, category: newCategory });
             }
         }
         
         if (expenseData.id) {
-            const { id, ...dataToUpdate } = expenseData;
-            await updateDoc(doc(db, "expenses", id), dataToUpdate);
+            await updateDoc(doc(db, "expenses", expenseData.id), expenseData);
         } else {
             await addDoc(collection(db, "expenses"), expenseData);
         }
@@ -135,9 +103,6 @@ export async function saveExpense(expenseData, originalCategory) {
     }
 }
 
-/**
- * Guarda una transacción financiera (préstamo o pago) en Firestore.
- */
 export async function saveFinancialTransaction() {
     const form = document.getElementById('financial-form');
     if (!form.reportValidity()) return;
@@ -153,41 +118,29 @@ export async function saveFinancialTransaction() {
         const amount = parseFloat(document.getElementById('financial-credit').value) || 0;
         if (amount <= 0) {
             showModal({title: 'Dato Inválido', body: 'El monto del préstamo debe ser mayor a cero.', confirmText: 'Entendido', showCancel: false});
-            actionHistory.pop();
-            return;
+            actionHistory.pop(); return;
         }
-        const newEntry = {
+        batch.set(doc(collection(db, "expenses")), {
             date, concept, charge: 0, credit: amount,
-            type: 'financiero', sub_type: 'entrada_prestamo', category: '', channel: '',
-            source: 'manual'
-        };
-        batch.set(doc(collection(db, "expenses")), newEntry);
-    } else if (type === 'pago_prestamo') {
+            type: 'financiero', sub_type: 'entrada_prestamo', category: '', channel: '', source: 'manual'
+        });
+    } else {
         const capitalAmount = parseFloat(document.getElementById('financial-capital').value) || 0;
         const interestAmount = parseFloat(document.getElementById('financial-interest').value) || 0;
 
         if (capitalAmount <= 0 && interestAmount <= 0) {
             showModal({title: 'Datos Incompletos', body: 'Debe ingresar un monto para capital y/o intereses.', confirmText: 'Entendido', showCancel: false});
-            actionHistory.pop();
-            return;
+            actionHistory.pop(); return;
         }
 
-        if (capitalAmount > 0) {
-            const capitalEntry = {
-                date, concept: `Pago a capital: ${concept}`, charge: capitalAmount, credit: 0,
-                type: 'financiero', sub_type: 'pago_capital', category: '', channel: '',
-                source: 'manual'
-            };
-            batch.set(doc(collection(db, "expenses")), capitalEntry);
-        }
-        if (interestAmount > 0) {
-            const interestEntry = {
-                date, concept: `Intereses: ${concept}`, charge: interestAmount, credit: 0,
-                type: 'financiero', sub_type: 'pago_intereses', category: 'Gastos Financieros', channel: '',
-                source: 'manual'
-            };
-            batch.set(doc(collection(db, "expenses")), interestEntry);
-        }
+        if (capitalAmount > 0) batch.set(doc(collection(db, "expenses")), {
+            date, concept: `Pago a capital: ${concept}`, charge: capitalAmount, credit: 0,
+            type: 'financiero', sub_type: 'pago_capital', category: '', channel: '', source: 'manual'
+        });
+        if (interestAmount > 0) batch.set(doc(collection(db, "expenses")), {
+            date, concept: `Intereses: ${concept}`, charge: interestAmount, credit: 0,
+            type: 'financiero', sub_type: 'pago_intereses', category: 'Gastos Financieros', channel: '', source: 'manual'
+        });
     }
     
     try {
@@ -199,11 +152,6 @@ export async function saveFinancialTransaction() {
     }
 }
 
-
-/**
- * Elimina un único registro de gasto de Firestore.
- * @param {string} id - El ID del documento a eliminar.
- */
 export async function deleteExpense(id) {
     saveStateToHistory();
     try {
@@ -216,10 +164,6 @@ export async function deleteExpense(id) {
     }
 }
 
-/**
- * Guarda los datos de sueldos en un único documento en Firestore.
- * @param {Array<object>} [dataToSave] - Los datos a guardar. Si no se proveen, se usa el estado actual.
- */
 export async function saveSueldosDataToFirestore(dataToSave) {
     try {
         const data = dataToSave || state.sueldosData;
@@ -236,308 +180,212 @@ export async function saveSueldosDataToFirestore(dataToSave) {
     }
 }
 
-/**
- * Adds a new adjustment (bonus or expense) to an employee and saves the data.
- * @param {string} employeeId - The ID of the employee.
- * @param {string} type - The type of adjustment ('bono' or 'gasto').
- * @param {object} adjustmentData - The data for the new adjustment.
- */
-export async function saveAdjustment(employeeId, type, adjustmentData) {
+export async function saveBulkExpenses(expenses) {
+    if (!expenses || expenses.length === 0) return;
     saveStateToHistory();
+    const batch = writeBatch(db);
     try {
-        const employee = state.sueldosData.find(emp => emp.id === employeeId);
-        if (!employee) {
-            throw new Error('Empleado no encontrado.');
-        }
-
-        if (type === 'bono') {
-            if (!employee.bonos) employee.bonos = [];
-            employee.bonos.push(adjustmentData);
-        } else if (type === 'gasto') {
-            if (!employee.descuentos) employee.descuentos = [];
-            employee.descuentos.push(adjustmentData);
-        }
-
-        // Recalculate totals for the employee
-        recalculatePayment(employee);
-        
-        // Save the entire sueldos data back to Firestore
-        await saveSueldosDataToFirestore();
-
-        // Close the modal and the UI will update via the realtime listener
-        showModal({ show: false });
-    } catch (error) {
-        console.error(`Error saving adjustment for employee ${employeeId}:`, error);
-        actionHistory.pop(); // Revert history on failure
-        showModal({ 
-            title: 'Error al Guardar', 
-            body: `No se pudo guardar el ajuste. Detalles: ${error.message}`,
-            confirmText: 'Cerrar',
-            showCancel: false
+        expenses.forEach(expense => {
+            batch.set(doc(collection(db, "expenses")), expense);
         });
-    }
-}
-
-/**
- * Deletes an adjustment (bonus or expense) from an employee's record.
- * @param {string} employeeId - The ID of the employee.
- * @param {number} adjustmentId - The index of the adjustment to delete.
- * @param {string} type - The type of adjustment ('bono' or 'gasto').
- */
-export async function deleteAdjustment(employeeId, adjustmentId, type) {
-    saveStateToHistory();
-    try {
-        const employee = state.sueldosData.find(emp => emp.id === employeeId);
-        if (!employee) throw new Error('Empleado no encontrado.');
-
-        const list = type === 'bono' ? employee.bonos : employee.descuentos;
-        if (!list || adjustmentId < 0 || adjustmentId >= list.length) {
-            throw new Error('Ajuste no válido o fuera de rango.');
-        }
-
-        list.splice(adjustmentId, 1);
-        recalculatePayment(employee);
-        await saveSueldosDataToFirestore();
-        showModal({ show: false });
-        
+        await batch.commit();
     } catch (error) {
-        console.error(`Error deleting adjustment for employee ${employeeId}:`, error);
+        console.error("Error saving bulk expenses:", error);
         actionHistory.pop();
-        showModal({ 
-            title: 'Error al Eliminar', 
-            body: `No se pudo eliminar el ajuste. Detalles: ${error.message}`,
-            confirmText: 'Cerrar',
-            showCancel: false
-        });
+        throw new Error("No se pudieron guardar los registros en la base de datos.");
     }
 }
 
-
-// --- OPERACIONES EN LOTE (BULK) ---
-
-/**
- * Elimina todos los registros de la colección 'expenses', excepto los de tipo 'Ajuste'.
- */
 export async function deleteAllData() {
-    const expensesToDelete = state.expenses.filter(e => e.concept !== 'Ajuste');
-    if (expensesToDelete.length === 0) {
-        showModal({ title: 'Información', body: 'No hay datos para borrar (excluyendo los ajustes).', showCancel: false, confirmText: 'Entendido' });
-        return;
-    }
     saveStateToHistory();
     showModal({ show: false });
     try {
         const batch = writeBatch(db);
         const q = query(collection(db, "expenses"), where("concept", "!=", "Ajuste"));
-        const querySnapshot = await getDocs(q);
-        
-        querySnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+             showModal({ title: 'Información', body: 'No hay datos para borrar (excluyendo ajustes).', showCancel: false, confirmText: 'Entendido' });
+             actionHistory.pop(); return;
+        }
+        snapshot.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
-        showModal({ title: 'Éxito', body: `Se han borrado ${querySnapshot.size} registros. Los ingresos de tipo "Ajuste" se han conservado.`, showCancel: false, confirmText: 'Entendido' });
+        showModal({ title: 'Éxito', body: `Se borraron ${snapshot.size} registros.`, showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error borrando todos los datos:", error);
         actionHistory.pop();
-        showModal({ title: 'Error', body: 'No se pudieron borrar los datos.', showCancel: false, confirmText: 'Entendido' });
     }
 }
 
-/**
- * Elimina todos los registros de gastos del mes en curso.
- */
 export async function deleteCurrentMonthData() {
     saveStateToHistory();
     showModal({ show: false });
-
     const today = new Date();
-    const startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-    const endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-
-    const startDateString = startDate.toISOString().split('T')[0];
-    const endDateString = endDate.toISOString().split('T')[0];
-
+    const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
     try {
         const batch = writeBatch(db);
-        const q = query(collection(db, "expenses"), 
-            where("date", ">=", startDateString),
-            where("date", "<=", endDateString)
-        );
-        
-        const querySnapshot = await getDocs(q);
-        
-        if (querySnapshot.empty) {
-            showModal({ title: 'Información', body: 'No se encontraron registros en el mes actual para borrar.', showCancel: false, confirmText: 'Entendido' });
-            actionHistory.pop();
-            return;
+        const q = query(collection(db, "expenses"), where("date", ">=", start), where("date", "<=", end));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+            showModal({ title: 'Información', body: 'No hay registros en el mes actual.', showCancel: false, confirmText: 'Entendido' });
+            actionHistory.pop(); return;
         }
-
-        querySnapshot.forEach(doc => {
-            batch.delete(doc.ref);
-        });
-        
+        snapshot.forEach(doc => batch.delete(doc.ref));
         await batch.commit();
-        showModal({ title: 'Éxito', body: `Se han borrado ${querySnapshot.size} registros del mes actual.`, showCancel: false, confirmText: 'Entendido' });
+        showModal({ title: 'Éxito', body: `Se borraron ${snapshot.size} registros del mes actual.`, showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error deleting current month data:", error);
         actionHistory.pop();
-        showModal({ title: 'Error', body: 'No se pudieron borrar los datos del mes actual.', showCancel: false, confirmText: 'Entendido' });
     }
 }
 
-/**
- * Elimina los registros del mes anterior que fueron cargados desde un archivo XLS.
- */
 export async function deletePreviousMonthData() {
       saveStateToHistory();
       showModal({ show: false });
-
       const today = new Date();
-      const year = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
-      const month = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
-
-      const startDate = new Date(year, month, 1);
-      const endDate = new Date(year, month + 1, 0);
-
-      const startDateString = startDate.toISOString().split('T')[0];
-      const endDateString = endDate.toISOString().split('T')[0];
-
+      const y = today.getMonth() === 0 ? today.getFullYear() - 1 : today.getFullYear();
+      const m = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
+      const start = new Date(y, m, 1).toISOString().split('T')[0];
+      const end = new Date(y, m + 1, 0).toISOString().split('T')[0];
       try {
           const batch = writeBatch(db);
-          const q = query(collection(db, "expenses"), 
-              where("date", ">=", startDateString),
-              where("date", "<=", endDateString)
-          );
-          
-          const querySnapshot = await getDocs(q);
+          const q = query(collection(db, "expenses"), where("date", ">=", start), where("date", "<=", end));
+          const snapshot = await getDocs(q);
           let deletedCount = 0;
-
-          if (querySnapshot.empty) {
-              showModal({ title: 'Información', body: 'No se encontraron registros en el mes anterior para borrar.', showCancel: false, confirmText: 'Entendido' });
-              actionHistory.pop();
-              return;
+          if (snapshot.empty) {
+              showModal({ title: 'Información', body: 'No hay registros del mes anterior.', showCancel: false, confirmText: 'Entendido' });
+              actionHistory.pop(); return;
           }
-
-          querySnapshot.forEach(doc => {
-              const data = doc.data();
-              if (data.source !== 'manual') {
+          snapshot.forEach(doc => {
+              if (doc.data().source !== 'manual') {
                   batch.delete(doc.ref);
                   deletedCount++;
               }
           });
-
           if (deletedCount === 0) {
-              showModal({ title: 'Información', body: 'No se encontraron registros cargados por archivo en el mes anterior. Todos los registros eran manuales y se conservaron.', showCancel: false, confirmText: 'Entendido' });
-              actionHistory.pop();
-              return;
+              showModal({ title: 'Información', body: 'No hay registros de archivo para borrar.', showCancel: false, confirmText: 'Entendido' });
+              actionHistory.pop(); return;
           }
-          
           await batch.commit();
-          showModal({ title: 'Éxito', body: `Se han borrado ${deletedCount} registros del mes anterior.`, showCancel: false, confirmText: 'Entendido' });
+          showModal({ title: 'Éxito', body: `Se borraron ${deletedCount} registros.`, showCancel: false, confirmText: 'Entendido' });
       } catch (error) {
           console.error("Error deleting previous month data:", error);
           actionHistory.pop();
-          showModal({ title: 'Error', body: 'No se pudieron borrar los datos del mes anterior.', showCancel: false, confirmText: 'Entendido' });
       }
 }
 
-/**
- * Busca y elimina registros de gastos duplicados en toda la colección.
- */
 export async function removeDuplicates() {
     showModal({ show: false }); 
-    const expenses = state.expenses;
-    if (expenses.length < 2) {
-        showModal({ title: 'Información', body: 'No hay suficientes registros para buscar duplicados.', showCancel: false, confirmText: 'Entendido' });
-        return;
-    }
-
     const seen = new Map();
     const duplicatesToDelete = [];
-    const sortedExpenses = [...expenses].sort((a, b) => new Date(a.date) - new Date(b.date));
-
-    sortedExpenses.forEach(expense => {
-        const signature = getExpenseSignature(expense);
-        if (seen.has(signature)) {
-            duplicatesToDelete.push(expense.id);
-        } else {
-            seen.set(signature, expense.id);
-        }
+    [...state.expenses].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(exp => {
+        const sig = getExpenseSignature(exp);
+        if (seen.has(sig)) duplicatesToDelete.push(exp.id);
+        else seen.set(sig, exp.id);
     });
-
     if (duplicatesToDelete.length === 0) {
-        showModal({ title: 'Sin Duplicados', body: '¡Buenas noticias! No se encontraron registros duplicados.', showCancel: false, confirmText: 'Entendido' });
+        showModal({ title: 'Sin Duplicados', body: 'No se encontraron registros duplicados.', showCancel: false, confirmText: 'Entendido' });
         return;
     }
-
     try {
         saveStateToHistory();
         const batch = writeBatch(db);
         duplicatesToDelete.forEach(id => batch.delete(doc(db, "expenses", id)));
         await batch.commit();
-        showModal({ title: 'Limpieza Exitosa', body: `Se eliminaron ${duplicatesToDelete.length} registros duplicados.`, showCancel: false, confirmText: 'Entendido' });
+        showModal({ title: 'Éxito', body: `Se eliminaron ${duplicatesToDelete.length} duplicados.`, showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error removing duplicates:", error);
         actionHistory.pop();
-        showModal({ title: 'Error', body: 'Ocurrió un error al eliminar los duplicados.', showCancel: false, confirmText: 'Entendido' });
     }
 }
 
-/**
- * Elimina todos los datos de sueldos, reseteando el documento a un estado vacío.
- */
 export async function deleteSueldosData() {
     showModal({ show: false });
     try {
         await setDoc(doc(db, "sueldos", "main"), { employees: [] });
-        showModal({ 
-            title: 'Éxito', 
-            body: 'Todos los datos de sueldos han sido eliminados.', 
-            showCancel: false, 
-            confirmText: 'Entendido' 
-        });
+        showModal({ title: 'Éxito', body: 'Datos de sueldos eliminados.', showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error deleting payroll data:", error);
-        showModal({ 
-            title: 'Error', 
-            body: 'No se pudieron borrar los datos de sueldos.', 
-            showCancel: false, 
-            confirmText: 'Entendido' 
-        });
     }
 }
 
+export async function saveAdjustment(employeeId, type, adjustmentData) {
+    saveStateToHistory('sueldos'); 
+    try {
+        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
+        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
+
+        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
+        const employee = updatedEmployees[employeeIndex];
+        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
+        
+        if (!employee[collectionName]) employee[collectionName] = [];
+        employee[collectionName].push(adjustmentData);
+        
+        recalculatePayment(employee);
+
+        await saveSueldosDataToFirestore(updatedEmployees);
+        showModal({ show: false });
+    } catch (error) {
+        console.error(`Error al guardar ${type}:`, error);
+        actionHistory.pop(); 
+        showModal({ title: 'Error', body: `No se pudo guardar el ${type}. Inténtalo de nuevo.`, showCancel: false });
+    }
+}
+
+export async function deleteAdjustment(employeeId, type, adjustmentIndex) {
+    saveStateToHistory('sueldos');
+    try {
+        const employeeIndex = state.sueldosData.findIndex(e => e.id === employeeId);
+        if (employeeIndex === -1) throw new Error("Empleado no encontrado");
+
+        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData));
+        const employee = updatedEmployees[employeeIndex];
+        const collectionName = type === 'bono' ? 'bonos' : 'descuentos';
+
+        if (employee[collectionName] && employee[collectionName][adjustmentIndex]) {
+            employee[collectionName].splice(adjustmentIndex, 1);
+            recalculatePayment(employee);
+            await saveSueldosDataToFirestore(updatedEmployees);
+            showModal({ show: false });
+        } else {
+            throw new Error("Ajuste no encontrado para eliminar.");
+        }
+    } catch (error) {
+        console.error(`Error al eliminar ${type}:`, error);
+        actionHistory.pop();
+        showModal({ title: 'Error', body: `No se pudo eliminar el ${type}.`, showCancel: false });
+    }
+}
 
 // --- GESTIÓN DEL HISTORIAL (UNDO) ---
 
-/**
- * Guarda una copia del estado actual de los gastos en el historial de acciones.
- */
-export function saveStateToHistory() {
-    const snapshot = JSON.parse(JSON.stringify(state.expenses)).map(exp => { delete exp.id; return exp; });
-    actionHistory.push(snapshot);
+export function saveStateToHistory(dataType = 'expenses') {
+    const snapshot = (dataType === 'sueldos')
+        ? JSON.parse(JSON.stringify(state.sueldosData))
+        : JSON.parse(JSON.stringify(state.expenses)).map(exp => { delete exp.id; return exp; });
+    actionHistory.push({ type: dataType, data: snapshot });
 }
 
-/**
- * Restaura el estado de los gastos al estado anterior guardado en el historial.
- */
 export async function undoLastAction() {
     if (actionHistory.length === 0) {
         showModal({ title: 'Información', body: 'No hay más acciones que deshacer.', showCancel: false, confirmText: 'Entendido' });
         return;
     }
-    const previousExpenses = actionHistory.pop();
+    const lastAction = actionHistory.pop();
     try {
-        const batch = writeBatch(db);
-        const querySnapshot = await getDocs(collection(db, "expenses"));
-        querySnapshot.forEach(doc => batch.delete(doc.ref));
-        previousExpenses.forEach(expense => batch.set(doc(collection(db, "expenses")), expense));
-        await batch.commit();
+        if (lastAction.type === 'sueldos') {
+            await saveSueldosDataToFirestore(lastAction.data);
+        } else {
+            const batch = writeBatch(db);
+            const snapshot = await getDocs(collection(db, "expenses"));
+            snapshot.forEach(doc => batch.delete(doc.ref));
+            lastAction.data.forEach(exp => batch.set(doc(collection(db, "expenses")), exp));
+            await batch.commit();
+        }
         showModal({ title: 'Éxito', body: 'La última acción ha sido deshecha.', showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error during undo:", error);
-        showModal({ title: 'Error', body: 'No se pudo deshacer la acción.', showCancel: false, confirmText: 'Entendido' });
     }
 }
 
