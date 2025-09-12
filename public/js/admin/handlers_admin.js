@@ -411,21 +411,18 @@ function updateEmployeeRate(employeeId, newRate) {
  * @param {HTMLElement} cardElement - The employee card element.
  */
 function toggleEmployeeCard(cardElement) {
-    const body = cardElement.querySelector('.employee-body');
+    cardElement.classList.toggle('collapsed');
     const button = cardElement.querySelector('.toggle-details-btn');
     const icon = button.querySelector('i');
-    const isExpanded = button.getAttribute('aria-expanded') === 'true';
+    const isExpanded = !cardElement.classList.contains('collapsed');
 
+    button.setAttribute('aria-expanded', isExpanded);
     if (isExpanded) {
-        body.style.display = 'none';
-        button.setAttribute('aria-expanded', 'false');
-        icon.classList.remove('fa-chevron-up');
-        icon.classList.add('fa-chevron-down');
-    } else {
-        body.style.display = 'grid';
-        button.setAttribute('aria-expanded', 'true');
         icon.classList.remove('fa-chevron-down');
         icon.classList.add('fa-chevron-up');
+    } else {
+        icon.classList.remove('fa-chevron-up');
+        icon.classList.add('fa-chevron-down');
     }
 }
 
