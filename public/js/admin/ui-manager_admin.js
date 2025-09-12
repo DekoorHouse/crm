@@ -541,7 +541,7 @@ export function renderSueldosData(employees, isFiltered) {
 
         card.innerHTML = `
             <div class="employee-header">
-                <h3>${employee.name}</h3>
+                <h3>${capitalize(employee.name)}</h3>
                 <div class="employee-header-rate">
                     <div class="rate-input-wrapper">
                         <span class="rate-input-symbol">$</span>
