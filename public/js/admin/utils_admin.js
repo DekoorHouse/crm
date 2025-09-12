@@ -179,11 +179,17 @@ export function parseSueldosData(jsonData) {
 
     if (typeof dateCell === 'number') {
         startDate = convertExcelDate(dateCell);
-    } else if (typeof dateCell === 'string' && dateCell.includes('-')) {
-        const startDateString = dateCell.split(' ')[0].trim();
-        const dateParts = startDateString.split('-').map(Number);
-        if (dateParts.length === 3) {
+    } else if (typeof dateCell === 'string') {
+        // CORRECCIÓN: Se hace más robusta la lectura de la fecha para aceptar varios formatos.
+        const cleanedDateString = dateCell.trim().split(' ')[0]; // Tomar solo la parte de la fecha
+        let dateParts;
+
+        if (/^\d{4}-\d{2}-\d{2}$/.test(cleanedDateString)) { // Formato YYYY-MM-DD
+            dateParts = cleanedDateString.split('-').map(Number);
             startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
+        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(cleanedDateString)) { // Formato DD/MM/YYYY
+            dateParts = cleanedDateString.split('/').map(Number);
+            startDate = new Date(Date.UTC(dateParts[2], dateParts[1] - 1, dateParts[0]));
         }
     }
 
@@ -352,7 +358,8 @@ export function addManualEmployees() {
 export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
     if (!start || !end) {
-        return state.sueldsosData; // Return all data if no filter is set
+        // CORRECCIÓN: Se corrigió el error tipográfico de 'sueldsosData' a 'sueldosData'.
+        return state.sueldosData; // Return all data if no filter is set
     }
 
     const filtered = JSON.parse(JSON.stringify(state.sueldosData));
@@ -377,4 +384,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
