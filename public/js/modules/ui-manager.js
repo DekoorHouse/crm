@@ -1149,3 +1149,62 @@ function closeKnowledgeBaseModal() {
     }
 }
 
+// --- AÑADIDO: Funciones para el modal de Prompts de IA por Anuncio ---
+function openAIAdPromptModal(promptId = null) {
+    const modal = document.getElementById('ai-ad-prompt-modal');
+    if (!modal) return;
+
+    const form = document.getElementById('ai-ad-prompt-form');
+    const titleEl = document.getElementById('ai-ad-prompt-modal-title');
+    const docIdInput = document.getElementById('aip-doc-id');
+    const nameInput = document.getElementById('aip-name');
+    const adIdInput = document.getElementById('aip-ad-id');
+    const promptTextarea = document.getElementById('aip-prompt');
+
+    // Reset form
+    form.reset();
+    docIdInput.value = '';
+
+    if (promptId) {
+        // Edit mode
+        const prompt = state.aiAdPrompts.find(p => p.id === promptId);
+        if (prompt) {
+            titleEl.textContent = 'Editar Prompt de IA';
+            docIdInput.value = prompt.id;
+            nameInput.value = prompt.adName || '';
+            adIdInput.value = prompt.adId || '';
+            promptTextarea.value = prompt.prompt || '';
+        }
+    } else {
+        // Add mode
+        titleEl.textContent = 'Añadir Prompt de IA';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeAIAdPromptModal() {
+    const modal = document.getElementById('ai-ad-prompt-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
+// --- AÑADIDO: Funciones para el modal de Ajustes del Bot ---
+function openBotSettingsModal() {
+    const modal = document.getElementById('bot-settings-modal');
+    if (!modal) return;
+
+    const instructionsTextarea = document.getElementById('bot-instructions');
+    instructionsTextarea.value = state.botSettings.instructions || '';
+
+    modal.classList.remove('hidden');
+}
+
+function closeBotSettingsModal() {
+    const modal = document.getElementById('bot-settings-modal');
+    if (modal) {
+        modal.classList.add('hidden');
+    }
+}
+
