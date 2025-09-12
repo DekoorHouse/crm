@@ -53,7 +53,7 @@
     .card {
       background-color: var(--white);
       border-radius: 12px;
-      box-shadow: 0 4px_6px_-1px_rgba(0,0,0,0.1),_0_2px_4px_-2px_rgba(0,0,0,0.1);
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1);
       margin-bottom: 20px;
       overflow: hidden;
       transition: all 0.3s cubic-bezier(.25,.8,.25,1);
@@ -530,6 +530,15 @@
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap: 20px;
+      max-height: 500px; /* Give it a max-height for transition */
+      overflow: hidden;
+      transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out;
+    }
+    .employee-card.collapsed .employee-body {
+        max-height: 0;
+        padding-top: 0;
+        padding-bottom: 0;
+        overflow: hidden;
     }
     .employee-body .table-container {
         max-height: 250px;
@@ -625,6 +634,21 @@
         background-color: var(--white);
     }
 
+    .toggle-details-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: 5px;
+        color: var(--text-secondary);
+    }
+    .toggle-details-btn i {
+        transition: transform 0.3s ease-in-out;
+    }
+    .employee-card.collapsed .toggle-details-btn i {
+        transform: rotate(-180deg);
+    }
+
+
     /* --- FINANCIAL HEALTH TAB STYLES --- */
     #health-dashboard {
         display: grid;
@@ -716,4 +740,4 @@
      @media (max-width: 768px) {
         .employee-body { grid-template-columns: 1fr; }
     }
-
+```
