@@ -1,6 +1,6 @@
 import { elements, state } from './state_admin.js';
 import { formatCurrency, autoCategorize, capitalize } from './utils_admin.js';
-import { saveExpense, saveFinancialTransaction } from './services_admin.js'; // Necesario para los modales que guardan datos
+import * as services from './services_admin.js';
 
 /**
  * @file Módulo de gestión de la interfaz de usuario (UI).
@@ -333,7 +333,7 @@ export function openExpenseModal(expense = {}) {
                 
                 if (isEditing) expenseData.id = expense.id;
                 
-                saveExpense(expenseData, originalCategory);
+                services.saveExpense(expenseData, originalCategory);
             }
         },
         onModalOpen: () => {
@@ -415,7 +415,7 @@ export function openFinancialModal() {
         title: 'Registrar Movimiento Financiero',
         body: body,
         confirmText: 'Guardar Movimiento',
-        onConfirm: () => saveFinancialTransaction(),
+        onConfirm: () => services.saveFinancialTransaction(),
         onModalOpen: () => {
             const typeSelect = document.getElementById('financial-type');
             const entradaFields = document.getElementById('entrada-fields');
@@ -608,5 +608,70 @@ export function renderSueldosData(employees, isFiltered) {
         `;
         elements.sueldosTableContainer.appendChild(card);
     });
+}
+
+/**
+ * Opens a modal to add a bonus or an expense/discount for an employee.
+ * @param {string} employeeId - The ID of the employee.
+ * @param {string} type - The type of adjustment ('bono' or 'gasto').
+ */
+function openAdjustmentModal(employeeId, type) {
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) return;
+
+    const isBono = type === 'bono';
+    const title = isBono ? 'Agregar Bono' : 'Agregar Gasto/Descuento';
+    const amountLabel = isBono ? 'Monto del Bono ($)' : 'Monto del Gasto ($)';
+
+    const body = `
+        <form id="adjustment-form" style="display: grid; gap: 15px;">
+            <input type="hidden" id="adjustment-employee-id" value="${employeeId}">
+            <div class="form-group">
+                <label for="adjustment-date">Fecha</label>
+                <input type="date" id="adjustment-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
+            </div>
+            <div class="form-group">
+                <label for="adjustment-concept">Concepto</label>
+                <input type="text" id="adjustment-concept" class="modal-input" placeholder="${isBono ? 'Ej: Bono de puntualidad' : 'Ej: Adelanto de sueldo'}" required>
+            </div>
+            <div class="form-group">
+                <label for="adjustment-amount">${amountLabel}</label>
+                <input type="number" step="0.01" id="adjustment-amount" class="modal-input" placeholder="$0.00" required>
+            </div>
+        </form>
+    `;
+
+    showModal({
+        title: `${title} para ${capitalize(employee.name)}`,
+        body: body,
+        confirmText: 'Guardar',
+        onConfirm: () => {
+            const form = document.getElementById('adjustment-form');
+            if (form.reportValidity()) {
+                const adjustmentData = {
+                    date: document.getElementById('adjustment-date').value,
+                    concept: document.getElementById('adjustment-concept').value,
+                    amount: parseFloat(document.getElementById('adjustment-amount').value) || 0,
+                };
+                services.saveAdjustment(employeeId, type, adjustmentData);
+            }
+        }
+    });
+}
+
+/**
+ * Opens the modal specifically for adding a bonus.
+ * @param {string} employeeId - The ID of the employee.
+ */
+export function openBonoModal(employeeId) {
+    openAdjustmentModal(employeeId, 'bono');
+}
+
+/**
+ * Opens the modal specifically for adding an expense/discount.
+ * @param {string} employeeId - The ID of the employee.
+ */
+export function openGastoModal(employeeId) {
+    openAdjustmentModal(employeeId, 'gasto');
 }
 
