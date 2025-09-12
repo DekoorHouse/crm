@@ -79,6 +79,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (quickReplyForm) {
         quickReplyForm.addEventListener('submit', handleSaveQuickReply);
     }
+
+    const kbForm = document.getElementById('kb-form');
+    if (kbForm) {
+        kbForm.addEventListener('submit', handleSaveKnowledgeBaseEntry);
+    }
     // --- FIN DE LA SOLUCIÓN ---
 });
 
@@ -100,4 +105,3 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
-
