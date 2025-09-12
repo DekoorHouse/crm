@@ -249,6 +249,9 @@ const AjustesIAViewTemplate = () => `
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
                 <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
+                <div class="mb-4">
+                    <input type="text" id="bot-contact-search-input" placeholder="Buscar contacto por nombre o número..." class="!mb-0">
+                </div>
                 <div class="max-h-96 overflow-y-auto">
                     <table class="table">
                         <thead>
@@ -1090,4 +1093,3 @@ const OrderDetailsModalTemplate = (order) => {
     `;
 };
 // --- FIN DE MODIFICACIÓN ---
-
