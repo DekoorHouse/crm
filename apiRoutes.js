@@ -2,9 +2,8 @@ const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse } = require('./services');
-// Se importa dinámicamente para evitar dependencias circulares
-const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
+// SE ACTUALIZÓ LA IMPORTACIÓN PARA APUNTAR A services.js
+const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage } = require('./services');
 
 const router = express.Router();
 
@@ -1153,3 +1152,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
