@@ -2,14 +2,14 @@ const { google } = require('googleapis');
 const crypto = require('crypto');
 const fetch = require('node-fetch');
 const axios = require('axios');
-const { db } = require('./config');
+const { db, admin } = require('./config');
 
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN; // SE AÑADIÓ ESTA LÍNEA
 
 // =================================================================
 // === LÓGICA DE MAYOREO ===========================================
@@ -142,8 +142,68 @@ async function checkCoverage(postalCode) {
 }
 
 // =================================================================
-// === SERVICIOS DE IA (GEMINI) ====================================
+// === SERVICIOS DE IA (GEMINI) y MENSAJERÍA =======================
 // =================================================================
+
+/**
+ * Función movida desde whatsappHandler.js para romper la dependencia circular.
+ * Envía un mensaje de texto o multimedia a través de la API de WhatsApp.
+ */
+async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
+    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
+    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
+    let messagePayload;
+    let messageToSaveText;
+
+    const contactRef = db.collection('contacts_whatsapp').doc(to);
+    const contactDoc = await contactRef.get();
+    if (!contactDoc.exists) {
+        console.log(`[LOG] El contacto ${to} no existe. Creando uno nuevo antes de enviar el mensaje.`);
+        const contactUpdateData = {
+            name: `Nuevo Contacto (${to.slice(-4)})`,
+            name_lowercase: `nuevo contacto (${to.slice(-4)})`,
+            wa_id: to,
+            lastMessage: "Contacto creado por envío saliente.",
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: 0
+        };
+        await contactRef.set(contactUpdateData, { merge: true });
+    }
+
+    if (fileUrl && fileType) {
+        const type = fileType.startsWith('image/') ? 'image' :
+                     fileType.startsWith('video/') ? 'video' :
+                     fileType.startsWith('audio/') ? 'audio' : 'document';
+
+        const mediaObject = { link: fileUrl };
+        if (text) mediaObject.caption = text;
+
+        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
+        messageToSaveText = text || (type === 'image' ? '📷 Imagen' :
+                                     type === 'video' ? '🎥 Video' :
+                                     type === 'audio' ? '🎵 Audio' : '📄 Documento');
+    } else if (text) {
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
+        messageToSaveText = text;
+    } else {
+        throw new Error("Se requiere texto o un archivo para enviar un mensaje.");
+    }
+
+    if (reply_to_wamid) {
+        messagePayload.context = { message_id: reply_to_wamid };
+    }
+
+    try {
+        console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
+        const response = await axios.post(url, messagePayload, { headers });
+        console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
+        const messageId = response.data.messages[0].id;
+        return { id: messageId, textForDb: messageToSaveText, fileUrlForDb: fileUrl || null, fileTypeForDb: fileType || null };
+    } catch (error) {
+        console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw error;
+    }
+}
 
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
@@ -205,15 +265,14 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResponse = await generateGeminiResponse(prompt);
         
-        // Se importa dinámicamente para evitar dependencias circulares
-        const { sendAdvancedWhatsAppMessage } = require('./whatsappHandler');
+        // SE CORRIGIÓ: Se llama a la función directamente ya que fue movida a este archivo.
         const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
         
         await contactRef.collection('messages').add({
-            from: PHONE_NUMBER_ID, status: 'sent', timestamp: require('firebase-admin').firestore.FieldValue.serverTimestamp(),
+            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
             id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
         });
-        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: require('firebase-admin').firestore.FieldValue.serverTimestamp() });
+        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
         console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
@@ -282,11 +341,13 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     }
 }
 
-
+// SE ACTUALIZÓ LA EXPORTACIÓN
 module.exports = {
     handleWholesaleMessage,
     checkCoverage,
     generateGeminiResponse,
     triggerAutoReplyAI,
-    sendConversionEvent
+    sendConversionEvent,
+    sendAdvancedWhatsAppMessage
 };
+
