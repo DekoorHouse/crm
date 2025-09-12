@@ -278,6 +278,40 @@ export async function saveAdjustment(employeeId, type, adjustmentData) {
     }
 }
 
+/**
+ * Deletes an adjustment (bonus or expense) from an employee's record.
+ * @param {string} employeeId - The ID of the employee.
+ * @param {number} adjustmentId - The index of the adjustment to delete.
+ * @param {string} type - The type of adjustment ('bono' or 'gasto').
+ */
+export async function deleteAdjustment(employeeId, adjustmentId, type) {
+    saveStateToHistory();
+    try {
+        const employee = state.sueldosData.find(emp => emp.id === employeeId);
+        if (!employee) throw new Error('Empleado no encontrado.');
+
+        const list = type === 'bono' ? employee.bonos : employee.descuentos;
+        if (!list || adjustmentId < 0 || adjustmentId >= list.length) {
+            throw new Error('Ajuste no válido o fuera de rango.');
+        }
+
+        list.splice(adjustmentId, 1);
+        recalculatePayment(employee);
+        await saveSueldosDataToFirestore();
+        showModal({ show: false });
+        
+    } catch (error) {
+        console.error(`Error deleting adjustment for employee ${employeeId}:`, error);
+        actionHistory.pop();
+        showModal({ 
+            title: 'Error al Eliminar', 
+            body: `No se pudo eliminar el ajuste. Detalles: ${error.message}`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+    }
+}
+
 
 // --- OPERACIONES EN LOTE (BULK) ---
 
