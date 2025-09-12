@@ -1,7 +1,8 @@
 const express = require('express');
 const axios = require('axios');
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI } = require('./services');
+// SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendAdvancedWhatsAppMessage
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage } = require('./services');
 
 const router = express.Router();
 
@@ -69,63 +70,6 @@ async function downloadAndUploadMedia(mediaId, from) {
 
     } catch (error) {
         console.error(`[MEDIA] Falló el proceso de descarga y subida para mediaId ${mediaId}:`, error.response ? error.response.data : error.message);
-        throw error;
-    }
-}
-
-
-async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_to_wamid }) {
-    const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
-    const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    let messagePayload;
-    let messageToSaveText;
-
-    const contactRef = db.collection('contacts_whatsapp').doc(to);
-    const contactDoc = await contactRef.get();
-    if (!contactDoc.exists) {
-        console.log(`[LOG] El contacto ${to} no existe. Creando uno nuevo antes de enviar el mensaje.`);
-        const contactUpdateData = {
-            name: `Nuevo Contacto (${to.slice(-4)})`,
-            name_lowercase: `nuevo contacto (${to.slice(-4)})`,
-            wa_id: to,
-            lastMessage: "Contacto creado por envío saliente.",
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-            unreadCount: 0
-        };
-        await contactRef.set(contactUpdateData, { merge: true });
-    }
-
-    if (fileUrl && fileType) {
-        const type = fileType.startsWith('image/') ? 'image' :
-                     fileType.startsWith('video/') ? 'video' :
-                     fileType.startsWith('audio/') ? 'audio' : 'document';
-
-        const mediaObject = { link: fileUrl };
-        if (text) mediaObject.caption = text;
-
-        messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
-        messageToSaveText = text || (type === 'image' ? '📷 Imagen' :
-                                     type === 'video' ? '🎥 Video' :
-                                     type === 'audio' ? '🎵 Audio' : '📄 Documento');
-    } else if (text) {
-        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
-        messageToSaveText = text;
-    } else {
-        throw new Error("Se requiere texto o un archivo para enviar un mensaje.");
-    }
-
-    if (reply_to_wamid) {
-        messagePayload.context = { message_id: reply_to_wamid };
-    }
-
-    try {
-        console.log(`[LOG] Intentando enviar mensaje a ${to} con payload:`, JSON.stringify(messagePayload));
-        const response = await axios.post(url, messagePayload, { headers });
-        console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
-        const messageId = response.data.messages[0].id;
-        return { id: messageId, textForDb: messageToSaveText, fileUrlForDb: fileUrl || null, fileTypeForDb: fileType || null };
-    } catch (error) {
-        console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
     }
 }
@@ -293,7 +237,6 @@ router.post('/', async (req, res) => {
             if (message.type === 'text') {
                 messageData.text = message.text.body;
             } else if (message.type === 'image' && message.image?.id) {
-                // --- INICIO DE LA CORRECCIÓN: Usar descarga permanente para imágenes ---
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.image.id, from);
                     messageData.fileUrl = publicUrl;
@@ -305,9 +248,7 @@ router.post('/', async (req, res) => {
                     messageData.fileType = message.image.mime_type || 'image/jpeg';
                 }
                 messageData.text = message.image.caption || '📷 Imagen';
-                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'video' && message.video?.id) {
-                 // --- INICIO DE LA CORRECCIÓN: Usar descarga permanente para videos ---
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.video.id, from);
                     messageData.fileUrl = publicUrl;
@@ -319,7 +260,6 @@ router.post('/', async (req, res) => {
                     messageData.fileType = message.video.mime_type || 'video/mp4';
                 }
                 messageData.text = message.video.caption || '🎥 Video';
-                // --- FIN DE LA CORRECCIÓN ---
             } else if (message.type === 'audio' && message.audio?.id) {
                 try {
                     const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
@@ -403,11 +343,6 @@ router.post('/', async (req, res) => {
                     return res.sendStatus(200);
                 }
             }
-
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // Se comenta la siguiente línea para desactivar la respuesta automática a códigos postales.
-            // if (await handlePostalCodeAuto(message, contactRef, from)) return res.sendStatus(200);
-            // --- FIN DE LA MODIFICACIÓN ---
 
             if (isNewContact) {
                 let adResponseSent = false;
@@ -514,5 +449,6 @@ router.get("/wa/media/:mediaId", async (req, res) => {
     }
 });
 
+// SE ACTUALIZÓ LA EXPORTACIÓN
+module.exports = { router };
 
-module.exports = { router, sendAdvancedWhatsAppMessage };
