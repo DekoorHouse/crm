@@ -426,6 +426,26 @@ function toggleEmployeeCard(cardElement) {
     }
 }
 
+/**
+ * Shows a confirmation modal before deleting an adjustment.
+ * @param {string} employeeId - The ID of the employee.
+ * @param {number} adjustmentId - The index of the adjustment.
+ * @param {string} type - The type of adjustment ('bono' or 'gasto').
+ */
+function confirmDeleteAdjustment(employeeId, adjustmentId, type) {
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) return;
 
-function confirmDeleteAdjustment(empId, adjId, type) { console.log('Delete adjustment'); }
+    const list = type === 'bono' ? employee.bonos : employee.descuentos;
+    const adjustment = list[adjustmentId];
+    if (!adjustment) return;
+    
+    ui.showModal({
+        title: `Confirmar Eliminación`,
+        body: `¿Estás seguro de que quieres borrar el ${type} de "${adjustment.concept}" por ${formatCurrency(adjustment.amount)}?`,
+        confirmText: "Sí, Eliminar",
+        confirmClass: "btn-danger",
+        onConfirm: () => services.deleteAdjustment(employeeId, parseInt(adjustmentId), type)
+    });
+}
 
