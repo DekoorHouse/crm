@@ -429,22 +429,37 @@ function renderAjustesIAView() {
         botToggle.checked = state.globalBotSettings.isActive;
     }
 
-    const botContactsTableBody = document.getElementById('bot-contacts-table-body');
-    if(botContactsTableBody) {
-        // Esta vista necesitaría ser paginada también en una implementación a gran escala
-        const contactsToDisplay = state.contacts.slice(0, 100); // Mostramos solo los primeros 100
-        botContactsTableBody.innerHTML = contactsToDisplay.map(contact => `
-            <tr>
-                <td class="font-semibold">${contact.name || contact.id}</td>
-                <td>
-                    <label class="toggle-switch">
-                        <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive !== false ? 'checked' : ''}>
-                        <span class="slider"></span>
-                    </label>
-                </td>
-            </tr>
-        `).join('');
+    const searchInput = document.getElementById('bot-contact-search-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', (e) => {
+            renderBotContactsTable(e.target.value);
+        });
     }
+
+    renderBotContactsTable();
+}
+
+function renderBotContactsTable(searchTerm = '') {
+    const botContactsTableBody = document.getElementById('bot-contacts-table-body');
+    if(!botContactsTableBody) return;
+
+    const lowerCaseSearchTerm = searchTerm.toLowerCase();
+    const filteredContacts = state.contacts.filter(contact => 
+        (contact.name && contact.name.toLowerCase().includes(lowerCaseSearchTerm)) ||
+        (contact.id && contact.id.includes(lowerCaseSearchTerm))
+    );
+
+    botContactsTableBody.innerHTML = filteredContacts.map(contact => `
+        <tr>
+            <td class="font-semibold">${contact.name || contact.id}</td>
+            <td>
+                <label class="toggle-switch">
+                    <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive !== false ? 'checked' : ''}>
+                    <span class="slider"></span>
+                </label>
+            </td>
+        </tr>
+    `).join('');
 }
 
 function renderAjustesView() {
