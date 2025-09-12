@@ -630,6 +630,77 @@ async function handleGlobalBotToggle(isActive) {
     }
 }
 
+// --- AÑADIDO: Handlers for AI Ad Prompts ---
+async function handleSaveAIAdPrompt(event) {
+    event.preventDefault();
+    const id = document.getElementById('aip-doc-id').value;
+    const adName = document.getElementById('aip-name').value.trim();
+    const adId = document.getElementById('aip-ad-id').value.trim();
+    const prompt = document.getElementById('aip-prompt').value.trim();
+
+    if (!adName || !adId || !prompt) {
+        showError("Nombre, ID de anuncio y el prompt son obligatorios.");
+        return;
+    }
+
+    const data = { adName, adId, prompt };
+    const url = id ? `${API_BASE_URL}/api/ai-ad-prompts/${id}` : `${API_BASE_URL}/api/ai-ad-prompts`;
+    const method = id ? 'PUT' : 'POST';
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al guardar el prompt.');
+        }
+        closeAIAdPromptModal();
+    } catch (error) {
+        console.error("Error saving AI ad prompt:", error);
+        showError(error.message);
+    }
+}
+
+async function handleDeleteAIAdPrompt(id) {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar este prompt de IA?')) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/ai-ad-prompts/${id}`, { method: 'DELETE' });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al eliminar el prompt.');
+        }
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// --- AÑADIDO: Handler for Bot Settings ---
+async function handleSaveBotSettings(event) {
+    event.preventDefault();
+    const instructions = document.getElementById('bot-instructions').value.trim();
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/bot/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ instructions })
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al guardar los ajustes.');
+        }
+        state.botSettings.instructions = instructions; // Update local state
+        closeBotSettingsModal();
+        showError('Instrucciones del bot guardadas con éxito.', 'success');
+    } catch (error) {
+        console.error("Error saving bot settings:", error);
+        showError(error.message);
+    }
+}
+
 
 // --- START: ADDED FUNCTIONS TO FIX ERRORS ---
 
@@ -773,3 +844,4 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
