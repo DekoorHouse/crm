@@ -56,6 +56,53 @@ export function hashCode(str) {
 }
 
 /**
+ * Parsea los datos de gastos desde un array JSON (proveniente de una hoja de cálculo).
+ * @param {Array<object>} jsonData - Los datos crudos de la hoja.
+ * @param {string} fileType - La extensión del archivo ('xls' o 'xlsx').
+ * @returns {Array<object>} Un array de objetos de gasto formateados.
+ */
+export function parseExpensesData(jsonData, fileType) {
+    return jsonData.map(item => {
+        const dateRaw = item['Fecha'] || item['fecha'];
+        const concept = item['Concepto'] || item['concepto'] || item['Descripción'] || 'Sin concepto';
+        const charge = item['Cargo'] || item['cargo'] || 0;
+        const credit = item['Abono'] || item['abono'] || item['Ingreso'] || item['ingreso'] || 0;
+        
+        let date;
+        if (dateRaw instanceof Date) {
+            date = dateRaw.toISOString().split('T')[0];
+        } else if (typeof dateRaw === 'string') {
+            // Intenta parsear formatos comunes, ej. DD/MM/YYYY
+            const parts = dateRaw.match(/(\d+)/g);
+            if (parts && parts.length === 3) {
+                // Asumiendo DD/MM/YYYY o MM/DD/YYYY y dejando que el constructor de Date decida
+                date = new Date(parts[2], parts[1] - 1, parts[0]).toISOString().split('T')[0];
+            } else {
+                date = new Date().toISOString().split('T')[0]; // fallback
+            }
+        } else {
+            date = new Date().toISOString().split('T')[0]; // fallback
+        }
+
+        const expense = {
+            date: date,
+            concept: String(concept),
+            charge: parseFloat(charge) || 0,
+            credit: parseFloat(credit) || 0,
+            type: 'operativo',
+            source: fileType,
+            channel: ''
+        };
+
+        // Asignar categoría solo si es un cargo
+        expense.category = expense.charge > 0 ? autoCategorize(expense.concept) : '';
+
+        return expense;
+    });
+}
+
+
+/**
  * Calcula la diferencia en minutos entre una hora de entrada y una de salida.
  * @param {string} entrada - La hora de entrada (ej. "09:00").
  * @param {string} salida - La hora de salida (ej. "17:30").
@@ -87,7 +134,7 @@ export function calculateMinutesFromEntryExit(entrada, salida) {
  * @returns {string} La categoría asignada o 'SinCategorizar'.
  */
 export function autoCategorize(concept) {
-    const lowerConcept = concept.toLowerCase();
+    const lowerConcept = String(concept).toLowerCase();
     if (state.manualCategories.has(lowerConcept)) {
         return state.manualCategories.get(lowerConcept);
     }
@@ -100,7 +147,7 @@ export function autoCategorize(concept) {
  * @returns {string} La categoría asignada según las reglas, o 'SinCategorizar'.
  */
 export function autoCategorizeWithRulesOnly(concept) {
-    const lowerConcept = concept.toLowerCase();
+    const lowerConcept = String(concept).toLowerCase();
     const rules = {
         Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167'], 
         Alex: ['alex', 'bolt'], 
@@ -164,15 +211,12 @@ function convertExcelDate(excelDate) {
 
 /**
  * Parsea los datos de sueldos desde un array JSON (proveniente de una hoja de cálculo).
- * Adaptado para leer un formato de bloques por empleado y manejar fechas numéricas de Excel.
  * @param {Array<Array<string|number>>} jsonData - Los datos crudos de la hoja.
  * @returns {Array<object>} Un array de objetos de empleado.
  */
 export function parseSueldosData(jsonData) {
     const employees = [];
-    if (!jsonData || jsonData.length < 4) {
-        return employees;
-    }
+    if (!jsonData || jsonData.length < 4) return employees;
 
     let startDate = null;
     const dateCell = jsonData[2] ? jsonData[2][2] : null;
@@ -182,7 +226,6 @@ export function parseSueldosData(jsonData) {
     } else if (typeof dateCell === 'string') {
         const match = dateCell.match(/(\d{4}-\d{2}-\d{2})/);
         const cleanedDateString = match ? match[0] : null; 
-        
         if (cleanedDateString) {
             const dateParts = cleanedDateString.split('-').map(Number);
             startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
@@ -190,7 +233,7 @@ export function parseSueldosData(jsonData) {
     }
 
     if (!startDate || isNaN(startDate.getTime())) {
-        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda C3 (formato esperado: 'YYYY-MM-DD' o formato de fecha de Excel).");
+        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda C3.");
     }
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -200,20 +243,15 @@ export function parseSueldosData(jsonData) {
         if (!Array.isArray(row)) continue;
 
         let name = null;
-
         for (let j = 0; j < row.length; j++) {
-            // FIX: Se hizo la búsqueda del nombre más robusta.
-            // Ahora busca la celda que contiene "Nombre" y luego busca en las celdas siguientes
-            // el primer valor no vacío para asignarlo como el nombre.
-            if (typeof row[j] === 'string' && row[j].trim().toLowerCase().startsWith('nombre')) {
-                // Buscar en las siguientes celdas de la misma fila
+            if (typeof row[j] === 'string' && row[j].toLowerCase().includes('nombre')) {
                 for (let k = j + 1; k < row.length; k++) {
-                    if (row[k] && String(row[k]).trim() !== '') {
-                        name = String(row[k]).trim();
-                        break; // Salir del bucle interior una vez que se encuentra el nombre
+                    if (row[k] && typeof row[k] === 'string' && row[k].trim() !== '') {
+                        name = row[k];
+                        break;
                     }
                 }
-                if (name) break; // Salir del bucle principal si ya se encontró el nombre
+                break;
             }
         }
 
@@ -222,10 +260,7 @@ export function parseSueldosData(jsonData) {
             const employee = {
                 id: employeeId,
                 name: String(name),
-                registros: [],
-                bonos: [],
-                descuentos: [],
-                paymentHistory: []
+                registros: [], bonos: [], descuentos: [], paymentHistory: []
             };
 
             const dayHeaderRow = jsonData[i - 1];
@@ -235,25 +270,17 @@ export function parseSueldosData(jsonData) {
                 for (let k = 0; k < dayHeaderRow.length; k++) {
                     const dayNumber = dayHeaderRow[k];
                     if (typeof dayNumber === 'number' && dayNumber >= 1 && dayNumber <= 31) {
-                        
                         const recordDate = new Date(startDate.getTime());
                         recordDate.setUTCDate(startDate.getUTCDate() + dayNumber - 1);
                         const dayName = dayNames[recordDate.getUTCDay()];
-
                         const timesCell = attendanceRow[k];
                         if (timesCell && typeof timesCell === 'string') {
                             const times = timesCell.split('\n').map(t => t.trim()).filter(t => /\d{1,2}:\d{2}/.test(t));
-                            
                             if (times.length > 0) {
                                 times.sort(); 
                                 const entrada = times[0];
                                 const salida = times[times.length - 1];
-                                
-                                employee.registros.push({
-                                    day: dayName,
-                                    entrada: entrada,
-                                    salida: salida
-                                });
+                                employee.registros.push({ day: dayName, entrada, salida });
                             }
                         }
                     }
@@ -267,7 +294,7 @@ export function parseSueldosData(jsonData) {
     }
 
     if (employees.length === 0) {
-        throw new Error("No se encontraron empleados en el archivo. Verifica que el formato incluya filas con 'Nombre :' seguido por el nombre del empleado.");
+        throw new Error("No se encontraron empleados en el archivo. Verifica el formato.");
     }
     
     return employees;
@@ -314,77 +341,58 @@ export function generateWhatsAppMessage(employee) {
  * @returns {Array<object>} Un array de gastos filtrados.
  */
 export function getFilteredExpenses(includeFinancial = false) {
-    if (includeFinancial) {
-        return [...state.expenses];
-    }
+    if (includeFinancial) return [...state.expenses];
+
     const { start, end } = state.dateFilter;
     const category = state.categoryFilter;
 
     return state.expenses.filter(expense => {
-        // Match date
         const expenseDate = new Date(expense.date);
         expenseDate.setUTCHours(0, 0, 0, 0);
         const dateMatch = (!start || expenseDate >= start) && (!end || expenseDate <= end);
         if (!dateMatch) return false;
 
-        // Match category
         if (category && category !== 'all') {
-            const expenseCategory = expense.category || 'SinCategorizar';
-            return expenseCategory === category;
+            return (expense.category || 'SinCategorizar') === category;
         }
 
-        return true; // If category is 'all'
+        return true;
     });
 }
 
 /**
  * Placeholder function to handle potential future data migrations for payroll.
- * This was added to prevent a runtime error as it was called but not defined.
  */
 export function migrateSueldosDataStructure() {
-    // Currently no migration logic is needed. This is a placeholder.
     // console.log("Checking sueldos data structure...");
 }
 
 /**
  * Placeholder function to add manually tracked employees to the payroll data.
- * This was added to prevent a runtime error as it was called but not defined.
  */
 export function addManualEmployees() {
-    // Logic to add employees not present in the uploaded file can be added here.
     // console.log("Checking for manual employees to add...");
 }
 
 /**
  * Filters the payroll data based on the selected date range in the state.
- * It filters adjustments (bonuses, expenses) but keeps all weekly hour records.
  * @returns {Array<object>} An array of employee objects with filtered adjustments.
  */
 export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
-    if (!start || !end) {
-        // FIX: Corrected typo from 'sueldsosData' to 'sueldosData'.
-        return state.sueldosData; // Return all data if no filter is set
-    }
+    if (!start || !end) return state.sueldosData;
 
-    const filtered = JSON.parse(JSON.stringify(state.sueldosData));
-
-    return filtered.map(employee => {
-        // Filter bonuses by the selected date range
+    return JSON.parse(JSON.stringify(state.sueldosData)).map(employee => {
         employee.bonos = (employee.bonos || []).filter(bono => {
             if (!bono.date) return false;
             const bonoDate = new Date(bono.date);
             return bonoDate >= start && bonoDate <= end;
         });
-
-        // Filter expenses/discounts by the selected date range
         employee.descuentos = (employee.descuentos || []).filter(gasto => {
             if (!gasto.date) return false;
             const gastoDate = new Date(gasto.date);
             return gastoDate >= start && gastoDate <= end;
         });
-        
-        // Recalculate payment based on the filtered adjustments
         recalculatePayment(employee);
         return employee;
     });
