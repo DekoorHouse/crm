@@ -1,7 +1,7 @@
 import { db } from './firebase_admin.js';
 import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state_admin.js';
-import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode } from './utils_admin.js';
+import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils_admin.js';
 import { showModal } from './ui-manager_admin.js';
 
 /**
@@ -234,6 +234,37 @@ export async function saveSueldosDataToFirestore(dataToSave) {
         console.error("Error saving sueldos data:", error);
         showModal({ title: 'Error', body: 'No se pudieron guardar los datos de sueldos.' });
     }
+}
+
+/**
+ * Adds a new adjustment (bonus or expense) to an employee and saves the data.
+ * @param {string} employeeId - The ID of the employee.
+ * @param {string} type - The type of adjustment ('bono' or 'gasto').
+ * @param {object} adjustmentData - The data for the new adjustment.
+ */
+export async function saveAdjustment(employeeId, type, adjustmentData) {
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) {
+        showModal({ title: 'Error', body: 'Empleado no encontrado.' });
+        return;
+    }
+
+    if (type === 'bono') {
+        if (!employee.bonos) employee.bonos = [];
+        employee.bonos.push(adjustmentData);
+    } else if (type === 'gasto') {
+        if (!employee.descuentos) employee.descuentos = [];
+        employee.descuentos.push(adjustmentData);
+    }
+
+    // Recalculate totals for the employee
+    recalculatePayment(employee);
+    
+    // Save the entire sueldos data back to Firestore
+    await saveSueldosDataToFirestore();
+
+    // Close the modal and the UI will update via the realtime listener
+    showModal({ show: false });
 }
 
 
