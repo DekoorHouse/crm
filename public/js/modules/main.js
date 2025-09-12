@@ -84,6 +84,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if (kbForm) {
         kbForm.addEventListener('submit', handleSaveKnowledgeBaseEntry);
     }
+
+    // --- AÑADIDO: Listeners para los nuevos modales de IA ---
+    const aiAdPromptForm = document.getElementById('ai-ad-prompt-form');
+    if (aiAdPromptForm) {
+        aiAdPromptForm.addEventListener('submit', handleSaveAIAdPrompt);
+    }
+
+    const botSettingsForm = document.getElementById('bot-settings-form');
+    if (botSettingsForm) {
+        botSettingsForm.addEventListener('submit', handleSaveBotSettings);
+    }
     // --- FIN DE LA SOLUCIÓN ---
 });
 
@@ -105,3 +116,4 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
+
