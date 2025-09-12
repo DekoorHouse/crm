@@ -180,16 +180,13 @@ export function parseSueldosData(jsonData) {
     if (typeof dateCell === 'number') {
         startDate = convertExcelDate(dateCell);
     } else if (typeof dateCell === 'string') {
-        // CORRECCIÓN: Se hace más robusta la lectura de la fecha para aceptar varios formatos.
-        const cleanedDateString = dateCell.trim().split(' ')[0]; // Tomar solo la parte de la fecha
-        let dateParts;
-
-        if (/^\d{4}-\d{2}-\d{2}$/.test(cleanedDateString)) { // Formato YYYY-MM-DD
-            dateParts = cleanedDateString.split('-').map(Number);
+        // CORRECCIÓN MEJORADA: Se extrae la primera fecha del rango para evitar errores.
+        const match = dateCell.match(/(\d{4}-\d{2}-\d{2})/); // Busca el patrón YYYY-MM-DD
+        const cleanedDateString = match ? match[0] : null; 
+        
+        if (cleanedDateString) {
+            const dateParts = cleanedDateString.split('-').map(Number);
             startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
-        } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(cleanedDateString)) { // Formato DD/MM/YYYY
-            dateParts = cleanedDateString.split('/').map(Number);
-            startDate = new Date(Date.UTC(dateParts[2], dateParts[1] - 1, dateParts[0]));
         }
     }
 
@@ -384,3 +381,4 @@ export function filterSueldos() {
         return employee;
     });
 }
+
