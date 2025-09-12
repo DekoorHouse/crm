@@ -1,4 +1,4 @@
-import { initFirebase } from './admin/firebase_admin.js';
+import './admin/firebase_admin.js'; // Import for initialization
 import { app as appState, state, elements } from './admin/state_admin.js';
 import * as utils from './admin/utils_admin.js';
 import * as ui from './admin/ui-manager_admin.js';
@@ -25,7 +25,8 @@ const app = {
         try {
             this.cacheElements();
             initEventListeners(this);
-            initFirebase(this.onFirebaseReady.bind(this));
+            // Firebase se inicializa al importar el módulo, así que llamamos onFirebaseReady directamente.
+            this.onFirebaseReady();
         } catch (error) {
             console.error("Error fatal durante la inicialización:", error);
             document.body.innerHTML = '<div style="text-align: center; padding: 50px;"><h1>Error</h1><p>Ocurrió un error al cargar la aplicación. Por favor, intente recargar la página.</p></div>';
