@@ -494,4 +494,3 @@ function toggleEmployeeCard(card) {
     card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
 
-
