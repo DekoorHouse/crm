@@ -88,23 +88,38 @@ export function parseExpensesData(jsonData, fileType) {
         console.log(`[LOG-PARSE-ROW ${index + 5}] Fila cruda:`, row);
         console.log(`[LOG-PARSE-ROW ${index + 5}] Extraído: Fecha cruda='${rawDate}', Concepto='${concept}', Cargo str='${charge}', Ingreso str='${credit}'`);
 
-
         let dateValue = '';
+        // --- INICIO DE LA CORRECCIÓN ---
+        // Se añade un manejo para fechas que vienen como strings (común en archivos .xls)
         if (rawDate instanceof Date) {
-            // Asegura que la fecha se maneje correctamente sin problemas de zona horaria.
             const d = new Date(Date.UTC(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate()));
             if (!isNaN(d)) {
                 dateValue = d.toISOString().split('T')[0];
             }
         } else if (typeof rawDate === 'number') {
-            const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+            const d = convertExcelDate(rawDate);
             if (!isNaN(d)) {
-                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
-                dateValue = new Date(d.getTime() + userTimezoneOffset).toISOString().split('T')[0];
+                dateValue = d.toISOString().split('T')[0];
+            }
+        } else if (typeof rawDate === 'string') {
+            // Intenta parsear el string. Ajusta el formato 'DD/MM/YYYY' si es necesario.
+            const parts = rawDate.match(/(\d+)/g);
+            if (parts && parts.length === 3) {
+                // Asume formato DD/MM/YYYY o similar
+                const d = new Date(Date.UTC(parts[2], parts[1] - 1, parts[0]));
+                 if (!isNaN(d)) {
+                    dateValue = d.toISOString().split('T')[0];
+                }
+            } else if (!isNaN(new Date(rawDate))) {
+                 // Intenta un parseo genérico si no es el formato anterior
+                 const d = new Date(rawDate);
+                 const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                 dateValue = new Date(d.getTime() + userTimezoneOffset).toISOString().split('T')[0];
             }
         } else {
-            console.warn(`[LOG-PARSE-ROW ${index + 5}] El formato de la fecha no es ni Date ni número. Valor:`, rawDate, `Tipo: ${typeof rawDate}`);
+             console.warn(`[LOG-PARSE-ROW ${index + 5}] El formato de la fecha no es ni Date ni número. Valor:`, rawDate, `Tipo: ${typeof rawDate}`);
         }
+        // --- FIN DE LA CORRECCIÓN ---
         
         console.log(`[LOG-PARSE-ROW ${index + 5}] Valor de fecha procesado: '${dateValue}'`);
 
@@ -126,7 +141,6 @@ export function parseExpensesData(jsonData, fileType) {
             channel: '',
             type: 'operativo',
             sub_type: '',
-            // CORRECCIÓN: Se utiliza el parámetro fileType que se había omitido.
             source: fileType || 'xls'
         };
 
