@@ -345,8 +345,10 @@ function handleTabClick(tab) {
 }
 
 function confirmDeleteAllData() { services.deleteAllData(); }
-function confirmDeleteCurrentMonth() { services.deleteCurrentMonth(); }
-function confirmDeletePreviousMonth() { services.deletePreviousMonth(); }
+// FIX: Changed to call the correct function name with "Data" at the end.
+function confirmDeleteCurrentMonth() { services.deleteCurrentMonthData(); }
+// FIX: Changed to call the correct function name with "Data" at the end.
+function confirmDeletePreviousMonth() { services.deletePreviousMonthData(); }
 function confirmRemoveDuplicates() { services.removeDuplicates(); }
 function handleFilterChange() { app.renderData(); }
 
