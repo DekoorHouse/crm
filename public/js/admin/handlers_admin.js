@@ -344,12 +344,46 @@ function handleTabClick(tab) {
     document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
 }
 
-function confirmDeleteAllData() { services.deleteAllData(); }
-// FIX: Changed to call the correct function name with "Data" at the end.
-function confirmDeleteCurrentMonth() { services.deleteCurrentMonthData(); }
-// FIX: Changed to call the correct function name with "Data" at the end.
-function confirmDeletePreviousMonth() { services.deletePreviousMonthData(); }
-function confirmRemoveDuplicates() { services.removeDuplicates(); }
+function confirmDeleteAllData() {
+    ui.showModal({
+        title: "Confirmar Borrado Total",
+        body: "<strong>¡Atención!</strong> Estás a punto de borrar TODOS los registros de gastos. Esta acción es irreversible. <br><br>¿Estás completamente seguro?",
+        confirmText: "Sí, Borrar Todo",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteAllData()
+    });
+}
+
+function confirmDeleteCurrentMonth() {
+    ui.showModal({
+        title: "Confirmar Borrado",
+        body: "Vas a borrar todos los registros del mes actual. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        confirmText: "Borrar Mes Actual",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteCurrentMonthData()
+    });
+}
+
+function confirmDeletePreviousMonth() {
+    ui.showModal({
+        title: "Confirmar Borrado",
+        body: "Vas a borrar todos los registros del mes anterior. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        confirmText: "Borrar Mes Anterior",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deletePreviousMonthData()
+    });
+}
+
+function confirmRemoveDuplicates() {
+    ui.showModal({
+        title: "Confirmar Eliminación de Duplicados",
+        body: "El sistema buscará y eliminará registros duplicados basados en fecha, concepto y montos. Esta acción no se puede deshacer. <br><br>¿Deseas continuar?",
+        confirmText: "Sí, Eliminar Duplicados",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.removeDuplicates()
+    });
+}
+
 function handleFilterChange() { app.renderData(); }
 
 function handleCategoryChange(e) {
@@ -420,3 +454,4 @@ function toggleEmployeeCard(card) {
     icon.classList.toggle('fa-chevron-down', isExpanded);
     card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
+
