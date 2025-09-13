@@ -31,7 +31,7 @@ export function cacheElements() {
     elements.deleteCurrentMonthBtn = document.getElementById('delete-current-month-btn');
     elements.deletePreviousMonthBtn = document.getElementById('delete-previous-month-btn');
     elements.exportBtn = document.getElementById('export-btn');
-    elements.removeDuplicatesBtn = document.getElementById('remove-duplicates-btn'); 
+    elements.removeDuplicatesBtn = document.getElementById('remove-duplicates-btn');
     elements.dateRangeFilter = document.getElementById('date-range-filter');
     elements.categoryFilter = document.getElementById('category-filter');
     elements.actionsContainer = document.getElementById('actions-container');
@@ -76,46 +76,55 @@ export function cacheElements() {
 
 /**
  * Renderiza la tabla principal de gastos con los datos filtrados.
+ * @param {Array<object>} expenses - Un array de objetos de gastos para mostrar.
  */
 export function renderTable(expenses) {
     elements.dataTableBody.innerHTML = '';
     const sorted = [...expenses].sort((a,b) => (b.date > a.date) ? 1 : -1);
+    
     sorted.forEach(expense => {
         const tr = document.createElement('tr');
         tr.dataset.id = expense.id;
+        const charge = parseFloat(expense.charge) || 0;
+        const credit = parseFloat(expense.credit) || 0;
+        
+        let displayCategory = 'N/A';
+        const isOperational = expense.type === 'operativo' || !expense.type; 
+
+        if (isOperational && credit > 0) {
+            displayCategory = expense.channel || ''; // Show channel or blank
+        } else if (isOperational || expense.sub_type === 'pago_intereses') {
+            displayCategory = expense.category || 'SinCategorizar';
+        }
+        
+        let categoryHtml;
+        if (displayCategory === 'SinCategorizar') {
+            const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
+            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
+            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
+        } else {
+            categoryHtml = displayCategory;
+        }
+
         tr.innerHTML = `
-            <td>${expense.date}</td>
-            <td>${expense.concept}</td>
-            <td>${formatCurrency(expense.charge)}</td>
-            <td>${formatCurrency(expense.credit)}</td>
-            <td>
-                <select class="category-dropdown" data-expense-id="${expense.id}">
-                    <!-- Options will be populated here -->
-                </select>
-            </td>
-            <td>
-                <button class="btn btn-sm btn-outline edit-btn"><i class="fas fa-pencil-alt"></i></button>
-                <button class="btn btn-sm btn-danger delete-btn"><i class="fas fa-trash-alt"></i></button>
+            <td>${expense.date || ''}</td>
+            <td>${expense.concept || ''}</td>
+            <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
+            <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
+            <td>${categoryHtml}</td>
+            <td class="btn-group">
+                <button class="btn btn-outline btn-sm edit-btn"><i class="fas fa-pencil-alt"></i></button>
+                <button class="btn btn-outline btn-sm delete-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
             </td>
         `;
-        const categorySelect = tr.querySelector('.category-dropdown');
-        const categories = [...new Set(state.expenses.map(e => e.category).filter(Boolean))];
-        const allPossibleCategories = ['SinCategorizar', 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', ...categories].filter((v, i, a) => a.indexOf(v) === i);
-        allPossibleCategories.forEach(cat => {
-            const option = document.createElement('option');
-            option.value = cat;
-            option.textContent = capitalize(cat);
-            if ((expense.category || 'SinCategorizar') === cat) {
-                option.selected = true;
-            }
-            categorySelect.appendChild(option);
-        });
+        
         elements.dataTableBody.appendChild(tr);
     });
 }
   
 /**
  * Actualiza los totales en el pie de la tabla principal de gastos.
+ * @param {Array<object>} expenses - El array de gastos que se está mostrando actualmente.
  */
 export function updateTableTotals(expenses) {
     const { totalCharge, totalCredit } = expenses.reduce((acc, exp) => {
@@ -123,11 +132,9 @@ export function updateTableTotals(expenses) {
         acc.totalCredit += parseFloat(exp.credit) || 0;
         return acc;
     }, { totalCharge: 0, totalCredit: 0 });
-
     elements.dataTableFooter.innerHTML = `
         <tr>
-            <th>Total</th>
-            <th></th>
+            <th colspan="2">Totales (Vista Actual):</th>
             <th>${formatCurrency(totalCharge)}</th>
             <th>${formatCurrency(totalCredit)}</th>
             <th colspan="2"></th>
@@ -137,6 +144,7 @@ export function updateTableTotals(expenses) {
 
 /**
  * Renderiza la sección de resumen con tarjetas para cada categoría.
+ * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
  */
 export function updateSummary(getFilteredExpenses) {
     const operationalExpenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
@@ -145,25 +153,33 @@ export function updateSummary(getFilteredExpenses) {
         const charge = parseFloat(exp.charge) || 0;
         const credit = parseFloat(exp.credit) || 0;
         const category = exp.category || 'SinCategorizar';
-
-        acc.TotalCargos = (acc.TotalCargos || 0) + charge;
-        acc.TotalIngresos = (acc.TotalIngresos || 0) + credit;
         
-        if (charge > 0) {
-            acc[category] = (acc[category] || 0) + charge;
+        if (credit > 0) {
+            acc.TotalIngresos += credit;
         }
-
+        if (charge > 0) {
+            acc.TotalCargos += charge;
+            if (!acc[category]) acc[category] = 0;
+            acc[category] += charge;
+        }
         return acc;
-    }, {});
+    }, { TotalCargos: 0, TotalIngresos: 0 });
     
     summaryData.TotalNeto = summaryData.TotalIngresos - summaryData.TotalCargos;
-
+    
     elements.summarySection.innerHTML = '';
-    const sortedEntries = Object.entries(summaryData).sort(([, a], [, b]) => b - a);
-
-    sortedEntries.forEach(([key, value]) => {
-        if (value !== 0) {
-            const isClickable = !['TotalNeto', 'TotalCargos', 'TotalIngresos'].includes(key);
+    const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
+    const sortedSummary = Object.entries(summaryData).sort(([keyA], [keyB]) => {
+        const indexA = summaryOrder.indexOf(keyA);
+        const indexB = summaryOrder.indexOf(keyB);
+        if (indexA > -1 && indexB > -1) return indexA - indexB;
+        if (indexA > -1) return -1;
+        if (indexB > -1) return 1;
+        return keyA.localeCompare(keyB);
+    });
+    sortedSummary.forEach(([key, value]) => {
+        if (key.startsWith('Total') || value > 0) {
+            const isClickable = !key.startsWith('Total');
             const card = createSummaryCard(key, value, isClickable);
             elements.summarySection.appendChild(card);
         }
@@ -171,57 +187,51 @@ export function updateSummary(getFilteredExpenses) {
 }
   
 /**
- * Crea y devuelve un elemento HTMLElement para una tarjeta de resumen.
- * @param {string} title - El título de la tarjeta.
- * @param {number} amount - La cantidad a mostrar.
+ * Crea el HTML para una tarjeta de resumen individual.
+ * @param {string} title - El título de la tarjeta (generalmente la categoría).
+ * @param {number} amount - El monto total para esa categoría.
  * @param {boolean} isClickable - Si la tarjeta debe tener la clase 'clickable'.
  * @returns {HTMLElement} El elemento de la tarjeta creado.
  */
 export function createSummaryCard(title, amount, isClickable) {
       const icons = {
         TotalNeto: "fas fa-balance-scale", TotalCargos: "fas fa-arrow-up-from-bracket", TotalIngresos: "fas fa-hand-holding-usd", Alex: "fas fa-user", Chris: "fas fa-user-friends",
-        Sueldos: "fas fa-money-check-alt", Publicidad: "fas fa-bullhorn", Envios: "fas fa-truck", Local: "fas fa-store-alt",
-        Material: "fas fa-box-open", Tecnologia: "fas fa-laptop-code", Deudas: "fas fa-credit-card", Devoluciones: "fas fa-undo-alt",
-        GastosFinancieros: "fas fa-percent", SinCategorizar: "fas fa-question-circle"
+        Sueldos: "fas fa-coins", Deudas: "fas fa-credit-card", Publicidad: "fas fa-bullhorn", Envios: "fas fa-shipping-fast",
+        Local: "fas fa-building", Material: "fas fa-box-open", Tecnologia: "fas fa-laptop-code", Devoluciones: "fas fa-undo", GastosFinancieros: "fas fa-percentage", SinCategorizar: "fas fa-question-circle"
       };
-      
       const card = document.createElement('div');
-      const titleKey = title.replace(/\s+/g, '');
-      card.className = `summary-card ${titleKey} ${isClickable ? 'clickable' : ''}`;
-      if (isClickable) card.dataset.category = title;
-
-      const iconClass = icons[titleKey] || 'fas fa-dollar-sign';
-      const displayTitle = capitalize(title);
-
+      let displayTitle = title;
+      if (title === 'TotalNeto') displayTitle = 'Utilidad Operativa';
+      if (title === 'TotalIngresos') displayTitle = 'Ingresos Operativos';
+      if (title === 'TotalCargos') displayTitle = 'Cargos Operativos';
+      
+      card.className = `summary-card ${title.replace(" ", "")} ${isClickable ? 'clickable' : ''}`;
+      card.dataset.category = title;
       card.innerHTML = `
-        <div class="icon-container">
-          <i class="${iconClass}"></i>
-        </div>
-        <div>
-            <div class="summary-card-title">${displayTitle}</div>
-            <div class="summary-card-value">${formatCurrency(amount)}</div>
-        </div>`;
+        <div class="icon-container"><i class="${icons[title] || 'fas fa-tag'}"></i></div>
+        <div> <div class="summary-card-title">${displayTitle}</div> <div class="summary-card-value">${formatCurrency(amount)}</div> </div>`;
       return card;
 }
   
 /**
  * Muestra un modal con el desglose de gastos para una categoría específica.
+ * @param {string} category - La categoría a detallar.
+ * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
  */
 export function showCategoryDetailsModal(category, getFilteredExpenses) {
     const categoryExpenses = getFilteredExpenses().filter(e => (e.category || 'SinCategorizar') === category && (parseFloat(e.charge) || 0) > 0);
     let total = 0;
-    
-    const rows = categoryExpenses.map(exp => {
-        total += exp.charge;
-        return `<tr><td>${exp.date}</td><td>${exp.concept}</td><td style="text-align: right;">${formatCurrency(exp.charge)}</td></tr>`;
+    const rows = categoryExpenses.map(e => {
+        const charge = parseFloat(e.charge) || 0;
+        total += charge;
+        return `<tr> <td>${e.date}</td> <td>${e.concept}</td> <td style="text-align: right;">${formatCurrency(charge)}</td> </tr>`;
     }).join('');
-
     const tableHtml = `
         <div class="table-container">
             <table>
-                <thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align: right;">Monto</th></tr></thead>
+                <thead> <tr> <th>Fecha</th> <th>Concepto</th> <th style="text-align: right;">Cargo</th> </tr> </thead>
                 <tbody>${rows}</tbody>
-                <tfoot><tr><th colspan="2">Total</th><th style="text-align: right;">${formatCurrency(total)}</th></tr></tfoot>
+                <tfoot> <tr> <td colspan="2">Total</td> <td style="text-align: right;">${formatCurrency(total)}</td> </tr> </tfoot>
             </table>
         </div>`;
     showModal({ title: `Detalles de: ${category}`, body: tableHtml, confirmText: 'Cerrar', showCancel: false });
@@ -229,6 +239,7 @@ export function showCategoryDetailsModal(category, getFilteredExpenses) {
   
 /**
  * Muestra u oculta el modal principal, configurando su contenido y acciones.
+ * @param {object} options - Las opciones para configurar el modal.
  */
 export function showModal({ show = true, title, body, onConfirm, onModalOpen, confirmText = 'Confirmar', confirmClass = '', showCancel = true, showConfirm = true }) {
       if (!show) { elements.modal.classList.remove('visible'); return; }
@@ -238,227 +249,184 @@ export function showModal({ show = true, title, body, onConfirm, onModalOpen, co
       elements.modalConfirmBtn.className = `btn ${confirmClass}`;
       elements.modalConfirmBtn.style.display = showConfirm ? 'inline-flex' : 'none';
       elements.modalCancelBtn.style.display = showCancel ? 'inline-flex' : 'none';
-      
-      // Re-attach the event listener to avoid stacking them up
-      const newConfirmBtn = elements.modalConfirmBtn.cloneNode(true);
-      elements.modalConfirmBtn.parentNode.replaceChild(newConfirmBtn, elements.modalConfirmBtn);
-      elements.modalConfirmBtn = newConfirmBtn;
-      
-      if (onConfirm) elements.modalConfirmBtn.addEventListener('click', onConfirm);
-      
-      const newCancelBtn = elements.modalCancelBtn.cloneNode(true);
-      elements.modalCancelBtn.parentNode.replaceChild(newCancelBtn, elements.modalCancelBtn);
-      elements.modalCancelBtn = newCancelBtn;
-      elements.modalCancelBtn.addEventListener('click', () => showModal({ show: false }));
-
+      elements.modalConfirmBtn.onclick = onConfirm ? onConfirm : () => showModal({ show: false });
+      elements.modalCancelBtn.onclick = () => showModal({ show: false });
       elements.modal.classList.add('visible');
       if (onModalOpen) onModalOpen();
-}
-
-/**
- * Muestra un modal para que el usuario revise los duplicados encontrados.
- * @param {Array<object>} duplicates - Array de gastos duplicados.
- * @param {Array<object>} uniqueNewExpenses - Array de gastos nuevos y únicos.
- * @param {Function} onProcessCallback - La función a llamar con la lista final de gastos a guardar.
- */
-export function showDuplicateReviewModal(duplicates, uniqueNewExpenses, onProcessCallback) {
-    const rowsHtml = duplicates.map((exp, index) => `
-        <tr>
-            <td><input type="checkbox" class="duplicate-checkbox" data-index="${index}" checked></td>
-            <td>${exp.date}</td>
-            <td>${exp.concept}</td>
-            <td style="text-align: right;">${formatCurrency(exp.charge)}</td>
-            <td style="text-align: right;">${formatCurrency(exp.credit)}</td>
-        </tr>
-    `).join('');
-
-    const body = `
-        <p>Se encontraron <strong>${duplicates.length} registros</strong> que ya existen o están repetidos en el archivo. Por defecto, se omitirán.</p>
-        <p style="font-size: 13px; color: var(--text-secondary); margin-top: 5px;">Desmarca las filas que SÍ quieras cargar a pesar de ser repetidas.</p>
-        <div class="table-container" style="max-height: 40vh; margin-top: 15px;">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Omitir</th>
-                        <th>Fecha</th>
-                        <th>Concepto</th>
-                        <th style="text-align: right;">Cargo</th>
-                        <th style="text-align: right;">Ingreso</th>
-                    </tr>
-                </thead>
-                <tbody id="duplicates-table-body">${rowsHtml}</tbody>
-            </table>
-        </div>
-    `;
-
-    showModal({
-        title: 'Revisar Registros Repetidos',
-        body: body,
-        confirmText: 'Cargar (Omitiendo marcados)',
-        showCancel: true,
-        onConfirm: () => {
-            const checkboxes = document.querySelectorAll('.duplicate-checkbox');
-            const expensesToLoad = [...uniqueNewExpenses];
-            checkboxes.forEach(cb => {
-                if (!cb.checked) { // Solo se añaden los que el usuario desmarcó para "no omitir"
-                    const index = parseInt(cb.dataset.index);
-                    expensesToLoad.push(duplicates[index]);
-                }
-            });
-            onProcessCallback(expensesToLoad);
-        },
-        onModalOpen: () => {
-            const footer = elements.modal.querySelector('.modal-footer');
-            const confirmBtn = elements.modalConfirmBtn;
-
-            const loadAllBtn = document.createElement('button');
-            loadAllBtn.className = 'btn btn-outline';
-            loadAllBtn.textContent = 'Cargar Todo (Incluir Repetidos)';
-            loadAllBtn.style.marginRight = 'auto'; // Empuja este botón a la izquierda
-            loadAllBtn.onclick = () => {
-                const allExpenses = [...uniqueNewExpenses, ...duplicates];
-                onProcessCallback(allExpenses);
-            };
-            
-            // Reorganiza los botones en el pie del modal
-            footer.innerHTML = ''; 
-            footer.appendChild(loadAllBtn);
-            footer.appendChild(elements.modalCancelBtn);
-            footer.appendChild(confirmBtn);
-        }
-    });
 }
   
 /**
  * Abre el modal para agregar o editar un movimiento operativo.
+ * @param {object} [expense={}] - El objeto de gasto a editar. Si está vacío, se crea uno nuevo.
  */
 export function openExpenseModal(expense = {}) {
     const isEditing = !!expense.id;
     const title = isEditing ? 'Editar Movimiento' : 'Agregar Movimiento Operativo';
-    const body = `
-        <form id="expense-form" style="display: grid; gap: 15px;">
-            <input type="hidden" id="expense-id" value="${expense.id || ''}">
-            <div class="form-group">
-                <label for="expense-date">Fecha</label>
-                <input type="date" id="expense-date" class="modal-input" value="${expense.date || new Date().toISOString().split('T')[0]}" required>
-            </div>
-            <div class="form-group">
-                <label for="expense-concept">Concepto</label>
-                <input type="text" id="expense-concept" class="modal-input" value="${expense.concept || ''}" required>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                <div class="form-group">
-                    <label for="expense-charge">Cargo ($)</label>
-                    <input type="number" id="expense-charge" class="modal-input" value="${expense.charge || ''}" placeholder="0.00">
-                </div>
-                <div class="form-group">
-                    <label for="expense-credit">Ingreso ($)</label>
-                    <input type="number" id="expense-credit" class="modal-input" value="${expense.credit || ''}" placeholder="0.00">
-                </div>
-            </div>
-            <div class="form-group" id="category-group" style="display: ${ (expense.charge || 0) > 0 ? 'block' : 'none' };">
-                <label for="expense-category">Categoría</label>
-                <select id="expense-category" class="modal-input"></select>
-            </div>
-        </form>
-    `;
-    
+    const originalCategory = expense.category || 'SinCategorizar';
+
+    const isFinancial = expense.type === 'financiero';
+
+    const categories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'SinCategorizar', 'Gastos Financieros'].filter(Boolean))].sort();
+    const categoryOptions = categories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('');
+
+    const channels = ['WhatsApp', 'Instagram', 'Facebook', 'Grupo de Clientes', 'Grupo de Referencias', 'Otro'];
+    const channelOptions = channels.map(c => `<option value="${c}" ${expense.channel === c ? 'selected' : ''}>${c}</option>`).join('');
+
     showModal({
-        title, body, confirmText: isEditing ? 'Guardar Cambios' : 'Agregar',
+        title: title,
+        body: `<form id="expense-form" style="display: grid; gap: 15px;">
+                    <div class="form-group">
+                        <label for="expense-date">Fecha</label>
+                        <input type="date" id="expense-date" class="modal-input" value="${expense.date || new Date().toISOString().split('T')[0]}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-concept">Concepto</label>
+                        <input type="text" id="expense-concept" class="modal-input" placeholder="Concepto del movimiento" value="${expense.concept || ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-charge">Cargo ($)</label>
+                        <input type="number" step="0.01" id="expense-charge" class="modal-input" placeholder="$0.00" value="${expense.charge || ''}">
+                    </div>
+                    <div class="form-group">
+                        <label for="expense-credit">Ingreso ($)</label>
+                        <input type="number" step="0.01" id="expense-credit" class="modal-input" placeholder="$0.00" value="${expense.credit || ''}">
+                    </div>
+                    <div class="form-group" id="category-form-group">
+                        <label for="expense-category">Categoría</label>
+                        <select id="expense-category" class="modal-input">${categoryOptions}</select>
+                    </div>
+                    <div class="form-group" id="channel-form-group" style="display: none;">
+                        <label for="expense-channel">Canal de Venta</label>
+                        <select id="expense-channel" class="modal-input">
+                            <option value="">No aplica</option>
+                            ${channelOptions}
+                        </select>
+                    </div>
+               </form>`,
+        confirmText: 'Guardar',
         onConfirm: () => {
-            const updatedExpense = {
-                id: document.getElementById('expense-id').value,
-                date: document.getElementById('expense-date').value,
-                concept: document.getElementById('expense-concept').value,
-                charge: parseFloat(document.getElementById('expense-charge').value) || 0,
-                credit: parseFloat(document.getElementById('expense-credit').value) || 0,
-                category: document.getElementById('expense-category').value,
-                type: 'operativo', source: 'manual'
-            };
-            services.saveExpense(updatedExpense, expense.category);
+            const form = document.getElementById('expense-form');
+            if (form.reportValidity()) {
+                const creditValue = parseFloat(document.getElementById('expense-credit').value) || 0;
+                
+                const expenseData = {
+                    ...expense, 
+                    date: document.getElementById('expense-date').value,
+                    concept: document.getElementById('expense-concept').value,
+                    charge: parseFloat(document.getElementById('expense-charge').value) || 0,
+                    credit: creditValue,
+                    type: expense.type || 'operativo',
+                    category: '',
+                    channel: document.getElementById('expense-channel')?.value || '',
+                    source: 'manual'
+                };
+                
+                if (expenseData.sub_type === 'pago_intereses') {
+                     expenseData.category = 'Gastos Financieros';
+                } else if (expenseData.type === 'operativo') {
+                     expenseData.category = creditValue > 0 ? '' : document.getElementById('expense-category').value;
+                } else {
+                    expenseData.category = '';
+                }
+                
+                if (isEditing) expenseData.id = expense.id;
+                
+                services.saveExpense(expenseData, originalCategory);
+            }
         },
         onModalOpen: () => {
-            const chargeInput = document.getElementById('expense-charge');
-            const categoryGroup = document.getElementById('category-group');
+            const categoryGroup = document.getElementById('category-form-group');
             const categorySelect = document.getElementById('expense-category');
-            
-            const categories = [...new Set(state.expenses.map(e => e.category).filter(Boolean))];
-            const allPossibleCategories = ['SinCategorizar', 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', ...categories].filter((v, i, a) => a.indexOf(v) === i);
-            allPossibleCategories.forEach(cat => {
-                const option = document.createElement('option');
-                option.value = cat;
-                option.textContent = capitalize(cat);
-                categorySelect.appendChild(option);
-            });
-            categorySelect.value = expense.category || autoCategorize(expense.concept || '');
+            const conceptInput = document.getElementById('expense-concept');
+            const creditInput = document.getElementById('expense-credit');
+            const channelGroup = document.getElementById('channel-form-group');
 
-            const toggleCategory = () => {
-                const chargeValue = parseFloat(chargeInput.value) || 0;
-                categoryGroup.style.display = chargeValue > 0 ? 'block' : 'none';
+            const toggleFieldVisibility = () => {
+                const creditValue = parseFloat(creditInput.value) || 0;
+                const isIncome = creditValue > 0;
+
+                channelGroup.style.display = isIncome ? 'block' : 'none';
+                categoryGroup.style.display = isIncome || isFinancial ? 'none' : 'block';
+                
+                if(isFinancial && expense.sub_type === 'pago_intereses') {
+                    categoryGroup.style.display = 'block';
+                    categorySelect.value = 'Gastos Financieros';
+                    categorySelect.disabled = true;
+                } else if (!isFinancial) {
+                    categorySelect.disabled = false;
+                }
             };
             
-            chargeInput.addEventListener('input', toggleCategory);
-            toggleCategory();
+            creditInput.addEventListener('input', toggleFieldVisibility);
+            conceptInput.addEventListener('input', () => {
+                if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
+                    categorySelect.value = autoCategorize(conceptInput.value);
+                }
+            });
+
+            toggleFieldVisibility();
         }
     });
 }
   
 /**
- * Abre el modal para agregar una transacción financiera (préstamo o pago).
+ * Abre el modal para registrar un movimiento financiero (préstamos, pagos).
  */
 export function openFinancialModal() {
     const body = `
         <form id="financial-form" style="display: grid; gap: 15px;">
             <div class="form-group">
-                <label for="financial-type">Tipo de Movimiento</label>
-                <select id="financial-type" class="modal-input">
-                    <option value="entrada_prestamo">Entrada de Préstamo</option>
-                    <option value="pago_deuda">Pago de Deuda</option>
-                </select>
-            </div>
-            <div class="form-group">
                 <label for="financial-date">Fecha</label>
                 <input type="date" id="financial-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
             </div>
             <div class="form-group">
-                <label for="financial-concept">Concepto (Ej: Préstamo Banorte)</label>
-                <input type="text" id="financial-concept" class="modal-input" required>
+                <label for="financial-type">Tipo de Movimiento</label>
+                <select id="financial-type" class="modal-input">
+                    <option value="entrada_prestamo">Entrada de Préstamo</option>
+                    <option value="pago_prestamo">Pago de Préstamo</option>
+                </select>
             </div>
-            <div class="form-group" id="credit-field">
-                <label for="financial-credit">Monto del Préstamo ($)</label>
-                <input type="number" id="financial-credit" class="modal-input" placeholder="0.00">
+            <div class="form-group">
+                <label for="financial-concept">Concepto (Ej: Préstamo BBVA, Pago semanal)</label>
+                <input type="text" id="financial-concept" class="modal-input" placeholder="Concepto" required>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;" id="charge-fields">
+            <div id="entrada-fields">
+                <div class="form-group">
+                    <label for="financial-credit">Monto del Préstamo Recibido ($)</label>
+                    <input type="number" step="0.01" id="financial-credit" class="modal-input" placeholder="$5,000.00">
+                </div>
+            </div>
+            <div id="pago-fields" style="display: none;">
                 <div class="form-group">
                     <label for="financial-capital">Pago a Capital ($)</label>
-                    <input type="number" id="financial-capital" class="modal-input" placeholder="0.00">
+                    <input type="number" step="0.01" id="financial-capital" class="modal-input" placeholder="$1,000.00">
                 </div>
                 <div class="form-group">
                     <label for="financial-interest">Pago de Intereses ($)</label>
-                    <input type="number" id="financial-interest" class="modal-input" placeholder="0.00">
+                    <input type="number" step="0.01" id="financial-interest" class="modal-input" placeholder="$150.00">
                 </div>
             </div>
         </form>
     `;
 
     showModal({
-        title: 'Agregar Movimiento Financiero',
-        body,
-        confirmText: 'Guardar',
+        title: 'Registrar Movimiento Financiero',
+        body: body,
+        confirmText: 'Guardar Movimiento',
         onConfirm: () => services.saveFinancialTransaction(),
         onModalOpen: () => {
             const typeSelect = document.getElementById('financial-type');
-            const creditField = document.getElementById('credit-field');
-            const chargeFields = document.getElementById('charge-fields');
-
-            const toggleFieldVisibility = () => {
-                const isLoan = typeSelect.value === 'entrada_prestamo';
-                creditField.style.display = isLoan ? 'block' : 'none';
-                chargeFields.style.display = isLoan ? 'none' : 'grid';
-            };
-
-            typeSelect.addEventListener('change', toggleFieldVisibility);
-            toggleFieldVisibility(); // Initial call
+            const entradaFields = document.getElementById('entrada-fields');
+            const pagoFields = document.getElementById('pago-fields');
+            typeSelect.addEventListener('change', (e) => {
+                if (e.target.value === 'entrada_prestamo') {
+                    entradaFields.style.display = 'block';
+                    pagoFields.style.display = 'none';
+                } else {
+                    entradaFields.style.display = 'none';
+                    pagoFields.style.display = 'block';
+                }
+            });
         }
     });
 }
@@ -467,22 +435,18 @@ export function openFinancialModal() {
  * Rellena el select de filtro de categorías con las categorías existentes.
  */
 export function populateCategoryFilter() {
-    const currentCategory = elements.categoryFilter.value;
-    elements.categoryFilter.innerHTML = '<option value="all">Todas las categorías</option>';
-    
     const categories = [...new Set(state.expenses
         .filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses') 
-        .map(e => e.category || 'SinCategorizar')
-        .sort((a, b) => a.localeCompare(b))
-    )];
-
+        .map(e => e.category).filter(Boolean))];
+    categories.sort();
+    const currentCategory = elements.categoryFilter.value;
+    elements.categoryFilter.innerHTML = `<option value="all">Todas las categorías</option>`;
     categories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat;
-        option.textContent = capitalize(cat);
+        option.textContent = cat;
         elements.categoryFilter.appendChild(option);
     });
-    
     elements.categoryFilter.value = currentCategory;
 }
 
@@ -492,11 +456,8 @@ export function initDateRangePicker(callback) {
         return new Litepicker({
             element: elements.dateRangeFilter,
             singleMode: false,
-            autoApply: true,
+            format: 'MMM D, YYYY',
             plugins: ['ranges'],
-            ranges: {
-                position: 'left'
-            },
             setup: (picker) => {
                 picker.on('selected', (date1, date2) => {
                     callback();
@@ -511,7 +472,7 @@ export function initHealthDateRangePicker(callback) {
         return new Litepicker({
             element: elements.healthDateRangeFilter,
             singleMode: false,
-            autoApply: true,
+            format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
                 picker.on('selected', (date1, date2) => {
@@ -527,7 +488,7 @@ export function initSueldosDateRangePicker(callback) {
         return new Litepicker({
             element: elements.sueldosDateRangeFilter,
             singleMode: false,
-            autoApply: true,
+            format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
                 picker.on('selected', (date1, date2) => {
@@ -540,21 +501,112 @@ export function initSueldosDateRangePicker(callback) {
 
 export function renderSueldosData(employees, isFiltered) {
     elements.sueldosTableContainer.innerHTML = '';
-    if (employees.length === 0 && !isFiltered) {
-        // Handled by sueldos-empty-state
-        return;
-    }
     if (employees.length === 0 && isFiltered) {
-        elements.sueldosTableContainer.innerHTML = '<p style="text-align: center; color: var(--text-secondary);">No hay datos para el rango de fechas seleccionado.</p>';
+        elements.sueldosTableContainer.innerHTML = '<p>No se encontraron registros para el rango de fechas seleccionado.</p>';
         return;
     }
-
+    
     employees.forEach(employee => {
         const card = document.createElement('div');
         card.className = 'employee-card';
         card.dataset.employeeId = employee.id;
+
+        const bonosHtml = (employee.bonos || []).map((bono, index) => `
+            <div class="adjustment-item bono">
+                <span class="date">${bono.date || ''}</span>
+                <span class="concept">${bono.concept}</span>
+                <span class="amount">${formatCurrency(bono.amount)}</span>
+                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="bono" title="Eliminar">&times;</button>
+            </div>
+        `).join('');
+
+        const gastosHtml = (employee.descuentos || []).map((gasto, index) => `
+            <div class="adjustment-item gasto">
+                 <span class="date">${gasto.date || ''}</span>
+                <span class="concept">${gasto.concept}</span>
+                <span class="amount">-${formatCurrency(gasto.amount)}</span>
+                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="gasto" title="Eliminar">&times;</button>
+            </div>
+        `).join('');
+
+        const historyHtml = (employee.paymentHistory || []).map(p => `
+            <tr>
+                <td>${p.week}</td>
+                <td>${p.hours.toFixed(2)}</td>
+                <td>${formatCurrency(p.payment)}</td>
+            </tr>
+        `).join('');
+
         card.innerHTML = `
-            <!-- Employee card content will be generated here -->
+            <div class="employee-header">
+                <h3>${capitalize(employee.name)}</h3>
+                <div class="employee-header-rate">
+                    <div class="rate-input-wrapper">
+                        <span class="rate-input-symbol">$</span>
+                        <input type="number" class="hourly-rate-input" value="${employee.ratePerHour || 70}" min="0">
+                        <span>/hr</span>
+                    </div>
+                </div>
+                <button class="toggle-details-btn" aria-expanded="true">
+                    <i class="fas fa-chevron-up"></i>
+                </button>
+            </div>
+            <div class="employee-body">
+                <div class="table-container">
+                    <table>
+                        <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Hrs</th></tr></thead>
+                        <tbody>
+                            ${['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(day => {
+                                const registro = employee.registros?.find(r => r.day === day) || { entrada: '', salida: '', horas: '0.00' };
+                                return `
+                                    <tr>
+                                        <td>${day}</td>
+                                        <td contenteditable="true" data-type="entrada">${registro.entrada}</td>
+                                        <td contenteditable="true" data-type="salida">${registro.salida}</td>
+                                        <td>${registro.horas}</td>
+                                    </tr>
+                                `;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="payment-history-container">
+                    <h6>Historial de Pagos</h6>
+                    <div class="table-container" style="max-height: 200px;">
+                        <table>
+                            <thead><tr><th>Semana</th><th>Horas</th><th>Pago</th></tr></thead>
+                            <tbody>${historyHtml}</tbody>
+                        </table>
+                    </div>
+                </div>
+                <div>
+                    <div class="employee-payment-summary">
+                        <div class="payment-row"><span>Total Horas:</span><span class="payment-value-total-hours">${employee.totalHoursFormatted || '0.00'}</span></div>
+                        <div class="payment-row"><span>Subtotal:</span><span class="payment-value-subtotal">${formatCurrency(employee.subtotal || 0)}</span></div>
+                    </div>
+                    <div class="adjustments-list">
+                        <h6>Bonos</h6>
+                        <div class="adjustments-list-content">
+                            ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
+                        </div>
+                    </div>
+                    <div class="adjustments-list">
+                        <h6>Gastos/Descuentos</h6>
+                        <div class="adjustments-list-content">
+                            ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
+                        </div>
+                    </div>
+                    <div class="employee-payment-summary">
+                         <div class="payment-row final-payment"><span>Pago Final:</span><span class="payment-value-final">${formatCurrency(employee.pago || 0)}</span></div>
+                    </div>
+                     <div class="btn-group" style="margin-top: 15px;">
+                        <button class="btn btn-sm add-bono-btn"><i class="fas fa-plus"></i> Bono</button>
+                        <button class="btn btn-sm add-gasto-btn"><i class="fas fa-minus"></i> Gasto</button>
+                        <button class="btn btn-sm btn-outline share-text-btn"><i class="fab fa-whatsapp"></i></button>
+                        <button class="btn btn-sm btn-outline download-pdf-btn"><i class="fas fa-file-pdf"></i></button>
+                    </div>
+                </div>
+            </div>
         `;
         elements.sueldosTableContainer.appendChild(card);
     });
@@ -562,40 +614,46 @@ export function renderSueldosData(employees, isFiltered) {
 
 /**
  * Opens a modal to add a bonus or an expense/discount for an employee.
+ * @param {string} employeeId - The ID of the employee.
+ * @param {string} type - The type of adjustment ('bono' or 'gasto').
  */
 function openAdjustmentModal(employeeId, type) {
     const employee = state.sueldosData.find(emp => emp.id === employeeId);
     if (!employee) return;
-    
-    const title = type === 'bono' ? 'Agregar Bono' : 'Agregar Gasto/Descuento';
+
+    const isBono = type === 'bono';
+    const title = isBono ? 'Agregar Bono' : 'Agregar Gasto/Descuento';
+    const amountLabel = isBono ? 'Monto del Bono ($)' : 'Monto del Gasto ($)';
+
     const body = `
         <form id="adjustment-form" style="display: grid; gap: 15px;">
+            <input type="hidden" id="adjustment-employee-id" value="${employeeId}">
             <div class="form-group">
-                <label for="adj-date">Fecha</label>
-                <input type="date" id="adj-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
+                <label for="adjustment-date">Fecha</label>
+                <input type="date" id="adjustment-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
             </div>
             <div class="form-group">
-                <label for="adj-concept">Concepto</label>
-                <input type="text" id="adj-concept" class="modal-input" required>
+                <label for="adjustment-concept">Concepto</label>
+                <input type="text" id="adjustment-concept" class="modal-input" placeholder="${isBono ? 'Ej: Bono de puntualidad' : 'Ej: Adelanto de sueldo'}" required>
             </div>
             <div class="form-group">
-                <label for="adj-amount">Monto ($)</label>
-                <input type="number" id="adj-amount" class="modal-input" placeholder="0.00" required>
+                <label for="adjustment-amount">${amountLabel}</label>
+                <input type="number" step="0.01" id="adjustment-amount" class="modal-input" placeholder="$0.00" required>
             </div>
         </form>
     `;
 
     showModal({
-        title: `${title} para ${employee.name}`,
-        body,
+        title: `${title} para ${capitalize(employee.name)}`,
+        body: body,
         confirmText: 'Guardar',
         onConfirm: () => {
             const form = document.getElementById('adjustment-form');
             if (form.reportValidity()) {
                 const adjustmentData = {
-                    date: document.getElementById('adj-date').value,
-                    concept: document.getElementById('adj-concept').value,
-                    amount: parseFloat(document.getElementById('adj-amount').value) || 0
+                    date: document.getElementById('adjustment-date').value,
+                    concept: document.getElementById('adjustment-concept').value,
+                    amount: parseFloat(document.getElementById('adjustment-amount').value) || 0,
                 };
                 services.saveAdjustment(employeeId, type, adjustmentData);
             }
@@ -605,6 +663,7 @@ function openAdjustmentModal(employeeId, type) {
 
 /**
  * Opens the modal specifically for adding a bonus.
+ * @param {string} employeeId - The ID of the employee.
  */
 export function openBonoModal(employeeId) {
     openAdjustmentModal(employeeId, 'bono');
@@ -612,6 +671,7 @@ export function openBonoModal(employeeId) {
 
 /**
  * Opens the modal specifically for adding an expense/discount.
+ * @param {string} employeeId - The ID of the employee.
  */
 export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
