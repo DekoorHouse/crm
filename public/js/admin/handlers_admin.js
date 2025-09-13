@@ -18,6 +18,8 @@ async function handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
+    console.log(`[LOG] Iniciando carga del archivo: ${file.name}, Tipo: ${file.type}, Tamaño: ${file.size} bytes`);
+
     ui.showModal({
         title: "Procesando Archivo...",
         body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se leen los datos del archivo.</p>',
@@ -28,10 +30,13 @@ async function handleFileUpload(e) {
     const reader = new FileReader();
     reader.onload = async (event) => {
         try {
+            console.log('[LOG] FileReader onload - Archivo leído en memoria.');
             const data = new Uint8Array(event.target.result);
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
+            
+            console.log(`[LOG] Hoja de cálculo seleccionada: "${sheetName}"`);
             
             // --- INICIO DE LA CORRECCIÓN ---
             // Se agrega { header: 1 } para leer el archivo como un array de arrays,
@@ -39,13 +44,25 @@ async function handleFileUpload(e) {
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             // --- FIN DE LA CORRECCIÓN ---
 
+            console.log(`[LOG] Datos crudos extraídos de Excel (primeras 10 filas):`, JSON.parse(JSON.stringify(jsonData.slice(0, 10))));
+
             if (jsonData.length === 0) {
                 throw new Error("El archivo Excel está vacío o no tiene el formato correcto.");
             }
 
+            console.log('[LOG] Llamando a utils.parseExpensesData...');
             const newExpenses = utils.parseExpensesData(jsonData, file.name.split('.').pop());
+            console.log(`[LOG] Datos parseados por parseExpensesData. Total de registros válidos: ${newExpenses.length}`);
+            console.log(`[LOG] Muestra de datos parseados (primeros 5):`, JSON.parse(JSON.stringify(newExpenses.slice(0, 5))));
 
-            await services.saveBulkExpenses(newExpenses);
+            if (newExpenses.length > 0) {
+                console.log('[LOG] Guardando gastos en Firestore...');
+                await services.saveBulkExpenses(newExpenses);
+                console.log('[LOG] Gastos guardados correctamente.');
+            } else {
+                console.warn('[LOG] No se encontraron registros de gastos válidos para guardar.');
+            }
+
 
             ui.showModal({
                 title: 'Éxito',
@@ -55,10 +72,15 @@ async function handleFileUpload(e) {
             });
 
         } catch (error) {
-            console.error("Error procesando el archivo de gastos:", error);
+            // Log a more detailed error
+            console.error("Error detallado al procesar el archivo de gastos:", {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
             ui.showModal({
                 title: 'Error al Cargar',
-                body: `No se pudo procesar el archivo. <br><br><strong>Detalle:</strong> ${error.message}`,
+                body: `No se pudo procesar el archivo. Revisa la consola para más detalles. <br><br><strong>Detalle:</strong> ${error.message}`,
                 confirmText: 'Cerrar',
                 showCancel: false
             });
@@ -67,6 +89,7 @@ async function handleFileUpload(e) {
         }
     };
     reader.onerror = (error) => {
+         console.error('[LOG] FileReader onerror - Error de lectura:', error);
          ui.showModal({
             title: 'Error de Lectura',
             body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
