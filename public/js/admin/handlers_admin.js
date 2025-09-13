@@ -1,796 +1,436 @@
-import { elements, state } from './state_admin.js';
-import { formatCurrency, autoCategorize, capitalize } from './utils_admin.js';
+import { elements, state, app } from './state_admin.js';
+import * as utils from './utils_admin.js';
+import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
+import * as charts from './charts_admin.js';
 
 /**
- * @file Módulo de gestión de la interfaz de usuario (UI).
- * @description Contiene todas las funciones que manipulan directamente el DOM,
- * como renderizar tablas, actualizar vistas, mostrar y ocultar modales.
+ * @file Módulo de manejadores de eventos.
+ * @description Conecta las interacciones del usuario en la UI con la lógica de la aplicación
+ * definida en otros módulos.
  */
 
 /**
- * Almacena en caché los elementos del DOM en el objeto 'elements'.
+ * Procesa el archivo de gastos (.xls o .xlsx) cargado por el usuario.
+ * @param {Event} e - El evento 'change' del input de archivo.
  */
-export function cacheElements() {
-    elements.uploadBtn = document.getElementById('upload-btn');
-    elements.uploadInput = document.getElementById('file-upload-input');
-    elements.dataTableBody = document.querySelector('#data-table tbody');
-    elements.dataTableFooter = document.querySelector('#data-table tfoot');
-    elements.emptyState = document.getElementById('empty-state');
-    elements.summarySection = document.querySelector('.summary-section');
-    elements.modal = document.getElementById('modal');
-    elements.modalTitle = document.getElementById('modal-title');
-    elements.modalBody = document.getElementById('modal-body');
-    elements.modalConfirmBtn = document.getElementById('modal-confirm-btn');
-    elements.modalCancelBtn = document.getElementById('modal-cancel-btn');
-    elements.tabs = document.querySelectorAll('.tab');
-    elements.tabContents = document.querySelectorAll('.tab-content');
-    elements.addManualBtn = document.getElementById('add-manual-btn');
-    elements.addFinancialBtn = document.getElementById('add-financial-btn');
-    elements.deleteDataBtn = document.getElementById('delete-data-btn');
-    elements.deleteCurrentMonthBtn = document.getElementById('delete-current-month-btn');
-    elements.deletePreviousMonthBtn = document.getElementById('delete-previous-month-btn');
-    elements.exportBtn = document.getElementById('export-btn');
-    elements.removeDuplicatesBtn = document.getElementById('remove-duplicates-btn');
-    elements.dateRangeFilter = document.getElementById('date-range-filter');
-    elements.categoryFilter = document.getElementById('category-filter');
-    elements.actionsContainer = document.getElementById('actions-container');
-    elements.dataTableContainer = document.getElementById('data-table-container');
-    elements.chartContexts = {
-        pie: document.getElementById("pieChart")?.getContext("2d"),
-        category: document.getElementById("categoryChart")?.getContext("2d"),
-        compare: document.getElementById("compareChart")?.getContext("2d"),
-        leadsTrend: document.getElementById("leadsTrendChart")?.getContext("2d"),
-    };
-    
-    // Sueldos tab elements
-    elements.addEmployeeBtn = document.getElementById('add-employee-btn');
-    elements.sueldosUploadBtn = document.getElementById('sueldos-upload-btn');
-    elements.sueldosUploadInput = document.getElementById('sueldos-file-upload-input');
-    elements.sueldosTableContainer = document.getElementById('sueldos-table-container');
-    elements.sueldosEmptyState = document.getElementById('sueldos-empty-state');
-    elements.sueldosFilterCard = document.getElementById('sueldos-filter-card');
-    elements.sueldosDateRangeFilter = document.getElementById('sueldos-date-range-filter');
-    elements.resetSueldosFilterBtn = document.getElementById('reset-sueldos-filter-btn');
-    elements.closeWeekBtn = document.getElementById('close-week-btn');
-    elements.deleteSueldosBtn = document.getElementById('delete-sueldos-btn');
+async function handleFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
 
-    // Financial Health elements
-    elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
-    elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
-    elements.leadsChartToggle = document.getElementById('leads-chart-toggle');
-    elements.leadsChartTitle = document.getElementById('leads-chart-title');
-    elements.thermometerBar = document.getElementById('thermometer-bar');
-    elements.thermometerPercentage = document.getElementById('thermometer-percentage');
-    elements.kpiTotalRevenue = document.getElementById('kpi-total-revenue');
-    elements.kpiSalesRevenue = document.getElementById('kpi-sales-revenue');
-    elements.kpiCosts = document.getElementById('kpi-costs');
-    elements.kpiOperatingProfit = document.getElementById('kpi-operating-profit');
-    elements.kpiOwnerDraw = document.getElementById('kpi-owner-draw');
-    elements.kpiNetProfit = document.getElementById('kpi-net-profit');
-    elements.kpiLeads = document.getElementById('kpi-leads');
-    elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
-    elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
-    elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
-}
+    console.log(`[LOG] Iniciando carga del archivo: ${file.name}, Tipo: ${file.type}, Tamaño: ${file.size} bytes`);
 
-/**
- * Renderiza la tabla principal de gastos con los datos filtrados.
- * @param {Array<object>} expenses - Un array de objetos de gastos para mostrar.
- */
-export function renderTable(expenses) {
-    elements.dataTableBody.innerHTML = '';
-    const sorted = [...expenses].sort((a,b) => (b.date > a.date) ? 1 : -1);
-    
-    sorted.forEach(expense => {
-        const tr = document.createElement('tr');
-        tr.dataset.id = expense.id;
-        const charge = parseFloat(expense.charge) || 0;
-        const credit = parseFloat(expense.credit) || 0;
-        
-        let displayCategory = 'N/A';
-        const isOperational = expense.type === 'operativo' || !expense.type; 
-
-        if (isOperational && credit > 0) {
-            displayCategory = expense.channel || ''; // Show channel or blank
-        } else if (isOperational || expense.sub_type === 'pago_intereses') {
-            displayCategory = expense.category || 'SinCategorizar';
-        }
-        
-        let categoryHtml;
-        if (displayCategory === 'SinCategorizar') {
-            const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
-            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
-            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
-        } else {
-            categoryHtml = displayCategory;
-        }
-
-        tr.innerHTML = `
-            <td>${expense.date || ''}</td>
-            <td>${expense.concept || ''}</td>
-            <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
-            <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
-            <td>${categoryHtml}</td>
-            <td class="btn-group">
-                <button class="btn btn-outline btn-sm edit-btn"><i class="fas fa-pencil-alt"></i></button>
-                <button class="btn btn-outline btn-sm delete-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
-            </td>
-        `;
-        
-        elements.dataTableBody.appendChild(tr);
+    ui.showModal({
+        title: "Procesando Archivo...",
+        body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se leen los datos del archivo.</p>',
+        showConfirm: false,
+        showCancel: false
     });
-}
-  
-/**
- * Actualiza los totales en el pie de la tabla principal de gastos.
- * @param {Array<object>} expenses - El array de gastos que se está mostrando actualmente.
- */
-export function updateTableTotals(expenses) {
-    const { totalCharge, totalCredit } = expenses.reduce((acc, exp) => {
-        acc.totalCharge += parseFloat(exp.charge) || 0;
-        acc.totalCredit += parseFloat(exp.credit) || 0;
-        return acc;
-    }, { totalCharge: 0, totalCredit: 0 });
-    elements.dataTableFooter.innerHTML = `
-        <tr>
-            <th colspan="2">Totales (Vista Actual):</th>
-            <th>${formatCurrency(totalCharge)}</th>
-            <th>${formatCurrency(totalCredit)}</th>
-            <th colspan="2"></th>
-        </tr>
-    `;
-}
 
-/**
- * Renderiza la sección de resumen con tarjetas para cada categoría.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
- */
-export function updateSummary(getFilteredExpenses) {
-    const operationalExpenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
-    
-    const summaryData = operationalExpenses.reduce((acc, exp) => {
-        const charge = parseFloat(exp.charge) || 0;
-        const credit = parseFloat(exp.credit) || 0;
-        const category = exp.category || 'SinCategorizar';
-        
-        if (credit > 0) {
-            acc.TotalIngresos += credit;
-        }
-        if (charge > 0) {
-            acc.TotalCargos += charge;
-            if (!acc[category]) acc[category] = 0;
-            acc[category] += charge;
-        }
-        return acc;
-    }, { TotalCargos: 0, TotalIngresos: 0 });
-    
-    summaryData.TotalNeto = summaryData.TotalIngresos - summaryData.TotalCargos;
-    
-    elements.summarySection.innerHTML = '';
-    const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
-    const sortedSummary = Object.entries(summaryData).sort(([keyA], [keyB]) => {
-        const indexA = summaryOrder.indexOf(keyA);
-        const indexB = summaryOrder.indexOf(keyB);
-        if (indexA > -1 && indexB > -1) return indexA - indexB;
-        if (indexA > -1) return -1;
-        if (indexB > -1) return 1;
-        return keyA.localeCompare(keyB);
-    });
-    sortedSummary.forEach(([key, value]) => {
-        if (key.startsWith('Total') || value > 0) {
-            const isClickable = !key.startsWith('Total');
-            const card = createSummaryCard(key, value, isClickable);
-            elements.summarySection.appendChild(card);
-        }
-    });
-}
-  
-/**
- * Crea el HTML para una tarjeta de resumen individual.
- * @param {string} title - El título de la tarjeta (generalmente la categoría).
- * @param {number} amount - El monto total para esa categoría.
- * @param {boolean} isClickable - Si la tarjeta debe tener la clase 'clickable'.
- * @returns {HTMLElement} El elemento de la tarjeta creado.
- */
-export function createSummaryCard(title, amount, isClickable) {
-      const icons = {
-        TotalNeto: "fas fa-balance-scale", TotalCargos: "fas fa-arrow-up-from-bracket", TotalIngresos: "fas fa-hand-holding-usd", Alex: "fas fa-user", Chris: "fas fa-user-friends",
-        Sueldos: "fas fa-coins", Deudas: "fas fa-credit-card", Publicidad: "fas fa-bullhorn", Envios: "fas fa-shipping-fast",
-        Local: "fas fa-building", Material: "fas fa-box-open", Tecnologia: "fas fa-laptop-code", Devoluciones: "fas fa-undo", GastosFinancieros: "fas fa-percentage", SinCategorizar: "fas fa-question-circle"
-      };
-      const card = document.createElement('div');
-      let displayTitle = title;
-      if (title === 'TotalNeto') displayTitle = 'Utilidad Operativa';
-      if (title === 'TotalIngresos') displayTitle = 'Ingresos Operativos';
-      if (title === 'TotalCargos') displayTitle = 'Cargos Operativos';
-      
-      card.className = `summary-card ${title.replace(" ", "")} ${isClickable ? 'clickable' : ''}`;
-      card.dataset.category = title;
-      card.innerHTML = `
-        <div class="icon-container"><i class="${icons[title] || 'fas fa-tag'}"></i></div>
-        <div> <div class="summary-card-title">${displayTitle}</div> <div class="summary-card-value">${formatCurrency(amount)}</div> </div>`;
-      return card;
-}
-  
-/**
- * Muestra un modal con el desglose de gastos para una categoría específica.
- * @param {string} category - La categoría a detallar.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
- */
-export function showCategoryDetailsModal(category, getFilteredExpenses) {
-    const categoryExpenses = getFilteredExpenses().filter(e => (e.category || 'SinCategorizar') === category && (parseFloat(e.charge) || 0) > 0);
-    let total = 0;
-    const rows = categoryExpenses.map(e => {
-        const charge = parseFloat(e.charge) || 0;
-        total += charge;
-        return `<tr> <td>${e.date}</td> <td>${e.concept}</td> <td style="text-align: right;">${formatCurrency(charge)}</td> </tr>`;
-    }).join('');
-    const tableHtml = `
-        <div class="table-container">
-            <table>
-                <thead> <tr> <th>Fecha</th> <th>Concepto</th> <th style="text-align: right;">Cargo</th> </tr> </thead>
-                <tbody>${rows}</tbody>
-                <tfoot> <tr> <td colspan="2">Total</td> <td style="text-align: right;">${formatCurrency(total)}</td> </tr> </tfoot>
-            </table>
-        </div>`;
-    showModal({ title: `Detalles de: ${category}`, body: tableHtml, confirmText: 'Cerrar', showCancel: false });
-}
-  
-/**
- * Muestra u oculta el modal principal, configurando su contenido y acciones.
- * @param {object} options - Las opciones para configurar el modal.
- */
-export function showModal({ show = true, title, body, onConfirm, onModalOpen, confirmText = 'Confirmar', confirmClass = '', showCancel = true, showConfirm = true }) {
-      const modalContent = elements.modal.querySelector('.modal-content');
-      if (modalContent) {
-          modalContent.classList.remove('modal-lg');
-      }
-
-      if (!show) { elements.modal.classList.remove('visible'); return; }
-      elements.modalTitle.textContent = title;
-      elements.modalBody.innerHTML = body;
-      elements.modalConfirmBtn.textContent = confirmText;
-      elements.modalConfirmBtn.className = `btn ${confirmClass}`;
-      elements.modalConfirmBtn.style.display = showConfirm ? 'inline-flex' : 'none';
-      elements.modalCancelBtn.style.display = showCancel ? 'inline-flex' : 'none';
-      elements.modalConfirmBtn.onclick = onConfirm ? onConfirm : () => showModal({ show: false });
-      elements.modalCancelBtn.onclick = () => showModal({ show: false });
-      elements.modal.classList.add('visible');
-      if (onModalOpen) onModalOpen();
-}
-
-/**
- * Muestra un modal para que el usuario seleccione qué registros duplicados desea cargar.
- * @param {Array<object>} duplicateGroups - Grupos de gastos duplicados encontrados.
- * @param {Array<object>} nonDuplicates - Gastos únicos que se cargarán automáticamente.
- */
-export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
-    let tableRowsHtml = '';
-    let groupIndex = 0;
-    for (const group of duplicateGroups) {
-        tableRowsHtml += `<tr class="group-header"><td colspan="5"><strong>${group.reason}</strong> (${group.expenses.length} registros)</td></tr>`;
-        
-        let expenseIndex = 0;
-        for (const expense of group.expenses) {
-            tableRowsHtml += `
-                <tr data-group-index="${groupIndex}" data-expense-index="${expenseIndex}">
-                    <td><input type="checkbox" class="duplicate-checkbox" checked></td>
-                    <td>${expense.date}</td>
-                    <td>${expense.concept}</td>
-                    <td>${expense.charge > 0 ? formatCurrency(expense.charge) : ''}</td>
-                    <td>${expense.credit > 0 ? formatCurrency(expense.credit) : ''}</td>
-                </tr>
-            `;
-            expenseIndex++;
-        }
-        groupIndex++;
-    }
-
-    const modalBody = `
-        <p>Se encontraron ${duplicateGroups.reduce((acc, g) => acc + g.expenses.length, 0)} registros que podrían ser duplicados. Se cargarán <strong>${nonDuplicates.length}</strong> registros únicos automáticamente.</p>
-        <p>Por favor, selecciona los registros de la lista que también deseas cargar.</p>
-        <div class="table-container" style="max-height: 45vh; margin-top: 15px;">
-            <table class="table duplicate-table">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="select-all-duplicates" checked title="Seleccionar/Deseleccionar Todos"></th>
-                        <th>Fecha</th>
-                        <th>Concepto</th>
-                        <th>Cargo</th>
-                        <th>Ingreso</th>
-                    </tr>
-                </thead>
-                <tbody>${tableRowsHtml}</tbody>
-            </table>
-        </div>
-    `;
-
-    showModal({
-        title: 'Gestión de Duplicados al Cargar',
-        body: modalBody,
-        confirmText: 'Cargar Seleccionados',
-        onConfirm: async () => {
-            const selectedDuplicates = [];
-            const checkboxes = document.querySelectorAll('.duplicate-checkbox:checked');
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            console.log('[LOG] FileReader onload - Archivo leído en memoria.');
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
             
-            checkboxes.forEach(cb => {
-                const row = cb.closest('tr');
-                if (row && row.dataset.groupIndex) { // Asegurarse de no tomar el checkbox del header
-                    const groupIdx = parseInt(row.dataset.groupIndex, 10);
-                    const expenseIdx = parseInt(row.dataset.expenseIndex, 10);
-                    if (!isNaN(groupIdx) && !isNaN(expenseIdx)) {
-                        selectedDuplicates.push(duplicateGroups[groupIdx].expenses[expenseIdx]);
-                    }
+            console.log(`[LOG] Hoja de cálculo seleccionada: "${sheetName}"`);
+            
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            console.log(`[LOG] Datos crudos extraídos de Excel (primeras 10 filas):`, JSON.parse(JSON.stringify(jsonData.slice(0, 10))));
+
+            if (jsonData.length === 0) {
+                throw new Error("El archivo Excel está vacío o no tiene el formato correcto.");
+            }
+
+            console.log('[LOG] Llamando a utils.parseExpensesData...');
+            const newExpenses = utils.parseExpensesData(jsonData, file.name.split('.').pop());
+            console.log(`[LOG] Datos parseados por parseExpensesData. Total de registros válidos: ${newExpenses.length}`);
+            
+            if (newExpenses.length === 0) {
+                ui.showModal({
+                    title: 'Sin Datos Válidos',
+                    body: 'No se encontraron registros de gastos válidos en el archivo para procesar.',
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+                return;
+            }
+
+            // --- LÓGICA DE DETECCIÓN DE DUPLICADOS ---
+            const existingSignatures = new Set(state.expenses.map(exp => utils.getExpenseSignature(exp)));
+            const newExpensesBySig = new Map();
+
+            newExpenses.forEach(expense => {
+                const sig = utils.getExpenseSignature(expense);
+                if (!newExpensesBySig.has(sig)) {
+                    newExpensesBySig.set(sig, []);
                 }
+                newExpensesBySig.get(sig).push(expense);
             });
 
-            const expensesToSave = [...nonDuplicates, ...selectedDuplicates];
+            const nonDuplicates = [];
+            const duplicateGroups = [];
 
-            if (expensesToSave.length > 0) {
-                try {
-                    await services.saveBulkExpenses(expensesToSave);
-                    showModal({
-                        title: 'Éxito',
-                        body: `Se han cargado <strong>${expensesToSave.length}</strong> registros en total. (${nonDuplicates.length} únicos y ${selectedDuplicates.length} duplicados seleccionados).`,
-                        confirmText: 'Entendido',
-                        showCancel: false
+            for (const [sig, group] of newExpensesBySig.entries()) {
+                const isExisting = existingSignatures.has(sig);
+                const isIntraFile = group.length > 1;
+
+                if (isExisting || isIntraFile) {
+                    let reason = '';
+                    if (isExisting && isIntraFile) reason = 'Ya existe en la base de datos Y en el archivo';
+                    else if (isExisting) reason = 'Ya existe en la base de datos';
+                    else if (isIntraFile) reason = 'Duplicado dentro del archivo';
+                    
+                    duplicateGroups.push({
+                        signature: sig,
+                        expenses: group,
+                        reason: reason
                     });
-                } catch (error) {
-                     showModal({
-                        title: 'Error al Guardar',
-                        body: `No se pudieron guardar los registros. Error: ${error.message}`,
-                        confirmText: 'Cerrar',
-                        showCancel: false
-                    });
+                } else {
+                    nonDuplicates.push(group[0]);
                 }
+            }
+
+            // --- PUNTO DE DECISIÓN ---
+            if (duplicateGroups.length > 0) {
+                // Mostrar modal para que el usuario elija
+                ui.showDuplicateSelectionModal(duplicateGroups, nonDuplicates);
             } else {
-                 showModal({
-                    title: 'Sin Cambios',
-                    body: 'No se seleccionó ningún registro para cargar.',
+                // Sin duplicados, guardar directamente
+                await services.saveBulkExpenses(nonDuplicates);
+                ui.showModal({
+                    title: 'Éxito',
+                    body: `Se cargaron y procesaron correctamente ${nonDuplicates.length} registros del archivo. No se encontraron duplicados.`,
                     confirmText: 'Entendido',
                     showCancel: false
                 });
             }
-        },
-        onModalOpen: () => {
-            const selectAllCheckbox = document.getElementById('select-all-duplicates');
-            if (selectAllCheckbox) {
-                selectAllCheckbox.addEventListener('change', (e) => {
-                    document.querySelectorAll('.duplicate-checkbox').forEach(cb => {
-                        cb.checked = e.target.checked;
-                    });
-                });
-            }
-            // Add this to make the modal larger
-            elements.modal.querySelector('.modal-content').classList.add('modal-lg');
+
+        } catch (error) {
+            // Log a more detailed error
+            console.error("Error detallado al procesar el archivo de gastos:", {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            ui.showModal({
+                title: 'Error al Cargar',
+                body: `No se pudo procesar el archivo. Revisa la consola para más detalles. <br><br><strong>Detalle:</strong> ${error.message}`,
+                confirmText: 'Cerrar',
+                showCancel: false
+            });
+        } finally {
+            e.target.value = ''; // Reset input
         }
+    };
+    reader.onerror = (error) => {
+         console.error('[LOG] FileReader onerror - Error de lectura:', error);
+         ui.showModal({
+            title: 'Error de Lectura',
+            body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+        e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+
+/**
+ * Procesa el archivo de sueldos cargado por el usuario.
+ * Lee la segunda hoja del excel, la parsea y la guarda en Firestore.
+ * @param {Event} e - El evento 'change' del input de archivo.
+ */
+async function handleSueldosFileUpload(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    ui.showModal({
+        title: "Procesando Archivo...",
+        body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se procesa el archivo de sueldos.</p>',
+        showConfirm: false,
+        showCancel: false
+    });
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+        try {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            if (workbook.SheetNames.length < 2) {
+                throw new Error("El archivo Excel no tiene una segunda hoja. Asegúrate de que los datos de asistencia estén en la segunda hoja del archivo.");
+            }
+            const sheetName = workbook.SheetNames[1];
+            const worksheet = workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (jsonData.length < 2) { 
+                throw new Error("La segunda hoja del archivo está vacía o no tiene el formato correcto.");
+            }
+
+            const newEmployees = utils.parseSueldosData(jsonData);
+            const existingEmployees = state.sueldosData || [];
+            const mergedEmployees = [...existingEmployees];
+
+            newEmployees.forEach(newEmp => {
+                const existingIndex = mergedEmployees.findIndex(emp => emp.id === newEmp.id);
+                if (existingIndex > -1) {
+                    mergedEmployees[existingIndex].registros = newEmp.registros;
+                    utils.recalculatePayment(mergedEmployees[existingIndex]);
+                } else {
+                    mergedEmployees.push(newEmp);
+                }
+            });
+
+            await services.saveSueldosDataToFirestore(mergedEmployees);
+
+            ui.showModal({
+                title: 'Éxito',
+                body: `Se cargaron y procesaron correctamente los datos de ${newEmployees.length} empleados.`,
+                confirmText: 'Entendido',
+                showCancel: false
+            });
+
+        } catch (error) {
+            console.error("Error procesando el archivo de sueldos:", error);
+            ui.showModal({
+                title: 'Error al Cargar',
+                body: `No se pudo procesar el archivo. <br><br><strong>Detalle:</strong> ${error.message}`,
+                confirmText: 'Cerrar',
+                showCancel: false
+            });
+        } finally {
+            e.target.value = '';
+        }
+    };
+    reader.onerror = (error) => {
+         ui.showModal({
+            title: 'Error de Lectura',
+            body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+        e.target.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+export function handleTabClick(tab) {
+    elements.tabs.forEach(t => t.classList.remove('active'));
+    elements.tabContents.forEach(c => c.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+}
+
+export function confirmDeleteAllData() {
+    ui.showModal({
+        title: "Confirmar Borrado Total",
+        body: "<strong>¡Atención!</strong> Estás a punto de borrar TODOS los registros de gastos. Esta acción es irreversible. <br><br>¿Estás completamente seguro?",
+        confirmText: "Sí, Borrar Todo",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteAllData()
     });
 }
-  
-/**
- * Abre el modal para agregar o editar un movimiento operativo.
- * @param {object} [expense={}] - El objeto de gasto a editar. Si está vacío, se crea uno nuevo.
- */
-export function openExpenseModal(expense = {}) {
-    const isEditing = !!expense.id;
-    const title = isEditing ? 'Editar Movimiento' : 'Agregar Movimiento Operativo';
-    const originalCategory = expense.category || 'SinCategorizar';
 
-    const isFinancial = expense.type === 'financiero';
+export function confirmDeleteCurrentMonth() {
+    ui.showModal({
+        title: "Confirmar Borrado",
+        body: "Vas a borrar todos los registros del mes actual. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        confirmText: "Borrar Mes Actual",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteCurrentMonthData()
+    });
+}
 
-    const categories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'SinCategorizar', 'Gastos Financieros'].filter(Boolean))].sort();
-    const categoryOptions = categories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('');
+export function confirmDeletePreviousMonth() {
+    ui.showModal({
+        title: "Confirmar Borrado",
+        body: "Vas a borrar todos los registros del mes anterior. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        confirmText: "Borrar Mes Anterior",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deletePreviousMonthData()
+    });
+}
 
-    const channels = ['WhatsApp', 'Instagram', 'Facebook', 'Grupo de Clientes', 'Grupo de Referencias', 'Otro'];
-    const channelOptions = channels.map(c => `<option value="${c}" ${expense.channel === c ? 'selected' : ''}>${c}</option>`).join('');
+export function confirmRemoveDuplicates() {
+    ui.showModal({
+        title: "Confirmar Eliminación de Duplicados",
+        body: "El sistema buscará y eliminará registros duplicados basados en fecha, concepto y montos. Esta acción no se puede deshacer. <br><br>¿Deseas continuar?",
+        confirmText: "Sí, Eliminar Duplicados",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.removeDuplicates()
+    });
+}
 
-    showModal({
-        title: title,
-        body: `<form id="expense-form" style="display: grid; gap: 15px;">
-                    <div class="form-group">
-                        <label for="expense-date">Fecha</label>
-                        <input type="date" id="expense-date" class="modal-input" value="${expense.date || new Date().toISOString().split('T')[0]}" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="expense-concept">Concepto</label>
-                        <input type="text" id="expense-concept" class="modal-input" placeholder="Concepto del movimiento" value="${expense.concept || ''}" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="expense-charge">Cargo ($)</label>
-                        <input type="number" step="0.01" id="expense-charge" class="modal-input" placeholder="$0.00" value="${expense.charge || ''}">
-                    </div>
-                    <div class="form-group">
-                        <label for="expense-credit">Ingreso ($)</label>
-                        <input type="number" step="0.01" id="expense-credit" class="modal-input" placeholder="$0.00" value="${expense.credit || ''}">
-                    </div>
-                    <div class="form-group" id="category-form-group">
-                        <label for="expense-category">Categoría</label>
-                        <select id="expense-category" class="modal-input">${categoryOptions}</select>
-                    </div>
-                    <div class="form-group" id="channel-form-group" style="display: none;">
-                        <label for="expense-channel">Canal de Venta</label>
-                        <select id="expense-channel" class="modal-input">
-                            <option value="">No aplica</option>
-                            ${channelOptions}
-                        </select>
-                    </div>
-               </form>`,
-        confirmText: 'Guardar',
+export function handleFilterChange() {
+    app.renderData();
+}
+
+export function handleCategoryChange(e) {
+    const select = e.target;
+    const expenseId = select.dataset.expenseId;
+    const newCategory = select.value;
+    const expense = state.expenses.find(exp => exp.id === expenseId);
+    if(expense) services.saveExpense({...expense, category: newCategory}, expense.category);
+}
+
+export function confirmDeleteExpense(id) {
+    ui.showModal({
+        title: "Confirmar Eliminación",
+        body: "¿Estás seguro de que quieres borrar este registro único?",
+        confirmText: "Eliminar",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteExpense(id)
+    });
+}
+
+export function handleModalClick(e) {
+    if (e.target === elements.modal) {
+        ui.showModal({ show: false });
+    }
+}
+
+export function handleKeyDown(e) {
+    if (elements.modal.classList.contains('visible')) {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            elements.modalCancelBtn.click();
+        }
+        if (e.key === 'Enter' && !e.target.matches('textarea')) { 
+            e.preventDefault();
+            if (elements.modalConfirmBtn.style.display !== 'none') {
+                elements.modalConfirmBtn.click();
+            }
+        }
+    } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        services.undoLastAction();
+    }
+}
+
+export function openAddEmployeeModal() {
+    ui.showModal({
+        title: "Agregar Nuevo Empleado",
+        body: `
+            <form id="add-employee-form">
+                <div class="form-group">
+                    <label for="employee-name">Nombre del Empleado</label>
+                    <input type="text" id="employee-name" class="modal-input" required>
+                </div>
+                 <div class="form-group">
+                    <label for="employee-rate">Tarifa por Hora ($)</label>
+                    <input type="number" id="employee-rate" class="modal-input" value="70" step="0.01" required>
+                </div>
+            </form>`,
+        confirmText: 'Agregar',
         onConfirm: () => {
-            const form = document.getElementById('expense-form');
-            if (form.reportValidity()) {
-                const creditValue = parseFloat(document.getElementById('expense-credit').value) || 0;
-                
-                const expenseData = {
-                    ...expense, 
-                    date: document.getElementById('expense-date').value,
-                    concept: document.getElementById('expense-concept').value,
-                    charge: parseFloat(document.getElementById('expense-charge').value) || 0,
-                    credit: creditValue,
-                    type: expense.type || 'operativo',
-                    category: '',
-                    channel: document.getElementById('expense-channel')?.value || '',
-                    source: 'manual'
-                };
-                
-                if (expenseData.sub_type === 'pago_intereses') {
-                     expenseData.category = 'Gastos Financieros';
-                } else if (expenseData.type === 'operativo') {
-                     expenseData.category = creditValue > 0 ? '' : document.getElementById('expense-category').value;
-                } else {
-                    expenseData.category = '';
-                }
-                
-                if (isEditing) expenseData.id = expense.id;
-                
-                services.saveExpense(expenseData, originalCategory);
+            const nameInput = document.getElementById('employee-name');
+            const rateInput = document.getElementById('employee-rate');
+            const name = nameInput.value.trim();
+            const rate = parseFloat(rateInput.value);
+            if (name && !isNaN(rate) && rate > 0) {
+                services.addEmployee(name, rate);
+            } else {
+                alert("Por favor, ingresa un nombre y una tarifa válida.");
             }
-        },
-        onModalOpen: () => {
-            const categoryGroup = document.getElementById('category-form-group');
-            const categorySelect = document.getElementById('expense-category');
-            const conceptInput = document.getElementById('expense-concept');
-            const creditInput = document.getElementById('expense-credit');
-            const channelGroup = document.getElementById('channel-form-group');
-
-            const toggleFieldVisibility = () => {
-                const creditValue = parseFloat(creditInput.value) || 0;
-                const isIncome = creditValue > 0;
-
-                channelGroup.style.display = isIncome ? 'block' : 'none';
-                categoryGroup.style.display = isIncome || isFinancial ? 'none' : 'block';
-                
-                if(isFinancial && expense.sub_type === 'pago_intereses') {
-                    categoryGroup.style.display = 'block';
-                    categorySelect.value = 'Gastos Financieros';
-                    categorySelect.disabled = true;
-                } else if (!isFinancial) {
-                    categorySelect.disabled = false;
-                }
-            };
-            
-            creditInput.addEventListener('input', toggleFieldVisibility);
-            conceptInput.addEventListener('input', () => {
-                if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
-                    categorySelect.value = autoCategorize(conceptInput.value);
-                }
-            });
-
-            toggleFieldVisibility();
-        }
-    });
-}
-  
-/**
- * Abre el modal para registrar un movimiento financiero (préstamos, pagos).
- */
-export function openFinancialModal() {
-    const body = `
-        <form id="financial-form" style="display: grid; gap: 15px;">
-            <div class="form-group">
-                <label for="financial-date">Fecha</label>
-                <input type="date" id="financial-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
-            </div>
-            <div class="form-group">
-                <label for="financial-type">Tipo de Movimiento</label>
-                <select id="financial-type" class="modal-input">
-                    <option value="entrada_prestamo">Entrada de Préstamo</option>
-                    <option value="pago_prestamo">Pago de Préstamo</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="financial-concept">Concepto (Ej: Préstamo BBVA, Pago semanal)</label>
-                <input type="text" id="financial-concept" class="modal-input" placeholder="Concepto" required>
-            </div>
-            <div id="entrada-fields">
-                <div class="form-group">
-                    <label for="financial-credit">Monto del Préstamo Recibido ($)</label>
-                    <input type="number" step="0.01" id="financial-credit" class="modal-input" placeholder="$5,000.00">
-                </div>
-            </div>
-            <div id="pago-fields" style="display: none;">
-                <div class="form-group">
-                    <label for="financial-capital">Pago a Capital ($)</label>
-                    <input type="number" step="0.01" id="financial-capital" class="modal-input" placeholder="$1,000.00">
-                </div>
-                <div class="form-group">
-                    <label for="financial-interest">Pago de Intereses ($)</label>
-                    <input type="number" step="0.01" id="financial-interest" class="modal-input" placeholder="$150.00">
-                </div>
-            </div>
-        </form>
-    `;
-
-    showModal({
-        title: 'Registrar Movimiento Financiero',
-        body: body,
-        confirmText: 'Guardar Movimiento',
-        onConfirm: () => services.saveFinancialTransaction(),
-        onModalOpen: () => {
-            const typeSelect = document.getElementById('financial-type');
-            const entradaFields = document.getElementById('entrada-fields');
-            const pagoFields = document.getElementById('pago-fields');
-            typeSelect.addEventListener('change', (e) => {
-                if (e.target.value === 'entrada_prestamo') {
-                    entradaFields.style.display = 'block';
-                    pagoFields.style.display = 'none';
-                } else {
-                    entradaFields.style.display = 'none';
-                    pagoFields.style.display = 'block';
-                }
-            });
         }
     });
 }
 
-/**
- * Rellena el select de filtro de categorías con las categorías existentes.
- */
-export function populateCategoryFilter() {
-    const categories = [...new Set(state.expenses
-        .filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses') 
-        .map(e => e.category).filter(Boolean))];
-    categories.sort();
-    const currentCategory = elements.categoryFilter.value;
-    elements.categoryFilter.innerHTML = `<option value="all">Todas las categorías</option>`;
-    categories.forEach(cat => {
-        const option = document.createElement('option');
-        option.value = cat;
-        option.textContent = cat;
-        elements.categoryFilter.appendChild(option);
-    });
-    elements.categoryFilter.value = currentCategory;
-}
-
-// --- Litepicker Initialization ---
-export function initDateRangePicker(callback) {
-    if (elements.dateRangeFilter) {
-        return new Litepicker({
-            element: elements.dateRangeFilter,
-            singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
-            format: 'MMM D, YYYY',
-            plugins: ['ranges'],
-            setup: (picker) => {
-                picker.on('selected', (date1, date2) => {
-                    callback();
-                });
-            }
-        });
-    }
-}
-
-export function initHealthDateRangePicker(callback) {
-    if (elements.healthDateRangeFilter) {
-        return new Litepicker({
-            element: elements.healthDateRangeFilter,
-            singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
-            format: 'MMM D, YYYY',
-            plugins: ['ranges'],
-            setup: (picker) => {
-                picker.on('selected', (date1, date2) => {
-                    callback();
-                });
-            }
-        });
-    }
-}
-
-export function initSueldosDateRangePicker(callback) {
-    if (elements.sueldosDateRangeFilter) {
-        return new Litepicker({
-            element: elements.sueldosDateRangeFilter,
-            singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
-            format: 'MMM D, YYYY',
-            plugins: ['ranges'],
-            setup: (picker) => {
-                picker.on('selected', (date1, date2) => {
-                    callback();
-                });
-            }
-        });
-    }
-}
-
-export function renderSueldosData(employees, isFiltered) {
-    elements.sueldosTableContainer.innerHTML = '';
-    if (employees.length === 0 && isFiltered) {
-        elements.sueldosTableContainer.innerHTML = '<p>No se encontraron registros para el rango de fechas seleccionado.</p>';
-        return;
-    }
-    
-    employees.forEach(employee => {
-        const card = document.createElement('div');
-        card.className = 'employee-card';
-        card.dataset.employeeId = employee.id;
-
-        const bonosHtml = (employee.bonos || []).map((bono, index) => `
-            <div class="adjustment-item bono">
-                <span class="date">${bono.date || ''}</span>
-                <span class="concept">${bono.concept}</span>
-                <span class="amount">${formatCurrency(bono.amount)}</span>
-                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="bono" title="Eliminar">&times;</button>
-            </div>
-        `).join('');
-
-        const gastosHtml = (employee.descuentos || []).map((gasto, index) => `
-            <div class="adjustment-item gasto">
-                 <span class="date">${gasto.date || ''}</span>
-                <span class="concept">${gasto.concept}</span>
-                <span class="amount">-${formatCurrency(gasto.amount)}</span>
-                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="gasto" title="Eliminar">&times;</button>
-            </div>
-        `).join('');
-
-        const historyHtml = (employee.paymentHistory || []).map(p => `
-            <tr>
-                <td>${p.week}</td>
-                <td>${p.hours.toFixed(2)}</td>
-                <td>${formatCurrency(p.payment)}</td>
-            </tr>
-        `).join('');
-
-        card.innerHTML = `
-            <div class="employee-header">
-                <h3>${capitalize(employee.name)}</h3>
-                <div class="employee-header-rate">
-                    <div class="rate-input-wrapper">
-                        <span class="rate-input-symbol">$</span>
-                        <input type="number" class="hourly-rate-input" value="${employee.ratePerHour || 70}" min="0">
-                        <span>/hr</span>
-                    </div>
-                </div>
-                <button class="toggle-details-btn" aria-expanded="true">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-            </div>
-            <div class="employee-body">
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Hrs</th></tr></thead>
-                        <tbody>
-                            ${['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(day => {
-                                const registro = employee.registros?.find(r => r.day === day) || { entrada: '', salida: '', horas: '0.00' };
-                                return `
-                                    <tr>
-                                        <td>${day}</td>
-                                        <td contenteditable="true" data-type="entrada">${registro.entrada}</td>
-                                        <td contenteditable="true" data-type="salida">${registro.salida}</td>
-                                        <td>${registro.horas}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="payment-history-container">
-                    <h6>Historial de Pagos</h6>
-                    <div class="table-container" style="max-height: 200px;">
-                        <table>
-                            <thead><tr><th>Semana</th><th>Horas</th><th>Pago</th></tr></thead>
-                            <tbody>${historyHtml}</tbody>
-                        </table>
-                    </div>
-                </div>
-                <div>
-                    <div class="employee-payment-summary">
-                        <div class="payment-row"><span>Total Horas:</span><span class="payment-value-total-hours">${employee.totalHoursFormatted || '0.00'}</span></div>
-                        <div class="payment-row"><span>Subtotal:</span><span class="payment-value-subtotal">${formatCurrency(employee.subtotal || 0)}</span></div>
-                    </div>
-                    <div class="adjustments-list">
-                        <h6>Bonos</h6>
-                        <div class="adjustments-list-content">
-                            ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
-                        </div>
-                    </div>
-                    <div class="adjustments-list">
-                        <h6>Gastos/Descuentos</h6>
-                        <div class="adjustments-list-content">
-                            ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
-                        </div>
-                    </div>
-                    <div class="employee-payment-summary">
-                         <div class="payment-row final-payment"><span>Pago Final:</span><span class="payment-value-final">${formatCurrency(employee.pago || 0)}</span></div>
-                    </div>
-                     <div class="btn-group" style="margin-top: 15px;">
-                        <button class="btn btn-sm add-bono-btn"><i class="fas fa-plus"></i> Bono</button>
-                        <button class="btn btn-sm add-gasto-btn"><i class="fas fa-minus"></i> Gasto</button>
-                        <button class="btn btn-sm btn-outline share-text-btn"><i class="fab fa-whatsapp"></i></button>
-                        <button class="btn btn-sm btn-outline download-pdf-btn"><i class="fas fa-file-pdf"></i></button>
-                    </div>
-                </div>
-            </div>
-        `;
-        elements.sueldosTableContainer.appendChild(card);
+export function confirmCloseWeek() {
+    ui.showModal({
+        title: "Confirmar Cierre de Semana",
+        body: `
+            <p>Estás a punto de cerrar la semana. Esto hará lo siguiente:</p>
+            <ul>
+                <li>- Guardará los pagos finales en el historial de cada empleado.</li>
+                <li>- Registrará los pagos como gastos en la pestaña de 'Datos'.</li>
+                <li>- Reiniciará las horas, bonos y descuentos para la nueva semana.</li>
+            </ul>
+            <p><strong>Esta acción no se puede deshacer.</strong> ¿Continuar?</p>`,
+        confirmText: 'Sí, Cerrar Semana',
+        confirmClass: 'btn-success',
+        onConfirm: () => services.closeWeek()
     });
 }
 
-/**
- * Opens a modal to add a bonus or an expense/discount for an employee.
- * @param {string} employeeId - The ID of the employee.
- * @param {string} type - The type of adjustment ('bono' or 'gasto').
- */
-function openAdjustmentModal(employeeId, type) {
+export function confirmDeleteSueldosData() {
+    ui.showModal({
+        title: "Confirmar Eliminación Total",
+        body: "¿Estás seguro de que quieres borrar TODOS los datos de sueldos? Esto incluye empleados, registros, bonos y gastos. Esta acción es irreversible.",
+        confirmText: "Sí, Borrar Todo",
+        confirmClass: "btn-danger",
+        onConfirm: () => services.deleteSueldosData()
+    });
+}
+
+export function sendWhatsAppMessage(employee) {
+    const message = utils.generateWhatsAppMessage(employee);
+    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
+}
+
+export function updateSchedule(cell) {
+    const employeeId = cell.closest('.employee-card').dataset.employeeId;
+    const type = cell.dataset.type;
+    const day = cell.closest('tr').querySelector('td:first-child').textContent;
+    const value = cell.textContent;
+    services.updateEmployeeTime(employeeId, day, type, value);
+}
+
+export function updateEmployeeRate(employeeId, newRate) {
     const employee = state.sueldosData.find(emp => emp.id === employeeId);
-    if (!employee) return;
+    if (employee && !isNaN(newRate) && newRate >= 0) {
+        services.updateEmployeeField(employeeId, 'ratePerHour', newRate);
+    } else if (employee) {
+        const rateInput = document.querySelector(`.employee-card[data-employee-id="${employeeId}"] .hourly-rate-input`);
+        if(rateInput) rateInput.value = employee.ratePerHour || 70;
+    }
+}
 
-    const isBono = type === 'bono';
-    const title = isBono ? 'Agregar Bono' : 'Agregar Gasto/Descuento';
-    const amountLabel = isBono ? 'Monto del Bono ($)' : 'Monto del Gasto ($)';
-
-    const body = `
-        <form id="adjustment-form" style="display: grid; gap: 15px;">
-            <input type="hidden" id="adjustment-employee-id" value="${employeeId}">
-            <div class="form-group">
-                <label for="adjustment-date">Fecha</label>
-                <input type="date" id="adjustment-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
-            </div>
-            <div class="form-group">
-                <label for="adjustment-concept">Concepto</label>
-                <input type="text" id="adjustment-concept" class="modal-input" placeholder="${isBono ? 'Ej: Bono de puntualidad' : 'Ej: Adelanto de sueldo'}" required>
-            </div>
-            <div class="form-group">
-                <label for="adjustment-amount">${amountLabel}</label>
-                <input type="number" step="0.01" id="adjustment-amount" class="modal-input" placeholder="$0.00" required>
-            </div>
-        </form>
-    `;
-
-    showModal({
-        title: `${title} para ${capitalize(employee.name)}`,
-        body: body,
-        confirmText: 'Guardar',
-        onConfirm: () => {
-            const form = document.getElementById('adjustment-form');
-            if (form.reportValidity()) {
-                const adjustmentData = {
-                    date: document.getElementById('adjustment-date').value,
-                    concept: document.getElementById('adjustment-concept').value,
-                    amount: parseFloat(document.getElementById('adjustment-amount').value) || 0,
-                };
-                services.saveAdjustment(employeeId, type, adjustmentData);
-            }
-        }
+export function confirmDeleteAdjustment(empId, adjId, type) {
+    ui.showModal({
+        title: "Confirmar Eliminación",
+        body: `¿Estás seguro de que quieres eliminar este ${type === 'bono' ? 'bono' : 'gasto'}?`,
+        confirmText: "Eliminar",
+        confirmClass: "btn-danger",
+        onConfirm: () => services.deleteAdjustment(empId, type, parseInt(adjId))
     });
 }
 
-/**
- * Opens the modal specifically for adding a bonus.
- * @param {string} employeeId - The ID of the employee.
- */
-export function openBonoModal(employeeId) {
-    openAdjustmentModal(employeeId, 'bono');
+export function toggleEmployeeCard(card) {
+    card.classList.toggle('collapsed');
+    const isCollapsed = card.classList.contains('collapsed');
+    const button = card.querySelector('.toggle-details-btn');
+    if (button) {
+        button.setAttribute('aria-expanded', !isCollapsed);
+    }
 }
 
-/**
- * Opens the modal specifically for adding an expense/discount.
- * @param {string} employeeId - The ID of the employee.
- */
-export function openGastoModal(employeeId) {
-    openAdjustmentModal(employeeId, 'gasto');
+export function handleLeadsChartToggle(e) {
+    const button = e.target.closest('button');
+    if (button && !button.classList.contains('active')) {
+        elements.leadsChartToggle.querySelector('.active').classList.remove('active');
+        button.classList.add('active');
+        state.financials.leadsChartTimeframe = button.dataset.timeframe;
+        charts.updateLeadsTrendChart();
+    }
 }
 
+export function resetSueldosFilter() {
+    if (app.sueldosPicker) {
+        app.sueldosPicker.clearSelection();
+    }
+}
+
+export function resetHealthFilter() {
+     if (app.healthPicker) {
+        app.healthPicker.clearSelection();
+    }
+}
 
