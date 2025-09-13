@@ -2,7 +2,7 @@ import { elements, state, app } from './state_admin.js';
 import * as utils from './utils_admin.js';
 import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
-import * as charts from './charts_admin.js';
+import * as charts from './charts_admin.js'; // Assuming you have this module for charts
 
 /**
  * @file Módulo de manejadores de eventos.
@@ -221,14 +221,169 @@ async function handleSueldosFileUpload(e) {
     reader.readAsArrayBuffer(file);
 }
 
-export function handleTabClick(tab) {
+/**
+ * Inicializa todos los event listeners de la aplicación.
+ */
+export function initEventListeners() {
+    elements.uploadBtn.addEventListener('click', () => elements.uploadInput.click());
+    elements.uploadInput.addEventListener('change', handleFileUpload);
+    
+    elements.tabs.forEach(tab => tab.addEventListener('click', () => handleTabClick(tab)));
+    elements.addManualBtn.addEventListener('click', () => ui.openExpenseModal());
+    elements.addFinancialBtn.addEventListener('click', () => ui.openFinancialModal());
+    elements.deleteDataBtn.addEventListener('click', confirmDeleteAllData);
+    elements.deleteCurrentMonthBtn.addEventListener('click', confirmDeleteCurrentMonth);
+    elements.deletePreviousMonthBtn.addEventListener('click', confirmDeletePreviousMonth);
+    elements.exportBtn.addEventListener('click', exportToExcel);
+    elements.removeDuplicatesBtn.addEventListener('click', confirmRemoveDuplicates);
+    elements.categoryFilter.addEventListener('change', handleFilterChange);
+    
+    elements.modal.addEventListener('click', (e) => {
+        if (e.target === elements.modal) ui.showModal({ show: false });
+    });
+    
+    elements.dataTableBody.addEventListener('click', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+
+        const editBtn = e.target.closest('.edit-btn');
+        const deleteBtn = e.target.closest('.delete-btn');
+        const expenseId = row.querySelector('.category-dropdown')?.dataset.expenseId || state.expenses.find(exp => exp.id === row.dataset.id)?.id;
+
+        if (editBtn && expenseId) {
+            const expense = state.expenses.find(exp => exp.id === expenseId);
+            if (expense) ui.openExpenseModal(expense);
+        }
+        if (deleteBtn && expenseId) {
+            confirmDeleteExpense(expenseId);
+        }
+    });
+    
+    elements.dataTableBody.addEventListener('change', (e) => {
+        if (e.target.classList.contains('category-dropdown')) {
+            handleCategoryChange(e);
+        }
+    });
+    
+    elements.summarySection.addEventListener('click', (e) => {
+        const card = e.target.closest('.summary-card.clickable');
+        if (card) {
+            ui.showCategoryDetailsModal(card.dataset.category, utils.getFilteredExpenses);
+        }
+    });
+
+    elements.addEmployeeBtn.addEventListener('click', () => ui.openAddEmployeeModal());
+    elements.sueldosUploadBtn.addEventListener('click', () => elements.sueldosUploadInput.click());
+    elements.sueldosUploadInput.addEventListener('change', handleSueldosFileUpload);
+    elements.resetSueldosFilterBtn.addEventListener('click', () => app.resetSueldosFilter());
+    elements.closeWeekBtn.addEventListener('click', confirmCloseWeek);
+    elements.deleteSueldosBtn.addEventListener('click', confirmDeleteSueldosData);
+
+    elements.sueldosTableContainer.addEventListener('click', (e) => {
+        const employeeCard = e.target.closest('.employee-card');
+        if (!employeeCard) return;
+        const employeeId = employeeCard.dataset.employeeId;
+        const employee = state.sueldosData.find(emp => emp.id === employeeId);
+
+        if (e.target.closest('.add-bono-btn')) ui.openBonoModal(employeeId);
+        if (e.target.closest('.add-gasto-btn')) ui.openGastoModal(employeeId);
+        if (e.target.closest('.share-text-btn') && employee) sendWhatsAppMessage(employee);
+        if (e.target.closest('.download-pdf-btn') && employee) ui.generateReportPdf(employee);
+        if (e.target.closest('.delete-adjustment-btn')) {
+            const { adjustmentId, adjustmentType } = e.target.closest('.delete-adjustment-btn').dataset;
+            confirmDeleteAdjustment(employeeId, adjustmentId, adjustmentType);
+        }
+        if (e.target.closest('.toggle-details-btn')) {
+            toggleEmployeeCard(employeeCard);
+        }
+    });
+
+    elements.sueldosTableContainer.addEventListener('input', (e) => {
+        if (e.target.classList.contains('hourly-rate-input')) {
+            const employeeId = e.target.closest('.employee-card').dataset.employeeId;
+            updateEmployeeRate(employeeId, parseFloat(e.target.value));
+        }
+    });
+    
+    elements.sueldosTableContainer.addEventListener('blur', (e) => {
+        if (e.target.matches('td[contenteditable="true"]')) {
+            updateSchedule(e.target);
+        }
+    }, true);
+
+    elements.sueldosTableContainer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey && e.target.matches('td[contenteditable="true"]')) {
+            e.preventDefault();
+            e.target.blur();
+        }
+    });
+
+    elements.resetHealthFilterBtn.addEventListener('click', () => {
+        if (app.healthPicker) app.healthPicker.clearSelection();
+    });
+    elements.leadsChartToggle.addEventListener('click', (e) => {
+        const button = e.target.closest('button');
+        if (button && !button.classList.contains('active')) {
+            elements.leadsChartToggle.querySelector('.active').classList.remove('active');
+            button.classList.add('active');
+            state.financials.leadsChartTimeframe = button.dataset.timeframe;
+            charts.updateLeadsTrendChart();
+        }
+    });
+    
+    window.addEventListener('keydown', (e) => {
+        if (elements.modal.classList.contains('visible')) {
+            if (e.key === 'Escape') { e.preventDefault(); elements.modalCancelBtn.click(); }
+            if (e.key === 'Enter') { 
+                e.preventDefault(); 
+                if (elements.modalConfirmBtn.style.display !== 'none') elements.modalConfirmBtn.click();
+            }
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+            e.preventDefault();
+            services.undoLastAction();
+        }
+    });
+}
+
+function exportToExcel() {
+    const expensesToExport = utils.getFilteredExpenses();
+    if (expensesToExport.length === 0) {
+        ui.showModal({
+            title: 'No hay datos',
+            body: 'No hay datos en la vista actual para exportar.',
+            showCancel: false, confirmText: 'Entendido'
+        });
+        return;
+    }
+
+    const worksheetData = expensesToExport.map(exp => ({
+        Fecha: exp.date, Concepto: exp.concept,
+        Cargo: exp.charge || 0, Ingreso: exp.credit || 0,
+        Categoria: exp.category || 'Sin Categorizar', Canal: exp.channel || '',
+        Tipo: exp.type || 'operativo', 'Sub-tipo': exp.sub_type || ''
+    }));
+
+    const worksheet = XLSX.utils.json_to_sheet(worksheetData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Gastos');
+
+    const { start, end } = state.dateFilter;
+    let datePart = 'todos-los-datos';
+    if (start && end) {
+        datePart = `${start.toISOString().split('T')[0]}_a_${end.toISOString().split('T')[0]}`;
+    }
+    
+    XLSX.writeFile(workbook, `Reporte_Gastos_${datePart}.xlsx`);
+}
+
+function handleTabClick(tab) {
     elements.tabs.forEach(t => t.classList.remove('active'));
     elements.tabContents.forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
 }
 
-export function confirmDeleteAllData() {
+function confirmDeleteAllData() {
     ui.showModal({
         title: "Confirmar Borrado Total",
         body: "<strong>¡Atención!</strong> Estás a punto de borrar TODOS los registros de gastos. Esta acción es irreversible. <br><br>¿Estás completamente seguro?",
@@ -238,7 +393,7 @@ export function confirmDeleteAllData() {
     });
 }
 
-export function confirmDeleteCurrentMonth() {
+function confirmDeleteCurrentMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
         body: "Vas a borrar todos los registros del mes actual. Esta acción no se puede deshacer. <br><br>¿Continuar?",
@@ -248,7 +403,7 @@ export function confirmDeleteCurrentMonth() {
     });
 }
 
-export function confirmDeletePreviousMonth() {
+function confirmDeletePreviousMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
         body: "Vas a borrar todos los registros del mes anterior. Esta acción no se puede deshacer. <br><br>¿Continuar?",
@@ -258,7 +413,7 @@ export function confirmDeletePreviousMonth() {
     });
 }
 
-export function confirmRemoveDuplicates() {
+function confirmRemoveDuplicates() {
     ui.showModal({
         title: "Confirmar Eliminación de Duplicados",
         body: "El sistema buscará y eliminará registros duplicados basados en fecha, concepto y montos. Esta acción no se puede deshacer. <br><br>¿Deseas continuar?",
@@ -268,11 +423,9 @@ export function confirmRemoveDuplicates() {
     });
 }
 
-export function handleFilterChange() {
-    app.renderData();
-}
+function handleFilterChange() { app.renderData(); }
 
-export function handleCategoryChange(e) {
+function handleCategoryChange(e) {
     const select = e.target;
     const expenseId = select.dataset.expenseId;
     const newCategory = select.value;
@@ -280,110 +433,36 @@ export function handleCategoryChange(e) {
     if(expense) services.saveExpense({...expense, category: newCategory}, expense.category);
 }
 
-export function confirmDeleteExpense(id) {
+function confirmDeleteExpense(id) {
     ui.showModal({
-        title: "Confirmar Eliminación",
-        body: "¿Estás seguro de que quieres borrar este registro único?",
-        confirmText: "Eliminar",
-        confirmClass: 'btn-danger',
+        title: "Confirmar Eliminación", body: "¿Estás seguro de que quieres borrar este registro único?",
+        confirmText: "Eliminar", confirmClass: 'btn-danger',
         onConfirm: () => services.deleteExpense(id)
     });
 }
 
-export function handleModalClick(e) {
-    if (e.target === elements.modal) {
-        ui.showModal({ show: false });
-    }
-}
+function confirmCloseWeek() { console.log('Confirm close week'); }
 
-export function handleKeyDown(e) {
-    if (elements.modal.classList.contains('visible')) {
-        if (e.key === 'Escape') {
-            e.preventDefault();
-            elements.modalCancelBtn.click();
-        }
-        if (e.key === 'Enter' && !e.target.matches('textarea')) { 
-            e.preventDefault();
-            if (elements.modalConfirmBtn.style.display !== 'none') {
-                elements.modalConfirmBtn.click();
-            }
-        }
-    } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
-        e.preventDefault();
-        services.undoLastAction();
-    }
-}
-
-export function openAddEmployeeModal() {
+function confirmDeleteSueldosData() { 
     ui.showModal({
-        title: "Agregar Nuevo Empleado",
-        body: `
-            <form id="add-employee-form">
-                <div class="form-group">
-                    <label for="employee-name">Nombre del Empleado</label>
-                    <input type="text" id="employee-name" class="modal-input" required>
-                </div>
-                 <div class="form-group">
-                    <label for="employee-rate">Tarifa por Hora ($)</label>
-                    <input type="number" id="employee-rate" class="modal-input" value="70" step="0.01" required>
-                </div>
-            </form>`,
-        confirmText: 'Agregar',
-        onConfirm: () => {
-            const nameInput = document.getElementById('employee-name');
-            const rateInput = document.getElementById('employee-rate');
-            const name = nameInput.value.trim();
-            const rate = parseFloat(rateInput.value);
-            if (name && !isNaN(rate) && rate > 0) {
-                services.addEmployee(name, rate);
-            } else {
-                alert("Por favor, ingresa un nombre y una tarifa válida.");
-            }
-        }
-    });
-}
-
-export function confirmCloseWeek() {
-    ui.showModal({
-        title: "Confirmar Cierre de Semana",
-        body: `
-            <p>Estás a punto de cerrar la semana. Esto hará lo siguiente:</p>
-            <ul>
-                <li>- Guardará los pagos finales en el historial de cada empleado.</li>
-                <li>- Registrará los pagos como gastos en la pestaña de 'Datos'.</li>
-                <li>- Reiniciará las horas, bonos y descuentos para la nueva semana.</li>
-            </ul>
-            <p><strong>Esta acción no se puede deshacer.</strong> ¿Continuar?</p>`,
-        confirmText: 'Sí, Cerrar Semana',
-        confirmClass: 'btn-success',
-        onConfirm: () => services.closeWeek()
-    });
-}
-
-export function confirmDeleteSueldosData() {
-    ui.showModal({
-        title: "Confirmar Eliminación Total",
-        body: "¿Estás seguro de que quieres borrar TODOS los datos de sueldos? Esto incluye empleados, registros, bonos y gastos. Esta acción es irreversible.",
-        confirmText: "Sí, Borrar Todo",
-        confirmClass: "btn-danger",
+        title: "Confirmar Eliminación",
+        body: "¿Estás seguro de que quieres borrar TODOS los datos de sueldos? Esta acción es irreversible.",
+        confirmText: "Sí, Borrar Todo", confirmClass: "btn-danger",
         onConfirm: () => services.deleteSueldosData()
     });
 }
 
-export function sendWhatsAppMessage(employee) {
+function sendWhatsAppMessage(employee) {
     const message = utils.generateWhatsAppMessage(employee);
     window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, '_blank');
 }
 
-export function updateSchedule(cell) {
+function updateSchedule(cell) {
     const employeeId = cell.closest('.employee-card').dataset.employeeId;
-    const type = cell.dataset.type;
-    const day = cell.closest('tr').querySelector('td:first-child').textContent;
-    const value = cell.textContent;
-    services.updateEmployeeTime(employeeId, day, type, value);
+    services.updateEmployeeTime(employeeId);
 }
 
-export function updateEmployeeRate(employeeId, newRate) {
+function updateEmployeeRate(employeeId, newRate) {
     const employee = state.sueldosData.find(emp => emp.id === employeeId);
     if (employee && !isNaN(newRate) && newRate >= 0) {
         services.updateEmployeeField(employeeId, 'ratePerHour', newRate);
@@ -393,44 +472,24 @@ export function updateEmployeeRate(employeeId, newRate) {
     }
 }
 
-export function confirmDeleteAdjustment(empId, adjId, type) {
+function confirmDeleteAdjustment(empId, adjId, type) {
     ui.showModal({
         title: "Confirmar Eliminación",
         body: `¿Estás seguro de que quieres eliminar este ${type === 'bono' ? 'bono' : 'gasto'}?`,
-        confirmText: "Eliminar",
-        confirmClass: "btn-danger",
+        confirmText: "Eliminar", confirmClass: "btn-danger",
         onConfirm: () => services.deleteAdjustment(empId, type, parseInt(adjId))
     });
 }
 
-export function toggleEmployeeCard(card) {
-    card.classList.toggle('collapsed');
-    const isCollapsed = card.classList.contains('collapsed');
+function toggleEmployeeCard(card) {
+    const body = card.querySelector('.employee-body');
     const button = card.querySelector('.toggle-details-btn');
-    if (button) {
-        button.setAttribute('aria-expanded', !isCollapsed);
-    }
-}
+    const icon = button.querySelector('i');
+    const isExpanded = button.getAttribute('aria-expanded') === 'true';
 
-export function handleLeadsChartToggle(e) {
-    const button = e.target.closest('button');
-    if (button && !button.classList.contains('active')) {
-        elements.leadsChartToggle.querySelector('.active').classList.remove('active');
-        button.classList.add('active');
-        state.financials.leadsChartTimeframe = button.dataset.timeframe;
-        charts.updateLeadsTrendChart();
-    }
+    button.setAttribute('aria-expanded', !isExpanded);
+    body.style.display = isExpanded ? 'none' : 'grid';
+    icon.classList.toggle('fa-chevron-up', !isExpanded);
+    icon.classList.toggle('fa-chevron-down', isExpanded);
+    card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
-
-export function resetSueldosFilter() {
-    if (app.sueldosPicker) {
-        app.sueldosPicker.clearSelection();
-    }
-}
-
-export function resetHealthFilter() {
-     if (app.healthPicker) {
-        app.healthPicker.clearSelection();
-    }
-}
-
