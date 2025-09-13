@@ -38,11 +38,7 @@ async function handleFileUpload(e) {
             
             console.log(`[LOG] Hoja de cálculo seleccionada: "${sheetName}"`);
             
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Se agrega { header: 1 } para leer el archivo como un array de arrays,
-            // igual que en la versión funcional antigua.
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-            // --- FIN DE LA CORRECCIÓN ---
 
             console.log(`[LOG] Datos crudos extraídos de Excel (primeras 10 filas):`, JSON.parse(JSON.stringify(jsonData.slice(0, 10))));
 
@@ -53,23 +49,66 @@ async function handleFileUpload(e) {
             console.log('[LOG] Llamando a utils.parseExpensesData...');
             const newExpenses = utils.parseExpensesData(jsonData, file.name.split('.').pop());
             console.log(`[LOG] Datos parseados por parseExpensesData. Total de registros válidos: ${newExpenses.length}`);
-            console.log(`[LOG] Muestra de datos parseados (primeros 5):`, JSON.parse(JSON.stringify(newExpenses.slice(0, 5))));
-
-            if (newExpenses.length > 0) {
-                console.log('[LOG] Guardando gastos en Firestore...');
-                await services.saveBulkExpenses(newExpenses);
-                console.log('[LOG] Gastos guardados correctamente.');
-            } else {
-                console.warn('[LOG] No se encontraron registros de gastos válidos para guardar.');
+            
+            if (newExpenses.length === 0) {
+                ui.showModal({
+                    title: 'Sin Datos Válidos',
+                    body: 'No se encontraron registros de gastos válidos en el archivo para procesar.',
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+                return;
             }
 
+            // --- LÓGICA DE DETECCIÓN DE DUPLICADOS ---
+            const existingSignatures = new Set(state.expenses.map(exp => utils.getExpenseSignature(exp)));
+            const newExpensesBySig = new Map();
 
-            ui.showModal({
-                title: 'Éxito',
-                body: `Se cargaron y procesaron correctamente ${newExpenses.length} registros del archivo.`,
-                confirmText: 'Entendido',
-                showCancel: false
+            newExpenses.forEach(expense => {
+                const sig = utils.getExpenseSignature(expense);
+                if (!newExpensesBySig.has(sig)) {
+                    newExpensesBySig.set(sig, []);
+                }
+                newExpensesBySig.get(sig).push(expense);
             });
+
+            const nonDuplicates = [];
+            const duplicateGroups = [];
+
+            for (const [sig, group] of newExpensesBySig.entries()) {
+                const isExisting = existingSignatures.has(sig);
+                const isIntraFile = group.length > 1;
+
+                if (isExisting || isIntraFile) {
+                    let reason = '';
+                    if (isExisting && isIntraFile) reason = 'Ya existe en la base de datos Y en el archivo';
+                    else if (isExisting) reason = 'Ya existe en la base de datos';
+                    else if (isIntraFile) reason = 'Duplicado dentro del archivo';
+                    
+                    duplicateGroups.push({
+                        signature: sig,
+                        expenses: group,
+                        reason: reason
+                    });
+                } else {
+                    nonDuplicates.push(group[0]);
+                }
+            }
+
+            // --- PUNTO DE DECISIÓN ---
+            if (duplicateGroups.length > 0) {
+                // Mostrar modal para que el usuario elija
+                ui.showDuplicateSelectionModal(duplicateGroups, nonDuplicates);
+            } else {
+                // Sin duplicados, guardar directamente
+                await services.saveBulkExpenses(nonDuplicates);
+                ui.showModal({
+                    title: 'Éxito',
+                    body: `Se cargaron y procesaron correctamente ${nonDuplicates.length} registros del archivo. No se encontraron duplicados.`,
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+            }
 
         } catch (error) {
             // Log a more detailed error
@@ -454,4 +493,5 @@ function toggleEmployeeCard(card) {
     icon.classList.toggle('fa-chevron-down', isExpanded);
     card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
+
 
