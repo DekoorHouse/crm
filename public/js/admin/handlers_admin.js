@@ -2,6 +2,7 @@ import { elements, state, app } from './state_admin.js';
 import * as utils from './utils_admin.js';
 import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
+import * as charts from './charts_admin.js'; // Assuming you have this module for charts
 
 /**
  * @file Módulo de manejadores de eventos.
@@ -31,7 +32,12 @@ async function handleFileUpload(e) {
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet);
+            
+            // --- INICIO DE LA CORRECCIÓN ---
+            // Se agrega { header: 1 } para leer el archivo como un array de arrays,
+            // igual que en la versión funcional antigua.
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            // --- FIN DE LA CORRECCIÓN ---
 
             if (jsonData.length === 0) {
                 throw new Error("El archivo Excel está vacío o no tiene el formato correcto.");
@@ -316,8 +322,8 @@ function handleTabClick(tab) {
 }
 
 function confirmDeleteAllData() { services.deleteAllData(); }
-function confirmDeleteCurrentMonth() { services.deleteCurrentMonthData(); }
-function confirmDeletePreviousMonth() { services.deletePreviousMonthData(); }
+function confirmDeleteCurrentMonth() { services.deleteCurrentMonth(); }
+function confirmDeletePreviousMonth() { services.deletePreviousMonth(); }
 function confirmRemoveDuplicates() { services.removeDuplicates(); }
 function handleFilterChange() { app.renderData(); }
 
@@ -389,4 +395,3 @@ function toggleEmployeeCard(card) {
     icon.classList.toggle('fa-chevron-down', isExpanded);
     card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
-
