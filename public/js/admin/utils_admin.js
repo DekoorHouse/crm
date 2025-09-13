@@ -6,6 +6,66 @@ import { state } from './state_admin.js';
  * formateo de datos, cálculos y categorización automática.
  */
 
+// --- INICIO DE LA CORRECCIÓN ---
+// Esta función ha sido reescrita para que coincida con la lógica
+// de la versión anterior que funcionaba correctamente.
+/**
+ * Parsea los datos de gastos desde un array de arrays (proveniente de una hoja de cálculo).
+ * @param {Array<Array<string|number>>} jsonData - Los datos crudos de la hoja.
+ * @param {string} fileType - La extensión del archivo ('xls' o 'xlsx').
+ * @returns {Array<object>} Un array de objetos de gasto formateados.
+ */
+export function parseExpensesData(jsonData) {
+    // Se salta las primeras 4 filas, igual que en el código antiguo.
+    const rowsToProcess = jsonData.slice(4);
+
+    return rowsToProcess.map(row => {
+        // Accede a los datos por el índice de la columna, no por el nombre del encabezado.
+        const rawDate = row[0];
+        const concept = String(row[1] || '').trim();
+        const charge = String(row[2] || '0').replace(/[^0-9.-]+/g, "");
+        const credit = String(row[3] || '0').replace(/[^0--9.]+/g, "");
+
+        let dateValue = '';
+        if (rawDate instanceof Date) {
+            // Asegura que la fecha se maneje correctamente sin problemas de zona horaria.
+            const d = new Date(Date.UTC(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate()));
+            if (!isNaN(d)) {
+                dateValue = d.toISOString().split('T')[0];
+            }
+        } else if (typeof rawDate === 'number') {
+            const d = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+            if (!isNaN(d)) {
+                const userTimezoneOffset = d.getTimezoneOffset() * 60000;
+                dateValue = new Date(d.getTime() + userTimezoneOffset).toISOString().split('T')[0];
+            }
+        }
+
+        if (!dateValue || !concept) {
+            return null; // Si falta la fecha o el concepto, la fila es inválida.
+        }
+        
+        const chargeValue = Math.abs(parseFloat(charge) || 0);
+        const creditValue = parseFloat(credit) || 0;
+
+        const expense = {
+            date: dateValue,
+            concept: concept,
+            charge: chargeValue,
+            credit: creditValue,
+            category: creditValue > 0 ? '' : autoCategorize(concept),
+            channel: '',
+            type: 'operativo',
+            sub_type: '',
+            source: 'xls'
+        };
+
+        return expense;
+    }).filter(e => e && (e.charge > 0 || e.credit > 0)); // Filtra filas inválidas y sin valores
+}
+// --- FIN DE LA CORRECCIÓN ---
+
+
 /**
  * Formatea un número como una cadena de moneda en formato MXN.
  * @param {number} amount - La cantidad numérica a formatear.
@@ -63,66 +123,6 @@ export function hashCode(str) {
 function convertExcelDate(excelDate) {
     const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
     return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
-}
-
-/**
- * Parsea los datos de gastos desde un array JSON (proveniente de una hoja de cálculo).
- * @param {Array<object>} jsonData - Los datos crudos de la hoja.
- * @param {string} fileType - La extensión del archivo ('xls' o 'xlsx').
- * @returns {Array<object>} Un array de objetos de gasto formateados.
- */
-export function parseExpensesData(jsonData, fileType) {
-    return jsonData.map(item => {
-        // Busca las cabeceras sin importar mayúsculas/minúsculas o acentos
-        const findKey = (keys) => {
-            const lowerKeys = keys.map(k => k.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
-            for (const itemKey in item) {
-                const lowerItemKey = itemKey.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-                if (lowerKeys.includes(lowerItemKey)) {
-                    return item[itemKey];
-                }
-            }
-            return undefined;
-        };
-
-        const dateRaw = findKey(['fecha', 'date']);
-        const concept = findKey(['concepto', 'descripcion', 'description', 'detalle']) || 'Sin concepto';
-        const charge = findKey(['cargo', 'egreso', 'salida', 'debit']) || 0;
-        const credit = findKey(['abono', 'ingreso', 'entrada', 'credit']) || 0;
-        
-        let date;
-        if (dateRaw instanceof Date) {
-            date = dateRaw.toISOString().split('T')[0];
-        } else if (typeof dateRaw === 'number') {
-            date = convertExcelDate(dateRaw).toISOString().split('T')[0];
-        } else if (typeof dateRaw === 'string') {
-            const parts = dateRaw.match(/(\d+)/g);
-            if (parts && parts.length >= 3) {
-                 const year = parts[2].length === 4 ? parts[2] : `20${parts[2]}`;
-                 const month = parts[0] > 12 ? parts[1] : parts[0];
-                 const day = parts[0] > 12 ? parts[0] : parts[1];
-                 date = new Date(`${year}-${month}-${day}`).toISOString().split('T')[0];
-            } else {
-                 date = new Date().toISOString().split('T')[0];
-            }
-        } else {
-            date = new Date().toISOString().split('T')[0];
-        }
-
-        const expense = {
-            date: date,
-            concept: String(concept),
-            charge: parseFloat(String(charge).replace(/[^0-9.-]+/g,"")) || 0,
-            credit: parseFloat(String(credit).replace(/[^0-9.-]+/g,"")) || 0,
-            type: 'operativo',
-            source: fileType,
-            channel: ''
-        };
-
-        expense.category = expense.charge > 0 ? autoCategorize(expense.concept) : '';
-
-        return expense;
-    }).filter(e => e.concept !== 'Sin concepto' && (e.charge > 0 || e.credit > 0));
 }
 
 
@@ -411,4 +411,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
