@@ -72,16 +72,22 @@ function convertExcelDate(excelDate) {
  * @returns {Array<object>} Un array de objetos de gasto formateados.
  */
 export function parseExpensesData(jsonData, fileType) {
+    console.log('[LOG-PARSE] Iniciando parseo de datos. Total de filas recibidas:', jsonData.length);
     // Se salta las primeras 4 filas, igual que en el código antiguo.
     const rowsToProcess = jsonData.slice(4);
+    console.log('[LOG-PARSE] Filas a procesar (después de slice(4)):', rowsToProcess.length);
 
-    return rowsToProcess.map(row => {
+    const mappedExpenses = rowsToProcess.map((row, index) => {
         // Accede a los datos por el índice de la columna, no por el nombre del encabezado.
         const rawDate = row[0];
         const concept = String(row[1] || '').trim();
         const charge = String(row[2] || '0').replace(/[^0-9.-]+/g, "");
         // CORRECCIÓN: Se arregló el error tipográfico en la expresión regular.
         const credit = String(row[3] || '0').replace(/[^0-9.-]+/g, "");
+
+        console.log(`[LOG-PARSE-ROW ${index + 5}] Fila cruda:`, row);
+        console.log(`[LOG-PARSE-ROW ${index + 5}] Extraído: Fecha cruda='${rawDate}', Concepto='${concept}', Cargo str='${charge}', Ingreso str='${credit}'`);
+
 
         let dateValue = '';
         if (rawDate instanceof Date) {
@@ -96,9 +102,15 @@ export function parseExpensesData(jsonData, fileType) {
                 const userTimezoneOffset = d.getTimezoneOffset() * 60000;
                 dateValue = new Date(d.getTime() + userTimezoneOffset).toISOString().split('T')[0];
             }
+        } else {
+            console.warn(`[LOG-PARSE-ROW ${index + 5}] El formato de la fecha no es ni Date ni número. Valor:`, rawDate, `Tipo: ${typeof rawDate}`);
         }
+        
+        console.log(`[LOG-PARSE-ROW ${index + 5}] Valor de fecha procesado: '${dateValue}'`);
+
 
         if (!dateValue || !concept) {
+            console.warn(`[LOG-PARSE-ROW ${index + 5}] Fila inválida. Se omitirá. (Fecha o concepto vacío)`);
             return null; // Si falta la fecha o el concepto, la fila es inválida.
         }
         
@@ -118,8 +130,17 @@ export function parseExpensesData(jsonData, fileType) {
             source: fileType || 'xls'
         };
 
+        console.log(`[LOG-PARSE-ROW ${index + 5}] Objeto de gasto creado:`, JSON.parse(JSON.stringify(expense)));
         return expense;
-    }).filter(e => e && (e.charge > 0 || e.credit > 0)); // Filtra filas inválidas y sin valores
+    });
+    
+    console.log(`[LOG-PARSE] Total de objetos mapeados (antes de filtrar nulos): ${mappedExpenses.length}.`);
+
+    const filteredExpenses = mappedExpenses.filter(e => e && (e.charge > 0 || e.credit > 0)); // Filtra filas inválidas y sin valores
+    
+    console.log(`[LOG-PARSE] Total de objetos finales (después de filtrar): ${filteredExpenses.length}.`);
+
+    return filteredExpenses;
 }
 
 
@@ -408,4 +429,3 @@ export function filterSueldos() {
         return employee;
     });
 }
-
