@@ -569,6 +569,7 @@ export function initDateRangePicker(callback) {
         return new Litepicker({
             element: elements.dateRangeFilter,
             singleMode: false,
+            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
@@ -585,6 +586,7 @@ export function initHealthDateRangePicker(callback) {
         return new Litepicker({
             element: elements.healthDateRangeFilter,
             singleMode: false,
+            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
@@ -601,6 +603,7 @@ export function initSueldosDateRangePicker(callback) {
         return new Litepicker({
             element: elements.sueldosDateRangeFilter,
             singleMode: false,
+            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
@@ -789,4 +792,5 @@ export function openBonoModal(employeeId) {
 export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
+
 
