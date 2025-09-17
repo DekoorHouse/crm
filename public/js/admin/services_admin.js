@@ -38,6 +38,13 @@ export function listenForKpis(onDataChange) {
     }, (error) => console.error("KPIs Listener Error:", error));
 }
 
+export function listenForAllPedidos() {
+    return onSnapshot(collection(db, "pedidos"), (snapshot) => {
+        state.allPedidos = snapshot.docs.map(doc => doc.data());
+        // No callback needed here, as this is just background data for the modal
+    }, (error) => console.error("All Pedidos Listener Error:", error));
+}
+
 export function listenForSueldos(onDataChange) {
      return onSnapshot(doc(db, "sueldos", "main"), (docSnap) => {
         if (docSnap.exists()) {
