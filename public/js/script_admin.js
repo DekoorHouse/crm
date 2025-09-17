@@ -66,6 +66,9 @@ const app = {
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.listenForKpis(onDataChange);
+        services.listenForAllPedidos(() => {
+            services.syncKpisWithPedidos();
+        });
         services.setupOrdersListener(() => this.renderFinancialHealth());
     },
     
