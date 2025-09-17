@@ -1,3 +1,4 @@
+import './admin/firebase_admin.js'; // Import for initialization
 import { app as appState, state, elements } from './admin/state_admin.js';
 import * as utils from './admin/utils_admin.js';
 import * as ui from './admin/ui-manager_admin.js';
@@ -65,9 +66,6 @@ const app = {
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.listenForKpis(onDataChange);
-        services.listenForAllPedidos(() => {
-            services.syncKpisWithPedidos();
-        });
         services.setupOrdersListener(() => this.renderFinancialHealth());
     },
     
@@ -168,4 +166,3 @@ const app = {
 
 // Punto de entrada de la aplicación
 document.addEventListener('DOMContentLoaded', () => app.init());
-
