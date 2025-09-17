@@ -1,4 +1,3 @@
-import './admin/firebase_admin.js'; // Import for initialization
 import { app as appState, state, elements } from './admin/state_admin.js';
 import * as utils from './admin/utils_admin.js';
 import * as ui from './admin/ui-manager_admin.js';
