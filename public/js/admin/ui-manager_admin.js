@@ -72,8 +72,6 @@ export function cacheElements() {
     elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
-    elements.addKpiBtn = document.getElementById('add-kpi-btn');
-    elements.kpiTableBody = document.getElementById('kpi-table-body');
 }
 
 /**
@@ -121,51 +119,6 @@ export function renderTable(expenses) {
         `;
         
         elements.dataTableBody.appendChild(tr);
-    });
-}
-
-export function renderKpiTable(kpis) {
-    const tableBody = document.getElementById('kpi-table-body');
-    if (!tableBody) return;
-
-    tableBody.innerHTML = '';
-
-    const sortedKpis = [...kpis].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
-
-    if (sortedKpis.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding: 20px;">No hay registros de KPIs. Agrega uno para empezar.</td></tr>`;
-        return;
-    }
-
-    sortedKpis.forEach(kpi => {
-        const tr = document.createElement('tr');
-        tr.dataset.id = kpi.id;
-
-        const cpl = kpi.lineas > 0 ? kpi.facebook / kpi.lineas : 0;
-        const cpv = kpi.pagados > 0 ? kpi.facebook / kpi.pagados : 0;
-        const subtotal = kpi.montoPagado - kpi.envios - kpi.bases - kpi.facebook;
-        const porc_pago = kpi.montoPagado > 0 ? subtotal / kpi.montoPagado : 0;
-        const ganado_por_linea = kpi.lineas > 0 ? subtotal / kpi.lineas : 0;
-
-        tr.innerHTML = `
-            <td>${kpi.fecha}</td>
-            <td>${formatCurrency(kpi.facebook)}</td>
-            <td>${kpi.lineas}</td>
-            <td>${formatCurrency(cpl)}</td>
-            <td>${kpi.pagados}</td>
-            <td>${formatCurrency(cpv)}</td>
-            <td>${formatCurrency(kpi.montoPagado)}</td>
-            <td>${formatCurrency(kpi.envios)}</td>
-            <td>${formatCurrency(kpi.bases)}</td>
-            <td>${formatCurrency(subtotal)}</td>
-            <td>${(porc_pago * 100).toFixed(2)}%</td>
-            <td>${formatCurrency(ganado_por_linea)}</td>
-            <td class="btn-group">
-                <button class="btn btn-outline btn-sm edit-kpi-btn"><i class="fas fa-pencil-alt"></i></button>
-                <button class="btn btn-outline btn-sm delete-kpi-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
-            </td>
-        `;
-        tableBody.appendChild(tr);
     });
 }
   
@@ -289,11 +242,6 @@ export function showCategoryDetailsModal(category, getFilteredExpenses) {
  * @param {object} options - Las opciones para configurar el modal.
  */
 export function showModal({ show = true, title, body, onConfirm, onModalOpen, confirmText = 'Confirmar', confirmClass = '', showCancel = true, showConfirm = true }) {
-      const modalContent = elements.modal.querySelector('.modal-content');
-      if (modalContent) {
-          modalContent.classList.remove('modal-lg');
-      }
-
       if (!show) { elements.modal.classList.remove('visible'); return; }
       elements.modalTitle.textContent = title;
       elements.modalBody.innerHTML = body;
@@ -305,114 +253,6 @@ export function showModal({ show = true, title, body, onConfirm, onModalOpen, co
       elements.modalCancelBtn.onclick = () => showModal({ show: false });
       elements.modal.classList.add('visible');
       if (onModalOpen) onModalOpen();
-}
-
-/**
- * Muestra un modal para que el usuario seleccione qué registros duplicados desea cargar.
- * @param {Array<object>} duplicateGroups - Grupos de gastos duplicados encontrados.
- * @param {Array<object>} nonDuplicates - Gastos únicos que se cargarán automáticamente.
- */
-export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
-    let tableRowsHtml = '';
-    let groupIndex = 0;
-    for (const group of duplicateGroups) {
-        tableRowsHtml += `<tr class="group-header"><td colspan="5"><strong>${group.reason}</strong> (${group.expenses.length} registros)</td></tr>`;
-        
-        let expenseIndex = 0;
-        for (const expense of group.expenses) {
-            tableRowsHtml += `
-                <tr data-group-index="${groupIndex}" data-expense-index="${expenseIndex}">
-                    <td><input type="checkbox" class="duplicate-checkbox" checked></td>
-                    <td>${expense.date}</td>
-                    <td>${expense.concept}</td>
-                    <td>${expense.charge > 0 ? formatCurrency(expense.charge) : ''}</td>
-                    <td>${expense.credit > 0 ? formatCurrency(expense.credit) : ''}</td>
-                </tr>
-            `;
-            expenseIndex++;
-        }
-        groupIndex++;
-    }
-
-    const modalBody = `
-        <p>Se encontraron ${duplicateGroups.reduce((acc, g) => acc + g.expenses.length, 0)} registros que podrían ser duplicados. Se cargarán <strong>${nonDuplicates.length}</strong> registros únicos automáticamente.</p>
-        <p>Por favor, selecciona los registros de la lista que también deseas cargar.</p>
-        <div class="table-container" style="max-height: 45vh; margin-top: 15px;">
-            <table class="table duplicate-table">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="select-all-duplicates" checked title="Seleccionar/Deseleccionar Todos"></th>
-                        <th>Fecha</th>
-                        <th>Concepto</th>
-                        <th>Cargo</th>
-                        <th>Ingreso</th>
-                    </tr>
-                </thead>
-                <tbody>${tableRowsHtml}</tbody>
-            </table>
-        </div>
-    `;
-
-    showModal({
-        title: 'Gestión de Duplicados al Cargar',
-        body: modalBody,
-        confirmText: 'Cargar Seleccionados',
-        onConfirm: async () => {
-            const selectedDuplicates = [];
-            const checkboxes = document.querySelectorAll('.duplicate-checkbox:checked');
-            
-            checkboxes.forEach(cb => {
-                const row = cb.closest('tr');
-                if (row && row.dataset.groupIndex) { // Asegurarse de no tomar el checkbox del header
-                    const groupIdx = parseInt(row.dataset.groupIndex, 10);
-                    const expenseIdx = parseInt(row.dataset.expenseIndex, 10);
-                    if (!isNaN(groupIdx) && !isNaN(expenseIdx)) {
-                        selectedDuplicates.push(duplicateGroups[groupIdx].expenses[expenseIdx]);
-                    }
-                }
-            });
-
-            const expensesToSave = [...nonDuplicates, ...selectedDuplicates];
-
-            if (expensesToSave.length > 0) {
-                try {
-                    await services.saveBulkExpenses(expensesToSave);
-                    showModal({
-                        title: 'Éxito',
-                        body: `Se han cargado <strong>${expensesToSave.length}</strong> registros en total. (${nonDuplicates.length} únicos y ${selectedDuplicates.length} duplicados seleccionados).`,
-                        confirmText: 'Entendido',
-                        showCancel: false
-                    });
-                } catch (error) {
-                     showModal({
-                        title: 'Error al Guardar',
-                        body: `No se pudieron guardar los registros. Error: ${error.message}`,
-                        confirmText: 'Cerrar',
-                        showCancel: false
-                    });
-                }
-            } else {
-                 showModal({
-                    title: 'Sin Cambios',
-                    body: 'No se seleccionó ningún registro para cargar.',
-                    confirmText: 'Entendido',
-                    showCancel: false
-                });
-            }
-        },
-        onModalOpen: () => {
-            const selectAllCheckbox = document.getElementById('select-all-duplicates');
-            if (selectAllCheckbox) {
-                selectAllCheckbox.addEventListener('change', (e) => {
-                    document.querySelectorAll('.duplicate-checkbox').forEach(cb => {
-                        cb.checked = e.target.checked;
-                    });
-                });
-            }
-            // Add this to make the modal larger
-            elements.modal.querySelector('.modal-content').classList.add('modal-lg');
-        }
-    });
 }
   
 /**
@@ -591,107 +431,6 @@ export function openFinancialModal() {
     });
 }
 
-export function openKpiModal(kpi = {}) {
-    const isEditing = !!kpi.id;
-    const title = isEditing ? 'Editar Registro de KPI' : 'Agregar Registro Diario de KPI';
-
-    const body = `
-        <form id="kpi-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-            <div class="form-group" style="grid-column: 1 / -1;">
-                <label for="kpi-date">Fecha</label>
-                <input type="date" id="kpi-date" class="modal-input" value="${kpi.fecha || new Date().toISOString().split('T')[0]}" required>
-            </div>
-            <div class="form-group">
-                <label for="kpi-facebook">Inversión Facebook ($)</label>
-                <input type="number" step="0.01" id="kpi-facebook" class="modal-input" placeholder="0.00" value="${kpi.facebook || ''}" required>
-            </div>
-             <div class="form-group">
-                <label for="kpi-envios">Envíos ($)</label>
-                <input type="number" step="0.01" id="kpi-envios" class="modal-input" placeholder="0.00" value="${kpi.envios || ''}" required>
-            </div>
-            <div class="form-group">
-                <label for="kpi-bases">Bases ($)</label>
-                <input type="number" step="0.01" id="kpi-bases" class="modal-input" placeholder="0.00" value="${kpi.bases || ''}" required>
-            </div>
-            <div style="grid-column: 1 / -1; border-top: 1px solid #e5e7eb; margin-top: 5px; padding-top: 15px;">
-                <p style="font-size: 12px; color: #6b7280; text-align: center; margin-bottom: 15px;">Los siguientes campos se calculan automáticamente desde los Pedidos.</p>
-            </div>
-            <div class="form-group">
-                <label for="kpi-lineas">Leads (Líneas)</label>
-                <input type="number" id="kpi-lineas" class="modal-input" placeholder="0" value="${kpi.lineas || ''}" readonly>
-            </div>
-            <div class="form-group">
-                <label for="kpi-pagados">Pagados</label>
-                <input type="number" id="kpi-pagados" class="modal-input" placeholder="0" value="${kpi.pagados || ''}" readonly>
-            </div>
-            <div class="form-group">
-                <label for="kpi-monto-pagado">$ Pagado</label>
-                <input type="number" step="0.01" id="kpi-monto-pagado" class="modal-input" placeholder="0.00" value="${kpi.montoPagado || ''}" readonly>
-            </div>
-        </form>
-    `;
-
-    showModal({
-        title: title,
-        body: body,
-        confirmText: 'Guardar',
-        onConfirm: () => {
-            const form = document.getElementById('kpi-form');
-            if (form.reportValidity()) {
-                const kpiData = {
-                    id: kpi.id,
-                    fecha: document.getElementById('kpi-date').value,
-                    facebook: parseFloat(document.getElementById('kpi-facebook').value) || 0,
-                    lineas: parseInt(document.getElementById('kpi-lineas').value) || 0,
-                    pagados: parseInt(document.getElementById('kpi-pagados').value) || 0,
-                    montoPagado: parseFloat(document.getElementById('kpi-monto-pagado').value) || 0,
-                    envios: parseFloat(document.getElementById('kpi-envios').value) || 0,
-                    bases: parseFloat(document.getElementById('kpi-bases').value) || 0,
-                };
-                services.saveKpi(kpiData);
-            }
-        },
-        onModalOpen: () => {
-            const dateInput = document.getElementById('kpi-date');
-            const leadsInput = document.getElementById('kpi-lineas');
-            const pagadosInput = document.getElementById('kpi-pagados');
-            const montoPagadoInput = document.getElementById('kpi-monto-pagado');
-
-            const calculateKpisForDate = (selectedDate) => {
-                if (!selectedDate) return;
-
-                const startOfDay = new Date(selectedDate);
-                startOfDay.setUTCHours(0, 0, 0, 0);
-
-                const endOfDay = new Date(selectedDate);
-                endOfDay.setUTCHours(23, 59, 59, 999);
-
-                const pedidosDelDia = state.allPedidos.filter(p => {
-                    if (!p.createdAt || !p.createdAt.toDate) return false;
-                    const pedidoDate = p.createdAt.toDate();
-                    return pedidoDate >= startOfDay && pedidoDate <= endOfDay;
-                });
-                
-                const leads = pedidosDelDia.length;
-                const pedidosPagados = pedidosDelDia.filter(p => p.estatus === 'Pagado');
-                const pagados = pedidosPagados.length;
-                const montoPagado = pedidosPagados.reduce((sum, p) => sum + (p.precio || 0), 0);
-                
-                leadsInput.value = leads;
-                pagadosInput.value = pagados;
-                montoPagadoInput.value = montoPagado.toFixed(2);
-            };
-
-            dateInput.addEventListener('change', (e) => calculateKpisForDate(e.target.value));
-            
-            // Si es un nuevo registro, calcular para la fecha actual al abrir
-            if (!isEditing) {
-                calculateKpisForDate(dateInput.value);
-            }
-        }
-    });
-}
-  
 /**
  * Rellena el select de filtro de categorías con las categorías existentes.
  */
@@ -717,7 +456,6 @@ export function initDateRangePicker(callback) {
         return new Litepicker({
             element: elements.dateRangeFilter,
             singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
@@ -734,7 +472,6 @@ export function initHealthDateRangePicker(callback) {
         return new Litepicker({
             element: elements.healthDateRangeFilter,
             singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
@@ -751,7 +488,6 @@ export function initSueldosDateRangePicker(callback) {
         return new Litepicker({
             element: elements.sueldosDateRangeFilter,
             singleMode: false,
-            autoApply: true, // Apply filter immediately after selecting range
             format: 'MMM D, YYYY',
             plugins: ['ranges'],
             setup: (picker) => {
