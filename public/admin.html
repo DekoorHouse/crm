@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Gestor de Negocio v6.29</title>
+  <title>Gestor de Negocio v6.30</title>
   
   <!-- Librerías -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -22,88 +22,13 @@
   
   <link rel="stylesheet" href="estilos/style_admin.css" />
 
-  <!-- Estilos movidos aquí para forzar la actualización -->
-  <style>
-    .rate-input-container {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        background-color: var(--gray-light);
-        padding: 4px 8px;
-        border-radius: 6px;
-    }
-    .rate-input-container label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-secondary);
-        cursor: pointer;
-    }
-    .hourly-rate-input {
-        width: 70px;
-        padding: 4px 6px;
-        border: 1px solid var(--gray-medium);
-        border-radius: 4px;
-        text-align: right;
-        font-size: 14px;
-        font-weight: 600;
-        background-color: var(--white);
-    }
-    .hourly-rate-input:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-        outline: none;
-    }
-    .employee-header-rate {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .employee-header-rate label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-secondary);
-    }
-    .rate-input-wrapper {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        border: 1px solid var(--gray-medium);
-        border-radius: 6px;
-        padding: 4px 8px;
-        background-color: var(--white);
-        transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .rate-input-wrapper:focus-within {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-    }
-    .rate-input-symbol {
-        font-size: 14px;
-        color: var(--text-secondary);
-    }
-    .hourly-rate-input {
-        width: 50px;
-        padding: 2px;
-        border: none;
-        border-radius: 4px;
-        text-align: right;
-        font-size: 14px;
-        font-weight: 600;
-        background-color: transparent;
-    }
-    .hourly-rate-input:focus {
-        box-shadow: none;
-        outline: none;
-    }
-  </style>
-
 </head>
 <body>
   
   <div class="container">
     <div class="card">
        <div class="card-header">
-        <h2><i class="fas fa-chart-line"></i> Gestor de Negocio v6.29</h2>
+        <h2><i class="fas fa-chart-line"></i> Gestor de Negocio v6.30</h2>
       </div>
       <div class="card-body" style="padding: 10px;">
          <div class="tabs">
@@ -210,14 +135,38 @@
            </div>
         </div>
 
-        <!-- Tab Content: KPIs -->
+        <!-- Tab Content: KPIs (CORREGIDO) -->
         <div class="tab-content" id="kpis-tab">
            <div class="card-body">
-             <div id="kpis-dashboard">
-                 <h2>Key Performance Indicators (KPIs)</h2>
-                 <p>Esta sección mostrará los indicadores clave de rendimiento del negocio.</p>
-                 <!-- El contenido de los KPIs se añadirá aquí -->
-             </div>
+                <div id="kpis-actions-container" style="margin-bottom: 20px;">
+                    <div class="btn-group">
+                        <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro KPI Diario</button>
+                    </div>
+                </div>
+                <div class="table-container" id="kpi-table-container">
+                    <table id="kpi-table">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Inversión FB</th>
+                                <th>Leads</th>
+                                <th>CPL</th>
+                                <th>Pagados</th>
+                                <th>CPV</th>
+                                <th>Monto Pagado</th>
+                                <th>Envíos</th>
+                                <th>Bases</th>
+                                <th>Subtotal</th>
+                                <th>% Ganancia</th>
+                                <th>Ganado/Lead</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="kpi-table-body">
+                            <!-- KPI rows will be rendered here -->
+                        </tbody>
+                    </table>
+                </div>
            </div>
         </div>
         
@@ -327,11 +276,7 @@
       </div>
   </div>
   
-  <!-- 
-    CORRECCIÓN:
-    La ruta al archivo de script se cambió de "script.js" a la correcta "js/script_admin.js".
-    El nombre del archivo original era incorrecto y no incluía la carpeta "js".
-  -->
-  <script type="module" src="js/script_admin.js"></script>
+  <!-- CORRECCIÓN: La ruta al script principal del panel de admin -->
+  <script type="module" src="js/admin/script_admin.js"></script>
 </body>
 </html>
