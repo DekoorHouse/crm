@@ -237,6 +237,7 @@ export function initEventListeners() {
     elements.exportBtn.addEventListener('click', exportToExcel);
     elements.removeDuplicatesBtn.addEventListener('click', confirmRemoveDuplicates);
     elements.categoryFilter.addEventListener('change', handleFilterChange);
+    elements.addKpiBtn.addEventListener('click', () => ui.openKpiModal());
     
     elements.modal.addEventListener('click', (e) => {
         if (e.target === elements.modal) ui.showModal({ show: false });
@@ -259,6 +260,23 @@ export function initEventListeners() {
         }
     });
     
+    elements.kpiTableBody.addEventListener('click', (e) => {
+        const row = e.target.closest('tr');
+        if (!row) return;
+
+        const editBtn = e.target.closest('.edit-kpi-btn');
+        const deleteBtn = e.target.closest('.delete-kpi-btn');
+        const kpiId = row.dataset.id;
+
+        if (editBtn && kpiId) {
+            const kpi = state.kpis.find(k => k.id === kpiId);
+            if (kpi) ui.openKpiModal(kpi);
+        }
+        if (deleteBtn && kpiId) {
+            confirmDeleteKpi(kpiId);
+        }
+    });
+
     elements.dataTableBody.addEventListener('change', (e) => {
         if (e.target.classList.contains('category-dropdown')) {
             handleCategoryChange(e);
@@ -393,6 +411,16 @@ function confirmDeleteAllData() {
     });
 }
 
+function confirmDeleteKpi(id) {
+    ui.showModal({
+        title: "Confirmar Eliminación",
+        body: "¿Estás seguro de que quieres borrar este registro de KPI?",
+        confirmText: "Eliminar",
+        confirmClass: 'btn-danger',
+        onConfirm: () => services.deleteKpi(id)
+    });
+}
+
 function confirmDeleteCurrentMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
@@ -493,3 +521,4 @@ function toggleEmployeeCard(card) {
     icon.classList.toggle('fa-chevron-down', isExpanded);
     card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
+
