@@ -38,16 +38,12 @@ export function listenForKpis(onDataChange) {
     }, (error) => console.error("KPIs Listener Error:", error));
 }
 
-export function listenForAllPedidos(onInitialLoad) {
+export function listenForAllPedidos() {
     return onSnapshot(collection(db, "pedidos"), (snapshot) => {
         state.allPedidos = snapshot.docs.map(doc => doc.data());
-        if (onInitialLoad) {
-            onInitialLoad();
-            onInitialLoad = null; // Ensure it only runs once
-        }
+        // No callback needed here, as this is just background data for the modal
     }, (error) => console.error("All Pedidos Listener Error:", error));
 }
-
 
 export function listenForSueldos(onDataChange) {
      return onSnapshot(doc(db, "sueldos", "main"), (docSnap) => {
@@ -451,88 +447,3 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
-export async function syncKpisWithPedidos() {
-    console.log("Sincronizando KPIs con Pedidos...");
-    const startDate = new Date('2025-09-01T06:00:00Z'); // Use UTC time
-    const today = new Date();
-    today.setUTCHours(23, 59, 59, 999);
-
-    if (state.allPedidos.length === 0) {
-        console.log("No hay pedidos cargados en el estado, saltando sincronización de KPIs.");
-        return;
-    }
-
-    // Group pedidos by date string (YYYY-MM-DD)
-    const pedidosByDate = state.allPedidos.reduce((acc, pedido) => {
-        if (pedido.createdAt && typeof pedido.createdAt.toDate === 'function') {
-            const dateStr = pedido.createdAt.toDate().toISOString().split('T')[0];
-            if (!acc[dateStr]) {
-                acc[dateStr] = [];
-            }
-            acc[dateStr].push(pedido);
-        }
-        return acc;
-    }, {});
-
-    const kpisCollection = collection(db, "daily_kpis");
-    const existingKpisSnapshot = await getDocs(kpisCollection);
-    const existingKpisByDate = existingKpisSnapshot.docs.reduce((acc, doc) => {
-        acc[doc.data().fecha] = { id: doc.id, ...doc.data() };
-        return acc;
-    }, {});
-
-    const batch = writeBatch(db);
-    let writes = 0;
-
-    for (let d = new Date(startDate); d <= today; d.setDate(d.getDate() + 1)) {
-        const dateStr = d.toISOString().split('T')[0];
-        const dailyPedidos = pedidosByDate[dateStr] || [];
-
-        const leads = dailyPedidos.length;
-        const paidPedidos = dailyPedidos.filter(p => p.estatus === 'Pagado');
-        const pagados = paidPedidos.length;
-        const montoPagado = paidPedidos.reduce((sum, p) => sum + (p.precio || 0), 0);
-
-        const existingKpi = existingKpisByDate[dateStr];
-        
-        if (leads > 0 || existingKpi) {
-            const kpiData = {
-                fecha: dateStr,
-                lineas: leads,
-                pagados: pagados,
-                montoPagado: montoPagado
-            };
-
-            let docRef;
-            if (existingKpi) {
-                docRef = doc(db, "daily_kpis", existingKpi.id);
-                // Preserve manual fields if they exist, otherwise default to 0
-                kpiData.facebook = existingKpi.facebook || 0;
-                kpiData.envios = existingKpi.envios || 0;
-                kpiData.bases = existingKpi.bases || 0;
-                batch.set(docRef, kpiData, { merge: true });
-            } else {
-                // This is a new record based on pedidos
-                docRef = doc(collection(db, "daily_kpis"));
-                kpiData.facebook = 0;
-                kpiData.envios = 0;
-                kpiData.bases = 0;
-                batch.set(docRef, kpiData);
-            }
-            writes++;
-        }
-    }
-
-    if (writes > 0) {
-        try {
-            await batch.commit();
-            console.log(`Sincronización de KPIs completada. ${writes} registros procesados.`);
-        } catch (error) {
-            console.error("Error al cometer el batch de KPIs:", error);
-        }
-    } else {
-        console.log("No se necesitaron actualizaciones de KPIs.");
-    }
-}
-
