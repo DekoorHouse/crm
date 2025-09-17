@@ -24,7 +24,6 @@ export const state = {
   sueldosData: [],
   sueldosDateFilter: { start: null, end: null },
   kpis: [],
-  allPedidos: [],
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],
@@ -74,4 +73,3 @@ export const actionHistory = [];
  * @type {object}
  */
 export const app = {};
-
