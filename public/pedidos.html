@@ -22,7 +22,11 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
 
-    <!-- CORRECCIÓN: Ruta al archivo CSS corregida -->
+    <!-- 
+      FIX: Corrected the path to the CSS file.
+      The original path "estilos.css" was incorrect because the file is inside the "estilos" directory.
+      The path has been changed to "estilos/estilos.css".
+    -->
     <link rel="stylesheet" href="estilos/estilos.css">
 </head>
 <body>
@@ -189,6 +193,7 @@
                      <div class="form-item form-item-full">
                         <label for="pedidoFotoPromocionFile">Fotos de la Promoción (Clic derecho o Ctrl+C para copiar):</label>
                         
+                        <!-- NEW CHECKBOX CONTAINER -->
                         <div class="checkbox-container" id="mismaFotoContainer" style="display: none;">
                             <input type="checkbox" id="mismaFotoCheckbox">
                             <label for="mismaFotoCheckbox">Usar la(s) misma(s) foto(s) del pedido</label>
@@ -292,6 +297,7 @@
     <button id="closeSearchBtn" title="Cerrar (Esc)">&times;</button>
 </div>
 
+<!-- Link to external JS file -->
 <script type="module" src="js/logica.js"></script>
 
 </body>
