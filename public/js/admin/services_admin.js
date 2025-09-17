@@ -31,6 +31,13 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
+export function listenForKpis(onDataChange) {
+    return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
+        state.kpis = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        onDataChange();
+    }, (error) => console.error("KPIs Listener Error:", error));
+}
+
 export function listenForSueldos(onDataChange) {
      return onSnapshot(doc(db, "sueldos", "main"), (docSnap) => {
         if (docSnap.exists()) {
@@ -103,6 +110,34 @@ export async function saveExpense(expenseData, originalCategory) {
     }
 }
 
+export async function saveKpi(kpiData) {
+    try {
+        const dataToSave = { ...kpiData };
+        delete dataToSave.id; // No guardar el ID dentro del documento
+
+        if (kpiData.id) {
+            const docRef = doc(db, "daily_kpis", kpiData.id);
+            await updateDoc(docRef, dataToSave);
+        } else {
+            // Revisar si ya existe un registro para esta fecha para evitar duplicados
+            const q = query(collection(db, "daily_kpis"), where("fecha", "==", kpiData.fecha));
+            const querySnapshot = await getDocs(q);
+            if (!querySnapshot.empty) {
+                // Existe, así que se actualiza en lugar de crear uno nuevo
+                const docToUpdate = querySnapshot.docs[0];
+                await updateDoc(docToUpdate.ref, dataToSave);
+            } else {
+                // No existe, se crea uno nuevo
+                await addDoc(collection(db, "daily_kpis"), dataToSave);
+            }
+        }
+        showModal({ show: false });
+    } catch (error) {
+        console.error("Error saving KPI:", error);
+        showModal({ title: 'Error', body: 'No se pudo guardar el registro de KPI.' });
+    }
+}
+
 export async function saveFinancialTransaction() {
     const form = document.getElementById('financial-form');
     if (!form.reportValidity()) return;
@@ -161,6 +196,16 @@ export async function deleteExpense(id) {
         console.error("Error borrando el registro:", error);
         actionHistory.pop();
         showModal({ title: 'Error', body: 'No se pudo borrar el registro.', showCancel: false });
+    }
+}
+
+export async function deleteKpi(id) {
+    try {
+        await deleteDoc(doc(db, "daily_kpis", id));
+        showModal({ show: false });
+    } catch (error) {
+        console.error("Error deleting KPI:", error);
+        showModal({ title: 'Error', body: 'No se pudo borrar el registro de KPI.', showCancel: false });
     }
 }
 
