@@ -1,8 +1,8 @@
-import { elements, state } from './state_admin.js';
+import { elements, state, app } from './state_admin.js';
 import * as utils from './utils_admin.js';
 import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
-import * as charts from './charts_admin.js';
+import * as charts from './charts_admin.js'; // Assuming you have this module for charts
 
 /**
  * @file Módulo de manejadores de eventos.
@@ -18,6 +18,8 @@ async function handleFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
 
+    console.log(`[LOG] Iniciando carga del archivo: ${file.name}, Tipo: ${file.type}, Tamaño: ${file.size} bytes`);
+
     ui.showModal({
         title: "Procesando Archivo...",
         body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se leen los datos del archivo.</p>',
@@ -28,18 +30,25 @@ async function handleFileUpload(e) {
     const reader = new FileReader();
     reader.onload = async (event) => {
         try {
+            console.log('[LOG] FileReader onload - Archivo leído en memoria.');
             const data = new Uint8Array(event.target.result);
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
             
+            console.log(`[LOG] Hoja de cálculo seleccionada: "${sheetName}"`);
+            
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            console.log(`[LOG] Datos crudos extraídos de Excel (primeras 10 filas):`, JSON.parse(JSON.stringify(jsonData.slice(0, 10))));
 
             if (jsonData.length === 0) {
                 throw new Error("El archivo Excel está vacío o no tiene el formato correcto.");
             }
 
+            console.log('[LOG] Llamando a utils.parseExpensesData...');
             const newExpenses = utils.parseExpensesData(jsonData, file.name.split('.').pop());
+            console.log(`[LOG] Datos parseados por parseExpensesData. Total de registros válidos: ${newExpenses.length}`);
             
             if (newExpenses.length === 0) {
                 ui.showModal({
@@ -51,7 +60,7 @@ async function handleFileUpload(e) {
                 return;
             }
 
-            // Lógica de detección de duplicados
+            // --- LÓGICA DE DETECCIÓN DE DUPLICADOS ---
             const existingSignatures = new Set(state.expenses.map(exp => utils.getExpenseSignature(exp)));
             const newExpensesBySig = new Map();
 
@@ -71,10 +80,13 @@ async function handleFileUpload(e) {
                 const isIntraFile = group.length > 1;
 
                 if (isExisting || isIntraFile) {
-                    let reason = isExisting ? 'Ya existe en la base de datos' : 'Duplicado dentro del archivo';
-                    if (isExisting && isIntraFile) reason += ' Y en el archivo';
+                    let reason = '';
+                    if (isExisting && isIntraFile) reason = 'Ya existe en la base de datos Y en el archivo';
+                    else if (isExisting) reason = 'Ya existe en la base de datos';
+                    else if (isIntraFile) reason = 'Duplicado dentro del archivo';
                     
                     duplicateGroups.push({
+                        signature: sig,
                         expenses: group,
                         reason: reason
                     });
@@ -83,23 +95,31 @@ async function handleFileUpload(e) {
                 }
             }
 
+            // --- PUNTO DE DECISIÓN ---
             if (duplicateGroups.length > 0) {
+                // Mostrar modal para que el usuario elija
                 ui.showDuplicateSelectionModal(duplicateGroups, nonDuplicates);
             } else {
+                // Sin duplicados, guardar directamente
                 await services.saveBulkExpenses(nonDuplicates);
                 ui.showModal({
                     title: 'Éxito',
-                    body: `Se cargaron y procesaron correctamente ${nonDuplicates.length} registros. No se encontraron duplicados.`,
+                    body: `Se cargaron y procesaron correctamente ${nonDuplicates.length} registros del archivo. No se encontraron duplicados.`,
                     confirmText: 'Entendido',
                     showCancel: false
                 });
             }
 
         } catch (error) {
-            console.error("Error detallado al procesar el archivo de gastos:", error);
+            // Log a more detailed error
+            console.error("Error detallado al procesar el archivo de gastos:", {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
             ui.showModal({
                 title: 'Error al Cargar',
-                body: `No se pudo procesar el archivo. <br><br><strong>Detalle:</strong> ${error.message}`,
+                body: `No se pudo procesar el archivo. Revisa la consola para más detalles. <br><br><strong>Detalle:</strong> ${error.message}`,
                 confirmText: 'Cerrar',
                 showCancel: false
             });
@@ -108,6 +128,7 @@ async function handleFileUpload(e) {
         }
     };
     reader.onerror = (error) => {
+         console.error('[LOG] FileReader onerror - Error de lectura:', error);
          ui.showModal({
             title: 'Error de Lectura',
             body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
@@ -119,8 +140,10 @@ async function handleFileUpload(e) {
     reader.readAsArrayBuffer(file);
 }
 
+
 /**
  * Procesa el archivo de sueldos cargado por el usuario.
+ * Lee la segunda hoja del excel, la parsea y la guarda en Firestore.
  * @param {Event} e - El evento 'change' del input de archivo.
  */
 async function handleSueldosFileUpload(e) {
@@ -141,7 +164,7 @@ async function handleSueldosFileUpload(e) {
             const workbook = XLSX.read(data, { type: 'array' });
 
             if (workbook.SheetNames.length < 2) {
-                throw new Error("El archivo Excel no tiene una segunda hoja para los datos de asistencia.");
+                throw new Error("El archivo Excel no tiene una segunda hoja. Asegúrate de que los datos de asistencia estén en la segunda hoja del archivo.");
             }
             const sheetName = workbook.SheetNames[1];
             const worksheet = workbook.Sheets[sheetName];
@@ -186,14 +209,22 @@ async function handleSueldosFileUpload(e) {
             e.target.value = '';
         }
     };
+    reader.onerror = (error) => {
+         ui.showModal({
+            title: 'Error de Lectura',
+            body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+        e.target.value = '';
+    };
     reader.readAsArrayBuffer(file);
 }
 
 /**
  * Inicializa todos los event listeners de la aplicación.
- * @param {object} app - La instancia principal de la aplicación.
  */
-export function initEventListeners(app) {
+export function initEventListeners() {
     elements.uploadBtn.addEventListener('click', () => elements.uploadInput.click());
     elements.uploadInput.addEventListener('change', handleFileUpload);
     
@@ -205,8 +236,7 @@ export function initEventListeners(app) {
     elements.deletePreviousMonthBtn.addEventListener('click', confirmDeletePreviousMonth);
     elements.exportBtn.addEventListener('click', exportToExcel);
     elements.removeDuplicatesBtn.addEventListener('click', confirmRemoveDuplicates);
-    elements.categoryFilter.addEventListener('change', () => app.renderData());
-    elements.addKpiBtn.addEventListener('click', () => ui.openKpiModal());
+    elements.categoryFilter.addEventListener('change', handleFilterChange);
     
     elements.modal.addEventListener('click', (e) => {
         if (e.target === elements.modal) ui.showModal({ show: false });
@@ -216,31 +246,19 @@ export function initEventListeners(app) {
         const row = e.target.closest('tr');
         if (!row) return;
 
-        const expenseId = row.dataset.id;
-        const expense = state.expenses.find(exp => exp.id === expenseId);
+        const editBtn = e.target.closest('.edit-btn');
+        const deleteBtn = e.target.closest('.delete-btn');
+        const expenseId = row.querySelector('.category-dropdown')?.dataset.expenseId || state.expenses.find(exp => exp.id === row.dataset.id)?.id;
 
-        if (e.target.closest('.edit-btn') && expense) {
-            ui.openExpenseModal(expense);
+        if (editBtn && expenseId) {
+            const expense = state.expenses.find(exp => exp.id === expenseId);
+            if (expense) ui.openExpenseModal(expense);
         }
-        if (e.target.closest('.delete-btn') && expenseId) {
+        if (deleteBtn && expenseId) {
             confirmDeleteExpense(expenseId);
         }
     });
     
-    elements.kpiTableBody.addEventListener('click', (e) => {
-        const row = e.target.closest('tr');
-        if (!row) return;
-        const kpiId = row.dataset.id;
-        const kpi = state.kpis.find(k => k.id === kpiId);
-
-        if (e.target.closest('.edit-kpi-btn') && kpi) {
-            ui.openKpiModal(kpi);
-        }
-        if (e.target.closest('.delete-kpi-btn') && kpiId) {
-            confirmDeleteKpi(kpiId);
-        }
-    });
-
     elements.dataTableBody.addEventListener('change', (e) => {
         if (e.target.classList.contains('category-dropdown')) {
             handleCategoryChange(e);
@@ -316,7 +334,7 @@ export function initEventListeners(app) {
     window.addEventListener('keydown', (e) => {
         if (elements.modal.classList.contains('visible')) {
             if (e.key === 'Escape') { e.preventDefault(); elements.modalCancelBtn.click(); }
-            if (e.key === 'Enter' && !e.shiftKey) { 
+            if (e.key === 'Enter') { 
                 e.preventDefault(); 
                 if (elements.modalConfirmBtn.style.display !== 'none') elements.modalConfirmBtn.click();
             }
@@ -375,16 +393,6 @@ function confirmDeleteAllData() {
     });
 }
 
-function confirmDeleteKpi(id) {
-    ui.showModal({
-        title: "Confirmar Eliminación",
-        body: "¿Estás seguro de que quieres borrar este registro de KPI?",
-        confirmText: "Eliminar",
-        confirmClass: 'btn-danger',
-        onConfirm: () => services.deleteKpi(id)
-    });
-}
-
 function confirmDeleteCurrentMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
@@ -414,6 +422,8 @@ function confirmRemoveDuplicates() {
         onConfirm: () => services.removeDuplicates()
     });
 }
+
+function handleFilterChange() { app.renderData(); }
 
 function handleCategoryChange(e) {
     const select = e.target;
@@ -473,23 +483,13 @@ function confirmDeleteAdjustment(empId, adjId, type) {
 
 function toggleEmployeeCard(card) {
     const body = card.querySelector('.employee-body');
-    const isExpanded = !body.classList.contains('collapsed');
-    
-    // For JS-driven animation, we can't just toggle a class
-    if (isExpanded) {
-        // Collapse
-        body.style.maxHeight = body.scrollHeight + 'px'; // Set initial height
-        setTimeout(() => { body.style.maxHeight = '0'; }, 10);
-        body.classList.add('collapsed');
-    } else {
-        // Expand
-        body.classList.remove('collapsed');
-        body.style.maxHeight = body.scrollHeight + 'px';
-        // After animation, remove max-height to allow content to resize
-        setTimeout(() => {
-            if (!body.classList.contains('collapsed')) {
-                 body.style.maxHeight = null;
-            }
-        }, 500);
-    }
+    const button = card.querySelector('.toggle-details-btn');
+    const icon = button.querySelector('i');
+    const isExpanded = button.getAttribute('aria-expanded') === 'true';
+
+    button.setAttribute('aria-expanded', !isExpanded);
+    body.style.display = isExpanded ? 'none' : 'grid';
+    icon.classList.toggle('fa-chevron-up', !isExpanded);
+    icon.classList.toggle('fa-chevron-down', isExpanded);
+    card.querySelector('.employee-header-rate').style.display = isExpanded ? 'none' : 'flex';
 }
