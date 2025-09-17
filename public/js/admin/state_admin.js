@@ -23,6 +23,7 @@ export const state = {
   categoryFilter: 'all',
   sueldosData: [],
   sueldosDateFilter: { start: null, end: null },
+  kpis: [],
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],
