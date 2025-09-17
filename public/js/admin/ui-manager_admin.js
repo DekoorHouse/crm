@@ -605,25 +605,28 @@ export function openKpiModal(kpi = {}) {
                 <label for="kpi-facebook">Inversión Facebook ($)</label>
                 <input type="number" step="0.01" id="kpi-facebook" class="modal-input" placeholder="0.00" value="${kpi.facebook || ''}" required>
             </div>
-            <div class="form-group">
-                <label for="kpi-lineas">Leads (Líneas)</label>
-                <input type="number" id="kpi-lineas" class="modal-input" placeholder="0" value="${kpi.lineas || ''}" required>
-            </div>
-            <div class="form-group">
-                <label for="kpi-pagados">Pagados</label>
-                <input type="number" id="kpi-pagados" class="modal-input" placeholder="0" value="${kpi.pagados || ''}" required>
-            </div>
-            <div class="form-group">
-                <label for="kpi-monto-pagado">$ Pagado</label>
-                <input type="number" step="0.01" id="kpi-monto-pagado" class="modal-input" placeholder="0.00" value="${kpi.montoPagado || ''}" required>
-            </div>
-            <div class="form-group">
+             <div class="form-group">
                 <label for="kpi-envios">Envíos ($)</label>
                 <input type="number" step="0.01" id="kpi-envios" class="modal-input" placeholder="0.00" value="${kpi.envios || ''}" required>
             </div>
             <div class="form-group">
                 <label for="kpi-bases">Bases ($)</label>
                 <input type="number" step="0.01" id="kpi-bases" class="modal-input" placeholder="0.00" value="${kpi.bases || ''}" required>
+            </div>
+            <div style="grid-column: 1 / -1; border-top: 1px solid #e5e7eb; margin-top: 5px; padding-top: 15px;">
+                <p style="font-size: 12px; color: #6b7280; text-align: center; margin-bottom: 15px;">Los siguientes campos se calculan automáticamente desde los Pedidos.</p>
+            </div>
+            <div class="form-group">
+                <label for="kpi-lineas">Leads (Líneas)</label>
+                <input type="number" id="kpi-lineas" class="modal-input" placeholder="0" value="${kpi.lineas || ''}" readonly>
+            </div>
+            <div class="form-group">
+                <label for="kpi-pagados">Pagados</label>
+                <input type="number" id="kpi-pagados" class="modal-input" placeholder="0" value="${kpi.pagados || ''}" readonly>
+            </div>
+            <div class="form-group">
+                <label for="kpi-monto-pagado">$ Pagado</label>
+                <input type="number" step="0.01" id="kpi-monto-pagado" class="modal-input" placeholder="0.00" value="${kpi.montoPagado || ''}" readonly>
             </div>
         </form>
     `;
@@ -646,6 +649,44 @@ export function openKpiModal(kpi = {}) {
                     bases: parseFloat(document.getElementById('kpi-bases').value) || 0,
                 };
                 services.saveKpi(kpiData);
+            }
+        },
+        onModalOpen: () => {
+            const dateInput = document.getElementById('kpi-date');
+            const leadsInput = document.getElementById('kpi-lineas');
+            const pagadosInput = document.getElementById('kpi-pagados');
+            const montoPagadoInput = document.getElementById('kpi-monto-pagado');
+
+            const calculateKpisForDate = (selectedDate) => {
+                if (!selectedDate) return;
+
+                const startOfDay = new Date(selectedDate);
+                startOfDay.setUTCHours(0, 0, 0, 0);
+
+                const endOfDay = new Date(selectedDate);
+                endOfDay.setUTCHours(23, 59, 59, 999);
+
+                const pedidosDelDia = state.allPedidos.filter(p => {
+                    if (!p.createdAt || !p.createdAt.toDate) return false;
+                    const pedidoDate = p.createdAt.toDate();
+                    return pedidoDate >= startOfDay && pedidoDate <= endOfDay;
+                });
+                
+                const leads = pedidosDelDia.length;
+                const pedidosPagados = pedidosDelDia.filter(p => p.estatus === 'Pagado');
+                const pagados = pedidosPagados.length;
+                const montoPagado = pedidosPagados.reduce((sum, p) => sum + (p.precio || 0), 0);
+                
+                leadsInput.value = leads;
+                pagadosInput.value = pagados;
+                montoPagadoInput.value = montoPagado.toFixed(2);
+            };
+
+            dateInput.addEventListener('change', (e) => calculateKpisForDate(e.target.value));
+            
+            // Si es un nuevo registro, calcular para la fecha actual al abrir
+            if (!isEditing) {
+                calculateKpisForDate(dateInput.value);
             }
         }
     });
