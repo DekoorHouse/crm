@@ -72,6 +72,8 @@ export function cacheElements() {
     elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
+    elements.addKpiBtn = document.getElementById('add-kpi-btn');
+    elements.kpiTableBody = document.getElementById('kpi-table-body');
 }
 
 /**
@@ -119,6 +121,51 @@ export function renderTable(expenses) {
         `;
         
         elements.dataTableBody.appendChild(tr);
+    });
+}
+
+export function renderKpiTable(kpis) {
+    const tableBody = document.getElementById('kpi-table-body');
+    if (!tableBody) return;
+
+    tableBody.innerHTML = '';
+
+    const sortedKpis = [...kpis].sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+    if (sortedKpis.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="13" style="text-align:center; padding: 20px;">No hay registros de KPIs. Agrega uno para empezar.</td></tr>`;
+        return;
+    }
+
+    sortedKpis.forEach(kpi => {
+        const tr = document.createElement('tr');
+        tr.dataset.id = kpi.id;
+
+        const cpl = kpi.lineas > 0 ? kpi.facebook / kpi.lineas : 0;
+        const cpv = kpi.pagados > 0 ? kpi.facebook / kpi.pagados : 0;
+        const subtotal = kpi.montoPagado - kpi.envios - kpi.bases;
+        const porc_pago = kpi.montoPagado > 0 ? subtotal / kpi.montoPagado : 0;
+        const ganado_por_linea = kpi.lineas > 0 ? subtotal / kpi.lineas : 0;
+
+        tr.innerHTML = `
+            <td>${kpi.fecha}</td>
+            <td>${formatCurrency(kpi.facebook)}</td>
+            <td>${kpi.lineas}</td>
+            <td>${formatCurrency(cpl)}</td>
+            <td>${kpi.pagados}</td>
+            <td>${formatCurrency(cpv)}</td>
+            <td>${formatCurrency(kpi.montoPagado)}</td>
+            <td>${formatCurrency(kpi.envios)}</td>
+            <td>${formatCurrency(kpi.bases)}</td>
+            <td>${formatCurrency(subtotal)}</td>
+            <td>${(porc_pago * 100).toFixed(2)}%</td>
+            <td>${formatCurrency(ganado_por_linea)}</td>
+            <td class="btn-group">
+                <button class="btn btn-outline btn-sm edit-kpi-btn"><i class="fas fa-pencil-alt"></i></button>
+                <button class="btn btn-outline btn-sm delete-kpi-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
+            </td>
+        `;
+        tableBody.appendChild(tr);
     });
 }
   
@@ -544,6 +591,66 @@ export function openFinancialModal() {
     });
 }
 
+export function openKpiModal(kpi = {}) {
+    const isEditing = !!kpi.id;
+    const title = isEditing ? 'Editar Registro de KPI' : 'Agregar Registro Diario de KPI';
+
+    const body = `
+        <form id="kpi-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <div class="form-group" style="grid-column: 1 / -1;">
+                <label for="kpi-date">Fecha</label>
+                <input type="date" id="kpi-date" class="modal-input" value="${kpi.fecha || new Date().toISOString().split('T')[0]}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-facebook">Inversión Facebook ($)</label>
+                <input type="number" step="0.01" id="kpi-facebook" class="modal-input" placeholder="0.00" value="${kpi.facebook || ''}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-lineas">Leads (Líneas)</label>
+                <input type="number" id="kpi-lineas" class="modal-input" placeholder="0" value="${kpi.lineas || ''}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-pagados">Pagados</label>
+                <input type="number" id="kpi-pagados" class="modal-input" placeholder="0" value="${kpi.pagados || ''}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-monto-pagado">$ Pagado</label>
+                <input type="number" step="0.01" id="kpi-monto-pagado" class="modal-input" placeholder="0.00" value="${kpi.montoPagado || ''}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-envios">Envíos ($)</label>
+                <input type="number" step="0.01" id="kpi-envios" class="modal-input" placeholder="0.00" value="${kpi.envios || ''}" required>
+            </div>
+            <div class="form-group">
+                <label for="kpi-bases">Bases ($)</label>
+                <input type="number" step="0.01" id="kpi-bases" class="modal-input" placeholder="0.00" value="${kpi.bases || ''}" required>
+            </div>
+        </form>
+    `;
+
+    showModal({
+        title: title,
+        body: body,
+        confirmText: 'Guardar',
+        onConfirm: () => {
+            const form = document.getElementById('kpi-form');
+            if (form.reportValidity()) {
+                const kpiData = {
+                    id: kpi.id,
+                    fecha: document.getElementById('kpi-date').value,
+                    facebook: parseFloat(document.getElementById('kpi-facebook').value) || 0,
+                    lineas: parseInt(document.getElementById('kpi-lineas').value) || 0,
+                    pagados: parseInt(document.getElementById('kpi-pagados').value) || 0,
+                    montoPagado: parseFloat(document.getElementById('kpi-monto-pagado').value) || 0,
+                    envios: parseFloat(document.getElementById('kpi-envios').value) || 0,
+                    bases: parseFloat(document.getElementById('kpi-bases').value) || 0,
+                };
+                services.saveKpi(kpiData);
+            }
+        }
+    });
+}
+  
 /**
  * Rellena el select de filtro de categorías con las categorías existentes.
  */
@@ -792,5 +899,4 @@ export function openBonoModal(employeeId) {
 export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
-
 
