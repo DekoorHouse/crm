@@ -143,7 +143,7 @@ export function renderKpiTable(kpis) {
 
         const cpl = kpi.lineas > 0 ? kpi.facebook / kpi.lineas : 0;
         const cpv = kpi.pagados > 0 ? kpi.facebook / kpi.pagados : 0;
-        const subtotal = kpi.montoPagado - kpi.envios - kpi.bases;
+        const subtotal = kpi.montoPagado - kpi.envios - kpi.bases - kpi.facebook;
         const porc_pago = kpi.montoPagado > 0 ? subtotal / kpi.montoPagado : 0;
         const ganado_por_linea = kpi.lineas > 0 ? subtotal / kpi.lineas : 0;
 
