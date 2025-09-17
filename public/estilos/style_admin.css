@@ -49,6 +49,64 @@
       margin: 20px auto;
       padding: 0 20px;
     }
+    
+    /* --- INICIO DE CORRECCIÓN: Estilos para Login y Header --- */
+    #login-section {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 80vh;
+    }
+    .login-container {
+        background-color: var(--white);
+        padding: 40px;
+        border-radius: 12px;
+        box-shadow: 0 5px 25px rgba(0,0,0,0.1);
+        text-align: center;
+        max-width: 420px;
+        width: 100%;
+    }
+    .login-container h1 {
+        margin-bottom: 25px;
+        font-size: 22px;
+        color: var(--primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+    }
+    .login-container .btn {
+        width: 100%;
+        margin-top: 10px;
+    }
+    #login-error-message {
+        margin-top: 15px;
+        color: var(--danger);
+        font-weight: 500;
+        min-height: 1.2em;
+        font-size: 14px;
+    }
+    .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        font-size: 14px;
+    }
+    .user-info #logout-btn {
+        background-color: rgba(255,255,255,0.2);
+        border-color: rgba(255,255,255,0.5);
+        color: var(--white);
+    }
+    .user-info #logout-btn:hover {
+        background-color: rgba(255,255,255,0.3);
+        border-color: var(--white);
+    }
+    /* --- FIN DE CORRECCIÓN --- */
 
     .card {
       background-color: var(--white);
@@ -104,6 +162,12 @@
       transform: translateY(-2px);
       box-shadow: 0 4px 10px rgba(0,0,0,0.1);
     }
+    .btn:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+    }
     .btn.btn-primary:hover { background-color: var(--primary-dark); }
     .btn.btn-sm { padding: 5px 10px; font-size: 12px; }
     
@@ -141,7 +205,7 @@
       align-items: center;
     }
     
-    #actions-container {
+    #actions-container, #kpis-actions-container {
         display: flex;
         flex-wrap: wrap;
         align-items: center;
@@ -178,6 +242,8 @@
       overflow-y: auto;
       position: relative;
       transition: max-height 0.4s ease-out;
+      border: 1px solid var(--gray-medium);
+      border-radius: 8px;
     }
     
     table {
@@ -209,9 +275,9 @@
       border-top: 2px solid var(--gray-dark);
     }
     
-    tr:hover { background-color: #f9fafb; }
+    tbody tr:hover { background-color: #f9fafb; }
 
-    select, input[type="text"], input[type="date"], input[type="number"] {
+    select, input[type="text"], input[type="date"], input[type="number"], input[type="password"], input[type="email"] {
       width: 100%;
       padding: 8px 12px;
       border: 1px solid var(--gray-medium);
@@ -226,7 +292,6 @@
         outline: none;
     }
     
-    /* Style for the new category dropdown in the table */
     .category-dropdown {
         width: 100%;
         padding: 6px 8px;
@@ -282,16 +347,15 @@
       font-weight: 600;
     }
     
-    /* Category Card Specific Styles */
     .summary-card.TotalNeto { border-left-color: var(--c-neto); }
     .summary-card.TotalNeto .icon-container { background-color: #f3e8ff; color: var(--c-neto); }
     .summary-card.TotalNeto .summary-card-value { color: var(--c-neto); }
-    .summary-card.TotalCargos { border-left-color: var(--primary); }
-    .summary-card.TotalCargos .icon-container { background-color: #dbeafe; color: var(--primary); }
-    .summary-card.TotalCargos .summary-card-value { color: var(--primary); }
     .summary-card.TotalIngresos { border-left-color: var(--success); }
     .summary-card.TotalIngresos .icon-container { background-color: #dcfce7; color: var(--success); }
     .summary-card.TotalIngresos .summary-card-value { color: var(--success); }
+    .summary-card.TotalCargos { border-left-color: var(--primary); }
+    .summary-card.TotalCargos .icon-container { background-color: #dbeafe; color: var(--primary); }
+    .summary-card.TotalCargos .summary-card-value { color: var(--primary); }
     .summary-card.Alex { border-left-color: var(--c-alex); }
     .summary-card.Alex .icon-container { background-color: #dbeafe; color: var(--c-alex); }
     .summary-card.Alex .summary-card-value { color: var(--c-alex); }
@@ -364,7 +428,6 @@
       position: relative;
     }
     
-    /* Modal styles */
     .modal-overlay {
       position: fixed;
       top: 0; left: 0;
@@ -447,7 +510,6 @@
         background-color: #128c7e;
     }
 
-    /* --- SUELDOS TAB STYLES --- */
     #sueldos-table-container {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(650px, 1fr));
@@ -512,17 +574,8 @@
         display: flex;
         align-items: center;
         gap: 8px;
-        transition: opacity 0.3s ease-in-out;
     }
-    .employee-card.collapsed .employee-header-rate {
-        opacity: 0;
-        pointer-events: none;
-    }
-    .employee-header-rate label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-secondary);
-    }
+    .employee-card.collapsed .employee-header-rate { display: none; }
     .rate-input-wrapper {
         display: flex;
         align-items: center;
@@ -560,17 +613,10 @@
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap: 20px;
-      max-height: 500px; /* Give it a max-height for transition */
-      overflow: hidden;
-      transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out, opacity 0.3s ease-in-out;
-      opacity: 1;
+      transition: all 0.5s ease-in-out;
     }
-    .employee-card.collapsed .employee-body {
-        max-height: 0;
-        padding-top: 0;
-        padding-bottom: 0;
-        opacity: 0;
-        overflow: hidden;
+    .employee-body.collapsed {
+        display: none;
     }
     .employee-body .table-container {
         max-height: 250px;
@@ -584,10 +630,7 @@
     .employee-body table td[contenteditable="true"] {
         background-color: #fefce8;
         cursor: text;
-        white-space: pre-wrap; /* Allow multiline editing */
-    }
-    .employee-payment-summary {
-      font-size: 14px;
+        white-space: pre-wrap;
     }
     .payment-history-container h6, .payment-history-container th {
         font-size: 12px;
@@ -673,15 +716,7 @@
         padding: 5px;
         color: var(--text-secondary);
     }
-    .toggle-details-btn i {
-        transition: transform 0.3s ease-in-out;
-    }
-    .employee-card.collapsed .toggle-details-btn i {
-        transform: rotate(-180deg);
-    }
-
-
-    /* --- FINANCIAL HEALTH TAB STYLES --- */
+    
     #health-dashboard {
         display: grid;
         grid-template-columns: 1fr 2fr;
@@ -736,7 +771,7 @@
     }
     .thermometer-bar {
         height: 100%;
-        width: 50%; /* Default to break-even */
+        width: 50%;
         position: absolute;
         left: 0;
         top: 0;
@@ -772,4 +807,3 @@
      @media (max-width: 768px) {
         .employee-body { grid-template-columns: 1fr; }
     }
-
