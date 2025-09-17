@@ -1,10 +1,11 @@
-import './admin/firebase_admin.js'; // Import for initialization
-import { app as appState, state, elements } from './admin/state_admin.js';
-import * as utils from './admin/utils_admin.js';
-import * as ui from './admin/ui-manager_admin.js';
-import * as services from './admin/services_admin.js';
-import * as charts from './admin/charts_admin.js';
-import { initEventListeners } from './admin/handlers_admin.js';
+import { elements, state, app as appState } from './state_admin.js';
+import * as utils from './utils_admin.js';
+import * as ui from './ui-manager_admin.js';
+import * as services from './services_admin.js';
+import * as charts from './charts_admin.js';
+import { initEventListeners } from './handlers_admin.js';
+import { auth } from './firebase_admin.js';
+import { onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
 /**
  * @file Punto de entrada y orquestador principal del panel de administración.
@@ -22,15 +23,22 @@ const app = {
      * Inicializa la aplicación completa.
      */
     init() {
-        try {
-            this.cacheElements();
-            initEventListeners(this);
-            // Firebase se inicializa al importar el módulo, así que llamamos onFirebaseReady directamente.
-            this.onFirebaseReady();
-        } catch (error) {
-            console.error("Error fatal durante la inicialización:", error);
-            document.body.innerHTML = '<div style="text-align: center; padding: 50px;"><h1>Error</h1><p>Ocurrió un error al cargar la aplicación. Por favor, intente recargar la página.</p></div>';
-        }
+        onAuthStateChanged(auth, user => {
+            if (user) {
+                try {
+                    this.cacheElements();
+                    // Pasamos 'this' (el objeto app) a los handlers para evitar dependencias circulares
+                    initEventListeners(this); 
+                    this.onFirebaseReady();
+                } catch (error) {
+                    console.error("Error fatal durante la inicialización:", error);
+                    document.body.innerHTML = '<div style="text-align: center; padding: 50px;"><h1>Error</h1><p>Ocurrió un error al cargar la aplicación. Por favor, intente recargar la página.</p></div>';
+                }
+            } else {
+                // Lógica de logout o si no hay usuario
+                console.log("No user is signed in.");
+            }
+        });
     },
 
     /**
@@ -66,6 +74,7 @@ const app = {
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.listenForKpis(onDataChange);
+        services.listenForAllPedidos(); // Carga todos los pedidos en segundo plano para los cálculos
         services.setupOrdersListener(() => this.renderFinancialHealth());
     },
     
@@ -111,7 +120,10 @@ const app = {
     renderFinancialHealth() {
         charts.updateFinancialHealthDashboard(() => utils.getFilteredExpenses(true));
     },
-
+    
+    /**
+     * Renderiza la tabla de KPIs.
+     */
     renderKpis() {
         ui.renderKpiTable(state.kpis);
     },
