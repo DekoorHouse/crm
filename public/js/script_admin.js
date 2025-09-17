@@ -60,10 +60,12 @@ const app = {
             this.renderSummary();
             this.renderAllCharts();
             this.renderFinancialHealth();
+            this.renderKpis();
         };
         services.listenForExpenses(onDataChange);
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
+        services.listenForKpis(onDataChange);
         services.setupOrdersListener(() => this.renderFinancialHealth());
     },
     
@@ -108,6 +110,10 @@ const app = {
      */
     renderFinancialHealth() {
         charts.updateFinancialHealthDashboard(() => utils.getFilteredExpenses(true));
+    },
+
+    renderKpis() {
+        ui.renderKpiTable(state.kpis);
     },
 
     /**
@@ -160,3 +166,4 @@ const app = {
 
 // Punto de entrada de la aplicación
 document.addEventListener('DOMContentLoaded', () => app.init());
+
