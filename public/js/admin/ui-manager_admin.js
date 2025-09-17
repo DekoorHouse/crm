@@ -659,15 +659,13 @@ export function openKpiModal(kpi = {}) {
 
             const calculateKpisForDate = (selectedDate) => {
                 if (!selectedDate) return;
-
-                const startOfDay = new Date(selectedDate);
-                startOfDay.setUTCHours(0, 0, 0, 0);
-
-                const endOfDay = new Date(selectedDate);
-                endOfDay.setUTCHours(23, 59, 59, 999);
+                
+                // Adjust for timezone differences by treating dates as UTC
+                const startOfDay = new Date(selectedDate + 'T00:00:00Z');
+                const endOfDay = new Date(selectedDate + 'T23:59:59Z');
 
                 const pedidosDelDia = state.allPedidos.filter(p => {
-                    if (!p.createdAt || !p.createdAt.toDate) return false;
+                    if (!p.createdAt || typeof p.createdAt.toDate !== 'function') return false;
                     const pedidoDate = p.createdAt.toDate();
                     return pedidoDate >= startOfDay && pedidoDate <= endOfDay;
                 });
@@ -684,10 +682,8 @@ export function openKpiModal(kpi = {}) {
 
             dateInput.addEventListener('change', (e) => calculateKpisForDate(e.target.value));
             
-            // Si es un nuevo registro, calcular para la fecha actual al abrir
-            if (!isEditing) {
-                calculateKpisForDate(dateInput.value);
-            }
+            // Initial calculation for the pre-filled date
+            calculateKpisForDate(dateInput.value);
         }
     });
 }
