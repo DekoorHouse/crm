@@ -1,360 +1,77 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Gestor de Negocio v6.29</title>
-  
-  <!-- Librerías -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+/**
+ * @file Módulo para la gestión del estado de la aplicación del panel de administración.
+ * @description Centraliza todos los datos dinámicos, referencias a elementos del DOM
+ * y variables de estado que la aplicación necesita para funcionar.
+ */
 
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
-  />
-  <!-- Litepicker Date Range Picker -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
-  <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
-  
-  <link rel="stylesheet" href="estilos/style_admin.css" />
+/**
+ * Almacena todas las referencias a los elementos del DOM cacheados para un acceso rápido.
+ * Este objeto es poblado por la función `cacheElements` en `main_admin.js`.
+ * @type {Object<string, HTMLElement>}
+ */
+export const elements = {};
 
-  <!-- Estilos movidos aquí para forzar la actualización -->
-  <style>
-    .rate-input-container {
-        display: flex;
-        align-items: center;
-        gap: 5px;
-        background-color: var(--gray-light);
-        padding: 4px 8px;
-        border-radius: 6px;
-    }
-    .rate-input-container label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-secondary);
-        cursor: pointer;
-    }
-    .hourly-rate-input {
-        width: 70px;
-        padding: 4px 6px;
-        border: 1px solid var(--gray-medium);
-        border-radius: 4px;
-        text-align: right;
-        font-size: 14px;
-        font-weight: 600;
-        background-color: var(--white);
-    }
-    .hourly-rate-input:focus {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-        outline: none;
-    }
-    .employee-header-rate {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-    }
-    .employee-header-rate label {
-        font-size: 12px;
-        font-weight: 500;
-        color: var(--text-secondary);
-    }
-    .rate-input-wrapper {
-        display: flex;
-        align-items: center;
-        gap: 4px;
-        border: 1px solid var(--gray-medium);
-        border-radius: 6px;
-        padding: 4px 8px;
-        background-color: var(--white);
-        transition: border-color 0.2s, box-shadow 0.2s;
-    }
-    .rate-input-wrapper:focus-within {
-        border-color: var(--primary);
-        box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-    }
-    .rate-input-symbol {
-        font-size: 14px;
-        color: var(--text-secondary);
-    }
-    .hourly-rate-input {
-        width: 50px;
-        padding: 2px;
-        border: none;
-        border-radius: 4px;
-        text-align: right;
-        font-size: 14px;
-        font-weight: 600;
-        background-color: transparent;
-    }
-    .hourly-rate-input:focus {
-        box-shadow: none;
-        outline: none;
-    }
-  </style>
+/**
+ * Contiene el estado dinámico de la aplicación, como los datos obtenidos de la base de datos
+ * y los filtros seleccionados por el usuario.
+ * @type {object}
+ */
+export const state = {
+  expenses: [],
+  manualCategories: new Map(), // Almacena categorías asignadas manualmente
+  dateFilter: { start: null, end: null },
+  categoryFilter: 'all',
+  sueldosData: [],
+  sueldosDateFilter: { start: null, end: null },
+  kpis: [],
+  allPedidos: [],
+  financials: {
+      dateFilter: { start: null, end: null }, 
+      allOrders: [],
+      totalOrdersCount: 0,
+      paidOrdersCount: 0, 
+      paidOrdersRevenue: 0,
+      leadsChartTimeframe: 'daily',
+  }
+};
 
-</head>
-<body>
-  
-  <div class="container">
-    <div class="card">
-       <div class="card-header">
-        <h2><i class="fas fa-chart-line"></i> Gestor de Negocio v6.29</h2>
-      </div>
-      <div class="card-body" style="padding: 10px;">
-         <div class="tabs">
-          <div class="tab active" data-tab="data"><i class="fas fa-table"></i> Datos</div>
-          <div class="tab" data-tab="summary"><i class="fas fa-clipboard-list"></i> Resumen</div>
-          <div class="tab" data-tab="charts"><i class="fas fa-chart-pie"></i> Gráficas</div>
-          <div class="tab" data-tab="sueldos"><i class="fas fa-file-invoice-dollar"></i> Sueldos</div>
-          <div class="tab" data-tab="kpis"><i class="fas fa-tachometer-alt"></i> KPI's</div>
-          <div class="tab" data-tab="health"><i class="fas fa-heartbeat"></i> Salud Financiera</div>
-        </div>
+/**
+ * Almacena las instancias de las gráficas de Chart.js para poder actualizarlas o destruirlas.
+ * @type {object}
+ */
+export const charts = { 
+  pieChart: null,
+  categoryChart: null,
+  compareChart: null,
+  leadsTrendChart: null,
+};
 
-        <!-- Tab Content: Data (Now default) -->
-        <div class="tab-content active" id="data-tab">
-           <div class="card-body">
-              <div id="actions-container">
-                  <div class="btn-group">
-                    <button id="add-manual-btn" class="btn"><i class="fas fa-plus"></i> Agregar Gasto/Ingreso</button>
-                    <button id="add-financial-btn" class="btn btn-outline"><i class="fas fa-landmark"></i> Registrar Préstamo/Pago</button>
-                    <button id="export-btn" class="btn btn-outline"><i class="fas fa-download"></i> Exportar</button>
-                    <button id="remove-duplicates-btn" class="btn btn-outline"><i class="fas fa-magic"></i> Eliminar Duplicados</button>
-                    <button id="upload-btn" class="btn btn-outline"><i class="fas fa-upload"></i> Cargar Archivo</button>
-                    <button id="delete-previous-month-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-calendar-minus"></i> Borrar Mes Anterior</button>
-                    <button id="delete-current-month-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-calendar-times"></i> Borrar Mes Actual</button>
-                    <button id="delete-data-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-trash"></i> Borrar Datos</button>
-                  </div>
-                  <div class="filter-group">
-                      <label for="date-range-filter">Filtrar por fecha:</label>
-                      <input type="text" id="date-range-filter" placeholder="Seleccionar rango..." readonly>
-                      <label for="category-filter">Filtrar por Categoría:</label>
-                      <select id="category-filter"></select>
-                  </div>
-                  <input type="file" class="file-upload-input" id="file-upload-input" accept=".xlsx, .xls" />
-              </div>
-              <div class="table-container" id="data-table-container">
-                <table id="data-table">
-                  <thead>
-                    <tr>
-                      <th>Fecha</th>
-                      <th>Concepto</th>
-                      <th>Cargo</th>
-                      <th>Ingreso</th>
-                      <th>Categoría</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody></tbody>
-                  <tfoot></tfoot>
-                </table>
-                <div id="empty-state" class="empty-state" style="display: none;">
-                  <p>No hay datos para mostrar.</p>
-                </div>
-              </div>
-           </div>
-        </div>
+/**
+ * Referencia a la función para cancelar la suscripción al listener de pedidos de Firestore.
+ * Se utiliza para detener la escucha de cambios cuando ya no es necesaria.
+ * @type {Function|null}
+ */
+export let ordersUnsubscribe = null;
 
-        <!-- Tab Content: Summary -->
-        <div class="tab-content" id="summary-tab">
-            <div class="card-body">
-                <div class="summary-section"></div>
-            </div>
-        </div>
+/**
+ * Permite establecer una nueva función de cancelación de suscripción.
+ * @param {Function} newUnsubscribe La nueva función de cancelación.
+ */
+export function setOrdersUnsubscribe(newUnsubscribe) {
+    ordersUnsubscribe = newUnsubscribe;
+}
 
-        <!-- Tab Content: Charts -->
-        <div class="tab-content" id="charts-tab">
-           <div class="card-body">
-             <div class="chart-grid">
-                <div class="chart-container"><canvas id="categoryChart"></canvas></div>
-                <div class="chart-container"><canvas id="pieChart"></canvas></div>
-                <div class="chart-container"><canvas id="compareChart"></canvas></div>
-             </div>
-           </div>
-        </div>
+/**
+ * Un array que almacena "instantáneas" del estado de los gastos antes de cada modificación.
+ * Se utiliza para implementar la funcionalidad de "deshacer".
+ * @type {Array<object>}
+ */
+export const actionHistory = [];
 
-        <!-- Tab Content: Sueldos -->
-        <div class="tab-content" id="sueldos-tab">
-           <div class="card-body">
-             <div class="btn-group" style="margin-bottom: 20px;">
-                <button id="add-employee-btn" class="btn"><i class="fas fa-user-plus"></i> Agregar Empleado</button>
-                <button id="sueldos-upload-btn" class="btn btn-outline"><i class="fas fa-upload"></i> Cargar Archivo de Sueldos</button>
-                 <button id="close-week-btn" class="btn btn-success"><i class="fas fa-calendar-check"></i> Cerrar Semana</button>
-                <button id="delete-sueldos-btn" class="btn btn-danger"><i class="fas fa-trash"></i> Borrar Datos de Sueldos</button>
-                <input type="file" class="file-upload-input" id="sueldos-file-upload-input" accept=".xlsx, .xls" />
-             </div>
-             
-             <div class="card" id="sueldos-filter-card" style="display: none; margin-top: 20px;">
-                <div class="card-body" style="padding: 15px;">
-                  <div class="filter-group" style="justify-content: space-between;">
-                      <div>
-                        <label for="sueldos-date-range-filter">Filtrar período de pago:</label>
-                        <input type="text" id="sueldos-date-range-filter" placeholder="Seleccionar rango de fechas..." readonly>
-                      </div>
-                      <button id="reset-sueldos-filter-btn" class="btn btn-sm btn-outline"><i class="fas fa-times"></i> Limpiar Filtro</button>
-                  </div>
-                </div>
-             </div>
-
-             <div id="sueldos-empty-state" style="display: block; margin-top: 20px;">
-                <p>Cargando datos de sueldos o no hay datos guardados. Sube un archivo para comenzar.</p>
-             </div>
-             
-             <div id="sueldos-table-container" style="margin-top: 20px;">
-                <!-- Employee cards will be rendered here -->
-             </div>
-           </div>
-        </div>
-
-        <!-- Tab Content: KPIs -->
-        <div class="tab-content" id="kpis-tab">
-           <div class="card-body">
-             <div class="btn-group" style="margin-bottom: 20px;">
-                <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro Diario</button>
-             </div>
-             <div class="table-container" id="kpi-table-container">
-                <table id="kpi-table">
-                    <thead>
-                        <tr>
-                            <th>Fecha</th>
-                            <th>Inversión FB</th>
-                            <th>Leads</th>
-                            <th>CPL</th>
-                            <th>Pagados</th>
-                            <th>CPV</th>
-                            <th>$ Pagado</th>
-                            <th>Envíos</th>
-                            <th>Bases</th>
-                            <th>Subtotal</th>
-                            <th>% Pago</th>
-                            <th>$ Ganado/Lead</th>
-                            <th>Acciones</th>
-                        </tr>
-                    </thead>
-                    <tbody id="kpi-table-body">
-                        <!-- Data will be rendered here by JavaScript -->
-                    </tbody>
-                </table>
-             </div>
-           </div>
-        </div>
-        
-        <!-- Tab Content: Financial Health -->
-        <div class="tab-content" id="health-tab">
-            <div class="card-body">
-                <div id="health-dashboard">
-                    <div id="health-inputs">
-                        <h3>Configurar Análisis Financiero</h3>
-                        
-                        <div class="form-group">
-                            <div class="filter-group" style="justify-content: space-between;">
-                                <label for="health-date-range-filter">Filtrar por Fecha (KPIs):</label>
-                                <button id="reset-health-filter-btn" class="btn btn-sm btn-outline"><i class="fas fa-times"></i></button>
-                            </div>
-                            <input type="text" id="health-date-range-filter" placeholder="Todo el tiempo" readonly>
-                        </div>
-                    </div>
-                    <div id="health-visuals">
-                       <div class="thermometer-container">
-                           <h4 style="text-align: center; margin-bottom: 10px;">Termómetro de Utilidad Operativa</h4>
-                           <div class="thermometer">
-                               <div id="thermometer-bar" class="thermometer-bar">
-                                  <span id="thermometer-percentage">0%</span>
-                               </div>
-                           </div>
-                           <div class="thermometer-labels">
-                               <span>Pérdida</span>
-                               <span>Equilibrio</span>
-                               <span>Ganancia</span>
-                           </div>
-                       </div>
-                       <div id="kpi-grid">
-                           <div class="kpi-card">
-                               <div class="kpi-title">Ingresos Totales (Contable)</div>
-                               <div class="kpi-value" id="kpi-total-revenue">$0</div>
-                           </div>
-                            <div class="kpi-card">
-                               <div class="kpi-title">Ingresos por Ventas (Pedidos)</div>
-                               <div class="kpi-value" id="kpi-sales-revenue">$0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Número de Leads</div>
-                               <div class="kpi-value" id="kpi-leads">0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Pedidos Pagados</div>
-                               <div class="kpi-value" id="kpi-paid-orders">0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Tasa de Cierre (Ventas/Leads)</div>
-                               <div class="kpi-value" id="kpi-conversion-rate">0%</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Ticket Promedio (Ventas)</div>
-                               <div class="kpi-value" id="kpi-avg-ticket-sales">$0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Costos Operativos</div>
-                               <div class="kpi-value" id="kpi-costs">$0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Utilidad Operativa</div>
-                               <div class="kpi-value" id="kpi-operating-profit">$0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Retiros de Socios</div>
-                               <div class="kpi-value" id="kpi-owner-draw">$0</div>
-                           </div>
-                           <div class="kpi-card">
-                               <div class="kpi-title">Utilidad/Pérdida Neta Final</div>
-                               <div class="kpi-value" id="kpi-net-profit">$0</div>
-                           </div>
-                       </div>
-                       <div class="card" style="margin-top: 20px;">
-                          <div class="card-body">
-                              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                                  <h4 id="leads-chart-title">Tendencia de Leads vs. Pagados</h4>
-                                  <div class="btn-group" id="leads-chart-toggle">
-                                      <button class="btn btn-sm btn-outline active" data-timeframe="daily">Diario</button>
-                                      <button class="btn btn-sm btn-outline" data-timeframe="monthly">Mensual</button>
-                                  </div>
-                              </div>
-                              <div class="chart-container" style="height: 300px;">
-                                  <canvas id="leadsTrendChart"></canvas>
-                              </div>
-                          </div>
-                      </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-      </div>
-    </div>
-  </div>
-
-  <!-- Modal Structure -->
-  <div id="modal" class="modal-overlay">
-      <div class="modal-content">
-          <h3 class="modal-header" id="modal-title"></h3>
-          <div class="modal-body" id="modal-body"></div>
-          <div class="modal-footer">
-              <button id="modal-cancel-btn" class="btn btn-outline">Cancelar</button>
-              <button id="modal-confirm-btn" class="btn">Confirmar</button>
-          </div>
-      </div>
-  </div>
-  
-  <!-- 
-    CORRECCIÓN:
-    La ruta al archivo de script se cambió de "script.js" a la correcta "js/script_admin.js".
-    El nombre del archivo original era incorrecto y no incluía la carpeta "js".
-  -->
-  <script type="module" src="js/script_admin.js"></script>
-</body>
-</html>
+// FIX: Export the 'app' object to resolve the import error in other modules.
+/**
+ * The main application object, to be populated by the main script.
+ * @type {object}
+ */
+export const app = {};
 
