@@ -82,6 +82,7 @@ export function listenForMonthlyPaidLeads(onDataChange) {
 
     return onSnapshot(q, (snapshot) => {
         const leadsCount = {};
+        const revenueSum = {}; // Para guardar la suma de precios
         const paidStasuses = ["Pagado", "Fabricar"];
         snapshot.docs.forEach(doc => {
             const data = doc.data();
@@ -91,9 +92,11 @@ export function listenForMonthlyPaidLeads(onDataChange) {
                 // Formato YYYY-MM-DD
                 const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
                 leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
+                revenueSum[dateString] = (revenueSum[dateString] || 0) + (parseFloat(data.precio) || 0); // Sumar el precio
             }
         });
         state.monthlyPaidLeads = leadsCount;
+        state.monthlyPaidRevenue = revenueSum; // Actualizar el estado con los ingresos
         onDataChange();
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
@@ -182,6 +185,7 @@ export async function saveKpi(kpiData) {
     try {
         const dataToSave = { ...kpiData };
         delete dataToSave.id; // No guardar el ID dentro del documento
+        delete dataToSave.revenue; // No guardar el ingreso, es automático
 
         if (kpiData.id) {
             const docRef = doc(db, "daily_kpis", kpiData.id);
@@ -508,3 +512,4 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
+
