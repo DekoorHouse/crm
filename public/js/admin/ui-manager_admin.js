@@ -621,19 +621,46 @@ export function renderSueldosData(employees, isFiltered) {
 export function renderKpisTable() {
     if (!elements.kpisTableBody) return;
     elements.kpisTableBody.innerHTML = '';
+
+    const today = new Date();
+    const year = 2025; // Año fijo
+    const month = 9;   // Septiembre (fijo)
+
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const combinedData = [];
+
+    for (let i = 1; i <= daysInMonth; i++) {
+        const dateString = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+        
+        const leads = state.monthlyLeads[dateString] || 0;
+        const manualKpi = state.kpis.find(k => k.fecha === dateString) || {};
+
+        combinedData.push({
+            id: manualKpi.id || null,
+            fecha: dateString,
+            leads: leads,
+            ventas: manualKpi.ventas || 0,
+            revenue: manualKpi.revenue || 0,
+            costo_publicidad: manualKpi.costo_publicidad || 0
+        });
+    }
     
-    if (state.kpis.length === 0) {
+    // Ordenar de más reciente a más antiguo
+    combinedData.sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+
+    if (combinedData.length === 0) {
         elements.kpisEmptyState.style.display = 'block';
         return;
     }
     elements.kpisEmptyState.style.display = 'none';
 
-    state.kpis.forEach(kpi => {
+    combinedData.forEach(kpi => {
         const tr = document.createElement('tr');
-        const leads = Number(kpi.leads) || 0;
-        const ventas = Number(kpi.ventas) || 0;
-        const revenue = Number(kpi.revenue) || 0;
-        const costoPublicidad = Number(kpi.costo_publicidad) || 0;
+        const leads = Number(kpi.leads);
+        const ventas = Number(kpi.ventas);
+        const revenue = Number(kpi.revenue);
+        const costoPublicidad = Number(kpi.costo_publicidad);
 
         const conversionRate = leads > 0 ? ((ventas / leads) * 100).toFixed(2) : '0.00';
         const cpa = ventas > 0 ? (costoPublicidad / ventas).toFixed(2) : '0.00';
@@ -647,28 +674,26 @@ export function renderKpisTable() {
             <td>${formatCurrency(cpa)}</td>
             <td>${conversionRate}%</td>
             <td class="btn-group">
-                <button class="btn btn-outline btn-sm edit-kpi-btn" data-id="${kpi.id}"><i class="fas fa-pencil-alt"></i></button>
-                <button class="btn btn-outline btn-sm delete-kpi-btn" data-id="${kpi.id}" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
+                <button class="btn btn-outline btn-sm edit-kpi-btn" data-fecha="${kpi.fecha}"><i class="fas fa-pencil-alt"></i></button>
+                <button class="btn btn-outline btn-sm delete-kpi-btn" data-id="${kpi.id || ''}" style="color:var(--danger);" ${!kpi.id ? 'disabled' : ''}><i class="fas fa-trash"></i></button>
             </td>
         `;
         elements.kpisTableBody.appendChild(tr);
     });
 }
 
+
 export function openKpiModal(kpi = {}) {
     const isEditing = !!kpi.id;
-    const title = isEditing ? 'Editar Registro de KPI' : 'Agregar Registro Diario de KPI';
+    const title = isEditing ? `Editar Registro de KPI para ${kpi.fecha}` : `Agregar Registro para ${kpi.fecha}`;
 
     showModal({
         title: title,
         body: `<form id="kpi-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div class="form-group" style="grid-column: 1 / -1;">
-                        <label for="kpi-fecha">Fecha</label>
-                        <input type="date" id="kpi-fecha" class="modal-input" value="${kpi.fecha || new Date().toISOString().split('T')[0]}" required>
-                    </div>
+                    <input type="hidden" id="kpi-fecha" value="${kpi.fecha}">
                     <div class="form-group">
-                        <label for="kpi-leads">Leads</label>
-                        <input type="number" id="kpi-leads" class="modal-input" placeholder="0" value="${kpi.leads || ''}" required>
+                        <label for="kpi-leads">Leads (Automático)</label>
+                        <input type="number" id="kpi-leads" class="modal-input" value="${kpi.leads || 0}" disabled>
                     </div>
                     <div class="form-group">
                         <label for="kpi-ventas">Ventas</label>
@@ -690,7 +715,7 @@ export function openKpiModal(kpi = {}) {
                 const kpiData = {
                     id: kpi.id,
                     fecha: document.getElementById('kpi-fecha').value,
-                    leads: Number(document.getElementById('kpi-leads').value) || 0,
+                    leads: Number(document.getElementById('kpi-leads').value) || 0, // Aunque deshabilitado, lo enviamos
                     ventas: Number(document.getElementById('kpi-ventas').value) || 0,
                     revenue: Number(document.getElementById('kpi-revenue').value) || 0,
                     costo_publicidad: Number(document.getElementById('kpi-costo').value) || 0,
@@ -766,3 +791,4 @@ export function openBonoModal(employeeId) {
 export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
+
