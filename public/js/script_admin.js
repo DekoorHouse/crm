@@ -63,11 +63,15 @@ const app = {
         };
         services.listenForExpenses(onDataChange);
         services.listenForManualCategories(onDataChange);
+        services.listenForSubcategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.setupOrdersListener(() => this.renderFinancialHealth());
         services.listenForKpis(() => this.renderKpisTable());
         services.listenForMonthlyLeads(() => this.renderKpisTable());
-        services.listenForMonthlyPaidLeads(() => this.renderKpisTable());
+        services.listenForMonthlyPaidLeads(() => {
+            this.renderKpisTable();
+            this.renderFinancialHealth();
+        });
         services.listenForAllTimeLeads();
     },
     
