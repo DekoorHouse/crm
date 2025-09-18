@@ -19,6 +19,7 @@ export const elements = {};
 export const state = {
   expenses: [],
   manualCategories: new Map(), // Almacena categorías asignadas manualmente
+  subcategories: {}, // Almacenará subcategorías por categoría: { 'Publicidad': ['Facebook', 'Google'] }
   dateFilter: { start: null, end: null },
   categoryFilter: 'all',
   sueldosData: [],
@@ -77,4 +78,5 @@ export const actionHistory = [];
  * @type {object}
  */
 export const app = {};
+
 
