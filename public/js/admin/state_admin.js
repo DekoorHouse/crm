@@ -26,14 +26,15 @@ export const state = {
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],
-      totalOrdersCount: 0, // This will remain the count for the filtered period
-      totalLeads: 0, // This will be the total count of all orders (all-time leads)
+      totalOrdersCount: 0,
       paidOrdersCount: 0, 
       paidOrdersRevenue: 0,
       leadsChartTimeframe: 'daily',
   },
   kpis: [],
-  monthlyLeads: {} // Almacenará el conteo de leads por día del mes actual
+  monthlyLeads: {},
+  monthlyPaidLeads: {},
+  totalLeads: 0,
 };
 
 /**
@@ -75,5 +76,4 @@ export const actionHistory = [];
  * @type {object}
  */
 export const app = {};
-
 
