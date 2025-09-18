@@ -30,7 +30,8 @@ export const state = {
       paidOrdersCount: 0, 
       paidOrdersRevenue: 0,
       leadsChartTimeframe: 'daily',
-  }
+  },
+  kpis: []
 };
 
 /**
