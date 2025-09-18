@@ -87,28 +87,46 @@ export function renderTable(expenses) {
     elements.dataTableBody.innerHTML = '';
     const sorted = [...expenses].sort((a,b) => (b.date > a.date) ? 1 : -1);
     
+    // Get all unique categories for the dropdown
+    const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
+
     sorted.forEach(expense => {
         const tr = document.createElement('tr');
         tr.dataset.id = expense.id;
         const charge = parseFloat(expense.charge) || 0;
         const credit = parseFloat(expense.credit) || 0;
         
-        let displayCategory = 'N/A';
-        const isOperational = expense.type === 'operativo' || !expense.type; 
+        let categoryContent = '';
+        let subcategoryContent = '';
+        const isOperationalCharge = (expense.type === 'operativo' || !expense.type) && charge > 0;
 
-        if (isOperational && credit > 0) {
-            displayCategory = expense.channel || ''; // Show channel or blank
-        } else if (isOperational || expense.sub_type === 'pago_intereses') {
-            displayCategory = expense.category || 'SinCategorizar';
-        }
-        
-        let categoryHtml;
-        if (displayCategory === 'SinCategorizar') {
-            const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
-            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
-            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
+        if (isOperationalCharge) {
+            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('');
+            categoryContent = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
+
+            // Subcategory dropdown logic
+            const parentCategory = expense.category;
+            const subcategoriesForParent = state.subcategories[parentCategory] || [];
+            if (parentCategory && parentCategory !== 'SinCategorizar') {
+                 let subcategoryOptions = subcategoriesForParent
+                    .map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`)
+                    .join('');
+                
+                // Add "create new" option
+                subcategoryOptions += `<option value="__add_new__" style="font-weight: bold; color: var(--primary);">+ Crear nueva...</option>`;
+                
+                subcategoryContent = `<select class="subcategory-dropdown" data-expense-id="${expense.id}">
+                                        <option value="">-- Seleccionar --</option>
+                                        ${subcategoryOptions}
+                                      </select>`;
+            } else {
+                 subcategoryContent = 'N/A';
+            }
+
         } else {
-            categoryHtml = displayCategory;
+            // For credits or non-operational expenses
+            categoryContent = expense.category || (credit > 0 ? (expense.channel || '') : 'N/A');
+            subcategoryContent = expense.subcategory || 'N/A';
         }
 
         tr.innerHTML = `
@@ -116,7 +134,8 @@ export function renderTable(expenses) {
             <td>${expense.concept || ''}</td>
             <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
             <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
-            <td>${categoryHtml}</td>
+            <td>${categoryContent}</td>
+            <td>${subcategoryContent}</td>
             <td class="btn-group">
                 <button class="btn btn-outline btn-sm edit-btn"><i class="fas fa-pencil-alt"></i></button>
                 <button class="btn btn-outline btn-sm delete-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
@@ -142,7 +161,7 @@ export function updateTableTotals(expenses) {
             <th colspan="2">Totales (Vista Actual):</th>
             <th>${formatCurrency(totalCharge)}</th>
             <th>${formatCurrency(totalCredit)}</th>
-            <th colspan="2"></th>
+            <th colspan="3"></th>
         </tr>
     `;
 }
@@ -300,6 +319,10 @@ export function openExpenseModal(expense = {}) {
                         <label for="expense-category">Categoría</label>
                         <select id="expense-category" class="modal-input">${categoryOptions}</select>
                     </div>
+                    <div class="form-group" id="subcategory-form-group" style="display: none;">
+                        <label for="expense-subcategory">Subcategoría</label>
+                        <select id="expense-subcategory" class="modal-input"></select>
+                    </div>
                     <div class="form-group" id="channel-form-group" style="display: none;">
                         <label for="expense-channel">Canal de Venta</label>
                         <select id="expense-channel" class="modal-input">
@@ -322,6 +345,7 @@ export function openExpenseModal(expense = {}) {
                     credit: creditValue,
                     type: expense.type || 'operativo',
                     category: '',
+                    subcategory: document.getElementById('expense-subcategory')?.value || '',
                     channel: document.getElementById('expense-channel')?.value || '',
                     source: 'manual'
                 };
@@ -342,16 +366,39 @@ export function openExpenseModal(expense = {}) {
         onModalOpen: () => {
             const categoryGroup = document.getElementById('category-form-group');
             const categorySelect = document.getElementById('expense-category');
+            const subcategoryGroup = document.getElementById('subcategory-form-group');
+            const subcategorySelect = document.getElementById('expense-subcategory');
             const conceptInput = document.getElementById('expense-concept');
             const creditInput = document.getElementById('expense-credit');
             const channelGroup = document.getElementById('channel-form-group');
 
+            function populateSubcategories(parentCategory) {
+                const subcategoriesForParent = state.subcategories[parentCategory] || [];
+                if (subcategoriesForParent.length > 0) {
+                    let subcategoryOptions = subcategoriesForParent
+                        .map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`)
+                        .join('');
+                    subcategorySelect.innerHTML = `<option value="">-- Seleccionar --</option>${subcategoryOptions}`;
+                    subcategoryGroup.style.display = 'block';
+                } else {
+                    subcategorySelect.innerHTML = '';
+                    subcategoryGroup.style.display = 'none';
+                }
+            }
+
             const toggleFieldVisibility = () => {
                 const creditValue = parseFloat(creditInput.value) || 0;
                 const isIncome = creditValue > 0;
+                const selectedCategory = categorySelect.value;
 
                 channelGroup.style.display = isIncome ? 'block' : 'none';
                 categoryGroup.style.display = isIncome || isFinancial ? 'none' : 'block';
+                
+                if (!isIncome && !isFinancial) {
+                    populateSubcategories(selectedCategory);
+                } else {
+                    subcategoryGroup.style.display = 'none';
+                }
                 
                 if(isFinancial && expense.sub_type === 'pago_intereses') {
                     categoryGroup.style.display = 'block';
@@ -363,6 +410,7 @@ export function openExpenseModal(expense = {}) {
             };
             
             creditInput.addEventListener('input', toggleFieldVisibility);
+            categorySelect.addEventListener('change', toggleFieldVisibility);
             conceptInput.addEventListener('input', () => {
                 if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
                     categorySelect.value = autoCategorize(conceptInput.value);
@@ -884,4 +932,5 @@ export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
         }
     });
 }
+
 
