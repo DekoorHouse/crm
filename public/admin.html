@@ -112,6 +112,7 @@
           <div class="tab" data-tab="charts"><i class="fas fa-chart-pie"></i> Gráficas</div>
           <div class="tab" data-tab="sueldos"><i class="fas fa-file-invoice-dollar"></i> Sueldos</div>
           <div class="tab" data-tab="health"><i class="fas fa-heartbeat"></i> Salud Financiera</div>
+          <div class="tab" data-tab="kpis"><i class="fas fa-tachometer-alt"></i> KPI's</div>
         </div>
 
         <!-- Tab Content: Data (Now default) -->
@@ -299,6 +300,35 @@
             </div>
         </div>
 
+        <!-- Tab Content: KPIs -->
+        <div class="tab-content" id="kpis-tab">
+           <div class="card-body">
+             <div class="btn-group" style="margin-bottom: 20px;">
+                <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro Diario</button>
+             </div>
+             <div class="table-container" id="kpis-table-container">
+               <table id="kpis-table">
+                 <thead>
+                   <tr>
+                     <th>Fecha</th>
+                     <th>Leads</th>
+                     <th>Ventas</th>
+                     <th>Ingresos ($)</th>
+                     <th>Costo Publicidad ($)</th>
+                     <th>CPA ($)</th>
+                     <th>Tasa Cierre (%)</th>
+                     <th>Acciones</th>
+                   </tr>
+                 </thead>
+                 <tbody id="kpis-table-body"></tbody>
+               </table>
+               <div id="kpis-empty-state" class="empty-state" style="display: none;">
+                 <p>No hay registros de KPIs. Agrega uno para empezar.</p>
+               </div>
+             </div>
+           </div>
+        </div>
+
       </div>
     </div>
   </div>
@@ -315,11 +345,6 @@
       </div>
   </div>
   
-  <!-- 
-    CORRECCIÓN:
-    La ruta al archivo de script se cambió de "script.js" a la correcta "js/script_admin.js".
-    El nombre del archivo original era incorrecto y no incluía la carpeta "js".
-  -->
   <script type="module" src="js/script_admin.js"></script>
 </body>
 </html>
