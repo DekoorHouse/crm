@@ -205,6 +205,7 @@ export function autoCategorize(concept) {
 export function autoCategorizeWithRulesOnly(concept) {
     const lowerConcept = String(concept).toLowerCase();
     const rules = {
+        Ganancia: ['xciento'],
         Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167'], 
         Alex: ['alex', 'bolt'], 
         Publicidad: ['facebook'],
@@ -450,3 +451,4 @@ export function filterSueldos() {
         return employee;
     });
 }
+
