@@ -663,7 +663,7 @@ export function renderKpisTable() {
         const costoPublicidad = Number(kpi.costo_publicidad);
 
         const conversionRate = leads > 0 ? ((ventas / leads) * 100).toFixed(2) : '0.00';
-        const cpa = ventas > 0 ? (costoPublicidad / ventas).toFixed(2) : '0.00';
+        const cpl = leads > 0 ? (costoPublicidad / leads).toFixed(2) : '0.00';
 
         tr.innerHTML = `
             <td>${kpi.fecha}</td>
@@ -671,7 +671,7 @@ export function renderKpisTable() {
             <td>${ventas}</td>
             <td>${formatCurrency(revenue)}</td>
             <td>${formatCurrency(costoPublicidad)}</td>
-            <td>${formatCurrency(cpa)}</td>
+            <td>${formatCurrency(cpl)}</td>
             <td>${conversionRate}%</td>
             <td class="btn-group">
                 <button class="btn btn-outline btn-sm edit-kpi-btn" data-fecha="${kpi.fecha}"><i class="fas fa-pencil-alt"></i></button>
