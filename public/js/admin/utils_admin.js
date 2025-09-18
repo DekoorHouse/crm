@@ -399,7 +399,14 @@ export function getFilteredExpenses(includeFinancial = false) {
         if (!dateMatch) return false;
 
         if (category && category !== 'all') {
-            return (expense.category || 'SinCategorizar') === category;
+            // --- INICIO DE LA MODIFICACIÓN ---
+            const expenseCategory = expense.category || 'SinCategorizar';
+            if (category === 'SinCategorizar') {
+                // Si el filtro es "SinCategorizar", solo mostrar gastos (charge > 0)
+                return expenseCategory === 'SinCategorizar' && (parseFloat(expense.charge) || 0) > 0;
+            }
+            return expenseCategory === category;
+            // --- FIN DE LA MODIFICACIÓN ---
         }
 
         return true;
