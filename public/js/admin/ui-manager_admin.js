@@ -72,11 +72,10 @@ export function cacheElements() {
     elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
-
-    // KPI Tab elements
+    
+    // KPIs Tab elements
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
-    elements.kpisTableContainer = document.getElementById('kpis-table-container');
-    elements.kpisTableBody = document.getElementById('kpis-table-body');
+    elements.kpisTableBody = document.querySelector('#kpis-table tbody');
     elements.kpisEmptyState = document.getElementById('kpis-empty-state');
 }
 
