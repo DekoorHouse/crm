@@ -31,6 +31,24 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
+export function listenForSubcategories(onDataChange) {
+    return onSnapshot(collection(db, "expense_subcategories"), (snapshot) => {
+        state.subcategories = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (!state.subcategories[data.category]) {
+                state.subcategories[data.category] = [];
+            }
+            state.subcategories[data.category].push(data.name);
+        });
+        // Ensure all subcategory arrays are sorted
+        for (const category in state.subcategories) {
+            state.subcategories[category].sort();
+        }
+        onDataChange();
+    }, (error) => console.error("Subcategories Listener Error:", error));
+}
+
 export function listenForKpis(onDataChange) {
     return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
         state.kpis = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -178,6 +196,22 @@ export async function saveExpense(expenseData, originalCategory) {
     } catch(error) {
         console.error("Error saving expense:", error);
         actionHistory.pop();
+    }
+}
+
+export async function saveNewSubcategory(category, name) {
+    if (!category || !name) {
+        console.error("Category and name are required to save a new subcategory.");
+        return;
+    }
+    try {
+        await addDoc(collection(db, "expense_subcategories"), {
+            category: category,
+            name: name
+        });
+    } catch (error) {
+        console.error("Error saving new subcategory:", error);
+        showModal({ title: 'Error', body: 'No se pudo guardar la nueva subcategoría.' });
     }
 }
 
@@ -512,4 +546,5 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
+
 
