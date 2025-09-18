@@ -626,19 +626,20 @@ export function renderKpisTable() {
     const month = 9;   // Septiembre (fijo)
     const currentDay = today.getFullYear() === year && today.getMonth() + 1 === month ? today.getDate() : 30;
 
-
     const combinedData = [];
 
     for (let i = 1; i <= currentDay; i++) {
         const dateString = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         
         const leads = state.monthlyLeads[dateString] || 0;
+        const paidLeads = state.monthlyPaidLeads[dateString] || 0;
         const manualKpi = state.kpis.find(k => k.fecha === dateString) || {};
 
         combinedData.push({
             id: manualKpi.id || null,
             fecha: dateString,
             leads: leads,
+            paidLeads: paidLeads,
             ventas: manualKpi.ventas || 0,
             revenue: manualKpi.revenue || 0,
             costo_publicidad: manualKpi.costo_publicidad || 0
@@ -647,7 +648,6 @@ export function renderKpisTable() {
     
     // Ordenar de más reciente a más antiguo
     combinedData.sort((a, b) => b.fecha.localeCompare(a.fecha));
-
 
     if (combinedData.length === 0) {
         elements.kpisEmptyState.style.display = 'block';
@@ -658,6 +658,7 @@ export function renderKpisTable() {
     combinedData.forEach(kpi => {
         const tr = document.createElement('tr');
         const leads = Number(kpi.leads);
+        const paidLeads = Number(kpi.paidLeads);
         const ventas = Number(kpi.ventas);
         const revenue = Number(kpi.revenue);
         const costoPublicidad = Number(kpi.costo_publicidad);
@@ -669,6 +670,7 @@ export function renderKpisTable() {
             <td>${kpi.fecha}</td>
             <td>${leads}</td>
             <td>${ventas}</td>
+            <td>${paidLeads}</td>
             <td>${formatCurrency(revenue)}</td>
             <td>${formatCurrency(costoPublicidad)}</td>
             <td>${formatCurrency(cpl)}</td>
@@ -682,7 +684,6 @@ export function renderKpisTable() {
     });
 }
 
-
 export function openKpiModal(kpi = {}) {
     const isEditing = !!kpi.id;
     const title = isEditing ? `Editar Registro de KPI para ${kpi.fecha}` : `Agregar Registro para ${kpi.fecha}`;
@@ -694,6 +695,10 @@ export function openKpiModal(kpi = {}) {
                     <div class="form-group">
                         <label for="kpi-leads">Leads (Automático)</label>
                         <input type="number" id="kpi-leads" class="modal-input" value="${kpi.leads || 0}" disabled>
+                    </div>
+                    <div class="form-group">
+                        <label for="kpi-paid-leads">Leads Pagados (Automático)</label>
+                        <input type="number" id="kpi-paid-leads" class="modal-input" value="${kpi.paidLeads || 0}" disabled>
                     </div>
                     <div class="form-group">
                         <label for="kpi-ventas">Ventas</label>
@@ -715,7 +720,7 @@ export function openKpiModal(kpi = {}) {
                 const kpiData = {
                     id: kpi.id,
                     fecha: document.getElementById('kpi-fecha').value,
-                    leads: Number(document.getElementById('kpi-leads').value) || 0, // Aunque deshabilitado, lo enviamos
+                    // Los campos automáticos no se envían, se calculan en el backend o se toman del estado
                     ventas: Number(document.getElementById('kpi-ventas').value) || 0,
                     revenue: Number(document.getElementById('kpi-revenue').value) || 0,
                     costo_publicidad: Number(document.getElementById('kpi-costo').value) || 0,
