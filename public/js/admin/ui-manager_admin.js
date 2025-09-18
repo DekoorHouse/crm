@@ -624,11 +624,12 @@ export function renderKpisTable() {
     const today = new Date();
     const year = 2025; // Año fijo
     const month = 9;   // Septiembre (fijo)
+    const currentDay = today.getFullYear() === year && today.getMonth() + 1 === month ? today.getDate() : 30;
 
-    const daysInMonth = new Date(year, month, 0).getDate();
+
     const combinedData = [];
 
-    for (let i = 1; i <= daysInMonth; i++) {
+    for (let i = 1; i <= currentDay; i++) {
         const dateString = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
         
         const leads = state.monthlyLeads[dateString] || 0;
