@@ -13,36 +13,25 @@ import { initEventListeners } from './admin/handlers_admin.js';
  */
 
 const app = {
-    // Propiedades del estado y referencias
     ...appState,
     state,
     elements,
 
-    /**
-     * Inicializa la aplicación completa.
-     */
     init() {
         try {
             this.cacheElements();
             initEventListeners(this);
-            // Firebase se inicializa al importar el módulo, así que llamamos onFirebaseReady directamente.
             this.onFirebaseReady();
         } catch (error) {
             console.error("Error fatal durante la inicialización:", error);
-            document.body.innerHTML = '<div style="text-align: center; padding: 50px;"><h1>Error</h1><p>Ocurrió un error al cargar la aplicación. Por favor, intente recargar la página.</p></div>';
+            document.body.innerHTML = '<div style="text-align: center; padding: 50px;"><h1>Error</h1><p>Ocurrió un error al cargar la aplicación.</p></div>';
         }
     },
 
-    /**
-     * Almacena en caché los elementos del DOM en el objeto 'elements'.
-     */
     cacheElements() {
         ui.cacheElements();
     },
 
-    /**
-     * Callback que se ejecuta cuando Firebase está listo.
-     */
     onFirebaseReady() {
         this.setupRealtimeListeners();
         this.initDateRangePicker();
@@ -50,9 +39,6 @@ const app = {
         this.initSueldosDateRangePicker();
     },
     
-    /**
-     * Configura todos los listeners de Firestore para actualizaciones en tiempo real.
-     */
     setupRealtimeListeners() {
         const onDataChange = () => {
             ui.populateCategoryFilter();
@@ -65,11 +51,9 @@ const app = {
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.setupOrdersListener(() => this.renderFinancialHealth());
+        services.listenForKpis(() => this.renderKpis());
     },
     
-    /**
-     * Callback que se ejecuta cuando los datos de sueldos cambian.
-     */
     onSueldosDataChange() {
         utils.migrateSueldosDataStructure();
         utils.addManualEmployees();
@@ -79,9 +63,6 @@ const app = {
         elements.sueldosEmptyState.innerHTML = '<p>No se han cargado datos de nómina. Sube un archivo para empezar.</p>';
     },
     
-    /**
-     * Renderiza la tabla de datos principal y sus totales.
-     */
     renderData() {
         const filteredExpenses = utils.getFilteredExpenses(false);
         ui.renderTable(filteredExpenses);
@@ -89,47 +70,34 @@ const app = {
         elements.emptyState.style.display = filteredExpenses.length === 0 ? 'block' : 'none';
     },
 
-    /**
-     * Renderiza la sección de resumen.
-     */
     renderSummary() {
         ui.updateSummary(() => utils.getFilteredExpenses(false));
     },
 
-    /**
-     * Renderiza todas las gráficas.
-     */
     renderAllCharts() {
         charts.updateAllCharts(() => utils.getFilteredExpenses(false));
     },
 
-    /**
-     * Renderiza el dashboard de salud financiera.
-     */
     renderFinancialHealth() {
         charts.updateFinancialHealthDashboard(() => utils.getFilteredExpenses(true));
     },
 
-    /**
-     * Filtra y renderiza los datos de la pestaña de sueldos.
-     */
+    renderKpis() {
+        ui.renderKpisTable();
+    },
+
     filterSueldos() {
         const employeesToDisplay = utils.filterSueldos();
         const isFiltered = !!(state.sueldosDateFilter.start && state.sueldosDateFilter.end);
         ui.renderSueldosData(employeesToDisplay, isFiltered);
     },
 
-    /**
-     * Limpia el filtro de fechas en la pestaña de sueldos.
-     */
     resetSueldosFilter() {
         if (this.sueldosPicker) this.sueldosPicker.clearSelection();
         state.sueldosDateFilter.start = null;
         state.sueldosDateFilter.end = null;
         this.filterSueldos();
     },
-
-    // --- INICIALIZADORES DE LIBRERÍAS ---
 
     initDateRangePicker() {
         this.picker = ui.initDateRangePicker(() => {
@@ -158,5 +126,4 @@ const app = {
     }
 };
 
-// Punto de entrada de la aplicación
 document.addEventListener('DOMContentLoaded', () => app.init());
