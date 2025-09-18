@@ -31,6 +31,36 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
+export function listenForMonthPedidos(year, month, onDataChange) {
+    const startDate = new Date(Date.UTC(year, month - 1, 1));
+    const endDate = new Date(Date.UTC(year, month, 1));
+
+    const q = query(
+        collection(db, "pedidos"),
+        where("createdAt", ">=", Timestamp.fromDate(startDate)),
+        where("createdAt", "<", Timestamp.fromDate(endDate))
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        const leadsByDay = {};
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt && data.createdAt.toDate) {
+                const date = data.createdAt.toDate();
+                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                leadsByDay[dateString] = (leadsByDay[dateString] || 0) + 1;
+            }
+        });
+        state.monthlyLeads = leadsByDay;
+        onDataChange();
+    }, (error) => {
+        console.error("Month Pedidos Listener Error:", error);
+        state.monthlyLeads = {};
+        onDataChange();
+    });
+}
+
+
 export function listenForAllTimeLeads(onDataChange) {
     const q = query(collection(db, "pedidos"));
     return onSnapshot(q, (snapshot) => {
@@ -449,4 +479,5 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
+
 
