@@ -72,6 +72,12 @@ export function cacheElements() {
     elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
+
+    // KPI Tab elements
+    elements.addKpiBtn = document.getElementById('add-kpi-btn');
+    elements.kpisTableContainer = document.getElementById('kpis-table-container');
+    elements.kpisTableBody = document.getElementById('kpis-table-body');
+    elements.kpisEmptyState = document.getElementById('kpis-empty-state');
 }
 
 /**
@@ -611,6 +617,90 @@ export function renderSueldosData(employees, isFiltered) {
         elements.sueldosTableContainer.appendChild(card);
     });
 }
+
+export function renderKpisTable() {
+    if (!elements.kpisTableBody) return;
+    elements.kpisTableBody.innerHTML = '';
+    
+    if (state.kpis.length === 0) {
+        elements.kpisEmptyState.style.display = 'block';
+        return;
+    }
+    elements.kpisEmptyState.style.display = 'none';
+
+    state.kpis.forEach(kpi => {
+        const tr = document.createElement('tr');
+        const leads = Number(kpi.leads) || 0;
+        const ventas = Number(kpi.ventas) || 0;
+        const revenue = Number(kpi.revenue) || 0;
+        const costoPublicidad = Number(kpi.costo_publicidad) || 0;
+
+        const conversionRate = leads > 0 ? ((ventas / leads) * 100).toFixed(2) : '0.00';
+        const cpa = ventas > 0 ? (costoPublicidad / ventas).toFixed(2) : '0.00';
+
+        tr.innerHTML = `
+            <td>${kpi.fecha}</td>
+            <td>${leads}</td>
+            <td>${ventas}</td>
+            <td>${formatCurrency(revenue)}</td>
+            <td>${formatCurrency(costoPublicidad)}</td>
+            <td>${formatCurrency(cpa)}</td>
+            <td>${conversionRate}%</td>
+            <td class="btn-group">
+                <button class="btn btn-outline btn-sm edit-kpi-btn" data-id="${kpi.id}"><i class="fas fa-pencil-alt"></i></button>
+                <button class="btn btn-outline btn-sm delete-kpi-btn" data-id="${kpi.id}" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
+            </td>
+        `;
+        elements.kpisTableBody.appendChild(tr);
+    });
+}
+
+export function openKpiModal(kpi = {}) {
+    const isEditing = !!kpi.id;
+    const title = isEditing ? 'Editar Registro de KPI' : 'Agregar Registro Diario de KPI';
+
+    showModal({
+        title: title,
+        body: `<form id="kpi-form" style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+                    <div class="form-group" style="grid-column: 1 / -1;">
+                        <label for="kpi-fecha">Fecha</label>
+                        <input type="date" id="kpi-fecha" class="modal-input" value="${kpi.fecha || new Date().toISOString().split('T')[0]}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kpi-leads">Leads</label>
+                        <input type="number" id="kpi-leads" class="modal-input" placeholder="0" value="${kpi.leads || ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kpi-ventas">Ventas</label>
+                        <input type="number" id="kpi-ventas" class="modal-input" placeholder="0" value="${kpi.ventas || ''}" required>
+                    </div>
+                     <div class="form-group">
+                        <label for="kpi-revenue">Ingresos ($)</label>
+                        <input type="number" step="0.01" id="kpi-revenue" class="modal-input" placeholder="0.00" value="${kpi.revenue || ''}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="kpi-costo">Costo Publicidad ($)</label>
+                        <input type="number" step="0.01" id="kpi-costo" class="modal-input" placeholder="0.00" value="${kpi.costo_publicidad || ''}" required>
+                    </div>
+               </form>`,
+        confirmText: 'Guardar',
+        onConfirm: () => {
+            const form = document.getElementById('kpi-form');
+            if (form.reportValidity()) {
+                const kpiData = {
+                    id: kpi.id,
+                    fecha: document.getElementById('kpi-fecha').value,
+                    leads: Number(document.getElementById('kpi-leads').value) || 0,
+                    ventas: Number(document.getElementById('kpi-ventas').value) || 0,
+                    revenue: Number(document.getElementById('kpi-revenue').value) || 0,
+                    costo_publicidad: Number(document.getElementById('kpi-costo').value) || 0,
+                };
+                services.saveKpi(kpiData);
+            }
+        }
+    });
+}
+
 
 /**
  * Opens a modal to add a bonus or an expense/discount for an employee.
