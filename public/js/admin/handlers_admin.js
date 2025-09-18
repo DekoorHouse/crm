@@ -423,7 +423,12 @@ function confirmRemoveDuplicates() {
     });
 }
 
-function handleFilterChange() { app.renderData(); }
+function handleFilterChange(e) { 
+    state.categoryFilter = e.target.value;
+    app.renderData();
+    app.renderSummary();
+    app.renderAllCharts();
+}
 
 function handleCategoryChange(e) {
     const select = e.target;
