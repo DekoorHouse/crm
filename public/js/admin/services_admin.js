@@ -73,17 +73,20 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
     const endOfMonth = new Date(Date.UTC(year, month, 1));
 
+    // FIX: Se eliminó la consulta compuesta para evitar la necesidad de un índice personalizado de Firestore.
+    // Ahora la consulta solo filtra por fecha, y el estado se verifica en el lado del cliente.
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
-        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
-        where("estatus", "in", ["Pagado", "Fabricar"])
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
     );
 
     return onSnapshot(q, (snapshot) => {
         const leadsCount = {};
+        const paidStasuses = ["Pagado", "Fabricar"];
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.createdAt && data.createdAt.toDate) {
+            // Filtrado del lado del cliente para 'estatus'
+            if (data.createdAt && data.createdAt.toDate && paidStasuses.includes(data.estatus)) {
                 const date = data.createdAt.toDate();
                 // Formato YYYY-MM-DD
                 const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
@@ -505,4 +508,3 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
