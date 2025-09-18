@@ -633,7 +633,7 @@ export function renderKpisTable() {
         
         const leads = state.monthlyLeads[dateString] || 0;
         const paidLeads = state.monthlyPaidLeads[dateString] || 0;
-        const revenue = state.monthlyPaidRevenue[dateString] || 0; // Obtener ingresos desde el estado
+        const revenue = state.monthlyPaidRevenue[dateString] || 0;
         const manualKpi = state.kpis.find(k => k.fecha === dateString) || {};
 
         combinedData.push({
@@ -641,13 +641,11 @@ export function renderKpisTable() {
             fecha: dateString,
             leads: leads,
             paidLeads: paidLeads,
-            ventas: manualKpi.ventas || 0,
-            revenue: revenue, // Usar los ingresos automáticos
+            revenue: revenue,
             costo_publicidad: manualKpi.costo_publicidad || 0
         });
     }
     
-    // Ordenar de más reciente a más antiguo
     combinedData.sort((a, b) => b.fecha.localeCompare(a.fecha));
 
     if (combinedData.length === 0) {
@@ -660,7 +658,6 @@ export function renderKpisTable() {
         const tr = document.createElement('tr');
         const leads = Number(kpi.leads);
         const paidLeads = Number(kpi.paidLeads);
-        const ventas = Number(kpi.ventas);
         const revenue = Number(kpi.revenue);
         const costoPublicidad = Number(kpi.costo_publicidad);
 
@@ -671,7 +668,6 @@ export function renderKpisTable() {
         tr.innerHTML = `
             <td>${kpi.fecha}</td>
             <td>${leads}</td>
-            <td>${ventas}</td>
             <td>${paidLeads}</td>
             <td>${formatCurrency(revenue)}</td>
             <td>${formatCurrency(costoPublicidad)}</td>
@@ -690,7 +686,7 @@ export function renderKpisTable() {
 export function openKpiModal(kpi = {}) {
     const isEditing = !!kpi.id;
     const title = isEditing ? `Editar Registro de KPI para ${kpi.fecha}` : `Agregar Registro para ${kpi.fecha}`;
-    const revenueFromState = state.monthlyPaidRevenue[kpi.fecha] || 0; // Obtener ingresos para la fecha
+    const revenueFromState = state.monthlyPaidRevenue[kpi.fecha] || 0;
 
     showModal({
         title: title,
@@ -703,10 +699,6 @@ export function openKpiModal(kpi = {}) {
                     <div class="form-group">
                         <label for="kpi-paid-leads">Leads Pagados (Automático)</label>
                         <input type="number" id="kpi-paid-leads" class="modal-input" value="${kpi.paidLeads || 0}" disabled>
-                    </div>
-                    <div class="form-group">
-                        <label for="kpi-ventas">Ventas (Manual)</label>
-                        <input type="number" id="kpi-ventas" class="modal-input" placeholder="0" value="${kpi.ventas || ''}">
                     </div>
                      <div class="form-group">
                         <label for="kpi-revenue">Ingresos (Automático)</label>
@@ -724,13 +716,8 @@ export function openKpiModal(kpi = {}) {
                 const kpiData = {
                     id: kpi.id,
                     fecha: document.getElementById('kpi-fecha').value,
-                    // Los campos automáticos no se envían, se calculan en el backend o se toman del estado
-                    ventas: Number(document.getElementById('kpi-ventas').value) || 0,
-                    // revenue ya no se guarda manualmente.
                     costo_publicidad: Number(document.getElementById('kpi-costo').value) || 0,
                 };
-                // Se elimina 'revenue' si existe de datos antiguos para que no se guarde.
-                delete kpiData.revenue;
                 services.saveKpi(kpiData);
             }
         }
