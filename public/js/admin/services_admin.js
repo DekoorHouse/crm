@@ -32,19 +32,15 @@ export function listenForManualCategories(onDataChange) {
 }
 
 export function listenForSubcategories(onDataChange) {
-    return onSnapshot(collection(db, "expense_subcategories"), (snapshot) => {
-        state.subcategories = {};
+    return onSnapshot(collection(db, "subcategories"), (snapshot) => {
+        const subcategorySet = new Set();
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (!state.subcategories[data.category]) {
-                state.subcategories[data.category] = [];
+            if (data.name) {
+                subcategorySet.add(data.name);
             }
-            state.subcategories[data.category].push(data.name);
         });
-        // Ensure all subcategory arrays are sorted
-        for (const category in state.subcategories) {
-            state.subcategories[category].sort();
-        }
+        state.subcategories = Array.from(subcategorySet).sort(); // Convertir a array ordenado
         onDataChange();
     }, (error) => console.error("Subcategories Listener Error:", error));
 }
@@ -91,30 +87,26 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
     const endOfMonth = new Date(Date.UTC(year, month, 1));
 
-    // FIX: Se eliminó la consulta compuesta para evitar la necesidad de un índice personalizado de Firestore.
-    // Ahora la consulta solo filtra por fecha, y el estado se verifica en el lado del cliente.
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
-        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
+        where("estatus", "in", ["Pagado", "Fabricar"])
     );
 
     return onSnapshot(q, (snapshot) => {
         const leadsCount = {};
-        const revenueSum = {}; // Para guardar la suma de precios
-        const paidStasuses = ["Pagado", "Fabricar"];
+        const revenueCount = {};
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            // Filtrado del lado del cliente para 'estatus'
-            if (data.createdAt && data.createdAt.toDate && paidStasuses.includes(data.estatus)) {
+            if (data.createdAt && data.createdAt.toDate) {
                 const date = data.createdAt.toDate();
-                // Formato YYYY-MM-DD
                 const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
                 leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
-                revenueSum[dateString] = (revenueSum[dateString] || 0) + (parseFloat(data.precio) || 0); // Sumar el precio
+                revenueCount[dateString] = (revenueCount[dateString] || 0) + (parseFloat(data.precio) || 0);
             }
         });
         state.monthlyPaidLeads = leadsCount;
-        state.monthlyPaidRevenue = revenueSum; // Actualizar el estado con los ingresos
+        state.monthlyPaidRevenue = revenueCount;
         onDataChange();
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
@@ -199,19 +191,17 @@ export async function saveExpense(expenseData, originalCategory) {
     }
 }
 
-export async function saveNewSubcategory(category, name) {
-    if (!category || !name) {
-        console.error("Category and name are required to save a new subcategory.");
-        return;
-    }
+export async function saveNewSubcategory(subcategoryName) {
     try {
-        await addDoc(collection(db, "expense_subcategories"), {
-            category: category,
-            name: name
-        });
+        // Verificar si la subcategoría ya existe globalmente
+        const q = query(collection(db, "subcategories"), where("name", "==", subcategoryName));
+        const querySnapshot = await getDocs(q);
+        if (querySnapshot.empty) {
+            // Guardar solo el nombre, sin categoría padre
+            await addDoc(collection(db, "subcategories"), { name: subcategoryName });
+        }
     } catch (error) {
         console.error("Error saving new subcategory:", error);
-        showModal({ title: 'Error', body: 'No se pudo guardar la nueva subcategoría.' });
     }
 }
 
@@ -219,7 +209,9 @@ export async function saveKpi(kpiData) {
     try {
         const dataToSave = { ...kpiData };
         delete dataToSave.id; // No guardar el ID dentro del documento
-        delete dataToSave.revenue; // No guardar el ingreso, es automático
+        delete dataToSave.leads; // No guardar el campo de leads
+        delete dataToSave.paidLeads; // No guardar el campo de leads pagados
+        delete dataToSave.revenue; // No guardar el campo de ingresos
 
         if (kpiData.id) {
             const docRef = doc(db, "daily_kpis", kpiData.id);
@@ -546,5 +538,4 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
 
