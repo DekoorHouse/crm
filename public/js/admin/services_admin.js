@@ -1,7 +1,7 @@
 import { db } from './firebase_admin.js';
-import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state_admin.js';
-import { autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils_admin.js';
+import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils_admin.js';
 import { showModal } from './ui-manager_admin.js';
 
 /**
@@ -31,51 +31,77 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
-export function listenForMonthPedidos(year, month, onDataChange) {
-    const startDate = new Date(Date.UTC(year, month - 1, 1));
-    const endDate = new Date(Date.UTC(year, month, 1));
-
-    const q = query(
-        collection(db, "pedidos"),
-        where("createdAt", ">=", Timestamp.fromDate(startDate)),
-        where("createdAt", "<", Timestamp.fromDate(endDate))
-    );
-
-    return onSnapshot(q, (snapshot) => {
-        const leadsByDay = {};
-        snapshot.forEach(doc => {
-            const data = doc.data();
-            if (data.createdAt && data.createdAt.toDate) {
-                const date = data.createdAt.toDate();
-                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-                leadsByDay[dateString] = (leadsByDay[dateString] || 0) + 1;
-            }
-        });
-        state.monthlyLeads = leadsByDay;
-        onDataChange();
-    }, (error) => {
-        console.error("Month Pedidos Listener Error:", error);
-        state.monthlyLeads = {};
-        onDataChange();
-    });
-}
-
-
-export function listenForAllTimeLeads(onDataChange) {
-    const q = query(collection(db, "pedidos"));
-    return onSnapshot(q, (snapshot) => {
-        state.financials.totalLeads = snapshot.size;
-        onDataChange(); // Llama al callback para re-renderizar
-    }, (error) => console.error("All-Time Leads Listener Error:", error));
-}
-
 export function listenForKpis(onDataChange) {
-    const q = query(collection(db, "daily_kpis"), orderBy("fecha", "desc"));
-    return onSnapshot(q, (snapshot) => {
+    return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
         state.kpis = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         onDataChange();
     }, (error) => console.error("KPIs Listener Error:", error));
 }
+
+export function listenForMonthlyLeads(onDataChange) {
+    const today = new Date();
+    const year = 2025;
+    const month = 9;
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(year, month, 1));
+
+    const q = query(collection(db, "pedidos"), 
+        where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        const leadsCount = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt && data.createdAt.toDate) {
+                const date = data.createdAt.toDate();
+                // Formato YYYY-MM-DD
+                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
+            }
+        });
+        state.monthlyLeads = leadsCount;
+        onDataChange();
+    }, (error) => console.error("Monthly Leads Listener Error:", error));
+}
+
+export function listenForMonthlyPaidLeads(onDataChange) {
+    const today = new Date();
+    const year = 2025;
+    const month = 9;
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(year, month, 1));
+
+    const q = query(collection(db, "pedidos"),
+        where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
+        where("estatus", "in", ["Pagado", "Fabricar"])
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        const leadsCount = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt && data.createdAt.toDate) {
+                const date = data.createdAt.toDate();
+                // Formato YYYY-MM-DD
+                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
+            }
+        });
+        state.monthlyPaidLeads = leadsCount;
+        onDataChange();
+    }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
+}
+
+
+export function listenForAllTimeLeads() {
+    return onSnapshot(collection(db, "pedidos"), (snapshot) => {
+        state.totalLeads = snapshot.size;
+    }, (error) => console.error("All Time Leads Listener Error:", error));
+}
+
 
 export function listenForSueldos(onDataChange) {
      return onSnapshot(doc(db, "sueldos", "main"), (docSnap) => {
@@ -479,5 +505,4 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
 
