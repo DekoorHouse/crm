@@ -1,7 +1,7 @@
 import { db } from './firebase_admin.js';
-import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp, orderBy } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state_admin.js';
-import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils_admin.js';
+import { autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils_admin.js';
 import { showModal } from './ui-manager_admin.js';
 
 /**
@@ -32,17 +32,11 @@ export function listenForManualCategories(onDataChange) {
 }
 
 export function listenForKpis(onDataChange) {
-    return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
+    const q = query(collection(db, "daily_kpis"), orderBy("fecha", "desc"));
+    return onSnapshot(q, (snapshot) => {
         state.kpis = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         onDataChange();
     }, (error) => console.error("KPIs Listener Error:", error));
-}
-
-export function listenForAllPedidos() {
-    return onSnapshot(collection(db, "pedidos"), (snapshot) => {
-        state.allPedidos = snapshot.docs.map(doc => doc.data());
-        // No callback needed here, as this is just background data for the modal
-    }, (error) => console.error("All Pedidos Listener Error:", error));
 }
 
 export function listenForSueldos(onDataChange) {
