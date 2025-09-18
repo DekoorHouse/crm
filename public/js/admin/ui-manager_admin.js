@@ -664,7 +664,7 @@ export function renderKpisTable() {
         const revenue = Number(kpi.revenue);
         const costoPublicidad = Number(kpi.costo_publicidad);
 
-        const conversionRate = leads > 0 ? ((ventas / leads) * 100).toFixed(2) : '0.00';
+        const conversionRate = leads > 0 ? ((paidLeads / leads) * 100).toFixed(2) : '0.00';
         const cpl = leads > 0 ? (costoPublicidad / leads).toFixed(2) : '0.00';
         const cpv = paidLeads > 0 ? (costoPublicidad / paidLeads).toFixed(2) : '0.00';
 
