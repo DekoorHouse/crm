@@ -1,5 +1,5 @@
 import './admin/firebase_admin.js'; // Import for initialization
-import { app as appState, state, elements } from './admin/state_admin.js';
+import { app, state, elements } from './admin/state_admin.js';
 import * as utils from './admin/utils_admin.js';
 import * as ui from './admin/ui-manager_admin.js';
 import * as services from './admin/services_admin.js';
@@ -12,9 +12,9 @@ import { initEventListeners } from './admin/handlers_admin.js';
  * la lógica a los módulos importados para mantener una estructura organizada.
  */
 
-const app = {
+// Se popula el objeto 'app' exportado desde state_admin.js para que sea accesible globalmente.
+Object.assign(app, {
     // Propiedades del estado y referencias
-    ...appState,
     state,
     elements,
 
@@ -171,7 +171,7 @@ const app = {
             this.filterSueldos();
         });
     }
-};
+});
 
 // Punto de entrada de la aplicación
 document.addEventListener('DOMContentLoaded', () => app.init());
