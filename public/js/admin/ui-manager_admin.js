@@ -87,46 +87,44 @@ export function renderTable(expenses) {
     elements.dataTableBody.innerHTML = '';
     const sorted = [...expenses].sort((a,b) => (b.date > a.date) ? 1 : -1);
     
-    // Get all unique categories for the dropdown
-    const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
-
     sorted.forEach(expense => {
         const tr = document.createElement('tr');
         tr.dataset.id = expense.id;
         const charge = parseFloat(expense.charge) || 0;
         const credit = parseFloat(expense.credit) || 0;
         
-        let categoryContent = '';
-        let subcategoryContent = '';
-        const isOperationalCharge = (expense.type === 'operativo' || !expense.type) && charge > 0;
+        let displayCategory = 'N/A';
+        const isOperational = expense.type === 'operativo' || !expense.type; 
 
-        if (isOperationalCharge) {
-            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('');
-            categoryContent = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
-
-            // Subcategory dropdown logic
-            const parentCategory = expense.category;
-            const subcategoriesForParent = state.subcategories[parentCategory] || [];
-            if (parentCategory && parentCategory !== 'SinCategorizar') {
-                 let subcategoryOptions = subcategoriesForParent
-                    .map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`)
-                    .join('');
-                
-                // Add "create new" option
-                subcategoryOptions += `<option value="__add_new__" style="font-weight: bold; color: var(--primary);">+ Crear nueva...</option>`;
-                
-                subcategoryContent = `<select class="subcategory-dropdown" data-expense-id="${expense.id}">
-                                        <option value="">-- Seleccionar --</option>
-                                        ${subcategoryOptions}
-                                      </select>`;
-            } else {
-                 subcategoryContent = 'N/A';
-            }
-
+        if (isOperational && credit > 0) {
+            displayCategory = expense.channel || ''; // Show channel or blank
+        } else if (isOperational || expense.sub_type === 'pago_intereses') {
+            displayCategory = expense.category || 'SinCategorizar';
+        }
+        
+        let categoryHtml;
+        if (displayCategory === 'SinCategorizar') {
+            const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
+            const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
+            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
         } else {
-            // For credits or non-operational expenses
-            categoryContent = expense.category || (credit > 0 ? (expense.channel || '') : 'N/A');
-            subcategoryContent = expense.subcategory || 'N/A';
+            categoryHtml = displayCategory;
+        }
+
+        let subcategoryHtml = 'N/A';
+        if (displayCategory !== 'N/A' && displayCategory !== '') {
+            // MODIFICADO: Usar la lista global de subcategorías en lugar de una específica de la categoría.
+            const availableSubcategories = state.subcategories || [];
+            const subcategoryOptions = availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
+            
+            subcategoryHtml = `
+                <select class="subcategory-dropdown" data-expense-id="${expense.id}">
+                    <option value="">-- Seleccionar --</option>
+                    ${subcategoryOptions}
+                    <option value="" disabled>──────────</option>
+                    <option value="__add_new__">+ Crear nueva...</option>
+                </select>
+            `;
         }
 
         tr.innerHTML = `
@@ -134,8 +132,8 @@ export function renderTable(expenses) {
             <td>${expense.concept || ''}</td>
             <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
             <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
-            <td>${categoryContent}</td>
-            <td>${subcategoryContent}</td>
+            <td>${categoryHtml}</td>
+            <td>${subcategoryHtml}</td>
             <td class="btn-group">
                 <button class="btn btn-outline btn-sm edit-btn"><i class="fas fa-pencil-alt"></i></button>
                 <button class="btn btn-outline btn-sm delete-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
@@ -319,7 +317,7 @@ export function openExpenseModal(expense = {}) {
                         <label for="expense-category">Categoría</label>
                         <select id="expense-category" class="modal-input">${categoryOptions}</select>
                     </div>
-                    <div class="form-group" id="subcategory-form-group" style="display: none;">
+                     <div class="form-group" id="subcategory-form-group" style="display: none;">
                         <label for="expense-subcategory">Subcategoría</label>
                         <select id="expense-subcategory" class="modal-input"></select>
                     </div>
@@ -372,34 +370,33 @@ export function openExpenseModal(expense = {}) {
             const creditInput = document.getElementById('expense-credit');
             const channelGroup = document.getElementById('channel-form-group');
 
-            function populateSubcategories(parentCategory) {
-                const subcategoriesForParent = state.subcategories[parentCategory] || [];
-                if (subcategoriesForParent.length > 0) {
-                    let subcategoryOptions = subcategoriesForParent
-                        .map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`)
-                        .join('');
-                    subcategorySelect.innerHTML = `<option value="">-- Seleccionar --</option>${subcategoryOptions}`;
+            const populateSubcategories = () => {
+                const selectedCategory = categorySelect.value;
+                subcategorySelect.innerHTML = '';
+                if (selectedCategory && selectedCategory !== 'SinCategorizar') {
+                    const availableSubcategories = state.subcategories || [];
+                    let optionsHtml = '<option value="">-- Seleccionar --</option>';
+                    optionsHtml += availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
+                    subcategorySelect.innerHTML = optionsHtml;
                     subcategoryGroup.style.display = 'block';
                 } else {
-                    subcategorySelect.innerHTML = '';
                     subcategoryGroup.style.display = 'none';
                 }
-            }
+            };
 
             const toggleFieldVisibility = () => {
                 const creditValue = parseFloat(creditInput.value) || 0;
                 const isIncome = creditValue > 0;
-                const selectedCategory = categorySelect.value;
 
                 channelGroup.style.display = isIncome ? 'block' : 'none';
                 categoryGroup.style.display = isIncome || isFinancial ? 'none' : 'block';
                 
-                if (!isIncome && !isFinancial) {
-                    populateSubcategories(selectedCategory);
-                } else {
+                if (isIncome || isFinancial) {
                     subcategoryGroup.style.display = 'none';
+                } else {
+                    populateSubcategories();
                 }
-                
+
                 if(isFinancial && expense.sub_type === 'pago_intereses') {
                     categoryGroup.style.display = 'block';
                     categorySelect.value = 'Gastos Financieros';
@@ -410,10 +407,11 @@ export function openExpenseModal(expense = {}) {
             };
             
             creditInput.addEventListener('input', toggleFieldVisibility);
-            categorySelect.addEventListener('change', toggleFieldVisibility);
+            categorySelect.addEventListener('change', populateSubcategories);
             conceptInput.addEventListener('input', () => {
                 if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
                     categorySelect.value = autoCategorize(conceptInput.value);
+                    populateSubcategories(); // Actualizar subcategorías cuando la categoría principal cambia
                 }
             });
 
@@ -839,98 +837,82 @@ export function openGastoModal(employeeId) {
 }
 
 /**
- * Muestra un modal para que el usuario seleccione qué registros duplicados desea importar.
- * @param {Array<object>} duplicateGroups - Grupos de gastos duplicados encontrados.
- * @param {Array<object>} nonDuplicates - Gastos que no son duplicados y se importarán.
+ * Displays a modal for selecting from a list of duplicate expenses.
+ * @param {Array<object>} duplicateGroups - Groups of duplicate expenses found.
+ * @param {Array<object>} nonDuplicates - Expenses that were not found to be duplicates.
  */
 export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
-    let tableRows = '';
-    duplicateGroups.forEach((group, groupIndex) => {
-        tableRows += `
-            <tr class="group-header">
-                <td colspan="6">
-                    <strong>Grupo Duplicado ${groupIndex + 1}</strong> (${group.reason})
-                    <br><em>${group.signature.replace(/\|/g, ' | ')}</em>
-                </td>
-            </tr>
+    let duplicateHtml = duplicateGroups.map((group, index) => {
+        return `
+            <div class="duplicate-group" style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
+                <p><strong>Motivo:</strong> ${group.reason}</p>
+                <table class="duplicate-table" style="width: 100%; font-size: 13px;">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" class="group-checkbox" data-group-index="${index}"></th>
+                            <th>Fecha</th>
+                            <th>Concepto</th>
+                            <th>Cargo</th>
+                            <th>Ingreso</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${group.expenses.map((exp, expIndex) => `
+                            <tr>
+                                <td><input type="checkbox" class="expense-checkbox" data-group-index="${index}" value="${expIndex}"></td>
+                                <td>${exp.date}</td>
+                                <td>${exp.concept}</td>
+                                <td>${formatCurrency(exp.charge)}</td>
+                                <td>${formatCurrency(exp.credit)}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            </div>
         `;
-        group.expenses.forEach((expense, expenseIndex) => {
-            const charge = parseFloat(expense.charge) || 0;
-            const credit = parseFloat(expense.credit) || 0;
-            tableRows += `
-                <tr>
-                    <td><input type="checkbox" class="duplicate-checkbox" data-group-index="${groupIndex}" data-expense-index="${expenseIndex}" checked></td>
-                    <td>${expense.date}</td>
-                    <td>${expense.concept}</td>
-                    <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
-                    <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
-                    <td>${expense.category}</td>
-                </tr>
-            `;
-        });
-    });
+    }).join('');
 
     const body = `
-        <p>Se encontraron registros que parecen ser duplicados (ya sea dentro del archivo o con datos existentes). Por favor, selecciona los registros que deseas importar y haz clic en "Confirmar Selección".</p>
-        <div class="table-container" style="max-height: 40vh; margin-top: 15px;">
-            <table class="duplicate-table">
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="select-all-duplicates" checked></th>
-                        <th>Fecha</th>
-                        <th>Concepto</th>
-                        <th>Cargo</th>
-                        <th>Ingreso</th>
-                        <th>Categoría</th>
-                    </tr>
-                </thead>
-                <tbody>${tableRows}</tbody>
-            </table>
+        <p>Se encontraron ${duplicateGroups.length} grupo(s) de movimientos duplicados. Por favor, selecciona los que deseas importar. ${nonDuplicates.length > 0 ? `Se importarán ${nonDuplicates.length} registros únicos automáticamente.` : ''}</p>
+        <div id="duplicates-container" style="max-height: 40vh; overflow-y: auto; margin-top: 15px;">
+            ${duplicateHtml}
         </div>
     `;
 
     showModal({
-        title: 'Seleccionar Duplicados para Importar',
+        title: "Manejar Duplicados",
         body: body,
-        confirmText: 'Confirmar Selección',
-        showCancel: true,
+        confirmText: "Importar Selección",
         onConfirm: async () => {
             const selectedExpenses = [...nonDuplicates];
-            document.querySelectorAll('.duplicate-checkbox:checked').forEach(checkbox => {
-                const groupIndex = checkbox.dataset.groupIndex;
-                const expenseIndex = checkbox.dataset.expenseIndex;
+            document.querySelectorAll('.expense-checkbox:checked').forEach(checkbox => {
+                const groupIndex = parseInt(checkbox.dataset.groupIndex);
+                const expenseIndex = parseInt(checkbox.value);
                 selectedExpenses.push(duplicateGroups[groupIndex].expenses[expenseIndex]);
             });
-
+            
             if (selectedExpenses.length > 0) {
-                try {
-                    await services.saveBulkExpenses(selectedExpenses);
-                    showModal({
-                        title: 'Éxito',
-                        body: `Se importaron ${selectedExpenses.length} registros seleccionados.`,
-                        confirmText: 'Entendido',
-                        showCancel: false
-                    });
-                } catch (error) {
-                     showModal({
-                        title: 'Error al Guardar',
-                        body: `No se pudieron guardar los registros. Detalle: ${error.message}`,
-                        confirmText: 'Cerrar',
-                        showCancel: false
-                    });
-                }
+                await services.saveBulkExpenses(selectedExpenses);
+                showModal({
+                    title: 'Éxito',
+                    body: `Se importaron ${selectedExpenses.length} registros.`,
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
             } else {
-                showModal({ show: false }); // Just close if nothing was selected
+                showModal({ show: false });
             }
         },
         onModalOpen: () => {
-            document.getElementById('select-all-duplicates').addEventListener('change', (e) => {
-                document.querySelectorAll('.duplicate-checkbox').forEach(checkbox => {
-                    checkbox.checked = e.target.checked;
+            document.querySelectorAll('.group-checkbox').forEach(groupCheckbox => {
+                groupCheckbox.addEventListener('change', (e) => {
+                    const groupIndex = e.target.dataset.groupIndex;
+                    document.querySelectorAll(`.expense-checkbox[data-group-index="${groupIndex}"]`).forEach(expCheckbox => {
+                        expCheckbox.checked = e.target.checked;
+                    });
                 });
             });
         }
     });
 }
-
 
