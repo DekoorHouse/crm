@@ -34,6 +34,7 @@ export const state = {
   kpis: [],
   monthlyLeads: {},
   monthlyPaidLeads: {},
+  monthlyPaidRevenue: {}, // Para guardar los ingresos de los leads pagados
   totalLeads: 0,
 };
 
