@@ -32,7 +32,8 @@ export const state = {
       paidOrdersRevenue: 0,
       leadsChartTimeframe: 'daily',
   },
-  kpis: []
+  kpis: [],
+  monthlyLeads: {} // Almacenará el conteo de leads por día del mes actual
 };
 
 /**
@@ -74,4 +75,5 @@ export const actionHistory = [];
  * @type {object}
  */
 export const app = {};
+
 
