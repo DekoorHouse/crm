@@ -51,6 +51,7 @@ const app = {
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.setupOrdersListener(() => this.renderFinancialHealth());
+        services.listenForAllTimeLeads(() => this.renderFinancialHealth());
         services.listenForKpis(() => this.renderKpis());
     },
     
@@ -127,3 +128,4 @@ const app = {
 };
 
 document.addEventListener('DOMContentLoaded', () => app.init());
+
