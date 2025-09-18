@@ -19,7 +19,7 @@ export const elements = {};
 export const state = {
   expenses: [],
   manualCategories: new Map(), // Almacena categorías asignadas manualmente
-  subcategories: {}, // Almacenará subcategorías por categoría: { 'Publicidad': ['Facebook', 'Google'] }
+  subcategories: [], // MODIFICADO: Ahora es un array plano de strings.
   dateFilter: { start: null, end: null },
   categoryFilter: 'all',
   sueldosData: [],
@@ -35,7 +35,7 @@ export const state = {
   kpis: [],
   monthlyLeads: {},
   monthlyPaidLeads: {},
-  monthlyPaidRevenue: {}, // Para guardar los ingresos de los leads pagados
+  monthlyPaidRevenue: {},
   totalLeads: 0,
 };
 
@@ -72,11 +72,9 @@ export function setOrdersUnsubscribe(newUnsubscribe) {
  */
 export const actionHistory = [];
 
-// FIX: Export the 'app' object to resolve the import error in other modules.
 /**
- * The main application object, to be populated by the main script.
+ * El objeto principal de la aplicación, poblado por script_admin.js para ser accesible globalmente.
  * @type {object}
  */
 export const app = {};
-
 
