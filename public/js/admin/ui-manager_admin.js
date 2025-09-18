@@ -697,15 +697,15 @@ export function openKpiModal(kpi = {}) {
                     </div>
                     <div class="form-group">
                         <label for="kpi-ventas">Ventas</label>
-                        <input type="number" id="kpi-ventas" class="modal-input" placeholder="0" value="${kpi.ventas || ''}" required>
+                        <input type="number" id="kpi-ventas" class="modal-input" placeholder="0" value="${kpi.ventas || ''}">
                     </div>
                      <div class="form-group">
                         <label for="kpi-revenue">Ingresos ($)</label>
-                        <input type="number" step="0.01" id="kpi-revenue" class="modal-input" placeholder="0.00" value="${kpi.revenue || ''}" required>
+                        <input type="number" step="0.01" id="kpi-revenue" class="modal-input" placeholder="0.00" value="${kpi.revenue || ''}">
                     </div>
                     <div class="form-group">
                         <label for="kpi-costo">Costo Publicidad ($)</label>
-                        <input type="number" step="0.01" id="kpi-costo" class="modal-input" placeholder="0.00" value="${kpi.costo_publicidad || ''}" required>
+                        <input type="number" step="0.01" id="kpi-costo" class="modal-input" placeholder="0.00" value="${kpi.costo_publicidad || ''}">
                     </div>
                </form>`,
         confirmText: 'Guardar',
