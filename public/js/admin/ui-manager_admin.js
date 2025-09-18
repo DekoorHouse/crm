@@ -790,3 +790,98 @@ export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
 
+/**
+ * Muestra un modal para que el usuario seleccione qué registros duplicados desea importar.
+ * @param {Array<object>} duplicateGroups - Grupos de gastos duplicados encontrados.
+ * @param {Array<object>} nonDuplicates - Gastos que no son duplicados y se importarán.
+ */
+export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
+    let tableRows = '';
+    duplicateGroups.forEach((group, groupIndex) => {
+        tableRows += `
+            <tr class="group-header">
+                <td colspan="6">
+                    <strong>Grupo Duplicado ${groupIndex + 1}</strong> (${group.reason})
+                    <br><em>${group.signature.replace(/\|/g, ' | ')}</em>
+                </td>
+            </tr>
+        `;
+        group.expenses.forEach((expense, expenseIndex) => {
+            const charge = parseFloat(expense.charge) || 0;
+            const credit = parseFloat(expense.credit) || 0;
+            tableRows += `
+                <tr>
+                    <td><input type="checkbox" class="duplicate-checkbox" data-group-index="${groupIndex}" data-expense-index="${expenseIndex}" checked></td>
+                    <td>${expense.date}</td>
+                    <td>${expense.concept}</td>
+                    <td>${charge > 0 ? formatCurrency(charge) : ''}</td>
+                    <td>${credit > 0 ? formatCurrency(credit) : ''}</td>
+                    <td>${expense.category}</td>
+                </tr>
+            `;
+        });
+    });
+
+    const body = `
+        <p>Se encontraron registros que parecen ser duplicados (ya sea dentro del archivo o con datos existentes). Por favor, selecciona los registros que deseas importar y haz clic en "Confirmar Selección".</p>
+        <div class="table-container" style="max-height: 40vh; margin-top: 15px;">
+            <table class="duplicate-table">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select-all-duplicates" checked></th>
+                        <th>Fecha</th>
+                        <th>Concepto</th>
+                        <th>Cargo</th>
+                        <th>Ingreso</th>
+                        <th>Categoría</th>
+                    </tr>
+                </thead>
+                <tbody>${tableRows}</tbody>
+            </table>
+        </div>
+    `;
+
+    showModal({
+        title: 'Seleccionar Duplicados para Importar',
+        body: body,
+        confirmText: 'Confirmar Selección',
+        showCancel: true,
+        onConfirm: async () => {
+            const selectedExpenses = [...nonDuplicates];
+            document.querySelectorAll('.duplicate-checkbox:checked').forEach(checkbox => {
+                const groupIndex = checkbox.dataset.groupIndex;
+                const expenseIndex = checkbox.dataset.expenseIndex;
+                selectedExpenses.push(duplicateGroups[groupIndex].expenses[expenseIndex]);
+            });
+
+            if (selectedExpenses.length > 0) {
+                try {
+                    await services.saveBulkExpenses(selectedExpenses);
+                    showModal({
+                        title: 'Éxito',
+                        body: `Se importaron ${selectedExpenses.length} registros seleccionados.`,
+                        confirmText: 'Entendido',
+                        showCancel: false
+                    });
+                } catch (error) {
+                     showModal({
+                        title: 'Error al Guardar',
+                        body: `No se pudieron guardar los registros. Detalle: ${error.message}`,
+                        confirmText: 'Cerrar',
+                        showCancel: false
+                    });
+                }
+            } else {
+                showModal({ show: false }); // Just close if nothing was selected
+            }
+        },
+        onModalOpen: () => {
+            document.getElementById('select-all-duplicates').addEventListener('change', (e) => {
+                document.querySelectorAll('.duplicate-checkbox').forEach(checkbox => {
+                    checkbox.checked = e.target.checked;
+                });
+            });
+        }
+    });
+}
+
