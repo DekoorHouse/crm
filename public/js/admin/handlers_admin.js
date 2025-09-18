@@ -309,14 +309,22 @@ export function initEventListeners() {
             const deleteBtn = e.target.closest('.delete-kpi-btn');
 
             if (editBtn) {
-                const kpiId = editBtn.dataset.id;
-                const kpi = state.kpis.find(k => k.id === kpiId);
-                if (kpi) ui.openKpiModal(kpi);
+                const fecha = editBtn.dataset.fecha;
+                const leads = state.monthlyLeads[fecha] || 0;
+                const manualKpi = state.kpis.find(k => k.fecha === fecha) || {};
+                const kpiData = {
+                    ...manualKpi,
+                    fecha: fecha,
+                    leads: leads
+                };
+                ui.openKpiModal(kpiData);
             }
 
-            if (deleteBtn) {
+            if (deleteBtn && !deleteBtn.disabled) {
                 const kpiId = deleteBtn.dataset.id;
-                confirmDeleteKpi(kpiId);
+                if (kpiId) {
+                    confirmDeleteKpi(kpiId);
+                }
             }
         });
     }
@@ -482,3 +490,4 @@ function confirmDeleteAdjustment(empId, adjId, type) {
 function toggleEmployeeCard(card) {
     card.classList.toggle('collapsed');
 }
+
