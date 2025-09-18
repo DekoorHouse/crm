@@ -61,20 +61,14 @@ const app = {
             this.renderAllCharts();
             this.renderFinancialHealth();
         };
-        const onKpiDataChange = () => {
-            this.renderKpis();
-        };
-
         services.listenForExpenses(onDataChange);
         services.listenForManualCategories(onDataChange);
         services.listenForSueldos(() => this.onSueldosDataChange());
         services.setupOrdersListener(() => this.renderFinancialHealth());
-        services.listenForAllTimeLeads(() => this.renderFinancialHealth());
-        
-        // Listeners for KPIs
-        services.listenForKpis(onKpiDataChange);
-        const now = new Date();
-        services.listenForMonthPedidos(2025, 9, onKpiDataChange); // Septiembre 2025
+        services.listenForKpis(() => this.renderKpisTable());
+        services.listenForMonthlyLeads(() => this.renderKpisTable());
+        services.listenForMonthlyPaidLeads(() => this.renderKpisTable());
+        services.listenForAllTimeLeads();
     },
     
     /**
@@ -120,7 +114,10 @@ const app = {
         charts.updateFinancialHealthDashboard(() => utils.getFilteredExpenses(true));
     },
 
-    renderKpis() {
+    /**
+     * Renderiza la tabla de KPIs.
+     */
+    renderKpisTable() {
         ui.renderKpisTable();
     },
 
