@@ -31,6 +31,14 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
+export function listenForAllTimeLeads(onDataChange) {
+    const q = query(collection(db, "pedidos"));
+    return onSnapshot(q, (snapshot) => {
+        state.financials.totalLeads = snapshot.size;
+        onDataChange(); // Llama al callback para re-renderizar
+    }, (error) => console.error("All-Time Leads Listener Error:", error));
+}
+
 export function listenForKpis(onDataChange) {
     const q = query(collection(db, "daily_kpis"), orderBy("fecha", "desc"));
     return onSnapshot(q, (snapshot) => {
@@ -441,3 +449,4 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
+
