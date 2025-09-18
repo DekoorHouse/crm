@@ -125,7 +125,7 @@ function getCompareChartConfig(alexTotal, chrisTotal) {
  */
 export function updateFinancialHealthDashboard(getFilteredExpenses) {
     const expenses = getFilteredExpenses(true);
-    const { totalOrdersCount, paidOrdersCount, paidOrdersRevenue } = state.financials;
+    const { totalOrdersCount, paidOrdersCount, paidOrdersRevenue, totalLeads } = state.financials;
     const cogsCategories = ['Material', 'Sueldos'];
     const drawCategories = ['Alex', 'Chris'];
 
@@ -171,7 +171,7 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
     elements.kpiOperatingProfit.textContent = formatCurrency(operatingProfit);
     elements.kpiOwnerDraw.textContent = formatCurrency(ownerDraw);
     elements.kpiNetProfit.textContent = formatCurrency(netProfit);
-    elements.kpiLeads.textContent = totalOrdersCount;
+    elements.kpiLeads.textContent = totalLeads;
     elements.kpiPaidOrders.textContent = paidOrdersCount;
     elements.kpiAvgTicketSales.textContent = formatCurrency(avgTicketSales); 
     elements.kpiConversionRate.textContent = `${conversionRate.toFixed(2)}%`; 
