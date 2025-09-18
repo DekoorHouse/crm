@@ -231,6 +231,9 @@ export function initEventListeners() {
         if (e.target.classList.contains('category-dropdown')) {
             handleCategoryChange(e);
         }
+        if (e.target.classList.contains('subcategory-dropdown')) {
+            handleSubcategoryChange(e);
+        }
     });
     
     elements.summarySection.addEventListener('click', (e) => {
@@ -311,11 +314,13 @@ export function initEventListeners() {
             if (editBtn) {
                 const fecha = editBtn.dataset.fecha;
                 const leads = state.monthlyLeads[fecha] || 0;
+                const paidLeads = state.monthlyPaidLeads[fecha] || 0;
                 const manualKpi = state.kpis.find(k => k.fecha === fecha) || {};
                 const kpiData = {
                     ...manualKpi,
                     fecha: fecha,
-                    leads: leads
+                    leads: leads,
+                    paidLeads: paidLeads
                 };
                 ui.openKpiModal(kpiData);
             }
@@ -425,7 +430,35 @@ function handleCategoryChange(e) {
     const expenseId = select.dataset.expenseId;
     const newCategory = select.value;
     const expense = state.expenses.find(exp => exp.id === expenseId);
-    if(expense) services.saveExpense({...expense, category: newCategory}, expense.category);
+    if(expense) {
+        // When category changes, reset subcategory
+        services.saveExpense({...expense, category: newCategory, subcategory: ''}, expense.category);
+    }
+}
+
+async function handleSubcategoryChange(e) {
+    const select = e.target;
+    const expenseId = select.dataset.expenseId;
+    const newSubcategory = select.value;
+    const expense = state.expenses.find(exp => exp.id === expenseId);
+
+    if (newSubcategory === '__add_new__') {
+        const newSubcategoryName = prompt(`Introduce el nombre de la nueva subcategoría para "${expense.category}":`);
+        if (newSubcategoryName && newSubcategoryName.trim() !== '') {
+            await services.saveNewSubcategory(expense.category, newSubcategoryName.trim());
+            // Firestore listener will update the state and UI automatically.
+            // We can optionally set it immediately for better UX.
+            await services.saveExpense({...expense, subcategory: newSubcategoryName.trim()}, expense.category);
+        } else {
+            // Reset dropdown if user cancels
+            select.value = expense.subcategory || '';
+        }
+        return;
+    }
+
+    if(expense && expense.subcategory !== newSubcategory) {
+        services.saveExpense({...expense, subcategory: newSubcategory}, expense.category);
+    }
 }
 
 function confirmDeleteExpense(id) {
