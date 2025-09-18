@@ -448,12 +448,13 @@ async function handleSubcategoryChange(e) {
     const expense = state.expenses.find(exp => exp.id === expenseId);
 
     if (newSubcategory === '__add_new__') {
-        const newSubcategoryName = prompt(`Introduce el nombre de la nueva subcategoría para "${expense.category}":`);
+        const newSubcategoryName = prompt(`Introduce el nombre de la nueva subcategoría:`);
         if (newSubcategoryName && newSubcategoryName.trim() !== '') {
-            await services.saveNewSubcategory(expense.category, newSubcategoryName.trim());
-            // Firestore listener will update the state and UI automatically.
-            // We can optionally set it immediately for better UX.
-            await services.saveExpense({...expense, subcategory: newSubcategoryName.trim()}, expense.category);
+            const trimmedName = newSubcategoryName.trim();
+            // Guardar la nueva subcategoría global
+            await services.saveNewSubcategory(trimmedName);
+            // Guardar el gasto con la nueva subcategoría. El listener se encargará de actualizar la UI.
+            await services.saveExpense({...expense, subcategory: trimmedName}, expense.category);
         } else {
             // Reset dropdown if user cancels
             select.value = expense.subcategory || '';
