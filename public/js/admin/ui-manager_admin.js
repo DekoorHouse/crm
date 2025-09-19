@@ -26,12 +26,9 @@ export function cacheElements() {
     elements.tabs = document.querySelectorAll('.tab');
     elements.tabContents = document.querySelectorAll('.tab-content');
     elements.addManualBtn = document.getElementById('add-manual-btn');
-    elements.addFinancialBtn = document.getElementById('add-financial-btn');
-    elements.deleteDataBtn = document.getElementById('delete-data-btn');
     elements.deleteCurrentMonthBtn = document.getElementById('delete-current-month-btn');
     elements.deletePreviousMonthBtn = document.getElementById('delete-previous-month-btn');
     elements.exportBtn = document.getElementById('export-btn');
-    elements.removeDuplicatesBtn = document.getElementById('remove-duplicates-btn');
     elements.dateRangeFilter = document.getElementById('date-range-filter');
     elements.categoryFilter = document.getElementById('category-filter');
     elements.actionsContainer = document.getElementById('actions-container');
