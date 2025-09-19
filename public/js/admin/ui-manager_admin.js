@@ -112,13 +112,12 @@ export function renderTable(expenses) {
         }
 
         let subcategoryHtml = 'N/A';
-        if (displayCategory !== 'N/A' && displayCategory !== '') {
-            // MODIFICADO: Usar la lista global de subcategorías en lugar de una específica de la categoría.
-            const availableSubcategories = state.subcategories || [];
+        if (displayCategory !== 'N/A' && displayCategory !== '' && displayCategory !== 'SinCategorizar') {
+            const availableSubcategories = state.subcategories[displayCategory] || [];
             const subcategoryOptions = availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
             
             subcategoryHtml = `
-                <select class="subcategory-dropdown" data-expense-id="${expense.id}">
+                <select class="subcategory-dropdown" data-expense-id="${expense.id}" data-category="${displayCategory}">
                     <option value="">-- Seleccionar --</option>
                     ${subcategoryOptions}
                     <option value="" disabled>──────────</option>
@@ -374,10 +373,15 @@ export function openExpenseModal(expense = {}) {
                 const selectedCategory = categorySelect.value;
                 subcategorySelect.innerHTML = '';
                 if (selectedCategory && selectedCategory !== 'SinCategorizar') {
-                    const availableSubcategories = state.subcategories || [];
+                    const availableSubcategories = state.subcategories[selectedCategory] || [];
                     let optionsHtml = '<option value="">-- Seleccionar --</option>';
                     optionsHtml += availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
+                    
+                    optionsHtml += '<option value="" disabled>──────────</option>';
+                    optionsHtml += '<option value="__add_new__">+ Crear nueva...</option>';
+                    
                     subcategorySelect.innerHTML = optionsHtml;
+                    subcategorySelect.dataset.category = selectedCategory; // Guardar categoría padre
                     subcategoryGroup.style.display = 'block';
                 } else {
                     subcategoryGroup.style.display = 'none';
@@ -408,6 +412,33 @@ export function openExpenseModal(expense = {}) {
             
             creditInput.addEventListener('input', toggleFieldVisibility);
             categorySelect.addEventListener('change', populateSubcategories);
+
+            subcategorySelect.addEventListener('change', async (e) => {
+                if (e.target.value === '__add_new__') {
+                    const parentCategory = e.target.dataset.category;
+                    const originalSubcategory = expense.subcategory || '';
+                    const newSubcategoryName = prompt(`Nueva subcategoría para "${parentCategory}":`);
+                    if (newSubcategoryName && newSubcategoryName.trim()) {
+                        const trimmedName = newSubcategoryName.trim();
+                        await services.saveNewSubcategory(trimmedName, parentCategory);
+                        // El listener de Firestore actualizará el estado global. Para mejorar la UX,
+                        // actualizamos el estado local y repoblamos el select inmediatamente.
+                        if (!state.subcategories[parentCategory]) {
+                           state.subcategories[parentCategory] = [];
+                        }
+                        if (!state.subcategories[parentCategory].includes(trimmedName)) {
+                            state.subcategories[parentCategory].push(trimmedName);
+                            state.subcategories[parentCategory].sort();
+                        }
+                        
+                        populateSubcategories();
+                        e.target.value = trimmedName;
+                    } else {
+                        e.target.value = originalSubcategory; // Revertir si se cancela
+                    }
+                }
+            });
+
             conceptInput.addEventListener('input', () => {
                 if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
                     categorySelect.value = autoCategorize(conceptInput.value);
