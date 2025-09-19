@@ -802,11 +802,12 @@ function calculateAndDisplayAverages(data) {
     const avgAdCost = totals.adCost / daysWithData;
     const avgCpv = totals.paidLeads > 0 ? totals.adCost / totals.paidLeads : 0;
 
-    elements.kpiAvgLeads.textContent = avgLeads.toFixed(1);
-    elements.kpiAvgPaidLeads.textContent = avgPaidLeads.toFixed(1);
-    elements.kpiAvgRevenue.textContent = formatCurrency(avgRevenue);
-    elements.kpiAvgAdCost.textContent = formatCurrency(avgAdCost);
-    elements.kpiAvgCpv.textContent = formatCurrency(avgCpv);
+    // Safety checks to prevent errors if elements don't exist
+    if (elements.kpiAvgLeads) elements.kpiAvgLeads.textContent = avgLeads.toFixed(1);
+    if (elements.kpiAvgPaidLeads) elements.kpiAvgPaidLeads.textContent = avgPaidLeads.toFixed(1);
+    if (elements.kpiAvgRevenue) elements.kpiAvgRevenue.textContent = formatCurrency(avgRevenue);
+    if (elements.kpiAvgAdCost) elements.kpiAvgAdCost.textContent = formatCurrency(avgAdCost);
+    if (elements.kpiAvgCpv) elements.kpiAvgCpv.textContent = formatCurrency(avgCpv);
 }
 
 
