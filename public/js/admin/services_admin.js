@@ -126,6 +126,35 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
 
+// NUEVA FUNCIÓN PARA PEDIDOS CANCELADOS
+export function listenForMonthlyCancelledLeads(onDataChange) {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth(); // 0-indexed for Date object
+    const startOfMonth = new Date(Date.UTC(year, month, 1));
+    const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
+
+    const q = query(collection(db, "pedidos"),
+        where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
+        where("estatus", "==", "Cancelado")
+    );
+
+    return onSnapshot(q, (snapshot) => {
+        const cancelledCount = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.createdAt && data.createdAt.toDate) {
+                const date = data.createdAt.toDate();
+                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                cancelledCount[dateString] = (cancelledCount[dateString] || 0) + 1;
+            }
+        });
+        state.monthlyCancelledLeads = cancelledCount;
+        onDataChange();
+    }, (error) => console.error("Monthly Cancelled Leads Listener Error:", error));
+}
+
 
 export function listenForAllTimeLeads() {
     return onSnapshot(collection(db, "pedidos"), (snapshot) => {
@@ -409,26 +438,6 @@ export async function saveBulkExpenses(expenses) {
         console.error("Error saving bulk expenses:", error);
         actionHistory.pop();
         throw new Error("No se pudieron guardar los registros en la base de datos.");
-    }
-}
-
-export async function deleteAllData() {
-    saveStateToHistory();
-    showModal({ show: false });
-    try {
-        const batch = writeBatch(db);
-        const q = query(collection(db, "expenses"), where("concept", "!=", "Ajuste"));
-        const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-             showModal({ title: 'Información', body: 'No hay datos para borrar (excluyendo ajustes).', showCancel: false, confirmText: 'Entendido' });
-             actionHistory.pop(); return;
-        }
-        snapshot.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
-        showModal({ title: 'Éxito', body: `Se borraron ${snapshot.size} registros.`, showCancel: false, confirmText: 'Entendido' });
-    } catch (error) {
-        console.error("Error borrando todos los datos:", error);
-        actionHistory.pop();
     }
 }
 
