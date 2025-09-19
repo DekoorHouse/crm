@@ -19,7 +19,7 @@ export const elements = {};
 export const state = {
   expenses: [],
   manualCategories: new Map(), // Almacena categorías asignadas manualmente
-  subcategories: [], // MODIFICADO: Ahora es un array plano de strings.
+  subcategories: {}, // MODIFICADO: Ahora es un objeto para agrupar por categoría.
   dateFilter: { start: null, end: null },
   categoryFilter: 'all',
   sueldosData: [],
