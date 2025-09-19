@@ -33,27 +33,26 @@ export function listenForManualCategories(onDataChange) {
 
 export function listenForSubcategories(onDataChange) {
     return onSnapshot(collection(db, "subcategories"), (snapshot) => {
-        const subcategoriesByCategory = {};
+        state.subcategories = {};
         snapshot.docs.forEach(doc => {
             const data = doc.data();
             if (data.name && data.parentCategory) {
-                if (!subcategoriesByCategory[data.parentCategory]) {
-                    subcategoriesByCategory[data.parentCategory] = [];
+                if (!state.subcategories[data.parentCategory]) {
+                    state.subcategories[data.parentCategory] = [];
                 }
-                // Evitar duplicados
-                if (!subcategoriesByCategory[data.parentCategory].includes(data.name)) {
-                    subcategoriesByCategory[data.parentCategory].push(data.name);
+                if (!state.subcategories[data.parentCategory].includes(data.name)) {
+                    state.subcategories[data.parentCategory].push(data.name);
                 }
             }
         });
-        // Ordenar alfabéticamente cada lista de subcategorías
-        for (const category in subcategoriesByCategory) {
-            subcategoriesByCategory[category].sort();
+        // Sort each subcategory array
+        for (const category in state.subcategories) {
+            state.subcategories[category].sort();
         }
-        state.subcategories = subcategoriesByCategory;
         onDataChange();
     }, (error) => console.error("Subcategories Listener Error:", error));
 }
+
 
 export function listenForKpis(onDataChange) {
     return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
@@ -64,10 +63,10 @@ export function listenForKpis(onDataChange) {
 
 export function listenForMonthlyLeads(onDataChange) {
     const today = new Date();
-    const year = 2025;
-    const month = 9;
-    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
-    const endOfMonth = new Date(Date.UTC(year, month, 1));
+    const year = today.getFullYear();
+    const month = today.getMonth(); // 0-indexed for Date object
+    const startOfMonth = new Date(Date.UTC(year, month, 1));
+    const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
     const q = query(collection(db, "pedidos"), 
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
@@ -92,10 +91,10 @@ export function listenForMonthlyLeads(onDataChange) {
 
 export function listenForMonthlyPaidLeads(onDataChange) {
     const today = new Date();
-    const year = 2025;
-    const month = 9;
-    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
-    const endOfMonth = new Date(Date.UTC(year, month, 1));
+    const year = today.getFullYear();
+    const month = today.getMonth(); // 0-indexed for Date object
+    const startOfMonth = new Date(Date.UTC(year, month, 1));
+    const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
@@ -202,25 +201,20 @@ export async function saveExpense(expenseData, originalCategory) {
 }
 
 export async function saveNewSubcategory(subcategoryName, parentCategory) {
-    if (!subcategoryName || !parentCategory) return;
     try {
-        // Verificar si la subcategoría ya existe para esa categoría padre
-        const q = query(collection(db, "subcategories"), 
-            where("name", "==", subcategoryName),
-            where("parentCategory", "==", parentCategory)
-        );
-        const querySnapshot = await getDocs(q);
-        if (querySnapshot.empty) {
-            // Guardar con nombre y categoría padre
-            await addDoc(collection(db, "subcategories"), { 
-                name: subcategoryName,
-                parentCategory: parentCategory
-            });
-        }
+        // ID único basado en el padre y el nombre de la subcategoría
+        const subcategoryId = `${parentCategory.toLowerCase()}_${subcategoryName.toLowerCase()}`;
+        const docRef = doc(db, "subcategories", subcategoryId);
+
+        await setDoc(docRef, { 
+            name: subcategoryName, 
+            parentCategory: parentCategory 
+        });
     } catch (error) {
         console.error("Error saving new subcategory:", error);
     }
 }
+
 
 export async function saveKpi(kpiData) {
     try {
@@ -442,26 +436,21 @@ export async function deleteCurrentMonthData() {
         const batch = writeBatch(db);
         const q = query(collection(db, "expenses"), where("date", ">=", start), where("date", "<=", end));
         const snapshot = await getDocs(q);
+        let deletedCount = 0;
         if (snapshot.empty) {
             showModal({ title: 'Información', body: 'No hay registros en el mes actual.', showCancel: false, confirmText: 'Entendido' });
-            actionHistory.pop();
-            return;
+            actionHistory.pop(); return;
         }
-
-        let deletedCount = 0;
         snapshot.forEach(doc => {
             if (doc.data().source !== 'manual') {
                 batch.delete(doc.ref);
                 deletedCount++;
             }
         });
-
-        if (deletedCount === 0) {
+         if (deletedCount === 0) {
             showModal({ title: 'Información', body: 'No hay registros de archivo para borrar en el mes actual.', showCancel: false, confirmText: 'Entendido' });
-            actionHistory.pop();
-            return;
+            actionHistory.pop(); return;
         }
-
         await batch.commit();
         showModal({ title: 'Éxito', body: `Se borraron ${deletedCount} registros del mes actual.`, showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
@@ -494,11 +483,11 @@ export async function deletePreviousMonthData() {
               }
           });
           if (deletedCount === 0) {
-              showModal({ title: 'Información', body: 'No hay registros de archivo para borrar.', showCancel: false, confirmText: 'Entendido' });
+              showModal({ title: 'Información', body: 'No hay registros de archivo para borrar en el mes anterior.', showCancel: false, confirmText: 'Entendido' });
               actionHistory.pop(); return;
           }
           await batch.commit();
-          showModal({ title: 'Éxito', body: `Se borraron ${deletedCount} registros.`, showCancel: false, confirmText: 'Entendido' });
+          showModal({ title: 'Éxito', body: `Se borraron ${deletedCount} registros del mes anterior.`, showCancel: false, confirmText: 'Entendido' });
       } catch (error) {
           console.error("Error deleting previous month data:", error);
           actionHistory.pop();
