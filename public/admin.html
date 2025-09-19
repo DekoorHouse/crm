@@ -346,9 +346,26 @@
           </div>
       </div>
   </div>
+
+  <!-- Custom Prompt Modal -->
+  <div id="prompt-modal" class="modal-overlay">
+      <div class="modal-content">
+          <h3 class="modal-header" id="prompt-modal-title"></h3>
+          <div class="modal-body">
+              <form id="prompt-modal-form" novalidate>
+                  <div class="form-group">
+                      <input type="text" id="prompt-modal-input" class="modal-input" required>
+                  </div>
+              </form>
+          </div>
+          <div class="modal-footer">
+              <button id="prompt-modal-cancel-btn" class="btn btn-outline">Cancelar</button>
+              <button id="prompt-modal-confirm-btn" class="btn">Aceptar</button>
+          </div>
+      </div>
+  </div>
   
   <script type="module" src="js/script_admin.js"></script>
 </body>
 </html>
-
 
