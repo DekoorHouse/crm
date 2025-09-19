@@ -121,27 +121,29 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
 
-// NUEVA FUNCIÓN PARA PEDIDOS CANCELADOS
 export function listenForMonthlyCancelledLeads(onDataChange) {
     const year = 2025;
     const month = 8; // Septiembre es el mes 8 (0-indexed)
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
+    // Query only by date to avoid needing a composite index
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
-        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
-        where("estatus", "==", "Cancelado")
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
     );
 
     return onSnapshot(q, (snapshot) => {
         const cancelledCount = {};
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.createdAt && data.createdAt.toDate) {
-                const date = data.createdAt.toDate();
-                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-                cancelledCount[dateString] = (cancelledCount[dateString] || 0) + 1;
+            // Filter for "Cancelado" status on the client side
+            if (data.estatus === "Cancelado") {
+                if (data.createdAt && data.createdAt.toDate) {
+                    const date = data.createdAt.toDate();
+                    const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                    cancelledCount[dateString] = (cancelledCount[dateString] || 0) + 1;
+                }
             }
         });
         state.monthlyCancelledLeads = cancelledCount;
