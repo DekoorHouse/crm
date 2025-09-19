@@ -399,6 +399,9 @@
       display: flex;
       flex-direction: column;
     }
+    .modal-content.modal-sm {
+        max-width: 400px;
+    }
     .modal-content.modal-lg {
         max-width: 800px;
     }
@@ -451,19 +454,6 @@
     .btn-whatsapp:hover {
         background-color: #128c7e;
     }
-
-    /* --- Custom Prompt Modal --- */
-    #prompt-modal .modal-content {
-        max-width: 450px;
-    }
-    #prompt-modal-form {
-        margin-top: 10px;
-    }
-    #prompt-modal-input {
-        font-size: 1rem;
-        padding: 12px 15px;
-    }
-
 
     /* --- SUELDOS TAB STYLES --- */
     #sueldos-table-container {
@@ -783,6 +773,33 @@
       gap: 20px;
       margin-top: 20px;
     }
+    .kpi-averages-section {
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid var(--gray-medium);
+    }
+    .kpi-averages-section .section-title {
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--text-primary);
+        margin-bottom: 15px;
+        text-align: center;
+    }
+    #kpi-averages-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 15px;
+    }
+    #kpi-averages-grid .kpi-card {
+        padding: 15px;
+    }
+    #kpi-averages-grid .kpi-title {
+        font-size: 13px;
+    }
+    #kpi-averages-grid .kpi-value {
+        font-size: 24px;
+    }
+
 
     @media (max-width: 992px) {
         #health-dashboard { grid-template-columns: 1fr; }
