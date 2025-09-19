@@ -770,37 +770,35 @@ export function renderKpisTable() {
     if (!elements.kpisTableBody) return;
     elements.kpisTableBody.innerHTML = '';
 
-    const today = new Date();
-    const year = 2025; // Año fijo
-    const month = 9;   // Septiembre (fijo)
-    const currentDay = today.getFullYear() === year && today.getMonth() + 1 === month ? today.getDate() : 30;
+    const allDates = new Set([
+        ...Object.keys(state.monthlyLeads),
+        ...Object.keys(state.monthlyPaidLeads),
+        ...state.kpis.map(k => k.fecha)
+    ]);
 
-    const combinedData = [];
+    if (allDates.size === 0) {
+        elements.kpisEmptyState.style.display = 'block';
+        return;
+    }
 
-    for (let i = 1; i <= currentDay; i++) {
-        const dateString = `${year}-${String(month).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
-        
+    const combinedData = Array.from(allDates).map(dateString => {
         const leads = state.monthlyLeads[dateString] || 0;
         const paidLeads = state.monthlyPaidLeads[dateString] || 0;
         const revenue = state.monthlyPaidRevenue[dateString] || 0;
         const manualKpi = state.kpis.find(k => k.fecha === dateString) || {};
 
-        combinedData.push({
+        return {
             id: manualKpi.id || null,
             fecha: dateString,
             leads: leads,
             paidLeads: paidLeads,
             revenue: revenue,
             costo_publicidad: manualKpi.costo_publicidad || 0
-        });
-    }
+        };
+    });
     
     combinedData.sort((a, b) => b.fecha.localeCompare(a.fecha));
 
-    if (combinedData.length === 0) {
-        elements.kpisEmptyState.style.display = 'block';
-        return;
-    }
     elements.kpisEmptyState.style.display = 'none';
 
     combinedData.forEach(kpi => {
