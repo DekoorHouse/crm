@@ -524,68 +524,6 @@ export function openExpenseModal(expense = {}) {
 }
   
 /**
- * Abre el modal para registrar un movimiento financiero (préstamos, pagos).
- */
-export function openFinancialModal() {
-    const body = `
-        <form id="financial-form" style="display: grid; gap: 15px;">
-            <div class="form-group">
-                <label for="financial-date">Fecha</label>
-                <input type="date" id="financial-date" class="modal-input" value="${new Date().toISOString().split('T')[0]}" required>
-            </div>
-            <div class="form-group">
-                <label for="financial-type">Tipo de Movimiento</label>
-                <select id="financial-type" class="modal-input">
-                    <option value="entrada_prestamo">Entrada de Préstamo</option>
-                    <option value="pago_prestamo">Pago de Préstamo</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="financial-concept">Concepto (Ej: Préstamo BBVA, Pago semanal)</label>
-                <input type="text" id="financial-concept" class="modal-input" placeholder="Concepto" required>
-            </div>
-            <div id="entrada-fields">
-                <div class="form-group">
-                    <label for="financial-credit">Monto del Préstamo Recibido ($)</label>
-                    <input type="number" step="0.01" id="financial-credit" class="modal-input" placeholder="$5,000.00">
-                </div>
-            </div>
-            <div id="pago-fields" style="display: none;">
-                <div class="form-group">
-                    <label for="financial-capital">Pago a Capital ($)</label>
-                    <input type="number" step="0.01" id="financial-capital" class="modal-input" placeholder="$1,000.00">
-                </div>
-                <div class="form-group">
-                    <label for="financial-interest">Pago de Intereses ($)</label>
-                    <input type="number" step="0.01" id="financial-interest" class="modal-input" placeholder="$150.00">
-                </div>
-            </div>
-        </form>
-    `;
-
-    showModal({
-        title: 'Registrar Movimiento Financiero',
-        body: body,
-        confirmText: 'Guardar Movimiento',
-        onConfirm: () => services.saveFinancialTransaction(),
-        onModalOpen: () => {
-            const typeSelect = document.getElementById('financial-type');
-            const entradaFields = document.getElementById('entrada-fields');
-            const pagoFields = document.getElementById('pago-fields');
-            typeSelect.addEventListener('change', (e) => {
-                if (e.target.value === 'entrada_prestamo') {
-                    entradaFields.style.display = 'block';
-                    pagoFields.style.display = 'none';
-                } else {
-                    entradaFields.style.display = 'none';
-                    pagoFields.style.display = 'block';
-                }
-            });
-        }
-    });
-}
-
-/**
  * Rellena el select de filtro de categorías con las categorías existentes.
  */
 export function populateCategoryFilter() {
@@ -773,6 +711,7 @@ export function renderKpisTable() {
     const allDates = new Set([
         ...Object.keys(state.monthlyLeads),
         ...Object.keys(state.monthlyPaidLeads),
+        ...Object.keys(state.monthlyCancelledLeads),
         ...state.kpis.map(k => k.fecha)
     ]);
 
@@ -784,6 +723,7 @@ export function renderKpisTable() {
     const combinedData = Array.from(allDates).map(dateString => {
         const leads = state.monthlyLeads[dateString] || 0;
         const paidLeads = state.monthlyPaidLeads[dateString] || 0;
+        const cancelledLeads = state.monthlyCancelledLeads[dateString] || 0;
         const revenue = state.monthlyPaidRevenue[dateString] || 0;
         const manualKpi = state.kpis.find(k => k.fecha === dateString) || {};
 
@@ -792,6 +732,7 @@ export function renderKpisTable() {
             fecha: dateString,
             leads: leads,
             paidLeads: paidLeads,
+            cancelledLeads: cancelledLeads,
             revenue: revenue,
             costo_publicidad: manualKpi.costo_publicidad || 0
         };
@@ -805,6 +746,7 @@ export function renderKpisTable() {
         const tr = document.createElement('tr');
         const leads = Number(kpi.leads);
         const paidLeads = Number(kpi.paidLeads);
+        const cancelledLeads = Number(kpi.cancelledLeads);
         const revenue = Number(kpi.revenue);
         const costoPublicidad = Number(kpi.costo_publicidad);
 
@@ -816,6 +758,7 @@ export function renderKpisTable() {
             <td>${kpi.fecha}</td>
             <td>${leads}</td>
             <td>${paidLeads}</td>
+            <td>${cancelledLeads}</td>
             <td>${formatCurrency(revenue)}</td>
             <td>${formatCurrency(costoPublicidad)}</td>
             <td>${formatCurrency(cpl)}</td>
