@@ -68,12 +68,13 @@ Object.assign(app, {
         services.setupOrdersListener(() => this.renderFinancialHealth());
         services.listenForKpis(() => this.renderKpisTable());
         services.listenForMonthlyLeads(() => this.renderKpisTable());
+        
+        services.listenForMonthlyCancelledLeads(() => this.renderKpisTable());
+
         services.listenForMonthlyPaidLeads(() => {
             this.renderKpisTable();
             this.renderFinancialHealth();
         });
-        // AÑADIDO: Se activa el listener para los pedidos cancelados
-        services.listenForMonthlyCancelledLeads(() => this.renderKpisTable());
         services.listenForAllTimeLeads();
     },
     
@@ -177,3 +178,4 @@ Object.assign(app, {
 
 // Punto de entrada de la aplicación
 document.addEventListener('DOMContentLoaded', () => app.init());
+
