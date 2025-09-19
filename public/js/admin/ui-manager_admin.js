@@ -38,6 +38,7 @@ export function cacheElements() {
         category: document.getElementById("categoryChart")?.getContext("2d"),
         compare: document.getElementById("compareChart")?.getContext("2d"),
         leadsTrend: document.getElementById("leadsTrendChart")?.getContext("2d"),
+        incomeVsAdCost: document.getElementById("incomeVsAdCostChart")?.getContext("2d"), // Nuevo
     };
     
     // Sueldos tab elements
@@ -69,6 +70,13 @@ export function cacheElements() {
     elements.kpiPaidOrders = document.getElementById('kpi-paid-orders');
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
+
+    // Average KPI elements
+    elements.kpiAvgLeads = document.getElementById('kpi-avg-leads');
+    elements.kpiAvgPaidLeads = document.getElementById('kpi-avg-paid-leads');
+    elements.kpiAvgRevenue = document.getElementById('kpi-avg-revenue');
+    elements.kpiAvgAdCost = document.getElementById('kpi-avg-ad-cost');
+    elements.kpiAvgCpv = document.getElementById('kpi-avg-cpv');
     
     // KPIs Tab elements
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
@@ -522,7 +530,7 @@ export function openExpenseModal(expense = {}) {
         }
     });
 }
-  
+
 /**
  * Rellena el select de filtro de categorías con las categorías existentes.
  */
@@ -771,7 +779,36 @@ export function renderKpisTable() {
         `;
         elements.kpisTableBody.appendChild(tr);
     });
+
+    // Calcular y mostrar promedios
+    calculateAndDisplayAverages(combinedData);
 }
+
+function calculateAndDisplayAverages(data) {
+    const daysWithData = data.length;
+    if (daysWithData === 0) return;
+
+    const totals = data.reduce((acc, day) => {
+        acc.leads += day.leads;
+        acc.paidLeads += day.paidLeads;
+        acc.revenue += day.revenue;
+        acc.adCost += day.costo_publicidad;
+        return acc;
+    }, { leads: 0, paidLeads: 0, revenue: 0, adCost: 0 });
+
+    const avgLeads = totals.leads / daysWithData;
+    const avgPaidLeads = totals.paidLeads / daysWithData;
+    const avgRevenue = totals.revenue / daysWithData;
+    const avgAdCost = totals.adCost / daysWithData;
+    const avgCpv = totals.paidLeads > 0 ? totals.adCost / totals.paidLeads : 0;
+
+    elements.kpiAvgLeads.textContent = avgLeads.toFixed(1);
+    elements.kpiAvgPaidLeads.textContent = avgPaidLeads.toFixed(1);
+    elements.kpiAvgRevenue.textContent = formatCurrency(avgRevenue);
+    elements.kpiAvgAdCost.textContent = formatCurrency(avgAdCost);
+    elements.kpiAvgCpv.textContent = formatCurrency(avgCpv);
+}
+
 
 export function openKpiModal(kpi = {}) {
     const isEditing = !!kpi.id;
