@@ -187,6 +187,7 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
     elements.thermometerPercentage.textContent = `${operatingMargin.toFixed(1)}%`;
     
     updateLeadsTrendChart();
+    updateIncomeVsAdCostChart();
 }
   
 /**
@@ -278,5 +279,74 @@ export function updateLeadsTrendChart() {
         }
     });
     elements.leadsChartTitle.textContent = title;
+}
+
+/**
+ * Actualiza la gráfica de ingresos vs. costo de publicidad.
+ */
+export function updateIncomeVsAdCostChart() {
+    if (!elements.chartContexts.incomeVsAdCost) return;
+    if (charts.incomeVsAdCostChart) {
+        charts.incomeVsAdCostChart.destroy();
+    }
+
+    const allDates = new Set([
+        ...Object.keys(state.monthlyPaidRevenue),
+        ...state.kpis.map(k => k.fecha)
+    ]);
+
+    const sortedLabels = Array.from(allDates).sort((a, b) => new Date(a) - new Date(b));
+
+    const revenueData = sortedLabels.map(date => state.monthlyPaidRevenue[date] || 0);
+    const adCostData = sortedLabels.map(date => {
+        const kpi = state.kpis.find(k => k.fecha === date);
+        return kpi ? (kpi.costo_publicidad || 0) : 0;
+    });
+    
+    charts.incomeVsAdCostChart = new Chart(elements.chartContexts.incomeVsAdCost, {
+        type: 'bar',
+        data: {
+            labels: sortedLabels,
+            datasets: [
+                {
+                    label: 'Ingresos',
+                    data: revenueData,
+                    backgroundColor: 'rgba(22, 163, 74, 0.7)',
+                    yAxisID: 'y',
+                },
+                {
+                    label: 'Costo Publicidad',
+                    data: adCostData,
+                    backgroundColor: 'rgba(239, 68, 68, 0.7)',
+                    yAxisID: 'y',
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            plugins: {
+                title: { display: false },
+                legend: { display: true, position: 'top' }
+            },
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    beginAtZero: true,
+                    ticks: {
+                        callback: function(value) {
+                            return formatCurrency(value);
+                        }
+                    }
+                },
+            }
+        }
+    });
 }
 
