@@ -427,11 +427,26 @@ export async function deleteCurrentMonthData() {
         const snapshot = await getDocs(q);
         if (snapshot.empty) {
             showModal({ title: 'Información', body: 'No hay registros en el mes actual.', showCancel: false, confirmText: 'Entendido' });
-            actionHistory.pop(); return;
+            actionHistory.pop();
+            return;
         }
-        snapshot.forEach(doc => batch.delete(doc.ref));
+
+        let deletedCount = 0;
+        snapshot.forEach(doc => {
+            if (doc.data().source !== 'manual') {
+                batch.delete(doc.ref);
+                deletedCount++;
+            }
+        });
+
+        if (deletedCount === 0) {
+            showModal({ title: 'Información', body: 'No hay registros de archivo para borrar en el mes actual.', showCancel: false, confirmText: 'Entendido' });
+            actionHistory.pop();
+            return;
+        }
+
         await batch.commit();
-        showModal({ title: 'Éxito', body: `Se borraron ${snapshot.size} registros del mes actual.`, showCancel: false, confirmText: 'Entendido' });
+        showModal({ title: 'Éxito', body: `Se borraron ${deletedCount} registros del mes actual.`, showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error deleting current month data:", error);
         actionHistory.pop();
@@ -538,4 +553,3 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
