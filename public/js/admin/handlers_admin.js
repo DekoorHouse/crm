@@ -454,7 +454,12 @@ async function handleSubcategoryChange(e) {
             select.value = expense.subcategory || '';
             return;
         }
-        const newSubcategoryName = prompt(`Nueva subcategoría para "${parentCategory}":`);
+        const newSubcategoryName = await ui.showPromptModal({
+            title: `Nueva subcategoría para "${parentCategory}"`,
+            placeholder: 'Nombre de la subcategoría',
+            confirmText: 'Crear'
+        });
+        
         if (newSubcategoryName && newSubcategoryName.trim() !== '') {
             const trimmedName = newSubcategoryName.trim();
             // Guardar la nueva subcategoría con su categoría padre
