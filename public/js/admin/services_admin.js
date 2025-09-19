@@ -96,22 +96,28 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
+    // Se quita el filtro de 'estatus' de la consulta para evitar problemas de índices en Firestore.
+    // El filtro se aplicará en el lado del cliente.
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
-        where("createdAt", "<", Timestamp.fromDate(endOfMonth)),
-        where("estatus", "in", ["Pagado", "Fabricar"])
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
     );
 
     return onSnapshot(q, (snapshot) => {
         const leadsCount = {};
         const revenueCount = {};
+        const paidStatuses = ["Pagado", "Fabricar"];
+
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.createdAt && data.createdAt.toDate) {
-                const date = data.createdAt.toDate();
-                const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
-                leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
-                revenueCount[dateString] = (revenueCount[dateString] || 0) + (parseFloat(data.precio) || 0);
+            // Se aplica el filtro por estatus aquí, después de recibir los datos.
+            if (paidStatuses.includes(data.estatus)) {
+                if (data.createdAt && data.createdAt.toDate) {
+                    const date = data.createdAt.toDate();
+                    const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+                    leadsCount[dateString] = (leadsCount[dateString] || 0) + 1;
+                    revenueCount[dateString] = (revenueCount[dateString] || 0) + (parseFloat(data.precio) || 0);
+                }
             }
         });
         state.monthlyPaidLeads = leadsCount;
