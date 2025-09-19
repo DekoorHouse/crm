@@ -19,7 +19,7 @@ export const elements = {};
 export const state = {
   expenses: [],
   manualCategories: new Map(), // Almacena categorías asignadas manualmente
-  subcategories: {}, // Objeto para almacenar subcategorías por categoría padre
+  subcategories: {}, // Objeto donde cada clave es una categoría y el valor es un array de subcategorías
   dateFilter: { start: null, end: null },
   categoryFilter: 'all',
   sueldosData: [],
@@ -36,7 +36,7 @@ export const state = {
   monthlyLeads: {},
   monthlyPaidLeads: {},
   monthlyPaidRevenue: {},
-  monthlyCancelledLeads: {}, // NUEVA PROPIEDAD
+  monthlyCancelledLeads: {},
   totalLeads: 0,
 };
 
@@ -49,6 +49,7 @@ export const charts = {
   categoryChart: null,
   compareChart: null,
   leadsTrendChart: null,
+  incomeVsAdCostChart: null, // Nuevo
 };
 
 /**
