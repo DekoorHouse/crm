@@ -396,7 +396,7 @@ function confirmDeleteAllData() {
 function confirmDeleteCurrentMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
-        body: "Vas a borrar todos los registros del mes actual. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        body: "Vas a borrar todos los registros del mes actual que no hayan sido agregados manualmente. Esta acción no se puede deshacer. <br><br>¿Continuar?",
         confirmText: "Borrar Mes Actual",
         confirmClass: 'btn-danger',
         onConfirm: () => services.deleteCurrentMonthData()
@@ -406,7 +406,7 @@ function confirmDeleteCurrentMonth() {
 function confirmDeletePreviousMonth() {
     ui.showModal({
         title: "Confirmar Borrado",
-        body: "Vas a borrar todos los registros del mes anterior. Esta acción no se puede deshacer. <br><br>¿Continuar?",
+        body: "Vas a borrar todos los registros del mes anterior que no hayan sido agregados manualmente. Esta acción no se puede deshacer. <br><br>¿Continuar?",
         confirmText: "Borrar Mes Anterior",
         confirmClass: 'btn-danger',
         onConfirm: () => services.deletePreviousMonthData()
@@ -444,19 +444,25 @@ function handleCategoryChange(e) {
 async function handleSubcategoryChange(e) {
     const select = e.target;
     const expenseId = select.dataset.expenseId;
+    const parentCategory = select.dataset.category;
     const newSubcategory = select.value;
     const expense = state.expenses.find(exp => exp.id === expenseId);
 
     if (newSubcategory === '__add_new__') {
-        const newSubcategoryName = prompt(`Introduce el nombre de la nueva subcategoría:`);
+        if (!parentCategory) {
+            alert("Primero debe seleccionar una categoría principal.");
+            select.value = expense.subcategory || '';
+            return;
+        }
+        const newSubcategoryName = prompt(`Nueva subcategoría para "${parentCategory}":`);
         if (newSubcategoryName && newSubcategoryName.trim() !== '') {
             const trimmedName = newSubcategoryName.trim();
-            // Guardar la nueva subcategoría global
-            await services.saveNewSubcategory(trimmedName);
-            // Guardar el gasto con la nueva subcategoría. El listener se encargará de actualizar la UI.
+            // Guardar la nueva subcategoría con su categoría padre
+            await services.saveNewSubcategory(trimmedName, parentCategory);
+            // Guardar el gasto con la nueva subcategoría. El listener actualizará la UI.
             await services.saveExpense({...expense, subcategory: trimmedName}, expense.category);
         } else {
-            // Reset dropdown if user cancels
+            // Reset dropdown si el usuario cancela
             select.value = expense.subcategory || '';
         }
         return;
