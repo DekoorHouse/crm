@@ -201,12 +201,9 @@ export function initEventListeners() {
     
     elements.tabs.forEach(tab => tab.addEventListener('click', () => handleTabClick(tab)));
     elements.addManualBtn.addEventListener('click', () => ui.openExpenseModal());
-    elements.addFinancialBtn.addEventListener('click', () => ui.openFinancialModal());
-    elements.deleteDataBtn.addEventListener('click', confirmDeleteAllData);
     elements.deleteCurrentMonthBtn.addEventListener('click', confirmDeleteCurrentMonth);
     elements.deletePreviousMonthBtn.addEventListener('click', confirmDeletePreviousMonth);
     elements.exportBtn.addEventListener('click', exportToExcel);
-    elements.removeDuplicatesBtn.addEventListener('click', confirmRemoveDuplicates);
     elements.categoryFilter.addEventListener('change', handleFilterChange);
     
     elements.modal.addEventListener('click', (e) => {
