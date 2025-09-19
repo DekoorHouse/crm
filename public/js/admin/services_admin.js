@@ -62,9 +62,8 @@ export function listenForKpis(onDataChange) {
 }
 
 export function listenForMonthlyLeads(onDataChange) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth(); // 0-indexed for Date object
+    const year = 2025;
+    const month = 8; // Septiembre es el mes 8 (0-indexed)
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
@@ -90,14 +89,11 @@ export function listenForMonthlyLeads(onDataChange) {
 }
 
 export function listenForMonthlyPaidLeads(onDataChange) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth(); // 0-indexed for Date object
+    const year = 2025;
+    const month = 8; // Septiembre es el mes 8 (0-indexed)
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
-    // Se quita el filtro de 'estatus' de la consulta para evitar problemas de índices en Firestore.
-    // El filtro se aplicará en el lado del cliente.
     const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
         where("createdAt", "<", Timestamp.fromDate(endOfMonth))
@@ -110,7 +106,6 @@ export function listenForMonthlyPaidLeads(onDataChange) {
 
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            // Se aplica el filtro por estatus aquí, después de recibir los datos.
             if (paidStatuses.includes(data.estatus)) {
                 if (data.createdAt && data.createdAt.toDate) {
                     const date = data.createdAt.toDate();
@@ -126,11 +121,9 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
 
-// NUEVA FUNCIÓN PARA PEDIDOS CANCELADOS
 export function listenForMonthlyCancelledLeads(onDataChange) {
-    const today = new Date();
-    const year = today.getFullYear();
-    const month = today.getMonth(); // 0-indexed for Date object
+    const year = 2025;
+    const month = 8; // Septiembre es el mes 8 (0-indexed)
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
@@ -279,55 +272,6 @@ export async function saveKpi(kpiData) {
     } catch (error) {
         console.error("Error saving KPI:", error);
         showModal({ title: 'Error', body: 'No se pudo guardar el registro de KPI.' });
-    }
-}
-
-export async function saveFinancialTransaction() {
-    const form = document.getElementById('financial-form');
-    if (!form.reportValidity()) return;
-
-    const date = document.getElementById('financial-date').value;
-    const concept = document.getElementById('financial-concept').value;
-    const type = document.getElementById('financial-type').value;
-
-    saveStateToHistory();
-    const batch = writeBatch(db);
-
-    if (type === 'entrada_prestamo') {
-        const amount = parseFloat(document.getElementById('financial-credit').value) || 0;
-        if (amount <= 0) {
-            showModal({title: 'Dato Inválido', body: 'El monto del préstamo debe ser mayor a cero.', confirmText: 'Entendido', showCancel: false});
-            actionHistory.pop(); return;
-        }
-        batch.set(doc(collection(db, "expenses")), {
-            date, concept, charge: 0, credit: amount,
-            type: 'financiero', sub_type: 'entrada_prestamo', category: '', channel: '', source: 'manual'
-        });
-    } else {
-        const capitalAmount = parseFloat(document.getElementById('financial-capital').value) || 0;
-        const interestAmount = parseFloat(document.getElementById('financial-interest').value) || 0;
-
-        if (capitalAmount <= 0 && interestAmount <= 0) {
-            showModal({title: 'Datos Incompletos', body: 'Debe ingresar un monto para capital y/o intereses.', confirmText: 'Entendido', showCancel: false});
-            actionHistory.pop(); return;
-        }
-
-        if (capitalAmount > 0) batch.set(doc(collection(db, "expenses")), {
-            date, concept: `Pago a capital: ${concept}`, charge: capitalAmount, credit: 0,
-            type: 'financiero', sub_type: 'pago_capital', category: '', channel: '', source: 'manual'
-        });
-        if (interestAmount > 0) batch.set(doc(collection(db, "expenses")), {
-            date, concept: `Intereses: ${concept}`, charge: interestAmount, credit: 0,
-            type: 'financiero', sub_type: 'pago_intereses', category: 'Gastos Financieros', channel: '', source: 'manual'
-        });
-    }
-    
-    try {
-        await batch.commit();
-        showModal({ show: false });
-    } catch(error) {
-        console.error("Error saving financial transaction:", error);
-        actionHistory.pop();
     }
 }
 
@@ -507,31 +451,6 @@ export async function deletePreviousMonthData() {
           console.error("Error deleting previous month data:", error);
           actionHistory.pop();
       }
-}
-
-export async function removeDuplicates() {
-    showModal({ show: false }); 
-    const seen = new Map();
-    const duplicatesToDelete = [];
-    [...state.expenses].sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(exp => {
-        const sig = getExpenseSignature(exp);
-        if (seen.has(sig)) duplicatesToDelete.push(exp.id);
-        else seen.set(sig, exp.id);
-    });
-    if (duplicatesToDelete.length === 0) {
-        showModal({ title: 'Sin Duplicados', body: 'No se encontraron registros duplicados.', showCancel: false, confirmText: 'Entendido' });
-        return;
-    }
-    try {
-        saveStateToHistory();
-        const batch = writeBatch(db);
-        duplicatesToDelete.forEach(id => batch.delete(doc(db, "expenses", id)));
-        await batch.commit();
-        showModal({ title: 'Éxito', body: `Se eliminaron ${duplicatesToDelete.length} duplicados.`, showCancel: false, confirmText: 'Entendido' });
-    } catch (error) {
-        console.error("Error removing duplicates:", error);
-        actionHistory.pop();
-    }
 }
 
 export async function deleteSueldosData() {
