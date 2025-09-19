@@ -452,6 +452,19 @@
         background-color: #128c7e;
     }
 
+    /* --- Custom Prompt Modal --- */
+    #prompt-modal .modal-content {
+        max-width: 450px;
+    }
+    #prompt-modal-form {
+        margin-top: 10px;
+    }
+    #prompt-modal-input {
+        font-size: 1rem;
+        padding: 12px 15px;
+    }
+
+
     /* --- SUELDOS TAB STYLES --- */
     #sueldos-table-container {
       display: grid;
@@ -777,3 +790,4 @@
      @media (max-width: 768px) {
         .employee-body { grid-template-columns: 1fr; }
     }
+
