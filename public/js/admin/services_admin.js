@@ -121,6 +121,7 @@ export function listenForMonthlyPaidLeads(onDataChange) {
     }, (error) => console.error("Monthly Paid Leads Listener Error:", error));
 }
 
+// NUEVA FUNCIÓN PARA PEDIDOS CANCELADOS
 export function listenForMonthlyCancelledLeads(onDataChange) {
     const year = 2025;
     const month = 8; // Septiembre es el mes 8 (0-indexed)
