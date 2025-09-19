@@ -77,6 +77,14 @@ export function cacheElements() {
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
     elements.kpisTableBody = document.querySelector('#kpis-table tbody');
     elements.kpisEmptyState = document.getElementById('kpis-empty-state');
+
+    // Custom Prompt Elements
+    elements.promptModal = document.getElementById('prompt-modal');
+    elements.promptModalTitle = document.getElementById('prompt-modal-title');
+    elements.promptModalInput = document.getElementById('prompt-modal-input');
+    elements.promptModalForm = document.getElementById('prompt-modal-form');
+    elements.promptModalConfirmBtn = document.getElementById('prompt-modal-confirm-btn');
+    elements.promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
 }
 
 /**
@@ -275,6 +283,68 @@ export function showModal({ show = true, title, body, onConfirm, onModalOpen, co
       elements.modal.classList.add('visible');
       if (onModalOpen) onModalOpen();
 }
+
+/**
+ * Muestra un modal de prompt personalizado.
+ * @param {object} options - Opciones para el modal.
+ * @param {string} options.title - El título del modal.
+ * @param {string} [options.placeholder=''] - El placeholder para el input.
+ * @param {string} [options.confirmText='Aceptar'] - El texto para el botón de confirmación.
+ * @param {string} [options.value=''] - Valor inicial del input.
+ * @returns {Promise<string|null>} Una promesa que resuelve con el valor del input o null si se cancela.
+ */
+export function showPromptModal({ title, placeholder = '', confirmText = 'Aceptar', value = '' }) {
+    return new Promise((resolve) => {
+        const { 
+            promptModal, promptModalTitle, promptModalInput, promptModalForm, 
+            promptModalConfirmBtn, promptModalCancelBtn 
+        } = elements;
+
+        promptModalTitle.textContent = title;
+        promptModalInput.placeholder = placeholder;
+        promptModalInput.value = value;
+        promptModalConfirmBtn.textContent = confirmText;
+
+        const cleanup = () => {
+            promptModal.classList.remove('visible');
+            promptModalForm.onsubmit = null;
+            promptModalConfirmBtn.onclick = null;
+            promptModalCancelBtn.onclick = null;
+            promptModal.onclick = null;
+        };
+
+        const handleConfirm = (e) => {
+            if (e) e.preventDefault();
+            const inputValue = promptModalInput.value.trim();
+            if (inputValue) {
+                cleanup();
+                resolve(inputValue);
+            } else {
+                promptModalInput.focus(); // Simple validation
+            }
+        };
+
+        const handleCancel = () => {
+            cleanup();
+            resolve(null); // Resolve with null on cancel
+        };
+
+        promptModalForm.onsubmit = handleConfirm;
+        promptModalConfirmBtn.onclick = handleConfirm;
+        promptModalCancelBtn.onclick = handleCancel;
+        promptModal.onclick = (e) => {
+            if (e.target === promptModal) {
+                handleCancel();
+            }
+        };
+
+        promptModal.classList.add('visible');
+        setTimeout(() => {
+            promptModalInput.focus();
+            promptModalInput.select();
+        }, 50);
+    });
+}
   
 /**
  * Abre el modal para agregar o editar un movimiento operativo.
@@ -417,8 +487,13 @@ export function openExpenseModal(expense = {}) {
                 if (e.target.value === '__add_new__') {
                     const parentCategory = e.target.dataset.category;
                     const originalSubcategory = expense.subcategory || '';
-                    const newSubcategoryName = prompt(`Nueva subcategoría para "${parentCategory}":`);
-                    if (newSubcategoryName && newSubcategoryName.trim()) {
+                    const newSubcategoryName = await showPromptModal({
+                        title: `Nueva subcategoría para "${parentCategory}"`,
+                        placeholder: 'Nombre de la subcategoría',
+                        confirmText: 'Crear'
+                    });
+
+                    if (newSubcategoryName) {
                         const trimmedName = newSubcategoryName.trim();
                         await services.saveNewSubcategory(trimmedName, parentCategory);
                         // El listener de Firestore actualizará el estado global. Para mejorar la UX,
