@@ -33,14 +33,24 @@ export function listenForManualCategories(onDataChange) {
 
 export function listenForSubcategories(onDataChange) {
     return onSnapshot(collection(db, "subcategories"), (snapshot) => {
-        const subcategorySet = new Set();
+        const subcategoriesByCategory = {};
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            if (data.name) {
-                subcategorySet.add(data.name);
+            if (data.name && data.parentCategory) {
+                if (!subcategoriesByCategory[data.parentCategory]) {
+                    subcategoriesByCategory[data.parentCategory] = [];
+                }
+                // Evitar duplicados
+                if (!subcategoriesByCategory[data.parentCategory].includes(data.name)) {
+                    subcategoriesByCategory[data.parentCategory].push(data.name);
+                }
             }
         });
-        state.subcategories = Array.from(subcategorySet).sort(); // Convertir a array ordenado
+        // Ordenar alfabéticamente cada lista de subcategorías
+        for (const category in subcategoriesByCategory) {
+            subcategoriesByCategory[category].sort();
+        }
+        state.subcategories = subcategoriesByCategory;
         onDataChange();
     }, (error) => console.error("Subcategories Listener Error:", error));
 }
@@ -191,14 +201,21 @@ export async function saveExpense(expenseData, originalCategory) {
     }
 }
 
-export async function saveNewSubcategory(subcategoryName) {
+export async function saveNewSubcategory(subcategoryName, parentCategory) {
+    if (!subcategoryName || !parentCategory) return;
     try {
-        // Verificar si la subcategoría ya existe globalmente
-        const q = query(collection(db, "subcategories"), where("name", "==", subcategoryName));
+        // Verificar si la subcategoría ya existe para esa categoría padre
+        const q = query(collection(db, "subcategories"), 
+            where("name", "==", subcategoryName),
+            where("parentCategory", "==", parentCategory)
+        );
         const querySnapshot = await getDocs(q);
         if (querySnapshot.empty) {
-            // Guardar solo el nombre, sin categoría padre
-            await addDoc(collection(db, "subcategories"), { name: subcategoryName });
+            // Guardar con nombre y categoría padre
+            await addDoc(collection(db, "subcategories"), { 
+                name: subcategoryName,
+                parentCategory: parentCategory
+            });
         }
     } catch (error) {
         console.error("Error saving new subcategory:", error);
@@ -553,3 +570,4 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
+
