@@ -1302,7 +1302,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const pedidoData = {
                 producto: productoFinal,
-                vendedor: loggedInUserName,
                 telefono: telefono,
                 fotoUrls: finalOrderPhotoUrls,
                 fotoPromocionUrls: finalPromoPhotoUrls,
@@ -1330,6 +1329,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 });
                 const nuevoPedido = { 
                     ...pedidoData, 
+                    vendedor: loggedInUserName,
                     consecutiveOrderNumber: newOrderNumber, 
                     createdAt: serverTimestamp(), 
                     createdBy: auth.currentUser.uid, 
