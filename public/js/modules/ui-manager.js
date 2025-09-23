@@ -160,6 +160,7 @@ function renderChatWindow() {
             if (messageInput) { 
                 messageInput.addEventListener('paste', handlePaste); 
                 messageInput.addEventListener('input', handleQuickReplyInput);
+                messageInput.addEventListener('keydown', handleMessageInputKeyDown);
                 
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
@@ -168,12 +169,6 @@ function renderChatWindow() {
                         newHeight = 120;
                     }
                     messageInput.style.height = newHeight + 'px';
-                });
-                messageInput.addEventListener('keydown', (e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        document.getElementById('message-form').requestSubmit();
-                    }
                 });
 
                 messageInput.focus(); 
