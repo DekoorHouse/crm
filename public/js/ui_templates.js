@@ -431,14 +431,19 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
     let textPreview = '';
     // Check for image first
     if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
-        const caption = originalMessage.text !== '📷 Imagen' ? originalMessage.text : 'Foto';
+        const caption = originalMessage.text && originalMessage.text !== '📷 Imagen' ? originalMessage.text : '';
+        let captionHtml = '';
+        if (caption) {
+            captionHtml = `
+                <div class="reply-media-text">
+                    <p class="reply-media-caption">${caption}</p>
+                </div>
+                `;
+        }
         textPreview = `
             <div class="reply-media-preview">
                 <img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">
-                <div class="reply-media-text">
-                    <p class="reply-media-icon">📷</p>
-                    <p class="reply-media-caption">${caption}</p>
-                </div>
+                ${captionHtml}
             </div>
         `;
     } else {
