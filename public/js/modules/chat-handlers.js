@@ -435,6 +435,68 @@ async function handleSelectReaction(event, messageDocId, emoji) {
 
 // --- START: Picker Management (ADDED CODE) ---
 
+function updatePickerSelection() {
+    const picker = document.querySelector('.picker-container:not(.hidden)');
+    if (!picker) return;
+
+    const items = picker.querySelectorAll('.picker-item');
+    items.forEach((item, index) => {
+        if (index === state.pickerSelectedIndex) {
+            item.classList.add('selected');
+            item.scrollIntoView({ block: 'nearest' });
+        } else {
+            item.classList.remove('selected');
+        }
+    });
+}
+
+function navigatePicker(direction) {
+    if (!state.pickerItems || state.pickerItems.length === 0) return;
+
+    if (direction === 'down') {
+        state.pickerSelectedIndex = (state.pickerSelectedIndex + 1) % state.pickerItems.length;
+    } else if (direction === 'up') {
+        state.pickerSelectedIndex = (state.pickerSelectedIndex - 1 + state.pickerItems.length) % state.pickerItems.length;
+    }
+    updatePickerSelection();
+}
+
+function handleMessageInputKeyDown(e) {
+    const isPickerOpen = state.quickReplyPickerOpen || state.templatePickerOpen;
+
+    if (isPickerOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        e.preventDefault();
+        navigatePicker(e.key === 'ArrowUp' ? 'up' : 'down');
+        return;
+    }
+
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        if (isPickerOpen && state.pickerSelectedIndex > -1) {
+            const selectedItem = state.pickerItems[state.pickerSelectedIndex];
+            if (selectedItem) {
+                if (state.quickReplyPickerOpen) {
+                    selectQuickReply(selectedItem.id);
+                } else if (state.templatePickerOpen) {
+                    handleSendTemplate(selectedItem);
+                }
+            }
+        } else {
+            document.getElementById('message-form').requestSubmit();
+        }
+        return;
+    }
+    
+    if (e.key === 'Escape') {
+        if (isPickerOpen) {
+            e.preventDefault();
+            state.quickReplyPickerOpen = false;
+            state.templatePickerOpen = false;
+            renderAllPickers();
+        }
+    }
+}
+
 function toggleEmojiPicker() {
     state.emojiPickerOpen = !state.emojiPickerOpen;
     if (state.emojiPickerOpen) {
@@ -449,6 +511,7 @@ function toggleTemplatePicker() {
     if (state.templatePickerOpen) {
         state.emojiPickerOpen = false;
         state.quickReplyPickerOpen = false;
+        renderTemplatePicker(); // Re-render to set state
     }
     renderAllPickers();
 }
@@ -462,7 +525,6 @@ function renderAllPickers() {
     if (templatePicker) templatePicker.classList.toggle('hidden', !state.templatePickerOpen);
     if (emojiPicker) emojiPicker.classList.toggle('hidden', !state.emojiPickerOpen);
 
-    if (state.templatePickerOpen) renderTemplatePicker();
     if (state.emojiPickerOpen) renderEmojiPicker();
 }
 
@@ -472,9 +534,12 @@ function renderQuickReplyPicker(searchTerm = '') {
 
     const filteredReplies = state.quickReplies.filter(r => r.shortcut.toLowerCase().includes(searchTerm.toLowerCase()));
 
+    state.pickerItems = filteredReplies;
+    state.pickerSelectedIndex = filteredReplies.length > 0 ? 0 : -1;
+
     if (filteredReplies.length > 0) {
         picker.innerHTML = filteredReplies.map(reply => `
-            <div class="picker-item" onclick="selectQuickReply('${reply.id}')">
+            <div class="picker-item" data-reply-id="${reply.id}" onclick="selectQuickReply('${reply.id}')">
                 <strong>/${reply.shortcut}</strong> - <span class="text-gray-500">${(reply.message || '').substring(0, 50)}...</span>
             </div>
         `).join('');
@@ -482,17 +547,22 @@ function renderQuickReplyPicker(searchTerm = '') {
         picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay respuestas rápidas que coincidan.</div>`;
     }
      picker.innerHTML += `<div class="picker-add-btn" onclick="navigateTo('respuestas-rapidas')"><i class="fas fa-plus-circle mr-2"></i>Añadir nueva respuesta</div>`;
+    
+    updatePickerSelection();
 }
 
 function renderTemplatePicker() {
     const picker = document.getElementById('template-picker');
     if (!picker) return;
 
+    state.pickerItems = state.templates || [];
+    state.pickerSelectedIndex = state.pickerItems.length > 0 ? 0 : -1;
+
     if (state.templates && state.templates.length > 0) {
         picker.innerHTML = state.templates.map(template => {
             const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
             return `
-                <div class="picker-item template-item" onclick="handleSendTemplate(${templateString})">
+                <div class="picker-item template-item" data-template-name="${template.name}" onclick="handleSendTemplate(${templateString})">
                     <div class="flex justify-between items-center">
                         <span class="font-semibold">${template.name}</span>
                         <span class="template-category">${template.category}</span>
@@ -503,6 +573,8 @@ function renderTemplatePicker() {
     } else {
         picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles.</div>`;
     }
+
+    updatePickerSelection();
 }
 
 function renderEmojiPicker() {
@@ -687,4 +759,3 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
-
