@@ -40,7 +40,9 @@ let state = {
         lastVisibleId: null, // Guarda el ID del último contacto cargado
         isLoadingMore: false, // Previene cargas múltiples simultáneas
         hasMore: true // Indica si quedan más contactos por cargar
-    }
+    },
+    pickerItems: [],
+    pickerSelectedIndex: -1
 };
 
 // --- Listener Unsubscribers ---
