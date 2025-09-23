@@ -1,3 +1,5 @@
+import { auth } from './admin/firebase_admin.js';
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 import './admin/firebase_admin.js'; // Import for initialization
 import { app, state, elements } from './admin/state_admin.js';
 import * as utils from './admin/utils_admin.js';
@@ -14,6 +16,7 @@ import { initEventListeners } from './admin/handlers_admin.js';
 
 // Se popula el objeto 'app' exportado desde state_admin.js para que sea accesible globalmente.
 Object.assign(app, {
+    initialized: false,
     // Propiedades del estado y referencias
     state,
     elements,
@@ -176,6 +179,63 @@ Object.assign(app, {
     }
 });
 
-// Punto de entrada de la aplicación
-document.addEventListener('DOMContentLoaded', () => app.init());
+function setupAuthentication() {
+    const loginView = document.getElementById('login-view');
+    const appContainer = document.querySelector('.container');
+    const loginForm = document.getElementById('login-form');
+    const loginEmail = document.getElementById('login-email');
+    const loginPassword = document.getElementById('login-password');
+    const loginError = document.getElementById('login-error-message');
+    const loginButton = document.getElementById('login-button');
+    const logoutBtn = document.getElementById('logout-btn');
 
+    onAuthStateChanged(auth, (user) => {
+        if (user) {
+            loginView.style.display = 'none';
+            appContainer.style.display = 'block';
+            if (!app.initialized) {
+                app.init();
+                app.initialized = true;
+            }
+        } else {
+            loginView.style.display = 'flex';
+            appContainer.style.display = 'none';
+            app.initialized = false;
+        }
+    });
+
+    if (loginForm) {
+        loginForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const email = loginEmail.value;
+            const password = loginPassword.value;
+            if(loginError) loginError.textContent = '';
+            if(loginButton) {
+                loginButton.disabled = true;
+                loginButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Ingresando...';
+            }
+
+            signInWithEmailAndPassword(auth, email, password)
+                .catch((error) => {
+                    if(loginError) loginError.textContent = 'Correo o contraseña incorrectos.';
+                })
+                .finally(() => {
+                    if(loginButton) {
+                        loginButton.disabled = false;
+                        loginButton.innerHTML = '<i class="fas fa-sign-in-alt"></i> Ingresar';
+                    }
+                });
+        });
+    }
+
+    if(logoutBtn) {
+        logoutBtn.addEventListener('click', () => {
+            signOut(auth);
+        });
+    }
+}
+
+// Punto de entrada de la aplicación
+document.addEventListener('DOMContentLoaded', () => {
+    setupAuthentication();
+});
