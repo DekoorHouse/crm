@@ -192,7 +192,7 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .picker-container { position: absolute; bottom: 100%; left: 0; right: 0; margin-bottom: 8px; background: white; border-radius: var(--border-radius-md); box-shadow: 0 -5px 15px rgba(0,0,0,0.1); z-index: 30; max-height: 250px; overflow-y: auto; }
 .picker-item { display: block; width: 100%; text-align: left; font-size: 0.9rem; padding: 10px 15px; cursor: pointer; border-bottom: 1px solid var(--color-border); }
 .picker-item:last-child { border-bottom: none; }
-.picker-item:hover { background-color: #f7f9fc; }
+.picker-item:hover, .picker-item.selected { background-color: #eef2ff; }
 .picker-item strong { color: var(--color-primary); }
 .picker-add-btn { display: block; width: 100%; text-align: left; font-size: 0.9rem; padding: 10px 15px; cursor: pointer; color: var(--color-primary); font-weight: 600; }
 .picker-add-btn:hover { background-color: #f7f9fc; }
