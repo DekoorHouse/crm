@@ -749,7 +749,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
             </header>
             <div class="flex-1 p-6 overflow-y-auto">
                 <div class="text-center mb-6">
-                    ${UserIcon(contact, 'h-24 w-24')}
+                    ${UserIcon(contact, 'h-24 w-24 mx-auto')}
                     <h2 class="text-2xl font-bold mt-4">${contact.name || 'Desconocido'}</h2>
                     <p class="text-gray-500">+${contact.id}</p>
                 </div>
