@@ -428,23 +428,38 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
     if (!originalMessage) return '';
     const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
     
-    let textPreview = originalMessage.text || 'Mensaje';
-    if (originalMessage.type === 'audio') {
-        textPreview = '🎤 Mensaje de voz';
-    } else if (originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) {
-        textPreview = '📷 Imagen';
-    } else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) {
-        textPreview = '🎥 Video';
-    } else if (originalMessage.type === 'location') {
-        textPreview = '📍 Ubicación';
-    } else if (originalMessage.fileType) {
-        textPreview = '📄 Documento';
+    let textPreview = '';
+    // Check for image first
+    if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
+        const caption = originalMessage.text !== '📷 Imagen' ? originalMessage.text : 'Foto';
+        textPreview = `
+            <div class="reply-media-preview">
+                <img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">
+                <div class="reply-media-text">
+                    <p class="reply-media-icon">📷</p>
+                    <p class="reply-media-caption">${caption}</p>
+                </div>
+            </div>
+        `;
+    } else {
+        // Fallback to existing logic for other types
+        let plainText = originalMessage.text || 'Mensaje';
+        if (originalMessage.type === 'audio') {
+            plainText = '🎤 Mensaje de voz';
+        } else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) {
+            plainText = '🎥 Video';
+        } else if (originalMessage.type === 'location') {
+            plainText = '📍 Ubicación';
+        } else if (originalMessage.fileType) {
+            plainText = '📄 Documento';
+        }
+        textPreview = `<p class="reply-text">${plainText}</p>`;
     }
 
     return `
         <div class="reply-preview">
             <p class="reply-author">${authorName}</p>
-            <p class="reply-text">${textPreview}</p>
+            ${textPreview}
         </div>
     `;
 };
