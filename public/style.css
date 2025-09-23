@@ -290,6 +290,41 @@ input:checked + .slider { background-color: var(--color-primary); }
 input:checked + .slider:before { transform: translateX(22px); }
 .settings-card { background-color: #fff; border: 1px solid var(--color-border); border-radius: var(--border-radius-lg); padding: 1.5rem; }
 
+/* Styles for Reply with Media Preview */
+.reply-media-preview {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 4px;
+}
+
+.reply-thumbnail {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--border-radius-sm);
+    object-fit: cover;
+    background-color: #e2e8f0; /* gray-200 */
+}
+
+.reply-media-text {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.reply-media-icon {
+    font-size: 0.8rem;
+    line-height: 1;
+}
+
+.reply-media-caption {
+    font-size: 0.85rem;
+    color: var(--color-text-light);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
 /* Estilos para la vista de métricas */
 .metrics-grid {
     display: grid;
