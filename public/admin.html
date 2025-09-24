@@ -320,6 +320,46 @@
         <!-- Tab Content: KPIs -->
         <div class="tab-content" id="kpis-tab">
            <div class="card-body">
+            <!-- KPI SUMMARY DASHBOARD -->
+            <div class="card" style="margin-bottom: 25px; background-color: var(--gray-light); border: none; box-shadow: none;">
+              <div class="card-body" style="padding: 20px;">
+                  <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; text-align: center;">Resumen de KPIs del Mes (Septiembre 2025)</h3>
+                  <div id="kpi-summary-grid" class="summary-section" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px;">
+                      <div class="kpi-card">
+                          <div class="kpi-title">Total Leads</div>
+                          <div class="kpi-value" id="kpi-total-leads">0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Leads Pagados</div>
+                          <div class="kpi-value" id="kpi-total-paid-leads">0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Leads Cancelados</div>
+                          <div class="kpi-value" id="kpi-total-cancelled-leads">0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Ingresos Totales</div>
+                          <div class="kpi-value" id="kpi-total-revenue-kpis">$0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Costo Publicidad</div>
+                          <div class="kpi-value" id="kpi-total-ad-cost">$0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Promedio CPL</div>
+                          <div class="kpi-value" id="kpi-avg-cpl">$0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Promedio Costo x Venta</div>
+                          <div class="kpi-value" id="kpi-avg-cpv-kpis">$0</div>
+                      </div>
+                      <div class="kpi-card">
+                          <div class="kpi-title">Promedio Tasa Cierre</div>
+                          <div class="kpi-value" id="kpi-avg-conversion-rate-kpis">0%</div>
+                      </div>
+                  </div>
+              </div>
+            </div>
              <div class="btn-group" style="margin-bottom: 20px;">
                 <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro Diario</button>
              </div>
