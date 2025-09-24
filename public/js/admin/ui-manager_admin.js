@@ -128,7 +128,11 @@ export function renderTable(expenses) {
         }
 
         let subcategoryHtml = 'N/A';
-        if (displayCategory !== 'N/A' && displayCategory !== '' && displayCategory !== 'SinCategorizar') {
+        const categoriesWithoutSubcategory = ['Alex', 'Chris', 'Publicidad'];
+
+        if (credit > 0 || categoriesWithoutSubcategory.includes(displayCategory)) {
+            subcategoryHtml = ''; // Deja el espacio en blanco para estas categorías
+        } else if (displayCategory !== 'N/A' && displayCategory !== '' && displayCategory !== 'SinCategorizar') {
             const availableSubcategories = state.subcategories[displayCategory] || [];
             const subcategoryOptions = availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
             
