@@ -74,6 +74,7 @@ export function cacheElements() {
     // KPI Summary Dashboard elements
     elements.kpiTotalLeads = document.getElementById('kpi-total-leads');
     elements.kpiTotalPaidLeads = document.getElementById('kpi-total-paid-leads');
+    elements.kpiTotalCancelledLeads = document.getElementById('kpi-total-cancelled-leads');
     elements.kpiTotalRevenueKpis = document.getElementById('kpi-total-revenue-kpis');
     elements.kpiTotalAdCost = document.getElementById('kpi-total-ad-cost');
     elements.kpiAvgCpl = document.getElementById('kpi-avg-cpl');
@@ -792,6 +793,7 @@ function calculateAndDisplayAverages(data) {
     if (data.length === 0) {
         if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = '0';
         if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = '0';
+        if (elements.kpiTotalCancelledLeads) elements.kpiTotalCancelledLeads.textContent = '0';
         if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(0);
         if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(0);
         if (elements.kpiAvgCpl) elements.kpiAvgCpl.textContent = formatCurrency(0);
@@ -803,10 +805,11 @@ function calculateAndDisplayAverages(data) {
     const totals = data.reduce((acc, day) => {
         acc.leads += day.leads;
         acc.paidLeads += day.paidLeads;
+        acc.cancelledLeads += day.cancelledLeads;
         acc.revenue += day.revenue;
         acc.adCost += day.costo_publicidad;
         return acc;
-    }, { leads: 0, paidLeads: 0, revenue: 0, adCost: 0 });
+    }, { leads: 0, paidLeads: 0, revenue: 0, adCost: 0, cancelledLeads: 0 });
 
     const avgCpl = totals.leads > 0 ? totals.adCost / totals.leads : 0;
     const avgCpv = totals.paidLeads > 0 ? totals.adCost / totals.paidLeads : 0;
@@ -815,6 +818,7 @@ function calculateAndDisplayAverages(data) {
     // Update Total cards
     if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = totals.leads;
     if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = totals.paidLeads;
+    if (elements.kpiTotalCancelledLeads) elements.kpiTotalCancelledLeads.textContent = totals.cancelledLeads;
     if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(totals.revenue);
     if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(totals.adCost);
 
