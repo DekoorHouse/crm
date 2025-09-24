@@ -207,6 +207,10 @@ export function initEventListeners() {
     elements.categoryFilter.addEventListener('change', handleFilterChange);
     
     elements.modal.addEventListener('click', (e) => {
+        if (e.target.closest('.modal-cancel-btn')) { // Ensure cancel button in modal closes it
+            ui.showModal({ show: false });
+            return;
+        }
         if (e.target === elements.modal) ui.showModal({ show: false });
     });
     
@@ -299,6 +303,10 @@ export function initEventListeners() {
         }
     });
 
+    if (elements.monthFilterContainer) {
+        elements.monthFilterContainer.addEventListener('click', handleMonthFilterClick);
+    }
+
     // KPI Listeners
     if (elements.addKpiBtn) {
         elements.addKpiBtn.addEventListener('click', () => ui.openKpiModal());
@@ -378,6 +386,31 @@ function handleTabClick(tab) {
     elements.tabContents.forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+}
+
+/**
+ * Maneja el clic en un botón de filtro de mes.
+ * @param {Event} e - El evento de clic.
+ */
+function handleMonthFilterClick(e) {
+    const button = e.target.closest('button');
+    if (!button) return;
+
+    if (app.picker) {
+        app.picker.clearSelection();
+    }
+
+    const month = parseInt(button.dataset.month);
+    const year = parseInt(button.dataset.year);
+
+    state.activeMonth = { month, year };
+    state.dateFilter.start = new Date(year, month, 1);
+    state.dateFilter.end = new Date(year, month + 1, 0);
+
+    ui.renderMonthFilter();
+    app.renderData();
+    app.renderSummary();
+    app.renderAllCharts();
 }
 
 function confirmDeleteAllData() {
