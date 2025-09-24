@@ -71,12 +71,14 @@ export function cacheElements() {
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
 
-    // Average KPI elements
-    elements.kpiAvgLeads = document.getElementById('kpi-avg-leads');
-    elements.kpiAvgPaidLeads = document.getElementById('kpi-avg-paid-leads');
-    elements.kpiAvgRevenue = document.getElementById('kpi-avg-revenue');
-    elements.kpiAvgAdCost = document.getElementById('kpi-avg-ad-cost');
-    elements.kpiAvgCpv = document.getElementById('kpi-avg-cpv');
+    // KPI Summary Dashboard elements
+    elements.kpiTotalLeads = document.getElementById('kpi-total-leads');
+    elements.kpiTotalPaidLeads = document.getElementById('kpi-total-paid-leads');
+    elements.kpiTotalRevenueKpis = document.getElementById('kpi-total-revenue-kpis');
+    elements.kpiTotalAdCost = document.getElementById('kpi-total-ad-cost');
+    elements.kpiAvgCpl = document.getElementById('kpi-avg-cpl');
+    elements.kpiAvgCpvKpis = document.getElementById('kpi-avg-cpv-kpis');
+    elements.kpiAvgConversionRateKpis = document.getElementById('kpi-avg-conversion-rate-kpis');
     
     // KPIs Tab elements
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
@@ -725,6 +727,7 @@ export function renderKpisTable() {
 
     if (allDates.size === 0) {
         elements.kpisEmptyState.style.display = 'block';
+        calculateAndDisplayAverages([]); // Reset summary dashboard
         return;
     }
 
@@ -785,8 +788,17 @@ export function renderKpisTable() {
 }
 
 function calculateAndDisplayAverages(data) {
-    const daysWithData = data.length;
-    if (daysWithData === 0) return;
+    // Reset dashboard if no data
+    if (data.length === 0) {
+        if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = '0';
+        if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = '0';
+        if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(0);
+        if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(0);
+        if (elements.kpiAvgCpl) elements.kpiAvgCpl.textContent = formatCurrency(0);
+        if (elements.kpiAvgCpvKpis) elements.kpiAvgCpvKpis.textContent = formatCurrency(0);
+        if (elements.kpiAvgConversionRateKpis) elements.kpiAvgConversionRateKpis.textContent = '0%';
+        return;
+    }
 
     const totals = data.reduce((acc, day) => {
         acc.leads += day.leads;
@@ -796,18 +808,20 @@ function calculateAndDisplayAverages(data) {
         return acc;
     }, { leads: 0, paidLeads: 0, revenue: 0, adCost: 0 });
 
-    const avgLeads = totals.leads / daysWithData;
-    const avgPaidLeads = totals.paidLeads / daysWithData;
-    const avgRevenue = totals.revenue / daysWithData;
-    const avgAdCost = totals.adCost / daysWithData;
+    const avgCpl = totals.leads > 0 ? totals.adCost / totals.leads : 0;
     const avgCpv = totals.paidLeads > 0 ? totals.adCost / totals.paidLeads : 0;
+    const avgConversionRate = totals.leads > 0 ? (totals.paidLeads / totals.leads) * 100 : 0;
 
-    // Safety checks to prevent errors if elements don't exist
-    if (elements.kpiAvgLeads) elements.kpiAvgLeads.textContent = avgLeads.toFixed(1);
-    if (elements.kpiAvgPaidLeads) elements.kpiAvgPaidLeads.textContent = avgPaidLeads.toFixed(1);
-    if (elements.kpiAvgRevenue) elements.kpiAvgRevenue.textContent = formatCurrency(avgRevenue);
-    if (elements.kpiAvgAdCost) elements.kpiAvgAdCost.textContent = formatCurrency(avgAdCost);
-    if (elements.kpiAvgCpv) elements.kpiAvgCpv.textContent = formatCurrency(avgCpv);
+    // Update Total cards
+    if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = totals.leads;
+    if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = totals.paidLeads;
+    if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(totals.revenue);
+    if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(totals.adCost);
+
+    // Update Average cards
+    if (elements.kpiAvgCpl) elements.kpiAvgCpl.textContent = formatCurrency(avgCpl);
+    if (elements.kpiAvgCpvKpis) elements.kpiAvgCpvKpis.textContent = formatCurrency(avgCpv);
+    if (elements.kpiAvgConversionRateKpis) elements.kpiAvgConversionRateKpis.textContent = `${avgConversionRate.toFixed(2)}%`;
 }
 
 
