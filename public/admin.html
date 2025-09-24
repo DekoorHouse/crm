@@ -208,15 +208,15 @@
                     <button id="delete-current-month-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-calendar-times"></i> Borrar Mes Actual</button>
                   </div>
                   <div class="main-filters">
-                    <div id="month-filter-container" class="btn-group">
-                        <!-- Month buttons will be rendered here by JavaScript -->
-                    </div>
-                    <div class="filter-group">
-                        <label for="date-range-filter">Rango personalizado:</label>
-                        <input type="text" id="date-range-filter" placeholder="Seleccionar..." readonly>
-                        <label for="category-filter">Categoría:</label>
-                        <select id="category-filter"></select>
-                    </div>
+                      <div class="filter-group">
+                          <label for="date-range-filter">Rango personalizado:</label>
+                          <input type="text" id="date-range-filter" placeholder="Seleccionar..." readonly>
+                          <label for="category-filter">Categoría:</label>
+                          <select id="category-filter"></select>
+                          <div id="month-filter-container" class="btn-group">
+                              <!-- Month buttons will be rendered here by JavaScript -->
+                          </div>
+                      </div>
                   </div>
                   <input type="file" class="file-upload-input" id="file-upload-input" accept=".xlsx, .xls" />
               </div>
