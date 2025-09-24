@@ -404,7 +404,7 @@ export async function deleteCurrentMonthData() {
             actionHistory.pop(); return;
         }
         snapshot.forEach(doc => {
-            if (doc.data().source !== 'manual') {
+            if (doc.data().source !== 'manual' && doc.data().source !== 'modified') {
                 batch.delete(doc.ref);
                 deletedCount++;
             }
@@ -439,7 +439,7 @@ export async function deletePreviousMonthData() {
               actionHistory.pop(); return;
           }
           snapshot.forEach(doc => {
-              if (doc.data().source !== 'manual') {
+            if (doc.data().source !== 'manual' && doc.data().source !== 'modified') {
                   batch.delete(doc.ref);
                   deletedCount++;
               }
@@ -496,4 +496,3 @@ export async function undoLastAction() {
         console.error("Error during undo:", error);
     }
 }
-
