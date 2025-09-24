@@ -48,9 +48,19 @@ Object.assign(app, {
      */
     onFirebaseReady() {
         this.setupRealtimeListeners();
+        this.setDefaultDateFilter();
         this.initDateRangePicker();
         this.initHealthDateRangePicker();
         this.initSueldosDateRangePicker();
+        ui.renderMonthFilter();
+    },
+
+    setDefaultDateFilter() {
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = today.getMonth();
+        state.dateFilter.start = new Date(year, month, 1);
+        state.dateFilter.end = new Date(year, month + 1, 0);
     },
     
     /**
@@ -156,6 +166,10 @@ Object.assign(app, {
         this.picker = ui.initDateRangePicker(() => {
             state.dateFilter.start = this.picker.getStartDate()?.dateInstance || null;
             state.dateFilter.end = this.picker.getEndDate()?.dateInstance || null;
+            
+            state.activeMonth = null;
+            ui.renderMonthFilter();
+
             this.renderData();
             this.renderSummary();
             this.renderAllCharts();
@@ -239,3 +253,4 @@ function setupAuthentication() {
 document.addEventListener('DOMContentLoaded', () => {
     setupAuthentication();
 });
+
