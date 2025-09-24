@@ -21,6 +21,7 @@ export const state = {
   manualCategories: new Map(), // Almacena categorías asignadas manualmente
   subcategories: {}, // Objeto donde cada clave es una categoría y el valor es un array de subcategorías
   dateFilter: { start: null, end: null },
+  activeMonth: { month: new Date().getMonth(), year: new Date().getFullYear() },
   categoryFilter: 'all',
   sueldosData: [],
   sueldosDateFilter: { start: null, end: null },
