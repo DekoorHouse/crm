@@ -32,6 +32,7 @@ export function cacheElements() {
     elements.dateRangeFilter = document.getElementById('date-range-filter');
     elements.categoryFilter = document.getElementById('category-filter');
     elements.actionsContainer = document.getElementById('actions-container');
+    elements.monthFilterContainer = document.getElementById('month-filter-container');
     elements.dataTableContainer = document.getElementById('data-table-container');
     elements.chartContexts = {
         pie: document.getElementById("pieChart")?.getContext("2d"),
@@ -537,6 +538,9 @@ export function openExpenseModal(expense = {}) {
         }
     });
 }
+  
+/**
+ * Abre el modal para agregar o editar un movimiento operativo.
 
 /**
  * Rellena el select de filtro de categorías con las categorías existentes.
@@ -925,36 +929,36 @@ function openAdjustmentModal(employeeId, type) {
 }
 
 /**
- * Opens the modal specifically for adding a bonus.
- * @param {string} employeeId - The ID of the employee.
+ * Renderiza los botones de filtro por mes. Muestra los últimos 6 meses.
  */
-export function openBonoModal(employeeId) {
-    openAdjustmentModal(employeeId, 'bono');
+export function renderMonthFilter() {
+    const container = elements.monthFilterContainer;
+    if (!container) return;
+
+    const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
+    const today = new Date();
+    let buttonsHtml = '';
+
+    for (let i = 0; i < 6; i++) {
+        const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        const monthIndex = date.getMonth();
+        const year = date.getFullYear();
+        
+        const isActive = state.activeMonth && 
+                         monthIndex === state.activeMonth.month && 
+                         year === state.activeMonth.year;
+
+        // unshift equivalent for strings
+        buttonsHtml = `<button class="btn btn-sm btn-outline ${isActive ? 'active' : ''}" data-month="${monthIndex}" data-year="${year}">${monthNames[monthIndex]} '${year.toString().slice(-2)}</button>` + buttonsHtml;
+    }
+    
+    container.innerHTML = buttonsHtml;
 }
 
 /**
- * Opens the modal specifically for adding an expense/discount.
- * @param {string} employeeId - The ID of the employee.
+ * Rellena el select de filtro de categorías con las categorías existentes.
  */
-export function openGastoModal(employeeId) {
-    openAdjustmentModal(employeeId, 'gasto');
-}
-
-/**
- * Displays a modal for selecting from a list of duplicate expenses.
- * @param {Array<object>} duplicateGroups - Groups of duplicate expenses found.
- * @param {Array<object>} nonDuplicates - Expenses that were not found to be duplicates.
- */
-export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
-    let duplicateHtml = duplicateGroups.map((group, index) => {
-        return `
-            <div class="duplicate-group" style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
-                <p><strong>Motivo:</strong> ${group.reason}</p>
-                <table class="duplicate-table" style="width: 100%; font-size: 13px;">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" class="group-checkbox" data-group-index="${index}"></th>
-                            <th>Fecha</th>
+export function populateCategoryFilter() {
                             <th>Concepto</th>
                             <th>Cargo</th>
                             <th>Ingreso</th>
@@ -1019,4 +1023,5 @@ export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
         }
     });
 }
+
 
