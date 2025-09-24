@@ -336,12 +336,14 @@ router.post('/', async (req, res) => {
             }
 
             // --- INICIO DE LA MODIFICACIÓN ---
-            // Se prioriza la detección de CP. Si se maneja, se detiene el flujo.
+            // Se ha comentado esta sección para desactivar la respuesta automática a códigos postales.
+            /*
             const postalCodeHandled = await handlePostalCodeAuto(message, contactRef, from);
             if (postalCodeHandled) {
                 console.log(`[LOGIC] Código postal manejado para ${from}. El flujo de IA se detiene aquí.`);
                 return res.sendStatus(200);
             }
+            */
             // --- FIN DE LA MODIFICACIÓN ---
 
             if (message.type === 'text') {
