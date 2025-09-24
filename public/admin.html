@@ -95,6 +95,68 @@
         box-shadow: none;
         outline: none;
     }
+
+    /* --- KPI Card Styles --- */
+    #kpis-tab .kpi-card {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        padding: 20px;
+        border-left: 5px solid transparent;
+        transition: all 0.3s ease;
+        background-color: var(--white);
+        border-radius: 12px;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    #kpis-tab .kpi-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 8px 16px rgba(0,0,0,0.08);
+    }
+    .kpi-icon-container {
+        width: 48px;
+        height: 48px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        flex-shrink: 0;
+    }
+    #kpis-tab .kpi-card .kpi-title {
+        font-size: 14px;
+        color: var(--text-secondary);
+        margin-bottom: 4px;
+    }
+    #kpis-tab .kpi-card .kpi-value {
+        font-size: 22px;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+
+    /* Icon specific colors */
+    #kpis-tab .kpi-card.total-leads { border-left-color: #3b82f6; }
+    #kpis-tab .kpi-card.total-leads .kpi-icon-container { background-color: #dbeafe; color: #3b82f6; }
+
+    #kpis-tab .kpi-card.paid-leads { border-left-color: var(--success); }
+    #kpis-tab .kpi-card.paid-leads .kpi-icon-container { background-color: var(--success-light); color: var(--success); }
+
+    #kpis-tab .kpi-card.cancelled-leads { border-left-color: var(--danger); }
+    #kpis-tab .kpi-card.cancelled-leads .kpi-icon-container { background-color: var(--danger-light); color: var(--danger); }
+
+    #kpis-tab .kpi-card.total-revenue { border-left-color: #10b981; }
+    #kpis-tab .kpi-card.total-revenue .kpi-icon-container { background-color: #d1fae5; color: #10b981; }
+
+    #kpis-tab .kpi-card.ad-cost { border-left-color: #8b5cf6; }
+    #kpis-tab .kpi-card.ad-cost .kpi-icon-container { background-color: #ede9fe; color: #8b5cf6; }
+
+    #kpis-tab .kpi-card.avg-cpl { border-left-color: #f97316; }
+    #kpis-tab .kpi-card.avg-cpl .kpi-icon-container { background-color: #ffedd5; color: #f97316; }
+
+    #kpis-tab .kpi-card.avg-cpv { border-left-color: #f59e0b; }
+    #kpis-tab .kpi-card.avg-cpv .kpi-icon-container { background-color: #fef3c7; color: #f59e0b; }
+
+    #kpis-tab .kpi-card.avg-conversion { border-left-color: #6366f1; }
+    #kpis-tab .kpi-card.avg-conversion .kpi-icon-container { background-color: #e0e7ff; color: #6366f1; }
   </style>
 
 </head>
@@ -324,38 +386,78 @@
             <div class="card" style="margin-bottom: 25px; background-color: var(--gray-light); border: none; box-shadow: none;">
               <div class="card-body" style="padding: 20px;">
                   <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; text-align: center;">Resumen de KPIs del Mes (Septiembre 2025)</h3>
-                  <div id="kpi-summary-grid" class="summary-section" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 15px;">
-                      <div class="kpi-card">
-                          <div class="kpi-title">Total Leads</div>
-                          <div class="kpi-value" id="kpi-total-leads">0</div>
+                  <div id="kpi-summary-grid" class="summary-section" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px;">
+                      <div class="kpi-card total-leads">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-users"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Total Leads</div>
+                              <div class="kpi-value" id="kpi-total-leads">0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Leads Pagados</div>
-                          <div class="kpi-value" id="kpi-total-paid-leads">0</div>
+                      <div class="kpi-card paid-leads">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-check-double"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Leads Pagados</div>
+                              <div class="kpi-value" id="kpi-total-paid-leads">0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Leads Cancelados</div>
-                          <div class="kpi-value" id="kpi-total-cancelled-leads">0</div>
+                      <div class="kpi-card cancelled-leads">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-ban"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Leads Cancelados</div>
+                              <div class="kpi-value" id="kpi-total-cancelled-leads">0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Ingresos Totales</div>
-                          <div class="kpi-value" id="kpi-total-revenue-kpis">$0</div>
+                      <div class="kpi-card total-revenue">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-dollar-sign"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Ingresos Totales</div>
+                              <div class="kpi-value" id="kpi-total-revenue-kpis">$0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Costo Publicidad</div>
-                          <div class="kpi-value" id="kpi-total-ad-cost">$0</div>
+                      <div class="kpi-card ad-cost">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-bullhorn"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Costo Publicidad</div>
+                              <div class="kpi-value" id="kpi-total-ad-cost">$0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Promedio CPL</div>
-                          <div class="kpi-value" id="kpi-avg-cpl">$0</div>
+                      <div class="kpi-card avg-cpl">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-mouse-pointer"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Promedio CPL</div>
+                              <div class="kpi-value" id="kpi-avg-cpl">$0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Promedio Costo x Venta</div>
-                          <div class="kpi-value" id="kpi-avg-cpv-kpis">$0</div>
+                      <div class="kpi-card avg-cpv">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-shopping-cart"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Promedio Costo x Venta</div>
+                              <div class="kpi-value" id="kpi-avg-cpv-kpis">$0</div>
+                          </div>
                       </div>
-                      <div class="kpi-card">
-                          <div class="kpi-title">Promedio Tasa Cierre</div>
-                          <div class="kpi-value" id="kpi-avg-conversion-rate-kpis">0%</div>
+                      <div class="kpi-card avg-conversion">
+                          <div class="kpi-icon-container">
+                              <i class="fas fa-percentage"></i>
+                          </div>
+                          <div>
+                              <div class="kpi-title">Promedio Tasa Cierre</div>
+                              <div class="kpi-value" id="kpi-avg-conversion-rate-kpis">0%</div>
+                          </div>
                       </div>
                   </div>
               </div>
@@ -423,4 +525,5 @@
   <script type="module" src="js/script_admin.js"></script>
 </body>
 </html>
+
 
