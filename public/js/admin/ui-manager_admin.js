@@ -189,9 +189,12 @@ export function updateTableTotals(expenses) {
  * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
  */
 export function updateSummary(getFilteredExpenses) {
-    const operationalExpenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
+    // --- INICIO DE LA MODIFICACIÓN ---
     
-    const summaryData = operationalExpenses.reduce((acc, exp) => {
+    // 1. Calcular totales para las tarjetas de categorías basadas en los filtros actuales.
+    const filteredOperationalExpenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
+    
+    const summaryData = filteredOperationalExpenses.reduce((acc, exp) => {
         const charge = parseFloat(exp.charge) || 0;
         const credit = parseFloat(exp.credit) || 0;
         const category = exp.category || 'SinCategorizar';
@@ -207,8 +210,16 @@ export function updateSummary(getFilteredExpenses) {
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
     
-    summaryData.TotalNeto = summaryData.TotalIngresos - summaryData.TotalCargos;
+    // 2. Calcular la Utilidad Operativa total usando TODOS los movimientos, ignorando los filtros.
+    const allOperationalExpenses = state.expenses.filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
+    const totalOverallIncome = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
+    const totalOverallCharges = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
     
+    // Asignar el cálculo global a la propiedad TotalNeto
+    summaryData.TotalNeto = totalOverallIncome - totalOverallCharges;
+    
+    // --- FIN DE LA MODIFICACIÓN ---
+
     elements.summarySection.innerHTML = '';
     const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
     const sortedSummary = Object.entries(summaryData).sort(([keyA], [keyB]) => {
@@ -1047,4 +1058,3 @@ export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
         }
     });
 }
-
