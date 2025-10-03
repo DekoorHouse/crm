@@ -835,48 +835,47 @@ document.addEventListener('DOMContentLoaded', () => {
                     return td;
                 };
                 
-                    const createDatosCell = (photoUrls, texto, orderId, type) => {
-                        const td = createTd('');
-                        const container = document.createElement('div');
-                        container.className = 'datos-container';
-                
-                        if (photoUrls.length > 0) {
-                            const imgContainer = document.createElement('div');
-                            imgContainer.className = 'img-container';
-                
-                            // Create a placeholder icon instead of an img tag
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'foto-placeholder-icon'; // A new class for styling
-                            placeholder.innerHTML = '<i class="fas fa-camera"></i>';
-                            placeholder.title = 'Ver foto(s)';
-                            
-                            placeholder.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                abrirModalImagen(photoUrls, 0, `DH${orderId}`);
-                            });
-                            imgContainer.appendChild(placeholder);
-                
-                            if (photoUrls.length > 1) {
-                                const badge = document.createElement('span');
-                                badge.className = 'photo-count-badge';
-                                badge.textContent = `+${photoUrls.length - 1}`;
-                                badge.title = `${photoUrls.length} fotos en total`;
-                                imgContainer.appendChild(badge);
-                            }
-                            container.appendChild(imgContainer);
-                        } else {
-                            const ph = document.createElement('span');
-                            ph.className = 'foto-placeholder'; ph.textContent = '-';
-                            container.appendChild(ph);
+                const createDatosCell = (photoUrls, texto, orderId, type) => {
+                    const td = createTd('');
+                    const container = document.createElement('div');
+                    container.className = 'datos-container';
+            
+                    if (photoUrls.length > 0) {
+                        const imgContainer = document.createElement('div');
+                        imgContainer.className = 'img-container';
+            
+                        const img = document.createElement('img');
+                        img.src = photoUrls[0]; // Usar la primera foto como miniatura
+                        img.alt = 'Miniatura del pedido';
+                        img.title = 'Ver foto(s)';
+                        
+                        img.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            abrirModalImagen(photoUrls, 0, `DH${orderId}`);
+                        });
+                        imgContainer.appendChild(img);
+            
+                        if (photoUrls.length > 1) {
+                            const badge = document.createElement('span');
+                            badge.className = 'photo-count-badge';
+                            badge.textContent = `+${photoUrls.length - 1}`;
+                            badge.title = `${photoUrls.length} fotos en total`;
+                            imgContainer.appendChild(badge);
                         }
-                
-                        const textoSpan = document.createElement('span');
-                        textoSpan.className = 'datos-text';
-                        textoSpan.innerHTML = texto;
-                        container.appendChild(textoSpan);
-                        td.appendChild(container);
-                        return td;
-                    };
+                        container.appendChild(imgContainer);
+                    } else {
+                        const ph = document.createElement('span');
+                        ph.className = 'foto-placeholder'; ph.textContent = '-';
+                        container.appendChild(ph);
+                    }
+            
+                    const textoSpan = document.createElement('span');
+                    textoSpan.className = 'datos-text';
+                    textoSpan.innerHTML = texto;
+                    container.appendChild(textoSpan);
+                    td.appendChild(container);
+                    return td;
+                };
                 tr.appendChild(createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A'));
                 tr.appendChild(createTd(fechaFormateada));
                 tr.appendChild(createTd(vendedor, true));
