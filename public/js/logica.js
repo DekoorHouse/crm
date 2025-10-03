@@ -845,7 +845,37 @@ document.addEventListener('DOMContentLoaded', () => {
                         imgContainer.className = 'img-container';
             
                         const img = document.createElement('img');
-                        img.src = photoUrls[0]; // Usar la primera foto como miniatura
+                        
+                        // --- INICIO DE MODIFICACIÓN: Crear y usar URL de miniatura ---
+                        const originalUrl = photoUrls[0];
+                        let thumbnailUrl = originalUrl; // Fallback a la original
+
+                        try {
+                            // Se asume que la extensión "Resize Images" está configurada para añadir un sufijo "_45x45".
+                            // Ejemplo: .../mi-foto.jpg?token=...  ->  .../mi-foto_45x45.jpg?token=...
+                            const url = new URL(originalUrl);
+                            const pathname = url.pathname;
+                            const lastDotIndex = pathname.lastIndexOf('.');
+                            
+                            if (lastDotIndex !== -1) {
+                                const pathWithoutExtension = pathname.substring(0, lastDotIndex);
+                                const extension = pathname.substring(lastDotIndex);
+                                url.pathname = `${pathWithoutExtension}_45x45${extension}`;
+                                thumbnailUrl = url.href;
+                            }
+                        } catch (e) {
+                            console.error("Error al crear la URL de la miniatura, se usará la original:", e);
+                            thumbnailUrl = originalUrl; // Usar la original si algo falla
+                        }
+                        
+                        img.src = thumbnailUrl; // Cargar la miniatura
+                        // Si la miniatura no carga (ej. para fotos antiguas), cargar la original.
+                        img.onerror = () => { 
+                            img.onerror = null; // Evitar bucles infinitos si la original tampoco carga
+                            img.src = originalUrl; 
+                        }; 
+                        // --- FIN DE MODIFICACIÓN ---
+
                         img.alt = 'Miniatura del pedido';
                         img.title = 'Ver foto(s)';
                         
@@ -1952,3 +1982,4 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
+
