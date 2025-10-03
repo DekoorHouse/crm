@@ -835,77 +835,48 @@ document.addEventListener('DOMContentLoaded', () => {
                     return td;
                 };
                 
-                const createDatosCell = (photoUrls, texto, orderId, type) => {
-                    const td = createTd('');
-                    const container = document.createElement('div');
-                    container.className = 'datos-container';
-            
-                    if (photoUrls.length > 0) {
-                        const imgContainer = document.createElement('div');
-                        imgContainer.className = 'img-container';
-            
-                        const img = document.createElement('img');
-                        
-                        // --- INICIO DE MODIFICACIÓN: Crear y usar URL de miniatura ---
-                        const originalUrl = photoUrls[0];
-                        let thumbnailUrl = originalUrl; // Fallback a la original
-
-                        try {
-                            // Se asume que la extensión "Resize Images" está configurada para añadir un sufijo "_45x45".
-                            // Ejemplo: .../mi-foto.jpg?token=...  ->  .../mi-foto_45x45.jpg?token=...
-                            const url = new URL(originalUrl);
-                            const pathname = url.pathname;
-                            const lastDotIndex = pathname.lastIndexOf('.');
+                    const createDatosCell = (photoUrls, texto, orderId, type) => {
+                        const td = createTd('');
+                        const container = document.createElement('div');
+                        container.className = 'datos-container';
+                
+                        if (photoUrls.length > 0) {
+                            const imgContainer = document.createElement('div');
+                            imgContainer.className = 'img-container';
+                
+                            // Create a placeholder icon instead of an img tag
+                            const placeholder = document.createElement('div');
+                            placeholder.className = 'foto-placeholder-icon'; // A new class for styling
+                            placeholder.innerHTML = '<i class="fas fa-camera"></i>';
+                            placeholder.title = 'Ver foto(s)';
                             
-                            if (lastDotIndex !== -1) {
-                                const pathWithoutExtension = pathname.substring(0, lastDotIndex);
-                                const extension = pathname.substring(lastDotIndex);
-                                url.pathname = `${pathWithoutExtension}_45x45${extension}`;
-                                thumbnailUrl = url.href;
+                            placeholder.addEventListener('click', (e) => {
+                                e.stopPropagation();
+                                abrirModalImagen(photoUrls, 0, `DH${orderId}`);
+                            });
+                            imgContainer.appendChild(placeholder);
+                
+                            if (photoUrls.length > 1) {
+                                const badge = document.createElement('span');
+                                badge.className = 'photo-count-badge';
+                                badge.textContent = `+${photoUrls.length - 1}`;
+                                badge.title = `${photoUrls.length} fotos en total`;
+                                imgContainer.appendChild(badge);
                             }
-                        } catch (e) {
-                            console.error("Error al crear la URL de la miniatura, se usará la original:", e);
-                            thumbnailUrl = originalUrl; // Usar la original si algo falla
+                            container.appendChild(imgContainer);
+                        } else {
+                            const ph = document.createElement('span');
+                            ph.className = 'foto-placeholder'; ph.textContent = '-';
+                            container.appendChild(ph);
                         }
-                        
-                        img.src = thumbnailUrl; // Cargar la miniatura
-                        // Si la miniatura no carga (ej. para fotos antiguas), cargar la original.
-                        img.onerror = () => { 
-                            img.onerror = null; // Evitar bucles infinitos si la original tampoco carga
-                            img.src = originalUrl; 
-                        }; 
-                        // --- FIN DE MODIFICACIÓN ---
-
-                        img.alt = 'Miniatura del pedido';
-                        img.title = 'Ver foto(s)';
-                        
-                        img.addEventListener('click', (e) => {
-                            e.stopPropagation();
-                            abrirModalImagen(photoUrls, 0, `DH${orderId}`);
-                        });
-                        imgContainer.appendChild(img);
-            
-                        if (photoUrls.length > 1) {
-                            const badge = document.createElement('span');
-                            badge.className = 'photo-count-badge';
-                            badge.textContent = `+${photoUrls.length - 1}`;
-                            badge.title = `${photoUrls.length} fotos en total`;
-                            imgContainer.appendChild(badge);
-                        }
-                        container.appendChild(imgContainer);
-                    } else {
-                        const ph = document.createElement('span');
-                        ph.className = 'foto-placeholder'; ph.textContent = '-';
-                        container.appendChild(ph);
-                    }
-            
-                    const textoSpan = document.createElement('span');
-                    textoSpan.className = 'datos-text';
-                    textoSpan.innerHTML = texto;
-                    container.appendChild(textoSpan);
-                    td.appendChild(container);
-                    return td;
-                };
+                
+                        const textoSpan = document.createElement('span');
+                        textoSpan.className = 'datos-text';
+                        textoSpan.innerHTML = texto;
+                        container.appendChild(textoSpan);
+                        td.appendChild(container);
+                        return td;
+                    };
                 tr.appendChild(createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A'));
                 tr.appendChild(createTd(fechaFormateada));
                 tr.appendChild(createTd(vendedor, true));
@@ -1982,4 +1953,3 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 });
-
