@@ -733,6 +733,12 @@ const ChatWindowTemplate = (contact) => {
         ${mainContent}
         <div id="file-preview-container"></div>
         <footer class="chat-footer relative">
+            <div id="drag-drop-overlay-footer" class="drag-overlay-footer hidden">
+                <div class="drag-overlay-content">
+                    <i class="fas fa-file-import text-3xl mb-2"></i>
+                    <p>Suelta aquí para adjuntar</p>
+                </div>
+            </div>
             ${sessionExpiredNotification}
             ${replyContextBarHTML}
             <div id="quick-reply-picker" class="picker-container hidden"></div>
