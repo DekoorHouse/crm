@@ -52,9 +52,9 @@ function setupChatListEventListeners() {
         }
     });
     
-    // La lógica de Drag & Drop para archivos se mantiene
-    const chatArea = document.getElementById('chat-panel');
-    const overlay = document.getElementById('drag-drop-overlay');
+    // Lógica de Drag & Drop para archivos en el pie de página del chat
+    const chatFooter = document.querySelector('.chat-footer');
+    const footerOverlay = document.getElementById('drag-drop-overlay-footer');
     
     const searchInput = document.getElementById('search-contacts-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
@@ -70,13 +70,47 @@ function setupChatListEventListeners() {
         clearSearchBtn.classList.toggle('hidden', searchInput.value.length === 0);
     }
 
-    if (!chatArea || !overlay) return;
-    const showOverlay = () => overlay.classList.remove('hidden');
-    const hideOverlay = () => overlay.classList.add('hidden');
-    chatArea.addEventListener('dragenter', (e) => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) { showOverlay(); } });
-    chatArea.addEventListener('dragover', (e) => { e.preventDefault(); e.stopPropagation(); });
-    chatArea.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); if (e.relatedTarget === null || !chatArea.contains(e.relatedTarget)) { hideOverlay(); } });
-    chatArea.addEventListener('drop', (e) => { e.preventDefault(); e.stopPropagation(); hideOverlay(); const files = e.dataTransfer.files; if (files.length > 0) { stageFile(files[0]); } });
+    if (!chatFooter || !footerOverlay) return;
+
+    const showOverlay = () => footerOverlay.classList.remove('hidden');
+    const hideOverlay = () => footerOverlay.classList.add('hidden');
+
+    // Usar un contador para manejar dragenter/dragleave sobre elementos hijos
+    let dragCounter = 0;
+
+    chatFooter.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.dataTransfer.types.includes('Files')) {
+            dragCounter++;
+            showOverlay();
+        }
+    });
+
+    chatFooter.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
+
+    chatFooter.addEventListener('dragleave', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter--;
+        if (dragCounter === 0) {
+            hideOverlay();
+        }
+    });
+
+    chatFooter.addEventListener('drop', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragCounter = 0;
+        hideOverlay();
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            stageFile(files[0]);
+        }
+    });
 }
 
 
