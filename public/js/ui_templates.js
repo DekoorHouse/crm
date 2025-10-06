@@ -711,7 +711,7 @@ const ChatWindowTemplate = (contact) => {
     `;
 
     return `
-        <div id="drag-drop-overlay" class="drag-overlay hidden"><div class="drag-overlay-content"><i class="fas fa-file-import text-5xl mb-4"></i><p>Suelta el archivo para adjuntarlo</p></div></div>
+        
         <header class="chat-header p-2 shadow-sm flex items-center space-x-2">
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
