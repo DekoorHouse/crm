@@ -166,8 +166,6 @@ function renderChatWindow() {
     } 
 }
 
-let hasGlobalDragListeners = false;
-
 /**
  * Configura los listeners de drag and drop para toda el área del chat.
  */
@@ -177,20 +175,13 @@ function setupDragAndDropForChatArea() {
 
     if (!chatPanel || !chatOverlay) return;
     
-    // Prevenir que el navegador abra el archivo por defecto. Se añaden una sola vez.
-    if (!hasGlobalDragListeners) {
-        const preventDefaults = e => e.preventDefault();
-        window.addEventListener('dragover', preventDefaults);
-        window.addEventListener('drop', preventDefaults);
-        hasGlobalDragListeners = true;
-    }
-
     let dragCounter = 0;
 
     const showOverlay = () => chatOverlay.classList.remove('hidden');
     const hideOverlay = () => chatOverlay.classList.add('hidden');
 
     chatPanel.addEventListener('dragenter', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         // Solo mostrar overlay si se arrastran archivos
         if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
@@ -200,11 +191,12 @@ function setupDragAndDropForChatArea() {
     });
 
     chatPanel.addEventListener('dragover', (e) => {
+        e.preventDefault();
         e.stopPropagation();
-        e.preventDefault(); // Necesario para que el evento 'drop' funcione
     });
 
     chatPanel.addEventListener('dragleave', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         dragCounter--;
         if (dragCounter === 0) {
@@ -213,6 +205,7 @@ function setupDragAndDropForChatArea() {
     });
 
     chatPanel.addEventListener('drop', (e) => {
+        e.preventDefault();
         e.stopPropagation();
         dragCounter = 0;
         hideOverlay();
@@ -905,4 +898,5 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
 
