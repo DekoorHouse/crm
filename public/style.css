@@ -656,3 +656,27 @@ label.disabled-icon {
 .order-history-item .status-sin-estatus { background-color: #e9ecef; color: #495057; }
 .order-history-item .status-default { background-color: #f0f0f0; color: var(--color-text-light); }
 /* --- END: Order History Styles --- */
+
+.drag-overlay-footer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(238, 242, 255, 0.9);
+    border: 3px dashed var(--color-primary);
+    border-radius: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 25;
+    pointer-events: all;
+}
+
+.drag-overlay-footer .drag-overlay-content {
+    color: var(--color-primary);
+    font-family: var(--font-heading);
+    font-size: 1.2rem;
+    font-weight: 600;
+    text-align: center;
+}
