@@ -116,6 +116,118 @@ function setupChatListEventListeners() {
 
 // --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
 
+function renderChatWindow() { 
+    if (state.activeView !== 'chats') return;
+    
+    const chatPanelEl = document.getElementById('chat-panel');
+    if (!chatPanelEl) return;
+
+    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
+    chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+
+    const searchInput = document.getElementById('search-contacts-input');
+    if (searchInput) {
+        searchInput.addEventListener('input', handleSearchInput);
+    }
+    
+    if (contact) { 
+        const statusWrapper = document.getElementById('contact-status-wrapper');
+        if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
+        if (state.activeTab === 'chat') {
+            renderMessages();
+            const messagesContainer = document.getElementById('messages-container'); 
+            if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
+            
+            const messageForm = document.getElementById('message-form');
+            const messageInput = document.getElementById('message-input'); 
+            if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
+            if (messageInput) { 
+                messageInput.addEventListener('paste', handlePaste); 
+                messageInput.addEventListener('input', handleQuickReplyInput);
+                messageInput.addEventListener('keydown', handleMessageInputKeyDown);
+                
+                messageInput.addEventListener('input', () => {
+                    messageInput.style.height = 'auto';
+                    let newHeight = messageInput.scrollHeight;
+                    if (newHeight > 120) {
+                        newHeight = 120;
+                    }
+                    messageInput.style.height = newHeight + 'px';
+                });
+
+                messageInput.focus(); 
+            } 
+            
+        } else if (state.activeTab === 'notes') {
+            renderNotes();
+            document.getElementById('note-form').addEventListener('submit', handleSaveNote);
+        }
+        setupDragAndDropForChatArea(); // Llamada a la nueva función
+    } 
+}
+
+let hasGlobalDragListeners = false;
+
+/**
+ * Configura los listeners de drag and drop para toda el área del chat.
+ */
+function setupDragAndDropForChatArea() {
+    const chatPanel = document.getElementById('chat-panel');
+    const chatOverlay = document.getElementById('drag-drop-overlay-chat');
+
+    if (!chatPanel || !chatOverlay) return;
+    
+    // Prevenir que el navegador abra el archivo por defecto. Se añaden una sola vez.
+    if (!hasGlobalDragListeners) {
+        const preventDefaults = e => e.preventDefault();
+        window.addEventListener('dragover', preventDefaults);
+        window.addEventListener('drop', preventDefaults);
+        hasGlobalDragListeners = true;
+    }
+
+    let dragCounter = 0;
+
+    const showOverlay = () => chatOverlay.classList.remove('hidden');
+    const hideOverlay = () => chatOverlay.classList.add('hidden');
+
+    chatPanel.addEventListener('dragenter', (e) => {
+        e.stopPropagation();
+        // Solo mostrar overlay si se arrastran archivos
+        if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+            dragCounter++;
+            showOverlay();
+        }
+    });
+
+    chatPanel.addEventListener('dragover', (e) => {
+        e.stopPropagation();
+        e.preventDefault(); // Necesario para que el evento 'drop' funcione
+    });
+
+    chatPanel.addEventListener('dragleave', (e) => {
+        e.stopPropagation();
+        dragCounter--;
+        if (dragCounter === 0) {
+            hideOverlay();
+        }
+    });
+
+    chatPanel.addEventListener('drop', (e) => {
+        e.stopPropagation();
+        dragCounter = 0;
+        hideOverlay();
+        
+        const files = e.dataTransfer.files;
+        if (files && files.length > 0) {
+            // Solo adjuntar si el input no está deshabilitado (sesión de chat activa)
+            const messageInput = document.getElementById('message-input');
+            if (messageInput && !messageInput.disabled) {
+                stageFile(files[0]); // Usar la función existente para manejar el archivo
+            }
+        }
+    });
+}
+
 async function handleSelectContact(contactId) { 
     if (state.campaignMode) return;
     
@@ -793,3 +905,4 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
