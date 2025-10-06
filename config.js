@@ -36,21 +36,11 @@ const allowedOrigins = [
     // Si tienes otra URL de desarrollo, agrégala aquí
 ];
 
-const corsOptions = {
-    origin: function (origin, callback) {
-        // Permite peticiones sin 'origin' (como las de Postman o apps móviles)
-        // o si el origen de la petición está en nuestra lista blanca.
-        if (!origin || allowedOrigins.indexOf(origin) !== -1) {
-            callback(null, true);
-        } else {
-            console.warn(`CORS: Se bloqueó una solicitud del origen no permitido: ${origin}`);
-            callback(new Error('No permitido por la política de CORS'));
-        }
-    }
-};
-
 // Aplica la configuración de CORS a todas las rutas de la aplicación.
-app.use(cors(corsOptions));
+// Esta configuración le dice al servidor que acepte solicitudes únicamente de los
+// dominios listados en 'allowedOrigins'. Esto soluciona el error al incluir
+// el encabezado 'Access-Control-Allow-Origin' en las respuestas del servidor.
+app.use(cors({ origin: allowedOrigins }));
 // --- FIN DE LA CORRECCIÓN DE CORS ---
 
 app.use(express.json());
