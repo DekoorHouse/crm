@@ -3,6 +3,14 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const FormData = require('form-data');
 const path = require('path');
+const fs = require('fs'); // Añadido para manejar archivos temporales
+const tmp = require('tmp'); // Añadido para crear archivos temporales
+const ffmpeg = require('fluent-ffmpeg'); // Añadido para el procesamiento de video
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path; // Añadido para la ruta de ffmpeg
+
+// Configurar la ruta de ffmpeg para fluent-ffmpeg
+ffmpeg.setFfmpegPath(ffmpegPath);
+
 const { db, admin, bucket } = require('./config');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA APUNTAR A services.js
 const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage } = require('./services');
@@ -14,25 +22,99 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const PORT = process.env.PORT || 3000;
+// --- INICIO: NUEVAS CONSTANTES PARA COMPRESIÓN ---
+const VIDEO_SIZE_LIMIT_MB = 15.5; // Límite seguro de 15.5MB (el de WhatsApp es 16MB)
+const VIDEO_SIZE_LIMIT_BYTES = VIDEO_SIZE_LIMIT_MB * 1024 * 1024;
+const TARGET_BITRATE = '1000k'; // Bitrate objetivo de 1 Mbps para la compresión
+// --- FIN: NUEVAS CONSTANTES ---
+
+// --- INICIO: NUEVA FUNCIÓN DE COMPRESIÓN DE VIDEO ---
+/**
+ * Comprime un búfer de video si excede el límite de tamaño.
+ * @param {Buffer} inputBuffer El búfer de video a procesar.
+ * @param {string} mimeType El tipo MIME del video.
+ * @returns {Promise<Buffer>} Una promesa que se resuelve con el búfer de video (potencialmente comprimido).
+ */
+function compressVideoIfNeeded(inputBuffer, mimeType) {
+    return new Promise((resolve, reject) => {
+        // Si no es un video o ya está dentro del límite, no hacer nada
+        if (!mimeType.startsWith('video/') || inputBuffer.length <= VIDEO_SIZE_LIMIT_BYTES) {
+            console.log(`[COMPRESSOR] El archivo no es un video o está dentro del límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB). Omitiendo compresión.`);
+            return resolve(inputBuffer);
+        }
+
+        console.log(`[COMPRESSOR] El video excede el límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB > ${VIDEO_SIZE_LIMIT_MB} MB). Iniciando compresión.`);
+
+        // Crear archivos temporales para la entrada y salida de ffmpeg
+        const tempInput = tmp.fileSync({ postfix: '.mp4' });
+        const tempOutput = tmp.fileSync({ postfix: '.mp4' });
+
+        // Escribir el búfer de video original en un archivo temporal
+        fs.writeFile(tempInput.name, inputBuffer, (err) => {
+            if (err) {
+                tempInput.removeCallback();
+                tempOutput.removeCallback();
+                return reject(err);
+            }
+
+            // Usar ffmpeg para comprimir el video
+            ffmpeg(tempInput.name)
+                .outputOptions([
+                    '-c:v libx264',      // Usar códec H.264, altamente compatible
+                    `-b:v ${TARGET_BITRATE}`, // Establecer bitrate de video objetivo
+                    '-c:a aac',          // Usar códec de audio AAC
+                    '-b:a 128k',         // Establecer bitrate de audio
+                    '-preset fast',      // Usar un preajuste de codificación rápido
+                    '-crf 28'            // Factor de Calidad Constante (más alto = más compresión)
+                ])
+                .on('end', () => {
+                    console.log('[COMPRESSOR] Procesamiento con FFmpeg finalizado.');
+                    // Leer el video comprimido desde el archivo de salida temporal
+                    fs.readFile(tempOutput.name, (err, compressedBuffer) => {
+                        // Limpiar archivos temporales
+                        tempInput.removeCallback();
+                        tempOutput.removeCallback();
+                        if (err) {
+                            return reject(err);
+                        }
+                        console.log(`[COMPRESSOR] Compresión exitosa. Nuevo tamaño: ${(compressedBuffer.length / 1024 / 1024).toFixed(2)} MB.`);
+                        resolve(compressedBuffer); // Devolver el búfer del video comprimido
+                    });
+                })
+                .on('error', (err) => {
+                    console.error('[COMPRESSOR] Error de FFmpeg:', err);
+                    tempInput.removeCallback();
+                    tempOutput.removeCallback();
+                    reject(new Error('No se pudo comprimir el video. ' + err.message));
+                })
+                .save(tempOutput.name);
+        });
+    });
+}
+// --- FIN: NUEVA FUNCIÓN ---
 
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
  * SOPORTA: Carga directa de videos y otros archivos, no solo imágenes.
+ * MODIFICADO: Añade compresión de video si es necesario.
  * @param {string} mediaUrl La URL pública del archivo.
  * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
  */
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
-    // SOLUCIÓN: Se unifica el método de subida para todos los tipos de archivo a form-data,
-    // ya que es más robusto que el método de 'link' que estaba fallando.
     try {
         console.log(`[MEDIA UPLOAD - FORM] Descargando ${mediaUrl} para subir a WhatsApp...`);
-        // 1. Descargar el archivo a un buffer
+        // 1. Descargar el archivo a un búfer
         const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
-        const fileBuffer = fileResponse.data;
+        let fileBuffer = fileResponse.data;
         const fileName = path.basename(new URL(mediaUrl).pathname) || `media.${mimeType.split('/')[1] || 'bin'}`;
 
-        // 2. Crear el formulario multipart/form-data
+        // --- INICIO: PASO DE COMPRESIÓN AÑADIDO ---
+        // Comprime el video si es necesario antes de proceder
+        fileBuffer = await compressVideoIfNeeded(fileBuffer, mimeType);
+        // --- FIN: PASO DE COMPRESIÓN AÑADIDO ---
+
+        // 2. Crear el formulario multipart/form-data con el búfer (posiblemente) comprimido
         const form = new FormData();
         form.append('messaging_product', 'whatsapp');
         form.append('file', fileBuffer, {
@@ -343,6 +425,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
+
+// --- El resto del archivo permanece igual ---
+// ... (resto de las rutas sin cambios) ...
 
 // --- NUEVA RUTA PARA MENSAJES PAGINADOS (PREVISUALIZACIÓN) ---
 router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
