@@ -13,6 +13,37 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const PORT = process.env.PORT || 3000;
 
+// --- NUEVA FUNCIÓN AUXILIAR PARA SUBIR MEDIA A WHATSAPP ---
+/**
+ * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
+ * @param {string} mediaUrl La URL pública del archivo.
+ * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
+ * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
+ */
+async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
+    try {
+        console.log(`[MEDIA UPLOAD] Subiendo ${mediaUrl} a WhatsApp...`);
+        const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`, {
+            messaging_product: 'whatsapp',
+            type: mimeType,
+            link: mediaUrl,
+        }, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        
+        const mediaId = response.data.id;
+        if (!mediaId) {
+            throw new Error("La respuesta de la API de carga de media no incluyó un ID.");
+        }
+        console.log(`[MEDIA UPLOAD] Archivo subido con éxito. Media ID: ${mediaId}`);
+        return mediaId;
+    } catch (error) {
+        console.error('❌ Error al subir media a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        throw new Error('No se pudo subir el archivo a los servidores de WhatsApp.');
+    }
+}
+
+
 // --- FUNCIÓN MOVIDA PARA EVITAR DEPENDENCIA CIRCULAR ---
 async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null, bodyParams = []) {
     console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
@@ -203,27 +234,68 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        let messageToSave;
+        let messageId;
+
         if (template) {
+            // Lógica existente para plantillas
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []);
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
-            const messageId = response.data.messages[0].id;
-            const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
-            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
-            const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
-            await messageRef.set(messageToSave);
-            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+            messageId = response.data.messages[0].id;
+            messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
+
+        } else if (fileUrl && fileType) {
+            // --- INICIO DE LA MODIFICACIÓN: Lógica mejorada para enviar videos y otros archivos ---
+            // 1. Subir el archivo a WhatsApp primero para obtener un ID.
+            const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
+
+            // 2. Construir el payload del mensaje usando el ID obtenido.
+            const type = fileType.startsWith('image/') ? 'image' :
+                         fileType.startsWith('video/') ? 'video' :
+                         fileType.startsWith('audio/') ? 'audio' : 'document';
+            
+            const messagePayload = {
+                messaging_product: 'whatsapp',
+                to: contactId,
+                type: type,
+                [type]: {
+                    id: mediaId,
+                    caption: text || ''
+                }
+            };
+            if (reply_to_wamid) {
+                messagePayload.context = { message_id: reply_to_wamid };
+            }
+
+            // 3. Enviar el mensaje a través de la API de WhatsApp.
+            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
+            messageId = response.data.messages[0].id;
+
+            // 4. Preparar los datos para guardar en Firestore.
+            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : '📎 Archivo');
+            messageToSave = {
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: messageId, text: messageTextForDb, fileUrl: fileUrl, fileType: fileType
+            };
+            // --- FIN DE LA MODIFICACIÓN ---
+
         } else {
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, fileUrl, fileType, reply_to_wamid });
-            const messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: sentMessageData.id, text: sentMessageData.textForDb, fileUrl: sentMessageData.fileUrlForDb, fileType: sentMessageData.fileTypeForDb };
-            if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
-            Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
-            const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
-            await messageRef.set(messageToSave);
-            await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+            // Lógica existente para mensajes de solo texto
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, reply_to_wamid });
+            messageId = sentMessageData.id;
+            messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: sentMessageData.textForDb };
         }
+
+        // Guardar en Firestore
+        if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
+        Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+        const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
+        await messageRef.set(messageToSave);
+        await contactRef.update({ lastMessage: messageToSave.text, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+        
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
         console.error('❌ Error al enviar mensaje/plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -1152,3 +1224,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
