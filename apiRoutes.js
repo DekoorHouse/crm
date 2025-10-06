@@ -23,28 +23,8 @@ const PORT = process.env.PORT || 3000;
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
  */
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
-    // Para imágenes, el método de enlace es más rápido y preferido.
-    if (mimeType.startsWith('image/')) {
-        try {
-            console.log(`[MEDIA UPLOAD - LINK] Subiendo imagen ${mediaUrl} a WhatsApp...`);
-            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`, {
-                messaging_product: 'whatsapp',
-                type: mimeType,
-                link: mediaUrl,
-            }, {
-                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
-            });
-            const mediaId = response.data.id;
-            if (!mediaId) throw new Error("La respuesta de la API de carga de media no incluyó un ID.");
-            console.log(`[MEDIA UPLOAD - LINK] Imagen subida con éxito. Media ID: ${mediaId}`);
-            return mediaId;
-        } catch (error) {
-            console.error('❌ Error al subir imagen a WhatsApp con link:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-            throw new Error('No se pudo subir la imagen a los servidores de WhatsApp.');
-        }
-    }
-
-    // Para videos y otros tipos de archivos, se debe usar form-data.
+    // SOLUCIÓN: Se unifica el método de subida para todos los tipos de archivo a form-data,
+    // ya que es más robusto que el método de 'link' que estaba fallando.
     try {
         console.log(`[MEDIA UPLOAD - FORM] Descargando ${mediaUrl} para subir a WhatsApp...`);
         // 1. Descargar el archivo a un buffer
