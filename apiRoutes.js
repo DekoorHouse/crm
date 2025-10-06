@@ -64,7 +64,7 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
                     `-b:v ${TARGET_BITRATE}`, // Establecer bitrate de video objetivo
                     '-c:a aac',          // Usar códec de audio AAC
                     '-b:a 128k',         // Establecer bitrate de audio
-                    '-preset fast',      // Usar un preajuste de codificación rápido
+                    '-preset ultrafast', // FIX: Changed preset from 'fast' to 'ultrafast' to prioritize speed.
                     '-crf 28'            // Factor de Calidad Constante (más alto = más compresión)
                 ])
                 .on('end', () => {
