@@ -295,6 +295,21 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         } else if (fileUrl && fileType) {
             // --- INICIO DE LA MODIFICACIÓN: Lógica mejorada para enviar videos y otros archivos ---
+            // SOLUCIÓN: Asegurarse de que el archivo sea público en GCS antes de enviarlo a WhatsApp.
+            if (fileUrl && fileUrl.includes(bucket.name)) {
+                try {
+                    // Extrae la ruta del archivo desde la URL pública.
+                    const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
+                    // Hace el archivo público.
+                    await bucket.file(filePath).makePublic();
+                    console.log(`[GCS-CHAT] Archivo ${filePath} hecho público para envío.`);
+                } catch (gcsError) {
+                    // Si falla, solo se registra un error pero no se detiene el proceso,
+                    // ya que el archivo podría ser público de todos modos.
+                    console.error(`[GCS-CHAT] Advertencia: No se pudo hacer público el archivo ${fileUrl}:`, gcsError.message);
+                }
+            }
+            
             // 1. Subir el archivo a WhatsApp primero para obtener un ID.
             const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
 
