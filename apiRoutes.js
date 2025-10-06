@@ -1,6 +1,8 @@
 const express = require('express');
 const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
+const FormData = require('form-data');
+const path = require('path');
 const { db, admin, bucket } = require('./config');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA APUNTAR A services.js
 const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage } = require('./services');
@@ -13,32 +15,76 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const PORT = process.env.PORT || 3000;
 
-// --- NUEVA FUNCIÓN AUXILIAR PARA SUBIR MEDIA A WHATSAPP ---
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
+ * SOPORTA: Carga directa de videos y otros archivos, no solo imágenes.
  * @param {string} mediaUrl La URL pública del archivo.
  * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
  */
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
+    // Para imágenes, el método de enlace es más rápido y preferido.
+    if (mimeType.startsWith('image/')) {
+        try {
+            console.log(`[MEDIA UPLOAD - LINK] Subiendo imagen ${mediaUrl} a WhatsApp...`);
+            const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`, {
+                messaging_product: 'whatsapp',
+                type: mimeType,
+                link: mediaUrl,
+            }, {
+                headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+            });
+            const mediaId = response.data.id;
+            if (!mediaId) throw new Error("La respuesta de la API de carga de media no incluyó un ID.");
+            console.log(`[MEDIA UPLOAD - LINK] Imagen subida con éxito. Media ID: ${mediaId}`);
+            return mediaId;
+        } catch (error) {
+            console.error('❌ Error al subir imagen a WhatsApp con link:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+            throw new Error('No se pudo subir la imagen a los servidores de WhatsApp.');
+        }
+    }
+
+    // Para videos y otros tipos de archivos, se debe usar form-data.
     try {
-        console.log(`[MEDIA UPLOAD] Subiendo ${mediaUrl} a WhatsApp...`);
-        const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`, {
-            messaging_product: 'whatsapp',
-            type: mimeType,
-            link: mediaUrl,
-        }, {
-            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` }
+        console.log(`[MEDIA UPLOAD - FORM] Descargando ${mediaUrl} para subir a WhatsApp...`);
+        // 1. Descargar el archivo a un buffer
+        const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
+        const fileBuffer = fileResponse.data;
+        const fileName = path.basename(new URL(mediaUrl).pathname) || `media.${mimeType.split('/')[1] || 'bin'}`;
+
+        // 2. Crear el formulario multipart/form-data
+        const form = new FormData();
+        form.append('messaging_product', 'whatsapp');
+        form.append('file', fileBuffer, {
+            filename: fileName,
+            contentType: mimeType,
         });
-        
-        const mediaId = response.data.id;
+
+        // 3. Subir el formulario a la API de WhatsApp
+        console.log(`[MEDIA UPLOAD - FORM] Subiendo ${fileName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB) a WhatsApp...`);
+        const uploadResponse = await axios.post(
+            `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`,
+            form,
+            {
+                headers: {
+                    ...form.getHeaders(),
+                    'Authorization': `Bearer ${WHATSAPP_TOKEN}`
+                },
+                maxContentLength: Infinity,
+                maxBodyLength: Infinity,
+            }
+        );
+
+        const mediaId = uploadResponse.data.id;
         if (!mediaId) {
             throw new Error("La respuesta de la API de carga de media no incluyó un ID.");
         }
-        console.log(`[MEDIA UPLOAD] Archivo subido con éxito. Media ID: ${mediaId}`);
+
+        console.log(`[MEDIA UPLOAD - FORM] Archivo subido con éxito. Media ID: ${mediaId}`);
         return mediaId;
+
     } catch (error) {
-        console.error('❌ Error al subir media a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error('❌ Error al subir archivo (form-data) a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error('No se pudo subir el archivo a los servidores de WhatsApp.');
     }
 }
@@ -1224,4 +1270,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
