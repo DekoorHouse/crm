@@ -144,8 +144,12 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
                     console.error('[AUDIO CONVERTER] Error de FFmpeg:', err);
                     tempInput.removeCallback();
                     tempOutput.removeCallback();
-                    // If conversion fails, resolve with the original buffer to attempt sending it as a standard file.
+                    // --- INICIO DE LA SOLUCIÓN ---
+                    // Si la conversión falla, en lugar de rechazar, se resuelve con el búfer original.
+                    // Esto permite enviar el audio como un archivo normal en lugar de que falle todo el envío.
+                    console.warn(`[AUDIO CONVERTER] Falló la conversión a OGG. Se enviará como archivo de audio estándar.`);
                     resolve({ buffer: inputBuffer, mimeType: mimeType });
+                    // --- FIN DE LA SOLUCIÓN ---
                 })
                 .save(tempOutput.name);
         });
