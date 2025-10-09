@@ -459,7 +459,7 @@ function handleStatusChange(contactId, newStatusKey) {
     });
 }
 
-function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) { showError('Solo se pueden adjuntar imágenes y videos.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
+function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
 
 function cancelStagedFile() { 
     if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } 
@@ -898,5 +898,4 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
-
 
