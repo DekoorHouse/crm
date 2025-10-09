@@ -498,8 +498,53 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     }
 });
 
-// --- El resto del archivo permanece igual ---
-// ... (resto de las rutas sin cambios) ...
+router.post('/contacts/:contactId/queue-message', async (req, res) => {
+    const { contactId } = req.params;
+    const { text, fileUrl, fileType, reply_to_wamid } = req.body;
+
+    if (!text && !fileUrl) {
+        return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        
+        let messageToSaveText = text;
+        if (fileUrl && !text) {
+            const type = fileType.startsWith('image/') ? 'image' :
+                         fileType.startsWith('video/') ? 'video' :
+                         fileType.startsWith('audio/') ? 'audio' : 'document';
+            messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : '📎 Archivo');
+        }
+
+        const messageToSave = {
+            from: PHONE_NUMBER_ID,
+            status: 'queued', // El nuevo estado para mensajes en cola
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            text: messageToSaveText,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null,
+        };
+
+        if (reply_to_wamid) {
+            messageToSave.context = { id: reply_to_wamid };
+        }
+
+        await contactRef.collection('messages').add(messageToSave);
+        
+        // Actualizamos el lastMessage para que la UI refleje el mensaje encolado
+        await contactRef.update({
+            lastMessage: `[En cola] ${messageToSave.text}`,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        res.status(200).json({ success: true, message: 'Mensaje encolado con éxito.' });
+
+    } catch (error) {
+        console.error('❌ Error al encolar mensaje:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error del servidor al encolar el mensaje.' });
+    }
+});
 
 // --- NUEVA RUTA PARA MENSAJES PAGINADOS (PREVISUALIZACIÓN) ---
 router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
