@@ -256,38 +256,46 @@ async function handleSelectContact(contactId) {
     unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
         .onSnapshot((snapshot) => {
             hideError();
+            const newMessages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+
             if (isInitialMessageLoad) {
-                state.messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+                state.messages = newMessages;
                 state.loadingMessages = false;
-                if (state.activeTab === 'chat') {
-                    renderMessages();
-                }
                 isInitialMessageLoad = false;
             } else {
                 snapshot.docChanges().forEach((change) => {
-                    if (change.type === "added") {
-                        const newMessage = { docId: change.doc.id, ...change.doc.data() };
-                        const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
+                    const changedMessage = { docId: change.doc.id, ...change.doc.data() };
+                    const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
 
-                        if (existingIndex > -1) {
-                            state.messages[existingIndex] = newMessage;
-                            if (state.activeTab === 'chat') renderMessages(); 
-                        } else {
-                            state.messages.push(newMessage);
-                            if (state.activeTab === 'chat') appendMessage(newMessage);
+                    if (change.type === "added") {
+                        if (existingIndex === -1) {
+                            state.messages.push(changedMessage);
                         }
-                    }
-                     if (change.type === "modified") {
-                        const updatedMessageIndex = state.messages.findIndex(m => m.docId === change.doc.id);
-                        if (updatedMessageIndex > -1) {
-                            state.messages[updatedMessageIndex] = { docId: change.doc.id, ...change.doc.data() };
-                            if (state.activeTab === 'chat') {
-                                renderMessages(); 
-                            }
+                    } else if (change.type === "modified") {
+                        if (existingIndex > -1) {
+                            state.messages[existingIndex] = changedMessage;
+                        }
+                    } else if (change.type === "removed") {
+                        if (existingIndex > -1) {
+                            state.messages.splice(existingIndex, 1);
                         }
                     }
                 });
             }
+
+            // Recalcular el estado de la sesión cada vez que llegan mensajes
+            const lastUserMessage = newMessages.slice().reverse().find(m => m.from === contactId);
+            if (lastUserMessage && lastUserMessage.timestamp) {
+                const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
+                state.isSessionExpired = hoursDiff > 24;
+            } else {
+                state.isSessionExpired = newMessages.length > 0; // Si hay mensajes pero ninguno del usuario, la sesión está expirada
+            }
+
+            if (state.activeTab === 'chat') {
+                renderMessages();
+            }
+
         }, (error) => {
             console.error(error);
             showError(`Error al cargar mensajes.`);
@@ -314,12 +322,15 @@ async function handleSendMessage(event) {
     const remoteFileToSend = state.stagedRemoteFile;
 
     if (!text && !fileToSend && !remoteFileToSend) return;
+
+    const isExpired = state.isSessionExpired;
+    const endpoint = isExpired ? 'queue-message' : 'messages';
     
     const tempId = `temp_${Date.now()}`;
     const pendingMessage = {
         docId: tempId,
         from: 'me',
-        status: 'pending',
+        status: isExpired ? 'queued' : 'pending',
         timestamp: { seconds: Math.floor(Date.now() / 1000) },
         text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
     };
@@ -333,13 +344,15 @@ async function handleSendMessage(event) {
 
     try {
         if (fileToSend) {
-            const response = await uploadAndSendFile(fileToSend, text);
+            const response = await uploadAndSendFile(fileToSend, text, isExpired);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Error del servidor.');
             }
         } else {
-            await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
+            if (!isExpired) {
+                await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
+            }
             const messageData = { text, tempId };
             if (remoteFileToSend) {
                 messageData.fileUrl = remoteFileToSend.url;
@@ -348,7 +361,7 @@ async function handleSendMessage(event) {
             if (state.replyingToMessage) {
                 messageData.reply_to_wamid = state.replyingToMessage.id;
             }
-            const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+            const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(messageData)
@@ -362,8 +375,11 @@ async function handleSendMessage(event) {
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
         showError(error.message);
-        state.messages = state.messages.filter(m => m.docId !== tempId);
-        renderMessages();
+        const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
+        if (failedMessageIndex > -1) {
+            state.messages[failedMessageIndex].status = 'failed';
+            renderMessages();
+        }
         if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
     }
 }
@@ -401,7 +417,7 @@ async function handleDeleteNote(noteId) {
     } catch (error) { showError(error.message); }
 }
 
-async function uploadAndSendFile(file, textCaption) { 
+async function uploadAndSendFile(file, textCaption, isExpired) { 
     if (!file || !state.selectedContactId || state.isUploading) return;
     const progressEl = document.getElementById('upload-progress');
     const submitButton = document.querySelector('#message-form button[type="submit"]');
@@ -430,7 +446,9 @@ async function uploadAndSendFile(file, textCaption) {
                     if (state.replyingToMessage) {
                         messageData.reply_to_wamid = state.replyingToMessage.id;
                     }
-                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
+
+                    const endpoint = isExpired ? 'queue-message' : 'messages';
+                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
                     resolve(response);
                 } catch (error) { 
                     reject(error); 
