@@ -110,6 +110,7 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
 .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
 .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
+.message-bubble.message-queued { background-color: #dbeafe; color: #1e40af; border-bottom-right-radius: 4px; }
 
 .message-actions { position: absolute; top: -12px; right: 10px; background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; padding: 2px; opacity: 0; visibility: hidden; transition: all 0.2s ease; z-index: 10; }
 .message-action-btn { background: none; border: none; cursor: pointer; color: var(--color-text-light); padding: 6px; display: flex; align-items: center; justify-content: center; }
