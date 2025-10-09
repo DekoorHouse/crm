@@ -417,6 +417,7 @@ const MessageStatusIconTemplate = (status) => {
     const readColor = '#53bdeb';
     switch (status) {
         case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
+        case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`; // Tailwind blue-400
         case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
         case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
         case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
@@ -582,7 +583,10 @@ const MessageBubbleTemplate = (message) => {
     const reactionHTML = message.reaction ? `<div class="reactions-container ${isSent ? '' : 'received-reaction'}">${message.reaction}</div>` : '';
 
     const bubbleAlignment = isSent ? 'justify-end' : 'justify-start';
-    const bubbleClasses = isSent ? 'sent' : 'received';
+    let bubbleClasses = isSent ? 'sent' : 'received';
+    if (message.status === 'queued') {
+        bubbleClasses += ' message-queued';
+    }
     
     return `
         <div class="flex my-1 ${bubbleAlignment}" data-doc-id="${message.docId}">
@@ -687,35 +691,28 @@ const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
-    const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contact.id);
-    let isSessionExpired = false;
+    const isSessionExpired = state.isSessionExpired; // Usar el estado global
 
-    if (lastUserMessage && lastUserMessage.timestamp) {
-        const lastMessageTimestamp = lastUserMessage.timestamp.seconds * 1000;
-        const now = new Date().getTime();
-        const hoursDiff = (now - lastMessageTimestamp) / (1000 * 60 * 60);
-        isSessionExpired = hoursDiff > 24;
-    } else if (state.messages.length > 0) {
-        isSessionExpired = true;
-    }
-    
     const sessionExpiredNotification = isSessionExpired
         ? `<div class="session-expired-banner">
-             <i class="fas fa-lock mr-2"></i> Chat cerrado. Han pasado más de 24 horas.
+             <i class="fas fa-lock mr-2"></i> Chat cerrado. Envía una plantilla para reactivar.
            </div>`
         : '';
-    
-    const isInputDisabled = isSessionExpired ? 'disabled' : '';
+
+    // El campo de texto ya no se deshabilita, solo cambia el placeholder
+    const placeholderText = isSessionExpired
+        ? 'La ventana de 24h ha cerrado. Los mensajes se encolarán.'
+        : 'Escribe un mensaje o usa / para respuestas rápidas...';
 
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
-             <label for="file-input" class="cursor-pointer p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}"><i class="fas fa-paperclip text-xl"></i></label>
-             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*" ${isInputDisabled}>
-             <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}" ${isInputDisabled}><i class="far fa-smile text-xl"></i></button>
+             <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
+             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*">
+             <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
-             <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn ${isInputDisabled ? 'disabled-icon' : ''}" title="Contestar con IA" ${isInputDisabled}><i class="fas fa-magic"></i></button>
-             <textarea id="message-input" placeholder="${isSessionExpired ? 'Solo puedes enviar plantillas' : 'Escribe un mensaje o usa / para respuestas rápidas...'}" class="flex-1 !p-0 !mb-0" rows="1" ${isInputDisabled}></textarea>
-             <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0" ${isInputDisabled}><i class="fas fa-paper-plane text-lg"></i></button>
+             <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
+             <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !p-0 !mb-0" rows="1"></textarea>
+             <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
     
     const mainContent = state.activeTab === 'chat'
