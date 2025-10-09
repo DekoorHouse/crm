@@ -93,10 +93,70 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
 }
 // --- FIN: NUEVA FUNCIÓN ---
 
+// --- INICIO: NUEVA FUNCIÓN PARA CONVERSIÓN DE AUDIO ---
+/**
+ * Converts an audio buffer to OGG format with Opus codec if needed.
+ * This is required for the audio to be displayed as a voice note in WhatsApp.
+ * @param {Buffer} inputBuffer The audio buffer to process.
+ * @param {string} mimeType The original MIME type of the audio.
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>} A promise that resolves with the potentially converted buffer and the new mimeType ('audio/ogg').
+ */
+function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
+    return new Promise((resolve, reject) => {
+        // If it's not an audio file, or it's already in the correct format, do nothing.
+        if (!mimeType.startsWith('audio/') || mimeType === 'audio/ogg') {
+            console.log(`[AUDIO CONVERTER] Omitiendo conversión para el tipo de archivo: ${mimeType}.`);
+            return resolve({ buffer: inputBuffer, mimeType: mimeType });
+        }
+
+        console.log(`[AUDIO CONVERTER] Convirtiendo audio de ${mimeType} a OGG Opus para formato de nota de voz.`);
+
+        const tempInput = tmp.fileSync({ postfix: `.${mimeType.split('/')[1] || 'tmp'}` });
+        const tempOutput = tmp.fileSync({ postfix: '.ogg' });
+
+        fs.writeFile(tempInput.name, inputBuffer, (err) => {
+            if (err) {
+                tempInput.removeCallback();
+                tempOutput.removeCallback();
+                return reject(err);
+            }
+
+            ffmpeg(tempInput.name)
+                .outputOptions([
+                    '-c:a libopus', // Use the Opus codec
+                    '-b:a 16k',     // Low bitrate, suitable for voice
+                    '-vbr off',     // Variable bitrate off
+                    '-ar 16000'     // Sample rate 16kHz
+                ])
+                .on('end', () => {
+                    console.log('[AUDIO CONVERTER] Procesamiento de audio con FFmpeg finalizado.');
+                    fs.readFile(tempOutput.name, (err, convertedBuffer) => {
+                        tempInput.removeCallback();
+                        tempOutput.removeCallback();
+                        if (err) {
+                            return reject(err);
+                        }
+                        console.log(`[AUDIO CONVERTER] Conversión a OGG Opus exitosa.`);
+                        resolve({ buffer: convertedBuffer, mimeType: 'audio/ogg' });
+                    });
+                })
+                .on('error', (err) => {
+                    console.error('[AUDIO CONVERTER] Error de FFmpeg:', err);
+                    tempInput.removeCallback();
+                    tempOutput.removeCallback();
+                    // If conversion fails, resolve with the original buffer to attempt sending it as a standard file.
+                    resolve({ buffer: inputBuffer, mimeType: mimeType });
+                })
+                .save(tempOutput.name);
+        });
+    });
+}
+// --- FIN: NUEVA FUNCIÓN ---
+
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
  * SOPORTA: Carga directa de videos y otros archivos, no solo imágenes.
- * MODIFICADO: Añade compresión de video si es necesario.
+ * MODIFICADO: Añade compresión de video y conversión de audio si es necesario.
  * @param {string} mediaUrl La URL pública del archivo.
  * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
@@ -107,19 +167,27 @@ async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
         // 1. Descargar el archivo a un búfer
         const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
         let fileBuffer = fileResponse.data;
+        let finalMimeType = mimeType;
         const fileName = path.basename(new URL(mediaUrl).pathname) || `media.${mimeType.split('/')[1] || 'bin'}`;
 
-        // --- INICIO: PASO DE COMPRESIÓN AÑADIDO ---
-        // Comprime el video si es necesario antes de proceder
-        fileBuffer = await compressVideoIfNeeded(fileBuffer, mimeType);
-        // --- FIN: PASO DE COMPRESIÓN AÑADIDO ---
+        // --- INICIO: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
+        if (mimeType.startsWith('video/')) {
+            // Comprime el video si es necesario antes de proceder
+            fileBuffer = await compressVideoIfNeeded(fileBuffer, mimeType);
+        } else if (mimeType.startsWith('audio/')) {
+            // Convierte el audio a ogg/opus para que se envíe como nota de voz
+            const conversionResult = await convertAudioToOggOpusIfNeeded(fileBuffer, mimeType);
+            fileBuffer = conversionResult.buffer;
+            finalMimeType = conversionResult.mimeType;
+        }
+        // --- FIN: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
 
-        // 2. Crear el formulario multipart/form-data con el búfer (posiblemente) comprimido
+        // 2. Crear el formulario multipart/form-data con el búfer (posiblemente) comprimido o convertido
         const form = new FormData();
         form.append('messaging_product', 'whatsapp');
         form.append('file', fileBuffer, {
             filename: fileName,
-            contentType: mimeType,
+            contentType: finalMimeType, // Usar el mimeType final
         });
 
         // 3. Subir el formulario a la API de WhatsApp
