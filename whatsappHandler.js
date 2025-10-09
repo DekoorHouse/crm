@@ -74,6 +74,61 @@ async function downloadAndUploadMedia(mediaId, from) {
     }
 }
 
+async function sendQueuedMessages(contactId) {
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    const queuedMessagesQuery = contactRef.collection('messages')
+        .where('status', '==', 'queued')
+        .orderBy('timestamp', 'asc');
+
+    try {
+        const snapshot = await queuedMessagesQuery.get();
+        if (snapshot.empty) {
+            return false; // No hay mensajes para enviar
+        }
+
+        console.log(`[QUEUE] Se encontraron ${snapshot.docs.length} mensajes en cola para ${contactId}. Enviando ahora...`);
+
+        let lastMessageText = '';
+        const batch = db.batch();
+
+        for (const doc of snapshot.docs) {
+            const queuedMessage = doc.data();
+            
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
+                text: queuedMessage.text,
+                fileUrl: queuedMessage.fileUrl,
+                fileType: queuedMessage.fileType,
+                reply_to_wamid: queuedMessage.context?.id
+            });
+
+            batch.update(doc.ref, {
+                status: 'sent',
+                id: sentMessageData.id,
+                timestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+
+            lastMessageText = sentMessageData.textForDb;
+            await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        if (lastMessageText) {
+            batch.update(contactRef, {
+                lastMessage: lastMessageText,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        await batch.commit();
+
+        console.log(`[QUEUE] Se enviaron y actualizaron ${snapshot.docs.length} mensajes en cola para ${contactId}.`);
+        return true;
+
+    } catch (error) {
+        console.error(`[QUEUE] Error al procesar la cola de mensajes para ${contactId}:`, error);
+        return false;
+    }
+}
+
 async function handleContingentSend(contactId) {
     const contingentQuery = db.collection('contingentSends')
         .where('contactId', '==', contactId)
@@ -328,6 +383,13 @@ router.post('/', async (req, res) => {
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto y mensaje de ${from} guardados.`);
             const updatedContactData = (await contactRef.get()).data();
+
+            // Revisa y envía mensajes encolados ahora que el usuario ha respondido.
+            const queuedSent = await sendQueuedMessages(from);
+            if (queuedSent) {
+                console.log(`[LOGIC] Mensajes en cola enviados para ${from}. El flujo de respuestas automáticas se detiene aquí.`);
+                return res.sendStatus(200);
+            }
             
             const contingentSent = await handleContingentSend(from);
             if (contingentSent) {
