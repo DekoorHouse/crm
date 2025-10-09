@@ -83,32 +83,43 @@ async function sendQueuedMessages(contactId) {
     try {
         const snapshot = await queuedMessagesQuery.get();
         if (snapshot.empty) {
-            return false; // No hay mensajes para enviar
+            return false;
         }
 
-        console.log(`[QUEUE] Se encontraron ${snapshot.docs.length} mensajes en cola para ${contactId}. Enviando ahora...`);
+        console.log(`[QUEUE] Se encontraron ${snapshot.docs.length} mensajes en cola para ${contactId}. Enviando...`);
 
-        let lastMessageText = '';
         const batch = db.batch();
+        let lastMessageText = '';
 
         for (const doc of snapshot.docs) {
             const queuedMessage = doc.data();
             
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
-                text: queuedMessage.text,
-                fileUrl: queuedMessage.fileUrl,
-                fileType: queuedMessage.fileType,
-                reply_to_wamid: queuedMessage.context?.id
-            });
+            if (!queuedMessage.text && !queuedMessage.fileUrl) {
+                console.warn(`[QUEUE] Omitiendo mensaje en cola vacío: ${doc.id}`);
+                batch.update(doc.ref, { status: 'failed', error: 'Contenido del mensaje vacío' });
+                continue;
+            }
 
-            batch.update(doc.ref, {
-                status: 'sent',
-                id: sentMessageData.id,
-                timestamp: admin.firestore.FieldValue.serverTimestamp()
-            });
+            try {
+                const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
+                    text: queuedMessage.text,
+                    fileUrl: queuedMessage.fileUrl,
+                    fileType: queuedMessage.fileType,
+                    reply_to_wamid: queuedMessage.context?.id
+                });
 
-            lastMessageText = sentMessageData.textForDb;
-            await new Promise(resolve => setTimeout(resolve, 500));
+                batch.update(doc.ref, {
+                    status: 'sent',
+                    id: sentMessageData.id,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp()
+                });
+                lastMessageText = sentMessageData.textForDb;
+            } catch (sendError) {
+                console.error(`[QUEUE] Falló el envío del mensaje ${doc.id} para ${contactId}:`, sendError.message);
+                batch.update(doc.ref, { status: 'failed', error: sendError.message });
+            }
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
 
         if (lastMessageText) {
@@ -119,12 +130,11 @@ async function sendQueuedMessages(contactId) {
         }
 
         await batch.commit();
-
-        console.log(`[QUEUE] Se enviaron y actualizaron ${snapshot.docs.length} mensajes en cola para ${contactId}.`);
+        console.log(`[QUEUE] Cola de mensajes para ${contactId} procesada.`);
         return true;
 
     } catch (error) {
-        console.error(`[QUEUE] Error al procesar la cola de mensajes para ${contactId}:`, error);
+        console.error(`[QUEUE] Error crítico al procesar la cola de mensajes para ${contactId}:`, error);
         return false;
     }
 }
