@@ -3,16 +3,17 @@ const axios = require('axios');
 const { v4: uuidv4 } = require('uuid');
 const FormData = require('form-data');
 const path = require('path');
-const fs = require('fs'); // Añadido para manejar archivos temporales
-const tmp = require('tmp'); // Añadido para crear archivos temporales
-const ffmpeg = require('fluent-ffmpeg'); // Añadido para el procesamiento de video
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path; // Añadido para la ruta de ffmpeg
+// --- INICIO DE MODIFICACIÓN: Se añaden librerías para manejo de archivos y video ---
+const fs = require('fs');
+const tmp = require('tmp');
+const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
-// Configurar la ruta de ffmpeg para fluent-ffmpeg
+// Configurar la ruta de ffmpeg para que la librería pueda encontrarlo
 ffmpeg.setFfmpegPath(ffmpegPath);
+// --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-// SE ACTUALIZÓ LA IMPORTACIÓN PARA APUNTAR A services.js
 const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage } = require('./services');
 
 const router = express.Router();
@@ -30,7 +31,7 @@ const TARGET_BITRATE = '1000k'; // Bitrate objetivo de 1 Mbps para la compresió
 
 // --- INICIO: NUEVA FUNCIÓN DE COMPRESIÓN DE VIDEO ---
 /**
- * Comprime un búfer de video si excede el límite de tamaño.
+ * Comprime un búfer de video si excede el límite de tamaño de WhatsApp.
  * @param {Buffer} inputBuffer El búfer de video a procesar.
  * @param {string} mimeType El tipo MIME del video.
  * @returns {Promise<Buffer>} Una promesa que se resuelve con el búfer de video (potencialmente comprimido).
@@ -45,11 +46,9 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
 
         console.log(`[COMPRESSOR] El video excede el límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB > ${VIDEO_SIZE_LIMIT_MB} MB). Iniciando compresión.`);
 
-        // Crear archivos temporales para la entrada y salida de ffmpeg
         const tempInput = tmp.fileSync({ postfix: '.mp4' });
         const tempOutput = tmp.fileSync({ postfix: '.mp4' });
 
-        // Escribir el búfer de video original en un archivo temporal
         fs.writeFile(tempInput.name, inputBuffer, (err) => {
             if (err) {
                 tempInput.removeCallback();
@@ -57,28 +56,23 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
                 return reject(err);
             }
 
-            // Usar ffmpeg para comprimir el video
             ffmpeg(tempInput.name)
                 .outputOptions([
-                    '-c:v libx264',      // Usar códec H.264, altamente compatible
-                    `-b:v ${TARGET_BITRATE}`, // Establecer bitrate de video objetivo
-                    '-c:a aac',          // Usar códec de audio AAC
-                    '-b:a 128k',         // Establecer bitrate de audio
-                    '-preset ultrafast', // FIX: Changed preset from 'fast' to 'ultrafast' to prioritize speed.
-                    '-crf 28'            // Factor de Calidad Constante (más alto = más compresión)
+                    '-c:v libx264',
+                    `-b:v ${TARGET_BITRATE}`,
+                    '-c:a aac',
+                    '-b:a 128k',
+                    '-preset ultrafast', // Prioriza la velocidad sobre la calidad de compresión
+                    '-crf 28'
                 ])
                 .on('end', () => {
                     console.log('[COMPRESSOR] Procesamiento con FFmpeg finalizado.');
-                    // Leer el video comprimido desde el archivo de salida temporal
                     fs.readFile(tempOutput.name, (err, compressedBuffer) => {
-                        // Limpiar archivos temporales
                         tempInput.removeCallback();
                         tempOutput.removeCallback();
-                        if (err) {
-                            return reject(err);
-                        }
+                        if (err) return reject(err);
                         console.log(`[COMPRESSOR] Compresión exitosa. Nuevo tamaño: ${(compressedBuffer.length / 1024 / 1024).toFixed(2)} MB.`);
-                        resolve(compressedBuffer); // Devolver el búfer del video comprimido
+                        resolve(compressedBuffer);
                     });
                 })
                 .on('error', (err) => {
@@ -95,22 +89,18 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
 
 // --- INICIO: NUEVA FUNCIÓN PARA CONVERSIÓN DE AUDIO ---
 /**
- * Converts an audio buffer to OGG format with Opus codec if needed.
- * This is required for the audio to be displayed as a voice note in WhatsApp.
- * @param {Buffer} inputBuffer The audio buffer to process.
- * @param {string} mimeType The original MIME type of the audio.
- * @returns {Promise<{buffer: Buffer, mimeType: string}>} A promise that resolves with the potentially converted buffer and the new mimeType ('audio/ogg').
+ * Convierte un búfer de audio a formato OGG con códec Opus para ser enviado como nota de voz.
+ * @param {Buffer} inputBuffer El búfer de audio a procesar.
+ * @param {string} mimeType El tipo MIME original del audio.
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>} Una promesa que resuelve con el búfer (potencialmente convertido) y el nuevo tipo MIME.
  */
 function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
-    return new Promise((resolve, reject) => {
-        // If it's not an audio file, or it's already in the correct format, do nothing.
+    return new Promise((resolve) => { // No rechaza, siempre resuelve.
         if (!mimeType.startsWith('audio/') || mimeType === 'audio/ogg') {
-            console.log(`[AUDIO CONVERTER] Omitiendo conversión para el tipo de archivo: ${mimeType}.`);
             return resolve({ buffer: inputBuffer, mimeType: mimeType });
         }
 
-        console.log(`[AUDIO CONVERTER] Convirtiendo audio de ${mimeType} a OGG Opus para formato de nota de voz.`);
-
+        console.log(`[AUDIO CONVERTER] Convirtiendo audio de ${mimeType} a OGG Opus.`);
         const tempInput = tmp.fileSync({ postfix: `.${mimeType.split('/')[1] || 'tmp'}` });
         const tempOutput = tmp.fileSync({ postfix: '.ogg' });
 
@@ -118,38 +108,29 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
             if (err) {
                 tempInput.removeCallback();
                 tempOutput.removeCallback();
-                return reject(err);
+                console.warn(`[AUDIO CONVERTER] Fallo al escribir archivo temporal. Se enviará como archivo estándar.`);
+                return resolve({ buffer: inputBuffer, mimeType: mimeType });
             }
 
             ffmpeg(tempInput.name)
-                .outputOptions([
-                    '-c:a libopus', // Use the Opus codec
-                    '-b:a 16k',     // Low bitrate, suitable for voice
-                    '-vbr off',     // Variable bitrate off
-                    '-ar 16000'     // Sample rate 16kHz
-                ])
+                .outputOptions(['-c:a libopus', '-b:a 16k', '-vbr off', '-ar 16000'])
                 .on('end', () => {
-                    console.log('[AUDIO CONVERTER] Procesamiento de audio con FFmpeg finalizado.');
                     fs.readFile(tempOutput.name, (err, convertedBuffer) => {
                         tempInput.removeCallback();
                         tempOutput.removeCallback();
                         if (err) {
-                            return reject(err);
+                             console.warn(`[AUDIO CONVERTER] Fallo al leer archivo convertido. Se enviará como archivo estándar.`);
+                             return resolve({ buffer: inputBuffer, mimeType: mimeType });
                         }
                         console.log(`[AUDIO CONVERTER] Conversión a OGG Opus exitosa.`);
                         resolve({ buffer: convertedBuffer, mimeType: 'audio/ogg' });
                     });
                 })
                 .on('error', (err) => {
-                    console.error('[AUDIO CONVERTER] Error de FFmpeg:', err);
                     tempInput.removeCallback();
                     tempOutput.removeCallback();
-                    // --- INICIO DE LA SOLUCIÓN ---
-                    // Si la conversión falla, en lugar de rechazar, se resuelve con el búfer original.
-                    // Esto permite enviar el audio como un archivo normal en lugar de que falle todo el envío.
-                    console.warn(`[AUDIO CONVERTER] Falló la conversión a OGG. Se enviará como archivo de audio estándar.`);
+                    console.warn(`[AUDIO CONVERTER] Falló la conversión a OGG: ${err.message}. Se enviará como archivo de audio estándar.`);
                     resolve({ buffer: inputBuffer, mimeType: mimeType });
-                    // --- FIN DE LA SOLUCIÓN ---
                 })
                 .save(tempOutput.name);
         });
@@ -157,18 +138,17 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
 }
 // --- FIN: NUEVA FUNCIÓN ---
 
+
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
- * SOPORTA: Carga directa de videos y otros archivos, no solo imágenes.
- * MODIFICADO: Añade compresión de video y conversión de audio si es necesario.
+ * MODIFICADO: Añade compresión de video y conversión de audio antes de la subida.
  * @param {string} mediaUrl La URL pública del archivo.
  * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
  */
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
     try {
-        console.log(`[MEDIA UPLOAD - FORM] Descargando ${mediaUrl} para subir a WhatsApp...`);
-        // 1. Descargar el archivo a un búfer
+        console.log(`[MEDIA UPLOAD] Descargando ${mediaUrl} para procesar y subir...`);
         const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
         let fileBuffer = fileResponse.data;
         let finalMimeType = mimeType;
@@ -176,56 +156,46 @@ async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
 
         // --- INICIO: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
         if (mimeType.startsWith('video/')) {
-            // Comprime el video si es necesario antes de proceder
             fileBuffer = await compressVideoIfNeeded(fileBuffer, mimeType);
         } else if (mimeType.startsWith('audio/')) {
-            // Convierte el audio a ogg/opus para que se envíe como nota de voz
             const conversionResult = await convertAudioToOggOpusIfNeeded(fileBuffer, mimeType);
             fileBuffer = conversionResult.buffer;
             finalMimeType = conversionResult.mimeType;
         }
         // --- FIN: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
 
-        // 2. Crear el formulario multipart/form-data con el búfer (posiblemente) comprimido o convertido
         const form = new FormData();
         form.append('messaging_product', 'whatsapp');
         form.append('file', fileBuffer, {
             filename: fileName,
-            contentType: finalMimeType, // Usar el mimeType final
+            contentType: finalMimeType,
         });
 
-        // 3. Subir el formulario a la API de WhatsApp
-        console.log(`[MEDIA UPLOAD - FORM] Subiendo ${fileName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB) a WhatsApp...`);
+        console.log(`[MEDIA UPLOAD] Subiendo ${fileName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB) a WhatsApp...`);
         const uploadResponse = await axios.post(
             `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`,
             form,
             {
-                headers: {
-                    ...form.getHeaders(),
-                    'Authorization': `Bearer ${WHATSAPP_TOKEN}`
-                },
-                maxContentLength: Infinity,
-                maxBodyLength: Infinity,
+                headers: { ...form.getHeaders(), 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
+                maxContentLength: Infinity, maxBodyLength: Infinity,
             }
         );
 
         const mediaId = uploadResponse.data.id;
-        if (!mediaId) {
-            throw new Error("La respuesta de la API de carga de media no incluyó un ID.");
-        }
+        if (!mediaId) throw new Error("La API de WhatsApp no devolvió un ID de medio.");
 
-        console.log(`[MEDIA UPLOAD - FORM] Archivo subido con éxito. Media ID: ${mediaId}`);
+        console.log(`[MEDIA UPLOAD] Archivo subido con éxito. Media ID: ${mediaId}`);
         return mediaId;
 
     } catch (error) {
-        console.error('❌ Error al subir archivo (form-data) a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error('❌ Error al subir archivo a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error('No se pudo subir el archivo a los servidores de WhatsApp.');
     }
 }
 
 
-// --- FUNCIÓN MOVIDA PARA EVITAR DEPENDENCIA CIRCULAR ---
 async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null, bodyParams = []) {
+    // ... (el resto de la función no necesita cambios)
     console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
     const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
     const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
@@ -240,7 +210,6 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
     }
     if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
-        // Asumiendo que el parámetro del encabezado es siempre el nombre del contacto por simplicidad
         payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: contactName }] });
     }
 
@@ -248,13 +217,11 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     if (bodyDef) {
         const matches = bodyDef.text?.match(/\{\{\d\}\}/g);
         if (matches) {
-            // El primer parámetro es siempre el nombre del contacto.
             const allParams = [contactName, ...bodyParams];
-            const parameters = allParams.slice(0, matches.length).map(param => ({ type: 'text', text: String(param) })); // Asegurarse de que sea string
+            const parameters = allParams.slice(0, matches.length).map(param => ({ type: 'text', text: String(param) }));
             
             payloadComponents.push({ type: 'body', parameters });
             
-            // Para guardar en la BD, se reemplazan las variables en el texto
             let tempText = bodyDef.text;
             parameters.forEach((param, index) => {
                 tempText = tempText.replace(`{{${index + 1}}}`, param.text);
@@ -262,7 +229,6 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
             messageToSaveText = tempText;
 
         } else {
-            // El cuerpo no tiene variables
             payloadComponents.push({ type: 'body', parameters: [] });
             messageToSaveText = bodyDef.text || messageToSaveText;
         }
@@ -285,7 +251,8 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 }
 
 
-// --- RUTAS DE CONTACTOS ---
+// --- El resto de las rutas no necesitan cambios ---
+// ... (todas las demás rutas permanecen igual) ...
 router.get('/contacts', async (req, res) => {
     try {
         const { limit = 30, startAfterId } = req.query;
@@ -312,7 +279,6 @@ router.get('/contacts/search', async (req, res) => {
         const searchResults = [];
         const lowercaseQuery = query.toLowerCase();
 
-        // --- INICIO DE MODIFICACIÓN: Búsqueda por número de pedido ---
         if (lowercaseQuery.startsWith('dh') && /dh\d+/.test(lowercaseQuery)) {
             const orderNumber = parseInt(lowercaseQuery.replace('dh', ''), 10);
             if (!isNaN(orderNumber)) {
@@ -329,7 +295,6 @@ router.get('/contacts/search', async (req, res) => {
                 }
             }
         }
-        // --- FIN DE MODIFICACIÓN ---
 
         const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
         if (phoneDoc.exists && !searchResults.some(c => c.id === phoneDoc.id)) {
@@ -370,7 +335,6 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 });
 
-// --- RUTA CORREGIDA PARA HISTORIAL DE PEDIDOS ---
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
         const { contactId } = req.params;
@@ -394,7 +358,6 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
             };
         });
 
-        // Sort orders in memory after fetching
         orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         res.status(200).json({ success: true, orders });
@@ -404,8 +367,6 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
     }
 });
 
-
-// --- RUTAS DE MENSAJES Y PLANTILLAS ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body;
@@ -418,7 +379,6 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         let messageId;
 
         if (template) {
-            // Lógica existente para plantillas
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []);
             if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
@@ -428,26 +388,18 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
 
         } else if (fileUrl && fileType) {
-            // --- INICIO DE LA MODIFICACIÓN: Lógica mejorada para enviar videos y otros archivos ---
-            // SOLUCIÓN: Asegurarse de que el archivo sea público en GCS antes de enviarlo a WhatsApp.
             if (fileUrl && fileUrl.includes(bucket.name)) {
                 try {
-                    // Extrae la ruta del archivo desde la URL pública.
                     const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                    // Hace el archivo público.
                     await bucket.file(filePath).makePublic();
                     console.log(`[GCS-CHAT] Archivo ${filePath} hecho público para envío.`);
                 } catch (gcsError) {
-                    // Si falla, solo se registra un error pero no se detiene el proceso,
-                    // ya que el archivo podría ser público de todos modos.
                     console.error(`[GCS-CHAT] Advertencia: No se pudo hacer público el archivo ${fileUrl}:`, gcsError.message);
                 }
             }
             
-            // 1. Subir el archivo a WhatsApp primero para obtener un ID.
             const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
 
-            // 2. Construir el payload del mensaje usando el ID obtenido.
             const type = fileType.startsWith('image/') ? 'image' :
                          fileType.startsWith('video/') ? 'video' :
                          fileType.startsWith('audio/') ? 'audio' : 'document';
@@ -465,26 +417,21 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 messagePayload.context = { message_id: reply_to_wamid };
             }
 
-            // 3. Enviar el mensaje a través de la API de WhatsApp.
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
             messageId = response.data.messages[0].id;
 
-            // 4. Preparar los datos para guardar en Firestore.
             const messageTextForDb = text || (type === 'video' ? '🎥 Video' : '📎 Archivo');
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: messageTextForDb, fileUrl: fileUrl, fileType: fileType
             };
-            // --- FIN DE LA MODIFICACIÓN ---
 
         } else {
-            // Lógica existente para mensajes de solo texto
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, reply_to_wamid });
             messageId = sentMessageData.id;
             messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: sentMessageData.textForDb };
         }
 
-        // Guardar en Firestore
         if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
         Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
         const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
@@ -497,7 +444,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
-
+// ... (resto de las rutas sin cambios)
 router.post('/contacts/:contactId/queue-message', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid } = req.body;
@@ -519,7 +466,7 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
 
         const messageToSave = {
             from: PHONE_NUMBER_ID,
-            status: 'queued', // El nuevo estado para mensajes en cola
+            status: 'queued',
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             text: messageToSaveText,
             fileUrl: fileUrl || null,
@@ -532,7 +479,6 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
 
         await contactRef.collection('messages').add(messageToSave);
         
-        // Actualizamos el lastMessage para que la UI refleje el mensaje encolado
         await contactRef.update({
             lastMessage: `[En cola] ${messageToSave.text}`,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -546,7 +492,6 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
     }
 });
 
-// --- NUEVA RUTA PARA MENSAJES PAGINADOS (PREVISUALIZACIÓN) ---
 router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
     try {
         const { contactId } = req.params;
@@ -559,9 +504,7 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
                       .limit(Number(limit));
 
         if (before) {
-            // 'before' es un timestamp Unix en segundos del último mensaje que tiene el cliente
             const firestoreTimestamp = admin.firestore.Timestamp.fromMillis(parseInt(before) * 1000);
-            // Buscamos mensajes ANTERIORES a ese timestamp
             query = query.where('timestamp', '<', firestoreTimestamp);
         }
 
@@ -619,7 +562,6 @@ router.get('/whatsapp-templates', async (req, res) => {
 });
 
 
-// --- RUTAS DE CAMPAÑAS ---
 router.post('/campaigns/send-template', async (req, res) => {
     const { contactIds, template } = req.body;
     if (!contactIds?.length || !template) return res.status(400).json({ success: false, message: 'Se requieren IDs y una plantilla.' });
@@ -663,8 +605,6 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Se combina la creación y actualización en un solo paso para manejar contactos nuevos.
             await contactRef.set({
                 name: `Nuevo Contacto (${contactId.slice(-4)})`,
                 wa_id: contactId,
@@ -672,7 +612,6 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
                 lastMessageTimestamp: timestamp,
                 unreadCount: 0
             }, { merge: true });
-            // --- FIN DE LA CORRECCIÓN ---
 
             await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external' });
             
@@ -688,7 +627,6 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
     res.status(200).json({ success: true, message: `Campaña con imagen procesada.`, results: { successful, failed } });
 });
 
-// --- RUTA PARA GENERAR URLS DE SUBIDA SEGURAS ---
 router.post('/storage/generate-signed-url', async (req, res) => {
     const { fileName, contentType, pathPrefix } = req.body;
     if (!fileName || !contentType || !pathPrefix) {
@@ -701,7 +639,7 @@ router.post('/storage/generate-signed-url', async (req, res) => {
     const options = {
         version: 'v4',
         action: 'write',
-        expires: Date.now() + 15 * 60 * 1000, // 15 minutos de validez
+        expires: Date.now() + 15 * 60 * 1000,
         contentType: contentType,
     };
 
@@ -721,7 +659,6 @@ router.post('/storage/generate-signed-url', async (req, res) => {
 });
 
 
-// --- RUTAS DE PEDIDOS ---
 router.get('/orders/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
@@ -803,7 +740,6 @@ router.post('/orders', async (req, res) => {
 });
 
 
-// --- RUTAS DE EVENTOS DE CONVERSIÓN ---
 router.post('/contacts/:contactId/mark-as-registration', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
@@ -862,7 +798,6 @@ router.post('/contacts/:contactId/send-view-content', async (req, res) => {
 });
 
 
-// --- RUTAS DE NOTAS ---
 router.post('/contacts/:contactId/notes', async (req, res) => {
     const { contactId } = req.params;
     const { text } = req.body;
@@ -892,14 +827,11 @@ router.delete('/contacts/:contactId/notes/:noteId', async (req, res) => {
 });
 
 
-// --- RUTAS DE RESPUESTAS RÁPIDAS (QUICK REPLIES) ---
 router.post('/quick-replies', async (req, res) => {
     const { shortcut, message, fileUrl, fileType } = req.body;
     if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
     if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
     try {
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Hacer público el archivo en GCS si se subió uno nuevo.
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -907,10 +839,8 @@ router.post('/quick-replies', async (req, res) => {
                 console.log(`[GCS-QR] Archivo ${filePath} hecho público con éxito.`);
             } catch (gcsError) {
                 console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
-                // No se detiene el proceso, pero se advierte del posible error.
             }
         }
-        // --- FIN DE LA CORRECCIÓN ---
 
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
         if (!existing.empty) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
@@ -926,8 +856,6 @@ router.put('/quick-replies/:id', async (req, res) => {
     if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
     if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
     try {
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Hacer público el archivo en GCS si se subió uno nuevo.
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -937,7 +865,6 @@ router.put('/quick-replies/:id', async (req, res) => {
                 console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
             }
         }
-        // --- FIN DE LA CORRECCIÓN ---
 
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
         if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
@@ -956,7 +883,6 @@ router.delete('/quick-replies/:id', async (req, res) => {
 });
 
 
-// --- RUTAS DE ETIQUETAS (TAGS) ---
 router.post('/tags', async (req, res) => {
     const { label, color, key, order } = req.body;
     if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
@@ -1005,12 +931,10 @@ router.delete('/tags', async (req, res) => {
 });
 
 
-// --- RUTAS DE RESPUESTAS DE ANUNCIOS (AD RESPONSES) ---
 router.post('/ad-responses', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
     try {
-        // SOLUCIÓN: Hacer público el archivo en GCS si existe una URL.
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -1034,7 +958,6 @@ router.put('/ad-responses/:id', async (req, res) => {
     const { adName, adId, message, fileUrl, fileType } = req.body;
     if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
     try {
-        // SOLUCIÓN: Hacer público el archivo en GCS si existe una URL.
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -1061,7 +984,6 @@ router.delete('/ad-responses/:id', async (req, res) => {
 });
 
 
-// --- RUTAS DE PROMPTS DE IA POR ANUNCIO ---
 router.post('/ai-ad-prompts', async (req, res) => {
     const { adName, adId, prompt } = req.body;
     if (!adName || !adId || !prompt) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
@@ -1082,18 +1004,17 @@ router.put('/ai-ad-prompts/:id', async (req, res) => {
         if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está en uso.` });
         await db.collection('ai_ad_prompts').doc(id).update({ adName, adId, prompt });
         res.status(200).json({ success: true, message: 'Prompt actualizado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar el prompt.' }); }
 });
 
 router.delete('/ai-ad-prompts/:id', async (req, res) => {
     try {
         await db.collection('ai_ad_prompts').doc(req.params.id).delete();
         res.status(200).json({ success: true, message: 'Prompt eliminado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar el prompt.' }); }
 });
 
 
-// --- RUTAS DE AJUSTES (SETTINGS) ---
 router.get('/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
@@ -1157,7 +1078,6 @@ router.post('/settings/google-sheet', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar.' }); }
 });
 
-// --- RUTAS DE BASE DE CONOCIMIENTO (KNOWLEDGE BASE) ---
 router.post('/knowledge-base', async (req, res) => {
     const { topic, answer, fileUrl, fileType } = req.body;
     if (!topic || !answer) return res.status(400).json({ success: false, message: 'Tema y respuesta son obligatorios.' });
@@ -1186,7 +1106,6 @@ router.delete('/knowledge-base/:id', async (req, res) => {
     } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
 });
 
-// --- RUTAS DE IA Y SIMULACIÓN ---
 router.post('/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
@@ -1229,7 +1148,6 @@ router.post('/test/simulate-ad-message', async (req, res) => {
     };
     try {
         console.log(`[SIMULATOR] Recibida simulación para ${from} desde Ad ID ${adId}.`);
-        // Se asume que el webhook está en la raíz, no en /webhook
         await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, { headers: { 'Content-Type': 'application/json' } });
         console.log(`[SIMULATOR] Simulación enviada al webhook con éxito.`);
         res.status(200).json({ success: true, message: 'Simulación procesada.' });
@@ -1239,7 +1157,6 @@ router.post('/test/simulate-ad-message', async (req, res) => {
     }
 });
 
-// --- RUTA DE MÉTRICAS ---
 router.get('/metrics', async (req, res) => {
     try {
         const endDate = new Date();
@@ -1251,9 +1168,6 @@ router.get('/metrics', async (req, res) => {
         const contactTags = {};
         contactsSnapshot.forEach(doc => { contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; });
         
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se elimina el filtro '!=' que causa el error en Firestore.
-        // El filtrado se hará en el código después de obtener los datos.
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
@@ -1263,9 +1177,8 @@ router.get('/metrics', async (req, res) => {
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
             
-            // Se añade la condición aquí para excluir los mensajes enviados por el CRM
             if (message.from === PHONE_NUMBER_ID) {
-                return; // Saltar este mensaje
+                return;
             }
 
             const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
@@ -1275,7 +1188,6 @@ router.get('/metrics', async (req, res) => {
             if (!metricsByDate[dateKey].tags[tag]) metricsByDate[dateKey].tags[tag] = 0;
             metricsByDate[dateKey].tags[tag]++;
         });
-        // --- FIN DE LA CORRECCIÓN ---
 
         const formattedMetrics = Object.keys(metricsByDate)
             .map(date => ({ date, totalMessages: metricsByDate[date].totalMessages, tags: metricsByDate[date].tags }))
@@ -1287,9 +1199,6 @@ router.get('/metrics', async (req, res) => {
     }
 });
 
-// --- NUEVAS RUTAS DE DIFUSIÓN ---
-
-// Verificar un número de pedido y obtener datos del cliente
 router.get('/orders/verify/:orderId', async (req, res) => {
     const { orderId } = req.params;
     const isPhoneNumber = /^\d{10,}$/.test(orderId.replace(/\D/g, ''));
@@ -1329,7 +1238,6 @@ router.get('/orders/verify/:orderId', async (req, res) => {
     }
 });
 
-// Enviar una campaña de difusión masiva
 router.post('/difusion/bulk-send', async (req, res) => {
     const { jobs, messageSequence, contingencyTemplate } = req.body;
     
@@ -1349,8 +1257,6 @@ router.post('/difusion/bulk-send', async (req, res) => {
             const contactRef = db.collection('contacts_whatsapp').doc(job.contactId);
             const contactDoc = await contactRef.get();
 
-            // --- INICIO DE LA CORRECCIÓN ---
-            // Si el contacto no existe, lo crea en lugar de fallar.
             if (!contactDoc.exists) {
                 console.log(`[DIFUSION] El contacto ${job.contactId} no existe. Creando nuevo registro.`);
                 await contactRef.set({
@@ -1361,10 +1267,7 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 });
                 console.log(`[DIFUSION] Contacto ${job.contactId} creado.`);
             }
-            // --- FIN DE LA CORRECCIÓN ---
 
-
-            // CORRECCIÓN: Buscar el último mensaje enviado POR EL CLIENTE.
             const messagesSnapshot = await contactRef.collection('messages')
                 .where('from', '==', job.contactId)
                 .orderBy('timestamp', 'desc')
@@ -1383,12 +1286,10 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
             if (isWithin24Hours) {
                 let lastMessageText = '';
-                // --- INICIO DE LA CORRECCIÓN ---
                 if (messageSequence && messageSequence.length > 0) {
                     for (const qr of messageSequence) {
                         const sentMessageData = await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
                         
-                        // AGREGADO: Guardar mensaje de la secuencia en la BD
                         const messageToSave = {
                             from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                             id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
@@ -1402,7 +1303,6 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 
                 const sentPhotoData = await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
                 
-                // AGREGADO: Guardar mensaje de la foto en la BD
                 const photoMessageToSave = {
                     from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                     id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb, 
@@ -1412,14 +1312,12 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 await contactRef.collection('messages').add(photoMessageToSave);
                 lastMessageText = sentPhotoData.textForDb;
 
-                // AGREGADO: Actualizar el último mensaje del contacto
                 await contactRef.update({
                     lastMessage: lastMessageText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
 
                 results.successful.push({ orderId: job.orderId });
-                // --- FIN DE LA CORRECCIÓN ---
             } else {
                 if (!contingencyTemplate || !contingencyTemplate.name) {
                     results.failed.push({ orderId: job.orderId, reason: 'Fuera de 24h y no se proporcionó plantilla de contingencia.' });
