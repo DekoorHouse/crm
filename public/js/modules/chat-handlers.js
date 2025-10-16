@@ -24,11 +24,7 @@ function handleSearchInput(event) {
 
 // CORREGIDO: Ahora también se encarga de ocultar el mensaje de "Cargando..."
 function handleSearchContacts() {
-    let contactsToRender = state.contacts;
-    if (state.activeFilter && state.activeFilter !== 'all') {
-        contactsToRender = state.contacts.filter(c => c.status === state.activeFilter);
-    }
-    
+    const contactsToRender = state.contacts; 
     const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
 
@@ -500,7 +496,10 @@ function setFilter(filter) {
     state.activeFilter = filter; 
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
     document.getElementById(`filter-${filter}`).classList.add('active'); 
-    handleSearchContacts();
+    
+    // Clear current contacts and trigger a new fetch from the server with the filter
+    state.contacts = [];
+    fetchInitialContacts();
 }
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
