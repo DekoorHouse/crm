@@ -62,7 +62,13 @@ async function fetchInitialContacts() {
         state.pagination.lastVisibleId = null;
         state.pagination.hasMore = true;
 
-        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30`);
+        const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
+        let url = `${API_BASE_URL}/api/contacts?limit=30`;
+        if (tag) {
+            url += `&tag=${tag}`;
+        }
+
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Error al cargar contactos iniciales.');
         
         const data = await response.json();
@@ -87,7 +93,13 @@ async function fetchMoreContacts() {
     state.pagination.isLoadingMore = true;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`);
+        const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
+        let url = `${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`;
+        if (tag) {
+            url += `&tag=${tag}`;
+        }
+
+        const response = await fetch(url);
         if (!response.ok) throw new Error('Error al cargar más contactos.');
 
         const data = await response.json();
