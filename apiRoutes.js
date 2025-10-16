@@ -255,8 +255,15 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 // ... (todas las demás rutas permanecen igual) ...
 router.get('/contacts', async (req, res) => {
     try {
-        const { limit = 30, startAfterId } = req.query;
-        let query = db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+        const { limit = 30, startAfterId, tag } = req.query;
+        let query = db.collection('contacts_whatsapp');
+
+        if (tag) {
+            query = query.where('status', '==', tag);
+        }
+
+        query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+        
         if (startAfterId) {
             const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
             if (lastDoc.exists) query = query.startAfter(lastDoc);
