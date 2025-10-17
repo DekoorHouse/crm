@@ -997,13 +997,14 @@ const OrderHistoryItemTemplate = (order) => {
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
     
-    // Genera las opciones para el menú desplegable
-    const statusOptionsHTML = state.tags
-        .map(tag => `<option value="${tag.key}" ${estatus === tag.key ? 'selected' : ''}>${tag.label}</option>`)
+    // INICIO DE LA MODIFICACIÓN: Usar state.orderStatuses en lugar de state.tags
+    const statusOptionsHTML = state.orderStatuses
+        .map(status => `<option value="${status.key}" ${estatus === status.key ? 'selected' : ''}>${status.label}</option>`)
         .join('');
 
-    // Encuentra la etiqueta actual para aplicar el estilo inicial
-    const currentTag = state.tags.find(t => t.key === estatus) || { color: '#e9ecef' }; // Color por defecto
+    // Encuentra el estado actual para aplicar el estilo inicial
+    const currentStatusStyle = state.orderStatuses.find(s => s.key === estatus) || { color: '#e9ecef' }; // Color por defecto
+    // FIN DE LA MODIFICACIÓN
 
     return `
         <div class="order-history-item">
@@ -1015,7 +1016,7 @@ const OrderHistoryItemTemplate = (order) => {
             <select 
                 class="order-history-status-select" 
                 data-order-id="${order.id}" 
-                style="background-color: ${currentTag.color}20; color: ${currentTag.color}; border-color: ${currentTag.color}50;"
+                style="background-color: ${currentStatusStyle.color}20; color: ${currentStatusStyle.color}; border-color: ${currentStatusStyle.color}50;"
             >
                 ${statusOptionsHTML}
             </select>
@@ -1037,9 +1038,11 @@ const OrderDetailsModalTemplate = (order) => {
     const orderPhotos = order.fotoUrls || [];
     const promoPhotos = order.fotoPromocionUrls || [];
 
-    const statusOptionsHTML = state.tags
-        .map(tag => `<option value="${tag.key}" ${order.estatus === tag.key ? 'selected' : ''}>${tag.label}</option>`)
+    // INICIO DE LA MODIFICACIÓN: Usar state.orderStatuses en lugar de state.tags
+    const statusOptionsHTML = state.orderStatuses
+        .map(status => `<option value="${status.key}" ${order.estatus === status.key ? 'selected' : ''}>${status.label}</option>`)
         .join('');
+    // FIN DE LA MODIFICACIÓN
 
     const photoGrid = (photos, title) => {
         if (photos.length === 0) return '';
