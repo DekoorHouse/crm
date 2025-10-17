@@ -102,19 +102,70 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .chat-icon-btn { color: var(--color-text-light); transition: color 0.2s ease; }
 .chat-icon-btn:hover { color: var(--color-primary); }
 
-.message-wrapper { display: flex; flex-direction: column; }
+.message-wrapper { display: flex; flex-direction: column; position: relative; }
 .message-wrapper.sent { align-items: flex-end; }
 .message-wrapper.received { align-items: flex-start; }
 
 .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 60%; margin-top: 1px; margin-bottom: 1px; }
-.message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
 .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
 .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
 .message-bubble.message-queued { background-color: #dbeafe; color: #1e40af; border-bottom-right-radius: 4px; }
 
-.message-actions { position: absolute; top: -12px; right: 10px; background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; align-items: center; padding: 2px; opacity: 0; visibility: hidden; transition: all 0.2s ease; z-index: 10; }
-.message-action-btn { background: none; border: none; cursor: pointer; color: var(--color-text-light); padding: 6px; display: flex; align-items: center; justify-content: center; }
-.message-action-btn:hover { color: var(--color-primary); }
+/* --- INICIO DE LA SOLUCIÓN: Estilos para el nuevo menú contextual --- */
+.message-actions {
+    display: flex;
+    align-items: center;
+    position: absolute;
+    top: 50%;
+    z-index: 10;
+    background-color: white;
+    border-radius: 20px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    padding: 2px;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.2s ease;
+}
+.message-wrapper:hover .message-actions {
+    opacity: 1;
+    visibility: visible;
+}
+.message-wrapper.sent .message-actions {
+    right: 100%;
+    margin-right: 8px;
+    transform: translateY(-50%);
+}
+.message-wrapper.received .message-actions {
+    left: 100%;
+    margin-left: 8px;
+    transform: translateY(-50%);
+}
+.reaction-bar {
+    display: flex;
+    align-items: center;
+    border-right: 1px solid var(--color-border);
+    padding-right: 4px;
+    margin-right: 4px;
+}
+.reaction-emoji-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1.1rem;
+    padding: 6px;
+    transition: transform 0.1s ease;
+}
+.reaction-emoji-btn:hover {
+    transform: scale(1.3);
+}
+.message-action-btn {
+    background: none; border: none; cursor: pointer; color: var(--color-text-light); padding: 6px; display: flex; align-items: center; justify-content: center;
+}
+.message-action-btn:hover {
+    color: var(--color-primary);
+}
+/* --- FIN DE LA SOLUCIÓN --- */
+
 .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .reactions-container.received-reaction { left: 10px; right: auto; }
 .reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 0 8px 0; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
@@ -154,38 +205,6 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .document-link { display: flex; align-items: center; gap: 10px; color: var(--color-text); padding: 8px; text-decoration: none; }
 .document-icon { font-size: 1.8rem; color: var(--color-primary); }
 .document-text { font-weight: 600; }
-.reaction-popover-container { position: relative; }
-.reaction-popover { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-8px); background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; padding: 4px; opacity: 0; visibility: hidden; transition: opacity 0.2s ease; z-index: 20; }
-.reaction-popover.fixed {
-    position: fixed;
-    bottom: auto;
-    left: auto;
-    transform: none;
-    transition: none;
-    z-index: 999;
-}
-.message-bubble.sent .reaction-popover { left: auto; right: 0; transform: translateY(-8px); }
-/* New styles for click-based reaction popover */
-.message-bubble.reaction-menu-open {
-    z-index: 11; /* Ensure the active bubble is on top */
-}
-.reaction-popover-container.active .reaction-popover {
-    opacity: 1;
-    visibility: visible;
-}
-/*
---- INICIO DE LA CORRECCIÓN ---
-Se ha eliminado la siguiente regla de CSS que causaba el conflicto
-de posicionamiento en los mensajes enviados.
-*/
-/*
-.message-bubble.sent .reaction-popover-container.active .reaction-popover {
-    transform: translateY(-4px);
-}
-*/
-/* --- FIN DE LA CORRECCIÓN --- */
-.reaction-emoji-btn { background: none; border: none; cursor: pointer; font-size: 1.2rem; padding: 6px; transition: transform 0.1s ease; }
-.reaction-emoji-btn:hover { transform: scale(1.3); }
 
 .sticker-fallback {
     display: inline-flex;
@@ -707,3 +726,4 @@ label.disabled-icon {
     font-weight: 600;
     text-align: center;
 }
+
