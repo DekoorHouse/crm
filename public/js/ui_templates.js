@@ -514,7 +514,7 @@ const MessageBubbleTemplate = (message) => {
     let bubbleClasses = isSent ? 'sent' : 'received';
     if (message.status === 'queued') bubbleClasses += ' message-queued';
     
-    // --- INICIO DE LA MODIFICACIÓN ---
+    // --- Correction Start: The actions menu is moved inside the message bubble ---
     return `
         <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}">
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
@@ -522,10 +522,10 @@ const MessageBubbleTemplate = (message) => {
                 ${contentHTML}
                 ${timeAndStatusHTML}
                 ${reactionHTML}
+                ${actionsHTML}
             </div>
-            ${actionsHTML}
         </div>`;
-    // --- FIN DE LA MODIFICACIÓN ---
+    // --- Correction End ---
 };
 
 
@@ -1081,4 +1081,3 @@ const OrderDetailsModalTemplate = (order) => {
     `;
 };
 // --- FIN DE MODIFICACIÓN ---
-
