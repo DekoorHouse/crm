@@ -576,21 +576,24 @@ function toggleReactionMenu(event) {
     const targetButton = event.currentTarget;
     const popoverContainer = targetButton.closest('.reaction-popover-container');
     const messageBubble = targetButton.closest('.message-bubble');
+    const messagesContainer = document.getElementById('messages-container');
 
-    if (!popoverContainer || !messageBubble) return;
+    if (!popoverContainer || !messageBubble || !messagesContainer) return;
 
     const wasActive = popoverContainer.classList.contains('active');
 
-    // Close all open menus first
+    // Close all open menus first and reset container style
     document.querySelectorAll('.reaction-popover-container.active').forEach(openContainer => {
         openContainer.classList.remove('active');
         openContainer.closest('.message-bubble')?.classList.remove('reaction-menu-open');
     });
+    messagesContainer.classList.remove('reaction-menu-is-open');
 
     // If the clicked menu was not already active, open it.
     if (!wasActive) {
         popoverContainer.classList.add('active');
         messageBubble.classList.add('reaction-menu-open');
+        messagesContainer.classList.add('reaction-menu-is-open');
     }
 }
 
@@ -607,6 +610,10 @@ document.addEventListener('click', (event) => {
         const bubble = openMenu.closest('.message-bubble');
         if (bubble) {
             bubble.classList.remove('reaction-menu-open');
+        }
+        const messagesContainer = document.getElementById('messages-container');
+        if (messagesContainer) {
+            messagesContainer.classList.remove('reaction-menu-is-open');
         }
     }
 });
