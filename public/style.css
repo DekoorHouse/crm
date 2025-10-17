@@ -659,7 +659,6 @@ label.disabled-icon {
 /* --- START: Order History Styles --- */
 .order-history-item {
     display: flex;
-    justify-content: space-between;
     align-items: center;
     padding: 8px 12px;
     background-color: #f7f9fc;
@@ -753,4 +752,5 @@ label.disabled-icon {
     font-weight: 600;
     text-align: center;
 }
+
 
