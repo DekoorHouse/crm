@@ -570,19 +570,20 @@ function cancelReply() {
     }
 }
 
-// --- INICIO DE LA SOLUCIÓN DEFINITIVA ---
-// Esta nueva versión de la función soluciona todos los problemas de posicionamiento.
+// --- INICIO DE LA SOLUCIÓN MEJORADA ---
+// Esta versión coloca el menú al lado del mensaje, eligiendo el lado con más espacio.
 function toggleReactionMenu(event) {
     event.stopPropagation();
     const targetButton = event.currentTarget;
     const popoverContainer = targetButton.closest('.reaction-popover-container');
     const popover = popoverContainer.querySelector('.reaction-popover');
+    const messageBubble = targetButton.closest('.message-bubble');
     
-    if (!popoverContainer || !popover) return;
+    if (!popoverContainer || !popover || !messageBubble) return;
 
     const wasActive = popoverContainer.classList.contains('active');
 
-    // Primero, cierra todos los otros menús de reacciones que puedan estar abiertos.
+    // Cierra todos los otros menús que puedan estar abiertos.
     document.querySelectorAll('.reaction-popover-container.active').forEach(container => {
         container.classList.remove('active');
         const p = container.querySelector('.reaction-popover');
@@ -590,44 +591,64 @@ function toggleReactionMenu(event) {
             p.classList.remove('fixed');
             p.style.top = '';
             p.style.left = '';
-            p.style.transform = ''; // Resetea la transformación al cerrar
+            p.style.transform = '';
         }
     });
 
-    // Si el menú en el que se hizo clic no estaba activo, ábrelo.
+    // Si no estaba activo, lo abrimos y calculamos la nueva posición.
     if (!wasActive) {
         popoverContainer.classList.add('active');
         popover.classList.add('fixed');
+        popover.style.transform = 'none';
         
-        // Asegúrate de que no haya transformaciones CSS que interfieran
-        popover.style.transform = 'none'; 
-        
-        // Mide la posición exacta del botón de reacción en la pantalla
-        const rect = targetButton.getBoundingClientRect();
+        const bubbleRect = messageBubble.getBoundingClientRect();
         const popoverHeight = popover.offsetHeight;
         const popoverWidth = popover.offsetWidth;
+        const margin = 8; // Espacio de 8px desde la burbuja
+
+        // Calcula el espacio disponible a cada lado.
+        const spaceRight = window.innerWidth - bubbleRect.right - margin;
+        const spaceLeft = bubbleRect.left - margin;
         
-        // Calcula la posición ideal (arriba y centrado del botón)
-        let top = rect.top - popoverHeight - 8; // 8px de espacio
-        let left = rect.left + (rect.width / 2) - (popoverWidth / 2);
+        let top = bubbleRect.top + (bubbleRect.height / 2) - (popoverHeight / 2);
+        let left;
 
-        // Ajusta la posición si se sale de la pantalla
-        if (top < 5) { // Si está muy cerca del borde superior, muéstralo abajo
-             top = rect.bottom + 8;
-        }
-        if (left < 5) { // Si está muy cerca del borde izquierdo
-            left = 5;
-        }
-        if (left + popoverWidth > window.innerWidth) { // Si se sale por la derecha
-            left = window.innerWidth - popoverWidth - 5;
+        // Decide dónde colocarlo horizontalmente.
+        if (spaceRight >= popoverWidth) {
+            // Colocar a la derecha.
+            left = bubbleRect.right + margin;
+        } else if (spaceLeft >= popoverWidth) {
+            // Colocar a la izquierda.
+            left = bubbleRect.left - popoverWidth - margin;
+        } else {
+            // Fallback: Si no hay espacio a los lados, colocarlo arriba.
+            const buttonRect = targetButton.getBoundingClientRect();
+            left = buttonRect.left + (buttonRect.width / 2) - (popoverWidth / 2);
+            top = bubbleRect.top - popoverHeight - margin;
         }
 
-        // Aplica la posición calculada
+        // Se asegura de que no se salga de la pantalla verticalmente.
+        if (top < margin) {
+            top = margin;
+        }
+        if (top + popoverHeight > window.innerHeight - margin) {
+            top = window.innerHeight - popoverHeight - margin;
+        }
+
+        // Se asegura de que no se salga de la pantalla horizontalmente (importante para el fallback).
+        if (left < margin) {
+            left = margin;
+        }
+        if (left + popoverWidth > window.innerWidth - margin) {
+            left = window.innerWidth - popoverWidth - margin;
+        }
+
+        // Aplica la posición final.
         popover.style.top = `${top}px`;
         popover.style.left = `${left}px`;
     }
 }
-// --- FIN DE LA SOLUCIÓN DEFINITIVA ---
+// --- FIN DE LA SOLUCIÓN MEJORADA ---
 
 
 // Add a global listener to close the menu when clicking outside
