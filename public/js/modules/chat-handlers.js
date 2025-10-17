@@ -570,7 +570,8 @@ function cancelReply() {
     }
 }
 
-
+// --- INICIO DE LA SOLUCIÓN DEFINITIVA ---
+// Esta nueva versión de la función soluciona todos los problemas de posicionamiento.
 function toggleReactionMenu(event) {
     event.stopPropagation();
     const targetButton = event.currentTarget;
@@ -581,7 +582,7 @@ function toggleReactionMenu(event) {
 
     const wasActive = popoverContainer.classList.contains('active');
 
-    // Close all popovers first
+    // Primero, cierra todos los otros menús de reacciones que puedan estar abiertos.
     document.querySelectorAll('.reaction-popover-container.active').forEach(container => {
         container.classList.remove('active');
         const p = container.querySelector('.reaction-popover');
@@ -589,31 +590,45 @@ function toggleReactionMenu(event) {
             p.classList.remove('fixed');
             p.style.top = '';
             p.style.left = '';
-            p.style.transform = ''; // Also reset transform on close
+            p.style.transform = ''; // Resetea la transformación al cerrar
         }
     });
 
-    // If the clicked one was not active, open it.
+    // Si el menú en el que se hizo clic no estaba activo, ábrelo.
     if (!wasActive) {
         popoverContainer.classList.add('active');
         popover.classList.add('fixed');
-        popover.style.transform = 'none'; // --- INICIO DE LA CORRECCIÓN: Asegura que no haya transformaciones CSS que interfieran ---
         
+        // Asegúrate de que no haya transformaciones CSS que interfieran
+        popover.style.transform = 'none'; 
+        
+        // Mide la posición exacta del botón de reacción en la pantalla
         const rect = targetButton.getBoundingClientRect();
         const popoverHeight = popover.offsetHeight;
         const popoverWidth = popover.offsetWidth;
         
-        let top = rect.top - popoverHeight - 8;
+        // Calcula la posición ideal (arriba y centrado del botón)
+        let top = rect.top - popoverHeight - 8; // 8px de espacio
         let left = rect.left + (rect.width / 2) - (popoverWidth / 2);
 
-        if (top < 5) top = rect.bottom + 8;
-        if (left < 5) left = 5;
-        if (left + popoverWidth > window.innerWidth) left = window.innerWidth - popoverWidth - 5;
+        // Ajusta la posición si se sale de la pantalla
+        if (top < 5) { // Si está muy cerca del borde superior, muéstralo abajo
+             top = rect.bottom + 8;
+        }
+        if (left < 5) { // Si está muy cerca del borde izquierdo
+            left = 5;
+        }
+        if (left + popoverWidth > window.innerWidth) { // Si se sale por la derecha
+            left = window.innerWidth - popoverWidth - 5;
+        }
 
+        // Aplica la posición calculada
         popover.style.top = `${top}px`;
         popover.style.left = `${left}px`;
     }
 }
+// --- FIN DE LA SOLUCIÓN DEFINITIVA ---
+
 
 // Add a global listener to close the menu when clicking outside
 document.addEventListener('click', (event) => {
@@ -1000,3 +1015,4 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
