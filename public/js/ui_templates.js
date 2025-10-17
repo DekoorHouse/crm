@@ -997,9 +997,9 @@ const OrderHistoryItemTemplate = (order) => {
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
     
-    // INICIO DE LA MODIFICACIÓN: Usar state.orderStatuses en lugar de state.tags
+    // INICIO DE LA MODIFICACIÓN: Usar state.orderStatuses y añadir estilo a cada opción
     const statusOptionsHTML = state.orderStatuses
-        .map(status => `<option value="${status.key}" ${estatus === status.key ? 'selected' : ''}>${status.label}</option>`)
+        .map(status => `<option value="${status.key}" ${estatus === status.key ? 'selected' : ''} style="color: ${status.color}; font-weight: 600;">${status.label}</option>`)
         .join('');
 
     // Encuentra el estado actual para aplicar el estilo inicial
@@ -1100,3 +1100,4 @@ const OrderDetailsModalTemplate = (order) => {
     `;
 };
 // --- FIN DE MODIFICACIÓN ---
+
