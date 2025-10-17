@@ -570,6 +570,47 @@ function cancelReply() {
     }
 }
 
+
+function toggleReactionMenu(event) {
+    event.stopPropagation();
+    const targetButton = event.currentTarget;
+    const popoverContainer = targetButton.closest('.reaction-popover-container');
+    const messageBubble = targetButton.closest('.message-bubble');
+
+    if (!popoverContainer || !messageBubble) return;
+
+    const wasActive = popoverContainer.classList.contains('active');
+
+    // Close all open menus first
+    document.querySelectorAll('.reaction-popover-container.active').forEach(openContainer => {
+        openContainer.classList.remove('active');
+        openContainer.closest('.message-bubble')?.classList.remove('reaction-menu-open');
+    });
+
+    // If the clicked menu was not already active, open it.
+    if (!wasActive) {
+        popoverContainer.classList.add('active');
+        messageBubble.classList.add('reaction-menu-open');
+    }
+}
+
+// Add a global listener to close the menu when clicking outside
+document.addEventListener('click', (event) => {
+    // Ensure we are in the chat view before running this
+    if (state.activeView !== 'chats') return;
+
+    const openMenu = document.querySelector('.reaction-popover-container.active');
+    
+    // If there is an open menu and the click was outside of it
+    if (openMenu && !openMenu.contains(event.target)) {
+        openMenu.classList.remove('active');
+        const bubble = openMenu.closest('.message-bubble');
+        if (bubble) {
+            bubble.classList.remove('reaction-menu-open');
+        }
+    }
+});
+
 async function handleSelectReaction(event, messageDocId, emoji) {
     event.stopPropagation();
     if (!state.selectedContactId) return;
