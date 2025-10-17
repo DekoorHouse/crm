@@ -581,43 +581,32 @@ function toggleReactionMenu(event) {
 
     const wasActive = popoverContainer.classList.contains('active');
 
-    // Always close any currently open menu first
-    const currentlyOpen = document.querySelector('.reaction-popover.fixed');
-    if (currentlyOpen) {
-        const oldContainer = currentlyOpen.closest('.reaction-popover-container');
-        currentlyOpen.classList.remove('fixed');
-        currentlyOpen.style.top = '';
-        currentlyOpen.style.left = '';
-        if (oldContainer) {
-            oldContainer.classList.remove('active');
+    // Close all popovers first
+    document.querySelectorAll('.reaction-popover-container.active').forEach(container => {
+        container.classList.remove('active');
+        const p = container.querySelector('.reaction-popover');
+        if (p) {
+            p.classList.remove('fixed');
+            p.style.top = '';
+            p.style.left = '';
         }
-    }
+    });
 
-    // If the one we clicked was not the one that was open, then open it.
+    // If the clicked one was not active, open it.
     if (!wasActive) {
         popoverContainer.classList.add('active');
-        
-        const rect = targetButton.getBoundingClientRect();
-        
-        // Apply fixed position to measure correctly before making it visible
         popover.classList.add('fixed');
         
+        const rect = targetButton.getBoundingClientRect();
         const popoverHeight = popover.offsetHeight;
         const popoverWidth = popover.offsetWidth;
         
-        let top = rect.top - popoverHeight - 8; // 8px spacing
+        let top = rect.top - popoverHeight - 8;
         let left = rect.left + (rect.width / 2) - (popoverWidth / 2);
 
-        // Boundary checks
-        if (top < 5) { // 5px from top edge
-            top = rect.bottom + 8;
-        }
-        if (left < 5) {
-            left = 5; // 5px from left edge
-        }
-        if (left + popoverWidth > window.innerWidth) {
-            left = window.innerWidth - popoverWidth - 5; // 5px from right edge
-        }
+        if (top < 5) top = rect.bottom + 8;
+        if (left < 5) left = 5;
+        if (left + popoverWidth > window.innerWidth) left = window.innerWidth - popoverWidth - 5;
 
         popover.style.top = `${top}px`;
         popover.style.left = `${left}px`;
