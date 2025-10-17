@@ -1008,20 +1008,24 @@ const OrderHistoryItemTemplate = (order) => {
 
     return `
         <div class="order-history-item">
-            <button class="order-number" onclick="openOrderDetailsModal('${order.id}')">
-                DH${order.consecutiveOrderNumber}
-            </button>
-            <span class="order-product" title="${order.producto}">${order.producto}</span>
-            
-            <select 
-                class="order-history-status-select" 
-                data-order-id="${order.id}" 
-                style="background-color: ${currentStatusStyle.color}20; color: ${currentStatusStyle.color}; border-color: ${currentStatusStyle.color}50;"
-            >
-                ${statusOptionsHTML}
-            </select>
-
-            <span class="order-date">${orderDate}</span>
+            <div class="order-history-row">
+                <button class="order-number" onclick="openOrderDetailsModal('${order.id}')">
+                    DH${order.consecutiveOrderNumber}
+                </button>
+                <span class="order-date">${orderDate}</span>
+            </div>
+            <div class="order-history-row">
+                <span class="order-product" title="${order.producto}">${order.producto}</span>
+            </div>
+            <div class="order-history-row">
+                <select 
+                    class="order-history-status-select" 
+                    data-order-id="${order.id}" 
+                    style="background-color: ${currentStatusStyle.color}20; color: ${currentStatusStyle.color}; border-color: ${currentStatusStyle.color}50;"
+                >
+                    ${statusOptionsHTML}
+                </select>
+            </div>
         </div>
     `;
 };
