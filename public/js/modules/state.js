@@ -17,6 +17,7 @@ let state = {
     globalBotSettings: { isActive: false },
     googleSheetSettings: { googleSheetId: '' },
     selectedContactId: null,
+    selectedContactOrders: [],
     loadingMessages: false,
     isUploading: false,
     stagedFile: null,
