@@ -381,11 +381,9 @@ const ContactItemTemplate = (contact, isSelected) => {
         timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
     }
     
-    // --- INICIO DE LA MODIFICACIÓN ---
     const orderBadgeHTML = contact.lastOrderNumber 
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>` 
         : '';
-    // --- FIN DE LA MODIFICACIÓN ---
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -430,47 +428,22 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
     const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
     
     let textPreview = '';
-    // Check for image first
     if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
         const caption = originalMessage.text && originalMessage.text !== '📷 Imagen' ? originalMessage.text : '';
-        let captionHtml = '';
-        if (caption) {
-            captionHtml = `
-                <div class="reply-media-text">
-                    <p class="reply-media-caption">${caption}</p>
-                </div>
-                `;
-        }
-        textPreview = `
-            <div class="reply-media-preview">
-                <img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">
-                ${captionHtml}
-            </div>
-        `;
+        let captionHtml = caption ? `<div class="reply-media-text"><p class="reply-media-caption">${caption}</p></div>` : '';
+        textPreview = `<div class="reply-media-preview"><img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">${captionHtml}</div>`;
     } else {
-        // Fallback to existing logic for other types
         let plainText = originalMessage.text || 'Mensaje';
-        if (originalMessage.type === 'audio') {
-            plainText = '🎤 Mensaje de voz';
-        } else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) {
-            plainText = '🎥 Video';
-        } else if (originalMessage.type === 'location') {
-            plainText = '📍 Ubicación';
-        } else if (originalMessage.fileType) {
-            plainText = '📄 Documento';
-        }
+        if (originalMessage.type === 'audio') plainText = '🎤 Mensaje de voz';
+        else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) plainText = '🎥 Video';
+        else if (originalMessage.type === 'location') plainText = '📍 Ubicación';
+        else if (originalMessage.fileType) plainText = '📄 Documento';
         textPreview = `<p class="reply-text">${plainText}</p>`;
     }
 
-    return `
-        <div class="reply-preview">
-            <p class="reply-author">${authorName}</p>
-            ${textPreview}
-        </div>
-    `;
+    return `<div class="reply-preview"><p class="reply-author">${authorName}</p>${textPreview}</div>`;
 };
 
-// --- INICIO DE LA SOLUCIÓN: Menú contextual ---
 const MessageBubbleTemplate = (message) => {
     const isSent = message.from !== state.selectedContactId;
     const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -481,20 +454,9 @@ const MessageBubbleTemplate = (message) => {
     let bubbleExtraClass = '';
     let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
     
-    const hasMedia = message.fileUrl || message.mediaProxyUrl;
-    const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
+    const hasText = message.text && !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
-    if (message.type === 'audio' && (message.fileUrl || message.mediaProxyUrl)) {
-        const isPermanentLink = !!message.fileUrl;
-        const audioSrc = isPermanentLink ? message.fileUrl : `${API_BASE_URL}${message.mediaProxyUrl}`;
-        let mimeType = message.fileType || 'audio/ogg';
-        if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
-        const onErrorHandler = `console.error('[AUDIO] Error al cargar el audio. URL: ${audioSrc}', event.target.error)`;
-        contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}"><source src="${audioSrc}" type="${mimeType}">Tu navegador no soporta la reproducción de audio.</audio>`;
-    } 
-    else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl && !message.fileUrl) {
-        contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
-    } else if (message.fileUrl && message.fileType) {
+    if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
             const sentBgClass = isSent ? `bg-[${'var(--color-bubble-sent-bg)'}]` : `bg-[${'var(--color-bubble-received-bg)'}]`;
@@ -506,10 +468,13 @@ const MessageBubbleTemplate = (message) => {
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${fullVideoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
-        } else if (message.type === 'document' || (message.fileType && message.fileType.startsWith('application/'))) {
+        } else if (message.fileType.startsWith('audio/')) {
+             const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
+             contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
+        } else if (message.type === 'document' || message.fileType.startsWith('application/')) {
             const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
-        } else if (message.type === 'sticker' && message.fileUrl) {
+        } else if (message.type === 'sticker') {
             const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
@@ -517,9 +482,9 @@ const MessageBubbleTemplate = (message) => {
         const { latitude, longitude, name, address } = message.location;
         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
         contentHTML += `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline"><div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}<p class="text-xs mt-1">Toca para ver en el mapa</p></a>`;
-    } else if (message.type === 'sticker' && !message.fileUrl) {
+    } else if (message.type === 'sticker') {
         contentHTML += `<div class="sticker-fallback"><i class="far fa-sticky-note"></i><span>Sticker</span></div>`;
-    } else if (hasText) {
+    } else if (message.text) {
          contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
     }
     
@@ -529,11 +494,8 @@ const MessageBubbleTemplate = (message) => {
         replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
     }
 
-    const copyButtonHTML = hasText
-        ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
-        : '';
-
-    // El menú de acciones ahora es un contenedor simple que aparecerá con CSS.
+    const copyButtonHTML = message.text ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>` : '';
+    
     const actionsHTML = `
         <div class="message-actions">
              <div class="reaction-bar">
@@ -548,26 +510,24 @@ const MessageBubbleTemplate = (message) => {
     `;
 
     const reactionHTML = message.reaction ? `<div class="reactions-container ${isSent ? '' : 'received-reaction'}">${message.reaction}</div>` : '';
-
-    const bubbleAlignment = isSent ? 'justify-end' : 'justify-start';
+    const bubbleAlignment = isSent ? 'sent' : 'received';
     let bubbleClasses = isSent ? 'sent' : 'received';
-    if (message.status === 'queued') {
-        bubbleClasses += ' message-queued';
-    }
+    if (message.status === 'queued') bubbleClasses += ' message-queued';
     
+    // --- INICIO DE LA MODIFICACIÓN ---
     return `
-        <div class="flex my-1 relative message-wrapper ${bubbleAlignment}" data-doc-id="${message.docId}">
-            ${!isSent ? actionsHTML : ''}
+        <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}">
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                 ${replyPreviewHTML}
                 ${contentHTML}
                 ${timeAndStatusHTML}
                 ${reactionHTML}
             </div>
-            ${isSent ? actionsHTML : ''}
+            ${actionsHTML}
         </div>`;
+    // --- FIN DE LA MODIFICACIÓN ---
 };
-// --- FIN DE LA SOLUCIÓN ---
+
 
 const NoteItemTemplate = (note) => {
     const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -1121,3 +1081,4 @@ const OrderDetailsModalTemplate = (order) => {
     `;
 };
 // --- FIN DE MODIFICACIÓN ---
+
