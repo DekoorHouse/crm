@@ -116,7 +116,8 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
 .message-bubble.message-queued { background-color: #dbeafe; color: #1e40af; border-bottom-right-radius: 4px; }
 
-/* --- INICIO DE LA SOLUCIÓN: Estilos para el nuevo menú contextual --- */
+/* --- Correction Start: Styles for the message actions menu --- */
+/* The menu is positioned absolutely inside the message bubble, which has position: relative. */
 .message-actions {
     display: flex;
     align-items: center;
@@ -132,15 +133,18 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
     transform: translateY(-50%) scale(0.9);
     transition: all 0.15s ease-in-out;
 }
-.message-group:hover .message-actions {
+/* The menu appears on hovering over the message bubble, not the entire group. */
+.message-bubble:hover .message-actions {
     opacity: 1;
     visibility: visible;
     transform: translateY(-50%) scale(1);
 }
+/* For sent messages, the menu is positioned to the left of the bubble. */
 .message-group.sent .message-actions {
     right: 100%;
     margin-right: 8px;
 }
+/* For received messages, the menu is positioned to the right of the bubble. */
 .message-group.received .message-actions {
     left: 100%;
     margin-left: 8px;
@@ -169,7 +173,7 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .message-action-btn:hover {
     color: var(--color-primary);
 }
-/* --- FIN DE LA SOLUCIÓN --- */
+/* --- Correction End --- */
 
 .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 .reactions-container.received-reaction { left: 10px; right: auto; }
@@ -731,4 +735,3 @@ label.disabled-icon {
     font-weight: 600;
     text-align: center;
 }
-
