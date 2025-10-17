@@ -560,7 +560,7 @@ const MessageBubbleTemplate = (message) => {
 
     const reactionPopoverHTML = `
         <div class="reaction-popover-container">
-            <button class="message-action-btn" title="Reaccionar"><i class="far fa-smile"></i></button>
+            <button class="message-action-btn" onclick="toggleReactionMenu(event)" title="Reaccionar"><i class="far fa-smile"></i></button>
             <div class="reaction-popover">
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')">👍</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '❤️')">❤️</button>
