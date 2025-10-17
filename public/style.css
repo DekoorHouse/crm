@@ -659,14 +659,23 @@ label.disabled-icon {
 /* --- START: Order History Styles --- */
 .order-history-item {
     display: flex;
-    align-items: center;
+    flex-direction: column; /* Cambiado a columna */
     padding: 8px 12px;
     background-color: #f7f9fc;
     border-radius: var(--border-radius-md);
     font-size: 0.85rem;
-    gap: 8px;
+    gap: 4px; /* Espacio entre filas */
 }
+
+.order-history-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
 .order-history-item.loading, .order-history-item.empty {
+    flex-direction: row; /* Mantener horizontal para mensajes de carga/vacío */
     justify-content: center;
     font-style: italic;
     color: var(--color-text-light);
@@ -674,15 +683,20 @@ label.disabled-icon {
 .order-history-item .order-number {
     font-weight: 600;
     color: var(--color-primary);
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    text-align: left;
 }
 .order-history-item .order-product {
     color: var(--color-text);
-    flex-grow: 1;
     margin: 0;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
+    font-weight: 500;
 }
 .order-history-item .order-date {
     font-size: 0.8rem;
@@ -691,6 +705,7 @@ label.disabled-icon {
 }
 
 .order-history-status-select {
+    width: 100%; /* Ocupar todo el ancho disponible */
     padding: 4px 8px;
     border-radius: 9999px;
     font-size: 0.85rem;
@@ -745,3 +760,4 @@ label.disabled-icon {
     font-weight: 600;
     text-align: center;
 }
+
