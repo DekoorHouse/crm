@@ -74,3 +74,4 @@ let unsubscribeMessagesListener = null,
 // --- Chart instances ---
 let dailyMessagesChart = null;
 let tagsDistributionChart = null;
+
