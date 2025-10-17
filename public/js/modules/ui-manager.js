@@ -761,6 +761,7 @@ async function openContactDetails() {
         
         // --- INICIO DE LA CORRECCIÓN: Usar el listener en tiempo real ---
         listenForContactOrders(contact.id, (orders) => {
+            state.selectedContactOrders = orders; // Almacena los pedidos en el estado
             if (ordersListEl.closest('.open')) { // Asegurarse que el panel sigue abierto
                 if (orders && orders.length > 0) {
                     // --- MODIFICACIÓN: Usar la nueva plantilla para cada item ---
@@ -768,6 +769,15 @@ async function openContactDetails() {
                 } else {
                     ordersListEl.innerHTML = `<div class="order-history-item empty">No hay pedidos anteriores.</div>`;
                 }
+            }
+        });
+
+        // Añadir event listener para los cambios de estatus
+        ordersListEl.addEventListener('change', (event) => {
+            if (event.target.classList.contains('order-history-status-select')) {
+                const orderId = event.target.dataset.orderId;
+                const newStatus = event.target.value;
+                handleOrderStatusChange(orderId, newStatus, event.target);
             }
         });
         // --- FIN DE LA CORRECCIÓN ---
