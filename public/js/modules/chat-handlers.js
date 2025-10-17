@@ -575,45 +575,68 @@ function toggleReactionMenu(event) {
     event.stopPropagation();
     const targetButton = event.currentTarget;
     const popoverContainer = targetButton.closest('.reaction-popover-container');
-    const messageBubble = targetButton.closest('.message-bubble');
-    const messagesContainer = document.getElementById('messages-container');
-
-    if (!popoverContainer || !messageBubble || !messagesContainer) return;
+    const popover = popoverContainer.querySelector('.reaction-popover');
+    
+    if (!popoverContainer || !popover) return;
 
     const wasActive = popoverContainer.classList.contains('active');
 
-    // Close all open menus first and reset container style
-    document.querySelectorAll('.reaction-popover-container.active').forEach(openContainer => {
-        openContainer.classList.remove('active');
-        openContainer.closest('.message-bubble')?.classList.remove('reaction-menu-open');
-    });
-    messagesContainer.classList.remove('reaction-menu-is-open');
+    // Always close any currently open menu first
+    const currentlyOpen = document.querySelector('.reaction-popover.fixed');
+    if (currentlyOpen) {
+        const oldContainer = currentlyOpen.closest('.reaction-popover-container');
+        currentlyOpen.classList.remove('fixed');
+        currentlyOpen.style.top = '';
+        currentlyOpen.style.left = '';
+        if (oldContainer) {
+            oldContainer.classList.remove('active');
+        }
+    }
 
-    // If the clicked menu was not already active, open it.
+    // If the one we clicked was not the one that was open, then open it.
     if (!wasActive) {
         popoverContainer.classList.add('active');
-        messageBubble.classList.add('reaction-menu-open');
-        messagesContainer.classList.add('reaction-menu-is-open');
+        
+        const rect = targetButton.getBoundingClientRect();
+        
+        // Apply fixed position to measure correctly before making it visible
+        popover.classList.add('fixed');
+        
+        const popoverHeight = popover.offsetHeight;
+        const popoverWidth = popover.offsetWidth;
+        
+        let top = rect.top - popoverHeight - 8; // 8px spacing
+        let left = rect.left + (rect.width / 2) - (popoverWidth / 2);
+
+        // Boundary checks
+        if (top < 5) { // 5px from top edge
+            top = rect.bottom + 8;
+        }
+        if (left < 5) {
+            left = 5; // 5px from left edge
+        }
+        if (left + popoverWidth > window.innerWidth) {
+            left = window.innerWidth - popoverWidth - 5; // 5px from right edge
+        }
+
+        popover.style.top = `${top}px`;
+        popover.style.left = `${left}px`;
     }
 }
 
 // Add a global listener to close the menu when clicking outside
 document.addEventListener('click', (event) => {
-    // Ensure we are in the chat view before running this
     if (state.activeView !== 'chats') return;
 
-    const openMenu = document.querySelector('.reaction-popover-container.active');
+    const openPopover = document.querySelector('.reaction-popover.fixed');
     
-    // If there is an open menu and the click was outside of it
-    if (openMenu && !openMenu.contains(event.target)) {
-        openMenu.classList.remove('active');
-        const bubble = openMenu.closest('.message-bubble');
-        if (bubble) {
-            bubble.classList.remove('reaction-menu-open');
-        }
-        const messagesContainer = document.getElementById('messages-container');
-        if (messagesContainer) {
-            messagesContainer.classList.remove('reaction-menu-is-open');
+    if (openPopover && !openPopover.closest('.reaction-popover-container').contains(event.target)) {
+        const container = openPopover.closest('.reaction-popover-container');
+        openPopover.classList.remove('fixed');
+        openPopover.style.top = '';
+        openPopover.style.left = '';
+        if (container) {
+            container.classList.remove('active');
         }
     }
 });
