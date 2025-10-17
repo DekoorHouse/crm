@@ -665,6 +665,24 @@ async function handleSelectReaction(event, messageDocId, emoji) {
     }
 }
 
+window.toggleReactionMenu = toggleReactionMenu;
+window.handleSelectReaction = handleSelectReaction;
+window.openConversationPreview = openConversationPreview;
+window.handleSelectContact = handleSelectContact;
+window.setFilter = setFilter;
+window.setActiveTab = setActiveTab;
+window.toggleEmojiPicker = toggleEmojiPicker;
+window.toggleTemplatePicker = toggleTemplatePicker;
+window.handleStartReply = handleStartReply;
+window.cancelReply = cancelReply;
+window.handleStatusChange = handleStatusChange;
+window.selectQuickReply = selectQuickReply;
+window.selectEmoji = selectEmoji;
+window.handleSendTemplate = handleSendTemplate;
+window.cancelStagedFile = cancelStagedFile;
+window.handleFileInputChange = handleFileInputChange;
+
+
 // --- START: Picker Management (ADDED CODE) ---
 
 function updatePickerSelection() {
