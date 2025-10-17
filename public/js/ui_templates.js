@@ -115,6 +115,126 @@ const CampaignsWithImageViewTemplate = () => `
     </div>
 `;
 
+const DifusionViewTemplate = () => `
+    <div class="view-container p-4 sm:p-8">
+        <style>
+            .table-input, .custom-select {
+                border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 12px;
+                width: 100%; transition: all 0.2s ease;
+            }
+            .table-input:focus, .custom-select:focus {
+                outline: none; border-color: #81B29A;
+                box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2);
+            }
+            .table-input.verified { border-color: #81B29A; background-color: #f0fff4; }
+            .table-input.error { border-color: #dc3545; background-color: #fff1f2; }
+            .photo-cell { display: flex; align-items: center; justify-content: center; width: 120px; height: 80px; }
+            .photo-uploader {
+                width: 100%; height: 100%; border: 2px dashed #d1d5db; border-radius: 8px;
+                display: flex; align-items: center; justify-content: center;
+                cursor: pointer; transition: all 0.2s ease; position: relative;
+            }
+            .photo-uploader:hover, .photo-uploader.drag-over { border-color: #81B29A; background-color: #f0fff4; }
+            .photo-uploader i { font-size: 1.5rem; color: #9ca3af; }
+            .photo-uploader .preview-img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
+            .photo-uploader .delete-btn {
+                position: absolute; top: -8px; right: -8px; background: #dc3545; color: white;
+                border-radius: 50%; width: 24px; height: 24px; border: none; cursor: pointer;
+                display: none; align-items: center; justify-content: center; z-index: 10;
+            }
+            .photo-uploader:hover .delete-btn { display: flex; }
+            .photo-uploader input[type="file"] { display: none; }
+            .status-tag { padding: 4px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.8rem; }
+            #quick-reply-dropdown { z-index: 50; max-height: 250px; overflow-y: auto; }
+            .message-pill { cursor: grab; transition: all 0.2s ease; }
+            .message-pill:active { cursor: grabbing; background-color: #F2CC8F; }
+            .message-pill .remove-pill { cursor: pointer; opacity: 0.6; transition: opacity 0.2s; }
+            .message-pill .remove-pill:hover { opacity: 1; }
+            .sortable-ghost { opacity: 0.4; background: #e0e7ff; }
+        </style>
+        <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-lg">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800" style="font-family: var(--font-heading);">
+                        <i class="fas fa-rocket text-indigo-500"></i>
+                        Envío Masivo de Fotos
+                    </h1>
+                    <p class="mt-2 text-gray-500">
+                        Añade los pedidos, sube sus fotos y envíalas a todos tus clientes con un solo clic.
+                    </p>
+                </div>
+                <div class="flex items-center gap-4 mt-4 sm:mt-0">
+                    <span id="job-counter" class="font-semibold text-gray-600">0 Pedidos en la lista</span>
+                    <button id="send-all-btn" class="btn btn-primary text-base" disabled>
+                        <i class="fas fa-paper-plane"></i> Enviar Todo
+                    </button>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                <div id="message-sequence-builder" class="border-b md:border-b-0 md:border-r pr-6 pb-6">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-3" style="font-family: var(--font-heading);">
+                        <i class="fas fa-stream text-gray-400"></i>
+                        Secuencia de Mensajes (&lt; 24h)
+                    </h2>
+                    <p class="text-sm text-gray-500 mb-4">Se enviará esta secuencia y la foto si el cliente contactó hace menos de 24 horas.</p>
+                    <div id="selected-messages-container" class="flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-lg min-h-[50px]"></div>
+                    <div id="add-message-controls" class="relative mt-4">
+                        <button id="add-message-btn" class="btn btn-subtle">
+                            <i class="fas fa-plus"></i> Agregar Mensaje
+                        </button>
+                        <div id="quick-reply-dropdown" class="absolute hidden mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl"></div>
+                    </div>
+                </div>
+
+                <div id="contingency-plan-builder">
+                    <h2 class="text-xl font-semibold text-gray-700 mb-3" style="font-family: var(--font-heading);">
+                        <i class="fas fa-history text-gray-400"></i>
+                        Plan de Contingencia (&gt; 24h)
+                    </h2>
+                    <p class="text-sm text-gray-500 mb-4">Si el cliente contactó hace MÁS de 24h, se enviará esta plantilla. Al responder, recibirá la secuencia normal.</p>
+                    <div>
+                        <label for="contingency-template-select" class="font-semibold text-sm mb-2 block">Plantilla de Reactivación</label>
+                        <select id="contingency-template-select" class="custom-select">
+                            <option value="">-- Seleccionar plantilla --</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="overflow-x-auto border-t pt-6">
+                <table class="table w-full">
+                    <thead>
+                        <tr class="bg-gray-50">
+                            <th class="w-12 text-center">#</th>
+                            <th class="w-48">No. Pedido o Teléfono</th>
+                            <th>Cliente</th>
+                            <th class="text-center">Foto del Pedido</th>
+                            <th>Estatus</th>
+                            <th class="w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="bulk-table-body">
+                        <tr id="empty-state-row">
+                            <td colspan="6" class="text-center text-gray-400 py-12">
+                                <i class="fas fa-images text-4xl mb-4"></i>
+                                <p class="font-semibold">Aún no hay pedidos en la lista.</p>
+                                <p>Usa el botón "Agregar Fila" para empezar.</p>
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="mt-6 flex justify-start">
+                <button id="add-row-btn" class="btn btn-subtle">
+                    <i class="fas fa-plus-circle"></i> Agregar Fila
+                </button>
+            </div>
+        </div>
+    </div>
+`;
+
 const MensajesAdsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -838,126 +958,6 @@ const NewOrderModalTemplate = () => `
     </div>
 `;
 
-const DifusionViewTemplate = () => `
-    <div class="view-container p-4 sm:p-8">
-        <style>
-            .table-input, .custom-select {
-                border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 12px;
-                width: 100%; transition: all 0.2s ease;
-            }
-            .table-input:focus, .custom-select:focus {
-                outline: none; border-color: #81B29A;
-                box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2);
-            }
-            .table-input.verified { border-color: #81B29A; background-color: #f0fff4; }
-            .table-input.error { border-color: #dc3545; background-color: #fff1f2; }
-            .photo-cell { display: flex; align-items: center; justify-content: center; width: 120px; height: 80px; }
-            .photo-uploader {
-                width: 100%; height: 100%; border: 2px dashed #d1d5db; border-radius: 8px;
-                display: flex; align-items: center; justify-content: center;
-                cursor: pointer; transition: all 0.2s ease; position: relative;
-            }
-            .photo-uploader:hover, .photo-uploader.drag-over { border-color: #81B29A; background-color: #f0fff4; }
-            .photo-uploader i { font-size: 1.5rem; color: #9ca3af; }
-            .photo-uploader .preview-img { width: 100%; height: 100%; object-fit: cover; border-radius: 6px; }
-            .photo-uploader .delete-btn {
-                position: absolute; top: -8px; right: -8px; background: #dc3545; color: white;
-                border-radius: 50%; width: 24px; height: 24px; border: none; cursor: pointer;
-                display: none; align-items: center; justify-content: center; z-index: 10;
-            }
-            .photo-uploader:hover .delete-btn { display: flex; }
-            .photo-uploader input[type="file"] { display: none; }
-            .status-tag { padding: 4px 12px; border-radius: 9999px; font-weight: 600; font-size: 0.8rem; }
-            #quick-reply-dropdown { z-index: 50; max-height: 250px; overflow-y: auto; }
-            .message-pill { cursor: grab; transition: all 0.2s ease; }
-            .message-pill:active { cursor: grabbing; background-color: #F2CC8F; }
-            .message-pill .remove-pill { cursor: pointer; opacity: 0.6; transition: opacity 0.2s; }
-            .message-pill .remove-pill:hover { opacity: 1; }
-            .sortable-ghost { opacity: 0.4; background: #e0e7ff; }
-        </style>
-        <div class="max-w-7xl mx-auto bg-white p-6 rounded-xl shadow-lg">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 border-b pb-4">
-                <div>
-                    <h1 class="text-3xl font-bold text-gray-800" style="font-family: var(--font-heading);">
-                        <i class="fas fa-rocket text-indigo-500"></i>
-                        Envío Masivo de Fotos
-                    </h1>
-                    <p class="mt-2 text-gray-500">
-                        Añade los pedidos, sube sus fotos y envíalas a todos tus clientes con un solo clic.
-                    </p>
-                </div>
-                <div class="flex items-center gap-4 mt-4 sm:mt-0">
-                    <span id="job-counter" class="font-semibold text-gray-600">0 Pedidos en la lista</span>
-                    <button id="send-all-btn" class="btn btn-primary text-base" disabled>
-                        <i class="fas fa-paper-plane"></i> Enviar Todo
-                    </button>
-                </div>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div id="message-sequence-builder" class="border-b md:border-b-0 md:border-r pr-6 pb-6">
-                    <h2 class="text-xl font-semibold text-gray-700 mb-3" style="font-family: var(--font-heading);">
-                        <i class="fas fa-stream text-gray-400"></i>
-                        Secuencia de Mensajes (&lt; 24h)
-                    </h2>
-                    <p class="text-sm text-gray-500 mb-4">Se enviará esta secuencia y la foto si el cliente contactó hace menos de 24 horas.</p>
-                    <div id="selected-messages-container" class="flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-lg min-h-[50px]"></div>
-                    <div id="add-message-controls" class="relative mt-4">
-                        <button id="add-message-btn" class="btn btn-subtle">
-                            <i class="fas fa-plus"></i> Agregar Mensaje
-                        </button>
-                        <div id="quick-reply-dropdown" class="absolute hidden mt-2 w-72 bg-white border border-gray-200 rounded-lg shadow-xl"></div>
-                    </div>
-                </div>
-
-                <div id="contingency-plan-builder">
-                    <h2 class="text-xl font-semibold text-gray-700 mb-3" style="font-family: var(--font-heading);">
-                        <i class="fas fa-history text-gray-400"></i>
-                        Plan de Contingencia (&gt; 24h)
-                    </h2>
-                    <p class="text-sm text-gray-500 mb-4">Si el cliente contactó hace MÁS de 24h, se enviará esta plantilla. Al responder, recibirá la secuencia normal.</p>
-                    <div>
-                        <label for="contingency-template-select" class="font-semibold text-sm mb-2 block">Plantilla de Reactivación</label>
-                        <select id="contingency-template-select" class="custom-select">
-                            <option value="">-- Seleccionar plantilla --</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-
-            <div class="overflow-x-auto border-t pt-6">
-                <table class="table w-full">
-                    <thead>
-                        <tr class="bg-gray-50">
-                            <th class="w-12 text-center">#</th>
-                            <th class="w-48">No. Pedido o Teléfono</th>
-                            <th>Cliente</th>
-                            <th class="text-center">Foto del Pedido</th>
-                            <th>Estatus</th>
-                            <th class="w-16"></th>
-                        </tr>
-                    </thead>
-                    <tbody id="bulk-table-body">
-                        <tr id="empty-state-row">
-                            <td colspan="6" class="text-center text-gray-400 py-12">
-                                <i class="fas fa-images text-4xl mb-4"></i>
-                                <p class="font-semibold">Aún no hay pedidos en la lista.</p>
-                                <p>Usa el botón "Agregar Fila" para empezar.</p>
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-
-            <div class="mt-6 flex justify-start">
-                <button id="add-row-btn" class="btn btn-subtle">
-                    <i class="fas fa-plus-circle"></i> Agregar Fila
-                </button>
-            </div>
-        </div>
-    </div>
-`;
-
 // --- NUEVA PLANTILLA PARA EL MODAL DE PREVISUALIZACIÓN ---
 const ConversationPreviewModalTemplate = (contact) => `
     <div id="conversation-preview-modal" class="modal-backdrop" onclick="closeConversationPreviewModal()">
@@ -996,7 +996,14 @@ const ConversationPreviewModalTemplate = (contact) => `
 const OrderHistoryItemTemplate = (order) => {
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
-    const statusClassName = `status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
+    
+    // Genera las opciones para el menú desplegable
+    const statusOptionsHTML = state.tags
+        .map(tag => `<option value="${tag.key}" ${estatus === tag.key ? 'selected' : ''}>${tag.label}</option>`)
+        .join('');
+
+    // Encuentra la etiqueta actual para aplicar el estilo inicial
+    const currentTag = state.tags.find(t => t.key === estatus) || { color: '#e9ecef' }; // Color por defecto
 
     return `
         <div class="order-history-item">
@@ -1004,11 +1011,20 @@ const OrderHistoryItemTemplate = (order) => {
                 DH${order.consecutiveOrderNumber}
             </button>
             <span class="order-product" title="${order.producto}">${order.producto}</span>
-            <span class="order-history-status ${statusClassName}">${estatus}</span>
+            
+            <select 
+                class="order-history-status-select" 
+                data-order-id="${order.id}" 
+                style="background-color: ${currentTag.color}20; color: ${currentTag.color}; border-color: ${currentTag.color}50;"
+            >
+                ${statusOptionsHTML}
+            </select>
+
             <span class="order-date">${orderDate}</span>
         </div>
     `;
 };
+
 
 /**
  * Genera el HTML para el modal de detalles del pedido.
