@@ -173,10 +173,17 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
     opacity: 1;
     visibility: visible;
 }
-/* Adjust position for sent messages when active */
+/*
+--- INICIO DE LA CORRECCIÓN ---
+Se ha eliminado la siguiente regla de CSS que causaba el conflicto
+de posicionamiento en los mensajes enviados.
+*/
+/*
 .message-bubble.sent .reaction-popover-container.active .reaction-popover {
     transform: translateY(-4px);
 }
+*/
+/* --- FIN DE LA CORRECCIÓN --- */
 .reaction-emoji-btn { background: none; border: none; cursor: pointer; font-size: 1.2rem; padding: 6px; transition: transform 0.1s ease; }
 .reaction-emoji-btn:hover { transform: scale(1.3); }
 
