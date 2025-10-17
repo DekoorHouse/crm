@@ -470,6 +470,7 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
     `;
 };
 
+// --- INICIO DE LA SOLUCIÓN: Menú contextual ---
 const MessageBubbleTemplate = (message) => {
     const isSent = message.from !== state.selectedContactId;
     const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
@@ -484,23 +485,12 @@ const MessageBubbleTemplate = (message) => {
     const hasText = message.text && !message.text.startsWith('🎤') && !message.text.startsWith('🎵') && !message.text.startsWith('📷');
 
     if (message.type === 'audio' && (message.fileUrl || message.mediaProxyUrl)) {
-        // --- INICIO DE LA CORRECCIÓN DE AUDIO ---
         const isPermanentLink = !!message.fileUrl;
-        // Usa la URL permanente si existe, si no, usa el proxy como fallback para mensajes antiguos.
         const audioSrc = isPermanentLink ? message.fileUrl : `${API_BASE_URL}${message.mediaProxyUrl}`;
-        let mimeType = message.fileType || 'audio/ogg'; // Usa el fileType guardado
-        
-        if (mimeType.includes(';')) {
-            mimeType = mimeType.split(';')[0];
-        }
-        
+        let mimeType = message.fileType || 'audio/ogg';
+        if (mimeType.includes(';')) mimeType = mimeType.split(';')[0];
         const onErrorHandler = `console.error('[AUDIO] Error al cargar el audio. URL: ${audioSrc}', event.target.error)`;
-
-        contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}">
-                            <source src="${audioSrc}" type="${mimeType}">
-                            Tu navegador no soporta la reproducción de audio.
-                        </audio>`;
-        // --- FIN DE LA CORRECCIÓN DE AUDIO ---
+        contentHTML += `<audio controls preload="metadata" class="chat-audio-player" onerror="${onErrorHandler.replace(/"/g, '&quot;')}"><source src="${audioSrc}" type="${mimeType}">Tu navegador no soporta la reproducción de audio.</audio>`;
     } 
     else if (message.text && message.text.startsWith('🎤') && !message.mediaProxyUrl && !message.fileUrl) {
         contentHTML += `<div><p class="break-words italic text-gray-500">🎤 Mensaje de voz (no se pudo cargar)</p></div>`;
@@ -509,25 +499,16 @@ const MessageBubbleTemplate = (message) => {
             bubbleExtraClass = 'has-image';
             const sentBgClass = isSent ? `bg-[${'var(--color-bubble-sent-bg)'}]` : `bg-[${'var(--color-bubble-received-bg)'}]`;
             const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
-            contentHTML += `
-                <div class="${sentBgClass} rounded-lg overflow-hidden">
-                    <img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">
-                    ${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}
-                    <div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>
-                </div>`;
+            contentHTML += `<div class="${sentBgClass} rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${fullVideoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
-        } else if (message.type === 'document' || (message.fileType && message.fileType.startsWith('application/'))) { // Manejo de PDF y otros documentos
+        } else if (message.type === 'document' || (message.fileType && message.fileType.startsWith('application/'))) {
             const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
-            contentHTML += `
-                <a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link">
-                    <i class="fas fa-file-alt document-icon"></i>
-                    <span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span>
-                </a>`;
+            contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
         } else if (message.type === 'sticker' && message.fileUrl) {
             const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
@@ -535,13 +516,7 @@ const MessageBubbleTemplate = (message) => {
     } else if (message.type === 'location' && message.location) {
         const { latitude, longitude, name, address } = message.location;
         const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
-        contentHTML += `
-            <a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline">
-                <div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>
-                ${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}
-                <p class="text-xs mt-1">Toca para ver en el mapa</p>
-            </a>
-        `;
+        contentHTML += `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline"><div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}<p class="text-xs mt-1">Toca para ver en el mapa</p></a>`;
     } else if (message.type === 'sticker' && !message.fileUrl) {
         contentHTML += `<div class="sticker-fallback"><i class="far fa-sticky-note"></i><span>Sticker</span></div>`;
     } else if (hasText) {
@@ -558,25 +533,17 @@ const MessageBubbleTemplate = (message) => {
         ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>`
         : '';
 
-    const reactionPopoverHTML = `
-        <div class="reaction-popover-container">
-            <button class="message-action-btn" onclick="toggleReactionMenu(event)" title="Reaccionar"><i class="far fa-smile"></i></button>
-            <div class="reaction-popover">
+    // El menú de acciones ahora es un contenedor simple que aparecerá con CSS.
+    const actionsHTML = `
+        <div class="message-actions">
+             <div class="reaction-bar">
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '👍')">👍</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '❤️')">❤️</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '😂')">😂</button>
                 <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '🙏')">🙏</button>
-                <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '🎉')">🎉</button>
-                <button class="reaction-emoji-btn" onclick="handleSelectReaction(event, '${message.docId}', '😢')">😢</button>
-            </div>
-        </div>
-    `;
-
-    const actionsHTML = `
-        <div class="message-actions">
-            <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
-            ${reactionPopoverHTML}
-            ${copyButtonHTML}
+             </div>
+             <button class="message-action-btn" onclick="handleStartReply(event, '${message.docId}')" title="Responder"><i class="fas fa-reply"></i></button>
+             ${copyButtonHTML}
         </div>
     `;
 
@@ -589,16 +556,18 @@ const MessageBubbleTemplate = (message) => {
     }
     
     return `
-        <div class="flex my-1 ${bubbleAlignment}" data-doc-id="${message.docId}">
+        <div class="flex my-1 relative message-wrapper ${bubbleAlignment}" data-doc-id="${message.docId}">
+            ${!isSent ? actionsHTML : ''}
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
-                ${actionsHTML}
                 ${replyPreviewHTML}
                 ${contentHTML}
                 ${timeAndStatusHTML}
                 ${reactionHTML}
             </div>
+            ${isSent ? actionsHTML : ''}
         </div>`;
 };
+// --- FIN DE LA SOLUCIÓN ---
 
 const NoteItemTemplate = (note) => {
     const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
@@ -1152,4 +1121,3 @@ const OrderDetailsModalTemplate = (order) => {
     `;
 };
 // --- FIN DE MODIFICACIÓN ---
-
