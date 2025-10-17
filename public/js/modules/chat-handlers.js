@@ -589,6 +589,7 @@ function toggleReactionMenu(event) {
             p.classList.remove('fixed');
             p.style.top = '';
             p.style.left = '';
+            p.style.transform = ''; // Also reset transform on close
         }
     });
 
@@ -596,6 +597,7 @@ function toggleReactionMenu(event) {
     if (!wasActive) {
         popoverContainer.classList.add('active');
         popover.classList.add('fixed');
+        popover.style.transform = 'none'; // --- INICIO DE LA CORRECCIÓN: Asegura que no haya transformaciones CSS que interfieran ---
         
         const rect = targetButton.getBoundingClientRect();
         const popoverHeight = popover.offsetHeight;
@@ -998,4 +1000,3 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
-
