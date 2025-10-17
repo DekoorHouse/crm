@@ -681,6 +681,58 @@ router.get('/orders/:orderId', async (req, res) => {
     }
 });
 
+router.put('/orders/:orderId', async (req, res) => {
+    const { orderId } = req.params;
+    const updateData = req.body;
+
+    if (!orderId) {
+        return res.status(400).json({ success: false, message: 'Falta el ID del pedido.' });
+    }
+
+    try {
+        const orderRef = db.collection('pedidos').doc(orderId);
+        const orderDoc = await orderRef.get();
+
+        if (!orderDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        }
+
+        const existingData = orderDoc.data();
+
+        // Manejar la eliminación de fotos de Storage
+        const existingPhotos = new Set([
+            ...(existingData.fotoUrls || []), 
+            ...(existingData.fotoPromocionUrls || [])
+        ]);
+        const updatedPhotos = new Set([
+            ...(updateData.fotoUrls || []), 
+            ...(updateData.fotoPromocionUrls || [])
+        ]);
+
+        const photosToDelete = [...existingPhotos].filter(url => !updatedPhotos.has(url));
+        
+        const deletePromises = photosToDelete.map(url => {
+            try {
+                const filePath = new URL(url).pathname.split('/').slice(2).join('/');
+                return bucket.file(decodeURIComponent(filePath)).delete().catch(err => console.warn(`No se pudo eliminar la foto antigua ${url}:`, err.message));
+            } catch (error) {
+                console.warn(`URL de foto inválida, no se puede eliminar de storage: ${url}`);
+                return Promise.resolve();
+            }
+        });
+
+        await Promise.all(deletePromises);
+
+        await orderRef.update(updateData);
+
+        res.status(200).json({ success: true, message: 'Pedido actualizado con éxito.' });
+
+    } catch (error) {
+        console.error(`Error al actualizar el pedido ${orderId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el pedido.' });
+    }
+});
+
 router.post('/orders', async (req, res) => {
     const { 
         contactId,
@@ -1372,3 +1424,4 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
+
