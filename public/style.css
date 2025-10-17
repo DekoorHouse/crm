@@ -693,9 +693,9 @@ label.disabled-icon {
 }
 
 .order-history-status-select {
-    padding: 2px 8px;
+    padding: 4px 8px;
     border-radius: 9999px;
-    font-size: 0.7rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-align: center;
     white-space: nowrap;
@@ -711,7 +711,7 @@ label.disabled-icon {
     background-repeat: no-repeat;
     background-position: right 8px center;
     background-size: 8px 8px;
-    padding-right: 24px; /* Space for the arrow */
+    padding-right: 26px; /* Space for the arrow */
     transition: background-color 0.2s, color 0.2s, border-color 0.2s;
 }
 
@@ -752,5 +752,6 @@ label.disabled-icon {
     font-weight: 600;
     text-align: center;
 }
+
 
 
