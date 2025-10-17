@@ -753,6 +753,51 @@ async function handleSaveBotSettings(event) {
     }
 }
 
+/**
+ * Maneja el cambio de estatus de un pedido desde la barra lateral de detalles.
+ * @param {string} orderId - El ID del documento del pedido en Firestore.
+ * @param {string} newStatus - La nueva clave de estatus.
+ * @param {HTMLElement} selectElement - El elemento select que fue cambiado.
+ */
+async function handleOrderStatusChange(orderId, newStatus, selectElement) {
+    if (!orderId || !newStatus) return;
+    
+    const orderIndex = state.selectedContactOrders.findIndex(o => o.id === orderId);
+    if (orderIndex === -1) return;
+    const originalStatus = state.selectedContactOrders[orderIndex].estatus;
+
+    // Actualización optimista del color
+    const newTag = state.tags.find(t => t.key === newStatus);
+    if (newTag) {
+        selectElement.style.backgroundColor = `${newTag.color}20`;
+        selectElement.style.color = newTag.color;
+        selectElement.style.borderColor = `${newTag.color}50`;
+    }
+
+    selectElement.disabled = true;
+
+    try {
+        const orderRef = db.collection('pedidos').doc(orderId);
+        await orderRef.update({ estatus: newStatus });
+        // El listener onSnapshot se encargará de la actualización final del estado y la UI.
+    } catch (error) {
+        console.error("Error al actualizar el estatus del pedido:", error);
+        showError("No se pudo actualizar el estatus del pedido.");
+        
+        // Revertir la UI en caso de fallo
+        selectElement.value = originalStatus;
+        const oldTag = state.tags.find(t => t.key === originalStatus);
+        if (oldTag) {
+            selectElement.style.backgroundColor = `${oldTag.color}20`;
+            selectElement.style.color = oldTag.color;
+            selectElement.style.borderColor = `${oldTag.color}50`;
+        }
+    } finally {
+        selectElement.disabled = false;
+    }
+}
+window.handleOrderStatusChange = handleOrderStatusChange;
+
 
 // --- START: ADDED FUNCTIONS TO FIX ERRORS ---
 
@@ -896,3 +941,4 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
