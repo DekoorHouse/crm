@@ -107,10 +107,6 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .message-wrapper.received { align-items: flex-start; }
 
 .message-bubble { position: relative; padding: 6px 12px; border-radius: var(--border-radius-md); box-shadow: 0 1px 1px rgba(0,0,0,0.05); max-width: 60%; margin-top: 1px; margin-bottom: 1px; }
-#messages-container.reaction-menu-is-open {
-    overflow: visible;
-}
-
 .message-bubble:hover .message-actions { opacity: 1; visibility: visible; transform: translateY(-5px); }
 .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
 .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
@@ -159,7 +155,15 @@ input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 .document-icon { font-size: 1.8rem; color: var(--color-primary); }
 .document-text { font-weight: 600; }
 .reaction-popover-container { position: relative; }
-.reaction-popover { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-8px); background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; padding: 4px; opacity: 0; visibility: hidden; transition: all 0.2s ease; z-index: 20; }
+.reaction-popover { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%) translateY(-8px); background-color: white; border-radius: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.15); display: flex; padding: 4px; opacity: 0; visibility: hidden; transition: opacity 0.2s, visibility 0.2s; z-index: 20; }
+.reaction-popover.fixed {
+    position: fixed;
+    bottom: auto;
+    left: auto;
+    transform: none;
+    transition: none;
+    z-index: 999;
+}
 .message-bubble.sent .reaction-popover { left: auto; right: 0; transform: translateY(-8px); }
 /* New styles for click-based reaction popover */
 .message-bubble.reaction-menu-open {
