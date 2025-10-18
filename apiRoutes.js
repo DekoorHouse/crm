@@ -411,15 +411,21 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                          fileType.startsWith('video/') ? 'video' :
                          fileType.startsWith('audio/') ? 'audio' : 'document';
             
+            // --- INICIO DE LA CORRECCIÓN ---
+            const mediaObject = { id: mediaId };
+            // La API de WhatsApp no permite 'caption' para audios.
+            if (type !== 'audio' && text) {
+                mediaObject.caption = text;
+            }
+            // --- FIN DE LA CORRECCIÓN ---
+
             const messagePayload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: type,
-                [type]: {
-                    id: mediaId,
-                    caption: text || ''
-                }
+                [type]: mediaObject // Usar el objeto construido dinámicamente
             };
+            
             if (reply_to_wamid) {
                 messagePayload.context = { message_id: reply_to_wamid };
             }
@@ -427,7 +433,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
             messageId = response.data.messages[0].id;
 
-            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : '📎 Archivo');
+            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : type === 'audio' ? '🎵 Audio' : '📎 Archivo');
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: messageTextForDb, fileUrl: fileUrl, fileType: fileType
@@ -1424,4 +1430,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
