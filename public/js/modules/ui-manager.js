@@ -970,6 +970,200 @@ async function handleSaveChangesOnOrderDetails(orderId) {
 
 // --- FIN DE MODIFICACIÓN ---
 
+// Managers for the edit modal photos
+let editOrderPhotosManager = [];
+let editPromoPhotosManager = [];
+
+// --- START: Order Edit Modal ---
+async function openOrderEditModal(orderId) {
+    const modalContainer = document.getElementById('order-edit-modal-container');
+    if (!modalContainer) return;
+
+    modalContainer.innerHTML = `<div class="modal-backdrop flex items-center justify-center"><i class="fas fa-spinner fa-spin text-4xl text-white"></i></div>`;
+
+    try {
+        const orderData = await fetchSingleOrder(orderId);
+        modalContainer.innerHTML = OrderEditModalTemplate(orderData);
+        
+        const producto = orderData.producto || '';
+        const productoSelect = document.getElementById('edit-order-product-select');
+        const productoOtroInput = document.getElementById('edit-order-product-other');
+        const esOpcionPredeterminada = Array.from(productoSelect.options).some(opt => opt.value === producto);
+
+        if (esOpcionPredeterminada) {
+            productoSelect.value = producto;
+        } else {
+            productoSelect.value = 'Otro';
+            productoOtroInput.value = producto;
+            productoOtroInput.style.display = 'block';
+            productoOtroInput.required = true;
+        }
+        
+        document.getElementById('edit-order-phone').value = orderData.telefono || '';
+        document.getElementById('edit-order-price').value = orderData.precio || '';
+        document.getElementById('edit-order-product-details').value = orderData.datosProducto || '';
+        document.getElementById('edit-order-promo-details').value = orderData.datosPromocion || '';
+        document.getElementById('edit-order-comments').value = orderData.comentarios || '';
+
+        editOrderPhotosManager = [];
+        editPromoPhotosManager = [];
+        
+        (orderData.fotoUrls || []).forEach(url => editOrderPhotosManager.push({ file: null, url: url, isNew: false }));
+        (orderData.fotoPromocionUrls || []).forEach(url => editPromoPhotosManager.push({ file: null, url: url, isNew: false }));
+
+        setupPhotoManagerForEditModal();
+        
+        document.getElementById('order-edit-form').addEventListener('submit', (e) => handleUpdateExistingOrder(e, orderId));
+        
+        productoSelect.addEventListener('change', () => {
+            const esOtro = productoSelect.value === 'Otro';
+            productoOtroInput.style.display = esOtro ? 'block' : 'none';
+            productoOtroInput.required = esOtro;
+            if (esOtro) productoOtroInput.focus();
+        });
+
+    } catch (error) {
+        console.error("Error opening order edit modal:", error);
+        showError("No se pudo cargar la información del pedido para editar.");
+        modalContainer.innerHTML = '';
+    }
+}
+
+function closeOrderEditModal() {
+    const modalContainer = document.getElementById('order-edit-modal-container');
+    if (modalContainer) {
+        modalContainer.innerHTML = '';
+    }
+}
+
+// Helper: Creates a renderer for photo previews with drag-and-drop.
+function createPhotoPreviewRenderer(previewContainer, photoManager, onUpdateCallback) {
+    let draggedItem = null;
+    const renderPreviews = () => {
+        previewContainer.innerHTML = '';
+        photoManager.forEach((photo, index) => {
+            const thumb = document.createElement('div');
+            thumb.className = 'preview-thumbnail';
+            thumb.dataset.index = index;
+            thumb.draggable = true;
+            thumb.addEventListener('dragstart', e => {
+                draggedItem = thumb;
+                e.dataTransfer.setData('text/plain', index);
+                setTimeout(() => thumb.classList.add('dragging'), 0);
+            });
+            thumb.addEventListener('dragend', () => {
+                if (draggedItem) draggedItem.classList.remove('dragging');
+                draggedItem = null;
+            });
+            const img = document.createElement('img');
+            img.src = photo.isNew ? URL.createObjectURL(photo.file) : photo.url;
+            if (photo.isNew) img.onload = () => URL.revokeObjectURL(img.src);
+            const delBtn = document.createElement('button');
+            delBtn.type = "button";
+            delBtn.className = 'delete-photo-btn';
+            delBtn.innerHTML = '&times;';
+            delBtn.onclick = (e) => { e.stopPropagation(); photoManager.splice(index, 1); renderPreviews(); };
+            thumb.appendChild(img);
+            thumb.appendChild(delBtn);
+            previewContainer.appendChild(thumb);
+        });
+        if (onUpdateCallback) onUpdateCallback(photoManager);
+    };
+    previewContainer.addEventListener('dragover', e => { e.preventDefault(); });
+    previewContainer.addEventListener('drop', e => {
+        e.preventDefault();
+        const oldIndex = parseInt(e.dataTransfer.getData('text/plain'));
+        const target = e.target.closest('.preview-thumbnail');
+        const newIndex = target ? parseInt(target.dataset.index) : photoManager.length;
+        if (oldIndex !== newIndex) {
+            const [movedItem] = photoManager.splice(oldIndex, 1);
+            photoManager.splice(newIndex > oldIndex ? newIndex - 1 : newIndex, 0, movedItem);
+            renderPreviews();
+        }
+    });
+    return renderPreviews;
+}
+
+// Helper: Sets up drag-and-drop and paste listeners for a file input area.
+function setupPhotoManagerListeners(dropZone, fileInput, manager, renderFunc) {
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+    dropZone.addEventListener('dragleave', (e) => { if (!dropZone.contains(e.relatedTarget)) dropZone.classList.remove('drag-over'); });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('drag-over');
+        if (e.dataTransfer.files) {
+            Array.from(e.dataTransfer.files).forEach(file => { if (file.type.startsWith('image/')) manager.push({ file, url: null, isNew: true }); });
+            renderFunc();
+        }
+    });
+    fileInput.addEventListener('change', (e) => {
+        Array.from(e.target.files).forEach(file => manager.push({ file, url: null, isNew: true }));
+        renderFunc();
+        e.target.value = '';
+    });
+    dropZone.addEventListener('paste', e => {
+        e.preventDefault();
+        const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+        for (const item of items) {
+            if (item.kind === 'file' && item.type.startsWith('image/')) {
+                manager.push({ file: item.getAsFile(), url: null, isNew: true });
+            }
+        }
+        renderFunc();
+    });
+}
+
+function setupPhotoManagerForEditModal() {
+    const orderPhotoContainer = document.getElementById('edit-order-file-input-container-product');
+    const orderPhotoInput = document.getElementById('edit-order-photo-file');
+    const orderPreviewContainer = document.getElementById('edit-order-photos-preview-container');
+    const promoPhotoContainer = document.getElementById('edit-order-file-input-container-promo');
+    const promoPhotoInput = document.getElementById('edit-order-promo-photo-file');
+    const promoPreviewContainer = document.getElementById('edit-order-promo-photos-preview-container');
+    const samePhotoCheckbox = document.getElementById('edit-order-same-photo-checkbox');
+    const samePhotoContainer = document.getElementById('edit-order-same-photo-container');
+
+    const onOrderPhotosUpdate = (manager) => {
+        samePhotoContainer.style.display = manager.length > 0 ? 'flex' : 'none';
+        if (samePhotoCheckbox.checked) {
+            editPromoPhotosManager = manager.map(p => ({ ...p }));
+            renderPromoPreviews();
+        }
+    };
+    const areArraysIdentical = (arr1, arr2) => {
+        if (arr1.length !== arr2.length) return false;
+        const sig1 = arr1.map(p => p.isNew ? p.file.name + p.file.size : p.url).sort();
+        const sig2 = arr2.map(p => p.isNew ? p.file.name + p.file.size : p.url).sort();
+        return sig1.every((v, i) => v === sig2[i]);
+    };
+    const onPromoPhotosUpdate = () => {
+        if (samePhotoCheckbox.checked && !areArraysIdentical(editOrderPhotosManager, editPromoPhotosManager)) {
+            samePhotoCheckbox.checked = false;
+            promoPhotoContainer.style.display = 'block';
+        }
+    };
+
+    const renderOrderPreviews = createPhotoPreviewRenderer(orderPreviewContainer, editOrderPhotosManager, onOrderPhotosUpdate);
+    const renderPromoPreviews = createPhotoPreviewRenderer(promoPreviewContainer, editPromoPhotosManager, onPromoPhotosUpdate);
+
+    setupPhotoManagerListeners(orderPhotoContainer, orderPhotoInput, editOrderPhotosManager, renderOrderPreviews);
+    setupPhotoManagerListeners(promoPhotoContainer, promoPhotoInput, editPromoPhotosManager, renderPromoPreviews);
+
+    samePhotoCheckbox.addEventListener('change', (e) => {
+        if (e.target.checked) {
+            editPromoPhotosManager = editOrderPhotosManager.map(p => ({ ...p }));
+            promoPhotoContainer.style.display = 'none';
+        } else {
+            promoPhotoContainer.style.display = 'block';
+        }
+        renderPromoPreviews();
+    });
+    renderOrderPreviews();
+    renderPromoPreviews();
+}
+
+// --- END: Order Edit Modal ---
+
 // --- INICIO DE LA SOLUCIÓN: Funciones para el modal de Mensajes de Anuncios ---
 function openAdResponseModal(responseId = null) {
     const modal = document.getElementById('ad-response-modal');
