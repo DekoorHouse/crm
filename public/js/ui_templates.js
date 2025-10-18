@@ -1009,7 +1009,7 @@ const OrderHistoryItemTemplate = (order) => {
     return `
         <div class="order-history-item">
             <div class="order-history-row">
-                <button class="order-number" onclick="openOrderDetailsModal('${order.id}')">
+                <button class="order-number" onclick="openOrderEditModal('${order.id}')">
                     DH${order.consecutiveOrderNumber}
                 </button>
                 <span class="order-date">${orderDate}</span>
