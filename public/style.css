@@ -656,6 +656,171 @@ label.disabled-icon {
 
 /* --- END: Conversation Preview Modal Styles --- */
 
+/* --- START: STYLES FOR ORDER EDIT MODAL (to match pedidos.html) --- */
+#order-edit-modal.modal-overlay {
+    display: flex;
+    background-color: rgba(40, 40, 40, 0.7);
+    padding: 20px;
+}
+
+#order-edit-modal .modal-content {
+    padding: 30px 40px;
+    max-width: 750px;
+}
+
+#order-edit-modal .modal-close-btn {
+    position: absolute; top: 10px; right: 15px; background: transparent;
+    border: none; font-size: 2.5rem; font-weight: 300;
+    color: var(--color-text-light); cursor: pointer; line-height: 1;
+    padding: 0 5px; margin: 0; transition: color 0.2s ease;
+}
+#order-edit-modal .modal-close-btn:hover { color: var(--color-secondary); transform: none; box-shadow: none; }
+
+#order-edit-modal h2 {
+    text-align: center;
+    font-size: 1.5em;
+    color: var(--color-primary); /* Use primary from style.css which is the green from estilos.css */
+    margin-bottom: 25px;
+}
+
+#order-edit-form .form-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 18px 25px;
+    margin-bottom: 25px;
+}
+
+#order-edit-form .form-item-full {
+    grid-column: 1 / -1;
+}
+
+#order-edit-form .form-actions {
+    text-align: right;
+    margin-top: 25px;
+    padding-top: 20px;
+    border-top: 1px solid var(--color-border);
+}
+
+#order-edit-form .form-actions button {
+    margin-left: 12px;
+}
+
+#order-edit-form .file-input-container {
+    border: 2px dashed var(--color-border);
+    border-radius: var(--border-radius-md);
+    padding: 15px;
+    margin-bottom: 18px;
+    transition: all 0.3s ease;
+    outline: none;
+}
+#order-edit-form .file-input-container:focus-within,
+#order-edit-form .file-input-container.drag-over {
+    border-color: var(--color-primary);
+    background-color: rgba(129, 178, 154, 0.1);
+}
+
+#order-edit-form .file-input-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+#order-edit-form .custom-file-upload {
+    display: inline-block;
+    background-color: var(--color-primary);
+    color: white;
+    padding: 10px 20px;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 1rem;
+    transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+#order-edit-form .custom-file-upload:hover {
+    background-color: #70a087;
+}
+
+#order-edit-form .previews-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    min-height: 50px;
+}
+
+#order-edit-form .preview-thumbnail {
+    position: relative;
+    width: 100px;
+    height: 100px;
+    border-radius: var(--border-radius-md);
+    overflow: hidden;
+    border: 2px solid transparent;
+    background-color: var(--color-bg);
+    cursor: grab;
+    transition: border-color 0.2s ease, opacity 0.2s ease;
+}
+#order-edit-form .preview-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+#order-edit-form .preview-thumbnail .delete-photo-btn {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    background-color: rgba(0,0,0,0.6);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+    font-size: 0.8em;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    padding: 0;
+    z-index: 2;
+}
+#order-edit-form .preview-thumbnail .delete-photo-btn:hover {
+    background-color: var(--color-danger);
+    transform: scale(1.1);
+}
+
+#order-edit-form .checkbox-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+#order-edit-form .checkbox-container input[type="checkbox"] {
+    width: auto;
+    margin-bottom: 0;
+    flex-shrink: 0;
+}
+#order-edit-form .checkbox-container label {
+    margin-bottom: 0;
+    font-weight: normal;
+    font-size: 0.9em;
+    color: var(--color-text-light);
+    cursor: pointer;
+}
+
+#edit-order-error-message {
+     margin-top: 15px; color: var(--color-danger); font-weight: 600; min-height: 1.2em; text-align: center; font-size: 0.9em;
+     background-color: rgba(220, 53, 69, 0.1); border-radius: var(--border-radius-sm); padding: 8px; display: block;
+}
+#edit-order-error-message:empty {
+    display: none;
+}
+/* --- END: STYLES FOR ORDER EDIT MODAL --- */
+
+
 /* --- START: Order History Styles --- */
 .order-history-item {
     display: flex;
