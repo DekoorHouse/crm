@@ -175,8 +175,13 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
                      fileType.startsWith('video/') ? 'video' :
                      fileType.startsWith('audio/') ? 'audio' : 'document';
 
+        // --- INICIO DE LA CORRECCIÓN ---
         const mediaObject = { link: fileUrl };
-        if (text) mediaObject.caption = text;
+        // La API de WhatsApp no permite 'caption' para audios.
+        if (type !== 'audio' && text) {
+            mediaObject.caption = text;
+        }
+        // --- FIN DE LA CORRECCIÓN ---
 
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
         messageToSaveText = text || (type === 'image' ? '📷 Imagen' :
