@@ -830,6 +830,8 @@ async function handleSaveBotSettings(event) {
     }
 }
 
+window.openOrderEditModal = openOrderEditModal;
+
 /**
  * Maneja el cambio de estatus de un pedido desde la barra lateral de detalles.
  * @param {string} orderId - El ID del documento del pedido en Firestore.
@@ -1018,4 +1020,5 @@ async function handleSimulateAdMessage(event) {
 }
 
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
+
 
