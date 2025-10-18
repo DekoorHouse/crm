@@ -1105,3 +1105,85 @@ const OrderDetailsModalTemplate = (order) => {
 };
 // --- FIN DE MODIFICACIÓN ---
 
+const OrderEditModalTemplate = (order) => `
+    <div id="order-edit-modal" class="modal-backdrop" onclick="closeOrderEditModal()">
+        <div class="modal-content !max-w-4xl" onclick="event.stopPropagation()">
+            <button onclick="closeOrderEditModal()" class="modal-close-btn" title="Cerrar">&times;</button>
+            <h2 class="!text-xl !font-bold !text-primary"><i class="fas fa-edit mr-2"></i> Editar Pedido DH${order.consecutiveOrderNumber}</h2>
+            <form id="order-edit-form">
+                 <div class="form-grid">
+                     <div class="form-item">
+                         <label for="edit-order-product-select">Producto (*):</label>
+                         <select id="edit-order-product-select" required>
+                            <option value="Modelo 7">Modelo 7</option>
+                            <option value="Portallaves">Portallaves</option>
+                            <option value="Calendario">Calendario</option>
+                            <option value="Placa de perro">Placa de perro</option>
+                            <option value="Otro">Otro</option>
+                         </select>
+                         <input type="text" id="edit-order-product-other" style="display: none;" placeholder="Nombre del producto">
+                     </div>
+                     <div class="form-item">
+                         <label for="edit-order-phone">Teléfono (*):</label>
+                         <input type="tel" id="edit-order-phone" placeholder="Ej: 521..." required>
+                     </div>
+                     <div class="form-item">
+                          <label for="edit-order-price">Precio (MXN):</label>
+                          <input type="number" id="edit-order-price" step="0.01" placeholder="Ej: 275.00">
+                      </div>
+
+                      <div class="form-item form-item-full">
+                           <label for="edit-order-photo-file">Fotos del Pedido (Arrastra o pega imágenes):</label>
+                           <div class="file-input-container" id="edit-order-file-input-container-product" tabindex="0">
+                               <input type="file" id="edit-order-photo-file" accept="image/*" multiple>
+                               <div class="file-input-header">
+                                   <label for="edit-order-photo-file" class="custom-file-upload">
+                                       <i class="fas fa-upload"></i> Seleccionar
+                                   </label>
+                                   <span>o arrastra y suelta aquí</span>
+                               </div>
+                               <div class="previews-container" id="edit-order-photos-preview-container"></div>
+                           </div>
+                      </div>
+                     <div class="form-item form-item-full">
+                         <label for="edit-order-product-details">Detalles del Producto:</label>
+                         <textarea id="edit-order-product-details" placeholder="Describe los detalles específicos del producto solicitado..."></textarea>
+                     </div>
+
+                     <div class="form-item form-item-full">
+                        <label for="edit-order-promo-photo-file">Fotos de la Promoción:</label>
+                        <div class="checkbox-container" id="edit-order-same-photo-container" style="display: none;">
+                            <input type="checkbox" id="edit-order-same-photo-checkbox">
+                            <label for="edit-order-same-photo-checkbox">Usar la(s) misma(s) foto(s) del pedido</label>
+                        </div>
+                        <div class="file-input-container" id="edit-order-file-input-container-promo" tabindex="0">
+                            <input type="file" id="edit-order-promo-photo-file" accept="image/*" multiple>
+                            <div class="file-input-header">
+                                <label for="edit-order-promo-photo-file" class="custom-file-upload">
+                                    <i class="fas fa-upload"></i> Seleccionar
+                                </label>
+                                <span>o arrastra y suelta aquí</span>
+                            </div>
+                            <div class="previews-container" id="edit-order-promo-photos-preview-container"></div>
+                        </div>
+                    </div>
+                    <div class="form-item form-item-full">
+                        <label for="edit-order-promo-details">Detalles de la Promoción:</label>
+                        <textarea id="edit-order-promo-details" placeholder="Describe la promoción aplicada, si existe..."></textarea>
+                    </div>
+
+                    <div class="form-item form-item-full">
+                           <label for="edit-order-comments">Comentarios Adicionales:</label>
+                           <textarea id="edit-order-comments" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
+                    </div>
+                 </div>
+                 <div id="edit-order-error-message"></div>
+                 <div class="form-actions">
+                      <button type="button" onclick="closeOrderEditModal()" class="btn btn-subtle"><i class="fas fa-times mr-2"></i> Cancelar</button>
+                      <button type="submit" id="order-update-btn" class="btn btn-primary"><i class="fas fa-save mr-2"></i> Guardar Cambios</button>
+                 </div>
+             </form>
+        </div>
+    </div>
+`;
+
