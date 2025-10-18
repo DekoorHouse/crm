@@ -213,6 +213,83 @@ async function handleSaveOrder(event) {
 }
 // --- END: New Order Logic ---
 
+async function handleUpdateExistingOrder(event, orderId) {
+    event.preventDefault();
+    const saveButton = document.getElementById('order-update-btn');
+    const errorMessageEl = document.getElementById('edit-order-error-message');
+
+    let productoFinal = document.getElementById('edit-order-product-select').value;
+    if (productoFinal === 'Otro') {
+        productoFinal = document.getElementById('edit-order-product-other').value.trim();
+        if (!productoFinal) {
+            errorMessageEl.textContent = 'El nombre del producto (Otro) es obligatorio.';
+            return;
+        }
+    }
+
+    const updateData = {
+        producto: productoFinal,
+        telefono: document.getElementById('edit-order-phone').value.trim(),
+        precio: Number(document.getElementById('edit-order-price').value) || 0,
+        datosProducto: document.getElementById('edit-order-product-details').value.trim(),
+        datosPromocion: document.getElementById('edit-order-promo-details').value.trim(),
+        comentarios: document.getElementById('edit-order-comments').value.trim(),
+    };
+
+    saveButton.disabled = true;
+    saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
+    errorMessageEl.textContent = '';
+
+    try {
+        async function uploadPhotos(photoManager, storagePath) {
+            const uploadPromises = photoManager.map(async photo => {
+                if (photo.isNew) {
+                    const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ fileName: photo.file.name, contentType: photo.file.type, pathPrefix: storagePath })
+                    });
+                    if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida de archivo.');
+                    const { signedUrl, publicUrl } = await signedUrlResponse.json();
+                    
+                    await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': photo.file.type }, body: photo.file });
+                    return publicUrl;
+                }
+                return Promise.resolve(photo.url);
+            });
+            return await Promise.all(uploadPromises);
+        }
+
+        saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
+        
+        updateData.fotoUrls = await uploadPhotos(editOrderPhotosManager, 'pedidos');
+        updateData.fotoPromocionUrls = await uploadPhotos(editPromoPhotosManager, 'promociones');
+
+        saveButton.innerHTML = '<i class="fas fa-database mr-2"></i> Actualizando...';
+        const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updateData)
+        });
+
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || "Ocurrió un error en el servidor.");
+        }
+
+        closeOrderEditModal();
+        showError('Pedido actualizado con éxito.', 'success'); 
+        
+    } catch (error) {
+        console.error("Error al actualizar el pedido:", error);
+        errorMessageEl.textContent = error.message;
+    } finally {
+        saveButton.disabled = false;
+        saveButton.innerHTML = '<i class="fas fa-save mr-2"></i> Guardar Cambios';
+    }
+}
+
+
 // --- Campaigns Handlers ---
 async function handleSendCampaign() {
     const tagSelect = document.getElementById('campaign-tag-select');
