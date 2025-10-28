@@ -690,36 +690,32 @@ function renderAdIdMetricsTable(counts) {
 }
 // --- FIN DE MODIFICACIÓN ---
 
-// --- INICIO DE MODIFICACIÓN: Renderizar Gráfica de Líneas ---
-// Renderiza la gráfica de mensajes diarios como línea
+// Renderiza la gráfica de mensajes diarios
 function renderDailyMessagesChart(data) {
     const ctx = document.getElementById('daily-messages-chart')?.getContext('2d');
     if (!ctx) return;
 
-    // Destruir gráfica anterior si existe para evitar duplicados
+    // Destruir gráfica anterior si existe
     if (dailyMessagesChart) {
         dailyMessagesChart.destroy();
     }
 
     // Preparar datos para Chart.js
-    const labels = data.map(d => new Date(d.date + 'T00:00:00Z').toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })); // Ajuste para UTC y formato corto
+    const labels = data.map(d => new Date(d.date + 'T00:00:00Z').toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })); // Ajuste para UTC
     const totalMessages = data.map(d => d.totalMessages);
 
-    // Crear nueva gráfica de LÍNEAS
+    // Crear nueva gráfica
     dailyMessagesChart = new Chart(ctx, {
-        type: 'line', // Cambiado a 'line'
+        type: 'bar', // Tipo barra
         data: {
             labels: labels,
             datasets: [{
                 label: 'Mensajes Recibidos',
                 data: totalMessages,
-                backgroundColor: 'rgba(129, 178, 154, 0.2)', // Área bajo la línea
-                borderColor: 'rgba(129, 178, 154, 1)', // Color de la línea
-                borderWidth: 2,
-                pointBackgroundColor: 'rgba(129, 178, 154, 1)', // Color de los puntos
-                pointRadius: 3, // Tamaño de los puntos
-                tension: 0.3, // Suavizar la línea
-                fill: true, // Rellenar área bajo la línea
+                backgroundColor: 'rgba(129, 178, 154, 0.6)', // Color principal suave
+                borderColor: 'rgba(129, 178, 154, 1)',
+                borderWidth: 1,
+                borderRadius: 5,
             }]
         },
         options: {
@@ -728,6 +724,9 @@ function renderDailyMessagesChart(data) {
             scales: {
                 y: {
                     beginAtZero: true, // Empezar eje Y en 0
+                    ticks: {
+                        // stepSize: 1 // REMOVED: Let Chart.js calculate automatically
+                    }
                 }
             },
             plugins: {
@@ -738,7 +737,7 @@ function renderDailyMessagesChart(data) {
         }
     });
 }
-// --- FIN DE MODIFICACIÓN ---
+
 
 // Renderiza la gráfica de distribución por etiquetas
 function renderTagsDistributionChart(data) {
@@ -790,7 +789,7 @@ function renderTagsDistributionChart(data) {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'right', // Posición de la leyenda
+                    position: 'top', // Posición de la leyenda
                 },
                 tooltip: { // Configuración de tooltips
                     callbacks: {
@@ -800,11 +799,7 @@ function renderTagsDistributionChart(data) {
                                 label += ': ';
                             }
                             if (context.parsed !== null) {
-                                // Calculate percentage
-                                const total = context.dataset.data.reduce((sum, value) => sum + value, 0);
-                                const value = context.parsed;
-                                const percentage = total > 0 ? ((value / total) * 100).toFixed(1) + '%' : '0%';
-                                label += `${value} (${percentage})`; // Muestra valor y porcentaje
+                                label += context.parsed; // Muestra el valor numérico
                             }
                             return label;
                         }
