@@ -19,7 +19,7 @@ function processContacts(contacts) {
             }
             // Caso 2: Maneja el timestamp serializado que viene de la API ({_seconds: ..., _nanoseconds: ...})
             else if (typeof ts === 'object' && typeof ts._seconds === 'number') {
-                contact.lastMessageTimestamp = new Date(ts._seconds * 1000);
+                contact.lastMessageTimestamp = new Date(ts._seconds * 1000 + (ts._nanoseconds || 0) / 1e6); // Incluir nanosegundos
             }
             // Caso 3: Podría ser ya un string ISO 8601 si viene de otra fuente
             else if (typeof ts === 'string' && !isNaN(Date.parse(ts))) {
@@ -112,12 +112,12 @@ async function fetchInitialContacts() {
         state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null; // Hay más si se devolvieron contactos y hay un ID para seguir
 
         // Renderiza la lista de contactos en la UI
-        handleSearchContacts();
+        handleSearchContacts(); // Asegúrate de que esta función esté definida globalmente o importada
 
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga
     } catch (error) {
         console.error(error);
-        showError(error.message);
+        showError(error.message); // Asegúrate de que showError esté definida globalmente o importada
     }
 }
 
@@ -130,6 +130,7 @@ async function fetchMoreContacts() {
     if (state.pagination.isLoadingMore || !state.pagination.hasMore || !state.pagination.lastVisibleId) return;
 
     state.pagination.isLoadingMore = true; // Marcar como cargando
+    console.log("Fetching more contacts after:", state.pagination.lastVisibleId);
 
     try {
         // Aplicar filtro de etiqueta si está activo
@@ -145,6 +146,8 @@ async function fetchMoreContacts() {
         if (!response.ok) throw new Error('Error al cargar más contactos.');
 
         const data = await response.json();
+        console.log("Received more contacts:", data.contacts.length, "lastVisibleId:", data.lastVisibleId);
+
 
         // Procesar timestamps
         const newContacts = processContacts(data.contacts);
@@ -157,16 +160,18 @@ async function fetchMoreContacts() {
 
             // Actualizar el ID del último contacto visible
             state.pagination.lastVisibleId = data.lastVisibleId;
+            state.pagination.hasMore = !!data.lastVisibleId; // Hay más si la API devuelve un ID
         } else {
             // Si no vienen más contactos, marcar que ya no hay más páginas
             state.pagination.hasMore = false;
+             console.log("No more contacts to load.");
         }
 
         // Re-renderizar la lista de contactos
-        handleSearchContacts();
+        handleSearchContacts(); // Asegúrate de que esta función esté definida globalmente o importada
     } catch (error) {
         console.error(error);
-        showError(error.message);
+        showError(error.message); // Asegúrate de que showError esté definida globalmente o importada
     } finally {
         state.pagination.isLoadingMore = false; // Desmarcar como cargando
     }
@@ -185,6 +190,9 @@ async function searchContactsAPI(query) {
         return;
     }
 
+    const contactsLoadingEl = document.getElementById('contacts-loading');
+    if (contactsLoadingEl) contactsLoadingEl.style.display = 'block'; // Mostrar carga durante búsqueda
+
     try {
         // Realizar petición a la API de búsqueda
         const response = await fetch(`${API_BASE_URL}/api/contacts/search?query=${encodeURIComponent(query)}`);
@@ -200,10 +208,12 @@ async function searchContactsAPI(query) {
         state.pagination.lastVisibleId = null;
 
         // Re-renderizar la lista
-        handleSearchContacts();
+        handleSearchContacts(); // Asegúrate de que esta función esté definida globalmente o importada
     } catch (error) {
         console.error(error);
-        showError(error.message);
+        showError(error.message); // Asegúrate de que showError esté definida globalmente o importada
+    } finally {
+        if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga
     }
 }
 
@@ -227,6 +237,7 @@ function listenForContactUpdates() {
         }
 
         console.log(`[Real-time] Se detectaron ${snapshot.docChanges().length} cambios en los contactos.`);
+        let needsReRender = false;
 
         // Procesar cada cambio detectado
         snapshot.docChanges().forEach(change => {
@@ -235,20 +246,39 @@ function listenForContactUpdates() {
             // Buscar si el contacto ya existe en la lista local
             const existingContactIndex = state.contacts.findIndex(c => c.id === updatedContactData.id);
 
-            if (existingContactIndex > -1) {
-                // Si existe, reemplazarlo con los datos actualizados
-                state.contacts[existingContactIndex] = updatedContactData;
-            } else {
-                // Si es un contacto nuevo (o no estaba en la página actual), añadirlo al INICIO de la lista
-                state.contacts.unshift(updatedContactData);
+            if (change.type === "added") {
+                if (existingContactIndex === -1) {
+                    // Añadir nuevo contacto al INICIO
+                    state.contacts.unshift(updatedContactData);
+                    needsReRender = true;
+                }
+            } else if (change.type === "modified") {
+                if (existingContactIndex > -1) {
+                    // Si existe, reemplazarlo con los datos actualizados
+                    state.contacts[existingContactIndex] = updatedContactData;
+                    needsReRender = true;
+                } else {
+                    // Si se modifica pero no estaba en la lista (posiblemente por paginación), añadirlo al inicio
+                     state.contacts.unshift(updatedContactData);
+                     needsReRender = true;
+                }
+            } else if (change.type === "removed") {
+                if (existingContactIndex > -1) {
+                    // Si se elimina, quitarlo de la lista
+                    state.contacts.splice(existingContactIndex, 1);
+                    needsReRender = true;
+                }
             }
         });
 
-        // Reordenar toda la lista por fecha del último mensaje (más reciente primero)
-        state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
+        // Solo reordenar y re-renderizar si hubo cambios relevantes
+        if (needsReRender) {
+             // Reordenar toda la lista por fecha del último mensaje (más reciente primero)
+            state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
 
-        // Re-renderizar la lista de contactos
-        handleSearchContacts();
+            // Re-renderizar la lista de contactos
+            handleSearchContacts(); // Asegúrate de que esta función esté definida globalmente o importada
+        }
 
     }, error => {
         // Manejo de errores del listener
@@ -268,7 +298,7 @@ function listenForQuickReplies() {
         state.quickReplies = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // Si la vista activa es la de respuestas rápidas, re-renderizarla
         if (state.activeView === 'respuestas-rapidas') {
-            renderQuickRepliesView();
+            renderQuickRepliesView(); // Asegúrate de que esta función esté definida globalmente o importada
         }
     }, (error) => { console.error("Error fetching quick replies:", error); showError("No se pudieron cargar las respuestas rápidas."); });
 }
@@ -299,6 +329,8 @@ function listenForTags() {
             const ordersListEl = document.getElementById('contact-orders-list');
              if (ordersListEl) {
                 // Volver a renderizar los items de pedido para actualizar los selects
+                // Asume que OrderHistoryItemTemplate usa state.orderStatuses que ahora se obtiene de state.tags
+                state.orderStatuses = state.tags.map(t => ({key: t.key, label: t.label, color: t.color})); // Mapea tags a la estructura de orderStatuses
                 ordersListEl.innerHTML = state.selectedContactOrders.map(OrderHistoryItemTemplate).join('');
              }
         }
@@ -430,8 +462,205 @@ async function fetchGoogleSheetSettings() {
     }
 }
 
-// --- INICIO DE MODIFICACIÓN ---
+// --- INICIO DE MODIFICACIÓN: API Functions ---
 
+/**
+ * --- MODIFICADO: Envía un mensaje usando la API oficial, manejando encolado ---
+ * @param {string} contactId El ID del contacto.
+ * @param {object} messageData Datos del mensaje { text, fileUrl, fileType, reply_to_wamid, tempId, shouldQueue }
+ * @returns {Promise<Response>} La respuesta del fetch.
+ */
+async function sendMessageViaAPI(contactId, { text, fileUrl, fileType, reply_to_wamid, tempId, shouldQueue }) {
+    // Determina el endpoint correcto basado en shouldQueue
+    const endpoint = shouldQueue ? 'queue-message' : 'messages';
+    const url = `${API_BASE_URL}/api/contacts/${contactId}/${endpoint}`;
+
+    const payload = { text, fileUrl, fileType, reply_to_wamid, tempId };
+    // Limpia propiedades nulas o indefinidas del payload
+    Object.keys(payload).forEach(key => payload[key] == null && delete payload[key]);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+        let errorMsg = 'Error del servidor al enviar mensaje.';
+        try {
+            const errorData = await response.json();
+            errorMsg = errorData.message || errorMsg;
+        } catch(e) { /* Ignora error de parseo */ }
+        throw new Error(errorMsg);
+    }
+    return response; // Devuelve la respuesta completa para que chat-handlers la procese
+}
+
+/**
+ * --- NUEVO: Envía un mensaje usando la conexión de WhatsApp Web ---
+ * @param {string} contactId El ID del contacto (número de teléfono).
+ * @param {object} messageData Datos del mensaje { text, fileUrl, fileType, reply_to_wamid, tempId }
+ * @returns {Promise<Response>} La respuesta del fetch al endpoint /api/web/send.
+ */
+async function sendWebMessage(contactId, { text, fileUrl, fileType, reply_to_wamid, tempId }) {
+    const url = `${API_BASE_URL}/api/web/send`;
+    const payload = {
+        to: contactId,
+        text: text,
+        fileUrl: fileUrl,
+        fileType: fileType,
+        // Nota: El backend de /api/web/send necesitará adaptar reply_to_wamid al formato de Baileys si es necesario
+        // reply_to_wamid: reply_to_wamid, // Podrías enviarlo si tu backend lo maneja
+        tempId: tempId
+    };
+    // Limpia propiedades nulas o indefinidas
+    Object.keys(payload).forEach(key => payload[key] == null && delete payload[key]);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!response.ok) {
+         let errorMsg = 'Error del servidor al enviar por WhatsApp Web.';
+        try {
+            const errorData = await response.json();
+            errorMsg = errorData.message || errorMsg;
+        } catch(e) { /* Ignora */ }
+        throw new Error(errorMsg);
+    }
+    return response;
+}
+
+/**
+ * --- NUEVO: Sube un archivo a Google Cloud Storage usando URL firmada ---
+ * @param {File} file El archivo a subir.
+ * @param {function(number)} onProgress Callback para reportar progreso (0-100).
+ * @returns {Promise<string>} La URL pública del archivo subido.
+ */
+async function uploadFileToGCS(file, onProgress) {
+    try {
+        // 1. Obtener URL firmada del backend
+        const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileName: file.name,
+                contentType: file.type,
+                pathPrefix: 'chat_uploads' // Carpeta específica
+            })
+        });
+        if (!signedUrlResponse.ok) {
+            const errorData = await signedUrlResponse.json();
+            throw new Error(errorData.message || 'No se pudo preparar la subida del archivo.');
+        }
+        const { signedUrl, publicUrl } = await signedUrlResponse.json();
+
+        // 2. Subir a GCS usando XHR para monitorear progreso
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', signedUrl, true);
+            xhr.setRequestHeader('Content-Type', file.type);
+
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable && onProgress) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    onProgress(percentComplete);
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status >= 200 && xhr.status < 300) {
+                    resolve(publicUrl); // Resuelve con la URL pública
+                } else {
+                    reject(new Error(`Error al subir ${xhr.status}: ${xhr.statusText}`));
+                }
+            };
+
+            xhr.onerror = () => {
+                reject(new Error('Error de red durante la subida.'));
+            };
+
+            xhr.send(file);
+        });
+
+    } catch (error) {
+        console.error("Error en uploadFileToGCS:", error);
+        throw error; // Re-lanza para que la función que llama maneje el error
+    }
+}
+
+/**
+ * --- NUEVO: Envía una reacción a un mensaje ---
+ * @param {string} contactId ID del contacto.
+ * @param {string} messageDocId ID del documento del mensaje en Firestore.
+ * @param {string|null} reaction Emoji de la reacción o null para quitarla.
+ * @returns {Promise<Response>} La respuesta del fetch.
+ */
+async function reactToMessageViaAPI(contactId, messageDocId, reaction) {
+    const url = `${API_BASE_URL}/api/contacts/${contactId}/messages/${messageDocId}/react`;
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reaction: reaction }) // Envía el emoji o null
+    });
+    if (!response.ok) {
+        let errorMsg = 'Error al enviar reacción.';
+        try { const errorData = await response.json(); errorMsg = errorData.message || errorMsg; } catch(e) {}
+        throw new Error(errorMsg);
+    }
+    return response;
+}
+
+/**
+ * --- NUEVO: Envía una plantilla de mensaje ---
+ * @param {string} contactId ID del contacto.
+ * @param {object} templateObject El objeto completo de la plantilla.
+ * @returns {Promise<Response>} La respuesta del fetch.
+ */
+async function sendTemplateViaAPI(contactId, templateObject) {
+    const url = `${API_BASE_URL}/api/contacts/${contactId}/messages`;
+    const payload = { template: templateObject }; // El backend espera el objeto completo
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+         let errorMsg = 'Error al enviar plantilla.';
+        try { const errorData = await response.json(); errorMsg = errorData.message || errorMsg; } catch(e) {}
+        throw new Error(errorMsg);
+    }
+    return response;
+}
+
+/**
+ * --- NUEVO: Obtiene conteo de mensajes por Ad ID ---
+ * @param {string} startDate Fecha de inicio (YYYY-MM-DD).
+ * @param {string} endDate Fecha de fin (YYYY-MM-DD).
+ * @returns {Promise<object>} Objeto con { adId: count }.
+ */
+async function fetchMessagesByAdIdMetrics(startDate, endDate) {
+    try {
+        const url = `${API_BASE_URL}/api/metrics/messages-by-ad?startDate=${startDate}&endDate=${endDate}`;
+        const response = await fetch(url);
+        if (!response.ok) {
+            let errorMsg = `Error del servidor (${response.status})`;
+            try { const errorData = await response.json(); errorMsg = errorData.message || errorMsg; } catch (e) {}
+            throw new Error(errorMsg);
+        }
+        const data = await response.json();
+        if (data.success && typeof data.counts === 'object') {
+            return data.counts;
+        } else {
+            throw new Error(data.message || 'Respuesta inválida del servidor.');
+        }
+    } catch (error) {
+        console.error("Error fetching messages by Ad ID metrics:", error);
+        throw error;
+    }
+}
 /**
  * Obtiene los datos completos de un único pedido desde Firestore por su ID de documento.
  * @param {string} orderId - El ID del documento del pedido en la colección 'pedidos'.
@@ -453,47 +682,31 @@ async function fetchSingleOrder(orderId) {
         throw error; // Lanza el error para que la función que llama lo maneje
     }
 }
+// --- FIN MODIFICACIÓN ---
 
-/**
- * Obtiene el conteo de mensajes entrantes por Ad ID para un rango de fechas específico.
- * Llama al nuevo endpoint del backend.
- * @param {string} startDate Fecha de inicio en formato YYYY-MM-DD.
- * @param {string} endDate Fecha de fin en formato YYYY-MM-DD.
- * @returns {Promise<object>} Una promesa que resuelve con un objeto { adId1: count1, adId2: count2, ... }.
- */
-async function fetchMessagesByAdIdMetrics(startDate, endDate) {
-    try {
-        // Construye la URL con los parámetros de fecha
-        const url = `${API_BASE_URL}/api/metrics/messages-by-ad?startDate=${startDate}&endDate=${endDate}`;
-        const response = await fetch(url);
-
-        if (!response.ok) {
-            // Si la respuesta no es OK, intenta obtener el mensaje de error del cuerpo
-            let errorMessage = `Error del servidor (${response.status})`;
-            try {
-                const errorData = await response.json();
-                errorMessage = errorData.message || errorMessage;
-            } catch (jsonError) {
-                // Si el cuerpo no es JSON válido, usa el mensaje de estado
-                console.error("No se pudo parsear el error JSON:", jsonError);
-            }
-            throw new Error(errorMessage);
-        }
-
-        const data = await response.json();
-
-        // Verifica si la respuesta del backend fue exitosa y devuelve los conteos
-        if (data.success && typeof data.counts === 'object') {
-            return data.counts;
-        } else {
-            // Si el backend devolvió success: false o falta 'counts'
-            throw new Error(data.message || 'Respuesta inválida del servidor al obtener métricas por Ad ID.');
-        }
-    } catch (error) {
-        // Captura errores de red o errores lanzados explícitamente
-        console.error("Error fetching messages by Ad ID metrics:", error);
-        // Lanza el error para que la función que llama (en ui-manager.js) pueda manejarlo
-        throw error;
-    }
-}
-// --- FIN DE MODIFICACIÓN ---
+// --- Exportaciones ---
+// Asegúrate de exportar las nuevas funciones
+export {
+    listenForContactOrders,
+    fetchInitialContacts,
+    fetchMoreContacts,
+    searchContactsAPI,
+    listenForContactUpdates,
+    listenForQuickReplies,
+    listenForTags,
+    listenForAdResponses,
+    listenForAIAdPrompts,
+    listenForKnowledgeBase,
+    fetchTemplates,
+    fetchBotSettings,
+    fetchAwayMessageSettings,
+    fetchGlobalBotSettings,
+    fetchGoogleSheetSettings,
+    sendMessageViaAPI, // Modificada
+    sendWebMessage, // Nueva
+    uploadFileToGCS, // Nueva
+    reactToMessageViaAPI, // Nueva
+    sendTemplateViaAPI, // Nueva
+    fetchMessagesByAdIdMetrics, // Nueva
+    fetchSingleOrder // Nueva
+};

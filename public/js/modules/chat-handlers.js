@@ -1,5 +1,11 @@
 // --- START: Event Handlers for the Chat View ---
 
+// --- Importaciones (Asegúrate de que las rutas sean correctas) ---
+// Asumimos que estas funciones existen o se crearán en api-service.js
+import { searchContactsAPI, uploadAndSendFileViaAPI, sendMessageViaAPI, sendTemplateViaAPI, reactToMessageViaAPI, sendWebMessage } from './api-service.js';
+// Asumimos que hay una forma de obtener el estado de la conexión web
+import { getWebConnectionStatus } from './web-utils.js'; // Necesitarás crear este archivo/función
+
 // --- NUEVA LÓGICA DE BÚSQUEDA Y SCROLL ---
 
 // Variable y función "debounce" para no sobrecargar el servidor con búsquedas
@@ -24,7 +30,7 @@ function handleSearchInput(event) {
 
 // CORREGIDO: Ahora también se encarga de ocultar el mensaje de "Cargando..."
 function handleSearchContacts() {
-    const contactsToRender = state.contacts; 
+    const contactsToRender = state.contacts;
     const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
 
@@ -51,11 +57,11 @@ function setupChatListEventListeners() {
             fetchMoreContacts();
         }
     });
-    
+
     // Lógica de Drag & Drop para archivos en el pie de página del chat
     const chatFooter = document.querySelector('.chat-footer');
     const footerOverlay = document.getElementById('drag-drop-overlay-footer');
-    
+
     const searchInput = document.getElementById('search-contacts-input');
     const clearSearchBtn = document.getElementById('clear-search-btn');
 
@@ -63,7 +69,7 @@ function setupChatListEventListeners() {
         searchInput.addEventListener('input', handleSearchInput);
         clearSearchBtn.addEventListener('click', () => {
             searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input')); 
+            searchInput.dispatchEvent(new Event('input'));
             searchInput.focus();
         });
 
@@ -114,38 +120,48 @@ function setupChatListEventListeners() {
 }
 
 
-// --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
+// --- LÓGICA DE CHAT EXISTENTE (CON MODIFICACIONES PARA WEB/API) ---
 
-function renderChatWindow() { 
+function renderChatWindow() {
     if (state.activeView !== 'chats') return;
-    
+
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
 
-    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
-    chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    chatPanelEl.innerHTML = ChatWindowTemplate(contact);
 
-    const searchInput = document.getElementById('search-contacts-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', handleSearchInput);
+    const searchInputEl = document.getElementById('search-contacts-input');
+    if (searchInputEl) {
+        searchInputEl.addEventListener('input', handleSearchInput);
+        // Add clear button listener if it exists within the template
+        const clearBtn = document.getElementById('clear-search-btn');
+        if (clearBtn) {
+             clearBtn.addEventListener('click', () => {
+                searchInputEl.value = '';
+                searchInputEl.dispatchEvent(new Event('input'));
+                searchInputEl.focus();
+            });
+            clearBtn.classList.toggle('hidden', searchInputEl.value.length === 0);
+        }
     }
-    
-    if (contact) { 
+
+    if (contact) {
         const statusWrapper = document.getElementById('contact-status-wrapper');
         if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
         if (state.activeTab === 'chat') {
             renderMessages();
-            const messagesContainer = document.getElementById('messages-container'); 
+            const messagesContainer = document.getElementById('messages-container');
             if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
-            
+
             const messageForm = document.getElementById('message-form');
-            const messageInput = document.getElementById('message-input'); 
-            if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
-            if (messageInput) { 
-                messageInput.addEventListener('paste', handlePaste); 
+            const messageInput = document.getElementById('message-input');
+            if (messageForm) messageForm.addEventListener('submit', handleSendMessage); // Modificado para elegir método
+            if (messageInput) {
+                messageInput.addEventListener('paste', handlePaste);
                 messageInput.addEventListener('input', handleQuickReplyInput);
                 messageInput.addEventListener('keydown', handleMessageInputKeyDown);
-                
+
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
                     let newHeight = messageInput.scrollHeight;
@@ -155,16 +171,18 @@ function renderChatWindow() {
                     messageInput.style.height = newHeight + 'px';
                 });
 
-                messageInput.focus(); 
-            } 
-            
+                messageInput.focus();
+            }
+
         } else if (state.activeTab === 'notes') {
             renderNotes();
-            document.getElementById('note-form').addEventListener('submit', handleSaveNote);
+            const noteForm = document.getElementById('note-form');
+            if (noteForm) noteForm.addEventListener('submit', handleSaveNote);
         }
-        setupDragAndDropForChatArea(); // Llamada a la nueva función
-    } 
+        setupDragAndDropForChatArea();
+    }
 }
+
 
 /**
  * Configura los listeners de drag and drop para toda el área del chat.
@@ -174,7 +192,7 @@ function setupDragAndDropForChatArea() {
     const chatOverlay = document.getElementById('drag-drop-overlay-chat');
 
     if (!chatPanel || !chatOverlay) return;
-    
+
     let dragCounter = 0;
 
     const showOverlay = () => chatOverlay.classList.remove('hidden');
@@ -209,7 +227,7 @@ function setupDragAndDropForChatArea() {
         e.stopPropagation();
         dragCounter = 0;
         hideOverlay();
-        
+
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
             // Solo adjuntar si el input no está deshabilitado (sesión de chat activa)
@@ -221,14 +239,14 @@ function setupDragAndDropForChatArea() {
     });
 }
 
-async function handleSelectContact(contactId) { 
+async function handleSelectContact(contactId) {
     if (state.campaignMode) return;
-    
-    cancelStagedFile(); 
+
+    cancelStagedFile();
     cancelReply();
 
     // Desuscribirse de los listeners del contacto anterior
-    if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
+    if (unsubscribeMessagesListener) unsubscribeMessagesListener();
     if (unsubscribeNotesListener) unsubscribeNotesListener();
     if (unsubscribeOrdersListener) {
         unsubscribeOrdersListener();
@@ -240,18 +258,18 @@ async function handleSelectContact(contactId) {
     if (contactIdx > -1) {
         state.contacts[contactIdx].unreadCount = 0;
     }
-    
+
     // La actualización en la base de datos sigue siendo importante
-    db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err)); 
-    
-    state.selectedContactId = contactId; 
-    state.loadingMessages = true; 
+    db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err));
+
+    state.selectedContactId = contactId;
+    state.loadingMessages = true;
     state.activeTab = 'chat';
     state.isEditingNote = null;
-    
+
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
-    handleSearchContacts(); 
-    
+    handleSearchContacts();
+
     let isInitialMessageLoad = true;
     unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
         .onSnapshot((snapshot) => {
@@ -303,19 +321,24 @@ async function handleSelectContact(contactId) {
             state.messages = [];
             if (state.activeTab === 'chat') renderMessages();
         });
-    
+
     unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
-    
+
     renderChatWindow();
-    
+
     openContactDetails();
 }
 
+/**
+ * --- MODIFICADO: Maneja el envío de mensajes, eligiendo entre API o Web ---
+ * @param {Event} event El evento de envío del formulario.
+ */
 async function handleSendMessage(event) {
     event.preventDefault();
     const input = document.getElementById('message-input');
     let text = input.value.trim();
-    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    const contactId = state.selectedContactId; // Usa el ID del estado
+    const contact = state.contacts.find(c => c.id === contactId);
     if (!contact || state.isUploading) return;
 
     const fileToSend = state.stagedFile;
@@ -323,73 +346,120 @@ async function handleSendMessage(event) {
 
     if (!text && !fileToSend && !remoteFileToSend) return;
 
-    const isExpired = state.isSessionExpired;
-    const endpoint = isExpired ? 'queue-message' : 'messages';
-    
+    // --- Inicio: Lógica para elegir el método ---
+    let connectionMethod = 'api'; // Por defecto, usar la API oficial
+    try {
+        // Llama a una función (que deberás crear en otro módulo, ej: web-utils.js)
+        // para obtener el estado actual de la conexión web.
+        const webStatus = await getWebConnectionStatus(); // Ej: retorna { status: 'connected' | 'disconnected' | ... }
+        if (webStatus && webStatus.status === 'connected') {
+            connectionMethod = 'web';
+            console.log("Usando método de envío: WhatsApp Web");
+        } else {
+            console.log("Usando método de envío: WhatsApp API Oficial");
+        }
+    } catch (statusError) {
+        console.warn("No se pudo verificar el estado de WhatsApp Web, usando API Oficial por defecto.", statusError);
+        connectionMethod = 'api'; // Volver a API si hay error al verificar estado
+    }
+    // --- Fin: Lógica para elegir el método ---
+
+    const isApiMethod = connectionMethod === 'api';
+    const isExpired = state.isSessionExpired; // Solo relevante para la API oficial
+    // Determina si se debe encolar (solo para API y si expiró)
+    const shouldQueue = isApiMethod && isExpired;
+
+    // UI optimista: Muestra el mensaje como pendiente o encolado
     const tempId = `temp_${Date.now()}`;
     const pendingMessage = {
         docId: tempId,
-        from: 'me',
-        status: isExpired ? 'queued' : 'pending',
+        from: 'me', // Identificador para mensajes salientes en la UI
+        status: shouldQueue ? 'queued' : 'pending',
         timestamp: { seconds: Math.floor(Date.now() / 1000) },
-        text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
+        text: text || (fileToSend ? '📷 Adjunto' : (remoteFileToSend ? '📎 Archivo Rápido' : '📄 Adjunto')),
     };
+    if (remoteFileToSend) { // Añadir detalles del archivo remoto para la UI
+        pendingMessage.fileUrl = remoteFileToSend.url;
+        pendingMessage.fileType = remoteFileToSend.type;
+    }
+    if (state.replyingToMessage) { // Añadir contexto para la UI
+        pendingMessage.context = { id: state.replyingToMessage.docId }; // Usar docId para referencia interna
+    }
 
     state.messages.push(pendingMessage);
-    appendMessage(pendingMessage);
+    appendMessage(pendingMessage); // Añade visualmente a la lista
 
+    // Limpia input y archivo preparado
     input.value = '';
     input.style.height = 'auto';
-    cancelStagedFile();
+    cancelStagedFile(); // Limpia archivos locales y remotos preparados
 
     try {
+        // --- Lógica de envío ---
         if (fileToSend) {
-            const response = await uploadAndSendFile(fileToSend, text, isExpired);
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
+            // Si hay un archivo local, primero subirlo a GCS
+            const publicUrl = await uploadFileToGCS(fileToSend); // Necesitas crear esta función en api-service.js
+
+            // Luego, enviar usando el método elegido
+            if (isApiMethod) {
+                // Llama a la función de API (existente o modificada)
+                await sendMessageViaAPI(contactId, { text, fileUrl: publicUrl, fileType: fileToSend.type, reply_to_wamid: state.replyingToMessage?.id, shouldQueue });
+            } else {
+                // Llama a la nueva función para Web
+                await sendWebMessage(contactId, { text, fileUrl: publicUrl, fileType: fileToSend.type, reply_to_wamid: state.replyingToMessage?.id });
             }
         } else {
-            if (!isExpired) {
-                await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
-            }
-            const messageData = { text, tempId };
-            if (remoteFileToSend) {
-                messageData.fileUrl = remoteFileToSend.url;
-                messageData.fileType = remoteFileToSend.type;
-            }
-            if (state.replyingToMessage) {
-                messageData.reply_to_wamid = state.replyingToMessage.id;
-            }
-            const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(messageData)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
+            // Si no hay archivo local (puede ser texto solo o archivo remoto de QR)
+            const messageData = {
+                text: text,
+                fileUrl: remoteFileToSend?.url || null,
+                fileType: remoteFileToSend?.type || null,
+                reply_to_wamid: state.replyingToMessage?.id || null, // ID del mensaje original de WA
+                tempId: tempId // ID temporal para posible actualización si falla
+            };
+
+            if (isApiMethod) {
+                // Llama a la función de API (existente o modificada)
+                await sendMessageViaAPI(contactId, { ...messageData, shouldQueue });
+                // Resetear contador de no leídos solo si NO se encola
+                if (!shouldQueue) {
+                    await db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 });
+                }
+            } else {
+                // Llama a la nueva función para Web
+                await sendWebMessage(contactId, messageData);
+                // Resetear contador inmediatamente para Web
+                await db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 });
             }
         }
-        cancelReply();
+        cancelReply(); // Limpia el contexto de respuesta si el envío fue exitoso
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
-        showError(error.message);
+        showError(error.message || 'Error desconocido al enviar.'); // Muestra error al usuario
+
+        // Actualiza el mensaje temporal a 'failed' en la UI
         const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
         if (failedMessageIndex > -1) {
             state.messages[failedMessageIndex].status = 'failed';
+            // Vuelve a renderizar mensajes para mostrar el estado fallido
+            // Podrías optimizar esto para solo actualizar el mensaje específico
             renderMessages();
         }
-        if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
+        // Restaurar texto en el input si era solo texto y falló
+        if (text && !fileToSend && !remoteFileToSend) {
+            input.value = text;
+        }
+        // No limpiar el archivo preparado si falló el envío con archivo
     }
 }
+
 
 async function handleSaveNote(event) {
     event.preventDefault();
     const input = document.getElementById('note-input');
     const text = input.value.trim();
     if (!text || !state.selectedContactId) return;
-    
+
     input.disabled = true;
     try {
         const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
@@ -410,57 +480,83 @@ async function handleUpdateNote(noteId) {
 }
 
 async function handleDeleteNote(noteId) {
-    if (!window.confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
+    if (!confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
     try {
         const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes/${noteId}`, { method: 'DELETE' });
         if (!response.ok) throw new Error('No se pudo eliminar la nota.');
     } catch (error) { showError(error.message); }
 }
 
-async function uploadAndSendFile(file, textCaption, isExpired) { 
-    if (!file || !state.selectedContactId || state.isUploading) return;
+/**
+ * --- MODIFICADO: Sube archivo a GCS y luego envía usando el método activo ---
+ * @param {File} file El archivo a subir y enviar.
+ * @param {string} textCaption El texto que acompaña al archivo.
+ * @returns {Promise<Response>} La respuesta del fetch al endpoint de envío (API o Web).
+ */
+async function uploadAndSendFile(file, textCaption) {
+    if (!file || !state.selectedContactId || state.isUploading) {
+        throw new Error("No se puede enviar el archivo ahora.");
+    }
     const progressEl = document.getElementById('upload-progress');
     const submitButton = document.querySelector('#message-form button[type="submit"]');
-    state.isUploading = true;
-    progressEl.textContent = 'Subiendo 0%...';
-    progressEl.classList.remove('hidden');
-    if(submitButton) submitButton.disabled = true;
-    
-    const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
-    const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`;
-    
-    const fileRef = storage.ref(filePath);
-    const uploadTask = fileRef.put(file);
-    return new Promise((resolve, reject) => {
-        uploadTask.on('state_changed', 
-            (snapshot) => { const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; }, 
-            (error) => { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; reject(new Error("Falló la subida del archivo.")); }, 
-            async () => {
-                try {
-                    const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
-                    const messageData = { 
-                        fileUrl: downloadURL, 
-                        fileType: file.type,
-                        text: textCaption 
-                    };
-                    if (state.replyingToMessage) {
-                        messageData.reply_to_wamid = state.replyingToMessage.id;
-                    }
 
-                    const endpoint = isExpired ? 'queue-message' : 'messages';
-                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
-                    resolve(response);
-                } catch (error) { 
-                    reject(error); 
-                } finally { 
-                    state.isUploading = false; 
-                    progressEl.classList.add('hidden'); 
-                    if(submitButton) submitButton.disabled = false; 
-                }
+    state.isUploading = true;
+    if (progressEl) {
+        progressEl.textContent = 'Subiendo 0%...';
+        progressEl.classList.remove('hidden');
+    }
+    if (submitButton) submitButton.disabled = true;
+
+    try {
+        // --- 1. Subir a GCS (Usando la función que ya existe o crearás en api-service.js) ---
+        const publicUrl = await uploadFileToGCS(file, (progress) => {
+            if (progressEl) progressEl.textContent = `Subiendo ${Math.round(progress)}%...`;
+        });
+
+        // --- 2. Determinar método de envío ---
+        let connectionMethod = 'api';
+        try {
+            const webStatus = await getWebConnectionStatus();
+            if (webStatus && webStatus.status === 'connected') {
+                connectionMethod = 'web';
             }
-        );
-    });
+        } catch (statusError) {
+            console.warn("Error al verificar estado Web, usando API por defecto.", statusError);
+        }
+
+        // --- 3. Enviar usando el método determinado ---
+        const isApiMethod = connectionMethod === 'api';
+        const isExpired = state.isSessionExpired;
+        const shouldQueue = isApiMethod && isExpired;
+
+        const messageData = {
+            text: textCaption,
+            fileUrl: publicUrl,
+            fileType: file.type,
+            reply_to_wamid: state.replyingToMessage?.id || null, // ID del mensaje original
+        };
+
+        let response;
+        if (isApiMethod) {
+            // Llama a la función de API (existente o modificada)
+            response = await sendMessageViaAPI(state.selectedContactId, { ...messageData, shouldQueue });
+        } else {
+            // Llama a la nueva función para Web
+            response = await sendWebMessage(state.selectedContactId, messageData);
+        }
+
+        return response; // Devuelve la respuesta del fetch
+
+    } catch (error) {
+        // El manejo de errores ya está fuera de esta función en handleSendMessage
+        throw error; // Re-lanza el error para que handleSendMessage lo capture
+    } finally {
+        state.isUploading = false;
+        if (progressEl) progressEl.classList.add('hidden');
+        if (submitButton) submitButton.disabled = false;
+    }
 }
+
 
 function handleStatusChange(contactId, newStatusKey) {
     const id = contactId || state.selectedContactId;
@@ -477,26 +573,32 @@ function handleStatusChange(contactId, newStatusKey) {
     });
 }
 
-function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
+function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/') && !file.type.startsWith('application/pdf') ) { showError('Solo se pueden adjuntar imágenes, videos, audios y PDF.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
 
-function cancelStagedFile() { 
-    if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } 
-    state.stagedFile = null; 
+function cancelStagedFile() {
+    if (state.stagedFile && typeof URL.revokeObjectURL === 'function') {
+         // Check if revokeObjectURL exists before calling
+         try {
+            URL.revokeObjectURL(state.stagedFile); // Clean up object URL
+         } catch(e) { console.warn("Could not revoke object URL", e); }
+    }
+    state.stagedFile = null;
     state.stagedRemoteFile = null;
-    const fileInput = document.getElementById('file-input'); 
-    if(fileInput) fileInput.value = null; 
-    renderFilePreview(); 
+    const fileInput = document.getElementById('file-input');
+    if(fileInput) fileInput.value = null; // Reset file input
+    renderFilePreview();
 }
 
 function handleFileInputChange(event) { const file = event.target.files[0]; if (file) stageFile(file); }
 
 function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
 
-function setFilter(filter) { 
-    state.activeFilter = filter; 
-    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
-    document.getElementById(`filter-${filter}`).classList.add('active'); 
-    
+function setFilter(filter) {
+    state.activeFilter = filter;
+    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+    const filterBtn = document.getElementById(`filter-${filter}`);
+    if(filterBtn) filterBtn.classList.add('active');
+
     // Clear current contacts and trigger a new fetch from the server with the filter
     state.contacts = [];
     fetchInitialContacts();
@@ -504,17 +606,17 @@ function setFilter(filter) {
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
 
-function handleQuickReplyInput(event) { 
-    const input = event.target; 
-    const text = input.value; 
-    if (text.startsWith('/')) { 
-        state.quickReplyPickerOpen = true; 
+function handleQuickReplyInput(event) {
+    const input = event.target;
+    const text = input.value;
+    if (text.startsWith('/')) {
+        state.quickReplyPickerOpen = true;
         state.templatePickerOpen = false;
         state.emojiPickerOpen = false;
-        const searchTerm = text.substring(1); 
-        renderQuickReplyPicker(searchTerm); 
-    } else { 
-        state.quickReplyPickerOpen = false; 
+        const searchTerm = text.substring(1);
+        renderQuickReplyPicker(searchTerm);
+    } else {
+        state.quickReplyPickerOpen = false;
     }
     renderAllPickers();
 }
@@ -530,8 +632,8 @@ function selectQuickReply(replyId) {
         const event = new Event('input', { bubbles: true });
         input.dispatchEvent(event);
     }
-    
-    state.stagedFile = null; 
+
+    state.stagedFile = null;
     if (reply.fileUrl) {
         state.stagedRemoteFile = {
             url: reply.fileUrl,
@@ -551,6 +653,9 @@ function selectEmoji(emoji) {
     const input = document.getElementById('message-input');
     input.value += emoji;
     input.focus();
+    // Disparar evento input para actualizar altura si es necesario
+    const event = new Event('input', { bubbles: true });
+    input.dispatchEvent(event);
 }
 
 function handleStartReply(event, messageDocId) {
@@ -578,7 +683,7 @@ function toggleReactionMenu(event) {
     const popoverContainer = targetButton.closest('.reaction-popover-container');
     const popover = popoverContainer.querySelector('.reaction-popover');
     const messageBubble = targetButton.closest('.message-bubble');
-    
+
     if (!popoverContainer || !popover || !messageBubble) return;
 
     const wasActive = popoverContainer.classList.contains('active');
@@ -600,7 +705,7 @@ function toggleReactionMenu(event) {
         popoverContainer.classList.add('active');
         popover.classList.add('fixed');
         popover.style.transform = 'none';
-        
+
         const bubbleRect = messageBubble.getBoundingClientRect();
         const popoverHeight = popover.offsetHeight;
         const popoverWidth = popover.offsetWidth;
@@ -609,7 +714,7 @@ function toggleReactionMenu(event) {
         // Calcula el espacio disponible a cada lado.
         const spaceRight = window.innerWidth - bubbleRect.right - margin;
         const spaceLeft = bubbleRect.left - margin;
-        
+
         let top = bubbleRect.top + (bubbleRect.height / 2) - (popoverHeight / 2);
         let left;
 
@@ -656,7 +761,7 @@ document.addEventListener('click', (event) => {
     if (state.activeView !== 'chats') return;
 
     const openPopover = document.querySelector('.reaction-popover.fixed');
-    
+
     if (openPopover && !openPopover.closest('.reaction-popover-container').contains(event.target)) {
         const container = openPopover.closest('.reaction-popover-container');
         openPopover.classList.remove('fixed');
@@ -668,6 +773,12 @@ document.addEventListener('click', (event) => {
     }
 });
 
+/**
+ * --- MODIFICADO: Llama a la función de API para reacciones ---
+ * @param {Event} event Evento del clic.
+ * @param {string} messageDocId ID del documento del mensaje en Firestore.
+ * @param {string} emoji El emoji seleccionado o null para quitar.
+ */
 async function handleSelectReaction(event, messageDocId, emoji) {
     event.stopPropagation();
     if (!state.selectedContactId) return;
@@ -675,22 +786,19 @@ async function handleSelectReaction(event, messageDocId, emoji) {
     const message = state.messages.find(m => m.docId === messageDocId);
     if (!message) return;
 
+    // Determina la nueva reacción (si es la misma, se quita -> null)
     const newReaction = message.reaction === emoji ? null : emoji;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages/${messageDocId}/react`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reaction: newReaction })
-        });
-        if (!response.ok) {
-            throw new Error('No se pudo guardar la reacción.');
-        }
+        // Llama a la función en api-service.js (necesitas crearla)
+        await reactToMessageViaAPI(state.selectedContactId, messageDocId, newReaction);
+        // La UI se actualizará automáticamente por el listener de mensajes
     } catch (error) {
         console.error("Error al reaccionar:", error);
-        showError(error.message);
+        showError(error.message || "No se pudo guardar la reacción.");
     }
 }
+
 
 window.toggleReactionMenu = toggleReactionMenu;
 window.handleSelectReaction = handleSelectReaction;
@@ -759,17 +867,40 @@ function handleMessageInputKeyDown(e) {
                 }
             }
         } else {
-            document.getElementById('message-form').requestSubmit();
+            // Trigger form submission
+            const messageForm = document.getElementById('message-form');
+            if (messageForm) {
+                // Create a temporary submit button if none exists, click it, then remove it
+                let tempSubmit = messageForm.querySelector('button[type="submit"]');
+                let addedTempSubmit = false;
+                if (!tempSubmit) {
+                    tempSubmit = document.createElement('button');
+                    tempSubmit.type = 'submit';
+                    tempSubmit.style.display = 'none';
+                    messageForm.appendChild(tempSubmit);
+                    addedTempSubmit = true;
+                }
+                tempSubmit.click(); // Click the actual or temporary submit button
+                if (addedTempSubmit) {
+                    messageForm.removeChild(tempSubmit);
+                }
+            }
         }
         return;
     }
-    
+
     if (e.key === 'Escape') {
         if (isPickerOpen) {
             e.preventDefault();
             state.quickReplyPickerOpen = false;
             state.templatePickerOpen = false;
             renderAllPickers();
+        } else if (state.replyingToMessage) {
+            e.preventDefault();
+            cancelReply();
+        } else if (state.stagedFile || state.stagedRemoteFile) {
+             e.preventDefault();
+             cancelStagedFile();
         }
     }
 }
@@ -817,14 +948,14 @@ function renderQuickReplyPicker(searchTerm = '') {
     if (filteredReplies.length > 0) {
         picker.innerHTML = filteredReplies.map(reply => `
             <div class="picker-item" data-reply-id="${reply.id}" onclick="selectQuickReply('${reply.id}')">
-                <strong>/${reply.shortcut}</strong> - <span class="text-gray-500">${(reply.message || '').substring(0, 50)}...</span>
+                <strong>/${reply.shortcut}</strong> - <span class="text-gray-500">${(reply.message || '').substring(0, 50)}...</span> ${reply.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-1"></i>': ''}
             </div>
         `).join('');
     } else {
         picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay respuestas rápidas que coincidan.</div>`;
     }
      picker.innerHTML += `<div class="picker-add-btn" onclick="navigateTo('respuestas-rapidas')"><i class="fas fa-plus-circle mr-2"></i>Añadir nueva respuesta</div>`;
-    
+
     updatePickerSelection();
 }
 
@@ -844,6 +975,7 @@ function renderTemplatePicker() {
                         <span class="font-semibold">${template.name}</span>
                         <span class="template-category">${template.category}</span>
                     </div>
+                     ${template.components.find(c=>c.type === 'BODY')?.text ? `<p class="text-xs text-gray-500 mt-1 truncate">${template.components.find(c=>c.type === 'BODY').text}</p>` : ''}
                 </div>
             `;
         }).join('');
@@ -856,11 +988,13 @@ function renderTemplatePicker() {
 
 function renderEmojiPicker() {
     const picker = document.getElementById('emoji-picker');
-    if (!picker) return;
+    if (!picker || picker.innerHTML.includes('emoji-category')) return; // Evita re-renderizado innecesario
 
     const emojis = {
-        'Smileys & People': ['😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '😊', '🤔', '😢'],
-        'Objects': ['💼', '💻', '📱', '💰', '📦', '📄', '📅', '⏰'],
+        'Frecuentes': ['👍', '❤️', '😂', '🎉', '🙏', '😊', '✅', '✨', '👀', '🤔'],
+        'Caritas': ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😭', '😍', '🥰', '😘', '🥳', '😎', '😢', '🥺'],
+        'Gestos': ['👋', '👌', '✌️', '🤞', '🤟', '🤘', '🤙', '👈', '👉', '👆', '🖕', '👇', '☝️', '🤝', '🙌'],
+        'Objetos': ['💼', '💻', '📱', '💰', '📦', '📄', '📅', '⏰', '✏️', '📌', '📎', '⚙️', '💡'],
     };
 
     let pickerHTML = '<div class="picker-content">';
@@ -872,29 +1006,20 @@ function renderEmojiPicker() {
     picker.innerHTML = pickerHTML;
 }
 
+/**
+ * --- MODIFICADO: Llama a la función de API para enviar plantillas ---
+ * @param {object} templateObject El objeto completo de la plantilla.
+ */
 async function handleSendTemplate(templateObject) {
     if (!state.selectedContactId) return;
 
-    const templateData = {
-        template: templateObject
-    };
-
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(templateData)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
-        }
-        
-        toggleTemplatePicker();
+        // Llama a la función en api-service.js (necesitas crearla)
+        await sendTemplateViaAPI(state.selectedContactId, templateObject);
+        toggleTemplatePicker(); // Cierra el selector
     } catch (error) {
         console.error("Error al enviar la plantilla:", error);
-        showError(error.message);
+        showError(error.message || 'Error del servidor al enviar plantilla.');
     }
 }
 // --- END: Picker Management ---
@@ -926,13 +1051,21 @@ async function openConversationPreview(event, contactId) {
     };
 
     const modalContainer = document.getElementById('conversation-preview-modal-container');
+    if(!modalContainer) {
+        console.error("Error: Container 'conversation-preview-modal-container' not found.");
+        return;
+    }
     modalContainer.innerHTML = ConversationPreviewModalTemplate(contact);
     document.body.classList.add('modal-open');
 
     const messagesContainer = document.getElementById('preview-messages-container');
-    messagesContainer.addEventListener('scroll', handlePreviewScroll);
-
-    await loadMorePreviewMessages();
+    if (messagesContainer) {
+        messagesContainer.addEventListener('scroll', handlePreviewScroll);
+        await loadMorePreviewMessages();
+    } else {
+         console.error("Error: Container 'preview-messages-container' not found in modal template.");
+         closeConversationPreviewModal(); // Close if template failed
+    }
 }
 
 async function loadMorePreviewMessages() {
@@ -942,75 +1075,96 @@ async function loadMorePreviewMessages() {
 
     const spinner = document.getElementById('preview-loading-spinner');
     if (spinner) spinner.style.display = 'flex';
-    
+
     try {
         // La URL del endpoint que crearemos más adelante
         let url = `${API_BASE_URL}/api/contacts/${previewState.contactId}/messages-paginated?limit=30`;
         if (previewState.lastMessageTimestamp) {
-            // Pide mensajes *anteriores* al último que ya tenemos
+            // Pide mensajes *anteriores* al último que ya tenemos (timestamp en segundos)
             url += `&before=${previewState.lastMessageTimestamp}`;
         }
-        
+
         const response = await fetch(url);
         if (!response.ok) throw new Error('No se pudieron cargar los mensajes.');
-        
+
         const data = await response.json();
 
         if (spinner) spinner.style.display = 'none';
 
         if (data.messages.length > 0) {
-            // CORRECCIÓN: Convertir timestamps de la API al formato que espera la plantilla
+            // Convertir timestamps de la API al formato {seconds: ..., nanoseconds: ...}
             const processedMessages = data.messages.map(msg => {
-                if (msg.timestamp && typeof msg.timestamp._seconds === 'number') {
-                    return { ...msg, timestamp: { seconds: msg.timestamp._seconds, nanoseconds: msg.timestamp._nanoseconds } };
+                if (msg.timestamp && typeof msg.timestamp === 'object' && typeof msg.timestamp._seconds === 'number') {
+                    // Convertir de {_seconds, _nanoseconds} a {seconds, nanoseconds}
+                     return { ...msg, timestamp: { seconds: msg.timestamp._seconds, nanoseconds: msg.timestamp._nanoseconds } };
+                } else if (msg.timestamp && typeof msg.timestamp.toDate === 'function'){
+                    // Si ya es un Timestamp de Firestore (del listener), convertirlo
+                     const date = msg.timestamp.toDate();
+                     return { ...msg, timestamp: { seconds: Math.floor(date.getTime() / 1000), nanoseconds: (date.getTime() % 1000) * 1e6 } };
+                } else if (typeof msg.timestamp === 'string') {
+                    // Si es un string (ISO 8601), convertirlo
+                    const date = new Date(msg.timestamp);
+                     return { ...msg, timestamp: { seconds: Math.floor(date.getTime() / 1000), nanoseconds: (date.getTime() % 1000) * 1e6 } };
                 }
+                // Si no se puede convertir, dejar como está (puede causar error en MessageBubbleTemplate)
+                console.warn("Timestamp in unexpected format:", msg.timestamp);
                 return msg;
             });
+
 
             // La API devuelve [nuevo..viejo], lo invertimos para tener [viejo..nuevo]
             const chronologicalMessages = processedMessages.reverse();
 
-            // El `state.selectedContactId` se usa globalmente en MessageBubbleTemplate, 
-            // así que lo seteamos temporalmente para que renderice correctamente
+            // Guardar ID original antes de cambiarlo temporalmente
             const originalSelectedId = state.selectedContactId;
-            state.selectedContactId = previewState.contactId;
+            state.selectedContactId = previewState.contactId; // Set temporal para MessageBubbleTemplate
 
+            // Generar HTML para los nuevos mensajes
             const newMessagesHtml = chronologicalMessages.map(MessageBubbleTemplate).join('');
-            
-            state.selectedContactId = originalSelectedId; // Lo restauramos
+
+            state.selectedContactId = originalSelectedId; // Restaurar ID original
 
             const contentDiv = document.getElementById('preview-messages-content');
             const container = document.getElementById('preview-messages-container');
             const isFirstLoad = previewState.messages.length === 0;
-            
+
             // Guardamos la altura del scroll antes de añadir contenido nuevo
             const oldScrollHeight = container.scrollHeight;
-            
+            const oldScrollTop = container.scrollTop; // Guardar posición actual
+
             if (isFirstLoad) {
                 contentDiv.innerHTML = newMessagesHtml;
             } else {
                 contentDiv.insertAdjacentHTML('afterbegin', newMessagesHtml);
             }
 
+            // Añadir mensajes al inicio del array local
             previewState.messages.unshift(...chronologicalMessages);
-            
+
             // El timestamp para la siguiente página es el del mensaje MÁS ANTIGUO que acabamos de recibir
             const oldestNewMsg = chronologicalMessages[0];
-            previewState.lastMessageTimestamp = oldestNewMsg.timestamp.seconds;
+            if (oldestNewMsg && oldestNewMsg.timestamp) {
+                previewState.lastMessageTimestamp = oldestNewMsg.timestamp.seconds;
+            } else {
+                 console.warn("Oldest message has no timestamp, stopping pagination.");
+                 previewState.hasMore = false; // Detener si falta timestamp
+            }
+
 
             if (isFirstLoad) {
-                // Si es la primera carga, hacemos scroll hasta el final para ver los mensajes más recientes
+                // Si es la primera carga, hacemos scroll hasta el final
                 container.scrollTop = container.scrollHeight;
             } else {
-                // Si no, mantenemos la posición del scroll relativa al contenido que había antes
-                container.scrollTop = container.scrollHeight - oldScrollHeight;
+                // Si no, mantenemos la posición relativa al contenido anterior
+                container.scrollTop = oldScrollTop + (container.scrollHeight - oldScrollHeight);
             }
         }
 
+        // Si la API devuelve menos mensajes que el límite, asumimos que no hay más
         if (data.messages.length < 30) {
             previewState.hasMore = false;
             const contentDiv = document.getElementById('preview-messages-content');
-            if (contentDiv) {
+            if (contentDiv && previewState.messages.length > 0) { // Solo añadir si ya hay mensajes
                 contentDiv.insertAdjacentHTML('afterbegin', `<div class="date-separator">Inicio de la conversación</div>`);
             }
         }
@@ -1018,7 +1172,7 @@ async function loadMorePreviewMessages() {
     } catch (error) {
         console.error("Error cargando mensajes de previsualización:", error);
         const contentDiv = document.getElementById('preview-messages-content');
-        if (contentDiv && previewState.messages.length === 0) {
+        if (contentDiv && previewState.messages.length === 0) { // Mostrar error solo si está vacío
             if(spinner) spinner.style.display = 'none';
             contentDiv.innerHTML = `<p class="p-4 text-red-500 text-center">${error.message}</p>`;
         }
@@ -1030,10 +1184,84 @@ async function loadMorePreviewMessages() {
 
 function handlePreviewScroll() {
     const container = document.getElementById('preview-messages-container');
-    // Cargar más cuando el usuario llega a la parte superior del scroll
-    if (container.scrollTop === 0 && previewState.hasMore && !previewState.isLoading) {
+    if (!container) return;
+    // Cargar más cuando el usuario llega cerca de la parte superior (ej: 50px)
+    if (container.scrollTop < 50 && previewState.hasMore && !previewState.isLoading) {
         loadMorePreviewMessages();
     }
 }
 // --- END: Conversation Preview Logic ---
 
+// --- Helper: Función para subir archivo a GCS (debe estar en api-service.js) ---
+/**
+ * Sube un archivo a Google Cloud Storage usando una URL firmada.
+ * @param {File} file El archivo a subir.
+ * @param {function(number)} onProgress Callback para reportar el progreso (0-100).
+ * @returns {Promise<string>} La URL pública del archivo subido.
+ */
+async function uploadFileToGCS(file, onProgress) {
+    try {
+        // 1. Obtener URL firmada del backend
+        const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                fileName: file.name,
+                contentType: file.type,
+                pathPrefix: 'chat_uploads' // Carpeta para archivos de chat
+            })
+        });
+        if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
+        const { signedUrl, publicUrl } = await signedUrlResponse.json();
+
+        // 2. Subir a GCS usando XHR para monitorear progreso
+        return new Promise((resolve, reject) => {
+            const xhr = new XMLHttpRequest();
+            xhr.open('PUT', signedUrl, true);
+            xhr.setRequestHeader('Content-Type', file.type);
+
+            xhr.upload.onprogress = (event) => {
+                if (event.lengthComputable) {
+                    const percentComplete = (event.loaded / event.total) * 100;
+                    if (onProgress) onProgress(percentComplete);
+                }
+            };
+
+            xhr.onload = () => {
+                if (xhr.status === 200 || xhr.status === 201) {
+                    resolve(publicUrl); // Resuelve con la URL pública
+                } else {
+                    reject(new Error(`Error al subir ${xhr.status}: ${xhr.statusText}`));
+                }
+            };
+
+            xhr.onerror = () => {
+                reject(new Error('Error de red durante la subida.'));
+            };
+
+            xhr.send(file);
+        });
+
+    } catch (error) {
+        console.error("Error en uploadFileToGCS:", error);
+        throw error; // Re-lanza para que la función que llama maneje el error
+    }
+}
+
+// --- Necesitarás crear este archivo y función ---
+// Ejemplo de contenido para public/js/modules/web-utils.js
+/*
+export async function getWebConnectionStatus() {
+    try {
+        const response = await fetch('/api/web/status'); // Asume ruta relativa
+        if (!response.ok) {
+            console.warn("Could not fetch web status, assuming disconnected.");
+            return { status: 'disconnected' };
+        }
+        return await response.json(); // { status: 'connected' | 'disconnected' | 'requires_scan' | 'connecting' }
+    } catch (error) {
+        console.error("Network error fetching web status:", error);
+        return { status: 'disconnected' }; // Assume disconnected on network error
+    }
+}
+*/
