@@ -11,33 +11,33 @@ function handleSelectContactFromPipeline(contactId) {
 }
 
 // --- Contact Details & General Actions ---
-async function handleUpdateContact(event) { 
-    event.preventDefault(); 
+async function handleUpdateContact(event) {
+    event.preventDefault();
     const id = document.getElementById('edit-contact-id').value;
-    const name = document.getElementById('edit-contact-name').value.trim(); 
-    const nickname = document.getElementById('edit-contact-nickname').value.trim(); 
-    const email = document.getElementById('edit-contact-email').value.trim(); 
-    if (!name) { showError("El nombre no puede estar vacío."); return; } 
-    
+    const name = document.getElementById('edit-contact-name').value.trim();
+    const nickname = document.getElementById('edit-contact-nickname').value.trim();
+    const email = document.getElementById('edit-contact-email').value.trim();
+    if (!name) { showError("El nombre no puede estar vacío."); return; }
+
     const contactId = id || state.selectedContactId;
     if (!contactId) { showError("No se ha seleccionado un contacto."); return; }
 
-    const button = event.target.querySelector('button[type="submit"]'); 
-    button.disabled = true; 
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
-    try { 
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, nickname, email }) }); 
-        if (!response.ok) { 
-            const errorData = await response.json(); 
-            throw new Error(errorData.message || 'Error al actualizar'); 
-        } 
-        closeEditContactModal(); 
-    } catch (error) { 
-        showError(error.message); 
-    } finally { 
-        button.disabled = false; 
-        button.textContent = 'Guardar'; 
-    } 
+    const button = event.target.querySelector('button[type="submit"]');
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, nickname, email }) });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al actualizar');
+        }
+        closeEditContactModal();
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Guardar';
+    }
 }
 
 async function handleDeleteContact(contactId) {
@@ -47,24 +47,24 @@ async function handleDeleteContact(contactId) {
 }
 
 // --- IA & Conversion Actions ---
-async function handleGenerateReply() { 
-    if (!state.selectedContactId) return; 
-    const button = document.getElementById('generate-reply-btn'); 
-    button.disabled = true; 
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>'; 
-    try { 
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/generate-reply`, { method: 'POST' }); 
+async function handleGenerateReply() {
+    if (!state.selectedContactId) return;
+    const button = document.getElementById('generate-reply-btn');
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/generate-reply`, { method: 'POST' });
         const result = await response.json();
-        if (!response.ok) { 
-            throw new Error(result.message || 'Error al generar respuesta.'); 
+        if (!response.ok) {
+            throw new Error(result.message || 'Error al generar respuesta.');
         }
         document.getElementById('message-input').value = result.suggestion;
-    } catch (error) { 
-        showError(error.message); 
-    } finally { 
-        button.disabled = false; 
-        button.innerHTML = '<i class="fas fa-magic"></i>'; 
-    } 
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.innerHTML = '<i class="fas fa-magic"></i>';
+    }
 }
 
 async function handleMarkAsPurchase() {
@@ -90,7 +90,7 @@ async function handleMarkAsPurchase() {
 
 async function handleMarkAsRegistration() {
     if (!state.selectedContactId) return;
-    
+
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
     if (contact && contact.registrationStatus === 'completed') {
         showError("Este pedido ya ha sido registrado.");
@@ -102,7 +102,7 @@ async function handleMarkAsRegistration() {
         const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/mark-as-registration`, { method: 'POST' });
         const result = await response.json();
         if (!response.ok) throw new Error(result.message);
-        showError(result.message); 
+        showError(result.message);
     } catch (error) {
         showError(error.message);
     }
@@ -127,12 +127,12 @@ async function handleSaveOrder(event) {
     const form = document.getElementById('new-order-form');
     const saveButton = document.getElementById('order-save-btn');
     const errorMessageEl = document.getElementById('order-error-message');
-    
+
     if (!state.selectedContactId) {
         showError("No se ha seleccionado un contacto.");
         return;
     }
-    
+
     // --- 1. Collect form data ---
     let productoFinal = document.getElementById('order-product-select').value;
     if (productoFinal === 'Otro') {
@@ -178,7 +178,7 @@ async function handleSaveOrder(event) {
         }
 
         saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
-        
+
         // These managers are global in ui-manager.js
         const finalOrderPhotoUrls = await uploadPhotos(orderPhotosManager, 'pedidos');
         const finalPromoPhotoUrls = await uploadPhotos(promoPhotosManager, 'promociones');
@@ -201,8 +201,8 @@ async function handleSaveOrder(event) {
 
         // --- 5. Handle success ---
         closeNewOrderModal();
-        showError(`Pedido ${result.orderNumber} registrado con éxito.`, 'success'); 
-        
+        showError(`Pedido ${result.orderNumber} registrado con éxito.`, 'success');
+
     } catch (error) {
         console.error("Error al guardar el pedido:", error);
         errorMessageEl.textContent = error.message;
@@ -251,7 +251,7 @@ async function handleUpdateExistingOrder(event, orderId) {
                     });
                     if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida de archivo.');
                     const { signedUrl, publicUrl } = await signedUrlResponse.json();
-                    
+
                     await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': photo.file.type }, body: photo.file });
                     return publicUrl;
                 }
@@ -261,7 +261,7 @@ async function handleUpdateExistingOrder(event, orderId) {
         }
 
         saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
-        
+
         updateData.fotoUrls = await uploadPhotos(editOrderPhotosManager, 'pedidos');
         updateData.fotoPromocionUrls = await uploadPhotos(editPromoPhotosManager, 'promociones');
 
@@ -278,8 +278,8 @@ async function handleUpdateExistingOrder(event, orderId) {
         }
 
         closeOrderEditModal();
-        showError('Pedido actualizado con éxito.', 'success'); 
-        
+        showError('Pedido actualizado con éxito.', 'success');
+
     } catch (error) {
         console.error("Error al actualizar el pedido:", error);
         errorMessageEl.textContent = error.message;
@@ -298,7 +298,7 @@ async function handleSendCampaign() {
 
     const selectedTagKey = tagSelect.value;
     const templateString = templateSelect.value;
-    
+
     if (!templateString) { showError("Por favor, selecciona una plantilla para enviar."); return; }
 
     let recipients = [];
@@ -307,7 +307,7 @@ async function handleSendCampaign() {
     } else {
         recipients = state.contacts.filter(c => c.status === selectedTagKey);
     }
-    
+
     if (recipients.length === 0) { showError("No hay contactos en la etiqueta seleccionada para enviar la campaña."); return; }
 
     const contactIds = recipients.map(c => c.id);
@@ -327,7 +327,7 @@ async function handleSendCampaign() {
         if (!response.ok || !result.success) { throw new Error(result.message || "Ocurrió un error en el servidor."); }
 
         alert(`Campaña enviada.\n\nÉxitos: ${result.results.successful.length}\nFallos: ${result.results.failed.length}`);
-        
+
     } catch (error) {
         console.error("Error al enviar la campaña:", error);
         showError(error.message);
@@ -360,7 +360,7 @@ async function handleSendCampaignWithImage() {
     } else {
         recipients = state.contacts.filter(c => c.status === selectedTagKey);
     }
-    
+
     if (recipients.length === 0 && !phoneNumber) {
         showError("No hay contactos en la etiqueta seleccionada y no se especificó un número de teléfono.");
         return;
@@ -374,7 +374,7 @@ async function handleSendCampaignWithImage() {
     try {
         const payload = {
             contactIds,
-            templateObject, 
+            templateObject,
             imageUrl,
             phoneNumber
         };
@@ -389,7 +389,7 @@ async function handleSendCampaignWithImage() {
         if (!response.ok || !result.success) { throw new Error(result.message || "Ocurrió un error en el servidor."); }
 
         alert(`Campaña con imagen enviada.\n\nÉxitos: ${result.results.successful.length}\nFallos: ${result.results.failed.length}`);
-        
+
     } catch (error) {
         console.error("Error al enviar la campaña con imagen:", error);
         showError(error.message);
@@ -418,7 +418,7 @@ async function handleSaveQuickReply(event) {
         const file = fileInput.files[0];
         try {
             showError('Subiendo archivo...', 'info');
-            
+
             // 1. Obtener URL firmada del backend
             const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
                 method: 'POST',
@@ -431,18 +431,18 @@ async function handleSaveQuickReply(event) {
             });
             if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
             const { signedUrl, publicUrl } = await signedUrlResponse.json();
-            
+
             // 2. Subir el archivo a la URL firmada
             await fetch(signedUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': file.type },
                 body: file
             });
-            
+
             // 3. Usar la URL pública para guardar en Firestore
             fileUrl = publicUrl;
             fileType = file.type;
-            
+
             hideError();
         } catch (error) {
             console.error("Error al subir archivo para Quick Reply:", error);
@@ -480,7 +480,7 @@ async function handleSaveQuickReply(event) {
 
 async function handleDeleteQuickReply(replyId) {
     if (!window.confirm('¿Estás seguro de que quieres eliminar esta respuesta rápida?')) return;
-    
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/quick-replies/${replyId}`, { method: 'DELETE' });
         if (!response.ok) {
@@ -494,10 +494,13 @@ async function handleDeleteQuickReply(replyId) {
 }
 
 async function handleSaveAdResponse(event) {
-    event.preventDefault(); // <-- AÑADIDO: Previene la recarga de la página
+    event.preventDefault(); // Previene la recarga de la página
     const id = document.getElementById('ar-doc-id').value;
     const adName = document.getElementById('ar-name').value.trim();
-    const adId = document.getElementById('ar-ad-id').value.trim();
+    // --- INICIO MODIFICACIÓN: Leer IDs separados por comas ---
+    const adIdsInput = document.getElementById('ar-ad-id').value.trim();
+    const adIds = adIdsInput.split(',').map(id => id.trim()).filter(id => id); // Crea un array de IDs limpios
+    // --- FIN MODIFICACIÓN ---
     const message = document.getElementById('ar-message').value.trim();
     const fileUrlInput = document.getElementById('ar-file-url');
     let fileUrl = fileUrlInput.value.trim();
@@ -505,57 +508,42 @@ async function handleSaveAdResponse(event) {
     let fileType = fileTypeInput.value.trim();
     const fileInput = document.getElementById('ar-file-input');
 
-    // --- INICIO DE LA SOLUCIÓN: Lógica de subida de archivo ---
+    // Lógica de subida de archivo (sin cambios respecto a la versión anterior)
     if (fileInput.files[0]) {
         const file = fileInput.files[0];
         try {
-            // Muestra un estado de carga al usuario
             showError('Subiendo archivo...', 'info');
-            
-            // 1. Obtener URL firmada del backend
             const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     fileName: file.name,
                     contentType: file.type,
-                    pathPrefix: 'ad_responses' // Especificar la carpeta
+                    pathPrefix: 'ad_responses'
                 })
             });
-
-            if (!signedUrlResponse.ok) {
-                throw new Error('No se pudo preparar la subida del archivo.');
-            }
-
+            if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
             const { signedUrl, publicUrl } = await signedUrlResponse.json();
-
-            // 2. Subir el archivo directamente a Google Cloud Storage usando la URL firmada
-            await fetch(signedUrl, {
-                method: 'PUT',
-                headers: { 'Content-Type': file.type },
-                body: file
-            });
-
-            // 3. Usar la URL pública para guardar en Firestore
+            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
             fileUrl = publicUrl;
             fileType = file.type;
-            
             hideError();
         } catch (error) {
             console.error("Error al subir archivo para Ad Response:", error);
             showError("Error al subir el archivo. Inténtalo de nuevo.");
-            return; // Detiene la ejecución si la subida falla
+            return;
         }
     }
-    // --- FIN DE LA SOLUCIÓN ---
 
-
-    if (!adName || !adId || (!message && !fileUrl)) {
-        showError("Nombre, ID de anuncio y un mensaje o archivo son obligatorios.");
+    // --- INICIO MODIFICACIÓN: Validación y preparación de datos ---
+    if (!adName || adIds.length === 0 || (!message && !fileUrl)) { // Validar que haya al menos un ID
+        showError("Nombre, al menos un ID de anuncio y un mensaje o archivo son obligatorios.");
         return;
     }
+    // Enviar 'adIds' como array al backend
+    const data = { adName, adIds, message, fileUrl, fileType };
+    // --- FIN MODIFICACIÓN ---
 
-    const data = { adName, adId, message, fileUrl, fileType };
     const url = id ? `${API_BASE_URL}/api/ad-responses/${id}` : `${API_BASE_URL}/api/ad-responses`;
     const method = id ? 'PUT' : 'POST';
 
@@ -575,6 +563,7 @@ async function handleSaveAdResponse(event) {
         showError(error.message);
     }
 }
+
 
 async function handleDeleteAdResponse(id) {
     if (!window.confirm('¿Estás seguro de que quieres eliminar este mensaje de anuncio?')) return;
@@ -605,7 +594,7 @@ async function handleSaveKnowledgeBaseEntry(event) {
         const file = fileInput.files[0];
         try {
             showError('Subiendo archivo...', 'info');
-            
+
             const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -617,16 +606,16 @@ async function handleSaveKnowledgeBaseEntry(event) {
             });
             if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
             const { signedUrl, publicUrl } = await signedUrlResponse.json();
-            
+
             await fetch(signedUrl, {
                 method: 'PUT',
                 headers: { 'Content-Type': file.type },
                 body: file
             });
-            
+
             fileUrl = publicUrl;
             fileType = file.type;
-            
+
             hideError();
         } catch (error) {
             console.error("Error al subir archivo para Knowledge Base:", error);
@@ -723,7 +712,7 @@ async function handleBotToggle(contactId, isActive) {
     if (contactIndex > -1) {
         originalState = state.contacts[contactIndex].botActive;
         state.contacts[contactIndex].botActive = isActive;
-        
+
         // Si el chat de este contacto está abierto, vuelve a dibujarlo para mostrar el cambio.
         if(state.selectedContactId === contactId) {
             renderChatWindow();
@@ -746,7 +735,7 @@ async function handleBotToggle(contactId, isActive) {
     } catch (error) {
         console.error("Error al cambiar el estado del bot:", error);
         showError(error.message);
-        
+
         // --- 3. Revertir la UI en caso de fallo ---
         if (contactIndex > -1 && originalState !== null) {
             state.contacts[contactIndex].botActive = originalState;
@@ -840,13 +829,13 @@ window.openOrderEditModal = openOrderEditModal;
  */
 async function handleOrderStatusChange(orderId, newStatus, selectElement) {
     if (!orderId || !newStatus) return;
-    
+
     const orderIndex = state.selectedContactOrders.findIndex(o => o.id === orderId);
     if (orderIndex === -1) return;
     const originalStatus = state.selectedContactOrders[orderIndex].estatus;
 
     // Actualización optimista del color
-    const newTag = state.tags.find(t => t.key === newStatus);
+    const newTag = state.orderStatuses.find(t => t.key === newStatus); // Use orderStatuses from state.js
     if (newTag) {
         selectElement.style.backgroundColor = `${newTag.color}20`;
         selectElement.style.color = newTag.color;
@@ -862,10 +851,10 @@ async function handleOrderStatusChange(orderId, newStatus, selectElement) {
     } catch (error) {
         console.error("Error al actualizar el estatus del pedido:", error);
         showError("No se pudo actualizar el estatus del pedido.");
-        
+
         // Revertir la UI en caso de fallo
         selectElement.value = originalStatus;
-        const oldTag = state.tags.find(t => t.key === originalStatus);
+        const oldTag = state.orderStatuses.find(t => t.key === originalStatus); // Use orderStatuses from state.js
         if (oldTag) {
             selectElement.style.backgroundColor = `${oldTag.color}20`;
             selectElement.style.color = oldTag.color;
@@ -922,11 +911,14 @@ function updateCampaignRecipientCount(type = 'text') {
 
     let count = 0;
     const selectedTagKey = tagSelect.value;
-    
+
     // For the image campaign, a phone number overrides the tag selection
     if (type === 'image' && phoneInput && phoneInput.value.trim()) {
         count = 1;
-        tagSelect.value = 'all'; // Reset tag selection if phone is entered
+        // Check if tagSelect exists before attempting to reset its value
+        if (tagSelect) {
+            tagSelect.value = 'all'; // Reset tag selection if phone is entered
+        }
     } else if (selectedTagKey === 'all') {
         count = state.contacts.length;
     } else {
@@ -935,6 +927,7 @@ function updateCampaignRecipientCount(type = 'text') {
 
     countDisplay.textContent = `Se enviará a ${count} contacto(s).`;
 }
+
 
 /**
  * Toggles the visibility of the IA submenu in the sidebar.
@@ -968,7 +961,7 @@ async function handleSaveGoogleSheetId() {
         });
         if (!response.ok) throw new Error('No se pudo guardar el ID.');
         state.googleSheetSettings.googleSheetId = googleSheetId;
-        showError("ID de Google Sheet guardado con éxito."); // Using showError for feedback
+        showError("ID de Google Sheet guardado con éxito.", 'success'); // Using showError for feedback
     } catch (error) {
         showError(error.message);
     } finally {
@@ -1019,6 +1012,56 @@ async function handleSimulateAdMessage(event) {
     }
 }
 
+// Exportar funciones para que sean accesibles globalmente si es necesario
+window.handleSaveTag = handleSaveTag;
+window.handleDeleteTag = handleDeleteTag;
+window.handleDeleteAllTags = handleDeleteAllTags;
+window.handleSaveQuickReply = handleSaveQuickReply;
+window.handleDeleteQuickReply = handleDeleteQuickReply;
+window.handleSaveAdResponse = handleSaveAdResponse;
+window.handleDeleteAdResponse = handleDeleteAdResponse;
+window.handleSaveKnowledgeBaseEntry = handleSaveKnowledgeBaseEntry;
+window.handleDeleteKnowledgeBaseEntry = handleDeleteKnowledgeBaseEntry;
+window.handleAwayMessageToggle = handleAwayMessageToggle;
+window.handleGlobalBotToggle = handleGlobalBotToggle;
+window.handleBotToggle = handleBotToggle;
+window.handleSaveAIAdPrompt = handleSaveAIAdPrompt;
+window.handleDeleteAIAdPrompt = handleDeleteAIAdPrompt;
+window.handleSaveBotSettings = handleSaveBotSettings;
+window.handleUpdateContact = handleUpdateContact;
+window.handleDeleteContact = handleDeleteContact;
+window.handleGenerateReply = handleGenerateReply;
+window.handleMarkAsPurchase = handleMarkAsPurchase;
+window.handleMarkAsRegistration = handleMarkAsRegistration;
+window.handleSendViewContent = handleSendViewContent;
+window.handleSaveOrder = handleSaveOrder; // Make sure this is globally accessible
+window.handleUpdateExistingOrder = handleUpdateExistingOrder;
+window.handleSendCampaign = handleSendCampaign;
+window.handleSendCampaignWithImage = handleSendCampaignWithImage;
+window.toggleIAMenu = toggleIAMenu;
+window.handleSaveGoogleSheetId = handleSaveGoogleSheetId;
+window.handleSimulateAdMessage = handleSimulateAdMessage;
+window.handleSelectContactFromPipeline = handleSelectContactFromPipeline;
+
+// Funciones de modal que necesitan ser globales
+window.openEditContactModal = openEditContactModal;
+window.closeEditContactModal = closeEditContactModal;
+window.openTagModal = openTagModal;
+window.closeTagModal = closeTagModal;
+window.openQuickReplyModal = openQuickReplyModal;
+window.closeQuickReplyModal = closeQuickReplyModal;
+window.openAdResponseModal = openAdResponseModal;
+window.closeAdResponseModal = closeAdResponseModal;
+window.openKnowledgeBaseModal = openKnowledgeBaseModal;
+window.closeKnowledgeBaseModal = closeKnowledgeBaseModal;
+window.openAIAdPromptModal = openAIAdPromptModal;
+window.closeAIAdPromptModal = closeAIAdPromptModal;
+window.openBotSettingsModal = openBotSettingsModal;
+window.closeBotSettingsModal = closeBotSettingsModal;
+window.openNewOrderModal = openNewOrderModal; // Make sure this is globally accessible
+window.closeNewOrderModal = closeNewOrderModal; // Make sure this is globally accessible
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
 
 
+
+}
