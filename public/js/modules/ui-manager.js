@@ -701,7 +701,7 @@ function renderDailyMessagesChart(data) {
     }
 
     // Preparar datos para Chart.js
-    const labels = data.map(d => new Date(d.date).toLocaleDateString('es-ES', { month: 'short', day: 'numeric' }));
+    const labels = data.map(d => new Date(d.date + 'T00:00:00Z').toLocaleDateString('es-ES', { month: 'short', day: 'numeric' })); // Ajuste para UTC
     const totalMessages = data.map(d => d.totalMessages);
 
     // Crear nueva gráfica
@@ -725,7 +725,7 @@ function renderDailyMessagesChart(data) {
                 y: {
                     beginAtZero: true, // Empezar eje Y en 0
                     ticks: {
-                        stepSize: 1 // Incrementos de 1 en el eje Y
+                        // stepSize: 1 // REMOVED: Let Chart.js calculate automatically
                     }
                 }
             },
@@ -737,6 +737,7 @@ function renderDailyMessagesChart(data) {
         }
     });
 }
+
 
 // Renderiza la gráfica de distribución por etiquetas
 function renderTagsDistributionChart(data) {
@@ -1570,3 +1571,7 @@ window.handleSendCampaignWithImage = handleSendCampaignWithImage; // Hacer globa
 window.initializeDifusionHandlers = initializeDifusionHandlers; // Hacer global
 window.removeMessageFromSequence = removeMessageFromSequence; // Hacer global difusion
 window.handleOrderStatusChange = handleOrderStatusChange; // Hacer global
+// --- INICIO MODIFICACIÓN ---
+window.loadAdIdMetrics = loadAdIdMetrics; // Hacer global
+window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Hacer global
+// --- FIN MODIFICACIÓN ---
