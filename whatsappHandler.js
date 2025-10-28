@@ -93,7 +93,7 @@ async function sendQueuedMessages(contactId) {
 
         for (const doc of snapshot.docs) {
             const queuedMessage = doc.data();
-            
+
             if (!queuedMessage.text && !queuedMessage.fileUrl) {
                 console.warn(`[QUEUE] Omitiendo mensaje en cola vacío: ${doc.id}`);
                 batch.update(doc.ref, { status: 'failed', error: 'Contenido del mensaje vacío' });
@@ -118,7 +118,7 @@ async function sendQueuedMessages(contactId) {
                 console.error(`[QUEUE] Falló el envío del mensaje ${doc.id} para ${contactId}:`, sendError.message);
                 batch.update(doc.ref, { status: 'failed', error: sendError.message });
             }
-            
+
             await new Promise(resolve => setTimeout(resolve, 300));
         }
 
@@ -163,7 +163,7 @@ async function handleContingentSend(contactId) {
         if (payload.messageSequence && payload.messageSequence.length > 0) {
             for (const qr of payload.messageSequence) {
                 const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
-                
+
                 const messageToSave = {
                     from: PHONE_NUMBER_ID,
                     status: 'sent',
@@ -202,12 +202,12 @@ async function handleContingentSend(contactId) {
         lastMessageText = sentPhotoData.textForDb;
 
         await contingentDoc.ref.update({ status: 'completed', completedAt: admin.firestore.FieldValue.serverTimestamp() });
-        
+
         await contactRef.update({
             lastMessage: lastMessageText,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
         });
-        
+
         console.log(`[CONTINGENT] Envío pendiente para ${contactId} completado exitosamente.`);
         return true;
 
@@ -400,15 +400,15 @@ router.post('/', async (req, res) => {
                 console.log(`[LOGIC] Mensajes en cola enviados para ${from}. El flujo de respuestas automáticas se detiene aquí.`);
                 return res.sendStatus(200);
             }
-            
+
             const contingentSent = await handleContingentSend(from);
             if (contingentSent) {
                 console.log(`[LOGIC] Envío de contingencia manejado para ${from}. El flujo regular se detiene aquí.`);
                 return res.sendStatus(200);
             }
 
-            // --- INICIO DE LA MODIFICACIÓN ---
-            // Se ha comentado esta sección para desactivar la respuesta automática a códigos postales.
+            // --- INICIO DE LA MODIFICACIÓN: Buscar por 'adIds' usando 'array-contains' ---
+            // Se comenta la lógica del código postal para priorizar la respuesta del anuncio si existe
             /*
             const postalCodeHandled = await handlePostalCodeAuto(message, contactRef, from);
             if (postalCodeHandled) {
@@ -431,11 +431,18 @@ router.post('/', async (req, res) => {
                 let adResponseSent = false;
                 if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                     const adId = message.referral.source_id;
-                    const snapshot = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
+                    console.log(`[AD] Nuevo contacto desde Ad ID: ${adId}`);
+                    // --- INICIO DE LA MODIFICACIÓN: Cambiar la consulta a array-contains ---
+                    // Buscar en la colección 'ad_responses' donde el array 'adIds' contenga el adId entrante
+                    const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains', adId).limit(1).get();
+                    // --- FIN DE LA MODIFICACIÓN ---
                     if (!snapshot.empty) {
                         const adResponseData = snapshot.docs[0].data();
+                        console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
                         await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
                         adResponseSent = true;
+                    } else {
+                        console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}. Se enviará mensaje general.`);
                     }
                 }
                 if (!adResponseSent) {
@@ -443,7 +450,15 @@ router.post('/', async (req, res) => {
                     await contactRef.update({ welcomed: true });
                 }
             } else {
-                await triggerAutoReplyAI(message, contactRef, updatedContactData);
+                // --- INICIO DE LA MODIFICACIÓN: Ejecutar IA solo si no se manejó el código postal ---
+                // Si la lógica del código postal se descomenta, hay que asegurarse de que no se ejecute la IA si ya se respondió por CP.
+                // const postalCodeHandled = await handlePostalCodeAuto(message, contactRef, from);
+                // if (!postalCodeHandled) {
+                    await triggerAutoReplyAI(message, contactRef, updatedContactData);
+                // } else {
+                //     console.log(`[LOGIC] Código postal manejado para ${from}. El flujo de IA se detiene aquí.`);
+                // }
+                 // --- FIN DE LA MODIFICACIÓN ---
             }
         } else if (value && value.statuses) {
             const statusUpdate = value.statuses[0];
@@ -534,4 +549,3 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 // SE ACTUALIZÓ LA EXPORTACIÓN
 module.exports = { router };
-
