@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="facebook-domain-verification" content="m7n0ij9b0l1p6pe3g4tum7xjuxz685" />
     <title>WhatsApp CRM ✨</title>
-    
+
     <!-- Librerías Externas -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,7 +47,7 @@
             </form>
         </div>
     </div>
-    
+
     <!-- Contenedor Principal de la App -->
     <div id="app-container" class="h-screen w-screen flex-col hidden">
         <header id="app-header" class="p-4 shadow-md z-10 flex items-center justify-between">
@@ -103,7 +103,7 @@
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
                     </a>
-                    
+
                     <!-- Menú Desplegable de IA -->
                     <div id="ia-menu">
                         <a onclick="toggleIAMenu()" class="nav-item justify-between">
@@ -152,7 +152,7 @@
             <main id="main-view-container"></main>
         </div>
     </div>
-    
+
     <!-- Modales -->
     <div id="image-modal" class="image-modal-backdrop" onclick="closeImageModal()">
         <div class="image-modal-content" onclick="event.stopPropagation()">
@@ -169,7 +169,7 @@
                 <input type="hidden" id="qr-file-url">
                 <input type="hidden" id="qr-file-type">
                 <input type="file" id="qr-file-input" accept="image/*,video/*,application/pdf" class="hidden">
-                
+
                 <div>
                     <label for="qr-shortcut">Atajo (sin "/")</label>
                     <input type="text" id="qr-shortcut" required class="!mb-4">
@@ -206,8 +206,10 @@
                     <input type="text" id="ar-name" required class="!mb-4" placeholder="Ej: Campaña Día de la Madre">
                 </div>
                 <div>
-                    <label for="ar-ad-id">Identificador del Anuncio (Ad ID)</label>
-                    <input type="text" id="ar-ad-id" required class="!mb-4" placeholder="Ej: 120229247610060637">
+                    <!-- === MODIFICACIÓN INICIO === -->
+                    <label for="ar-ad-id">Identificadores del Anuncio (Ad IDs, separados por comas)</label>
+                    <textarea id="ar-ad-id" required class="!mb-4" rows="3" placeholder="Ej: 120..., 120..., 120..."></textarea>
+                    <!-- === MODIFICACIÓN FIN === -->
                 </div>
                 <div>
                     <label for="ar-message">Mensaje de Respuesta (opcional si adjuntas archivo)</label>
@@ -277,7 +279,7 @@
             </form>
         </div>
     </div>
-    
+
     <div id="tag-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="tag-modal-title">Nueva Etiqueta</h2>
@@ -327,7 +329,7 @@
                 <input type="hidden" id="kb-file-url">
                 <input type="hidden" id="kb-file-type">
                 <input type="file" id="kb-file-input" accept="image/*,video/*,application/pdf" class="hidden">
-                
+
                 <div>
                     <label for="kb-topic">Tema / Palabras Clave</label>
                     <input type="text" id="kb-topic" required class="!mb-4" placeholder="Ej: precio, envío, garantía">
@@ -351,10 +353,10 @@
     </div>
 
     <div id="new-order-modal-container"></div>
-    
+
     <!-- Contenedor para el modal de previsualización de la conversación -->
     <div id="conversation-preview-modal-container"></div>
-    
+
     <!-- INICIO DE MODIFICACIÓN: Contenedor para el nuevo modal de detalles de pedido -->
     <div id="order-details-modal-container"></div>
     <!-- FIN DE MODIFICACIÓN -->
@@ -372,15 +374,14 @@
     <script src="js/modules/firebase-init.js"></script>
     <script src="js/modules/state.js"></script>
     <script src="js/modules/utils.js"></script>
-    <script src="js/ui_templates.js"></script> 
+    <script src="js/ui_templates.js"></script>
     <script src="js/modules/api-service.js"></script>
     <script src="js/modules/difusion-handlers.js"></script>
     <script src="js/modules/ui-manager.js"></script>
     <script src="js/modules/chat-handlers.js"></script>
     <script src="js/modules/feature-handlers.js"></script>
-    <script src="js/modules/main.js"></script> 
+    <script src="js/modules/main.js"></script>
     <script src="js/modules/auth.js"></script>
-    
+
 </body>
 </html>
-
