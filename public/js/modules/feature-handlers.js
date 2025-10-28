@@ -494,13 +494,11 @@ async function handleDeleteQuickReply(replyId) {
 }
 
 async function handleSaveAdResponse(event) {
-    event.preventDefault(); // Previene la recarga de la página
+    event.preventDefault(); // <-- Previene la recarga de la página
     const id = document.getElementById('ar-doc-id').value;
     const adName = document.getElementById('ar-name').value.trim();
-    // --- INICIO MODIFICACIÓN: Leer IDs separados por comas ---
-    const adIdsInput = document.getElementById('ar-ad-id').value.trim();
-    const adIds = adIdsInput.split(',').map(id => id.trim()).filter(id => id); // Crea un array de IDs limpios
-    // --- FIN MODIFICACIÓN ---
+    const adIdInput = document.getElementById('ar-ad-id'); // Input (ahora textarea)
+    const adIdsRaw = adIdInput.value.trim(); // Obtener el string con IDs
     const message = document.getElementById('ar-message').value.trim();
     const fileUrlInput = document.getElementById('ar-file-url');
     let fileUrl = fileUrlInput.value.trim();
@@ -508,11 +506,18 @@ async function handleSaveAdResponse(event) {
     let fileType = fileTypeInput.value.trim();
     const fileInput = document.getElementById('ar-file-input');
 
-    // Lógica de subida de archivo (sin cambios respecto a la versión anterior)
+    // --- INICIO DE MODIFICACIÓN: Procesar múltiples IDs ---
+    const adIds = adIdsRaw.split(',') // Dividir por comas
+                         .map(id => id.trim()) // Quitar espacios
+                         .filter(id => id); // Eliminar strings vacíos
+    // --- FIN DE MODIFICACIÓN ---
+
+    // Lógica de subida de archivo (sin cambios)
     if (fileInput.files[0]) {
         const file = fileInput.files[0];
         try {
             showError('Subiendo archivo...', 'info');
+
             const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -522,11 +527,22 @@ async function handleSaveAdResponse(event) {
                     pathPrefix: 'ad_responses'
                 })
             });
-            if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida del archivo.');
+
+            if (!signedUrlResponse.ok) {
+                throw new Error('No se pudo preparar la subida del archivo.');
+            }
+
             const { signedUrl, publicUrl } = await signedUrlResponse.json();
-            await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
+
+            await fetch(signedUrl, {
+                method: 'PUT',
+                headers: { 'Content-Type': file.type },
+                body: file
+            });
+
             fileUrl = publicUrl;
             fileType = file.type;
+
             hideError();
         } catch (error) {
             console.error("Error al subir archivo para Ad Response:", error);
@@ -535,14 +551,14 @@ async function handleSaveAdResponse(event) {
         }
     }
 
-    // --- INICIO MODIFICACIÓN: Validación y preparación de datos ---
+    // --- INICIO DE MODIFICACIÓN: Validación y envío de 'adIds' ---
     if (!adName || adIds.length === 0 || (!message && !fileUrl)) { // Validar que haya al menos un ID
         showError("Nombre, al menos un ID de anuncio y un mensaje o archivo son obligatorios.");
         return;
     }
-    // Enviar 'adIds' como array al backend
-    const data = { adName, adIds, message, fileUrl, fileType };
-    // --- FIN MODIFICACIÓN ---
+
+    const data = { adName, adIds, message, fileUrl, fileType }; // Enviar el array adIds
+    // --- FIN DE MODIFICACIÓN ---
 
     const url = id ? `${API_BASE_URL}/api/ad-responses/${id}` : `${API_BASE_URL}/api/ad-responses`;
     const method = id ? 'PUT' : 'POST';
@@ -562,8 +578,7 @@ async function handleSaveAdResponse(event) {
         console.error("Error saving ad response:", error);
         showError(error.message);
     }
-}
-
+} // <--- ESTA ES LA LLAVE QUE FALTABA
 
 async function handleDeleteAdResponse(id) {
     if (!window.confirm('¿Estás seguro de que quieres eliminar este mensaje de anuncio?')) return;
@@ -835,7 +850,7 @@ async function handleOrderStatusChange(orderId, newStatus, selectElement) {
     const originalStatus = state.selectedContactOrders[orderIndex].estatus;
 
     // Actualización optimista del color
-    const newTag = state.orderStatuses.find(t => t.key === newStatus); // Use orderStatuses from state.js
+    const newTag = state.tags.find(t => t.key === newStatus);
     if (newTag) {
         selectElement.style.backgroundColor = `${newTag.color}20`;
         selectElement.style.color = newTag.color;
@@ -854,7 +869,7 @@ async function handleOrderStatusChange(orderId, newStatus, selectElement) {
 
         // Revertir la UI en caso de fallo
         selectElement.value = originalStatus;
-        const oldTag = state.orderStatuses.find(t => t.key === originalStatus); // Use orderStatuses from state.js
+        const oldTag = state.tags.find(t => t.key === originalStatus);
         if (oldTag) {
             selectElement.style.backgroundColor = `${oldTag.color}20`;
             selectElement.style.color = oldTag.color;
@@ -915,10 +930,7 @@ function updateCampaignRecipientCount(type = 'text') {
     // For the image campaign, a phone number overrides the tag selection
     if (type === 'image' && phoneInput && phoneInput.value.trim()) {
         count = 1;
-        // Check if tagSelect exists before attempting to reset its value
-        if (tagSelect) {
-            tagSelect.value = 'all'; // Reset tag selection if phone is entered
-        }
+        tagSelect.value = 'all'; // Reset tag selection if phone is entered
     } else if (selectedTagKey === 'all') {
         count = state.contacts.length;
     } else {
@@ -927,7 +939,6 @@ function updateCampaignRecipientCount(type = 'text') {
 
     countDisplay.textContent = `Se enviará a ${count} contacto(s).`;
 }
-
 
 /**
  * Toggles the visibility of the IA submenu in the sidebar.
@@ -961,7 +972,7 @@ async function handleSaveGoogleSheetId() {
         });
         if (!response.ok) throw new Error('No se pudo guardar el ID.');
         state.googleSheetSettings.googleSheetId = googleSheetId;
-        showError("ID de Google Sheet guardado con éxito.", 'success'); // Using showError for feedback
+        showError("ID de Google Sheet guardado con éxito."); // Using showError for feedback
     } catch (error) {
         showError(error.message);
     } finally {
@@ -1012,56 +1023,5 @@ async function handleSimulateAdMessage(event) {
     }
 }
 
-// Exportar funciones para que sean accesibles globalmente si es necesario
-window.handleSaveTag = handleSaveTag;
-window.handleDeleteTag = handleDeleteTag;
-window.handleDeleteAllTags = handleDeleteAllTags;
-window.handleSaveQuickReply = handleSaveQuickReply;
-window.handleDeleteQuickReply = handleDeleteQuickReply;
-window.handleSaveAdResponse = handleSaveAdResponse;
-window.handleDeleteAdResponse = handleDeleteAdResponse;
-window.handleSaveKnowledgeBaseEntry = handleSaveKnowledgeBaseEntry;
-window.handleDeleteKnowledgeBaseEntry = handleDeleteKnowledgeBaseEntry;
-window.handleAwayMessageToggle = handleAwayMessageToggle;
-window.handleGlobalBotToggle = handleGlobalBotToggle;
-window.handleBotToggle = handleBotToggle;
-window.handleSaveAIAdPrompt = handleSaveAIAdPrompt;
-window.handleDeleteAIAdPrompt = handleDeleteAIAdPrompt;
-window.handleSaveBotSettings = handleSaveBotSettings;
-window.handleUpdateContact = handleUpdateContact;
-window.handleDeleteContact = handleDeleteContact;
-window.handleGenerateReply = handleGenerateReply;
-window.handleMarkAsPurchase = handleMarkAsPurchase;
-window.handleMarkAsRegistration = handleMarkAsRegistration;
-window.handleSendViewContent = handleSendViewContent;
-window.handleSaveOrder = handleSaveOrder; // Make sure this is globally accessible
-window.handleUpdateExistingOrder = handleUpdateExistingOrder;
-window.handleSendCampaign = handleSendCampaign;
-window.handleSendCampaignWithImage = handleSendCampaignWithImage;
-window.toggleIAMenu = toggleIAMenu;
-window.handleSaveGoogleSheetId = handleSaveGoogleSheetId;
-window.handleSimulateAdMessage = handleSimulateAdMessage;
-window.handleSelectContactFromPipeline = handleSelectContactFromPipeline;
-
-// Funciones de modal que necesitan ser globales
-window.openEditContactModal = openEditContactModal;
-window.closeEditContactModal = closeEditContactModal;
-window.openTagModal = openTagModal;
-window.closeTagModal = closeTagModal;
-window.openQuickReplyModal = openQuickReplyModal;
-window.closeQuickReplyModal = closeQuickReplyModal;
-window.openAdResponseModal = openAdResponseModal;
-window.closeAdResponseModal = closeAdResponseModal;
-window.openKnowledgeBaseModal = openKnowledgeBaseModal;
-window.closeKnowledgeBaseModal = closeKnowledgeBaseModal;
-window.openAIAdPromptModal = openAIAdPromptModal;
-window.closeAIAdPromptModal = closeAIAdPromptModal;
-window.openBotSettingsModal = openBotSettingsModal;
-window.closeBotSettingsModal = closeBotSettingsModal;
-window.openNewOrderModal = openNewOrderModal; // Make sure this is globally accessible
-window.closeNewOrderModal = closeNewOrderModal; // Make sure this is globally accessible
 // --- END: ADDED FUNCTIONS TO FIX ERRORS ---
 
-
-
-}
