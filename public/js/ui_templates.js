@@ -246,7 +246,7 @@ const MensajesAdsViewTemplate = () => `
             <thead>
                 <tr>
                     <th>Nombre del Anuncio</th>
-                    <th>ID del Anuncio</th>
+                    <th>IDs del Anuncio</th> <!-- MODIFICADO: Cabecera -->
                     <th>Mensaje</th>
                     <th>Acciones</th>
                 </tr>
@@ -365,7 +365,7 @@ const AjustesIAViewTemplate = () => `
                 <p class="mb-4 text-gray-600">Define el comportamiento general del bot. Estas instrucciones se usarán a menos que un prompt de anuncio específico las anule.</p>
                 <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-pencil-alt mr-2"></i>Editar Prompt General</button>
             </div>
-        
+
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
                 <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
@@ -481,7 +481,7 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
     const tag = state.tags.find(t => t.key === contactStatusKey);
     const bgColor = tag ? tag.color : '#d1d5db';
     const initial = contact.name ? contact.name.charAt(0).toUpperCase() : '?';
-    
+
     return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style="background-color: ${bgColor};">
                 ${initial}
             </div>`;
@@ -489,7 +489,7 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
 
 const ContactItemTemplate = (contact, isSelected) => {
     const typingText = contact.lastMessage || 'Sin mensajes.';
-    
+
     let timeOrBadgeHTML = '';
     if (contact.unreadCount > 0) {
         timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
@@ -500,9 +500,9 @@ const ContactItemTemplate = (contact, isSelected) => {
             : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
         timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
     }
-    
-    const orderBadgeHTML = contact.lastOrderNumber 
-        ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>` 
+
+    const orderBadgeHTML = contact.lastOrderNumber
+        ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
         : '';
 
     const mainContent = `
@@ -546,7 +546,7 @@ const MessageStatusIconTemplate = (status) => {
 const RepliedMessagePreviewTemplate = (originalMessage) => {
     if (!originalMessage) return '';
     const authorName = originalMessage.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
-    
+
     let textPreview = '';
     if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
         const caption = originalMessage.text && originalMessage.text !== '📷 Imagen' ? originalMessage.text : '';
@@ -566,14 +566,14 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
 
 const MessageBubbleTemplate = (message) => {
     const isSent = message.from !== state.selectedContactId;
-    const time = message.timestamp && typeof message.timestamp.seconds === 'number' 
-        ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) 
+    const time = message.timestamp && typeof message.timestamp.seconds === 'number'
+        ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : '';
-    
+
     let contentHTML = '';
     let bubbleExtraClass = '';
     let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
-    
+
     const hasText = message.text && !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
     if (message.fileUrl && message.fileType) {
@@ -607,7 +607,7 @@ const MessageBubbleTemplate = (message) => {
     } else if (message.text) {
          contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
     }
-    
+
     let replyPreviewHTML = '';
     if (message.context && message.context.id) {
         const originalMessage = state.messages.find(m => m.id === message.context.id);
@@ -615,7 +615,7 @@ const MessageBubbleTemplate = (message) => {
     }
 
     const copyButtonHTML = message.text ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>` : '';
-    
+
     const actionsHTML = `
         <div class="message-actions">
              <div class="reaction-bar">
@@ -633,7 +633,7 @@ const MessageBubbleTemplate = (message) => {
     const bubbleAlignment = isSent ? 'sent' : 'received';
     let bubbleClasses = isSent ? 'sent' : 'received';
     if (message.status === 'queued') bubbleClasses += ' message-queued';
-    
+
     // --- Correction Start: The actions menu is moved inside the message bubble ---
     return `
         <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}">
@@ -711,8 +711,8 @@ const StatusButtonsTemplate = (contact) => {
     let buttonsHtml = '<div class="status-btn-group">';
     state.tags.forEach(tag => {
         const isActive = contact.status === tag.key;
-        buttonsHtml += `<button 
-                            onclick="handleStatusChange('${contact.id}', '${tag.key}')" 
+        buttonsHtml += `<button
+                            onclick="handleStatusChange('${contact.id}', '${tag.key}')"
                             class="status-btn ${isActive ? 'active' : ''}"
                             style="${isActive ? `background-color: ${tag.color}; color: white; border-color: ${tag.color};` : `background-color: ${tag.color}20; color: ${tag.color}; border-color: ${tag.color}50;`}"
                         >
@@ -763,7 +763,7 @@ const ChatWindowTemplate = (contact) => {
              <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !p-0 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
-    
+
     const mainContent = state.activeTab === 'chat'
         ? `<main id="messages-container" class="relative flex-1 p-4 overflow-y-auto"><div id="sticky-date-header" class="date-separator"></div><div id="messages-content"></div></main>`
         : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">
@@ -773,15 +773,15 @@ const ChatWindowTemplate = (contact) => {
              </form>
              <div id="notes-content"></div>
            </main>`;
-    
+
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
     const isBotActiveForContact = contact.botActive !== false;
     const botToggleHTML = `
-        <button 
-            onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})" 
-            class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isBotActiveForContact ? 'text-green-500' : 'text-gray-400'}" 
+        <button
+            onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})"
+            class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isBotActiveForContact ? 'text-green-500' : 'text-gray-400'}"
             title="${isBotActiveForContact ? 'Desactivar IA para este chat' : 'Activar IA para este chat'}">
             <i class="fas fa-robot text-xl"></i>
         </button>
@@ -996,7 +996,7 @@ const ConversationPreviewModalTemplate = (contact) => `
 const OrderHistoryItemTemplate = (order) => {
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
-    
+
     // INICIO DE LA MODIFICACIÓN: Usar state.orderStatuses y añadir estilo a cada opción
     const statusOptionsHTML = state.orderStatuses
         .map(status => `<option value="${status.key}" ${estatus === status.key ? 'selected' : ''} style="color: ${status.color}; font-weight: 600;">${status.label}</option>`)
@@ -1018,9 +1018,9 @@ const OrderHistoryItemTemplate = (order) => {
                 <span class="order-product" title="${order.producto}">${order.producto}</span>
             </div>
             <div class="order-history-row">
-                <select 
-                    class="order-history-status-select" 
-                    data-order-id="${order.id}" 
+                <select
+                    class="order-history-status-select"
+                    data-order-id="${order.id}"
                     style="background-color: ${currentStatusStyle.color}20; color: ${currentStatusStyle.color}; border-color: ${currentStatusStyle.color}50;"
                 >
                     ${statusOptionsHTML}
@@ -1189,3 +1189,31 @@ const OrderEditModalTemplate = (order) => `
     </div>
 `;
 
+
+// --- INICIO DE MODIFICACIÓN: Plantilla HTML para el modal de ad-response ---
+// Se encuentra dentro del archivo index.html, no aquí directamente, pero conceptualmente
+// es donde se define la estructura. El cambio clave es en el input `ar-ad-id`.
+/*
+ Conceptual change in index.html for the ad-response modal:
+
+ <div id="ad-response-modal" class="modal-backdrop hidden">
+    <div class="modal-content">
+        <h2 id="ad-response-modal-title">Añadir Mensaje de Anuncio</h2>
+        <form id="ad-response-form">
+            ... [otros campos] ...
+            <div>
+                <!-- MODIFICADO: Cambiado a textarea y actualizado label/placeholder -->
+                <label for="ar-ad-id">Identificadores del Anuncio (Ad IDs, separados por comas)</label>
+                <textarea id="ar-ad-id" required class="!mb-4" rows="3" placeholder="Ej: 120..., 120..., 120..."></textarea>
+                <!-- FIN MODIFICACIÓN -->
+            </div>
+            ... [otros campos] ...
+            <div class="flex justify-end gap-3 mt-4">
+                <button type="button" onclick="closeAdResponseModal()" class="btn btn-subtle">Cancelar</button>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+            </div>
+        </form>
+    </div>
+ </div>
+*/
+// --- FIN DE MODIFICACIÓN ---
