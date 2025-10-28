@@ -10,7 +10,7 @@ function navigateTo(viewName, force = false) {
     if (state.activeView === viewName && !force) {
         return;
     }
-    
+
     state.activeView = viewName;
 
     const iaSubmenuViews = ['prompts-ia', 'respuestas-ia', 'ajustes-ia'];
@@ -35,7 +35,7 @@ function navigateTo(viewName, force = false) {
         case 'chats':
             mainViewContainer.innerHTML = ChatViewTemplate();
             renderChatWindow();
-            renderTagFilters(); 
+            renderTagFilters();
             setupChatListEventListeners();
             handleSearchContacts();
             break;
@@ -118,11 +118,11 @@ function renderTagFilters() {
     if (!container) return;
 
     let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
-    
+
     state.tags.forEach(tag => {
-        buttonsHtml += `<button 
-                            id="filter-${tag.key}" 
-                            class="filter-btn ${state.activeFilter === tag.key ? 'active' : ''}" 
+        buttonsHtml += `<button
+                            id="filter-${tag.key}"
+                            class="filter-btn ${state.activeFilter === tag.key ? 'active' : ''}"
                             onclick="setFilter('${tag.key}')"
                         >
                             ${tag.label}
@@ -132,36 +132,36 @@ function renderTagFilters() {
     container.innerHTML = buttonsHtml;
 }
 
-function renderChatWindow() { 
+function renderChatWindow() {
     if (state.activeView !== 'chats') return;
-    
+
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
 
-    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
-    chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
+    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    chatPanelEl.innerHTML = ChatWindowTemplate(contact);
 
     const searchInput = document.getElementById('search-contacts-input');
     if (searchInput) {
         searchInput.addEventListener('input', handleSearchInput);
     }
-    
-    if (contact) { 
+
+    if (contact) {
         const statusWrapper = document.getElementById('contact-status-wrapper');
         if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
         if (state.activeTab === 'chat') {
             renderMessages();
-            const messagesContainer = document.getElementById('messages-container'); 
+            const messagesContainer = document.getElementById('messages-container');
             if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
-            
+
             const messageForm = document.getElementById('message-form');
-            const messageInput = document.getElementById('message-input'); 
-            if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
-            if (messageInput) { 
-                messageInput.addEventListener('paste', handlePaste); 
+            const messageInput = document.getElementById('message-input');
+            if (messageForm) messageForm.addEventListener('submit', handleSendMessage);
+            if (messageInput) {
+                messageInput.addEventListener('paste', handlePaste);
                 messageInput.addEventListener('input', handleQuickReplyInput);
                 messageInput.addEventListener('keydown', handleMessageInputKeyDown);
-                
+
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
                     let newHeight = messageInput.scrollHeight;
@@ -171,14 +171,14 @@ function renderChatWindow() {
                     messageInput.style.height = newHeight + 'px';
                 });
 
-                messageInput.focus(); 
-            } 
-            
+                messageInput.focus();
+            }
+
         } else if (state.activeTab === 'notes') {
             renderNotes();
             document.getElementById('note-form').addEventListener('submit', handleSaveNote);
         }
-    } 
+    }
 }
 
 function renderTagsView() {
@@ -266,7 +266,7 @@ function renderDifusionView() {
     // Poblar las respuestas rápidas para el secuenciador de mensajes
     const quickReplyDropdown = document.getElementById('quick-reply-dropdown');
     if (quickReplyDropdown) {
-        quickReplyDropdown.innerHTML = state.quickReplies.map(qr => 
+        quickReplyDropdown.innerHTML = state.quickReplies.map(qr =>
             `<a href="#" data-id="${qr.id}" class="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 quick-reply-item"><strong>/${qr.shortcut}</strong>: ${qr.message || 'Adjunto'}</a>`
         ).join('');
     }
@@ -311,18 +311,24 @@ function renderAdResponsesView() {
         return;
     }
 
-    tableBody.innerHTML = state.adResponses.map(response => `
-        <tr>
-            <td class="font-semibold">${response.adName}</td>
-            <td class="font-mono text-sm">${response.adId}</td>
-            <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message || ''} ${response.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
-            <td class="actions-cell">
-                <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
-                <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
-            </td>
-        </tr>
-    `).join('');
+    tableBody.innerHTML = state.adResponses.map(response => {
+        // --- INICIO MODIFICACIÓN: Mostrar adIds como string separado por comas ---
+        const adIdsText = Array.isArray(response.adIds) ? response.adIds.join(', ') : (response.adId || ''); // Incluye fallback por si hay datos viejos
+        // --- FIN MODIFICACIÓN ---
+        return `
+            <tr>
+                <td class="font-semibold">${response.adName}</td>
+                <td class="font-mono text-sm">${adIdsText}</td>
+                <td class="text-gray-600 max-w-sm truncate" title="${response.message}">${response.message || ''} ${response.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
+                <td class="actions-cell">
+                    <button onclick="openAdResponseModal('${response.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                    <button onclick="handleDeleteAdResponse('${response.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
+
 
 function renderAIAdPromptsView() {
     if (state.activeView !== 'prompts-ia') return;
@@ -384,7 +390,7 @@ function renderPipelineView() {
             </div>
         `;
     }).join('');
-    
+
     document.querySelectorAll('.pipeline-cards').forEach(column => {
         new Sortable(column, {
             group: 'pipeline',
@@ -418,7 +424,7 @@ function renderKnowledgeBaseView() {
 
 function renderAjustesIAView() {
     if (state.activeView !== 'ajustes-ia') return;
-    
+
     const botToggle = document.getElementById('global-bot-toggle');
     if (botToggle) {
         botToggle.checked = state.globalBotSettings.isActive;
@@ -439,7 +445,7 @@ function renderBotContactsTable(searchTerm = '') {
     if(!botContactsTableBody) return;
 
     const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    const filteredContacts = state.contacts.filter(contact => 
+    const filteredContacts = state.contacts.filter(contact =>
         (contact.name && contact.name.toLowerCase().includes(lowerCaseSearchTerm)) ||
         (contact.id && contact.id.includes(lowerCaseSearchTerm))
     );
@@ -463,7 +469,7 @@ function renderAjustesView() {
     if (awayToggle) {
         awayToggle.checked = state.awayMessageSettings.isActive;
     }
-    
+
     const sheetIdInput = document.getElementById('google-sheet-id-input');
     if (sheetIdInput) {
         sheetIdInput.value = state.googleSheetSettings.googleSheetId || '';
@@ -494,7 +500,7 @@ async function renderMetricsView() {
 
         loadingEl.classList.add('hidden');
         contentEl.classList.remove('hidden');
-        
+
         renderDailyMessagesChart(metricsData);
         renderTagsDistributionChart(metricsData);
 
@@ -661,10 +667,10 @@ function appendMessage(message) {
 }
 
 
-function renderNotes() { 
-    const contentContainer = document.getElementById('notes-content'); 
-    if (!contentContainer) return; 
-    contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); 
+function renderNotes() {
+    const contentContainer = document.getElementById('notes-content');
+    if (!contentContainer) return;
+    contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join('');
 }
 
 /**
@@ -706,7 +712,7 @@ function handleScroll() {
 
 // --- UI Helpers & Modals ---
 
-function showError(message, type = 'error') { 
+function showError(message, type = 'error') {
     const container = document.getElementById('error-container');
     const messageEl = document.getElementById('error-message');
     if (!container || !messageEl) return;
@@ -719,30 +725,30 @@ function showError(message, type = 'error') {
         container.classList.add('bg-yellow-200', 'text-yellow-800');
         messageEl.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
     }
-    
-    container.classList.remove('hidden'); 
-    setTimeout(() => hideError(), 5000); 
+
+    container.classList.remove('hidden');
+    setTimeout(() => hideError(), 5000);
 }
 
-function hideError() { 
+function hideError() {
     const errorContainerEl = document.getElementById('error-container');
     if(errorContainerEl) {
-        errorContainerEl.classList.add('hidden'); 
+        errorContainerEl.classList.add('hidden');
     }
 }
 
-function openImageModal(imageUrl) { 
-    const modal = document.getElementById('image-modal'); 
-    const modalImage = document.getElementById('modal-image-content'); 
-    modalImage.src = imageUrl; 
-    modal.classList.add('visible'); 
+function openImageModal(imageUrl) {
+    const modal = document.getElementById('image-modal');
+    const modalImage = document.getElementById('modal-image-content');
+    modalImage.src = imageUrl;
+    modal.classList.add('visible');
 }
 
-function closeImageModal() { 
-    const modal = document.getElementById('image-modal'); 
-    modal.classList.remove('visible'); 
-    const modalImage = document.getElementById('modal-image-content'); 
-    setTimeout(() => { modalImage.src = ''; }, 300); 
+function closeImageModal() {
+    const modal = document.getElementById('image-modal');
+    modal.classList.remove('visible');
+    const modalImage = document.getElementById('modal-image-content');
+    setTimeout(() => { modalImage.src = ''; }, 300);
 }
 
 async function openContactDetails() {
@@ -750,7 +756,7 @@ async function openContactDetails() {
     if (!state.selectedContactId || !contactDetailsPanelEl) return;
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
     if (!contact) return;
-    
+
     contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(contact);
     contactDetailsPanelEl.classList.add('open');
     state.contactDetailsOpen = true;
@@ -758,7 +764,7 @@ async function openContactDetails() {
     const ordersListEl = document.getElementById('contact-orders-list');
     if (ordersListEl) {
         ordersListEl.innerHTML = `<div class="order-history-item loading"><i class="fas fa-spinner fa-spin"></i> Cargando historial...</div>`;
-        
+
         // --- INICIO DE LA CORRECCIÓN: Usar el listener en tiempo real ---
         listenForContactOrders(contact.id, (orders) => {
             state.selectedContactOrders = orders; // Almacena los pedidos en el estado
@@ -784,13 +790,13 @@ async function openContactDetails() {
     }
 }
 
-function closeContactDetails() { 
+function closeContactDetails() {
     const contactDetailsPanelEl = document.getElementById('contact-details-panel');
     if(contactDetailsPanelEl) {
-        contactDetailsPanelEl.classList.remove('open'); 
-        contactDetailsPanelEl.innerHTML = ''; 
+        contactDetailsPanelEl.classList.remove('open');
+        contactDetailsPanelEl.innerHTML = '';
     }
-    state.contactDetailsOpen = false; 
+    state.contactDetailsOpen = false;
     // Detener el listener de pedidos cuando se cierra el panel
     if (unsubscribeOrdersListener) {
         unsubscribeOrdersListener();
@@ -833,20 +839,20 @@ function openNewOrderModal() {
     if (!modalContainer) return;
 
     modalContainer.innerHTML = NewOrderModalTemplate();
-    
+
     // Set phone number from contact
     const phoneInput = document.getElementById('order-phone');
     if (phoneInput) {
         phoneInput.value = contact.id;
     }
-    
+
     // Reset photo managers
     orderPhotosManager = [];
     promoPhotosManager = [];
 
     // Setup event listeners for the new modal
     document.getElementById('new-order-form').addEventListener('submit', handleSaveOrder);
-    
+
     const productSelect = document.getElementById('order-product-select');
     const productOtherInput = document.getElementById('order-product-other');
     if(productSelect && productOtherInput) {
@@ -862,7 +868,7 @@ function openNewOrderModal() {
     const orderPhotoInput = document.getElementById('order-photo-file');
     const orderPreviewContainer = document.getElementById('order-photos-preview-container');
     setupPhotoManager(orderPhotoContainer, orderPhotoInput, orderPreviewContainer, orderPhotosManager, 'order');
-    
+
     const promoPhotoContainer = document.getElementById('order-file-input-container-promo');
     const promoPhotoInput = document.getElementById('order-promo-photo-file');
     const promoPreviewContainer = document.getElementById('order-promo-photos-preview-container');
@@ -984,7 +990,7 @@ async function openOrderEditModal(orderId) {
     try {
         const orderData = await fetchSingleOrder(orderId);
         modalContainer.innerHTML = OrderEditModalTemplate(orderData);
-        
+
         const producto = orderData.producto || '';
         const productoSelect = document.getElementById('edit-order-product-select');
         const productoOtroInput = document.getElementById('edit-order-product-other');
@@ -998,7 +1004,7 @@ async function openOrderEditModal(orderId) {
             productoOtroInput.style.display = 'block';
             productoOtroInput.required = true;
         }
-        
+
         document.getElementById('edit-order-phone').value = orderData.telefono || '';
         document.getElementById('edit-order-price').value = orderData.precio || '';
         document.getElementById('edit-order-product-details').value = orderData.datosProducto || '';
@@ -1007,14 +1013,14 @@ async function openOrderEditModal(orderId) {
 
         editOrderPhotosManager = [];
         editPromoPhotosManager = [];
-        
+
         (orderData.fotoUrls || []).forEach(url => editOrderPhotosManager.push({ file: null, url: url, isNew: false }));
         (orderData.fotoPromocionUrls || []).forEach(url => editPromoPhotosManager.push({ file: null, url: url, isNew: false }));
 
         setupPhotoManagerForEditModal();
-        
+
         document.getElementById('order-edit-form').addEventListener('submit', (e) => handleUpdateExistingOrder(e, orderId));
-        
+
         productoSelect.addEventListener('change', () => {
             const esOtro = productoSelect.value === 'Otro';
             productoOtroInput.style.display = esOtro ? 'block' : 'none';
@@ -1173,7 +1179,7 @@ function openAdResponseModal(responseId = null) {
     const titleEl = document.getElementById('ad-response-modal-title');
     const docIdInput = document.getElementById('ar-doc-id');
     const nameInput = document.getElementById('ar-name');
-    const adIdInput = document.getElementById('ar-ad-id');
+    const adIdInput = document.getElementById('ar-ad-id'); // Este es el input que modificaremos
     const messageTextarea = document.getElementById('ar-message');
     const fileUrlInput = document.getElementById('ar-file-url');
     const fileTypeInput = document.getElementById('ar-file-type');
@@ -1196,11 +1202,14 @@ function openAdResponseModal(responseId = null) {
             titleEl.textContent = 'Editar Mensaje de Anuncio';
             docIdInput.value = adResponse.id;
             nameInput.value = adResponse.adName || '';
-            adIdInput.value = adResponse.adId || '';
+            // --- INICIO MODIFICACIÓN: Poblar con IDs separados por comas ---
+            // Unir el array 'adIds' (o usar 'adId' como fallback) en un string
+            adIdInput.value = Array.isArray(adResponse.adIds) ? adResponse.adIds.join(', ') : (adResponse.adId || '');
+            // --- FIN MODIFICACIÓN ---
             messageTextarea.value = adResponse.message || '';
             fileUrlInput.value = adResponse.fileUrl || '';
             fileTypeInput.value = adResponse.fileType || '';
-            
+
             if (adResponse.fileUrl) {
                 mediaPreview.innerHTML = `<a href="${adResponse.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
                 attachButtonText.textContent = 'Reemplazar Archivo';
@@ -1209,15 +1218,14 @@ function openAdResponseModal(responseId = null) {
     } else {
         // Add mode
         titleEl.textContent = 'Añadir Mensaje de Anuncio';
+        adIdInput.value = ''; // Asegurarse de que esté vacío al añadir uno nuevo
     }
 
-    // AÑADIDO: Listener para el input de archivo
+    // Listener para el input de archivo (sin cambios)
     fileInput.onchange = (event) => {
         const file = event.target.files[0];
         if (file) {
-            // Aquí puedes añadir lógica para subir el archivo y obtener la URL,
-            // por ahora, solo mostraremos el nombre como feedback.
-            fileUrlInput.value = ''; // Limpiar URL previa si la había
+            fileUrlInput.value = '';
             fileTypeInput.value = file.type;
             mediaPreview.innerHTML = `<span class="text-sm text-gray-600">Archivo seleccionado: <strong>${file.name}</strong></span>`;
             attachButtonText.textContent = 'Cambiar Archivo';
@@ -1226,6 +1234,7 @@ function openAdResponseModal(responseId = null) {
 
     modal.classList.remove('hidden');
 }
+
 
 function closeAdResponseModal() {
     const modal = document.getElementById('ad-response-modal');
@@ -1268,7 +1277,7 @@ function openQuickReplyModal(replyId = null) {
             messageTextarea.value = reply.message || '';
             fileUrlInput.value = reply.fileUrl || '';
             fileTypeInput.value = reply.fileType || '';
-            
+
             if (reply.fileUrl) {
                 mediaPreview.innerHTML = `<a href="${reply.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
                 attachButtonText.textContent = 'Reemplazar Archivo';
@@ -1322,7 +1331,7 @@ function openKnowledgeBaseModal(entryId = null) {
     fileUrlInput.value = '';
     fileTypeInput.value = '';
     mediaPreview.innerHTML = '';
-    
+
     if (entryId) {
         // Edit mode
         const entry = state.knowledgeBase.find(e => e.id === entryId);
@@ -1333,7 +1342,7 @@ function openKnowledgeBaseModal(entryId = null) {
             answerTextarea.value = entry.answer || '';
             fileUrlInput.value = entry.fileUrl || '';
             fileTypeInput.value = entry.fileType || '';
-            
+
             if (entry.fileUrl) {
                 mediaPreview.innerHTML = `<a href="${entry.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
             }
@@ -1421,4 +1430,3 @@ function closeBotSettingsModal() {
         modal.classList.add('hidden');
     }
 }
-
