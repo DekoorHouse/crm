@@ -138,6 +138,24 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
 }
 // --- FIN: NUEVA FUNCIÓN ---
 
+// --- INICIO: Helper function to parse ad IDs ---
+/**
+ * Parses the adIds input (string or array) into a clean array of strings.
+ * @param {string|string[]} adIdsInput - The input from the request body.
+ * @returns {string[]} An array of unique, trimmed ad IDs.
+ */
+function parseAdIds(adIdsInput) {
+    if (!adIdsInput) return [];
+    let ids = [];
+    if (Array.isArray(adIdsInput)) {
+        ids = adIdsInput;
+    } else if (typeof adIdsInput === 'string') {
+        ids = adIdsInput.split(',').map(id => id.trim()).filter(id => id);
+    }
+    // Remove duplicates and ensure they are strings
+    return [...new Set(ids.map(id => String(id).trim()).filter(id => id))];
+}
+// --- FIN: Helper function ---
 
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
@@ -219,9 +237,9 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
         if (matches) {
             const allParams = [contactName, ...bodyParams];
             const parameters = allParams.slice(0, matches.length).map(param => ({ type: 'text', text: String(param) }));
-            
+
             payloadComponents.push({ type: 'body', parameters });
-            
+
             let tempText = bodyDef.text;
             parameters.forEach((param, index) => {
                 tempText = tempText.replace(`{{${index + 1}}}`, param.text);
@@ -263,7 +281,7 @@ router.get('/contacts', async (req, res) => {
         }
 
         query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
-        
+
         if (startAfterId) {
             const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
             if (lastDoc.exists) query = query.startAfter(lastDoc);
@@ -309,16 +327,16 @@ router.get('/contacts/search', async (req, res) => {
         }
         const nameSnapshot = await db.collection('contacts_whatsapp').where('name_lowercase', '>=', lowercaseQuery).where('name_lowercase', '<=', lowercaseQuery + '\uf8ff').limit(20).get();
         nameSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
-        
+
         const partialPhoneSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', query).where(admin.firestore.FieldPath.documentId(), '<=', query + '\uf8ff').limit(20).get();
         partialPhoneSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
-        
+
         if (/^\d+$/.test(query) && query.length >= 3) {
             const prefixedQuery = "521" + query;
             const prefixedSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', prefixedQuery).where(admin.firestore.FieldPath.documentId(), '<=', prefixedQuery + '\uf8ff').limit(20).get();
             prefixedSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
         }
-        
+
         searchResults.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
         res.status(200).json({ success: true, contacts: searchResults });
     } catch (error) {
@@ -345,7 +363,7 @@ router.put('/contacts/:contactId', async (req, res) => {
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
         const { contactId } = req.params;
-        
+
         const snapshot = await db.collection('pedidos')
                                  .where('telefono', '==', contactId)
                                  .get();
@@ -379,7 +397,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body;
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
     if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
-    
+
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         let messageToSave;
@@ -404,13 +422,13 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                     console.error(`[GCS-CHAT] Advertencia: No se pudo hacer público el archivo ${fileUrl}:`, gcsError.message);
                 }
             }
-            
+
             const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
 
             const type = fileType.startsWith('image/') ? 'image' :
                          fileType.startsWith('video/') ? 'video' :
                          fileType.startsWith('audio/') ? 'audio' : 'document';
-            
+
             const mediaObject = { id: mediaId };
             if (type !== 'audio' && text) {
                 mediaObject.caption = text;
@@ -446,7 +464,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
         await messageRef.set(messageToSave);
         await contactRef.update({ lastMessage: messageToSave.text, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
-        
+
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
         console.error('❌ Error al enviar mensaje/plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -464,7 +482,7 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        
+
         let messageToSaveText = text;
         if (fileUrl && !text) {
             const type = fileType.startsWith('image/') ? 'image' :
@@ -487,7 +505,7 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         }
 
         await contactRef.collection('messages').add(messageToSave);
-        
+
         await contactRef.update({
             lastMessage: `[En cola] ${messageToSave.text}`,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -623,7 +641,7 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
             }, { merge: true });
 
             await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external' });
-            
+
             return { status: 'fulfilled', value: contactId };
         } catch (error) {
             console.error(`Error en campaña con imagen a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
@@ -703,16 +721,16 @@ router.put('/orders/:orderId', async (req, res) => {
 
         // Manejar la eliminación de fotos de Storage
         const existingPhotos = new Set([
-            ...(existingData.fotoUrls || []), 
+            ...(existingData.fotoUrls || []),
             ...(existingData.fotoPromocionUrls || [])
         ]);
         const updatedPhotos = new Set([
-            ...(updateData.fotoUrls || []), 
+            ...(updateData.fotoUrls || []),
             ...(updateData.fotoPromocionUrls || [])
         ]);
 
         const photosToDelete = [...existingPhotos].filter(url => !updatedPhotos.has(url));
-        
+
         const deletePromises = photosToDelete.map(url => {
             try {
                 const filePath = new URL(url).pathname.split('/').slice(2).join('/');
@@ -736,7 +754,7 @@ router.put('/orders/:orderId', async (req, res) => {
 });
 
 router.post('/orders', async (req, res) => {
-    const { 
+    const {
         contactId,
         producto,
         telefono,
@@ -745,7 +763,7 @@ router.post('/orders', async (req, res) => {
         datosPromocion,
         comentarios,
         fotoUrls,
-        fotoPromocionUrls 
+        fotoPromocionUrls
     } = req.body;
 
     if (!contactId || !producto || !telefono) {
@@ -782,16 +800,16 @@ router.post('/orders', async (req, res) => {
         };
 
         await db.collection('pedidos').add(nuevoPedido);
-        
+
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
             lastOrderDate: admin.firestore.FieldValue.serverTimestamp()
         });
 
-        res.status(201).json({ 
-            success: true, 
-            message: 'Pedido registrado con éxito.', 
-            orderNumber: `DH${newOrderNumber}` 
+        res.status(201).json({
+            success: true,
+            message: 'Pedido registrado con éxito.',
+            orderNumber: `DH${newOrderNumber}`
         });
 
     } catch (error) {
@@ -992,10 +1010,20 @@ router.delete('/tags', async (req, res) => {
 });
 
 
+// --- INICIO: Modificación de Rutas /api/ad-responses ---
 router.post('/ad-responses', async (req, res) => {
-    const { adName, adId, message, fileUrl, fileType } = req.body;
-    if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
+    // Se extrae adIds (esperando un array o string) en lugar de adId
+    const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
+    // Se procesa la entrada de adIds
+    const adIds = parseAdIds(adIdsInput);
+
+    // Se valida que haya al menos un adId y los otros campos requeridos
+    if (!adName || adIds.length === 0 || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID y un mensaje o archivo son obligatorios.' });
+    }
+
     try {
+        // Asegurarse de que el archivo en GCS sea público si existe
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -1003,22 +1031,46 @@ router.post('/ad-responses', async (req, res) => {
                 console.log(`[GCS] Archivo ${filePath} hecho público con éxito.`);
             } catch (gcsError) {
                 console.error(`[GCS] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+                // Continuar aunque falle, ya que la URL podría ser válida temporalmente
             }
         }
-        
-        const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya existe.` });
-        const data = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+
+        // Verificar si alguno de los Ad IDs ya está en uso en OTRO documento
+        const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
+        if (!snapshot.empty) {
+            const conflictingIds = snapshot.docs.reduce((acc, doc) => {
+                const docIds = doc.data().adIds || [];
+                const overlap = adIds.filter(id => docIds.includes(id));
+                return acc.concat(overlap);
+            }, []);
+            if (conflictingIds.length > 0) {
+                 return res.status(409).json({ success: false, message: `Los siguientes Ad IDs ya están en uso: ${[...new Set(conflictingIds)].join(', ')}` });
+            }
+        }
+
+        // Guardar los datos con adIds como un array
+        const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
         const newResponse = await db.collection('ad_responses').add(data);
         res.status(201).json({ success: true, id: newResponse.id, data });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        console.error("Error creating ad response:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje de anuncio.' });
+    }
 });
 
 router.put('/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
-    const { adName, adId, message, fileUrl, fileType } = req.body;
-    if (!adName || !adId || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
+    // Se extrae adIds (esperando un array o string) en lugar de adId
+    const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
+    // Se procesa la entrada de adIds
+    const adIds = parseAdIds(adIdsInput);
+
+    // Se valida que haya al menos un adId y los otros campos requeridos
+    if (!adName || adIds.length === 0 || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID y un mensaje o archivo son obligatorios.' });
+    }
     try {
+        // Asegurarse de que el archivo en GCS sea público si existe
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -1029,13 +1081,35 @@ router.put('/ad-responses/:id', async (req, res) => {
             }
         }
 
-        const existing = await db.collection('ad_responses').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está en uso.` });
-        const data = { adName, adId, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        // Verificar si alguno de los Ad IDs ya está en uso en OTRO documento (excluyendo el actual)
+        const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
+        let conflict = false;
+        let conflictingIdsList = [];
+        snapshot.forEach(doc => {
+            if (doc.id !== id) { // Excluir el documento que se está editando
+                const docIds = doc.data().adIds || [];
+                const overlap = adIds.filter(newId => docIds.includes(newId));
+                if (overlap.length > 0) {
+                    conflict = true;
+                    conflictingIdsList = conflictingIdsList.concat(overlap);
+                }
+            }
+        });
+
+        if (conflict) {
+            return res.status(409).json({ success: false, message: `Los siguientes Ad IDs ya están en uso en otros mensajes: ${[...new Set(conflictingIdsList)].join(', ')}` });
+        }
+
+        // Actualizar los datos con adIds como un array
+        const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
         await db.collection('ad_responses').doc(id).update(data);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        console.error("Error updating ad response:", error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el mensaje de anuncio.' });
+    }
 });
+// --- FIN: Modificación de Rutas /api/ad-responses ---
 
 router.delete('/ad-responses/:id', async (req, res) => {
     try {
@@ -1228,16 +1302,16 @@ router.get('/metrics', async (req, res) => {
         const contactsSnapshot = await db.collection('contacts_whatsapp').get();
         const contactTags = {};
         contactsSnapshot.forEach(doc => { contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; });
-        
+
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
             .get();
-        
+
         const metricsByDate = {};
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
-            
+
             if (message.from === PHONE_NUMBER_ID) {
                 return;
             }
@@ -1301,11 +1375,11 @@ router.get('/orders/verify/:orderId', async (req, res) => {
 
 router.post('/difusion/bulk-send', async (req, res) => {
     const { jobs, messageSequence, contingencyTemplate } = req.body;
-    
+
     if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
         return res.status(400).json({ success: false, message: 'La lista de trabajos de envío es inválida.' });
     }
-    
+
     const results = { successful: [], failed: [], contingent: [] };
 
     for (const job of jobs) {
@@ -1350,23 +1424,23 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 if (messageSequence && messageSequence.length > 0) {
                     for (const qr of messageSequence) {
                         const sentMessageData = await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
-                        
+
                         const messageToSave = {
                             from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                             id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
                         };
                         await contactRef.collection('messages').add(messageToSave);
                         lastMessageText = sentMessageData.textForDb;
-                        
+
                         await new Promise(resolve => setTimeout(resolve, 500));
                     }
                 }
-                
+
                 const sentPhotoData = await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
-                
+
                 const photoMessageToSave = {
                     from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb, 
+                    id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb,
                     fileType: sentPhotoData.fileTypeForDb, isAutoReply: true
                 };
                 Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]);
@@ -1387,7 +1461,7 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
                 const bodyParams = [job.orderId];
                 const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl, bodyParams);
-                
+
                 const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                     headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
                 });
@@ -1402,15 +1476,15 @@ router.post('/difusion/bulk-send', async (req, res) => {
                     lastMessage: messageToSaveText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
-                
+
                 await db.collection('contingentSends').add({
                     contactId: job.contactId,
                     status: 'pending',
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    payload: { 
-                        messageSequence: messageSequence || [], 
-                        photoUrl: job.photoUrl, 
-                        orderId: job.orderId 
+                    payload: {
+                        messageSequence: messageSequence || [],
+                        photoUrl: job.photoUrl,
+                        orderId: job.orderId
                     }
                 });
                 results.contingent.push({ orderId: job.orderId });
@@ -1426,4 +1500,3 @@ router.post('/difusion/bulk-send', async (req, res) => {
 
 
 module.exports = router;
-
