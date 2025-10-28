@@ -63,7 +63,7 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
                     '-c:a aac',
                     '-b:a 128k',
                     '-preset ultrafast', // Prioriza la velocidad sobre la calidad de compresión
-                    '-crf 28'
+                    '-crf 28' // Controla la calidad (más alto = menor calidad, menor tamaño)
                 ])
                 .on('end', () => {
                     console.log('[COMPRESSOR] Procesamiento con FFmpeg finalizado.');
@@ -96,6 +96,7 @@ function compressVideoIfNeeded(inputBuffer, mimeType) {
  */
 function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
     return new Promise((resolve) => { // No rechaza, siempre resuelve.
+        // Si ya es ogg o no es audio, devolver original
         if (!mimeType.startsWith('audio/') || mimeType === 'audio/ogg') {
             return resolve({ buffer: inputBuffer, mimeType: mimeType });
         }
@@ -109,10 +110,11 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
                 tempInput.removeCallback();
                 tempOutput.removeCallback();
                 console.warn(`[AUDIO CONVERTER] Fallo al escribir archivo temporal. Se enviará como archivo estándar.`);
-                return resolve({ buffer: inputBuffer, mimeType: mimeType });
+                return resolve({ buffer: inputBuffer, mimeType: mimeType }); // Devolver original en caso de error
             }
 
             ffmpeg(tempInput.name)
+                // Opciones para OGG Opus compatible con WhatsApp (nota de voz)
                 .outputOptions(['-c:a libopus', '-b:a 16k', '-vbr off', '-ar 16000'])
                 .on('end', () => {
                     fs.readFile(tempOutput.name, (err, convertedBuffer) => {
@@ -120,17 +122,17 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
                         tempOutput.removeCallback();
                         if (err) {
                              console.warn(`[AUDIO CONVERTER] Fallo al leer archivo convertido. Se enviará como archivo estándar.`);
-                             return resolve({ buffer: inputBuffer, mimeType: mimeType });
+                             return resolve({ buffer: inputBuffer, mimeType: mimeType }); // Devolver original
                         }
                         console.log(`[AUDIO CONVERTER] Conversión a OGG Opus exitosa.`);
-                        resolve({ buffer: convertedBuffer, mimeType: 'audio/ogg' });
+                        resolve({ buffer: convertedBuffer, mimeType: 'audio/ogg' }); // Devolver convertido
                     });
                 })
                 .on('error', (err) => {
                     tempInput.removeCallback();
                     tempOutput.removeCallback();
                     console.warn(`[AUDIO CONVERTER] Falló la conversión a OGG: ${err.message}. Se enviará como archivo de audio estándar.`);
-                    resolve({ buffer: inputBuffer, mimeType: mimeType });
+                    resolve({ buffer: inputBuffer, mimeType: mimeType }); // Devolver original
                 })
                 .save(tempOutput.name);
         });
@@ -150,6 +152,7 @@ function parseAdIds(adIdsInput) {
     if (Array.isArray(adIdsInput)) {
         ids = adIdsInput;
     } else if (typeof adIdsInput === 'string') {
+        // Split by comma, trim whitespace, and filter out empty strings
         ids = adIdsInput.split(',').map(id => id.trim()).filter(id => id);
     }
     // Remove duplicates and ensure they are strings
@@ -160,86 +163,127 @@ function parseAdIds(adIdsInput) {
 /**
  * Sube un archivo multimedia a los servidores de WhatsApp y devuelve su ID.
  * MODIFICADO: Añade compresión de video y conversión de audio antes de la subida.
- * @param {string} mediaUrl La URL pública del archivo.
+ * @param {string} mediaUrl La URL pública del archivo (GCS o externa).
  * @param {string} mimeType El tipo MIME del archivo (ej. 'video/mp4').
  * @returns {Promise<string>} El ID del medio asignado por WhatsApp.
  */
 async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
     try {
         console.log(`[MEDIA UPLOAD] Descargando ${mediaUrl} para procesar y subir...`);
+        // Descargar el archivo como buffer
         const fileResponse = await axios.get(mediaUrl, { responseType: 'arraybuffer' });
         let fileBuffer = fileResponse.data;
         let finalMimeType = mimeType;
+        // Extraer nombre de archivo de la URL
         const fileName = path.basename(new URL(mediaUrl).pathname) || `media.${mimeType.split('/')[1] || 'bin'}`;
 
         // --- INICIO: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
         if (mimeType.startsWith('video/')) {
             fileBuffer = await compressVideoIfNeeded(fileBuffer, mimeType);
         } else if (mimeType.startsWith('audio/')) {
+            // Convertir audio a OGG Opus si es necesario
             const conversionResult = await convertAudioToOggOpusIfNeeded(fileBuffer, mimeType);
             fileBuffer = conversionResult.buffer;
-            finalMimeType = conversionResult.mimeType;
+            finalMimeType = conversionResult.mimeType; // Podría ser 'audio/ogg' ahora
         }
         // --- FIN: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
 
+        // Crear FormData para la subida a WhatsApp
         const form = new FormData();
         form.append('messaging_product', 'whatsapp');
         form.append('file', fileBuffer, {
-            filename: fileName,
-            contentType: finalMimeType,
+            filename: fileName, // Nombre de archivo original
+            contentType: finalMimeType, // Tipo MIME final (puede haber cambiado para audio)
         });
 
-        console.log(`[MEDIA UPLOAD] Subiendo ${fileName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB) a WhatsApp...`);
+        console.log(`[MEDIA UPLOAD] Subiendo ${fileName} (${(fileBuffer.length / 1024 / 1024).toFixed(2)} MB, tipo: ${finalMimeType}) a WhatsApp...`);
+        // Realizar la subida a la API de Medios de WhatsApp
         const uploadResponse = await axios.post(
             `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/media`,
             form,
             {
-                headers: { ...form.getHeaders(), 'Authorization': `Bearer ${WHATSAPP_TOKEN}` },
-                maxContentLength: Infinity, maxBodyLength: Infinity,
+                headers: {
+                    ...form.getHeaders(), // Headers necesarios para FormData
+                    'Authorization': `Bearer ${WHATSAPP_TOKEN}`
+                },
+                maxContentLength: Infinity, // Permitir archivos grandes
+                maxBodyLength: Infinity,
             }
         );
 
         const mediaId = uploadResponse.data.id;
-        if (!mediaId) throw new Error("La API de WhatsApp no devolvió un ID de medio.");
+        if (!mediaId) {
+            throw new Error("La API de WhatsApp no devolvió un ID de medio.");
+        }
 
         console.log(`[MEDIA UPLOAD] Archivo subido con éxito. Media ID: ${mediaId}`);
-        return mediaId;
+        return mediaId; // Devolver el ID del medio de WhatsApp
 
     } catch (error) {
+        // Manejo detallado de errores
         console.error('❌ Error al subir archivo a WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error('No se pudo subir el archivo a los servidores de WhatsApp.');
     }
 }
 
 
+/**
+ * Construye el payload para enviar una plantilla avanzada de WhatsApp (con header, body, botones).
+ * @param {string} contactId ID del contacto (número de teléfono).
+ * @param {object} templateObject Objeto de la plantilla obtenido de la API de Meta.
+ * @param {string|null} [imageUrl=null] URL de la imagen para plantillas con cabecera de imagen.
+ * @param {string[]} [bodyParams=[]] Array de strings para reemplazar variables {{2}}, {{3}}, etc. en el cuerpo.
+ * @returns {Promise<{payload: object, messageToSaveText: string}>} Objeto con el payload y el texto para guardar en DB.
+ */
 async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl = null, bodyParams = []) {
     // ... (el resto de la función no necesita cambios)
     console.log('[DIAGNÓSTICO] Objeto de plantilla recibido:', JSON.stringify(templateObject, null, 2));
     const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+    // Usa el nombre del contacto si existe, si no 'Cliente'
     const contactName = contactDoc.exists ? contactDoc.data().name : 'Cliente';
-    const { name: templateName, components: templateComponents, language } = templateObject;
-    const payloadComponents = [];
-    let messageToSaveText = `📄 Plantilla: ${templateName}`;
 
+    // Extraer datos relevantes de la plantilla
+    const { name: templateName, components: templateComponents, language } = templateObject;
+
+    const payloadComponents = []; // Array para los componentes del payload final
+    let messageToSaveText = `📄 Plantilla: ${templateName}`; // Texto por defecto para guardar en DB
+
+    // --- Procesar Cabecera (HEADER) ---
     const headerDef = templateComponents?.find(c => c.type === 'HEADER');
     if (headerDef?.format === 'IMAGE') {
         if (!imageUrl) throw new Error(`La plantilla '${templateName}' requiere una imagen.`);
-        payloadComponents.push({ type: 'header', parameters: [{ type: 'image', image: { link: imageUrl } }] });
+        // Añadir componente de cabecera de imagen
+        payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'image', image: { link: imageUrl } }]
+        });
         messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
     }
+    // Si la cabecera es texto y espera una variable ({{1}}), usar el nombre del contacto
     if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
-        payloadComponents.push({ type: 'header', parameters: [{ type: 'text', text: contactName }] });
+        payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'text', text: contactName }]
+        });
     }
 
+    // --- Procesar Cuerpo (BODY) ---
     const bodyDef = templateComponents?.find(c => c.type === 'BODY');
     if (bodyDef) {
+        // Encontrar cuántas variables ({{n}}) espera el cuerpo
         const matches = bodyDef.text?.match(/\{\{\d\}\}/g);
         if (matches) {
+            // Combinar nombre del contacto (para {{1}}) con los parámetros adicionales (para {{2}}, {{3}}, ...)
             const allParams = [contactName, ...bodyParams];
-            const parameters = allParams.slice(0, matches.length).map(param => ({ type: 'text', text: String(param) }));
+            // Crear los parámetros de texto, asegurándose de no exceder los esperados
+            const parameters = allParams.slice(0, matches.length).map(param => ({
+                type: 'text',
+                text: String(param) // Asegurar que sea string
+            }));
 
             payloadComponents.push({ type: 'body', parameters });
 
+            // Reconstruir el texto del mensaje para guardarlo en la DB
             let tempText = bodyDef.text;
             parameters.forEach((param, index) => {
                 tempText = tempText.replace(`{{${index + 1}}}`, param.text);
@@ -247,48 +291,79 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
             messageToSaveText = tempText;
 
         } else {
+            // Si el cuerpo no tiene variables, añadir componente vacío
             payloadComponents.push({ type: 'body', parameters: [] });
-            messageToSaveText = bodyDef.text || messageToSaveText;
+            messageToSaveText = bodyDef.text || messageToSaveText; // Usar texto del cuerpo si existe
         }
     }
 
+    // --- Procesar Botones (BUTTONS) ---
     const buttonsDef = templateComponents?.find(c => c.type === 'BUTTONS');
     buttonsDef?.buttons?.forEach((button, index) => {
+        // Si el botón es de tipo URL y espera una variable ({{1}}), usar el contactId
         if (button.type === 'URL' && button.url?.includes('{{1}}')) {
-            payloadComponents.push({ type: 'button', sub_type: 'url', index: index.toString(), parameters: [{ type: 'text', text: contactId }] });
+            payloadComponents.push({
+                type: 'button',
+                sub_type: 'url',
+                index: index.toString(), // El índice debe ser string
+                parameters: [{ type: 'text', text: contactId }] // Usar el ID del contacto
+            });
         }
+        // Nota: Los botones de respuesta rápida (quick_reply) no necesitan parámetros aquí.
     });
 
+    // Construir el payload final
     const payload = {
-        messaging_product: 'whatsapp', to: contactId, type: 'template',
-        template: { name: templateName, language: { code: language } }
+        messaging_product: 'whatsapp',
+        to: contactId,
+        type: 'template',
+        template: {
+            name: templateName,
+            language: { code: language }
+            // components se añade solo si hay alguno
+        }
     };
-    if (payloadComponents.length > 0) payload.template.components = payloadComponents;
+    if (payloadComponents.length > 0) {
+        payload.template.components = payloadComponents;
+    }
+
     console.log(`[DIAGNÓSTICO] Payload final construido para ${contactId}:`, JSON.stringify(payload, null, 2));
+    // Devolver el payload y el texto representativo
     return { payload, messageToSaveText };
 }
 
 
 // --- El resto de las rutas no necesitan cambios ---
 // ... (todas las demás rutas permanecen igual) ...
+// --- Endpoint GET /api/contacts (Paginado y con filtro de etiqueta) ---
 router.get('/contacts', async (req, res) => {
     try {
-        const { limit = 30, startAfterId, tag } = req.query;
+        const { limit = 30, startAfterId, tag } = req.query; // Obtener parámetros de query
         let query = db.collection('contacts_whatsapp');
 
+        // Aplicar filtro de etiqueta si se proporciona
         if (tag) {
             query = query.where('status', '==', tag);
         }
 
+        // Ordenar por último mensaje y limitar resultados
         query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
 
+        // Paginación: Empezar después del último documento de la página anterior
         if (startAfterId) {
             const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
-            if (lastDoc.exists) query = query.startAfter(lastDoc);
+            if (lastDoc.exists) {
+                query = query.startAfter(lastDoc); // Iniciar consulta después de este documento
+            }
         }
+
+        // Ejecutar la consulta
         const snapshot = await query.get();
         const contacts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Obtener el ID del último documento para la siguiente página
         const lastVisibleId = snapshot.docs.length > 0 ? snapshot.docs[snapshot.docs.length - 1].id : null;
+
         res.status(200).json({ success: true, contacts, lastVisibleId });
     } catch (error) {
         console.error('Error fetching paginated contacts:', error);
@@ -296,14 +371,27 @@ router.get('/contacts', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/contacts/search (Búsqueda de contactos) ---
 router.get('/contacts/search', async (req, res) => {
     const { query } = req.query;
     console.log(`[SEARCH] Iniciando búsqueda para: "${query}"`);
-    if (!query) return res.status(400).json({ success: false, message: 'Se requiere un término de búsqueda.' });
+    if (!query) {
+        return res.status(400).json({ success: false, message: 'Se requiere un término de búsqueda.' });
+    }
+
     try {
         const searchResults = [];
         const lowercaseQuery = query.toLowerCase();
+        const uniqueIds = new Set(); // Para evitar duplicados
 
+        const addResult = (doc) => {
+            if (!uniqueIds.has(doc.id)) {
+                searchResults.push({ id: doc.id, ...doc.data() });
+                uniqueIds.add(doc.id);
+            }
+        };
+
+        // 1. Buscar por número de pedido (DHxxxx)
         if (lowercaseQuery.startsWith('dh') && /dh\d+/.test(lowercaseQuery)) {
             const orderNumber = parseInt(lowercaseQuery.replace('dh', ''), 10);
             if (!isNaN(orderNumber)) {
@@ -313,31 +401,49 @@ router.get('/contacts/search', async (req, res) => {
                     const contactId = orderData.telefono;
                     if (contactId) {
                         const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
-                        if (contactDoc.exists && !searchResults.some(c => c.id === contactDoc.id)) {
-                            searchResults.push({ id: contactDoc.id, ...contactDoc.data() });
-                        }
+                        if (contactDoc.exists) addResult(contactDoc);
                     }
                 }
             }
         }
 
+        // 2. Buscar por número de teléfono exacto (ID del documento)
         const phoneDoc = await db.collection('contacts_whatsapp').doc(query).get();
-        if (phoneDoc.exists && !searchResults.some(c => c.id === phoneDoc.id)) {
-            searchResults.push({ id: phoneDoc.id, ...phoneDoc.data() });
-        }
-        const nameSnapshot = await db.collection('contacts_whatsapp').where('name_lowercase', '>=', lowercaseQuery).where('name_lowercase', '<=', lowercaseQuery + '\uf8ff').limit(20).get();
-        nameSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
+        if (phoneDoc.exists) addResult(phoneDoc);
 
-        const partialPhoneSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', query).where(admin.firestore.FieldPath.documentId(), '<=', query + '\uf8ff').limit(20).get();
-        partialPhoneSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
+        // 3. Buscar por nombre (usando name_lowercase)
+        const nameSnapshot = await db.collection('contacts_whatsapp')
+            .where('name_lowercase', '>=', lowercaseQuery)
+            .where('name_lowercase', '<=', lowercaseQuery + '\uf8ff') // Técnica de prefijo
+            .orderBy('name_lowercase') // Necesario para where con rango
+            .limit(20) // Limitar resultados por eficiencia
+            .get();
+        nameSnapshot.forEach(addResult);
 
+        // 4. Buscar por inicio de número de teléfono (prefijo)
+        const partialPhoneSnapshot = await db.collection('contacts_whatsapp')
+            .where(admin.firestore.FieldPath.documentId(), '>=', query)
+            .where(admin.firestore.FieldPath.documentId(), '<=', query + '\uf8ff') // Técnica de prefijo
+            .orderBy(admin.firestore.FieldPath.documentId()) // Necesario para where con rango en ID
+            .limit(20)
+            .get();
+        partialPhoneSnapshot.forEach(addResult);
+
+        // 5. Buscar por número local (prefijo 521 + query) si es numérico y corto
         if (/^\d+$/.test(query) && query.length >= 3) {
             const prefixedQuery = "521" + query;
-            const prefixedSnapshot = await db.collection('contacts_whatsapp').where(admin.firestore.FieldPath.documentId(), '>=', prefixedQuery).where(admin.firestore.FieldPath.documentId(), '<=', prefixedQuery + '\uf8ff').limit(20).get();
-            prefixedSnapshot.forEach(doc => { if (!searchResults.some(c => c.id === doc.id)) searchResults.push({ id: doc.id, ...doc.data() }); });
+            const prefixedSnapshot = await db.collection('contacts_whatsapp')
+                .where(admin.firestore.FieldPath.documentId(), '>=', prefixedQuery)
+                .where(admin.firestore.FieldPath.documentId(), '<=', prefixedQuery + '\uf8ff')
+                .orderBy(admin.firestore.FieldPath.documentId())
+                .limit(20)
+                .get();
+            prefixedSnapshot.forEach(addResult);
         }
 
+        // Ordenar resultados finales por fecha del último mensaje
         searchResults.sort((a, b) => (b.lastMessageTimestamp?.toMillis() || 0) - (a.lastMessageTimestamp?.toMillis() || 0));
+
         res.status(200).json({ success: true, contacts: searchResults });
     } catch (error) {
         console.error('Error searching contacts:', error);
@@ -345,13 +451,22 @@ router.get('/contacts/search', async (req, res) => {
     }
 });
 
+// --- Endpoint PUT /api/contacts/:contactId (Actualizar contacto) ---
 router.put('/contacts/:contactId', async (req, res) => {
     const { contactId } = req.params;
     const { name, email, nickname } = req.body;
-    if (!name) return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
+
+    if (!name) {
+        return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
+    }
+
     try {
+        // Actualizar documento del contacto
         await db.collection('contacts_whatsapp').doc(contactId).update({
-            name, email: email || null, nickname: nickname || null, name_lowercase: name.toLowerCase()
+            name: name,
+            email: email || null, // Guardar null si está vacío
+            nickname: nickname || null, // Guardar null si está vacío
+            name_lowercase: name.toLowerCase() // Actualizar campo para búsquedas
         });
         res.status(200).json({ success: true, message: 'Contacto actualizado.' });
     } catch (error) {
@@ -360,29 +475,34 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/contacts/:contactId/orders (Historial de pedidos) ---
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
         const { contactId } = req.params;
 
+        // Buscar pedidos donde el campo 'telefono' coincida con el contactId
         const snapshot = await db.collection('pedidos')
                                  .where('telefono', '==', contactId)
                                  .get();
 
         if (snapshot.empty) {
-            return res.status(200).json({ success: true, orders: [] });
+            return res.status(200).json({ success: true, orders: [] }); // Devolver array vacío si no hay pedidos
         }
 
+        // Mapear los documentos a un formato deseado
         const orders = snapshot.docs.map(doc => {
             const data = doc.data();
             return {
                 id: doc.id,
                 consecutiveOrderNumber: data.consecutiveOrderNumber,
                 producto: data.producto,
+                // Convertir timestamp a ISO string si existe
                 createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
-                estatus: data.estatus || 'Sin estatus'
+                estatus: data.estatus || 'Sin estatus' // Valor por defecto
             };
         });
 
+        // Ordenar por fecha de creación descendente (más reciente primero)
         orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
         res.status(200).json({ success: true, orders });
@@ -392,90 +512,139 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body;
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
-    if (!text && !fileUrl && !template) return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
+    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // tempId es opcional, para UI optimista
+
+    // Validaciones básicas
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    }
+    if (!text && !fileUrl && !template) {
+        return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío (texto, archivo o plantilla).' });
+    }
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        let messageToSave;
-        let messageId;
+        let messageToSave; // Objeto para guardar en Firestore
+        let messageId; // ID del mensaje de WhatsApp (wamid)
 
+        // --- Lógica para enviar PLANTILLA ---
         if (template) {
-            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []);
-            if (reply_to_wamid) payload.context = { message_id: reply_to_wamid };
+            // Construir payload de plantilla (asumiendo que buildAdvancedTemplatePayload maneja parámetros)
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []); // Sin imagen, sin params extra aquí
+            // Añadir contexto si se está respondiendo a un mensaje
+            if (reply_to_wamid) {
+                payload.context = { message_id: reply_to_wamid };
+            }
+
+            // Enviar a la API de WhatsApp
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
             messageId = response.data.messages[0].id;
-            messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: messageToSaveText };
-
-        } else if (fileUrl && fileType) {
+            // Preparar datos para Firestore
+            messageToSave = {
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: messageId, text: messageToSaveText // Texto representativo de la plantilla
+            };
+        }
+        // --- Lógica para enviar ARCHIVO (imagen, video, audio, documento) ---
+        else if (fileUrl && fileType) {
+            // Asegurar que el archivo en GCS sea público si es de nuestro bucket
             if (fileUrl && fileUrl.includes(bucket.name)) {
                 try {
                     const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                    await bucket.file(filePath).makePublic();
-                    console.log(`[GCS-CHAT] Archivo ${filePath} hecho público para envío.`);
+                    await bucket.file(decodeURIComponent(filePath)).makePublic();
+                    console.log(`[GCS-CHAT] Archivo ${decodeURIComponent(filePath)} hecho público para envío.`);
                 } catch (gcsError) {
                     console.error(`[GCS-CHAT] Advertencia: No se pudo hacer público el archivo ${fileUrl}:`, gcsError.message);
                 }
             }
 
+            // Subir el archivo a WhatsApp para obtener media ID
             const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
 
+            // Determinar el tipo de mensaje para la API de WhatsApp
             const type = fileType.startsWith('image/') ? 'image' :
                          fileType.startsWith('video/') ? 'video' :
                          fileType.startsWith('audio/') ? 'audio' : 'document';
 
             const mediaObject = { id: mediaId };
+            // Añadir caption si es relevante y hay texto
             if (type !== 'audio' && text) {
                 mediaObject.caption = text;
             }
 
+            // Construir payload para la API de WhatsApp
             const messagePayload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: type,
-                [type]: mediaObject
+                [type]: mediaObject // { image: { id: mediaId, caption: text } } o similar
             };
+            // Añadir contexto si se responde
             if (reply_to_wamid) {
                 messagePayload.context = { message_id: reply_to_wamid };
             }
 
+            // Enviar a la API de WhatsApp
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
             messageId = response.data.messages[0].id;
 
-            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : '📎 Archivo');
+            // Preparar datos para Firestore
+            const messageTextForDb = text || (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: messageTextForDb, fileUrl: fileUrl, fileType: fileType
             };
 
-        } else {
+        }
+        // --- Lógica para enviar solo TEXTO ---
+        else {
+            // Usar la función de envío avanzada que maneja solo texto
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, reply_to_wamid });
             messageId = sentMessageData.id;
-            messageToSave = { from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(), id: messageId, text: sentMessageData.textForDb };
+            // Preparar datos para Firestore
+            messageToSave = {
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: messageId, text: sentMessageData.textForDb
+            };
         }
 
-        if (reply_to_wamid) messageToSave.context = { id: reply_to_wamid };
+        // Añadir contexto a los datos de Firestore si se está respondiendo
+        if (reply_to_wamid) {
+            messageToSave.context = { id: reply_to_wamid };
+        }
+        // Limpiar campos nulos antes de guardar
         Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+
+        // Guardar en Firestore (usando tempId si se proporcionó para UI optimista)
         const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
-        await messageRef.set(messageToSave);
-        await contactRef.update({ lastMessage: messageToSave.text, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), unreadCount: 0 });
+        await messageRef.set(messageToSave); // Usar set() para manejar tanto creación como posible sobreescritura (en caso de tempId)
+
+        // Actualizar último mensaje y resetear contador de no leídos en el contacto
+        await contactRef.update({
+            lastMessage: messageToSave.text,
+            lastMessageTimestamp: messageToSave.timestamp, // Usar el timestamp del servidor
+            unreadCount: 0 // Resetear contador al enviar un mensaje
+        });
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
+        // Manejo de errores detallado
         console.error('❌ Error al enviar mensaje/plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
     }
 });
 // ... (resto de las rutas sin cambios)
+// --- Endpoint POST /api/contacts/:contactId/queue-message (Encolar mensaje si >24h) ---
 router.post('/contacts/:contactId/queue-message', async (req, res) => {
     const { contactId } = req.params;
     const { text, fileUrl, fileType, reply_to_wamid } = req.body;
 
+    // Validar que haya contenido
     if (!text && !fileUrl) {
         return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío.' });
     }
@@ -483,32 +652,38 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
+        // Determinar texto para DB (igual que en envío normal)
         let messageToSaveText = text;
         if (fileUrl && !text) {
             const type = fileType.startsWith('image/') ? 'image' :
                          fileType.startsWith('video/') ? 'video' :
                          fileType.startsWith('audio/') ? 'audio' : 'document';
-            messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : '📎 Archivo');
+            messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : '🎵 Audio');
         }
 
+        // Crear objeto del mensaje para guardar
         const messageToSave = {
-            from: PHONE_NUMBER_ID,
-            status: 'queued',
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            from: PHONE_NUMBER_ID, // Mensaje saliente
+            status: 'queued', // Marcar como encolado
+            timestamp: admin.firestore.FieldValue.serverTimestamp(), // Hora actual
             text: messageToSaveText,
             fileUrl: fileUrl || null,
             fileType: fileType || null,
         };
 
+        // Añadir contexto si es una respuesta
         if (reply_to_wamid) {
             messageToSave.context = { id: reply_to_wamid };
         }
 
+        // Guardar el mensaje en la subcolección 'messages'
         await contactRef.collection('messages').add(messageToSave);
 
+        // Actualizar la vista previa del último mensaje en el documento del contacto
         await contactRef.update({
-            lastMessage: `[En cola] ${messageToSave.text}`,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            lastMessage: `[En cola] ${messageToSave.text}`, // Añadir prefijo para UI
+            lastMessageTimestamp: messageToSave.timestamp,
+            // No resetear unreadCount aquí
         });
 
         res.status(200).json({ success: true, message: 'Mensaje encolado con éxito.' });
@@ -519,20 +694,29 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/contacts/:contactId/messages-paginated (Obtener mensajes paginados) ---
 router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
     try {
         const { contactId } = req.params;
-        const { limit = 30, before } = req.query;
+        const { limit = 30, before } = req.query; // 'before' es un timestamp en segundos
 
         let query = db.collection('contacts_whatsapp')
                       .doc(contactId)
                       .collection('messages')
-                      .orderBy('timestamp', 'desc')
+                      .orderBy('timestamp', 'desc') // Ordenar por más reciente primero
                       .limit(Number(limit));
 
+        // Si se proporciona 'before', obtener mensajes *anteriores* a ese timestamp
         if (before) {
+            // Convertir timestamp de segundos (del cliente) a Timestamp de Firestore
             const firestoreTimestamp = admin.firestore.Timestamp.fromMillis(parseInt(before) * 1000);
-            query = query.where('timestamp', '<', firestoreTimestamp);
+            // CORRECCIÓN: Usar startAfter en lugar de where <, ya que la consulta va desc
+            // Necesitamos el documento anterior para usar startAfter, o ajustar la lógica
+            // Alternativa más simple: Filtrar por timestamp <
+             query = query.where('timestamp', '<', firestoreTimestamp);
+             // Si se quiere paginación estricta con startAfter, se necesitaría obtener el documento
+             // const lastDocSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').where('timestamp','==', firestoreTimestamp).limit(1).get();
+             // if(!lastDocSnapshot.empty) query = query.startAfter(lastDocSnapshot.docs[0]);
         }
 
         const snapshot = await query.get();
@@ -541,8 +725,11 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
             return res.status(200).json({ success: true, messages: [] });
         }
 
+        // Mapear documentos, incluyendo el ID del documento de Firestore (docId)
         const messages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
 
+        // Nota: La API devuelve los mensajes ordenados del más reciente al más antiguo.
+        // El frontend los invertirá si necesita mostrarlos en orden cronológico.
         res.status(200).json({ success: true, messages });
 
     } catch (error) {
@@ -552,19 +739,48 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
 });
 
 
+// --- Endpoint POST /api/contacts/:contactId/messages/:messageDocId/react (Enviar/quitar reacción) ---
 router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body;
+    const { reaction } = req.body; // reaction es el emoji (string) o null/"" para quitarla
+
     try {
+        // Obtener referencia al mensaje en Firestore
         const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
         const messageDoc = await messageRef.get();
-        if (!messageDoc.exists) return res.status(404).json({ success: false, message: 'Mensaje no encontrado.' });
+
+        if (!messageDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Mensaje no encontrado.' });
+        }
+
+        // Obtener el WhatsApp Message ID (wamid) del mensaje original
         const wamid = messageDoc.data().id;
-        const payload = { messaging_product: 'whatsapp', to: contactId, type: 'reaction', reaction: { message_id: wamid, emoji: reaction || "" } };
+        if (!wamid) {
+             return res.status(400).json({ success: false, message: 'El mensaje original no tiene un ID de WhatsApp válido.' });
+        }
+
+        // Construir payload para la API de Reacciones de WhatsApp
+        const payload = {
+            messaging_product: 'whatsapp',
+            to: contactId,
+            type: 'reaction',
+            reaction: {
+                message_id: wamid, // ID del mensaje al que se reacciona
+                emoji: reaction || "" // Emoji o string vacío para quitar
+            }
+        };
+
+        // Enviar reacción a la API de WhatsApp
         await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
             headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
         });
-        await messageRef.update({ reaction: reaction || admin.firestore.FieldValue.delete() });
+
+        // Actualizar el campo 'reaction' en Firestore
+        // Si reaction es null o "", eliminar el campo; si no, actualizarlo
+        await messageRef.update({
+            reaction: reaction || admin.firestore.FieldValue.delete()
+        });
+
         res.status(200).json({ success: true, message: 'Reacción enviada y actualizada.' });
     } catch (error) {
         console.error('Error al procesar la reacción:', error.response ? error.response.data : error.message);
@@ -572,15 +788,34 @@ router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res
     }
 });
 
+// --- Endpoint GET /api/whatsapp-templates (Obtener plantillas aprobadas) ---
 router.get('/whatsapp-templates', async (req, res) => {
-    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
+    // Validar credenciales
+    if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp Business.' });
+    }
+
     const url = `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`;
     try {
+        // Llamar a la API de Meta
         const response = await axios.get(url, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
-        const templates = response.data.data.filter(t => t.status === 'APPROVED').map(t => ({
-            name: t.name, language: t.language, status: t.status, category: t.category,
-            components: t.components.map(c => ({ type: c.type, text: c.text, format: c.format, buttons: c.buttons }))
-        }));
+
+        // Filtrar solo plantillas APROBADAS y mapear a formato útil
+        const templates = response.data.data
+            .filter(t => t.status === 'APPROVED') // Solo aprobadas
+            .map(t => ({
+                name: t.name,
+                language: t.language,
+                status: t.status,
+                category: t.category,
+                // Mapear componentes (header, body, footer, buttons)
+                components: t.components.map(c => ({
+                    type: c.type,
+                    text: c.text, // Texto (puede tener variables {{n}})
+                    format: c.format, // Para header (IMAGE, TEXT, VIDEO, DOCUMENT)
+                    buttons: c.buttons // Array de botones si type es BUTTONS
+                }))
+            }));
         res.status(200).json({ success: true, templates });
     } catch (error) {
         console.error('Error al obtener plantillas de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
@@ -589,95 +824,160 @@ router.get('/whatsapp-templates', async (req, res) => {
 });
 
 
+// --- Endpoint POST /api/campaigns/send-template (Enviar campaña de texto) ---
 router.post('/campaigns/send-template', async (req, res) => {
-    const { contactIds, template } = req.body;
-    if (!contactIds?.length || !template) return res.status(400).json({ success: false, message: 'Se requieren IDs y una plantilla.' });
+    const { contactIds, template } = req.body; // template es el objeto completo
+
+    // Validaciones
+    if (!contactIds?.length || !template) {
+        return res.status(400).json({ success: false, message: 'Se requieren IDs de contacto y una plantilla.' });
+    }
+
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    const promises = contactIds.map(async (contactId) => {
+    let successful = 0;
+    let failed = 0;
+    const failedDetails = [];
+
+    // Enviar mensaje a cada contacto (con pequeño delay)
+    for (const contactId of contactIds) {
         try {
-            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+            // Construir payload usando la función helper
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template); // Sin imagen, sin params extra
+
+            // Enviar a WhatsApp
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
+
+            // Guardar en Firestore
             const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-            await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText });
-            await contactRef.update({ lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0 });
-            return { status: 'fulfilled', value: contactId };
+            await contactRef.collection('messages').add({
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText
+            });
+            // Actualizar último mensaje del contacto
+            await contactRef.update({
+                lastMessage: messageToSaveText, lastMessageTimestamp: timestamp, unreadCount: 0
+            });
+
+            successful++;
         } catch (error) {
-            console.error(`Error en campaña a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
-            return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
+            console.error(`Error en campaña (texto) a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            failed++;
+            failedDetails.push({ contactId, error: error.response ? JSON.stringify(error.response.data) : error.message });
         }
+        await new Promise(resolve => setTimeout(resolve, 300)); // Delay de 300ms
+    }
+
+    res.status(200).json({
+        success: true,
+        message: `Campaña de texto procesada.`,
+        results: { successful: successful, failed: failed, details: failedDetails }
     });
-    const outcomes = await Promise.all(promises);
-    const successful = outcomes.filter(o => o.status === 'fulfilled').map(o => o.value);
-    const failed = outcomes.filter(o => o.status === 'rejected').map(o => o.reason);
-    res.status(200).json({ success: true, message: `Campaña procesada.`, results: { successful, failed } });
 });
 
+// --- Endpoint POST /api/campaigns/send-template-with-image (Enviar campaña con imagen) ---
 router.post('/campaigns/send-template-with-image', async (req, res) => {
     const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;
-    if ((!contactIds || !contactIds.length) && !phoneNumber) return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs o un número.' });
-    if (!templateObject || !templateObject.name) return res.status(400).json({ success: false, message: 'Se requiere el objeto de la plantilla.' });
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
 
+    // Validaciones
+    if ((!contactIds || !contactIds.length) && !phoneNumber) {
+        return res.status(400).json({ success: false, message: 'Se requiere una lista de IDs de contacto o un número de teléfono.' });
+    }
+    if (!templateObject || !templateObject.name) {
+        return res.status(400).json({ success: false, message: 'Se requiere el objeto de la plantilla.' });
+    }
+    if (!imageUrl) {
+         return res.status(400).json({ success: false, message: 'Se requiere la URL de la imagen.' });
+    }
+    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+    }
+
+    // Determinar a quién enviar
     const targets = phoneNumber ? [phoneNumber] : contactIds;
     const url = `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`;
     const headers = { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' };
-    const promises = targets.map(async (contactId) => {
+    let successful = 0;
+    let failed = 0;
+    const failedDetails = [];
+
+    // Enviar a cada destinatario
+    for (const contactId of targets) {
         try {
+            // Construir payload (incluyendo imageUrl)
             const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, templateObject, imageUrl);
+
+            // Enviar a WhatsApp
             const response = await axios.post(url, payload, { headers });
             const messageId = response.data.messages[0].id;
             const timestamp = admin.firestore.FieldValue.serverTimestamp();
-            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
+            // Guardar/Actualizar contacto y mensaje en Firestore
+            const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+            // Asegurarse de que el contacto exista (crear si no)
             await contactRef.set({
-                name: `Nuevo Contacto (${contactId.slice(-4)})`,
+                name: `Nuevo Contacto (${contactId.slice(-4)})`, // Nombre genérico
                 wa_id: contactId,
                 lastMessage: messageToSaveText,
                 lastMessageTimestamp: timestamp,
-                unreadCount: 0
-            }, { merge: true });
+                unreadCount: 0 // Resetear no leídos
+            }, { merge: true }); // Usar merge para no sobrescribir datos existentes como tags
 
-            await contactRef.collection('messages').add({ from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId, text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external' });
+            // Guardar el mensaje enviado
+            await contactRef.collection('messages').add({
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp, id: messageId,
+                text: messageToSaveText, fileUrl: imageUrl, fileType: 'image/external' // Marcar como imagen externa
+            });
 
-            return { status: 'fulfilled', value: contactId };
+            successful++;
         } catch (error) {
             console.error(`Error en campaña con imagen a ${contactId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
-            return { status: 'rejected', reason: { contactId, error: error.response ? JSON.stringify(error.response.data) : error.message } };
+            failed++;
+            failedDetails.push({ contactId, error: error.response ? JSON.stringify(error.response.data) : error.message });
         }
+        await new Promise(resolve => setTimeout(resolve, 300)); // Delay
+    }
+
+    res.status(200).json({
+        success: true,
+        message: `Campaña con imagen procesada.`,
+        results: { successful: successful, failed: failed, details: failedDetails }
     });
-    const outcomes = await Promise.all(promises);
-    const successful = outcomes.filter(o => o.status === 'fulfilled').map(o => o.value);
-    const failed = outcomes.filter(o => o.status === 'rejected').map(o => o.reason);
-    res.status(200).json({ success: true, message: `Campaña con imagen procesada.`, results: { successful, failed } });
 });
 
+// --- Endpoint POST /api/storage/generate-signed-url (Generar URL firmada para subida a GCS) ---
 router.post('/storage/generate-signed-url', async (req, res) => {
     const { fileName, contentType, pathPrefix } = req.body;
+
+    // Validaciones
     if (!fileName || !contentType || !pathPrefix) {
         return res.status(400).json({ success: false, message: 'Faltan fileName, contentType o pathPrefix.' });
     }
 
+    // Crear ruta única en GCS
     const filePath = `${pathPrefix}/${Date.now()}_${fileName.replace(/\s/g, '_')}`;
     const file = bucket.file(filePath);
 
+    // Opciones para la URL firmada (v4, escritura, expira en 15 min)
     const options = {
         version: 'v4',
         action: 'write',
-        expires: Date.now() + 15 * 60 * 1000,
-        contentType: contentType,
+        expires: Date.now() + 15 * 60 * 1000, // 15 minutes
+        contentType: contentType, // Forzar tipo de contenido en la subida
     };
 
     try {
+        // Generar la URL firmada
         const [signedUrl] = await file.getSignedUrl(options);
+        // Generar la URL pública (para guardar en Firestore después de subir)
         const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
 
+        // Devolver ambas URLs al cliente
         res.status(200).json({
             success: true,
-            signedUrl,
-            publicUrl,
+            signedUrl, // URL para subir el archivo
+            publicUrl, // URL para acceder al archivo después
         });
     } catch (error) {
         console.error('Error al generar la URL firmada:', error);
@@ -686,14 +986,17 @@ router.post('/storage/generate-signed-url', async (req, res) => {
 });
 
 
+// --- Endpoint GET /api/orders/:orderId (Obtener un pedido por ID) ---
 router.get('/orders/:orderId', async (req, res) => {
     try {
         const { orderId } = req.params;
         const docRef = db.collection('pedidos').doc(orderId);
         const doc = await docRef.get();
+
         if (!doc.exists) {
             return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
         }
+        // Devolver datos del pedido incluyendo su ID
         res.status(200).json({ success: true, order: { id: doc.id, ...doc.data() } });
     } catch (error) {
         console.error('Error fetching single order:', error);
@@ -701,9 +1004,10 @@ router.get('/orders/:orderId', async (req, res) => {
     }
 });
 
+// --- Endpoint PUT /api/orders/:orderId (Actualizar un pedido) ---
 router.put('/orders/:orderId', async (req, res) => {
     const { orderId } = req.params;
-    const updateData = req.body;
+    const updateData = req.body; // Datos enviados desde el frontend
 
     if (!orderId) {
         return res.status(400).json({ success: false, message: 'Falta el ID del pedido.' });
@@ -719,30 +1023,39 @@ router.put('/orders/:orderId', async (req, res) => {
 
         const existingData = orderDoc.data();
 
-        // Manejar la eliminación de fotos de Storage
+        // --- Manejo de eliminación de fotos ---
+        // Combinar URLs de fotos existentes (pedido y promoción)
         const existingPhotos = new Set([
             ...(existingData.fotoUrls || []),
             ...(existingData.fotoPromocionUrls || [])
         ]);
+        // Combinar URLs de fotos actualizadas
         const updatedPhotos = new Set([
             ...(updateData.fotoUrls || []),
             ...(updateData.fotoPromocionUrls || [])
         ]);
 
+        // Encontrar URLs que estaban antes pero ya no están
         const photosToDelete = [...existingPhotos].filter(url => !updatedPhotos.has(url));
 
+        // Borrar las fotos eliminadas de GCS
         const deletePromises = photosToDelete.map(url => {
             try {
-                const filePath = new URL(url).pathname.split('/').slice(2).join('/');
-                return bucket.file(decodeURIComponent(filePath)).delete().catch(err => console.warn(`No se pudo eliminar la foto antigua ${url}:`, err.message));
+                // Extraer la ruta del archivo de la URL pública
+                const filePath = new URL(url).pathname.split(`/${bucket.name}/`)[1];
+                if (!filePath) throw new Error('Invalid GCS URL path');
+                console.log(`[GCS DELETE] Intentando borrar: ${decodeURIComponent(filePath)}`);
+                return bucket.file(decodeURIComponent(filePath)).delete()
+                    .catch(err => console.warn(`No se pudo eliminar la foto antigua ${url}:`, err.message)); // No fallar si el borrado falla
             } catch (error) {
-                console.warn(`URL de foto inválida, no se puede eliminar de storage: ${url}`);
-                return Promise.resolve();
+                console.warn(`URL de foto inválida o error al parsear, no se puede eliminar de storage: ${url}`, error.message);
+                return Promise.resolve(); // Continuar aunque falle el parseo/borrado
             }
         });
 
-        await Promise.all(deletePromises);
+        await Promise.all(deletePromises); // Esperar a que terminen los intentos de borrado
 
+        // Actualizar el documento del pedido en Firestore con los nuevos datos
         await orderRef.update(updateData);
 
         res.status(200).json({ success: true, message: 'Pedido actualizado con éxito.' });
@@ -753,63 +1066,75 @@ router.put('/orders/:orderId', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/orders (Crear nuevo pedido) ---
 router.post('/orders', async (req, res) => {
+    // Extraer datos del cuerpo de la solicitud
     const {
-        contactId,
+        contactId, // ID del contacto de WhatsApp asociado
         producto,
-        telefono,
+        telefono, // Puede ser diferente al contactId si se edita manualmente
         precio,
         datosProducto,
         datosPromocion,
         comentarios,
-        fotoUrls,
-        fotoPromocionUrls
+        fotoUrls, // Array de URLs de GCS para fotos del producto
+        fotoPromocionUrls // Array de URLs de GCS para fotos de la promoción
     } = req.body;
 
+    // Validaciones básicas
     if (!contactId || !producto || !telefono) {
         return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: contactId, producto y teléfono.' });
     }
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        // Referencia al contador de pedidos en Firestore
         const orderCounterRef = db.collection('counters').doc('orders');
 
+        // --- Generar número de pedido consecutivo usando una transacción ---
         const newOrderNumber = await db.runTransaction(async (transaction) => {
             const counterDoc = await transaction.get(orderCounterRef);
             let currentCounter = counterDoc.exists ? counterDoc.data().lastOrderNumber || 0 : 0;
+            // Asegurar que el contador empiece en 1001 si es menor
             const nextOrderNumber = (currentCounter < 1000) ? 1001 : currentCounter + 1;
+            // Actualizar el contador dentro de la transacción
             transaction.set(orderCounterRef, { lastOrderNumber: nextOrderNumber }, { merge: true });
             return nextOrderNumber;
         });
 
+        // Crear objeto del nuevo pedido
         const nuevoPedido = {
-            contactId,
+            contactId, // Guardar ID del contacto asociado
             producto,
             telefono,
             precio: precio || 0,
             datosProducto: datosProducto || '',
             datosPromocion: datosPromocion || '',
             comentarios: comentarios || '',
-            fotoUrls: fotoUrls || [],
-            fotoPromocionUrls: fotoPromocionUrls || [],
-            consecutiveOrderNumber: newOrderNumber,
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-            estatus: "Sin estatus",
-            telefonoVerificado: false,
-            estatusVerificado: false
+            fotoUrls: fotoUrls || [], // Guardar array de URLs
+            fotoPromocionUrls: fotoPromocionUrls || [], // Guardar array de URLs
+            consecutiveOrderNumber: newOrderNumber, // Número consecutivo
+            createdAt: admin.firestore.FieldValue.serverTimestamp(), // Fecha de creación
+            estatus: "Sin estatus", // Estatus inicial
+            telefonoVerificado: false, // Checkbox inicial
+            estatusVerificado: false // Checkbox inicial
+            // createdBy: userId (si se implementa autenticación de usuarios del CRM)
         };
 
-        await db.collection('pedidos').add(nuevoPedido);
+        // Añadir el nuevo pedido a la colección 'pedidos'
+        const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
 
+        // Actualizar el documento del contacto con la información del último pedido
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
-            lastOrderDate: admin.firestore.FieldValue.serverTimestamp()
+            lastOrderDate: nuevoPedido.createdAt // Usar el mismo timestamp
         });
 
+        // Devolver éxito y el número de pedido generado
         res.status(201).json({
             success: true,
             message: 'Pedido registrado con éxito.',
-            orderNumber: `DH${newOrderNumber}`
+            orderNumber: `DH${newOrderNumber}` // Formato DHxxxx
         });
 
     } catch (error) {
@@ -819,57 +1144,88 @@ router.post('/orders', async (req, res) => {
 });
 
 
-router.post('/contacts/:contactId/mark-as-registration', async (req, res) => {
-    const { contactId } = req.params;
-    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-    try {
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        const contactData = contactDoc.data();
-        if (contactData.registrationStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya fue registrado.' });
-        if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
-        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('CompleteRegistration', eventInfo, contactData.adReferral || {});
-        await contactRef.update({ registrationStatus: 'completed', registrationDate: admin.firestore.FieldValue.serverTimestamp(), status: 'venta' });
-        res.status(200).json({ success: true, message: 'Contacto marcado como "Registro Completado" y etiquetado como Venta.' });
-    } catch (error) {
-        console.error(`Error en mark-as-registration para ${contactId}:`, error.message);
-        res.status(500).json({ success: false, message: error.message || 'Error al procesar la solicitud.' });
-    }
-});
-
+// --- Endpoint POST /api/contacts/:contactId/mark-as-purchase (Marcar compra y enviar evento a Meta) ---
 router.post('/contacts/:contactId/mark-as-purchase', async (req, res) => {
     const { contactId } = req.params;
-    const { value } = req.body;
-    if (!value || isNaN(parseFloat(value))) return res.status(400).json({ success: false, message: 'Se requiere un valor numérico válido.' });
+    const { value } = req.body; // Valor de la compra
+
+    // Validar valor
+    if (!value || isNaN(parseFloat(value))) {
+        return res.status(400).json({ success: false, message: 'Se requiere un valor numérico válido para la compra.' });
+    }
+
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     try {
         const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
         const contactData = contactDoc.data();
-        if (contactData.purchaseStatus === 'completed') return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra.' });
-        if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
-        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
-        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, { value: parseFloat(value), currency: 'MXN' });
-        await contactRef.update({ purchaseStatus: 'completed', purchaseValue: parseFloat(value), purchaseCurrency: 'MXN', purchaseDate: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta.' });
+
+        // Evitar registrar la compra dos veces
+        if (contactData.purchaseStatus === 'completed') {
+            return res.status(400).json({ success: false, message: 'Este contacto ya realizó una compra registrada.' });
+        }
+        // Asegurar que tenemos el wa_id para el evento de Meta
+        if (!contactData.wa_id) {
+            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
+        }
+
+        // Preparar información para el evento de Meta
+        const eventInfo = {
+            wa_id: contactData.wa_id,
+            profile: { name: contactData.name }
+        };
+        const customEventData = {
+            value: parseFloat(value),
+            currency: 'MXN' // Moneda
+        };
+
+        // Enviar evento 'Purchase' a la API de Conversiones de Meta
+        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customEventData);
+
+        // Actualizar el estado del contacto en Firestore
+        await contactRef.update({
+            purchaseStatus: 'completed',
+            purchaseValue: parseFloat(value),
+            purchaseCurrency: 'MXN',
+            purchaseDate: admin.firestore.FieldValue.serverTimestamp()
+            // Podrías añadir lógica para actualizar la etiqueta ('status') aquí si es necesario
+            // status: 'venta_cerrada' // Por ejemplo
+        });
+
+        res.status(200).json({ success: true, message: 'Compra registrada y evento enviado a Meta con éxito.' });
     } catch (error) {
         console.error(`Error en mark-as-purchase para ${contactId}:`, error.message);
         res.status(500).json({ success: false, message: error.message || 'Error al procesar la compra.' });
     }
 });
 
+// --- Endpoint POST /api/contacts/:contactId/send-view-content (Enviar evento ViewContent a Meta) ---
 router.post('/contacts/:contactId/send-view-content', async (req, res) => {
     const { contactId } = req.params;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
     try {
         const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
         const contactData = contactDoc.data();
-        if (!contactData.wa_id) return res.status(500).json({ success: false, message: "Error: El contacto no tiene un ID de WhatsApp guardado." });
-        const eventInfo = { wa_id: contactData.wa_id, profile: { name: contactData.name } };
+
+        if (!contactData.wa_id) {
+             return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
+        }
+
+        // Preparar información para el evento
+        const eventInfo = {
+            wa_id: contactData.wa_id,
+            profile: { name: contactData.name }
+        };
+
+        // Enviar evento 'ViewContent'
         await sendConversionEvent('ViewContent', eventInfo, contactData.adReferral || {});
-        res.status(200).json({ success: true, message: 'Evento ViewContent enviado.' });
+
+        res.status(200).json({ success: true, message: 'Evento ViewContent enviado a Meta con éxito.' });
     } catch (error) {
         console.error(`Error en send-view-content para ${contactId}:`, error.message);
         res.status(500).json({ success: false, message: error.message || 'Error al procesar el envío de ViewContent.' });
@@ -877,165 +1233,257 @@ router.post('/contacts/:contactId/send-view-content', async (req, res) => {
 });
 
 
+// --- Endpoints para Notas Internas (/api/contacts/:contactId/notes) ---
+// POST (Crear)
 router.post('/contacts/:contactId/notes', async (req, res) => {
     const { contactId } = req.params;
     const { text } = req.body;
-    if (!text) return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
     try {
-        await db.collection('contacts_whatsapp').doc(contactId).collection('notes').add({ text, timestamp: admin.firestore.FieldValue.serverTimestamp() });
-        res.status(201).json({ success: true, message: 'Nota guardada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar la nota.' }); }
+        // Añadir nota a la subcolección 'notes' del contacto
+        await db.collection('contacts_whatsapp').doc(contactId).collection('notes').add({
+            text,
+            timestamp: admin.firestore.FieldValue.serverTimestamp() // Guardar hora de creación
+        });
+        res.status(201).json({ success: true, message: 'Nota guardada con éxito.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al guardar la nota.' });
+    }
 });
 
+// PUT (Actualizar)
 router.put('/contacts/:contactId/notes/:noteId', async (req, res) => {
     const { contactId, noteId } = req.params;
     const { text } = req.body;
-    if (!text) return res.status(400).json({ success: false, message: 'El texto no puede estar vacío.' });
+    if (!text) {
+        return res.status(400).json({ success: false, message: 'El texto de la nota no puede estar vacío.' });
+    }
     try {
-        await db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId).update({ text });
-        res.status(200).json({ success: true, message: 'Nota actualizada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la nota.' }); }
+        // Actualizar el texto de la nota específica
+        await db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId).update({
+            text: text
+            // Podrías añadir un campo 'updatedAt' si quisieras rastrear ediciones
+        });
+        res.status(200).json({ success: true, message: 'Nota actualizada con éxito.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar la nota.' });
+    }
 });
 
+// DELETE (Borrar)
 router.delete('/contacts/:contactId/notes/:noteId', async (req, res) => {
     const { contactId, noteId } = req.params;
     try {
+        // Borrar la nota específica
         await db.collection('contacts_whatsapp').doc(contactId).collection('notes').doc(noteId).delete();
-        res.status(200).json({ success: true, message: 'Nota eliminada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la nota.' }); }
+        res.status(200).json({ success: true, message: 'Nota eliminada con éxito.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar la nota.' });
+    }
 });
 
 
+// --- Endpoints para Respuestas Rápidas (/api/quick-replies) ---
+// POST (Crear)
 router.post('/quick-replies', async (req, res) => {
     const { shortcut, message, fileUrl, fileType } = req.body;
-    if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
-    if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
+    // Validaciones
+    if (!shortcut || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'El atajo y un mensaje o archivo adjunto son obligatorios.' });
+    }
+    if (fileUrl && !fileType) { // Si hay archivo, se necesita el tipo
+         return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
+    }
+
     try {
+        // Asegurar que archivo GCS sea público
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(filePath).makePublic();
-                console.log(`[GCS-QR] Archivo ${filePath} hecho público con éxito.`);
+                await bucket.file(decodeURIComponent(filePath)).makePublic();
+                console.log(`[GCS-QR] Archivo ${decodeURIComponent(filePath)} hecho público con éxito.`);
             } catch (gcsError) {
                 console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
+                // No fallar la operación, solo loguear
             }
         }
 
+        // Verificar si el atajo ya existe
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-        if (!existing.empty) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
-        const replyData = { shortcut, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        if (!existing.empty) {
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
+        }
+
+        // Crear datos para Firestore (null si no hay valor)
+        const replyData = {
+            shortcut,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+        // Añadir a Firestore
         const newReply = await db.collection('quick_replies').add(replyData);
         res.status(201).json({ success: true, id: newReply.id, data: replyData });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al crear la respuesta rápida.' });
+    }
 });
 
+// PUT (Actualizar)
 router.put('/quick-replies/:id', async (req, res) => {
     const { id } = req.params;
     const { shortcut, message, fileUrl, fileType } = req.body;
-    if (!shortcut || (!message && !fileUrl)) return res.status(400).json({ success: false, message: 'Atajo y mensaje/archivo son obligatorios.' });
-    if (fileUrl && !fileType) return res.status(400).json({ success: false, message: 'Tipo de archivo es obligatorio.' });
+    // Validaciones
+    if (!shortcut || (!message && !fileUrl)) {
+        return res.status(400).json({ success: false, message: 'El atajo y un mensaje o archivo adjunto son obligatorios.' });
+    }
+     if (fileUrl && !fileType) {
+         return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
+    }
+
     try {
+        // Asegurar que archivo GCS sea público
         if (fileUrl && fileUrl.includes(bucket.name)) {
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(filePath).makePublic();
-                console.log(`[GCS-QR] Archivo ${filePath} hecho público con éxito.`);
+                await bucket.file(decodeURIComponent(filePath)).makePublic();
+                console.log(`[GCS-QR] Archivo ${decodeURIComponent(filePath)} hecho público con éxito.`);
             } catch (gcsError) {
                 console.error(`[GCS-QR] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
             }
         }
 
+        // Verificar si el nuevo atajo ya existe en *otro* documento
         const existing = await db.collection('quick_replies').where('shortcut', '==', shortcut).limit(1).get();
-        if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya existe.` });
-        const updateData = { shortcut, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
+        if (!existing.empty && existing.docs[0].id !== id) { // Asegurarse de que no sea el mismo documento
+            return res.status(409).json({ success: false, message: `El atajo '/${shortcut}' ya está en uso por otra respuesta.` });
+        }
+
+        // Crear datos para actualizar
+        const updateData = {
+            shortcut,
+            message: message || null,
+            fileUrl: fileUrl || null,
+            fileType: fileType || null
+        };
+        // Actualizar en Firestore
         await db.collection('quick_replies').doc(id).update(updateData);
         res.status(200).json({ success: true, message: 'Respuesta rápida actualizada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
+    }
 });
 
+// DELETE (Borrar)
 router.delete('/quick-replies/:id', async (req, res) => {
     const { id } = req.params;
     try {
+        // Borrar de Firestore
         await db.collection('quick_replies').doc(id).delete();
         res.status(200).json({ success: true, message: 'Respuesta rápida eliminada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+        // Nota: No se borra el archivo de GCS asociado automáticamente.
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar.' });
+    }
 });
 
 
+// --- Endpoints para Etiquetas (/api/tags) ---
+// POST (Crear)
 router.post('/tags', async (req, res) => {
     const { label, color, key, order } = req.body;
-    if (!label || !color || !key || order === undefined) return res.status(400).json({ success: false, message: 'Faltan datos.' });
+    if (!label || !color || !key || order === undefined) {
+        return res.status(400).json({ success: false, message: 'Faltan datos (label, color, key, order).' });
+    }
     try {
         await db.collection('crm_tags').add({ label, color, key, order });
         res.status(201).json({ success: true });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al crear la etiqueta.' });
+    }
 });
 
+// PUT (Actualizar Orden)
 router.put('/tags/order', async (req, res) => {
-    const { orderedIds } = req.body;
-    if (!Array.isArray(orderedIds)) return res.status(400).json({ success: false, message: 'Se esperaba un array de IDs.' });
+    const { orderedIds } = req.body; // Array de IDs en el nuevo orden
+    if (!Array.isArray(orderedIds)) {
+        return res.status(400).json({ success: false, message: 'Se esperaba un array de IDs.' });
+    }
     try {
         const batch = db.batch();
-        orderedIds.forEach((id, index) => batch.update(db.collection('crm_tags').doc(id), { order: index }));
-        await batch.commit();
+        // Actualizar el campo 'order' de cada etiqueta según su posición en el array
+        orderedIds.forEach((id, index) => {
+            const docRef = db.collection('crm_tags').doc(id);
+            batch.update(docRef, { order: index });
+        });
+        await batch.commit(); // Ejecutar todas las actualizaciones en lote
         res.status(200).json({ success: true, message: 'Orden de etiquetas actualizado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar orden.' });
+    }
 });
 
+// PUT (Actualizar una etiqueta)
 router.put('/tags/:id', async (req, res) => {
     const { id } = req.params;
     const { label, color, key } = req.body;
-    if (!label || !color || !key) return res.status(400).json({ success: false, message: 'Faltan datos.' });
+    if (!label || !color || !key) {
+        return res.status(400).json({ success: false, message: 'Faltan datos (label, color, key).' });
+    }
     try {
         await db.collection('crm_tags').doc(id).update({ label, color, key });
         res.status(200).json({ success: true });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar la etiqueta.' });
+    }
 });
 
+// DELETE (Borrar una etiqueta)
 router.delete('/tags/:id', async (req, res) => {
     try {
         await db.collection('crm_tags').doc(req.params.id).delete();
         res.status(200).json({ success: true });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la etiqueta.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al eliminar la etiqueta.' });
+    }
 });
 
+// DELETE (Borrar TODAS las etiquetas)
 router.delete('/tags', async (req, res) => {
     try {
         const snapshot = await db.collection('crm_tags').get();
         const batch = db.batch();
-        snapshot.docs.forEach(doc => batch.delete(doc.ref));
-        await batch.commit();
+        snapshot.docs.forEach(doc => batch.delete(doc.ref)); // Añadir borrado de cada doc al lote
+        await batch.commit(); // Ejecutar borrado en lote
         res.status(200).json({ success: true });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al eliminar todas las etiquetas.' });
+    }
 });
 
 
-// --- INICIO: Modificación de Rutas /api/ad-responses ---
+// --- Endpoints para Mensajes de Anuncios (/api/ad-responses) ---
+// POST (Crear)
 router.post('/ad-responses', async (req, res) => {
-    // Se extrae adIds (esperando un array o string) en lugar de adId
     const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
-    // Se procesa la entrada de adIds
-    const adIds = parseAdIds(adIdsInput);
+    const adIds = parseAdIds(adIdsInput); // Usa la función helper para limpiar
 
-    // Se valida que haya al menos un adId y los otros campos requeridos
     if (!adName || adIds.length === 0 || (!message && !fileUrl)) {
-        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID y un mensaje o archivo son obligatorios.' });
+        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID válido, y un mensaje o archivo son obligatorios.' });
     }
 
     try {
-        // Asegurarse de que el archivo en GCS sea público si existe
-        if (fileUrl && fileUrl.includes(bucket.name)) {
+        if (fileUrl && fileUrl.includes(bucket.name)) { // Hacer público archivo GCS
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(filePath).makePublic();
-                console.log(`[GCS] Archivo ${filePath} hecho público con éxito.`);
-            } catch (gcsError) {
-                console.error(`[GCS] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
-                // Continuar aunque falle, ya que la URL podría ser válida temporalmente
-            }
+                await bucket.file(decodeURIComponent(filePath)).makePublic();
+                console.log(`[GCS-AD] Archivo ${decodeURIComponent(filePath)} hecho público.`);
+            } catch (gcsError) { console.error(`[GCS-AD] Warn: No se pudo hacer público ${fileUrl}:`, gcsError); }
         }
 
-        // Verificar si alguno de los Ad IDs ya está en uso en OTRO documento
+        // Verificar conflictos de Ad ID
         const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
         if (!snapshot.empty) {
             const conflictingIds = snapshot.docs.reduce((acc, doc) => {
@@ -1044,49 +1492,44 @@ router.post('/ad-responses', async (req, res) => {
                 return acc.concat(overlap);
             }, []);
             if (conflictingIds.length > 0) {
-                 return res.status(409).json({ success: false, message: `Los siguientes Ad IDs ya están en uso: ${[...new Set(conflictingIds)].join(', ')}` });
+                 return res.status(409).json({ success: false, message: `Los Ad IDs ya están en uso: ${[...new Set(conflictingIds)].join(', ')}` });
             }
         }
 
-        // Guardar los datos con adIds como un array
+        // Guardar en Firestore
         const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
         const newResponse = await db.collection('ad_responses').add(data);
         res.status(201).json({ success: true, id: newResponse.id, data });
     } catch (error) {
         console.error("Error creating ad response:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje de anuncio.' });
+        res.status(500).json({ success: false, message: 'Error del servidor al crear el mensaje.' });
     }
 });
 
+// PUT (Actualizar)
 router.put('/ad-responses/:id', async (req, res) => {
     const { id } = req.params;
-    // Se extrae adIds (esperando un array o string) en lugar de adId
     const { adName, adIds: adIdsInput, message, fileUrl, fileType } = req.body;
-    // Se procesa la entrada de adIds
-    const adIds = parseAdIds(adIdsInput);
+    const adIds = parseAdIds(adIdsInput); // Limpiar IDs
 
-    // Se valida que haya al menos un adId y los otros campos requeridos
     if (!adName || adIds.length === 0 || (!message && !fileUrl)) {
-        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID y un mensaje o archivo son obligatorios.' });
+        return res.status(400).json({ success: false, message: 'Nombre, al menos un Ad ID válido, y un mensaje o archivo son obligatorios.' });
     }
     try {
-        // Asegurarse de que el archivo en GCS sea público si existe
-        if (fileUrl && fileUrl.includes(bucket.name)) {
+        if (fileUrl && fileUrl.includes(bucket.name)) { // Hacer público archivo GCS
             try {
                 const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
-                await bucket.file(filePath).makePublic();
-                console.log(`[GCS] Archivo ${filePath} hecho público con éxito.`);
-            } catch (gcsError) {
-                console.error(`[GCS] No se pudo hacer público el archivo ${fileUrl}:`, gcsError);
-            }
+                await bucket.file(decodeURIComponent(filePath)).makePublic();
+                console.log(`[GCS-AD] Archivo ${decodeURIComponent(filePath)} hecho público.`);
+            } catch (gcsError) { console.error(`[GCS-AD] Warn: No se pudo hacer público ${fileUrl}:`, gcsError); }
         }
 
-        // Verificar si alguno de los Ad IDs ya está en uso en OTRO documento (excluyendo el actual)
+        // Verificar conflictos (excluyendo el documento actual)
         const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains-any', adIds).get();
         let conflict = false;
         let conflictingIdsList = [];
         snapshot.forEach(doc => {
-            if (doc.id !== id) { // Excluir el documento que se está editando
+            if (doc.id !== id) { // No comparar consigo mismo
                 const docIds = doc.data().adIds || [];
                 const overlap = adIds.filter(newId => docIds.includes(newId));
                 if (overlap.length > 0) {
@@ -1097,257 +1540,426 @@ router.put('/ad-responses/:id', async (req, res) => {
         });
 
         if (conflict) {
-            return res.status(409).json({ success: false, message: `Los siguientes Ad IDs ya están en uso en otros mensajes: ${[...new Set(conflictingIdsList)].join(', ')}` });
+            return res.status(409).json({ success: false, message: `Ad IDs en uso por otros mensajes: ${[...new Set(conflictingIdsList)].join(', ')}` });
         }
 
-        // Actualizar los datos con adIds como un array
+        // Actualizar en Firestore
         const data = { adName, adIds, message: message || null, fileUrl: fileUrl || null, fileType: fileType || null };
         await db.collection('ad_responses').doc(id).update(data);
         res.status(200).json({ success: true, message: 'Mensaje de anuncio actualizado.' });
     } catch (error) {
         console.error("Error updating ad response:", error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el mensaje de anuncio.' });
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
     }
 });
-// --- FIN: Modificación de Rutas /api/ad-responses ---
-
+// DELETE (Borrar)
 router.delete('/ad-responses/:id', async (req, res) => {
     try {
+        // Borrar de Firestore
         await db.collection('ad_responses').doc(req.params.id).delete();
         res.status(200).json({ success: true, message: 'Mensaje de anuncio eliminado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+        // Nota: No se borra el archivo de GCS asociado.
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar.' });
+    }
 });
 
-
+// --- Endpoints para Prompts de IA por Anuncio (/api/ai-ad-prompts) ---
+// POST (Crear)
 router.post('/ai-ad-prompts', async (req, res) => {
     const { adName, adId, prompt } = req.body;
-    if (!adName || !adId || !prompt) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
+    if (!adName || !adId || !prompt) {
+        return res.status(400).json({ success: false, message: 'Faltan datos (adName, adId, prompt).' });
+    }
     try {
+        // Verificar si ya existe un prompt para este Ad ID
         const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya tiene un prompt.` });
+        if (!existing.empty) {
+            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya tiene un prompt asignado.` });
+        }
+        // Crear nuevo prompt
         const newPrompt = await db.collection('ai_ad_prompts').add({ adName, adId, prompt });
         res.status(201).json({ success: true, id: newPrompt.id });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al crear prompt.' });
+    }
 });
 
+// PUT (Actualizar)
 router.put('/ai-ad-prompts/:id', async (req, res) => {
     const { id } = req.params;
     const { adName, adId, prompt } = req.body;
-    if (!adName || !adId || !prompt) return res.status(400).json({ success: false, message: 'Datos incompletos.' });
+    if (!adName || !adId || !prompt) {
+        return res.status(400).json({ success: false, message: 'Faltan datos (adName, adId, prompt).' });
+    }
     try {
+        // Verificar si el nuevo Ad ID ya existe en *otro* documento
         const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty && existing.docs[0].id !== id) return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está en uso.` });
+        if (!existing.empty && existing.docs[0].id !== id) {
+            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está asignado a otro prompt.` });
+        }
+        // Actualizar el prompt
         await db.collection('ai_ad_prompts').doc(id).update({ adName, adId, prompt });
         res.status(200).json({ success: true, message: 'Prompt actualizado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar el prompt.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar el prompt.' });
+    }
 });
 
+// DELETE (Borrar)
 router.delete('/ai-ad-prompts/:id', async (req, res) => {
     try {
         await db.collection('ai_ad_prompts').doc(req.params.id).delete();
         res.status(200).json({ success: true, message: 'Prompt eliminado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar el prompt.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al eliminar el prompt.' });
+    }
 });
 
 
+// --- Endpoints para Ajustes del Bot (/api/bot/...) ---
+// GET (Obtener instrucciones generales)
 router.get('/bot/settings', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('bot').get();
+        // Devolver instrucciones o un objeto vacío si no existe
         res.status(200).json({ success: true, settings: doc.exists ? doc.data() : { instructions: '' } });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al obtener ajustes.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener ajustes del bot.' });
+    }
 });
 
+// POST (Guardar instrucciones generales)
 router.post('/bot/settings', async (req, res) => {
     try {
+        // Guardar (o sobrescribir) las instrucciones en el documento 'bot'
         await db.collection('crm_settings').doc('bot').set({ instructions: req.body.instructions });
-        res.status(200).json({ success: true, message: 'Ajustes guardados.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar ajustes.' }); }
+        res.status(200).json({ success: true, message: 'Ajustes del bot guardados.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar ajustes del bot.' });
+    }
 });
 
+// POST (Activar/desactivar bot para un contacto)
 router.post('/bot/toggle', async (req, res) => {
     try {
-        await db.collection('contacts_whatsapp').doc(req.body.contactId).update({ botActive: req.body.isActive });
-        res.status(200).json({ success: true, message: `Bot ${req.body.isActive ? 'activado' : 'desactivado'}.` });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al actualizar estado del bot.' }); }
+        // Actualizar el campo 'botActive' en el documento del contacto
+        await db.collection('contacts_whatsapp').doc(req.body.contactId).update({
+            botActive: req.body.isActive // true o false
+        });
+        res.status(200).json({ success: true, message: `Bot ${req.body.isActive ? 'activado' : 'desactivado'} para el contacto.` });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al actualizar estado del bot para el contacto.' });
+    }
 });
 
+// --- Endpoints para Ajustes Generales (/api/settings/...) ---
+// GET (Obtener estado del mensaje de ausencia)
 router.get('/settings/away-message', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
+        // Devolver estado o true por defecto si no existe
         res.status(200).json({ success: true, settings: { isActive: doc.exists ? doc.data().awayMessageActive : true } });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al obtener ajustes.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener ajuste de mensaje de ausencia.' });
+    }
 });
 
+// POST (Guardar estado del mensaje de ausencia)
 router.post('/settings/away-message', async (req, res) => {
     try {
+        // Guardar estado en el documento 'general' (usar merge para no borrar otros ajustes)
         await db.collection('crm_settings').doc('general').set({ awayMessageActive: req.body.isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Ajustes guardados.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar ajustes.' }); }
+        res.status(200).json({ success: true, message: 'Ajuste de mensaje de ausencia guardado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar ajuste.' });
+    }
 });
 
+// GET (Obtener estado del bot global)
 router.get('/settings/global-bot', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
+        // Devolver estado o false por defecto si no existe
         res.status(200).json({ success: true, settings: { isActive: doc.exists ? doc.data().globalBotActive : false } });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al obtener ajustes.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener ajuste del bot global.' });
+    }
 });
 
+// POST (Guardar estado del bot global)
 router.post('/settings/global-bot', async (req, res) => {
     try {
+        // Guardar estado en el documento 'general'
         await db.collection('crm_settings').doc('general').set({ globalBotActive: req.body.isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Ajustes guardados.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar ajustes.' }); }
+        res.status(200).json({ success: true, message: 'Ajuste del bot global guardado.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar ajuste.' });
+    }
 });
 
+// GET (Obtener ID de Google Sheet)
 router.get('/settings/google-sheet', async (req, res) => {
     try {
         const doc = await db.collection('crm_settings').doc('general').get();
+        // Devolver ID o string vacío si no existe
         res.status(200).json({ success: true, settings: { googleSheetId: doc.exists ? doc.data().googleSheetId : '' } });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al obtener ajustes.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al obtener ID de Google Sheet.' });
+    }
 });
 
+// POST (Guardar ID de Google Sheet)
 router.post('/settings/google-sheet', async (req, res) => {
     try {
+        // Guardar ID en el documento 'general'
         await db.collection('crm_settings').doc('general').set({ googleSheetId: req.body.googleSheetId }, { merge: true });
         res.status(200).json({ success: true, message: 'ID de Google Sheet guardado.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al guardar.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al guardar ID.' });
+    }
 });
 
+// --- Endpoints para Base de Conocimiento (/api/knowledge-base) ---
+// POST (Crear entrada)
 router.post('/knowledge-base', async (req, res) => {
     const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) return res.status(400).json({ success: false, message: 'Tema y respuesta son obligatorios.' });
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta base son obligatorios.' });
+    }
     try {
         const data = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
         const newEntry = await db.collection('ai_knowledge_base').add(data);
         res.status(201).json({ success: true, id: newEntry.id, data });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al crear entrada.' });
+    }
 });
 
+// PUT (Actualizar entrada)
 router.put('/knowledge-base/:id', async (req, res) => {
     const { id } = req.params;
     const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) return res.status(400).json({ success: false, message: 'Tema y respuesta son obligatorios.' });
+    if (!topic || !answer) {
+        return res.status(400).json({ success: false, message: 'El tema y la respuesta base son obligatorios.' });
+    }
     try {
         const data = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
         await db.collection('ai_knowledge_base').doc(id).update(data);
-        res.status(200).json({ success: true, message: 'Entrada actualizada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error del servidor.' }); }
+        res.status(200).json({ success: true, message: 'Entrada de conocimiento actualizada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
+    }
 });
 
+// DELETE (Borrar entrada)
 router.delete('/knowledge-base/:id', async (req, res) => {
     try {
         await db.collection('ai_knowledge_base').doc(req.params.id).delete();
-        res.status(200).json({ success: true, message: 'Entrada eliminada.' });
-    } catch (error) { res.status(500).json({ success: false, message: 'Error al eliminar la entrada.' }); }
+        res.status(200).json({ success: true, message: 'Entrada de conocimiento eliminada.' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error al eliminar la entrada.' });
+    }
 });
 
+// --- Endpoint POST /api/contacts/:contactId/generate-reply (Generar respuesta con IA) ---
 router.post('/contacts/:contactId/generate-reply', async (req, res) => {
     const { contactId } = req.params;
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+        const contactData = contactDoc.data();
+
+        // Obtener historial reciente
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
-        if (messagesSnapshot.empty) return res.status(400).json({ success: false, message: 'No hay mensajes.' });
-        const conversationHistory = messagesSnapshot.docs.map(doc => `${doc.data().from === contactId ? 'Cliente' : 'Asistente'}: ${doc.data().text}`).reverse().join('\\n');
-        const prompt = `Eres un asistente virtual amigable y servicial para un CRM de ventas. Tu objetivo es ayudar a cerrar ventas y resolver dudas. Responde al último mensaje del cliente de manera concisa y profesional.\n\n--- Historial ---\n${conversationHistory}\n\n--- Tu Respuesta ---\nAsistente:`;
+        if (messagesSnapshot.empty) {
+            return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación para generar una respuesta.' });
+        }
+        // Formatear historial para el prompt
+        const conversationHistory = messagesSnapshot.docs.map(doc => {
+            const d = doc.data();
+            return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text || '(Mensaje multimedia)'}`; // Usar texto o placeholder
+        }).reverse().join('\n'); // Invertir para orden cronológico
+
+        // Determinar instrucciones del bot (específicas del Ad o generales)
+        let botInstructions = 'Eres un asistente virtual amigable y servicial para ventas.'; // Default
+        const adId = contactData.adReferral?.source_id;
+        if (adId) {
+            const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
+            if (!adPromptSnapshot.empty) botInstructions = adPromptSnapshot.docs[0].data().prompt;
+        } else {
+            const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
+            if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
+        }
+
+        // Obtener base de conocimiento
+        const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
+        const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
+
+        // Construir el prompt final para Gemini
+        const prompt = `
+            **Instrucciones:**\n${botInstructions}\n\n
+            **Base de Conocimiento:**\n${knowledgeBase || 'N/A'}\n\n
+            **Conversación Reciente:**\n${conversationHistory}\n\n
+            **Tarea:**\nResponde al ÚLTIMO mensaje del cliente. Sé conciso y útil. Si no sabes, pide ayuda a un humano.
+            Asistente:`; // Pedir explícitamente la respuesta del Asistente
+
+        // Llamar a Gemini
         const suggestion = await generateGeminiResponse(prompt);
-        res.status(200).json({ success: true, message: 'Respuesta generada.', suggestion });
+
+        res.status(200).json({ success: true, message: 'Sugerencia de respuesta generada.', suggestion });
     } catch (error) {
         console.error('Error al generar respuesta con IA:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor.' });
+        res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
     }
 });
 
+// --- Endpoint POST /api/test/simulate-ad-message (Simular mensaje de anuncio) ---
 router.post('/test/simulate-ad-message', async (req, res) => {
     const { from, adId, text } = req.body;
-    if (!from || !adId || !text) return res.status(400).json({ success: false, message: 'Faltan parámetros.' });
+    if (!from || !adId || !text) {
+        return res.status(400).json({ success: false, message: 'Faltan parámetros (from, adId, text).' });
+    }
+
+    // Construir un payload falso similar al que enviaría Meta
     const fakePayload = {
         object: 'whatsapp_business_account',
         entry: [{
-            id: WHATSAPP_BUSINESS_ACCOUNT_ID,
+            id: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID || 'DUMMY_WABA_ID', // Usar variable de entorno o dummy
             changes: [{
                 value: {
                     messaging_product: 'whatsapp',
-                    metadata: { display_phone_number: PHONE_NUMBER_ID.slice(2), phone_number_id: PHONE_NUMBER_ID },
+                    metadata: {
+                        display_phone_number: (PHONE_NUMBER_ID || '15550001111').slice(-10), // Usar variable o dummy
+                        phone_number_id: PHONE_NUMBER_ID || '15550001111'
+                    },
                     contacts: [{ profile: { name: `Test User ${from.slice(-4)}` }, wa_id: from }],
                     messages: [{
-                        from, id: `wamid.TEST_${uuidv4()}`, timestamp: Math.floor(Date.now() / 1000).toString(),
-                        text: { body: text }, type: 'text',
-                        referral: { source_url: `https://fb.me/xxxxxxxx`, source_type: 'ad', source_id: adId, headline: 'Anuncio de Prueba' }
+                        from: from,
+                        id: `wamid.TEST_${uuidv4()}`, // ID de mensaje falso único
+                        timestamp: Math.floor(Date.now() / 1000).toString(),
+                        text: { body: text },
+                        type: 'text',
+                        // Incluir la sección 'referral' para simular origen de anuncio
+                        referral: {
+                            source_url: `https://fb.me/xxxxxxxx`, // URL genérica
+                            source_type: 'ad',
+                            source_id: adId, // El Ad ID proporcionado
+                            headline: 'Anuncio de Prueba Simulado' // Texto genérico
+                        }
                     }]
                 },
                 field: 'messages'
             }]
         }]
     };
+
     try {
         console.log(`[SIMULATOR] Recibida simulación para ${from} desde Ad ID ${adId}.`);
-        await axios.post(`http://localhost:${PORT}/webhook`, fakePayload, { headers: { 'Content-Type': 'application/json' } });
-        console.log(`[SIMULATOR] Simulación enviada al webhook con éxito.`);
-        res.status(200).json({ success: true, message: 'Simulación procesada.' });
+        // Enviar el payload falso al propio endpoint del webhook
+        // Asegúrate de que la URL y el puerto sean correctos para tu entorno (local o producción)
+        const webhookUrl = `http://localhost:${PORT}/webhook`; // Cambiar si es necesario
+        await axios.post(webhookUrl, fakePayload, {
+            headers: { 'Content-Type': 'application/json' }
+        });
+        console.log(`[SIMULATOR] Simulación enviada al webhook (${webhookUrl}) con éxito.`);
+        res.status(200).json({ success: true, message: 'Simulación procesada por el webhook.' });
     } catch (error) {
         console.error('❌ ERROR EN EL SIMULADOR:', error.response ? error.response.data : error.message);
         res.status(500).json({ success: false, message: 'Error interno al procesar la simulación.' });
     }
 });
 
+// --- Endpoint GET /api/metrics (Obtener métricas de mensajes) ---
 router.get('/metrics', async (req, res) => {
     try {
+        // Rango de fechas: últimos 30 días
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 30);
+        startDate.setDate(endDate.getDate() - 30); // Restar 30 días
         const startTimestamp = admin.firestore.Timestamp.fromDate(startDate);
         const endTimestamp = admin.firestore.Timestamp.fromDate(endDate);
+
+        // Obtener todas las etiquetas de los contactos para mapear
         const contactsSnapshot = await db.collection('contacts_whatsapp').get();
         const contactTags = {};
-        contactsSnapshot.forEach(doc => { contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; });
+        contactsSnapshot.forEach(doc => {
+            contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; // Mapear ID de contacto a su etiqueta
+        });
 
+        // Obtener todos los mensajes entrantes en el rango de fechas usando collectionGroup
         const messagesSnapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
+            .where('from', '!=', PHONE_NUMBER_ID) // Solo mensajes entrantes (no enviados por el bot)
             .get();
 
+        // Procesar mensajes para agrupar por fecha y etiqueta
         const metricsByDate = {};
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
+            const contactId = doc.ref.parent.parent.id; // ID del contacto (documento padre de la subcolección)
 
-            if (message.from === PHONE_NUMBER_ID) {
-                return;
+            // Obtener fecha en formato YYYY-MM-DD
+            const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
+
+            // Inicializar contador para la fecha si no existe
+            if (!metricsByDate[dateKey]) {
+                metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
             }
 
-            const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
-            if (!metricsByDate[dateKey]) metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
+            // Incrementar contador total para la fecha
             metricsByDate[dateKey].totalMessages++;
-            const tag = contactTags[doc.ref.parent.parent.id] || 'sin_etiqueta';
-            if (!metricsByDate[dateKey].tags[tag]) metricsByDate[dateKey].tags[tag] = 0;
+
+            // Obtener etiqueta del contacto
+            const tag = contactTags[contactId] || 'sin_etiqueta'; // Usar 'sin_etiqueta' si no tiene
+
+            // Inicializar y/o incrementar contador para esa etiqueta en esa fecha
+            if (!metricsByDate[dateKey].tags[tag]) {
+                metricsByDate[dateKey].tags[tag] = 0;
+            }
             metricsByDate[dateKey].tags[tag]++;
         });
 
+        // Formatear resultados en un array ordenado por fecha
         const formattedMetrics = Object.keys(metricsByDate)
-            .map(date => ({ date, totalMessages: metricsByDate[date].totalMessages, tags: metricsByDate[date].tags }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
+            .map(date => ({
+                date,
+                totalMessages: metricsByDate[date].totalMessages,
+                tags: metricsByDate[date].tags // Objeto con cuentas por etiqueta para ese día
+            }))
+            .sort((a, b) => new Date(a.date) - new Date(b.date)); // Ordenar cronológicamente
+
         res.status(200).json({ success: true, data: formattedMetrics });
     } catch (error) {
         console.error('❌ Error al obtener las métricas:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor.' });
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener métricas.' });
     }
 });
 
+// --- Endpoint GET /api/orders/verify/:orderId (Verificar pedido o teléfono) ---
 router.get('/orders/verify/:orderId', async (req, res) => {
     const { orderId } = req.params;
+
+    // Verificar si es un número de teléfono (simplificado)
     const isPhoneNumber = /^\d{10,}$/.test(orderId.replace(/\D/g, ''));
     if (isPhoneNumber) {
-        return res.status(200).json({ success: true, contactId: orderId, customerName: 'N/A' });
+        // Si es teléfono, devolver directamente el ID y nombre N/A
+        return res.status(200).json({ success: true, contactId: orderId, customerName: 'N/A (Teléfono directo)' });
     }
 
-    const match = orderId.match(/(\d+)/);
+    // Si no es teléfono, intentar parsear como número de pedido (DHxxxx)
+    const match = orderId.match(/(\d+)/); // Extraer números
     if (!match) {
-        return res.status(400).json({ success: false, message: 'Formato de ID de pedido inválido. Se esperaba "DH" seguido de números.' });
+        return res.status(400).json({ success: false, message: 'Formato de ID de pedido inválido. Se esperaba "DH" seguido de números o un teléfono.' });
     }
     const consecutiveOrderNumber = parseInt(match[1], 10);
 
     try {
+        // Buscar pedido por número consecutivo
         const ordersQuery = db.collection('pedidos').where('consecutiveOrderNumber', '==', consecutiveOrderNumber).limit(1);
         const snapshot = await ordersQuery.get();
 
@@ -1356,15 +1968,17 @@ router.get('/orders/verify/:orderId', async (req, res) => {
         }
 
         const pedidoData = snapshot.docs[0].data();
-        const contactId = pedidoData.telefono;
+        const contactId = pedidoData.telefono; // Obtener teléfono del pedido
 
         if (!contactId) {
-            return res.status(404).json({ success: false, message: 'El pedido no tiene un número de teléfono asociado.' });
+            return res.status(404).json({ success: false, message: 'El pedido encontrado no tiene un número de teléfono asociado.' });
         }
 
+        // Buscar el nombre del contacto asociado al teléfono
         const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
-        const customerName = contactDoc.exists ? contactDoc.data().name : 'Cliente no en CRM';
+        const customerName = contactDoc.exists ? contactDoc.data().name : 'Cliente (No en CRM)';
 
+        // Devolver ID de contacto (teléfono) y nombre del cliente
         res.status(200).json({ success: true, contactId, customerName });
 
     } catch (error) {
@@ -1373,38 +1987,45 @@ router.get('/orders/verify/:orderId', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/difusion/bulk-send (Envío masivo para difusión) ---
 router.post('/difusion/bulk-send', async (req, res) => {
     const { jobs, messageSequence, contingencyTemplate } = req.body;
 
+    // Validación básica de entrada
     if (!jobs || !Array.isArray(jobs) || jobs.length === 0) {
-        return res.status(400).json({ success: false, message: 'La lista de trabajos de envío es inválida.' });
+        return res.status(400).json({ success: false, message: 'La lista de trabajos de envío es inválida o está vacía.' });
     }
 
     const results = { successful: [], failed: [], contingent: [] };
 
+    // Procesar cada trabajo de envío
     for (const job of jobs) {
+        // Validar datos del trabajo individual
         if (!job.contactId || !job.orderId || !job.photoUrl) {
-            results.failed.push({ orderId: job.orderId, reason: 'Datos del trabajo incompletos.' });
-            continue;
+            results.failed.push({ orderId: job.orderId, reason: 'Datos del trabajo incompletos (contactId, orderId, o photoUrl faltantes).' });
+            continue; // Saltar al siguiente trabajo
         }
 
         try {
             const contactRef = db.collection('contacts_whatsapp').doc(job.contactId);
             const contactDoc = await contactRef.get();
 
+            // Crear contacto si no existe
             if (!contactDoc.exists) {
                 console.log(`[DIFUSION] El contacto ${job.contactId} no existe. Creando nuevo registro.`);
                 await contactRef.set({
-                    name: `Nuevo Contacto (${job.contactId.slice(-4)})`,
+                    name: `Nuevo Contacto (${job.contactId.slice(-4)})`, // Nombre genérico
                     wa_id: job.contactId,
                     lastMessage: 'Inicio de conversación por difusión.',
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-                });
+                    // unreadCount no se establece aquí, se maneja al recibir mensaje
+                }, { merge: true }); // Usar merge por si acaso
                 console.log(`[DIFUSION] Contacto ${job.contactId} creado.`);
             }
 
+            // Verificar si la última respuesta del cliente fue hace menos de 24h
             const messagesSnapshot = await contactRef.collection('messages')
-                .where('from', '==', job.contactId)
+                .where('from', '==', job.contactId) // Mensajes DEL cliente
                 .orderBy('timestamp', 'desc')
                 .limit(1)
                 .get();
@@ -1419,84 +2040,162 @@ router.post('/difusion/bulk-send', async (req, res) => {
                 }
             }
 
+            // --- Lógica de envío basada en la ventana de 24h ---
             if (isWithin24Hours) {
-                let lastMessageText = '';
+                // --- DENTRO de 24h: Enviar secuencia + foto ---
+                console.log(`[DIFUSION] Contacto ${job.contactId} dentro de 24h. Enviando secuencia y foto.`);
+                let lastMessageText = ''; // Para actualizar el contacto
+
+                // Enviar secuencia de mensajes (si existe)
                 if (messageSequence && messageSequence.length > 0) {
                     for (const qr of messageSequence) {
                         const sentMessageData = await sendAdvancedWhatsAppMessage(job.contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
-
+                        // Guardar mensaje enviado en Firestore
                         const messageToSave = {
                             from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                             id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
                         };
                         await contactRef.collection('messages').add(messageToSave);
                         lastMessageText = sentMessageData.textForDb;
-
-                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await new Promise(resolve => setTimeout(resolve, 500)); // Pequeño delay
                     }
                 }
 
-                const sentPhotoData = await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' });
-
+                // Enviar la foto del pedido
+                const sentPhotoData = await sendAdvancedWhatsAppMessage(job.contactId, { text: null, fileUrl: job.photoUrl, fileType: 'image/jpeg' /* Asumir JPEG */ });
+                // Guardar mensaje de foto en Firestore
                 const photoMessageToSave = {
                     from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                     id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb,
                     fileType: sentPhotoData.fileTypeForDb, isAutoReply: true
                 };
-                Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]);
+                 Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]); // Limpiar nulos
                 await contactRef.collection('messages').add(photoMessageToSave);
                 lastMessageText = sentPhotoData.textForDb;
 
+                // Actualizar último mensaje del contacto
                 await contactRef.update({
                     lastMessage: lastMessageText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
 
                 results.successful.push({ orderId: job.orderId });
+
             } else {
+                // --- FUERA de 24h: Enviar plantilla de contingencia ---
+                console.log(`[DIFUSION] Contacto ${job.contactId} fuera de 24h. Enviando plantilla de contingencia.`);
+
+                // Validar que se proporcionó una plantilla
                 if (!contingencyTemplate || !contingencyTemplate.name) {
-                    results.failed.push({ orderId: job.orderId, reason: 'Fuera de 24h y no se proporcionó plantilla de contingencia.' });
-                    continue;
+                    results.failed.push({ orderId: job.orderId, reason: 'Fuera de ventana de 24h y no se proporcionó plantilla de contingencia válida.' });
+                    continue; // Saltar al siguiente trabajo
                 }
 
-                const bodyParams = [job.orderId];
+                // Parámetros para la plantilla (asumiendo que {{1}} es el ID del pedido y {{2}} la imagen)
+                const bodyParams = [job.orderId]; // Parámetros a partir de {{2}}
+                // Construir payload de la plantilla (con imagen como cabecera)
                 const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(job.contactId, contingencyTemplate, job.photoUrl, bodyParams);
 
+                // Enviar plantilla a WhatsApp
                 const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                     headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
                 });
 
+                // Guardar mensaje de plantilla en Firestore
                 const messageId = response.data.messages[0].id;
                 const messageToSave = {
                     from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                     id: messageId, text: messageToSaveText, isAutoReply: true
                 };
                 await contactRef.collection('messages').add(messageToSave);
+                // Actualizar último mensaje del contacto
                 await contactRef.update({
                     lastMessage: messageToSaveText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
                 });
 
+                // Guardar registro de envío contingente para ejecutarlo cuando el cliente responda
                 await db.collection('contingentSends').add({
                     contactId: job.contactId,
-                    status: 'pending',
+                    status: 'pending', // Marcar como pendiente
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
-                    payload: {
-                        messageSequence: messageSequence || [],
-                        photoUrl: job.photoUrl,
-                        orderId: job.orderId
+                    payload: { // Guardar la información necesaria para el envío posterior
+                        messageSequence: messageSequence || [], // Secuencia original
+                        photoUrl: job.photoUrl, // Foto original
+                        orderId: job.orderId // ID del pedido original
                     }
                 });
+
                 results.contingent.push({ orderId: job.orderId });
             }
         } catch (error) {
-            console.error(`Error procesando el trabajo para el pedido ${job.orderId}:`, error.response ? error.response.data : error.message);
-            results.failed.push({ orderId: job.orderId, reason: error.message || 'Error desconocido' });
+            console.error(`Error procesando el trabajo para el pedido ${job.orderId} (Contacto: ${job.contactId}):`, error.response ? error.response.data : error.message);
+            results.failed.push({ orderId: job.orderId, reason: error.message || 'Error desconocido durante el envío.' });
         }
-    }
+    } // Fin del bucle for
 
+    // Devolver resultados consolidados
     res.status(200).json({ success: true, message: 'Proceso de envío masivo completado.', results });
 });
+
+// --- INICIO: Nuevo Endpoint para Conteo de Mensajes por Ad ID ---
+router.get('/metrics/messages-by-ad', async (req, res) => {
+    const { startDate, endDate } = req.query; // Espera fechas en formato YYYY-MM-DD
+
+    // Validación básica de fechas
+    if (!startDate || !endDate) {
+        return res.status(400).json({ success: false, message: 'Se requieren las fechas de inicio (startDate) y fin (endDate) en formato YYYY-MM-DD.' });
+    }
+
+    try {
+        // Convertir strings de fecha a Timestamps de Firestore
+        // Asegurarse de que startDate sea el inicio del día y endDate el final del día
+        const start = new Date(`${startDate}T00:00:00.000Z`); // UTC para Firestore
+        const end = new Date(`${endDate}T23:59:59.999Z`); // UTC para Firestore
+
+        if (isNaN(start) || isNaN(end)) {
+             return res.status(400).json({ success: false, message: 'Formato de fecha inválido. Usar YYYY-MM-DD.' });
+        }
+
+        const startTimestamp = admin.firestore.Timestamp.fromDate(start);
+        const endTimestamp = admin.firestore.Timestamp.fromDate(end);
+
+        console.log(`[METRICS AD] Buscando mensajes entre ${startTimestamp.toDate()} y ${endTimestamp.toDate()}`);
+
+        // Consulta usando collectionGroup para buscar en todas las subcolecciones 'messages'
+        const messagesQuery = db.collectionGroup('messages')
+            .where('timestamp', '>=', startTimestamp)
+            .where('timestamp', '<=', endTimestamp)
+            .where('from', '!=', PHONE_NUMBER_ID) // Solo mensajes entrantes
+            .where('adId', '!=', null); // Solo mensajes que SÍ tengan un adId guardado
+
+        const snapshot = await messagesQuery.get();
+
+        if (snapshot.empty) {
+            console.log('[METRICS AD] No se encontraron mensajes entrantes con Ad ID en el rango especificado.');
+            return res.status(200).json({ success: true, counts: {} }); // Devolver objeto vacío
+        }
+
+        // Procesar los resultados para contar por Ad ID
+        const countsByAdId = {};
+        snapshot.forEach(doc => {
+            const messageData = doc.data();
+            const adId = messageData.adId; // El campo que guardamos en whatsappHandler.js
+
+            if (adId) { // Doble verificación por si acaso
+                countsByAdId[adId] = (countsByAdId[adId] || 0) + 1;
+            }
+        });
+
+        console.log(`[METRICS AD] Conteo final:`, countsByAdId);
+        res.status(200).json({ success: true, counts: countsByAdId });
+
+    } catch (error) {
+        console.error('❌ Error al obtener conteo de mensajes por Ad ID:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al procesar la solicitud de métricas por Ad ID.' });
+    }
+});
+// --- FIN: Nuevo Endpoint ---
 
 
 module.exports = router;
