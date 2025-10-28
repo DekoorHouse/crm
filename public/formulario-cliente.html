@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Registro de Cliente - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="estilos/estilos.css">
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+    </style>
+</head>
+<body>
+
+<div class="main-container" style="max-width: 500px;">
+    <div id="client-form-container" class="content-box">
+        <div class="text-center mb-6">
+            <img src="/favicon.png" alt="Logo" class="mx-auto mb-4" style="width: 60px; height: 60px; border-radius: 50%;">
+            <h1 style="color: var(--color-primary);">Registro de Cliente</h1>
+            <p style="color: var(--color-text-light);">Por favor, completa tus datos para registrarte.</p>
+        </div>
+        <form id="clienteForm">
+            <div>
+                <label for="nombre">Nombre Completo:</label>
+                <input type="text" id="nombre" required placeholder="Tu nombre y apellido">
+            </div>
+            <div>
+                <label for="telefono">Teléfono WhatsApp (10 dígitos):</label>
+                <input type="tel" id="telefono" required placeholder="Ej: 6181234567" pattern="\d{10}">
+            </div>
+            <div id="mensajeFormulario"></div>
+            <button type="submit" id="submitBtn"><i class="fas fa-paper-plane"></i> Enviar Registro</button>
+        </form>
+    </div>
+
+    <div id="confirmation-container" class="content-box text-center" style="display: none;">
+        <h1 style="color: var(--color-secondary);"><i class="fas fa-check-circle"></i> ¡Registro Exitoso!</h1>
+        <p>Gracias por registrarte. Nos pondremos en contacto contigo muy pronto.</p>
+        <p style="font-size: 0.9em; color: var(--color-text-light);">Ya puedes cerrar esta ventana.</p>
+    </div>
+</div>
+
+<script type="module" src="js/formulario.js"></script>
+
+</body>
+</html>
