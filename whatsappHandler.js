@@ -527,11 +527,15 @@ router.post('/', async (req, res) => {
             }
 
             // 3. Handle Postal Code (only for text messages)
+            // --- INICIO DE LA MODIFICACIÓN: Comentar el chequeo de CP ---
+            /*
             const postalCodeHandled = await handlePostalCodeAuto(message, contactRef, from);
             if (postalCodeHandled) {
                  console.log(`[LOGIC] Código postal manejado para ${from}. El flujo posterior se detiene aquí.`);
                  return res.sendStatus(200); // Stop if CP response was sent
             }
+            */
+            // --- FIN DE LA MODIFICACIÓN ---
 
             // 4. Handle Wholesale Logic (only for text messages)
             if (message.type === 'text') {
