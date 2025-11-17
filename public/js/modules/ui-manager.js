@@ -1657,15 +1657,22 @@ window.closeConversationPreviewModal = closeConversationPreviewModal; // Hacer g
 window.openOrderEditModal = openOrderEditModal; // Hacer global
 window.closeOrderEditModal = closeOrderEditModal; // Hacer global
 
+
+/**
+ * Establece la pestaña activa (ej. 'chat' o 'notas') y vuelve a renderizar la vista.
+ * @param {string} tabName - El nombre de la pestaña a activar.
+ */
+function setActiveTab(tabName) {
+    if (state.activeTab === tabName) return; // No hacer nada si ya está activa
+
+    state.activeTab = tabName;
+    renderChatWindow(); // Volver a renderizar para mostrar el contenido correcto
+}
+
 // --- Funciones del template que necesitan acceso global ---
+
 window.copyFormattedText = copyFormattedText;
 window.copyToClipboard = copyToClipboard;
 window.setActiveTab = setActiveTab;
 window.toggleEditNote = toggleEditNote;
-window.handleUpdateNote = handleUpdateNote;
-window.handleDeleteNote = handleDeleteNote;
-window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Definida en ui-manager
-window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-manager
-window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
-window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
-
+window.handleUpdateNote = h
