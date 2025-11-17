@@ -1156,6 +1156,31 @@ async function handleDeleteTag(tagId) {
     }
 }
 
+
+/**
+ * Maneja la eliminación de TODAS las etiquetas.
+ */
+async function handleDeleteAllTags() {
+    if (!window.confirm('ADVERTENCIA: ¿Estás absolutamente seguro de que quieres eliminar TODAS las etiquetas? Esta acción es irreversible y desasignará la etiqueta de todos los contactos.')) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/tags`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al eliminar las etiquetas.');
+        }
+
+        showError('Todas las etiquetas han sido eliminadas.', 'success');
+        // La UI se actualizará a través de los listeners de Firestore.
+    } catch (error) {
+        console.error("Error deleting all tags:", error);
+        showError(error.message);
+    }
+}
+
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
