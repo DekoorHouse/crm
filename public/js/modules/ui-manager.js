@@ -1634,7 +1634,6 @@ function toggleIAMenu() {
 window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
 window.toggleIAMenu = toggleIAMenu;
-window.openImageModal = openImageModal;
 window.closeImageModal = closeImageModal;
 window.openContactDetails = openContactDetails;
 window.closeContactDetails = closeContactDetails;
