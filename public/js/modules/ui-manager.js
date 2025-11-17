@@ -1676,4 +1676,27 @@ function setActiveTab(tabName) {
  */
 function toggleEditNote(noteId) {
     const noteElement = document.querySelector(`.note-item[data-id="${noteId}"]`);
-    if (
+    if (!noteElement) return;
+
+    const displayContent = noteElement.querySelector('.note-display-content');
+    const editForm = noteElement.querySelector('.note-edit-form');
+
+    if (displayContent && editForm) {
+        displayContent.classList.toggle('hidden');
+        editForm.classList.toggle('hidden');
+    }
+}
+
+// --- Funciones del template que necesitan acceso global ---
+
+window.copyFormattedText = copyFormattedText;
+window.copyToClipboard = copyToClipboard;
+window.setActiveTab = setActiveTab;
+window.toggleEditNote = toggleEditNote;
+window.handleUpdateNote = handleUpdateNote;
+window.handleDeleteNote = handleDeleteNote;
+window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Definida en ui-manager
+window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-manager
+window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
+window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
+
