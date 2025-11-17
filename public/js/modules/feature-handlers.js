@@ -1101,18 +1101,33 @@ async function handleSaveTag(event) {
  * @param {string} contactId - El ID del contacto a actualizar.
  * @param {string} newStatus - El nuevo estatus (key de la etiqueta).
  */
-async function handleStatusChange(contactId, newStatus) {
-    if (!contactId || !newStatus) {
-        console.error("Falta el ID del contacto o el nuevo estatus.");
-        showError("Error interno: no se pudo identificar el contacto o el estatus.", 'error');
-        return;
+async function handleStatusChange(contactId, newStatusKey) {
+    const id = contactId || state.selectedContactId;
+    if (!id) return;
+
+    const contact = state.contacts.find(c => c.id === id);
+    if (!contact) return;
+
+    // Determinar el estado final: si es el mismo, se desactiva (null), si no, se activa el nuevo
+    const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
+
+    // --- Optimistic UI Update ---
+    const originalStatus = contact.status; // Guardar estado original para revertir si falla
+    contact.status = finalStatus; // Actualizar estado localmente
+    handleSearchContacts(); // Re-renderizar la lista de contactos
+    if (state.selectedContactId === id) {
+        renderChatWindow(); // Re-renderizar la ventana de chat si es el contacto activo
+        if (state.contactDetailsOpen) {
+            openContactDetails(); // Re-renderizar detalles si están abiertos
+        }
     }
+    // --- End Optimistic UI Update ---
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/status`, {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${id}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: newStatus })
+            body: JSON.stringify({ status: finalStatus })
         });
 
         if (!response.ok) {
@@ -1120,12 +1135,23 @@ async function handleStatusChange(contactId, newStatus) {
             throw new Error(errorData.message || 'Error al actualizar el estatus del contacto.');
         }
 
-        showError(`Estatus del contacto actualizado a "${newStatus}"`, 'success');
-        // La UI se actualizará automáticamente gracias al listener de contactos.
+        showError(`Estatus del contacto actualizado a "${finalStatus || 'Sin etiqueta'}".`, 'success');
+        // No es necesario re-renderizar aquí, ya se hizo de forma optimista.
+        // El listener de Firestore eventualmente confirmará el cambio.
 
     } catch (error) {
         console.error("Error al actualizar el estatus del contacto: ", error);
         showError("Error al actualizar el estatus del contacto. Revisa la consola.", 'error');
+        // --- Revertir UI si la API falla ---
+        contact.status = originalStatus;
+        handleSearchContacts();
+        if (state.selectedContactId === id) {
+            renderChatWindow();
+            if (state.contactDetailsOpen) {
+                openContactDetails();
+            }
+        }
+        // --- Fin Revertir UI ---
     }
 }
 
