@@ -1660,19 +1660,12 @@ window.closeOrderEditModal = closeOrderEditModal; // Hacer global
 // --- Funciones del template que necesitan acceso global ---
 window.copyFormattedText = copyFormattedText;
 window.copyToClipboard = copyToClipboard;
-window.handleBotToggle = handleBotToggle;
 window.setActiveTab = setActiveTab;
 window.toggleEditNote = toggleEditNote;
 window.handleUpdateNote = handleUpdateNote;
 window.handleDeleteNote = handleDeleteNote;
-window.handleSelectContactFromPipeline = handleSelectContactFromPipeline; // Hacer global
-window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Hacer global
-window.handleSendCampaign = handleSendCampaign; // Hacer global
-window.handleSendCampaignWithImage = handleSendCampaignWithImage; // Hacer global
-window.initializeDifusionHandlers = initializeDifusionHandlers; // Hacer global
-window.removeMessageFromSequence = removeMessageFromSequence; // Hacer global difusion
-window.handleOrderStatusChange = handleOrderStatusChange; // Hacer global
-// --- INICIO MODIFICACIÓN ---
-window.loadAdIdMetrics = loadAdIdMetrics; // Hacer global
-window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Hacer global
-// --- FIN MODIFICACIÓN ---
+window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Definida en ui-manager
+window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-manager
+window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
+window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
+
