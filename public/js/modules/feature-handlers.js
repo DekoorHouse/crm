@@ -1181,6 +1181,77 @@ async function handleDeleteAllTags() {
     }
 }
 
+
+/**
+ * Maneja la actualización del contenido de una nota existente.
+ * @param {Event} event El evento de envío del formulario.
+ * @param {string} noteId El ID de la nota a actualizar.
+ */
+async function handleUpdateNote(event, noteId) {
+    event.preventDefault();
+    const form = event.target;
+    const newContent = form.querySelector('textarea').value.trim();
+    const button = form.querySelector('button[type="submit"]');
+
+    if (!newContent) {
+        showError("La nota no puede estar vacía.");
+        return;
+    }
+
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content: newContent })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al actualizar la nota.');
+        }
+
+        // La UI se actualizará automáticamente gracias al listener de Firestore.
+        // Simplemente volvemos a la vista de solo lectura.
+        toggleEditNote(noteId);
+
+    } catch (error) {
+        console.error("Error updating note:", error);
+        showError(error.message);
+    } finally {
+        button.disabled = false;
+        button.textContent = 'Guardar';
+    }
+}
+
+/**
+ * Maneja la eliminación de una nota.
+ * @param {string} noteId El ID de la nota a eliminar.
+ */
+async function handleDeleteNote(noteId) {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+            method: 'DELETE'
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al eliminar la nota.');
+        }
+        // La UI se actualizará automáticamente gracias al listener de Firestore.
+        showError('Nota eliminada.', 'success');
+
+    } catch (error) {
+        console.error("Error deleting note:", error);
+        showError(error.message);
+    }
+}
+
+
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
@@ -1212,4 +1283,6 @@ window.handleDeleteAllTags = handleDeleteAllTags; // Necesaria para el botón
 // --- INICIO MODIFICACIÓN ---
 window.handleLoadAdIdMetrics = handleLoadAdIdMetrics; // Hacer global
 window.handleClearAdIdMetricsFilter = handleClearAdIdMetricsFilter; // Hacer global
+window.handleUpdateNote = handleUpdateNote;
+window.handleDeleteNote = handleDeleteNote;
 // --- FIN MODIFICACIÓN ---
