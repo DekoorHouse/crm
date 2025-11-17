@@ -1058,6 +1058,43 @@ function handleClearAdIdMetricsFilter() {
 // --- FIN DE MODIFICACIÓN ---
 
 
+
+/**
+ * Maneja el guardado de una etiqueta (crear o actualizar).
+ * @param {Event} event El evento de envío del formulario.
+ */
+async function handleSaveTag(event) {
+    event.preventDefault();
+    const id = document.getElementById('tag-id').value;
+    const label = document.getElementById('tag-label').value.trim();
+    const color = document.getElementById('tag-color-input').value;
+
+    if (!label || !color) {
+        showError("La etiqueta y el color son obligatorios.");
+        return;
+    }
+
+    const data = { label, color };
+    const url = id ? `${API_BASE_URL}/api/tags/${id}` : `${API_BASE_URL}/api/tags`;
+    const method = id ? 'PUT' : 'POST';
+
+    try {
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al guardar la etiqueta.');
+        }
+        closeTagModal();
+    } catch (error) {
+        console.error("Error saving tag:", error);
+        showError(error.message);
+    }
+}
+
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
