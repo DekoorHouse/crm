@@ -475,6 +475,36 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 });
 
+// --- Endpoint PUT /api/contacts/:contactId/status (Actualizar estatus/etiqueta de contacto) ---
+router.put('/contacts/:contactId/status', async (req, res) => {
+    const { contactId } = req.params;
+    const { status } = req.body; // El nuevo estatus (ej. 'seguimiento')
+
+    if (!status) {
+        return res.status(400).json({ success: false, message: 'El campo "status" es obligatorio.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        
+        // Verificar si el contacto existe antes de actualizar
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
+        }
+
+        // Actualizar solo el campo 'status' del contacto
+        await contactRef.update({
+            status: status
+        });
+
+        res.status(200).json({ success: true, message: `Estatus del contacto actualizado a "${status}".` });
+    } catch (error) {
+        console.error(`Error al actualizar el estatus para el contacto ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar el estatus del contacto.' });
+    }
+});
+
 // --- Endpoint GET /api/contacts/:contactId/orders (Historial de pedidos) ---
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {
