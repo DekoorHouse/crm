@@ -1083,7 +1083,6 @@ window.handleSaveAIAdPrompt = handleSaveAIAdPrompt;
 window.handleDeleteAIAdPrompt = handleDeleteAIAdPrompt;
 window.handleSaveBotSettings = handleSaveBotSettings;
 window.handleSelectContactFromPipeline = handleSelectContactFromPipeline;
-window.updateCampaignRecipientCount = updateCampaignRecipientCount;
 window.handleSaveTag = handleSaveTag; // Necesaria para el modal de etiquetas
 window.handleDeleteTag = handleDeleteTag; // Necesaria para el modal de etiquetas
 window.handleDeleteAllTags = handleDeleteAllTags; // Necesaria para el botón
