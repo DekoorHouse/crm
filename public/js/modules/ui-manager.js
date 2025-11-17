@@ -1145,6 +1145,7 @@ function closeConversationPreviewModal() {
 
 // --- INICIO DE MODIFICACIÓN: Funciones para el modal de detalles/edición de pedido ---
 
+
 // Cierra el modal de edición de pedido y limpia los arrays de fotos
 function closeOrderEditModal() {
     const modalContainer = document.getElementById('order-edit-modal-container');
@@ -1154,6 +1155,47 @@ function closeOrderEditModal() {
     // Limpia los arrays de fotos de edición
     editOrderPhotosManager = [];
     editPromoPhotosManager = [];
+}
+
+/**
+ * Abre el modal para editar un pedido existente.
+ * @param {string} orderId - El ID del pedido a editar.
+ */
+function openOrderEditModal(orderId) {
+    const order = state.selectedContactOrders.find(o => o.id === orderId);
+    if (!order) {
+        showError("No se pudo encontrar el pedido para editar.");
+        return;
+    }
+
+    const modalContainer = document.getElementById('order-edit-modal-container');
+    if (!modalContainer) {
+        console.error("El contenedor del modal de edición de pedidos no existe.");
+        return;
+    }
+
+    // Asumimos que existe una plantilla OrderEditModalTemplate similar a NewOrderModalTemplate
+    // y que esta plantilla ya incluye los IDs correctos para los campos del formulario.
+    modalContainer.innerHTML = OrderEditModalTemplate(order);
+
+    // Configurar los manejadores de fotos para la edición
+    // (Asumimos que estas variables globales existen y son usadas por el modal de edición)
+    editOrderPhotosManager = order.fotoUrls ? order.fotoUrls.map(url => ({ file: null, url, isNew: false })) : [];
+    editPromoPhotosManager = order.fotoPromocionUrls ? order.fotoPromocionUrls.map(url => ({ file: null, url, isNew: false })) : [];
+
+    // Aquí iría la lógica para renderizar las vistas previas de las fotos,
+    // similar a como se hace en openNewOrderModal, pero para los contenedores de edición.
+    // Ejemplo:
+    // const editOrderPreviewContainer = document.getElementById('edit-order-photos-preview-container');
+    // renderPhotoPreviews(editOrderPreviewContainer, editOrderPhotosManager, 'edit-order');
+
+    // Añadir el listener para el envío del formulario de edición
+    const form = document.getElementById('edit-order-form');
+    if (form) {
+        form.addEventListener('submit', (event) => handleUpdateExistingOrder(event, orderId));
+    } else {
+        console.error("El formulario de edición de pedido ('edit-order-form') no se encontró en la plantilla.");
+    }
 }
 // --- FIN DE MODIFICACIÓN ---
 
