@@ -1095,6 +1095,67 @@ async function handleSaveTag(event) {
     }
 }
 
+
+/**
+ * Maneja el cambio de estatus de un contacto (usado en el pipeline).
+ * @param {string} contactId - El ID del contacto a actualizar.
+ * @param {string} newStatus - El nuevo estatus (key de la etiqueta).
+ */
+async function handleStatusChange(contactId, newStatus) {
+    if (!contactId || !newStatus) {
+        console.error("Falta el ID del contacto o el nuevo estatus.");
+        showError("Error interno: no se pudo identificar el contacto o el estatus.", 'error');
+        return;
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: newStatus })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al actualizar el estatus del contacto.');
+        }
+
+        showError(`Estatus del contacto actualizado a "${newStatus}"`, 'success');
+        // La UI se actualizará automáticamente gracias al listener de contactos.
+
+    } catch (error) {
+        console.error("Error al actualizar el estatus del contacto: ", error);
+        showError("Error al actualizar el estatus del contacto. Revisa la consola.", 'error');
+    }
+}
+
+/**
+ * Maneja la eliminación de una etiqueta.
+ * @param {string} tagId - El ID de la etiqueta a eliminar.
+ */
+async function handleDeleteTag(tagId) {
+    if (!window.confirm('¿Estás seguro de que quieres eliminar esta etiqueta? Esto también afectará a los contactos que la tengan asignada.')) return;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/tags/${tagId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error al eliminar la etiqueta.');
+        }
+
+        showError('Etiqueta eliminada con éxito.', 'success');
+        // La UI se actualizará automáticamente gracias al listener de etiquetas.
+
+    } catch (error) {
+        console.error("Error al eliminar la etiqueta: ", error);
+        showError("Error al eliminar la etiqueta. Revisa la consola.", 'error');
+    }
+}
+
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
