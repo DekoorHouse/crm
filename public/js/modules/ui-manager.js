@@ -1660,7 +1660,6 @@ window.closeOrderEditModal = closeOrderEditModal; // Hacer global
 // --- Funciones del template que necesitan acceso global ---
 window.copyFormattedText = copyFormattedText;
 window.copyToClipboard = copyToClipboard;
-window.handleSaveTag = handleSaveTag;
 window.handleDeleteQuickReply = handleDeleteQuickReply;
 window.handleDeleteAdResponse = handleDeleteAdResponse;
 window.handleDeleteAIAdPrompt = handleDeleteAIAdPrompt;
