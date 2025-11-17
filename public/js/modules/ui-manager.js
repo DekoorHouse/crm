@@ -1669,10 +1669,11 @@ function setActiveTab(tabName) {
     renderChatWindow(); // Volver a renderizar para mostrar el contenido correcto
 }
 
-// --- Funciones del template que necesitan acceso global ---
 
-window.copyFormattedText = copyFormattedText;
-window.copyToClipboard = copyToClipboard;
-window.setActiveTab = setActiveTab;
-window.toggleEditNote = toggleEditNote;
-window.handleUpdateNote = h
+/**
+ * Alterna entre el modo de visualización y edición de una nota.
+ * @param {string} noteId - El ID de la nota a editar.
+ */
+function toggleEditNote(noteId) {
+    const noteElement = document.querySelector(`.note-item[data-id="${noteId}"]`);
+    if (
