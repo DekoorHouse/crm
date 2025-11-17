@@ -1545,7 +1545,49 @@ async function handleOrderStatusChange(orderId, newStatus) {
     }
 }
 
+
+
+/**
+ * Actualiza el contador de destinatarios para las vistas de campañas.
+ * @param {string} type - El tipo de campaña ('text' o 'image'). Por defecto es 'text'.
+ */
+function updateCampaignRecipientCount(type = 'text') {
+    const isImageCampaign = type === 'image';
+    const tagSelectId = isImageCampaign ? 'campaign-image-tag-select' : 'campaign-tag-select';
+    const countElId = isImageCampaign ? 'campaign-image-recipient-count' : 'campaign-recipient-count';
+
+    const tagSelect = document.getElementById(tagSelectId);
+    const countEl = document.getElementById(countElId);
+
+    if (!tagSelect || !countEl) return; // Si los elementos no existen en la vista actual
+
+    const selectedTagKey = tagSelect.value;
+    let recipientCount = 0;
+
+    if (selectedTagKey === 'all') {
+        recipientCount = state.contacts.length;
+    } else {
+        recipientCount = state.contacts.filter(c => c.status === selectedTagKey).length;
+    }
+
+    countEl.textContent = `${recipientCount} destinatarios`;
+}
+
+/**
+ * Muestra u oculta el submenú de IA en la barra lateral.
+ */
+function toggleIAMenu() {
+    const iaSubmenu = document.getElementById('ia-submenu');
+    const iaChevron = document.getElementById('ia-menu-chevron');
+    if (iaSubmenu && iaChevron) {
+        iaSubmenu.classList.toggle('hidden');
+        iaChevron.classList.toggle('rotate-180');
+    }
+}
+
+
 // --- Make functions globally accessible ---
+
 // Esto permite llamar a las funciones desde los atributos onclick en el HTML
 window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
