@@ -1515,6 +1515,36 @@ function closeTagModal() {
     modal.classList.add('hidden');
 }
 
+
+/**
+ * Maneja el cambio de estatus de un pedido desde la barra lateral de detalles.
+ * @param {string} orderId - El ID del documento del pedido en Firestore.
+ * @param {string} newStatus - El nuevo valor del estatus.
+ */
+async function handleOrderStatusChange(orderId, newStatus) {
+    if (!orderId || !newStatus) {
+        console.error("Falta el ID del pedido o el nuevo estatus.");
+        showError("Error interno: no se pudo identificar el pedido o el estatus.", 'error');
+        return;
+    }
+
+    const originalStatus = state.selectedContactOrders.find(o => o.id === orderId)?.estatus;
+
+    try {
+        const orderRef = db.collection('pedidos').doc(orderId);
+        await orderRef.update({ estatus: newStatus });
+
+        showError(`Estatus del pedido actualizado.`, 'success');
+
+    } catch (error) {
+        console.error("Error al actualizar el estatus del pedido: ", error);
+        showError("Error al guardar el cambio. Revisa la consola.", 'error');
+
+        // Si falla, la UI se revertirá automáticamente gracias al listener de Firestore,
+        // que traerá el valor antiguo de la base de datos.
+    }
+}
+
 // --- Make functions globally accessible ---
 // Esto permite llamar a las funciones desde los atributos onclick en el HTML
 window.navigateTo = navigateTo;
