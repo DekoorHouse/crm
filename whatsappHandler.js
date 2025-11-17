@@ -1,8 +1,8 @@
 const express = require('express');
 const axios = require('axios');
+// SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-// SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendAdvancedWhatsAppMessage
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendConversionEvent } = require('./services');
 
 const router = express.Router();
 
@@ -506,6 +506,30 @@ router.post('/', async (req, res) => {
             // Set or merge contact data
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto ${from} actualizado/creado en Firestore.`);
+
+            // --- INICIO: Enviar evento a Meta Ads si el mensaje proviene de un anuncio ---
+            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+                console.log(`[META EVENT] Mensaje de Ad ${message.referral.source_id} detectado para ${from}.`);
+                try {
+                    // Construir la información del contacto para el evento
+                    const eventInfo = {
+                        wa_id: from, // 'from' es el wa_id
+                        profile: { name: contactInfo.profile?.name || from }
+                    };
+                    
+                    // Enviar el evento "Lead" (o el evento estándar para una conversación iniciada)
+                    // Usamos "Lead" como un evento estándar de CAPI.
+                    // El usuario mencionó "conversación con mensajes iniciada", que es similar a "MessagedConversationStarted"
+                    // o "Lead". Usaremos "Lead".
+                    await sendConversionEvent('Lead', eventInfo, message.referral, {});
+                    console.log(`[META EVENT] Evento 'Lead' enviado a Meta CAPI para ${from}.`);
+
+                } catch (eventError) {
+                    console.error(`[META EVENT] Error al enviar evento 'Lead' a Meta CAPI para ${from}:`, eventError.message);
+                    // No bloquear el resto del flujo, solo registrar el error
+                }
+            }
+            // --- FIN: Enviar evento a Meta Ads ---
 
             // Get potentially updated contact data for automation logic
             const updatedContactData = (await contactRef.get()).data();
