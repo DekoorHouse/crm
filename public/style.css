@@ -33,7 +33,10 @@ h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); color: var(--color-te
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #dcdcdc; border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: #c5c5c5; }
-.hidden { display: none; }
+
+/* CORRECCIÓN AQUÍ: Se agrega !important para asegurar que oculte los elementos */
+.hidden { display: none !important; }
+
 input[type="file"], input[type="color"] { display: none; }
 .btn { font-family: var(--font-heading); font-weight: 600; padding: 8px 18px; border: none; border-radius: var(--border-radius-md); cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .btn:disabled { background-color: #cccccc; color: #666666; cursor: not-allowed; opacity: 0.7; }
