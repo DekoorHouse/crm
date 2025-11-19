@@ -246,7 +246,7 @@ const MensajesAdsViewTemplate = () => `
             <thead>
                 <tr>
                     <th>Nombre del Anuncio</th>
-                    <th>IDs del Anuncio</th> <!-- MODIFICADO: Cabecera -->
+                    <th>IDs del Anuncio</th>
                     <th>Mensaje</th>
                     <th>Acciones</th>
                 </tr>
@@ -448,7 +448,6 @@ const SettingsViewTemplate = () => `
     </div>
 `;
 
-// --- INICIO DE MODIFICACIÓN: Plantilla de Métricas ---
 const MetricsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -459,7 +458,6 @@ const MetricsViewTemplate = () => `
             <p class="mt-4 text-gray-600">Cargando datos generales...</p>
         </div>
         <div id="metrics-content" class="hidden">
-            <!-- Sección Original: Gráficas Generales -->
             <div class="metrics-grid mb-8">
                 <div class="chart-container">
                     <h2>Mensajes Recibidos por Día (Últimos 30 días)</h2>
@@ -471,7 +469,6 @@ const MetricsViewTemplate = () => `
                 </div>
             </div>
 
-            <!-- NUEVA SECCIÓN: Mensajes por Anuncio -->
             <div class="settings-card mt-8">
                 <h2 class="text-xl font-bold mb-4">Mensajes Entrantes por Anuncio</h2>
                 <p class="text-sm text-gray-500 mb-4">Selecciona un rango de fechas para ver cuántos mensajes iniciales provinieron de cada Ad ID.</p>
@@ -499,20 +496,27 @@ const MetricsViewTemplate = () => `
                                 </tr>
                             </thead>
                             <tbody id="ad-metrics-table-body">
-                                <!-- Las filas se generarán dinámicamente -->
                             </tbody>
                         </table>
                     </div>
                 </div>
             </div>
-            <!-- Fin Nueva Sección -->
         </div>
     </div>
 `;
-// --- FIN DE MODIFICACIÓN ---
 
 // --- PLANTILLAS DE COMPONENTES ---
+
 const UserIcon = (contact, size = 'h-9 w-9') => {
+    // --- MODIFICACIÓN: Corona para compras ---
+    // Si el contacto ha completado una compra, mostramos un icono de corona dorada
+    if (contact && contact.purchaseStatus === 'completed') {
+         return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style="background: linear-gradient(135deg, #FFD700, #FFA500); box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
+                <i class="fas fa-crown text-sm"></i>
+            </div>`;
+    }
+    // --- FIN MODIFICACIÓN ---
+
     if (contact && contact.profileImageUrl) {
         return `<img src="${contact.profileImageUrl}" alt="${contact.name}" class="${size} rounded-full object-cover">`;
     }
@@ -529,26 +533,23 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
 };
 
 const ContactItemTemplate = (contact, isSelected) => {
-    const typingText = contact.lastMessage || 'Sin mensajes.'; // Texto de último mensaje o estado
+    const typingText = contact.lastMessage || 'Sin mensajes.';
 
-    // Generar HTML para la hora o contador de no leídos
     let timeOrBadgeHTML = '';
     if (contact.unreadCount > 0) {
         timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
     } else if (contact.lastMessageTimestamp) {
-        const date = contact.lastMessageTimestamp; // Ya es un objeto Date
+        const date = contact.lastMessageTimestamp;
         const timeString = isSameDay(new Date(), date)
-            ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) // HH:MM si es hoy
-            : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' }); // DD/Mes si es otro día
+            ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
         timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
     }
 
-    // Badge para el número de pedido (si existe)
     const orderBadgeHTML = contact.lastOrderNumber
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
         : '';
 
-    // Contenido principal del item
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
@@ -566,126 +567,103 @@ const ContactItemTemplate = (contact, isSelected) => {
             </div>
         </div>`;
 
-    // Acción al hacer clic
     const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
 
-    // Ensamblar el elemento HTML final
     return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''}" data-contact-id="${contact.id}">
                 ${UserIcon(contact)}
                 ${mainContent}
             </div>`;
 };
 
-// Muestra el icono de estado del mensaje (reloj, check, doble check)
 const MessageStatusIconTemplate = (status) => {
-    const sentColor = '#9ca3af'; // Gris para enviado/entregado
-    const readColor = '#53bdeb'; // Azul para leído
+    const sentColor = '#9ca3af';
+    const readColor = '#53bdeb';
     switch (status) {
-        case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`; // Reloj simple (enviando)
-        case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`; // Reloj azul (encolado >24h)
-        case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`; // Doble check azul
-        case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`; // Doble check gris
-        case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`; // Check simple gris
-        default: return ''; // Sin icono si el estado es desconocido
+        case 'pending': return `<i class="far fa-clock message-status-icon" style="color: ${sentColor};"></i>`;
+        case 'queued': return `<i class="far fa-clock message-status-icon" style="color: #60a5fa;"></i>`;
+        case 'read': return `<i class="fas fa-check-double" style="color: ${readColor};"></i>`;
+        case 'delivered': return `<i class="fas fa-check-double" style="color: ${sentColor};"></i>`;
+        case 'sent': return `<i class="fas fa-check" style="color: ${sentColor};"></i>`;
+        default: return '';
     }
 };
 
-// Genera la vista previa de un mensaje respondido
 const RepliedMessagePreviewTemplate = (originalMessage) => {
-    if (!originalMessage) return ''; // Si no se encuentra el mensaje original
+    if (!originalMessage) return '';
 
-    // Determinar el autor del mensaje original
     const authorName = originalMessage.from === state.selectedContactId
-        ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' // Nombre del contacto o 'Cliente'
-        : 'Tú'; // Si lo envió el usuario del CRM
+        ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente'
+        : 'Tú';
 
     let textPreview = '';
-    // Si el mensaje original era una imagen o video con URL
     if ((originalMessage.type === 'image' || originalMessage.fileType?.startsWith('image/')) && originalMessage.fileUrl) {
         const caption = originalMessage.text && originalMessage.text !== '📷 Imagen' ? originalMessage.text : '';
         let captionHtml = caption ? `<div class="reply-media-text"><p class="reply-media-caption">${caption}</p></div>` : '';
         textPreview = `<div class="reply-media-preview"><img src="${originalMessage.fileUrl}" alt="Miniatura de respuesta" class="reply-thumbnail">${captionHtml}</div>`;
     } else {
-        // Para otros tipos de mensaje (texto, audio, etc.)
         let plainText = originalMessage.text || 'Mensaje';
         if (originalMessage.type === 'audio') plainText = '🎤 Mensaje de voz';
         else if (originalMessage.type === 'video' || originalMessage.fileType?.startsWith('video/')) plainText = '🎥 Video';
         else if (originalMessage.type === 'location') plainText = '📍 Ubicación';
-        else if (originalMessage.fileType) plainText = '📄 Documento'; // Fallback para documentos
+        else if (originalMessage.fileType) plainText = '📄 Documento';
         textPreview = `<p class="reply-text">${plainText}</p>`;
     }
 
-    // Ensamblar el HTML de la vista previa
     return `<div class="reply-preview"><p class="reply-author">${authorName}</p>${textPreview}</div>`;
 };
 
-
-// Genera el HTML para una burbuja de mensaje individual
 const MessageBubbleTemplate = (message) => {
-    const isSent = message.from !== state.selectedContactId; // Determina si es mensaje enviado o recibido
-    // Formatea la hora del mensaje (HH:MM)
+    const isSent = message.from !== state.selectedContactId;
     const time = message.timestamp && typeof message.timestamp.seconds === 'number'
         ? new Date(message.timestamp.seconds * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         : '';
 
-    let contentHTML = ''; // Contenido principal del mensaje (texto, imagen, etc.)
-    let bubbleExtraClass = ''; // Clases CSS adicionales para la burbuja
-    // HTML para la hora y el icono de estado
+    let contentHTML = '';
+    let bubbleExtraClass = '';
     let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
 
-    const hasText = message.text && !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text); // Verifica si hay texto real (no solo el placeholder de multimedia)
+    const hasText = message.text && !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
-    // Si el mensaje tiene archivo adjunto (imagen, video, audio, doc)
     if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
-            bubbleExtraClass = 'has-image'; // Clase especial para imágenes (padding diferente)
+            bubbleExtraClass = 'has-image';
             const sentBgClass = isSent ? `bg-[${'var(--color-bubble-sent-bg)'}]` : `bg-[${'var(--color-bubble-received-bg)'}]`;
-            const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`; // Asegura URL completa
-            // Imagen + Texto (si hay) + Overlay de hora/estado
+            const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<div class="${sentBgClass} rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
-            timeAndStatusHTML = ''; // El overlay ya tiene la hora/estado
+            timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
-            const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl; // Añade timestamp para evitar caché
-            const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`; // URL completa
-            // Reproductor de video + Texto (si hay)
+            const videoUrl = message.timestamp ? `${message.fileUrl}?v=${message.timestamp.seconds}` : message.fileUrl;
+            const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
             contentHTML += `<video controls class="message-bubble video rounded-lg mb-1"><source src="${fullVideoUrl}" type="${message.fileType}">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
         } else if (message.fileType.startsWith('audio/')) {
-             const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`; // URL completa
-             // Reproductor de audio
+             const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
              contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
         } else if (message.type === 'document' || message.fileType.startsWith('application/')) {
-            const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`; // URL completa
-            // Enlace al documento
+            const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
         } else if (message.type === 'sticker') {
             const fullStickerUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<img src="${fullStickerUrl}" alt="Sticker" class="chat-sticker-preview">`;
         }
     } else if (message.type === 'location' && message.location) {
-        // Mensaje de ubicación
         const { latitude, longitude, name, address } = message.location;
-        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`; // Enlace a Google Maps
+        const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
         contentHTML += `<a href="${mapsUrl}" target="_blank" rel="noopener noreferrer" class="block text-blue-600 hover:underline"><div class="font-semibold"><i class="fas fa-map-marker-alt mr-2 text-red-500"></i>${name || 'Ubicación'}</div>${address ? `<p class="text-xs text-gray-500 mt-1">${address}</p>` : ''}<p class="text-xs mt-1">Toca para ver en el mapa</p></a>`;
     } else if (message.type === 'sticker') {
-         // Fallback si no se pudo cargar la URL del sticker
         contentHTML += `<div class="sticker-fallback"><i class="far fa-sticky-note"></i><span>Sticker</span></div>`;
     } else if (message.text) {
-        // Mensaje de solo texto
          contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
     }
 
-    // Añadir vista previa si es una respuesta
     let replyPreviewHTML = '';
     if (message.context && message.context.id) {
-        const originalMessage = state.messages.find(m => m.id === message.context.id); // Busca el mensaje original por ID
+        const originalMessage = state.messages.find(m => m.id === message.context.id);
         replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
     }
 
-    // Botón de copiar (solo si hay texto)
     const copyButtonHTML = message.text ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>` : '';
 
-    // HTML para las acciones (reaccionar, responder, copiar)
     const actionsHTML = `
         <div class="message-actions">
              <div class="reaction-bar">
@@ -699,15 +677,12 @@ const MessageBubbleTemplate = (message) => {
         </div>
     `;
 
-    // HTML para mostrar la reacción (si existe)
     const reactionHTML = message.reaction ? `<div class="reactions-container ${isSent ? '' : 'received-reaction'}">${message.reaction}</div>` : '';
 
-    // Clases CSS para la burbuja y el grupo
     const bubbleAlignment = isSent ? 'sent' : 'received';
     let bubbleClasses = isSent ? 'sent' : 'received';
-    if (message.status === 'queued') bubbleClasses += ' message-queued'; // Clase especial si está en cola
+    if (message.status === 'queued') bubbleClasses += ' message-queued';
 
-    // Ensamblar el HTML final del mensaje
     return `
         <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}">
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
@@ -720,13 +695,10 @@ const MessageBubbleTemplate = (message) => {
         </div>`;
 };
 
-
-// Genera el HTML para un elemento de nota interna (modo visualización o edición)
 const NoteItemTemplate = (note) => {
     const time = note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleString('es-ES') : 'Fecha desconocida';
-    const isEditing = state.isEditingNote === note.id; // Verifica si esta nota está en modo edición
+    const isEditing = state.isEditingNote === note.id;
 
-    // Si está en modo edición, muestra un textarea
     return isEditing
         ? `<div class="note-item">
              <textarea id="edit-note-input-${note.id}" class="!mb-2" rows="3">${note.text}</textarea>
@@ -735,7 +707,6 @@ const NoteItemTemplate = (note) => {
                <button class="btn btn-primary btn-sm" onclick="handleUpdateNote('${note.id}')">Guardar</button>
              </div>
            </div>`
-        // Si no, muestra el texto y los botones de editar/eliminar
         : `<div class="note-item">
              <p>${note.text}</p>
              <div class="note-meta">
@@ -748,9 +719,8 @@ const NoteItemTemplate = (note) => {
            </div>`;
 };
 
-// Genera la vista previa de un archivo local (antes de enviarlo)
 const LocalFilePreviewTemplate = (file) => {
-    const objectURL = URL.createObjectURL(file); // URL temporal para el archivo local
+    const objectURL = URL.createObjectURL(file);
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
     const isAudio = file.type.startsWith('audio/');
@@ -760,14 +730,13 @@ const LocalFilePreviewTemplate = (file) => {
     } else if (isVideo) {
         previewElement = `<video src="${objectURL}" alt="Vista previa"></video>`;
     } else if (isAudio) {
-        previewElement = `<div class="p-3"><i class="fas fa-music text-2xl text-gray-500"></i></div>`; // Icono para audio
+        previewElement = `<div class="p-3"><i class="fas fa-music text-2xl text-gray-500"></i></div>`;
     } else {
-        previewElement = `<div class="p-3"><i class="fas fa-file text-2xl text-gray-500"></i></div>`; // Icono genérico
+        previewElement = `<div class="p-3"><i class="fas fa-file text-2xl text-gray-500"></i></div>`;
     }
-    // Ensambla el HTML con el botón de cancelar, la vista previa y la info del archivo
     return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name}</p> <p>${(file.size / 1024).toFixed(1)} KB</p> </div> </div>`;
 };
-// Genera la vista previa de un archivo remoto (ej. de una respuesta rápida)
+
 const RemoteFilePreviewTemplate = (file) => {
     const isImage = file.type.startsWith('image/');
     const isVideo = file.type.startsWith('video/');
@@ -782,16 +751,13 @@ const RemoteFilePreviewTemplate = (file) => {
     } else {
         previewElement = `<div class="p-3"><i class="fas fa-file text-2xl text-gray-500"></i></div>`;
     }
-    // Similar al local, pero usa file.url y file.name
     return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name || 'Archivo adjunto'}</p></div> </div>`;
 };
 
-// Genera los botones de estado/etiqueta para un contacto
 const StatusButtonsTemplate = (contact) => {
     let buttonsHtml = '<div class="status-btn-group">';
     state.tags.forEach(tag => {
-        const isActive = contact.status === tag.key; // Verifica si esta es la etiqueta activa
-        // Genera un botón para cada etiqueta, con estilos basados en si está activa o no
+        const isActive = contact.status === tag.key;
         buttonsHtml += `<button
                             onclick="handleStatusChange('${contact.id}', '${tag.key}')"
                             class="status-btn ${isActive ? 'active' : ''}"
@@ -804,14 +770,10 @@ const StatusButtonsTemplate = (contact) => {
     return buttonsHtml;
 };
 
-// Genera la barra que aparece cuando se está respondiendo a un mensaje
 const ReplyContextBarTemplate = (message) => {
-    if (!message) return ''; // Si no hay mensaje al que responder
-    // Determina el autor del mensaje original
+    if (!message) return '';
     const authorName = message.from === state.selectedContactId ? state.contacts.find(c => c.id === state.selectedContactId)?.name || 'Cliente' : 'Tú';
-    // Genera una vista previa del texto o tipo de archivo
     const textPreview = message.text || (message.fileType ? `📷 Archivo` : '');
-    // Ensambla el HTML con el botón de cancelar y la vista previa
     return `
         <button id="cancel-reply-btn" onclick="cancelReply()"><i class="fas fa-times"></i></button>
         <div class="reply-preview !p-0 !border-l-2 !m-0">
@@ -821,26 +783,22 @@ const ReplyContextBarTemplate = (message) => {
     `;
 };
 
-// Genera el HTML completo para la ventana de chat de un contacto seleccionado
 const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
-    if (!contact) { return emptyChat; } // Muestra mensaje si no hay contacto seleccionado
+    if (!contact) { return emptyChat; }
 
-    const isSessionExpired = state.isSessionExpired; // Verifica si la sesión de 24h ha expirado
+    const isSessionExpired = state.isSessionExpired;
 
-    // Banner que indica si la sesión ha expirado
     const sessionExpiredNotification = isSessionExpired
         ? `<div class="session-expired-banner">
              <i class="fas fa-lock mr-2"></i> Chat cerrado. Envía una plantilla para reactivar.
            </div>`
         : '';
 
-    // Placeholder del input cambia según si la sesión expiró
     const placeholderText = isSessionExpired
         ? 'La ventana de 24h ha cerrado. Los mensajes se encolarán.'
         : 'Escribe un mensaje o usa / para respuestas rápidas...';
 
-    // Contenido del footer (formulario de mensaje)
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
@@ -852,7 +810,6 @@ const ChatWindowTemplate = (contact) => {
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
 
-    // Contenido principal (mensajes o notas)
     const mainContent = state.activeTab === 'chat'
         ? `<main id="messages-container" class="relative flex-1 p-4 overflow-y-auto"><div id="sticky-date-header" class="date-separator"></div><div id="messages-content"></div></main>`
         : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">
@@ -863,14 +820,10 @@ const ChatWindowTemplate = (contact) => {
              <div id="notes-content"></div>
            </main>`;
 
-    // Badge para el contador de notas
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
-    // Barra de contexto de respuesta (si aplica)
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
-    // Determina si el bot IA está activo para este contacto
-    const isBotActiveForContact = contact.botActive !== false; // Activo por defecto o si es true
-    // Botón para activar/desactivar la IA para este chat
+    const isBotActiveForContact = contact.botActive !== false;
     const botToggleHTML = `
         <button
             onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})"
@@ -880,7 +833,6 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
-    // Ensambla el HTML completo de la ventana de chat
     return `
         <div id="drag-drop-overlay-chat" class="drag-overlay hidden">
             <div class="drag-overlay-content">
@@ -925,7 +877,6 @@ const ChatWindowTemplate = (contact) => {
         </footer>`;
 };
 
-// Genera el HTML para la barra lateral de detalles del contacto
 const ContactDetailsSidebarTemplate = (contact) => {
     if (!contact) return '';
 
@@ -944,14 +895,12 @@ const ContactDetailsSidebarTemplate = (contact) => {
                      <p class="text-sm text-gray-500 mt-1"><em>${contact.nickname || ''}</em></p>
                 </div>
 
-                <!-- --- NUEVA SECCIÓN PARA EL HISTORIAL DE PEDIDOS --- -->
                 <div id="order-history-container" class="mt-4 border-t pt-4">
                      <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Historial de Pedidos</h4>
                      <div id="contact-orders-list" class="space-y-2">
                         <!-- El contenido se cargará dinámicamente -->
                      </div>
                 </div>
-                <!-- --- FIN DE LA NUEVA SECCIÓN --- -->
 
                 <div class="mt-6 border-t pt-6 space-y-2">
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
@@ -966,13 +915,10 @@ const ContactDetailsSidebarTemplate = (contact) => {
     `;
 };
 
-
-// Genera el HTML para un separador de fecha en el chat
 const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
 
-// --- Plantilla para el modal de Nuevo Pedido (reubicada desde feature-handlers.js) ---
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-backdrop">
         <div class="modal-content">
@@ -1055,7 +1001,6 @@ const NewOrderModalTemplate = () => `
     </div>
 `;
 
-// --- Plantilla para el modal de previsualización de conversación ---
 const ConversationPreviewModalTemplate = (contact) => `
     <div id="conversation-preview-modal" class="modal-backdrop" onclick="closeConversationPreviewModal()">
         <div class="modal-content !p-0 !max-w-3xl !w-full" onclick="event.stopPropagation()">
@@ -1083,19 +1028,15 @@ const ConversationPreviewModalTemplate = (contact) => `
     </div>
 `;
 
-
-// --- Plantilla para un item del historial de pedidos en la barra lateral ---
 const OrderHistoryItemTemplate = (order) => {
     const orderDate = order.createdAt ? new Date(order.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : '';
     const estatus = order.estatus || 'Sin estatus';
 
-    // Opciones del select de estatus
     const statusOptionsHTML = state.orderStatuses
         .map(status => `<option value="${status.key}" ${estatus === status.key ? 'selected' : ''} style="color: ${status.color}; font-weight: 600;">${status.label}</option>`)
         .join('');
 
-    // Estilo inicial del select basado en el estatus actual
-    const currentStatusStyle = state.orderStatuses.find(s => s.key === estatus) || { color: '#e9ecef' }; // Gris por defecto
+    const currentStatusStyle = state.orderStatuses.find(s => s.key === estatus) || { color: '#e9ecef' };
 
     return `
         <div class="order-history-item">
@@ -1122,8 +1063,6 @@ const OrderHistoryItemTemplate = (order) => {
     `;
 };
 
-
-// --- Plantilla para el modal de Edición de Pedido ---
 const OrderEditModalTemplate = (order) => `
     <div id="order-edit-modal" class="modal-overlay" onclick="closeOrderEditModal()">
         <div class="modal-content" onclick="event.stopPropagation()">
