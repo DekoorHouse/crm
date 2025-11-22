@@ -579,7 +579,7 @@ function handleQuickReplyInput(event) {
     const text = input.value; 
     if (text.startsWith('/')) { 
         state.quickReplyPickerOpen = true; 
-        state.templatePickerOpen = false;
+        state.templatePickerOpen = false; 
         state.emojiPickerOpen = false;
         const searchTerm = text.substring(1); 
         renderQuickReplyPicker(searchTerm); 
@@ -630,8 +630,15 @@ function handleStartReply(event, messageDocId) {
         state.replyingToMessage = message;
         // MODIFICADO: Pasar opción preserveScroll: true
         renderChatWindow({ preserveScroll: true });
-        // CORRECCIÓN: preventScroll para evitar salto al fondo
-        document.getElementById('message-input')?.focus({ preventScroll: true });
+        
+        // CORRECCIÓN MAYOR: Usar setTimeout para asegurar que el DOM esté listo y
+        // el scroll restaurado antes de enfocar el input.
+        setTimeout(() => {
+            const input = document.getElementById('message-input');
+            if (input) {
+                input.focus({ preventScroll: true });
+            }
+        }, 0);
     }
 }
 
