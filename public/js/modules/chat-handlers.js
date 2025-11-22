@@ -1088,11 +1088,18 @@ async function handleMarkAsUnread(event, contactId) {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);
         if (contactIndex > -1) {
             state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
+            // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
+            state.contacts[contactIndex].lastMessageTimestamp = new Date(); 
             handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
         }
 
         // 2. Actualizar en Firestore
-        await db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 1 });
+        // IMPORTANTE: Actualizamos lastMessageTimestamp para que el listener en otros dispositivos
+        // (que filtra por fecha > carga) detecte este cambio y actualice la UI.
+        await db.collection('contacts_whatsapp').doc(contactId).update({ 
+            unreadCount: 1,
+            lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
         
         // Nota: Si el chat está actualmente abierto (seleccionado), permanecerá abierto pero la lista mostrará el badge.
         // Al hacer clic de nuevo en el chat de la lista o enviar un mensaje, se volverá a marcar como leído.
