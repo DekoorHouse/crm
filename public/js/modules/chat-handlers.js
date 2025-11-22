@@ -1073,3 +1073,42 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
+
+// --- START: Mark as Unread Logic ---
+async function handleMarkAsUnread(event, contactId) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        // Also try stopping immediate propagation if multiple listeners exist (unlikely here but safe)
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    }
+
+    try {
+        // 1. Actualización optimista de la UI
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
+            handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
+        }
+
+        // 2. Actualizar en Firestore
+        await db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 1 });
+        
+        // Nota: Si el chat está actualmente abierto (seleccionado), permanecerá abierto pero la lista mostrará el badge.
+        // Al hacer clic de nuevo en el chat de la lista o enviar un mensaje, se volverá a marcar como leído.
+
+    } catch (error) {
+        console.error("Error al marcar como no leído:", error);
+        showError("No se pudo marcar como no leído.");
+        // Revertir cambio optimista si falla
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].unreadCount = 0;
+            handleSearchContacts();
+        }
+    }
+}
+// --- END: Mark as Unread Logic ---
+
+// Exportar la nueva función globalmente
+window.handleMarkAsUnread = handleMarkAsUnread;
