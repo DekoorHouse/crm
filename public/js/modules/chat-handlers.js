@@ -315,7 +315,12 @@ async function handleSendMessage(event) {
     event.preventDefault();
     const input = document.getElementById('message-input');
     let text = input.value.trim();
-    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+    
+    // --- CORRECCIÓN: Capturar el ID del contacto y el contexto de respuesta ACTUAL ---
+    const currentContactId = state.selectedContactId;
+    const currentReplyingTo = state.replyingToMessage;
+    
+    const contact = state.contacts.find(c => c.id === currentContactId);
     if (!contact || state.isUploading) return;
 
     const fileToSend = state.stagedFile;
@@ -335,8 +340,11 @@ async function handleSendMessage(event) {
         text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
     };
 
-    state.messages.push(pendingMessage);
-    appendMessage(pendingMessage);
+    // Solo agregar a la UI si seguimos viendo el mismo chat
+    if (state.selectedContactId === currentContactId) {
+        state.messages.push(pendingMessage);
+        appendMessage(pendingMessage);
+    }
 
     input.value = '';
     input.style.height = 'auto';
@@ -344,24 +352,26 @@ async function handleSendMessage(event) {
 
     try {
         if (fileToSend) {
-            const response = await uploadAndSendFile(fileToSend, text, isExpired);
+            // Pasamos el ID capturado y el contexto de respuesta capturado
+            const response = await uploadAndSendFile(fileToSend, text, isExpired, currentContactId, currentReplyingTo);
             if (!response.ok) {
                 const errorData = await response.json();
                 throw new Error(errorData.message || 'Error del servidor.');
             }
         } else {
             if (!isExpired) {
-                await db.collection('contacts_whatsapp').doc(state.selectedContactId).update({ unreadCount: 0 });
+                await db.collection('contacts_whatsapp').doc(currentContactId).update({ unreadCount: 0 });
             }
             const messageData = { text, tempId };
             if (remoteFileToSend) {
                 messageData.fileUrl = remoteFileToSend.url;
                 messageData.fileType = remoteFileToSend.type;
             }
-            if (state.replyingToMessage) {
-                messageData.reply_to_wamid = state.replyingToMessage.id;
+            if (currentReplyingTo) {
+                messageData.reply_to_wamid = currentReplyingTo.id;
             }
-            const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, {
+            // Usar currentContactId en la URL
+            const response = await fetch(`${API_BASE_URL}/api/contacts/${currentContactId}/${endpoint}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(messageData)
@@ -371,16 +381,23 @@ async function handleSendMessage(event) {
                 throw new Error(errorData.message || 'Error del servidor.');
             }
         }
-        cancelReply();
+        // Cancelar respuesta solo si seguimos en el mismo chat
+        if (state.selectedContactId === currentContactId) {
+            cancelReply();
+        }
     } catch (error) {
         console.error("Error en el proceso de envío:", error);
         showError(error.message);
-        const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
-        if (failedMessageIndex > -1) {
-            state.messages[failedMessageIndex].status = 'failed';
-            renderMessages();
+        
+        // Actualizar estado de error solo si seguimos en el chat o lo encontramos
+        if (state.selectedContactId === currentContactId) {
+            const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
+            if (failedMessageIndex > -1) {
+                state.messages[failedMessageIndex].status = 'failed';
+                renderMessages();
+            }
+            if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
         }
-        if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
     }
 }
 
@@ -417,13 +434,19 @@ async function handleDeleteNote(noteId) {
     } catch (error) { showError(error.message); }
 }
 
-async function uploadAndSendFile(file, textCaption, isExpired) { 
-    if (!file || !state.selectedContactId || state.isUploading) return;
+async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyingToMessage) { 
+    // Usar el contactId pasado o fallback al state (para compatibilidad), pero preferir el pasado
+    const targetContactId = contactId || state.selectedContactId;
+    if (!file || !targetContactId || state.isUploading) return;
+    
     const progressEl = document.getElementById('upload-progress');
     const submitButton = document.querySelector('#message-form button[type="submit"]');
     state.isUploading = true;
-    progressEl.textContent = 'Subiendo 0%...';
-    progressEl.classList.remove('hidden');
+    
+    if (progressEl) {
+        progressEl.textContent = 'Subiendo 0%...';
+        progressEl.classList.remove('hidden');
+    }
     if(submitButton) submitButton.disabled = true;
     
     const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
@@ -433,8 +456,18 @@ async function uploadAndSendFile(file, textCaption, isExpired) {
     const uploadTask = fileRef.put(file);
     return new Promise((resolve, reject) => {
         uploadTask.on('state_changed', 
-            (snapshot) => { const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; }, 
-            (error) => { state.isUploading = false; progressEl.classList.add('hidden'); if(submitButton) submitButton.disabled = false; reject(new Error("Falló la subida del archivo.")); }, 
+            (snapshot) => { 
+                if (progressEl) {
+                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; 
+                    progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; 
+                }
+            }, 
+            (error) => { 
+                state.isUploading = false; 
+                if (progressEl) progressEl.classList.add('hidden'); 
+                if(submitButton) submitButton.disabled = false; 
+                reject(new Error("Falló la subida del archivo.")); 
+            }, 
             async () => {
                 try {
                     const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
@@ -443,18 +476,22 @@ async function uploadAndSendFile(file, textCaption, isExpired) {
                         fileType: file.type,
                         text: textCaption 
                     };
-                    if (state.replyingToMessage) {
-                        messageData.reply_to_wamid = state.replyingToMessage.id;
+                    
+                    // Usar el contexto capturado si existe, si no, el del estado (riesgoso si cambió chat)
+                    const contextMsg = replyingToMessage !== undefined ? replyingToMessage : state.replyingToMessage;
+                    
+                    if (contextMsg) {
+                        messageData.reply_to_wamid = contextMsg.id;
                     }
 
                     const endpoint = isExpired ? 'queue-message' : 'messages';
-                    const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
+                    const response = await fetch(`${API_BASE_URL}/api/contacts/${targetContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
                     resolve(response);
                 } catch (error) { 
                     reject(error); 
                 } finally { 
                     state.isUploading = false; 
-                    progressEl.classList.add('hidden'); 
+                    if (progressEl) progressEl.classList.add('hidden'); 
                     if(submitButton) submitButton.disabled = false; 
                 }
             }
@@ -1036,4 +1073,3 @@ function handlePreviewScroll() {
     }
 }
 // --- END: Conversation Preview Logic ---
-
