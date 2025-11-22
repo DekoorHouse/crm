@@ -667,8 +667,10 @@ router.post('/', async (req, res) => {
     } catch (error) {
         console.error('❌ ERROR CRÍTICO EN EL WEBHOOK:', error);
     } finally {
-        // Always acknowledge the webhook quickly to prevent Meta retries
-        res.sendStatus(200);
+        // CORRECCIÓN APLICADA: Verificar si los headers ya fueron enviados antes de intentar responder
+        if (!res.headersSent) {
+            res.sendStatus(200);
+        }
     }
 });
 
