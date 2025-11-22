@@ -151,11 +151,17 @@ function renderTagFilters() {
 }
 
 // Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)
-function renderChatWindow() {
-    if (state.activeView !== 'chats') return; // Solo ejecutar en la vista de chats
+function renderChatWindow(options = {}) { // MODIFICADO: Aceptar opciones
+    if (state.activeView !== 'chats') return;
 
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
+
+    // --- INICIO MODIFICACIÓN: Capturar scroll actual ---
+    // Guardamos la posición actual del scroll antes de destruir el contenido
+    const messagesContainer = document.getElementById('messages-container');
+    const savedScrollTop = messagesContainer ? messagesContainer.scrollTop : null;
+    // --- FIN MODIFICACIÓN ---
 
     // Busca el contacto seleccionado actualmente en el estado global
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
@@ -176,10 +182,19 @@ function renderChatWindow() {
 
         // Si la pestaña activa es 'chat'
         if (state.activeTab === 'chat') {
-            renderMessages(); // Dibuja los mensajes
+            // --- INICIO MODIFICACIÓN: Pasar opciones de scroll a renderMessages ---
+            const renderMsgOptions = {};
+            // Si se pide preservar el scroll y tenemos una posición guardada
+            if (options.preserveScroll && savedScrollTop !== null) {
+                renderMsgOptions.scrollTop = savedScrollTop;
+                renderMsgOptions.scrollToBottom = false;
+            }
+            renderMessages(renderMsgOptions);
+            // --- FIN MODIFICACIÓN ---
+
             // Añade listener de scroll para la cabecera de fecha flotante
-            const messagesContainer = document.getElementById('messages-container');
-            if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
+            const messagesContainerNew = document.getElementById('messages-container');
+            if (messagesContainerNew) { messagesContainerNew.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
 
             // Añade listeners al formulario de envío de mensajes
             const messageForm = document.getElementById('message-form');
@@ -812,11 +827,11 @@ function renderTagsDistributionChart(data) {
 
 
 // Renderiza la lista de mensajes en el chat activo
-function renderMessages() {
+function renderMessages(options = {}) { // MODIFICADO: Aceptar opciones
     const contentContainer = document.getElementById('messages-content');
     if (!contentContainer) return;
 
-    let lastMessageDate = null; // Para agrupar por fecha
+    let lastMessageDate = null; 
     let messagesHtml = '';
 
     // Genera HTML para cada mensaje, añadiendo separadores de fecha
@@ -832,9 +847,18 @@ function renderMessages() {
     });
 
     contentContainer.innerHTML = messagesHtml; // Actualiza el DOM
-    // Scroll hasta el final
+    
+    // --- INICIO MODIFICACIÓN: Lógica de scroll condicional ---
     const messagesContainer = document.getElementById('messages-container');
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    if (options.scrollTop !== undefined) {
+        // Restaurar posición específica (usado al responder)
+        messagesContainer.scrollTop = options.scrollTop;
+    } else if (options.scrollToBottom !== false) {
+        // Comportamiento por defecto (scroll al final)
+        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }
+    // --- FIN MODIFICACIÓN ---
+
     handleScroll(); // Actualiza la cabecera de fecha flotante
 }
 
@@ -1697,4 +1721,3 @@ window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Definida 
 window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-manager
 window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
 window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
-
