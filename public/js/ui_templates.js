@@ -556,10 +556,10 @@ const ContactItemTemplate = (contact, isSelected) => {
                 <h3 class="font-semibold text-sm text-gray-800 truncate">${contact.name || 'Desconocido'}</h3>
                 <div class="contact-meta">
                      ${timeOrBadgeHTML}
-                     <button class="preview-icon" onclick="openConversationPreview(event, '${contact.id}')" title="Ver conversación">
+                     <button type="button" class="preview-icon" onclick="event.stopPropagation(); openConversationPreview(event, '${contact.id}')" title="Ver conversación">
                         <i class="fas fa-eye"></i>
                      </button>
-                     <button class="preview-icon" onclick="handleMarkAsUnread(event, '${contact.id}')" title="Marcar como no leído">
+                     <button type="button" class="preview-icon" onclick="event.stopPropagation(); handleMarkAsUnread(event, '${contact.id}')" title="Marcar como no leído">
                         <i class="fas fa-envelope"></i>
                      </button>
                 </div>
