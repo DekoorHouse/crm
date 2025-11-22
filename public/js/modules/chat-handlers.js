@@ -138,6 +138,27 @@ function renderChatWindow() {
             const messagesContainer = document.getElementById('messages-container'); 
             if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
             
+            // --- INICIO DE LA MODIFICACIÓN: Clic en el área del mensaje para responder ---
+            const messagesContent = document.getElementById('messages-content');
+            if (messagesContent) {
+                messagesContent.addEventListener('click', (e) => {
+                    // Buscamos si el clic fue dentro de un grupo de mensajes (la fila entera)
+                    const group = e.target.closest('.message-group');
+                    if (!group) return;
+
+                    // Si el clic fue DENTRO de la burbuja del mensaje o sus acciones, no hacemos nada
+                    // (dejamos que sus propios eventos actúen, ej: copiar texto, ver imagen, etc.)
+                    if (e.target.closest('.message-bubble')) return;
+
+                    // Si llegamos aquí, el clic fue en el espacio vacío al lado de la burbuja
+                    const messageDocId = group.dataset.docId;
+                    if (messageDocId) {
+                        handleStartReply(e, messageDocId);
+                    }
+                });
+            }
+            // --- FIN DE LA MODIFICACIÓN ---
+
             const messageForm = document.getElementById('message-form');
             const messageInput = document.getElementById('message-input'); 
             if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
