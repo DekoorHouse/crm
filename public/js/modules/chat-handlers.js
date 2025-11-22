@@ -138,10 +138,10 @@ function renderChatWindow() {
             const messagesContainer = document.getElementById('messages-container'); 
             if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
             
-            // --- INICIO DE LA MODIFICACIÓN: Clic en el área del mensaje para responder ---
+            // --- INICIO DE LA MODIFICACIÓN: Doble clic en el área del mensaje para responder ---
             const messagesContent = document.getElementById('messages-content');
             if (messagesContent) {
-                messagesContent.addEventListener('click', (e) => {
+                messagesContent.addEventListener('dblclick', (e) => { // Cambiado a 'dblclick'
                     // Buscamos si el clic fue dentro de un grupo de mensajes (la fila entera)
                     const group = e.target.closest('.message-group');
                     if (!group) return;
