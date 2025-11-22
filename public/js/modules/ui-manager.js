@@ -141,25 +141,23 @@ function renderTagFilters() {
 }
 
 // Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)
-// MODIFICADO: Acepta opciones para controlar el scroll
 function renderChatWindow(options = {}) { 
     if (state.activeView !== 'chats') return;
 
     const chatPanelEl = document.getElementById('chat-panel');
     if (!chatPanelEl) return;
 
-    // --- INICIO MODIFICACIÓN: Capturar scroll actual ---
-    // Guardamos la posición actual del scroll antes de destruir el contenido
+    // Capturamos el scroll ANTES de borrar el contenido
     const messagesContainer = document.getElementById('messages-container');
     const savedScrollTop = messagesContainer ? messagesContainer.scrollTop : null;
-    // --- FIN MODIFICACIÓN ---
 
     // Busca el contacto seleccionado actualmente en el estado global
     const contact = state.contacts.find(c => c.id === state.selectedContactId);
-    // Renderiza la plantilla de la ventana de chat (puede ser el estado vacío si no hay contacto)
+    
+    // Renderiza la plantilla de la ventana de chat
     chatPanelEl.innerHTML = ChatWindowTemplate(contact);
 
-    // Añade listener al input de búsqueda de contactos (si existe)
+    // Añade listener al input de búsqueda de contactos
     const searchInput = document.getElementById('search-contacts-input');
     if (searchInput) {
         searchInput.addEventListener('input', handleSearchInput);
@@ -173,46 +171,55 @@ function renderChatWindow(options = {}) {
 
         // Si la pestaña activa es 'chat'
         if (state.activeTab === 'chat') {
-            // --- INICIO MODIFICACIÓN: Pasar opciones de scroll a renderMessages ---
+            // Configurar opciones de renderizado
             const renderMsgOptions = {};
-            // Si se pide preservar el scroll y tenemos una posición guardada
-            if (options.preserveScroll && savedScrollTop !== null) {
-                renderMsgOptions.scrollTop = savedScrollTop;
+            
+            // Si se pide preservar el scroll, desactivamos explicitamente scrollToBottom
+            // y restauramos la posición si la tenemos
+            if (options.preserveScroll) {
                 renderMsgOptions.scrollToBottom = false;
+                if (savedScrollTop !== null) {
+                    renderMsgOptions.scrollTop = savedScrollTop;
+                }
             }
+            
             renderMessages(renderMsgOptions);
-            // --- FIN MODIFICACIÓN ---
 
             // Añade listener de scroll para la cabecera de fecha flotante
             const messagesContainerNew = document.getElementById('messages-container');
-            if (messagesContainerNew) { messagesContainerNew.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
+            if (messagesContainerNew) { 
+                messagesContainerNew.addEventListener('scroll', () => { 
+                    if (!ticking) { 
+                        window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); 
+                        ticking = true; 
+                    } 
+                }); 
+            }
 
             // Añade listeners al formulario de envío de mensajes
             const messageForm = document.getElementById('message-form');
             const messageInput = document.getElementById('message-input');
             if (messageForm) messageForm.addEventListener('submit', handleSendMessage);
             if (messageInput) {
-                messageInput.addEventListener('paste', handlePaste); // Para pegar imágenes
-                messageInput.addEventListener('input', handleQuickReplyInput); // Para '/shortcut'
-                messageInput.addEventListener('keydown', handleMessageInputKeyDown); // Para Enter, Flechas, Esc
+                messageInput.addEventListener('paste', handlePaste); 
+                messageInput.addEventListener('input', handleQuickReplyInput);
+                messageInput.addEventListener('keydown', handleMessageInputKeyDown);
 
                 // Ajustar altura del textarea dinámicamente
                 messageInput.addEventListener('input', () => {
                     messageInput.style.height = 'auto';
                     let newHeight = messageInput.scrollHeight;
-                    if (newHeight > 120) { // Limitar altura máxima
+                    if (newHeight > 120) {
                         newHeight = 120;
                     }
                     messageInput.style.height = newHeight + 'px';
                 });
 
-                messageInput.focus(); // Poner foco en el input
+                messageInput.focus();
             }
 
         } else if (state.activeTab === 'notes') {
-            // Si la pestaña activa es 'notas'
-            renderNotes(); // Dibuja las notas
-            // Añade listener al formulario de guardar nota
+            renderNotes(); 
             document.getElementById('note-form').addEventListener('submit', handleSaveNote);
         }
     }
@@ -818,7 +825,6 @@ function renderTagsDistributionChart(data) {
 
 
 // Renderiza la lista de mensajes en el chat activo
-// MODIFICADO: Aceptar opciones para controlar el scroll
 function renderMessages(options = {}) {
     const contentContainer = document.getElementById('messages-content');
     if (!contentContainer) return;
@@ -842,11 +848,12 @@ function renderMessages(options = {}) {
     
     // --- INICIO MODIFICACIÓN: Lógica de scroll condicional ---
     const messagesContainer = document.getElementById('messages-container');
+    
     if (options.scrollTop !== undefined) {
-        // Restaurar posición específica (usado al responder)
+        // Restaurar posición específica si se proporciona
         messagesContainer.scrollTop = options.scrollTop;
     } else if (options.scrollToBottom !== false) {
-        // Comportamiento por defecto (scroll al final)
+        // Comportamiento por defecto (scroll al final) SOLO si no se ha desactivado explícitamente
         messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
     // --- FIN MODIFICACIÓN ---
