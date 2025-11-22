@@ -559,6 +559,9 @@ const ContactItemTemplate = (contact, isSelected) => {
                      <button class="preview-icon" onclick="openConversationPreview(event, '${contact.id}')" title="Ver conversación">
                         <i class="fas fa-eye"></i>
                      </button>
+                     <button class="preview-icon" onclick="handleMarkAsUnread(event, '${contact.id}')" title="Marcar como no leído">
+                        <i class="fas fa-envelope"></i>
+                     </button>
                 </div>
             </div>
             <div class="flex justify-between items-center">
