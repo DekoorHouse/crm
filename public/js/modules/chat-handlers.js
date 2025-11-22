@@ -116,7 +116,8 @@ function setupChatListEventListeners() {
 
 // --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
 
-function renderChatWindow() { 
+// MODIFICADO: Aceptar opciones (como preserveScroll) para pasarlas a renderMessages
+function renderChatWindow(options = {}) { 
     if (state.activeView !== 'chats') return;
     
     const chatPanelEl = document.getElementById('chat-panel');
@@ -134,7 +135,9 @@ function renderChatWindow() {
         const statusWrapper = document.getElementById('contact-status-wrapper');
         if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
         if (state.activeTab === 'chat') {
-            renderMessages();
+            // MODIFICADO: Pasar las opciones a renderMessages para que maneje el scroll correctamente
+            renderMessages(options);
+            
             const messagesContainer = document.getElementById('messages-container'); 
             if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
             
@@ -627,7 +630,8 @@ function handleStartReply(event, messageDocId) {
         state.replyingToMessage = message;
         // MODIFICADO: Pasar opción preserveScroll: true
         renderChatWindow({ preserveScroll: true });
-        document.getElementById('message-input')?.focus();
+        // CORRECCIÓN: preventScroll para evitar salto al fondo
+        document.getElementById('message-input')?.focus({ preventScroll: true });
     }
 }
 
