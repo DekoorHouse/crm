@@ -153,6 +153,15 @@ function renderChatWindow() {
                     // Si llegamos aquí, el clic fue en el espacio vacío al lado de la burbuja
                     const messageDocId = group.dataset.docId;
                     if (messageDocId) {
+                        // --- Corrección para evitar selección de texto ---
+                        e.preventDefault();
+                        if (window.getSelection) {
+                            window.getSelection().removeAllRanges();
+                        } else if (document.selection) {
+                            document.selection.empty();
+                        }
+                        // -----------------------------------------------
+                        
                         handleStartReply(e, messageDocId);
                     }
                 });
