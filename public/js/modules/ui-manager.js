@@ -2,16 +2,6 @@
 // Este archivo se encarga de la navegación, renderizado de vistas,
 // y la manipulación de componentes de UI como modales, pickers, etc.
 
-// --- INICIO DE MODIFICACIÓN ---
-// Importar la nueva función de api-service (asegúrate de crearla allí)
-// import { fetchMessagesByAdIdMetrics } from './api-service.js';
-// Necesitamos acceso a state y showError
-// import { state, showError } from './state.js'; // Ajusta la ruta si es necesario
-// Importar Litepicker si aún no está global
-// import Litepicker from 'https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js'; // O desde donde lo cargues
-// --- FIN DE MODIFICACIÓN ---
-
-
 let ticking = false; // For scroll event throttling
 let tagsSortable = null;
 let adMetricsPicker = null; // Variable para la instancia del datepicker de métricas de Ad ID
@@ -151,7 +141,8 @@ function renderTagFilters() {
 }
 
 // Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)
-function renderChatWindow(options = {}) { // MODIFICADO: Aceptar opciones
+// MODIFICADO: Acepta opciones para controlar el scroll
+function renderChatWindow(options = {}) { 
     if (state.activeView !== 'chats') return;
 
     const chatPanelEl = document.getElementById('chat-panel');
@@ -827,7 +818,8 @@ function renderTagsDistributionChart(data) {
 
 
 // Renderiza la lista de mensajes en el chat activo
-function renderMessages(options = {}) { // MODIFICADO: Aceptar opciones
+// MODIFICADO: Aceptar opciones para controlar el scroll
+function renderMessages(options = {}) {
     const contentContainer = document.getElementById('messages-content');
     if (!contentContainer) return;
 
