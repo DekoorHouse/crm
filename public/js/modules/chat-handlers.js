@@ -625,7 +625,8 @@ function handleStartReply(event, messageDocId) {
     const message = state.messages.find(m => m.docId === messageDocId);
     if (message) {
         state.replyingToMessage = message;
-        renderChatWindow();
+        // MODIFICADO: Pasar opción preserveScroll: true
+        renderChatWindow({ preserveScroll: true });
         document.getElementById('message-input')?.focus();
     }
 }
@@ -633,7 +634,8 @@ function handleStartReply(event, messageDocId) {
 function cancelReply() {
     if (state.replyingToMessage) {
         state.replyingToMessage = null;
-        renderChatWindow();
+        // MODIFICADO: Pasar opción preserveScroll: true también al cancelar
+        renderChatWindow({ preserveScroll: true });
     }
 }
 
