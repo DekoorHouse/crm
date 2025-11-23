@@ -91,12 +91,22 @@ async function fetchInitialContacts() {
 
         // Determina si hay un filtro de etiqueta activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
+        
+        // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
+        const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
+        // --- FIN MODIFICACIÓN ---
+
         // Construye la URL base con límite
         let url = `${API_BASE_URL}/api/contacts?limit=30`;
         // Añade el parámetro 'tag' si hay un filtro
         if (tag) {
             url += `&tag=${tag}`;
         }
+        // --- INICIO MODIFICACIÓN: Añadir parámetro departmentId ---
+        if (departmentId) {
+            url += `&departmentId=${departmentId}`;
+        }
+        // --- FIN MODIFICACIÓN ---
 
         // Realiza la petición a la API
         const response = await fetch(url);
@@ -134,11 +144,21 @@ async function fetchMoreContacts() {
     try {
         // Aplicar filtro de etiqueta si está activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
+        
+        // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
+        const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
+        // --- FIN MODIFICACIÓN ---
+
         // Construir URL con límite y 'startAfterId'
         let url = `${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`;
         if (tag) {
             url += `&tag=${tag}`;
         }
+        // --- INICIO MODIFICACIÓN: Añadir parámetro departmentId ---
+        if (departmentId) {
+            url += `&departmentId=${departmentId}`;
+        }
+        // --- FIN MODIFICACIÓN ---
 
         // Realizar petición
         const response = await fetch(url);
@@ -232,6 +252,19 @@ function listenForContactUpdates() {
         snapshot.docChanges().forEach(change => {
             // Procesar timestamp del contacto modificado
             const updatedContactData = processContacts([{ id: change.doc.id, ...change.doc.data() }])[0];
+            
+            // --- INICIO MODIFICACIÓN: Verificar filtro de departamento ---
+            // Si hay un filtro de departamento activo y el contacto no pertenece, lo ignoramos (o removemos)
+            if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
+                 // Si existe en la lista local, lo removemos
+                 const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
+                 if (idx > -1) {
+                     state.contacts.splice(idx, 1);
+                 }
+                 return; // No añadir/actualizar
+            }
+            // --- FIN MODIFICACIÓN ---
+
             // Buscar si el contacto ya existe en la lista local
             const existingContactIndex = state.contacts.findIndex(c => c.id === updatedContactData.id);
 
@@ -356,6 +389,46 @@ function listenForKnowledgeBase() {
         showError("No se pudo cargar la base de conocimiento.");
     });
 }
+
+// --- NUEVO LISTENER: Escucha cambios en los Departamentos ---
+function listenForDepartments() {
+    if (unsubscribeDepartmentsListener) unsubscribeDepartmentsListener();
+    unsubscribeDepartmentsListener = db.collection('departments').orderBy('createdAt').onSnapshot(snapshot => {
+        // Actualiza estado global
+        state.departments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Re-renderizar vista si es la activa
+        if (state.activeView === 'departments') {
+            renderDepartmentsView();
+        }
+        // Si el modal de transferencia está abierto, actualizar el select
+        const transferSelect = document.getElementById('transfer-dept-select');
+        if (transferSelect && !transferSelect.closest('.hidden')) {
+            // Simple re-population logic
+             transferSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
+                state.departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('');
+        }
+    }, error => {
+        console.error("Error al escuchar departamentos:", error);
+        showError("No se pudieron cargar los departamentos.");
+    });
+}
+
+// --- NUEVO LISTENER: Escucha cambios en las Reglas de Enrutamiento ---
+function listenForAdRoutingRules() {
+    if (unsubscribeAdRoutingRulesListener) unsubscribeAdRoutingRulesListener();
+    unsubscribeAdRoutingRulesListener = db.collection('ad_routing_rules').orderBy('createdAt', 'desc').onSnapshot(snapshot => {
+        // Actualiza estado global
+        state.adRoutingRules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Re-renderizar vista si es la activa
+        if (state.activeView === 'ad-routing') {
+            renderAdRoutingView();
+        }
+    }, error => {
+        console.error("Error al escuchar reglas de enrutamiento:", error);
+        showError("No se pudieron cargar las reglas de enrutamiento.");
+    });
+}
+
 
 // --- API Fetchers (Llamadas únicas al cargar la app) ---
 
@@ -497,3 +570,49 @@ async function fetchMessagesByAdIdMetrics(startDate, endDate) {
     }
 }
 // --- FIN DE MODIFICACIÓN ---
+
+// --- START: Mark as Unread Logic ---
+async function handleMarkAsUnread(event, contactId) {
+    if (event) {
+        event.preventDefault();
+        event.stopPropagation();
+        // Also try stopping immediate propagation if multiple listeners exist (unlikely here but safe)
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+    }
+
+    try {
+        // 1. Actualización optimista de la UI
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
+            // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
+            state.contacts[contactIndex].lastMessageTimestamp = new Date(); 
+            handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
+        }
+
+        // 2. Actualizar en Firestore
+        // IMPORTANTE: Actualizamos lastMessageTimestamp para que el listener en otros dispositivos
+        // (que filtra por fecha > carga) detecte este cambio y actualice la UI.
+        await db.collection('contacts_whatsapp').doc(contactId).update({ 
+            unreadCount: 1,
+            lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        
+        // Nota: Si el chat está actualmente abierto (seleccionado), permanecerá abierto pero la lista mostrará el badge.
+        // Al hacer clic de nuevo en el chat de la lista o enviar un mensaje, se volverá a marcar como leído.
+
+    } catch (error) {
+        console.error("Error al marcar como no leído:", error);
+        showError("No se pudo marcar como no leído.");
+        // Revertir cambio optimista si falla
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].unreadCount = 0;
+            handleSearchContacts();
+        }
+    }
+}
+// --- END: Mark as Unread Logic ---
+
+// Exportar la nueva función globalmente
+window.handleMarkAsUnread = handleMarkAsUnread;
