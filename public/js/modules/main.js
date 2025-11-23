@@ -25,6 +25,11 @@ function startApp() {
     listenForAIAdPrompts();
     listenForKnowledgeBase();
     
+    // --- NUEVOS LISTENERS PARA DEPARTAMENTOS Y REGLAS ---
+    listenForDepartments();
+    listenForAdRoutingRules();
+    // ----------------------------------------------------
+
     // Fetch initial non-realtime data
     fetchTemplates();
     fetchBotSettings();
@@ -53,6 +58,11 @@ function stopApp() {
     if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
     if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
     
+    // --- DETENER NUEVOS LISTENERS ---
+    if (unsubscribeDepartmentsListener) unsubscribeDepartmentsListener();
+    if (unsubscribeAdRoutingRulesListener) unsubscribeAdRoutingRulesListener();
+    // -------------------------------
+
     // Remove global listeners
     document.removeEventListener('click', handleClickOutside);
     
@@ -96,6 +106,23 @@ document.addEventListener('DOMContentLoaded', () => {
         botSettingsForm.addEventListener('submit', handleSaveBotSettings);
     }
     // --- FIN DE LA SOLUCIÓN ---
+
+    // --- NUEVOS LISTENERS PARA DEPARTAMENTOS, REGLAS Y TRANSFERENCIA ---
+    const deptForm = document.getElementById('department-form');
+    if (deptForm) {
+        deptForm.addEventListener('submit', handleSaveDepartment);
+    }
+
+    const routingForm = document.getElementById('ad-routing-form');
+    if (routingForm) {
+        routingForm.addEventListener('submit', handleSaveAdRoutingRule);
+    }
+
+    const transferForm = document.getElementById('transfer-form');
+    if (transferForm) {
+        transferForm.addEventListener('submit', handleTransferChat);
+    }
+    // ------------------------------------------------------------------
 });
 
 /**
@@ -116,4 +143,3 @@ function handleClickOutside(event) {
         toggleTemplatePicker();
     }
 }
-
