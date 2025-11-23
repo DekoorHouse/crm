@@ -88,6 +88,18 @@
                         <i class="fas fa-address-book"></i>
                         <span class="sidebar-text">Contactos</span>
                     </a>
+                    
+                    <!-- NUEVO: Gestión de Departamentos y Reglas -->
+                    <a onclick="navigateTo('departments')" data-view="departments" class="nav-item">
+                        <i class="fas fa-building"></i>
+                        <span class="sidebar-text">Departamentos</span>
+                    </a>
+                    <a onclick="navigateTo('ad-routing')" data-view="ad-routing" class="nav-item">
+                        <i class="fas fa-route"></i>
+                        <span class="sidebar-text">Reglas de Ads</span>
+                    </a>
+                    <!-- FIN NUEVO -->
+
                     <a onclick="navigateTo('etiquetas')" data-view="etiquetas" class="nav-item">
                         <i class="fas fa-tags"></i>
                         <span class="sidebar-text">Etiquetas</span>
@@ -211,10 +223,8 @@
                     <input type="text" id="ar-name" required class="!mb-4" placeholder="Ej: Campaña Día de la Madre">
                 </div>
                 <div>
-                    <!-- === MODIFICACIÓN INICIO === -->
                     <label for="ar-ad-id">Identificadores del Anuncio (Ad IDs, separados por comas)</label>
                     <textarea id="ar-ad-id" required class="!mb-4" rows="3" placeholder="Ej: 120..., 120..., 120..."></textarea>
-                    <!-- === MODIFICACIÓN FIN === -->
                 </div>
                 <div>
                     <label for="ar-message">Mensaje de Respuesta (opcional si adjuntas archivo)</label>
@@ -310,6 +320,81 @@
         </div>
     </div>
 
+    <!-- NUEVO: Modal de Departamento -->
+    <div id="department-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="department-modal-title">Nuevo Departamento</h2>
+            <form id="department-form">
+                <input type="hidden" id="dept-id">
+                <div>
+                    <label for="dept-name">Nombre del Departamento</label>
+                    <input type="text" id="dept-name" required class="!mb-4" placeholder="Ej: Ventas">
+                </div>
+                <div>
+                    <label>Color</label>
+                    <div class="flex items-center gap-4">
+                        <input type="color" id="dept-color-input" value="#6c757d">
+                        <label for="dept-color-input" id="dept-color-preview" class="color-picker-label" style="background-color: #6c757d;"></label>
+                        <span id="dept-color-hex">#6c757d</span>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6">
+                    <button type="button" onclick="closeDepartmentModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NUEVO: Modal de Regla de Enrutamiento -->
+    <div id="ad-routing-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="ad-routing-modal-title">Nueva Regla de Enrutamiento</h2>
+            <form id="ad-routing-form">
+                <input type="hidden" id="rule-id">
+                <div>
+                    <label for="rule-name">Nombre de la Regla</label>
+                    <input type="text" id="rule-name" required class="!mb-4" placeholder="Ej: Campaña Verano">
+                </div>
+                <div>
+                    <label for="rule-ad-ids">Identificadores de Anuncios (Ad IDs)</label>
+                    <textarea id="rule-ad-ids" required class="!mb-4" rows="3" placeholder="Ej: 12345, 67890 (separados por coma)"></textarea>
+                </div>
+                <div>
+                    <label for="rule-target-dept">Departamento Destino</label>
+                    <select id="rule-target-dept" required class="w-full p-2 border rounded !mb-4 bg-gray-50 border-gray-300">
+                        <!-- Options populated dynamically -->
+                    </select>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeAdRoutingModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- NUEVO: Modal de Transferencia de Chat -->
+    <div id="transfer-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2>Transferir Chat</h2>
+            <p class="mb-4 text-gray-600">Selecciona el departamento al que deseas transferir este chat.</p>
+            <form id="transfer-form">
+                <input type="hidden" id="transfer-contact-id">
+                <div class="mb-4">
+                    <label for="transfer-dept-select">Departamento</label>
+                    <select id="transfer-dept-select" required class="w-full p-2 border rounded bg-gray-50 border-gray-300">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+                <div class="flex justify-end gap-3">
+                    <button type="button" onclick="closeTransferModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Transferir</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <div id="bot-settings-modal" class="modal-backdrop hidden">
         <div class="modal-content">
             <h2 id="bot-settings-modal-title">Ajustes del Bot</h2>
@@ -362,9 +447,8 @@
     <!-- Contenedor para el modal de previsualización de la conversación -->
     <div id="conversation-preview-modal-container"></div>
 
-    <!-- INICIO DE MODIFICACIÓN: Contenedor para el nuevo modal de detalles de pedido -->
+    <!-- Contenedor para el nuevo modal de detalles de pedido -->
     <div id="order-details-modal-container"></div>
-    <!-- FIN DE MODIFICACIÓN -->
 
     <!-- Contenedor para el modal de edición de pedidos -->
     <div id="order-edit-modal-container"></div>
