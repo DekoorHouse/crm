@@ -65,6 +65,12 @@ let state = {
     adIdMessageCounts: {}, // Almacena el resultado de la API { adId1: count1, ... }
     adIdMetricsDateRange: { start: null, end: null }, // Rango de fechas seleccionado para esta métrica
     // --- FIN DE MODIFICACIÓN ---
+
+    // --- NUEVO: Estado para Departamentos y Enrutamiento ---
+    departments: [], // Lista de departamentos disponibles
+    adRoutingRules: [], // Reglas de enrutamiento Ad ID -> Depto
+    currentUserProfile: null, // Perfil del usuario actual (incluye assignedDepartments y role)
+    activeDepartmentFilter: 'all' // Filtro de departamento activo en la lista de chats
 };
 
 // --- Variables para cancelar listeners de Firestore ---
@@ -76,7 +82,10 @@ let unsubscribeMessagesListener = null,
     unsubscribeAdResponsesListener = null,
     unsubscribeKnowledgeBaseListener = null,
     unsubscribeAIAdPromptsListener = null,
-    unsubscribeOrdersListener = null; // Listener para pedidos del contacto seleccionado
+    unsubscribeOrdersListener = null, // Listener para pedidos del contacto seleccionado
+    // NUEVOS LISTENERS
+    unsubscribeDepartmentsListener = null,
+    unsubscribeAdRoutingRulesListener = null;
 
 // --- Instancias de Gráficas (Chart.js) ---
 let dailyMessagesChart = null; // Gráfica de mensajes diarios (general)
