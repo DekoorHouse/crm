@@ -53,6 +53,16 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = ContactsViewTemplate();
             renderContactsView(); // Dibuja la tabla de contactos
             break;
+        // --- NUEVAS VISTAS ---
+        case 'departments':
+            mainViewContainer.innerHTML = DepartmentsViewTemplate();
+            renderDepartmentsView(); // Dibuja la tabla de departamentos
+            break;
+        case 'ad-routing':
+            mainViewContainer.innerHTML = AdRoutingViewTemplate();
+            renderAdRoutingView(); // Dibuja la tabla de reglas
+            break;
+        // ---------------------
         case 'etiquetas':
             mainViewContainer.innerHTML = TagsViewTemplate();
             renderTagsView(); // Dibuja la tabla de etiquetas
@@ -223,6 +233,64 @@ function renderChatWindow(options = {}) {
             document.getElementById('note-form').addEventListener('submit', handleSaveNote);
         }
     }
+}
+
+// --- NUEVO: Renderiza la tabla de departamentos ---
+function renderDepartmentsView() {
+    if (state.activeView !== 'departments') return;
+    const tableBody = document.getElementById('departments-table-body');
+    if (!tableBody) return;
+
+    if (state.departments.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-gray-500 py-4">No hay departamentos creados.</td></tr>`;
+        return;
+    }
+
+    tableBody.innerHTML = state.departments.map(dept => `
+        <tr>
+            <td class="font-semibold">${dept.name}</td>
+            <td>
+                <div class="tag-color-cell">
+                    <span class="tag-color-swatch" style="background-color: ${dept.color || '#6c757d'};"></span>
+                    <span>${dept.color || '#6c757d'}</span>
+                </div>
+            </td>
+            <td class="actions-cell">
+                <button onclick="openDepartmentModal(state.departments.find(d => d.id === '${dept.id}'))" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                <button onclick="handleDeleteDepartment('${dept.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+// --- NUEVO: Renderiza la tabla de reglas de enrutamiento ---
+function renderAdRoutingView() {
+    if (state.activeView !== 'ad-routing') return;
+    const tableBody = document.getElementById('ad-routing-table-body');
+    if (!tableBody) return;
+
+    if (state.adRoutingRules.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No hay reglas de enrutamiento.</td></tr>`;
+        return;
+    }
+
+    tableBody.innerHTML = state.adRoutingRules.map(rule => {
+        const dept = state.departments.find(d => d.id === rule.targetDepartmentId);
+        const deptName = dept ? dept.name : 'Departamento desconocido';
+        const adIdsText = Array.isArray(rule.adIds) ? rule.adIds.join(', ') : rule.adId || '';
+
+        return `
+            <tr>
+                <td class="font-semibold">${rule.ruleName}</td>
+                <td class="font-mono text-sm max-w-xs truncate" title="${adIdsText}">${adIdsText}</td>
+                <td><span class="px-2 py-1 rounded text-xs font-bold text-white" style="background-color: ${dept?.color || '#6c757d'}">${deptName}</span></td>
+                <td class="actions-cell">
+                    <button onclick="openAdRoutingModal(state.adRoutingRules.find(r => r.id === '${rule.id}'))" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                    <button onclick="handleDeleteAdRoutingRule('${rule.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+                </td>
+            </tr>
+        `;
+    }).join('');
 }
 
 // Renderiza la tabla de etiquetas y configura el drag-and-drop
@@ -1650,6 +1718,116 @@ function toggleIAMenu() {
     }
 }
 
+// --- NUEVAS FUNCIONES PARA MODALES DE DEPARTAMENTOS Y REGLAS ---
+
+// --- Modal de Departamentos ---
+function openDepartmentModal(dept = null) {
+    const modal = document.getElementById('department-modal');
+    const form = document.getElementById('department-form');
+    const title = document.getElementById('department-modal-title');
+    const idInput = document.getElementById('dept-id');
+    const nameInput = document.getElementById('dept-name');
+    const colorInput = document.getElementById('dept-color-input');
+    const colorPreview = document.getElementById('dept-color-preview');
+    const colorHex = document.getElementById('dept-color-hex');
+
+    if (!modal) return;
+
+    form.reset();
+    idInput.value = '';
+    const defaultColor = '#6c757d';
+
+    if (dept) { // Modo Edición
+        title.textContent = "Editar Departamento";
+        idInput.value = dept.id;
+        nameInput.value = dept.name || '';
+        colorInput.value = dept.color || defaultColor;
+        colorPreview.style.backgroundColor = dept.color || defaultColor;
+        colorHex.textContent = dept.color || defaultColor;
+    } else { // Modo Añadir
+        title.textContent = "Nuevo Departamento";
+        colorInput.value = defaultColor;
+        colorPreview.style.backgroundColor = defaultColor;
+        colorHex.textContent = defaultColor;
+    }
+
+    // Listener para color preview
+    colorInput.oninput = () => {
+        colorPreview.style.backgroundColor = colorInput.value;
+        colorHex.textContent = colorInput.value;
+    };
+
+    modal.classList.remove('hidden');
+    nameInput.focus();
+}
+
+function closeDepartmentModal() {
+    const modal = document.getElementById('department-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- Modal de Reglas de Enrutamiento ---
+function openAdRoutingModal(rule = null) {
+    const modal = document.getElementById('ad-routing-modal');
+    const form = document.getElementById('ad-routing-form');
+    const title = document.getElementById('ad-routing-modal-title');
+    const idInput = document.getElementById('rule-id');
+    const nameInput = document.getElementById('rule-name');
+    const adIdsInput = document.getElementById('rule-ad-ids');
+    const deptSelect = document.getElementById('rule-target-dept');
+
+    if (!modal) return;
+
+    // Poblar el select de departamentos
+    deptSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
+        state.departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('');
+
+    form.reset();
+    idInput.value = '';
+
+    if (rule) { // Modo Edición
+        title.textContent = "Editar Regla";
+        idInput.value = rule.id;
+        nameInput.value = rule.ruleName || '';
+        adIdsInput.value = Array.isArray(rule.adIds) ? rule.adIds.join(', ') : '';
+        deptSelect.value = rule.targetDepartmentId || '';
+    } else { // Modo Añadir
+        title.textContent = "Nueva Regla de Enrutamiento";
+    }
+
+    modal.classList.remove('hidden');
+    nameInput.focus();
+}
+
+function closeAdRoutingModal() {
+    const modal = document.getElementById('ad-routing-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- Modal de Transferencia de Chat ---
+function openTransferModal(contactId) {
+    const modal = document.getElementById('transfer-modal');
+    const contactIdInput = document.getElementById('transfer-contact-id');
+    const deptSelect = document.getElementById('transfer-dept-select');
+
+    if (!modal) return;
+
+    contactIdInput.value = contactId;
+
+    // Poblar select
+    deptSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
+        state.departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('');
+    
+    modal.classList.remove('hidden');
+}
+
+function closeTransferModal() {
+    const modal = document.getElementById('transfer-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+// --- FIN NUEVAS FUNCIONES ---
+
 
 // --- Make functions globally accessible ---
 
@@ -1674,12 +1852,20 @@ window.openKnowledgeBaseModal = openKnowledgeBaseModal;
 window.closeKnowledgeBaseModal = closeKnowledgeBaseModal;
 window.openBotSettingsModal = openBotSettingsModal;
 window.closeBotSettingsModal = closeBotSettingsModal;
-window.openNewOrderModal = openNewOrderModal; // Hacer global
-window.closeNewOrderModal = closeNewOrderModal; // Hacer global
-window.closeConversationPreviewModal = closeConversationPreviewModal; // Hacer global
-window.openOrderEditModal = openOrderEditModal; // Hacer global
-window.closeOrderEditModal = closeOrderEditModal; // Hacer global
+window.openNewOrderModal = openNewOrderModal; 
+window.closeNewOrderModal = closeNewOrderModal; 
+window.closeConversationPreviewModal = closeConversationPreviewModal; 
+window.openOrderEditModal = openOrderEditModal; 
+window.closeOrderEditModal = closeOrderEditModal; 
 
+// --- EXPORTAR NUEVAS FUNCIONES ---
+window.openDepartmentModal = openDepartmentModal;
+window.closeDepartmentModal = closeDepartmentModal;
+window.openAdRoutingModal = openAdRoutingModal;
+window.closeAdRoutingModal = closeAdRoutingModal;
+window.openTransferModal = openTransferModal;
+window.closeTransferModal = closeTransferModal;
+// ---------------------------------
 
 /**
  * Establece la pestaña activa (ej. 'chat' o 'notas') y vuelve a renderizar la vista.
