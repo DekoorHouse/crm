@@ -507,6 +507,32 @@ router.post('/', async (req, res) => {
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto ${from} actualizado/creado en Firestore.`);
 
+            // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
+            // Verifica si el mensaje trae referral para asignar el departamento
+            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+                const adId = message.referral.source_id;
+                console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
+                
+                // Buscar si existe una regla para este Ad ID
+                const ruleSnapshot = await db.collection('ad_routing_rules')
+                    .where('adIds', 'array-contains', adId)
+                    .limit(1)
+                    .get();
+
+                if (!ruleSnapshot.empty) {
+                    const ruleData = ruleSnapshot.docs[0].data();
+                    if (ruleData.targetDepartmentId) {
+                        // Asignar al departamento correspondiente
+                        await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
+                    }
+                } else {
+                    console.log(`[ROUTING] No se encontraron reglas de departamento para el Ad ID: ${adId}`);
+                    // Aquí se podría implementar una lógica de "default department" si se desea
+                }
+            }
+            // --- FIN: ENRUTAMIENTO POR DEPARTAMENTO ---
+
             // --- INICIO: Enviar evento a Meta Ads si el mensaje proviene de un anuncio ---
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 console.log(`[META EVENT] Mensaje de Ad ${message.referral.source_id} detectado para ${from}.`);
