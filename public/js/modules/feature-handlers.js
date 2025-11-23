@@ -1277,6 +1277,139 @@ async function handleDeleteNote(noteId) {
     }
 }
 
+// --- NUEVO: Manejadores para Departamentos y Reglas de Enrutamiento ---
+
+// --- DEPARTAMENTOS ---
+async function handleSaveDepartment(event) {
+    event.preventDefault();
+    // No need to re-declare API_BASE_URL, it's global
+    const id = document.getElementById('dept-id').value;
+    const name = document.getElementById('dept-name').value.trim();
+    const color = document.getElementById('dept-color-input').value;
+
+    if (!name) {
+        showError("El nombre del departamento es obligatorio.");
+        return;
+    }
+
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE_URL}/api/departments/${id}` : `${API_BASE_URL}/api/departments`;
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, color })
+        });
+        if (!response.ok) throw new Error("Error al guardar departamento.");
+        
+        closeDepartmentModal();
+        showError("Departamento guardado correctamente.", "success");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+async function handleDeleteDepartment(id) {
+    if (!confirm("¿Estás seguro de eliminar este departamento?")) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/departments/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error("Error al eliminar departamento.");
+        showError("Departamento eliminado.", "success");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// --- REGLAS DE ENRUTAMIENTO ---
+async function handleSaveAdRoutingRule(event) {
+    event.preventDefault();
+    const id = document.getElementById('rule-id').value;
+    const ruleName = document.getElementById('rule-name').value.trim();
+    const adIds = document.getElementById('rule-ad-ids').value.trim();
+    const targetDepartmentId = document.getElementById('rule-target-dept').value;
+
+    if (!ruleName || !adIds || !targetDepartmentId) {
+        showError("Todos los campos son obligatorios.");
+        return;
+    }
+
+    const method = id ? 'PUT' : 'POST';
+    const url = id ? `${API_BASE_URL}/api/ad-routing-rules/${id}` : `${API_BASE_URL}/api/ad-routing-rules`;
+
+    try {
+        const response = await fetch(url, {
+            method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ruleName, adIds, targetDepartmentId })
+        });
+        if (!response.ok) throw new Error("Error al guardar regla.");
+        
+        closeAdRoutingModal();
+        showError("Regla guardada correctamente.", "success");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+async function handleDeleteAdRoutingRule(id) {
+    if (!confirm("¿Estás seguro de eliminar esta regla?")) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/ad-routing-rules/${id}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error("Error al eliminar regla.");
+        showError("Regla eliminada.", "success");
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
+// --- TRANSFERENCIA DE CHAT ---
+async function handleTransferChat(event) {
+    event.preventDefault(); // Evita la recarga de la página por el submit del formulario
+
+    const contactId = document.getElementById('transfer-contact-id').value;
+    const targetDepartmentId = document.getElementById('transfer-dept-select').value;
+    const button = event.target.querySelector('button[type="submit"]'); // Selecciona el botón de submit dentro del formulario
+
+    if (!targetDepartmentId) {
+        showError("Debes seleccionar un departamento destino.");
+        return;
+    }
+
+    // Deshabilita el botón y muestra spinner
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Transfiriendo...';
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/transfer`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ targetDepartmentId })
+        });
+
+        if (!response.ok) throw new Error("Error al transferir el chat.");
+
+        closeTransferModal();
+        showError("Chat transferido con éxito.", "success");
+        
+        // Opcional: Si el usuario actual no tiene acceso al nuevo departamento,
+        // podrías redirigirlo o limpiar la vista, pero el listener de Firestore
+        // debería encargarse de quitar el chat de la lista eventualmente.
+
+    } catch (error) {
+        showError(error.message);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = 'Transferir';
+        }
+    }
+}
+
+// --- END NUEVOS MANEJADORES ---
+
 
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
@@ -1312,3 +1445,21 @@ window.handleClearAdIdMetricsFilter = handleClearAdIdMetricsFilter; // Hacer glo
 window.handleUpdateNote = handleUpdateNote;
 window.handleDeleteNote = handleDeleteNote;
 // --- FIN MODIFICACIÓN ---
+
+// --- EXPORTAR NUEVOS MANEJADORES ---
+window.handleSaveDepartment = handleSaveDepartment;
+window.handleDeleteDepartment = handleDeleteDepartment;
+window.handleSaveAdRoutingRule = handleSaveAdRoutingRule;
+window.handleDeleteAdRoutingRule = handleDeleteAdRoutingRule;
+// Nota: handleTransferChat se usa en el form submit, así que se debe adjuntar al evento en el HTML o aquí.
+// En ui_templates.js usaste <form id="transfer-form"> ... <button onclick="..."> pero el botón es submit.
+// Lo mejor es añadir el listener al formulario en runtime, pero como estamos usando onclicks en muchos sitios:
+// Vamos a exponerlo para usarlo en el onsubmit del form o onclick del botón.
+// En ui_templates.js, el botón tiene onclick="closeTransferModal()" (cancel) y el submit tiene type="submit".
+// Vamos a añadir el listener al formulario dinámicamente cuando se abre el modal en ui-manager, 
+// O, para seguir el patrón de este archivo, lo exponemos y cambiamos el template para usar onsubmit="handleTransferChat(event)"
+window.handleTransferChat = handleTransferChat; 
+
+// IMPORTANTE: Asegúrate de actualizar ui_templates.js para que el formulario use onsubmit="handleTransferChat(event)"
+// O asigna el listener aquí si prefieres. 
+// En este proyecto se usa mucho onclick en el HTML generado, así que exponerlo es consistente.
