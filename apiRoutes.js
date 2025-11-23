@@ -338,13 +338,22 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 // --- Endpoint GET /api/contacts (Paginado y con filtro de etiqueta) ---
 router.get('/contacts', async (req, res) => {
     try {
-        const { limit = 30, startAfterId, tag } = req.query; // Obtener parámetros de query
+        const { limit = 30, startAfterId, tag, departmentId } = req.query; // AÑADIDO: departmentId
         let query = db.collection('contacts_whatsapp');
 
         // Aplicar filtro de etiqueta si se proporciona
         if (tag) {
             query = query.where('status', '==', tag);
         }
+
+        // --- INICIO: Filtro por Departamento ---
+        // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
+        if (departmentId && departmentId !== 'all') {
+            // Nota: Esto requiere un índice compuesto en Firestore si se combina con otros filtros/ordenamientos
+            // Ejemplo: assignedDepartmentId + lastMessageTimestamp
+            query = query.where('assignedDepartmentId', '==', departmentId);
+        }
+        // --- FIN: Filtro por Departamento ---
 
         // Ordenar por último mensaje y limitar resultados
         query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
@@ -368,6 +377,25 @@ router.get('/contacts', async (req, res) => {
     } catch (error) {
         console.error('Error fetching paginated contacts:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al obtener contactos.' });
+    }
+});
+
+// --- Endpoint PUT /api/contacts/:contactId/transfer (Transferir Chat a Departamento) ---
+router.put('/contacts/:contactId/transfer', async (req, res) => {
+    const { contactId } = req.params;
+    const { targetDepartmentId } = req.body;
+
+    if (!targetDepartmentId) {
+        return res.status(400).json({ success: false, message: 'Se requiere el ID del departamento destino.' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        await contactRef.update({ assignedDepartmentId: targetDepartmentId });
+        res.status(200).json({ success: true, message: `Chat transferido al departamento '${targetDepartmentId}'.` });
+    } catch (error) {
+        console.error(`Error al transferir el chat ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error al transferir el chat.' });
     }
 });
 
@@ -2226,6 +2254,142 @@ router.get('/metrics/messages-by-ad', async (req, res) => {
     }
 });
 // --- FIN: Nuevo Endpoint ---
+
+// --- INICIO DE NUEVAS RUTAS PARA DEPARTAMENTOS Y REGLAS DE ENRUTAMIENTO ---
+
+// 1. DEPARTAMENTOS (/api/departments)
+
+// GET /api/departments: Listar todos los departamentos
+router.get('/departments', async (req, res) => {
+    try {
+        const snapshot = await db.collection('departments').get();
+        const departments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json({ success: true, departments });
+    } catch (error) {
+        console.error('Error al obtener departamentos:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener departamentos.' });
+    }
+});
+
+// POST /api/departments: Crear nuevo departamento
+router.post('/departments', async (req, res) => {
+    const { name, color } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
+
+    try {
+        const newDept = {
+            name,
+            color: color || '#6c757d', // Color por defecto (gris)
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        const docRef = await db.collection('departments').add(newDept);
+        res.status(201).json({ success: true, id: docRef.id, ...newDept });
+    } catch (error) {
+        console.error('Error al crear departamento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear departamento.' });
+    }
+});
+
+// PUT /api/departments/:id: Actualizar departamento
+router.put('/departments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, color } = req.body;
+
+    try {
+        await db.collection('departments').doc(id).update({
+            name,
+            color
+        });
+        res.status(200).json({ success: true, message: 'Departamento actualizado.' });
+    } catch (error) {
+        console.error('Error al actualizar departamento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar departamento.' });
+    }
+});
+
+// DELETE /api/departments/:id: Eliminar departamento
+router.delete('/departments/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('departments').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Departamento eliminado.' });
+    } catch (error) {
+        console.error('Error al eliminar departamento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar departamento.' });
+    }
+});
+
+
+// 2. REGLAS DE ENRUTAMIENTO DE ANUNCIOS (/api/ad-routing-rules)
+
+// GET /api/ad-routing-rules: Listar todas las reglas
+router.get('/ad-routing-rules', async (req, res) => {
+    try {
+        const snapshot = await db.collection('ad_routing_rules').get();
+        const rules = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json({ success: true, rules });
+    } catch (error) {
+        console.error('Error al obtener reglas de enrutamiento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener reglas.' });
+    }
+});
+
+// POST /api/ad-routing-rules: Crear nueva regla
+router.post('/ad-routing-rules', async (req, res) => {
+    const { ruleName, adIds: adIdsInput, targetDepartmentId } = req.body;
+    const adIds = parseAdIds(adIdsInput); // Usa la función helper existente para limpiar IDs
+
+    if (!ruleName || adIds.length === 0 || !targetDepartmentId) {
+        return res.status(400).json({ success: false, message: 'Nombre, Ad IDs y Departamento son obligatorios.' });
+    }
+
+    try {
+        const newRule = {
+            ruleName,
+            adIds,
+            targetDepartmentId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        const docRef = await db.collection('ad_routing_rules').add(newRule);
+        res.status(201).json({ success: true, id: docRef.id, ...newRule });
+    } catch (error) {
+        console.error('Error al crear regla de enrutamiento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al crear regla.' });
+    }
+});
+
+// PUT /api/ad-routing-rules/:id: Actualizar regla
+router.put('/ad-routing-rules/:id', async (req, res) => {
+    const { id } = req.params;
+    const { ruleName, adIds: adIdsInput, targetDepartmentId } = req.body;
+    const adIds = parseAdIds(adIdsInput);
+
+    try {
+        await db.collection('ad_routing_rules').doc(id).update({
+            ruleName,
+            adIds,
+            targetDepartmentId
+        });
+        res.status(200).json({ success: true, message: 'Regla actualizada.' });
+    } catch (error) {
+        console.error('Error al actualizar regla de enrutamiento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al actualizar regla.' });
+    }
+});
+
+// DELETE /api/ad-routing-rules/:id: Eliminar regla
+router.delete('/ad-routing-rules/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await db.collection('ad_routing_rules').doc(id).delete();
+        res.status(200).json({ success: true, message: 'Regla eliminada.' });
+    } catch (error) {
+        console.error('Error al eliminar regla de enrutamiento:', error);
+        res.status(500).json({ success: false, message: 'Error del servidor al eliminar regla.' });
+    }
+});
+
+// --- FIN DE NUEVAS RUTAS ---
 
 
 module.exports = router;
