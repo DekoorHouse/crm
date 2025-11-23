@@ -53,6 +53,49 @@ const TagsViewTemplate = () => `
     </div>
 `;
 
+// --- NUEVA PLANTILLA: Vista de Departamentos ---
+const DepartmentsViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header">
+            <h1>Gestión de Departamentos</h1>
+            <button onclick="openDepartmentModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Departamento</button>
+        </div>
+        <p class="mb-6 text-gray-600">Crea departamentos (bandejas de entrada) para organizar tus chats y asignar agentes específicos.</p>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Color</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="departments-table-body"></tbody>
+        </table>
+    </div>
+`;
+
+// --- NUEVA PLANTILLA: Vista de Reglas de Enrutamiento ---
+const AdRoutingViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header">
+            <h1>Reglas de Enrutamiento de Ads</h1>
+            <button onclick="openAdRoutingModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Regla</button>
+        </div>
+        <p class="mb-6 text-gray-600">Define a qué departamento deben llegar automáticamente los chats nuevos según el anuncio de origen (Ad ID).</p>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Nombre de la Regla</th>
+                    <th>Ad IDs</th>
+                    <th>Departamento Destino</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="ad-routing-table-body"></tbody>
+        </table>
+    </div>
+`;
+
 const CampaignsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -836,6 +879,13 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
+    // --- NUEVO: Botón de Transferencia de Chat ---
+    const transferButtonHTML = `
+        <button onclick="openTransferModal('${contact.id}')" class="p-2 rounded-full hover:bg-gray-200 transition-colors text-gray-500 ml-2" title="Transferir Chat">
+            <i class="fas fa-exchange-alt"></i>
+        </button>
+    `;
+
     return `
         <div id="drag-drop-overlay-chat" class="drag-overlay hidden">
             <div class="drag-overlay-content">
@@ -855,6 +905,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
             <div class="flex items-center pr-2">
                 ${botToggleHTML}
+                ${transferButtonHTML}
             </div>
         </header>
         <div class="bg-white border-b border-gray-200 flex">
