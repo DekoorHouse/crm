@@ -860,12 +860,14 @@ router.get('/users', async (req, res) => {
     try {
         // 1. Obtener usuarios de Firebase Authentication
         const listUsersResult = await admin.auth().listUsers();
-        const authUsers = listUsersResult.users.map(userRecord => ({
-            uid: userRecord.uid,
-            email: userRecord.email,
-            displayName: userRecord.displayName,
-            disabled: userRecord.disabled
-        }));
+        const authUsers = listUsersResult.users
+            .filter(userRecord => userRecord.email) // Filtrar usuarios que no tienen email
+            .map(userRecord => ({
+                uid: userRecord.uid,
+                email: userRecord.email,
+                displayName: userRecord.displayName,
+                disabled: userRecord.disabled
+            }));
 
         // 2. Obtener usuarios de la colección 'users' de Firestore
         const snapshot = await db.collection('users').get();
@@ -879,7 +881,7 @@ router.get('/users', async (req, res) => {
             // Devolver un objeto combinado. Los datos de Firestore (rol, deptos) prevalecen.
             // El ID de documento de Firestore es el email en minúsculas, así que lo usamos.
             return {
-                id: authUser.email.toLowerCase(), // Usar email como ID consistente
+                id: authUser.email.toLowerCase(), // Ahora es seguro llamar a toLowerCase
                 uid: authUser.uid,
                 email: authUser.email,
                 name: firestoreUser?.name || authUser.displayName || authUser.email.split('@')[0],
