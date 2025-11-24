@@ -981,6 +981,22 @@ router.get('/users/profile/:email', async (req, res) => {
         const doc = await db.collection('users').doc(userId).get();
 
         if (!doc.exists) {
+            // --- CORRECCIÓN APLICADA ---
+            // Si es el usuario admin principal y no existe, lo creamos o devolvemos datos dummy de admin
+            if (userId === 'alex@dekoor.com') {
+                 const adminData = {
+                    email: userId,
+                    name: 'Alex',
+                    role: 'admin',
+                    assignedDepartments: [], // Acceso total si es admin
+                    createdAt: admin.firestore.FieldValue.serverTimestamp()
+                };
+                // Creamos el documento para la próxima vez
+                await db.collection('users').doc(userId).set(adminData);
+                return res.status(200).json({ success: true, user: { id: userId, ...adminData } });
+            }
+            // -----------------------------
+
             // Opcional: Si no existe, podríamos devolver un perfil "default" o un 404.
             // Por seguridad, devolvemos 404 para que el frontend decida qué hacer (ej. mostrar error o usar modo restringido).
             return res.status(404).json({ success: false, message: 'Perfil de usuario no encontrado.' });
