@@ -1469,10 +1469,13 @@ router.post('/orders', async (req, res) => {
         // Añadir el nuevo pedido a la colección 'pedidos'
         const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
 
-        // Actualizar el documento del contacto con la información del último pedido
+        // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO COMPRADOR
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
-            lastOrderDate: nuevoPedido.createdAt // Usar el mismo timestamp
+            lastOrderDate: nuevoPedido.createdAt, // Usar el mismo timestamp
+            purchaseStatus: 'completed', // <-- NUEVO: Marcar como comprador para el ícono de corona
+            purchaseValue: parseFloat(precio) || 0, // Opcional: guardar valor
+            purchaseDate: admin.firestore.FieldValue.serverTimestamp() // Opcional: guardar fecha de compra
         });
 
         // --- INICIO: Enviar evento Purchase a Meta ---
