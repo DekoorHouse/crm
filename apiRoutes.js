@@ -400,7 +400,8 @@ router.put('/contacts/:contactId/transfer', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         await contactRef.update({ 
             assignedDepartmentId: targetDepartmentId,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() // Trigger frontend update
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(), // Trigger frontend update
+            unreadCount: 1 // Mark as unread
         });
         res.status(200).json({ success: true, message: `Chat transferido al departamento '${targetDepartmentId}'.` });
     } catch (error) {
