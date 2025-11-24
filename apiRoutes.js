@@ -2688,26 +2688,35 @@ router.post('/maintenance/migrate-orphans', async (req, res) => {
         }
         const generalDeptId = generalDeptSnapshot.docs[0].id;
 
-        // 2. Buscar todos los contactos que no tienen 'assignedDepartmentId' o es null
-        const contactsWithoutDeptQuery = db.collection('contacts_whatsapp').where('assignedDepartmentId', '==', null);
-        const contactsSnapshot = await contactsWithoutDeptQuery.get();
+        // 2. Obtener TODOS los contactos
+        const allContactsSnapshot = await db.collection('contacts_whatsapp').get();
 
-        if (contactsSnapshot.empty) {
+        // 3. Filtrar en el backend para encontrar los huérfanos
+        const orphanContacts = [];
+        allContactsSnapshot.forEach(doc => {
+            const data = doc.data();
+            // Un chat es huérfano si la propiedad no existe O si es null/undefined/vacía
+            if (!data.assignedDepartmentId) {
+                orphanContacts.push(doc);
+            }
+        });
+        
+        if (orphanContacts.length === 0) {
             return res.status(200).json({ success: true, message: 'No se encontraron chats huérfanos para migrar.' });
         }
 
-        // 3. Crear un batch para actualizar todos los contactos encontrados
+        // 4. Crear un batch para actualizar todos los huérfanos
         const batch = db.batch();
-        contactsSnapshot.forEach(doc => {
+        orphanContacts.forEach(doc => {
             const contactRef = db.collection('contacts_whatsapp').doc(doc.id);
             batch.update(contactRef, { assignedDepartmentId: generalDeptId });
         });
 
-        // 4. Ejecutar el batch
+        // 5. Ejecutar el batch
         await batch.commit();
 
-        // 5. Devolver resumen
-        const migratedCount = contactsSnapshot.size;
+        // 6. Devolver resumen
+        const migratedCount = orphanContacts.length;
         res.status(200).json({
             success: true,
             message: `Se migraron ${migratedCount} chats al departamento General.`
