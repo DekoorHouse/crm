@@ -3,7 +3,7 @@
 // incluyendo el inicio de sesión, cierre de sesión y la observación
 // de cambios en el estado de autenticación.
 
-auth.onAuthStateChanged(user => {
+auth.onAuthStateChanged(async user => {
     const loadingOverlay = document.getElementById('loading-overlay');
     const loginView = document.getElementById('login-view');
     const appContainer = document.getElementById('app-container');
@@ -15,8 +15,26 @@ auth.onAuthStateChanged(user => {
         appContainer.classList.remove('hidden');
         appContainer.classList.add('flex');
         userInfoEl.textContent = `Usuario: ${user.email}`;
+
+        // --- CORRECCIÓN: Cargar perfil del usuario ANTES de iniciar la app ---
+        // Esto asegura que state.currentUserProfile esté listo para los filtros
+        if (typeof fetchUserProfile === 'function') {
+            try {
+                // Intentar cargar el perfil extendido (roles, departamentos)
+                const profile = await fetchUserProfile(user.email);
+                if (profile) {
+                    state.currentUserProfile = profile;
+                    console.log("Perfil de usuario cargado correctamente:", profile);
+                }
+            } catch (err) {
+                console.warn("No se pudo cargar el perfil extendido del usuario, se usarán permisos por defecto.", err);
+            }
+        }
+        // ---------------------------------------------------------------------
+
         startApp();
     } else {
+        state.currentUserProfile = null; // Limpiar perfil al cerrar sesión
         stopApp();
         loginView.classList.remove('hidden');
         loginView.classList.add('flex');
