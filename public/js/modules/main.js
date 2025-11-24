@@ -13,12 +13,14 @@ function startApp() {
     navigateTo('chats', true); 
 
     // Start all data listeners
-    fetchInitialContacts(); // Carga inicial paginada
+    fetchAllUsers(); // Carga todos los usuarios del sistema
+    fetchInitialContacts(); // Carga inicial paginada de contactos
     
     // --- INICIO DE LA SOLUCIÓN: Activar el listener de actualizaciones ---
-    listenForContactUpdates(); // Escucha cambios en tiempo real
+    listenForContactUpdates(); // Escucha cambios en tiempo real en contactos
     // --- FIN DE LA SOLUCIÓN ---
 
+    listenForUsers(); // Escucha cambios en los usuarios
     listenForQuickReplies();
     listenForTags();
     listenForAdResponses();
