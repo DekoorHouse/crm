@@ -1044,44 +1044,26 @@ router.put('/departments/:id', async (req, res) => {
         if (color) deptUpdateData.color = color;
         batch.update(deptRef, deptUpdateData);
 
-        // 2. Actualizar usuarios asignados (Lógica robusta)
+        // 2. Actualizar usuarios asignados (si se proporcionó la lista)
         if (Array.isArray(userEmails)) {
-            // Normalizar lista de emails deseados (todos a minúsculas y sin espacios)
-            const desiredEmails = new Set(userEmails.map(e => e.toLowerCase().trim()));
-
-            // Obtener usuarios que ACTUALMENTE tienen este departamento asignado
-            const currentUsersSnapshot = await db.collection('users')
-                .where('assignedDepartments', 'array-contains', id)
-                .get();
-
-            const currentEmails = new Set();
+            // Obtener todos los usuarios para comparar
+            const usersSnapshot = await db.collection('users').get();
             
-            // A. Manejar REMOCIONES: Usuarios que lo tienen pero ya no deberían
-            currentUsersSnapshot.forEach(doc => {
-                const email = doc.id; // El ID del doc es el email normalizado
-                currentEmails.add(email);
+            for (const userDoc of usersSnapshot.docs) {
+                const userRef = userDoc.ref;
+                const userData = userDoc.data();
+                const userEmail = userData.email;
+                const assignedDepts = userData.assignedDepartments || [];
+                
+                const shouldBeAssigned = userEmails.includes(userEmail);
+                const isCurrentlyAssigned = assignedDepts.includes(id);
 
-                if (!desiredEmails.has(email)) {
-                    // Si ya no está en la lista deseada, quitar el departamento
-                    batch.update(doc.ref, { 
-                        assignedDepartments: admin.firestore.FieldValue.arrayRemove(id),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    });
-                }
-            });
-
-            // B. Manejar ADICIONES: Usuarios que deberían tenerlo (incluyendo nuevos perfiles)
-            for (const email of desiredEmails) {
-                // Si el usuario ya lo tenía (está en currentEmails), no hacemos nada (ya está asignado)
-                if (!currentEmails.has(email)) {
-                    const userRef = db.collection('users').doc(email);
-                    // Usamos set con merge: true. 
-                    // Si el documento no existe, lo crea. Si existe, solo actualiza el campo.
-                    batch.set(userRef, { 
-                        email: email, // Asegurar que el campo email exista
-                        assignedDepartments: admin.firestore.FieldValue.arrayUnion(id),
-                        updatedAt: admin.firestore.FieldValue.serverTimestamp()
-                    }, { merge: true });
+                if (shouldBeAssigned && !isCurrentlyAssigned) {
+                    // Añadir departamento al usuario
+                    batch.update(userRef, { assignedDepartments: admin.firestore.FieldValue.arrayUnion(id) });
+                } else if (!shouldBeAssigned && isCurrentlyAssigned) {
+                    // Quitar departamento del usuario
+                    batch.update(userRef, { assignedDepartments: admin.firestore.FieldValue.arrayRemove(id) });
                 }
             }
         }
