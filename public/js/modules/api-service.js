@@ -92,21 +92,39 @@ async function fetchInitialContacts() {
         // Determina si hay un filtro de etiqueta activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
 
-        // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
-        const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
-        // --- FIN MODIFICACIÓN ---
-
         // Construye la URL base con límite
         let url = `${API_BASE_URL}/api/contacts?limit=30`;
         // Añade el parámetro 'tag' si hay un filtro
         if (tag) {
             url += `&tag=${tag}`;
         }
-        // --- INICIO MODIFICACIÓN: Añadir parámetro departmentId ---
-        if (departmentId) {
-            url += `&departmentId=${departmentId}`;
+        
+        // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
+        let departmentIdParam = null;
+        const profile = state.currentUserProfile;
+
+        // Si hay un filtro de departamento activo en la UI, este tiene prioridad.
+        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
+            departmentIdParam = state.activeDepartmentFilter;
         }
-        // --- FIN MODIFICACIÓN ---
+        // Si no hay filtro activo, y el usuario NO es admin, se filtra por sus departamentos.
+        else if (profile && profile.role !== 'admin') {
+            if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
+                // Unir los IDs de departamento del usuario en un string para la API.
+                departmentIdParam = profile.assignedDepartments.join(',');
+            } else {
+                // Si el agente no tiene departamentos, no debe ver ningún chat departamental.
+                // Se pasa un ID imposible de encontrar.
+                departmentIdParam = 'none';
+            }
+        }
+        // Nota: Para un admin sin filtro activo, departmentIdParam será null y verá todos los chats.
+
+        // Añadir el parámetro de departamento a la URL si corresponde.
+        if (departmentIdParam) {
+            url += `&departmentId=${departmentIdParam}`;
+        }
+        // --- FIN: Lógica de filtrado de departamento ---
 
         // Realiza la petición a la API
         const response = await fetch(url);
@@ -145,20 +163,38 @@ async function fetchMoreContacts() {
         // Aplicar filtro de etiqueta si está activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
 
-        // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
-        const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
-        // --- FIN MODIFICACIÓN ---
-
         // Construir URL con límite y 'startAfterId'
         let url = `${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`;
         if (tag) {
             url += `&tag=${tag}`;
         }
-        // --- INICIO MODIFICACIÓN: Añadir parámetro departmentId ---
-        if (departmentId) {
-            url += `&departmentId=${departmentId}`;
+        
+        // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
+        let departmentIdParam = null;
+        const profile = state.currentUserProfile;
+
+        // Si hay un filtro de departamento activo en la UI, este tiene prioridad.
+        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
+            departmentIdParam = state.activeDepartmentFilter;
         }
-        // --- FIN MODIFICACIÓN ---
+        // Si no hay filtro activo, y el usuario NO es admin, se filtra por sus departamentos.
+        else if (profile && profile.role !== 'admin') {
+            if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
+                // Unir los IDs de departamento del usuario en un string para la API.
+                departmentIdParam = profile.assignedDepartments.join(',');
+            } else {
+                // Si el agente no tiene departamentos, no debe ver ningún chat departamental.
+                // Se pasa un ID imposible de encontrar.
+                departmentIdParam = 'none';
+            }
+        }
+        // Nota: Para un admin sin filtro activo, departmentIdParam será null y verá todos los chats.
+
+        // Añadir el parámetro de departamento a la URL si corresponde.
+        if (departmentIdParam) {
+            url += `&departmentId=${departmentIdParam}`;
+        }
+        // --- FIN: Lógica de filtrado de departamento ---
 
         // Realizar petición
         const response = await fetch(url);
@@ -253,15 +289,35 @@ function listenForContactUpdates() {
             // Procesar timestamp del contacto modificado
             const updatedContactData = processContacts([{ id: change.doc.id, ...change.doc.data() }])[0];
 
-            // --- INICIO MODIFICACIÓN: Verificar filtro de departamento ---
-            // Si hay un filtro de departamento activo y el contacto no pertenece, lo ignoramos (o removemos)
-            if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
-                // Si existe en la lista local, lo removemos
+            // --- INICIO MODIFICACIÓN: Verificar filtro de departamento por perfil ---
+            const profile = state.currentUserProfile;
+            let isAllowed = false;
+
+            // Define el conjunto de departamentos permitidos para el usuario.
+            if (profile && profile.role === 'admin') {
+                // El admin puede ver todo por defecto.
+                isAllowed = true;
+                // Si hay un filtro de UI activo, el admin solo ve ese departamento.
+                if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
+                    isAllowed = false;
+                }
+            } else if (profile) { // Para usuarios que no son admin
+                const userDepartments = new Set(profile.assignedDepartments || []);
+                const chatDepartment = updatedContactData.assignedDepartmentId;
+                // Es permitido si el chat no tiene departamento o si el usuario está asignado a ese departamento.
+                if (!chatDepartment || userDepartments.has(chatDepartment)) {
+                    isAllowed = true;
+                }
+            }
+
+            if (!isAllowed) {
+                // Si no está permitido, lo eliminamos de la lista local y detenemos el procesamiento.
                 const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
                 if (idx > -1) {
                     state.contacts.splice(idx, 1);
+                    handleSearchContacts(); // Re-renderizar para que el cambio sea visible.
                 }
-                return; // No añadir/actualizar
+                return; // No añadir ni actualizar este contacto.
             }
             // --- FIN MODIFICACIÓN ---
 
