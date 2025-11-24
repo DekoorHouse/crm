@@ -22,14 +22,37 @@ function handleSearchInput(event) {
 }
 
 
-// CORREGIDO: Ahora también se encarga de ocultar el mensaje de "Cargando..."
+// CORREGIDO: Ahora aplica filtros de departamento y oculta el mensaje de "Cargando..."
 function handleSearchContacts() {
-    const contactsToRender = state.contacts; 
+    // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
+    let contactsToRender = state.contacts;
+    
+    const user = state.currentUserProfile;
+    
+    // Si el usuario existe y NO es admin, aplicamos el filtro de seguridad
+    if (user && user.role !== 'admin') {
+        const userDepts = user.assignedDepartments || [];
+        
+        contactsToRender = contactsToRender.filter(contact => {
+            // Regla 1: Si el chat NO tiene departamento, se muestra a todos.
+            if (!contact.assignedDepartmentId) return true;
+            
+            // Regla 2: Si tiene departamento, el usuario debe tener ese departamento asignado.
+            return userDepts.includes(contact.assignedDepartmentId);
+        });
+    }
+    // --- FIN DE LA MODIFICACIÓN ---
+
     const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
 
     if (contactsListEl) {
-        contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
+        if (contactsToRender.length === 0 && state.contacts.length > 0) {
+             // Caso especial: Hay contactos cargados pero el filtro los ocultó todos
+             contactsListEl.innerHTML = `<div class="p-4 text-center text-gray-500 italic text-sm">No tienes chats asignados en tus departamentos.</div>`;
+        } else {
+             contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
+        }
     }
 
     // Ocultar el mensaje de "Cargando..." después de que la lista de contactos ha sido renderizada.
