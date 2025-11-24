@@ -3,39 +3,43 @@
 // incluyendo el inicio de sesión, cierre de sesión y la observación
 // de cambios en el estado de autenticación.
 
-auth.onAuthStateChanged(async user => {
+auth.onAuthStateChanged(async user => { // Hacemos la función async para esperar el perfil
     const loadingOverlay = document.getElementById('loading-overlay');
     const loginView = document.getElementById('login-view');
     const appContainer = document.getElementById('app-container');
     const userInfoEl = document.getElementById('user-info');
 
     if (user) {
+        // --- INICIO DE MODIFICACIÓN: Cargar perfil del usuario ---
+        try {
+            // Intentamos cargar el perfil extendido (roles, departamentos)
+            if (window.fetchUserProfile) {
+                const profile = await window.fetchUserProfile(user.email);
+                if (profile) {
+                    state.currentUserProfile = profile;
+                    console.log("Perfil de usuario cargado:", profile);
+                }
+            }
+        } catch (err) {
+            console.error("Error cargando perfil:", err);
+        }
+        // --- FIN DE MODIFICACIÓN ---
+
         loginView.classList.add('hidden');
         loginView.classList.remove('flex');
         appContainer.classList.remove('hidden');
         appContainer.classList.add('flex');
-        userInfoEl.textContent = `Usuario: ${user.email}`;
-
-        // --- CORRECCIÓN: Cargar perfil del usuario ANTES de iniciar la app ---
-        // Esto asegura que state.currentUserProfile esté listo para los filtros
-        if (typeof fetchUserProfile === 'function') {
-            try {
-                // Intentar cargar el perfil extendido (roles, departamentos)
-                const profile = await fetchUserProfile(user.email);
-                if (profile) {
-                    state.currentUserProfile = profile;
-                    console.log("Perfil de usuario cargado correctamente:", profile);
-                }
-            } catch (err) {
-                console.warn("No se pudo cargar el perfil extendido del usuario, se usarán permisos por defecto.", err);
-            }
-        }
-        // ---------------------------------------------------------------------
-
+        
+        // Mostrar nombre o email
+        const displayName = state.currentUserProfile?.name || user.email;
+        userInfoEl.textContent = `Usuario: ${displayName}`;
+        
         startApp();
     } else {
-        state.currentUserProfile = null; // Limpiar perfil al cerrar sesión
         stopApp();
+        // Limpiar perfil al salir
+        state.currentUserProfile = null;
+        
         loginView.classList.remove('hidden');
         loginView.classList.add('flex');
         appContainer.classList.add('hidden');
