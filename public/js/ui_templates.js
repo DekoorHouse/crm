@@ -487,6 +487,15 @@ const SettingsViewTemplate = () => `
                     </div>
                 </form>
             </div>
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-4">Mantenimiento</h2>
+                <div>
+                    <p class="text-sm text-gray-500 mb-3">Asigna todos los chats que actualmente no tienen un departamento al departamento por defecto "General".</p>
+                    <button onclick="handleMigrateOrphans()" class="btn btn-secondary">
+                        <i class="fas fa-random mr-2"></i> Migrar Chats Huérfanos a General
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 `;
