@@ -121,8 +121,8 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
                         tempInput.removeCallback();
                         tempOutput.removeCallback();
                         if (err) {
-                             console.warn(`[AUDIO CONVERTER] Fallo al leer archivo convertido. Se enviará como archivo estándar.`);
-                             return resolve({ buffer: inputBuffer, mimeType: mimeType }); // Devolver original
+                            console.warn(`[AUDIO CONVERTER] Fallo al leer archivo convertido. Se enviará como archivo estándar.`);
+                            return resolve({ buffer: inputBuffer, mimeType: mimeType }); // Devolver original
                         }
                         console.log(`[AUDIO CONVERTER] Conversión a OGG Opus exitosa.`);
                         resolve({ buffer: convertedBuffer, mimeType: 'audio/ogg' }); // Devolver convertido
@@ -349,9 +349,16 @@ router.get('/contacts', async (req, res) => {
         // --- INICIO: Filtro por Departamento ---
         // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
         if (departmentId && departmentId !== 'all') {
-            // Nota: Esto requiere un índice compuesto en Firestore si se combina con otros filtros/ordenamientos
-            // Ejemplo: assignedDepartmentId + lastMessageTimestamp
-            query = query.where('assignedDepartmentId', '==', departmentId);
+            // Soporte para múltiples IDs separados por coma (para usuarios con múltiples departamentos)
+            if (departmentId.includes(',')) {
+                const ids = departmentId.split(',').map(id => id.trim()).filter(id => id);
+                if (ids.length > 0) {
+                    // Nota: Firestore limita el operador 'in' a 10 valores.
+                    query = query.where('assignedDepartmentId', 'in', ids.slice(0, 10));
+                }
+            } else {
+                query = query.where('assignedDepartmentId', '==', departmentId);
+            }
         }
         // --- FIN: Filtro por Departamento ---
 
@@ -514,7 +521,7 @@ router.put('/contacts/:contactId/status', async (req, res) => {
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        
+
         // Verificar si el contacto existe antes de actualizar
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) {
@@ -540,8 +547,8 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
 
         // Buscar pedidos donde el campo 'telefono' coincida con el contactId
         const snapshot = await db.collection('pedidos')
-                                 .where('telefono', '==', contactId)
-                                 .get();
+            .where('telefono', '==', contactId)
+            .get();
 
         if (snapshot.empty) {
             return res.status(200).json({ success: true, orders: [] }); // Devolver array vacío si no hay pedidos
@@ -626,8 +633,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
             // Determinar el tipo de mensaje para la API de WhatsApp
             const type = fileType.startsWith('image/') ? 'image' :
-                         fileType.startsWith('video/') ? 'video' :
-                         fileType.startsWith('audio/') ? 'audio' : 'document';
+                fileType.startsWith('video/') ? 'video' :
+                    fileType.startsWith('audio/') ? 'audio' : 'document';
 
             const mediaObject = { id: mediaId };
             // Añadir caption si es relevante y hay texto
@@ -714,8 +721,8 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         let messageToSaveText = text;
         if (fileUrl && !text) {
             const type = fileType.startsWith('image/') ? 'image' :
-                         fileType.startsWith('video/') ? 'video' :
-                         fileType.startsWith('audio/') ? 'audio' : 'document';
+                fileType.startsWith('video/') ? 'video' :
+                    fileType.startsWith('audio/') ? 'audio' : 'document';
             messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : '🎵 Audio');
         }
 
@@ -759,10 +766,10 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
         const { limit = 30, before } = req.query; // 'before' es un timestamp en segundos
 
         let query = db.collection('contacts_whatsapp')
-                      .doc(contactId)
-                      .collection('messages')
-                      .orderBy('timestamp', 'desc') // Ordenar por más reciente primero
-                      .limit(Number(limit));
+            .doc(contactId)
+            .collection('messages')
+            .orderBy('timestamp', 'desc') // Ordenar por más reciente primero
+            .limit(Number(limit));
 
         // Si se proporciona 'before', obtener mensajes *anteriores* a ese timestamp
         if (before) {
@@ -771,10 +778,10 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
             // CORRECCIÓN: Usar startAfter en lugar de where <, ya que la consulta va desc
             // Necesitamos el documento anterior para usar startAfter, o ajustar la lógica
             // Alternativa más simple: Filtrar por timestamp <
-             query = query.where('timestamp', '<', firestoreTimestamp);
-             // Si se quiere paginación estricta con startAfter, se necesitaría obtener el documento
-             // const lastDocSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').where('timestamp','==', firestoreTimestamp).limit(1).get();
-             // if(!lastDocSnapshot.empty) query = query.startAfter(lastDocSnapshot.docs[0]);
+            query = query.where('timestamp', '<', firestoreTimestamp);
+            // Si se quiere paginación estricta con startAfter, se necesitaría obtener el documento
+            // const lastDocSnapshot = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').where('timestamp','==', firestoreTimestamp).limit(1).get();
+            // if(!lastDocSnapshot.empty) query = query.startAfter(lastDocSnapshot.docs[0]);
         }
 
         const snapshot = await query.get();
@@ -800,51 +807,294 @@ router.get('/contacts/:contactId/messages-paginated', async (req, res) => {
 // --- Endpoint POST /api/contacts/:contactId/messages/:messageDocId/react (Enviar/quitar reacción) ---
 router.post('/contacts/:contactId/messages/:messageDocId/react', async (req, res) => {
     const { contactId, messageDocId } = req.params;
-    const { reaction } = req.body; // reaction es el emoji (string) o null/"" para quitarla
+    const { emoji } = req.body; // Emoji para reaccionar, o string vacío para quitar
 
     try {
-        // Obtener referencia al mensaje en Firestore
-        const messageRef = db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId);
-        const messageDoc = await messageRef.get();
-
+        // 1. Obtener el ID de mensaje de WhatsApp (wamid) desde Firestore
+        const messageDoc = await db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId).get();
         if (!messageDoc.exists) {
             return res.status(404).json({ success: false, message: 'Mensaje no encontrado.' });
         }
+        const messageData = messageDoc.data();
+        const wamid = messageData.id; // El ID de WhatsApp
 
-        // Obtener el WhatsApp Message ID (wamid) del mensaje original
-        const wamid = messageDoc.data().id;
         if (!wamid) {
-             return res.status(400).json({ success: false, message: 'El mensaje original no tiene un ID de WhatsApp válido.' });
+            return res.status(400).json({ success: false, message: 'Este mensaje no tiene un ID de WhatsApp válido.' });
         }
 
-        // Construir payload para la API de Reacciones de WhatsApp
+        // 2. Enviar la reacción a la API de WhatsApp
         const payload = {
             messaging_product: 'whatsapp',
+            recipient_type: 'individual',
             to: contactId,
             type: 'reaction',
             reaction: {
-                message_id: wamid, // ID del mensaje al que se reacciona
-                emoji: reaction || "" // Emoji o string vacío para quitar
+                message_id: wamid,
+                emoji: emoji || "" // Emoji o cadena vacía para eliminar
             }
         };
 
-        // Enviar reacción a la API de WhatsApp
-        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
-            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+        await axios.post(
+            `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+            payload,
+            { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+        );
+
+        // 3. Actualizar el estado en Firestore (opcional, para reflejarlo en UI)
+        await db.collection('contacts_whatsapp').doc(contactId).collection('messages').doc(messageDocId).update({
+            reaction: emoji || admin.firestore.FieldValue.delete()
         });
 
-        // Actualizar el campo 'reaction' en Firestore
-        // Si reaction es null o "", eliminar el campo; si no, actualizarlo
-        await messageRef.update({
-            reaction: reaction || admin.firestore.FieldValue.delete()
-        });
+        res.status(200).json({ success: true, message: emoji ? 'Reacción enviada.' : 'Reacción eliminada.' });
 
-        res.status(200).json({ success: true, message: 'Reacción enviada y actualizada.' });
     } catch (error) {
-        console.error('Error al procesar la reacción:', error.response ? error.response.data : error.message);
-        res.status(500).json({ success: false, message: 'Error del servidor al procesar la reacción.' });
+        console.error('Error al enviar reacción:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error al enviar la reacción.' });
     }
 });
+
+// --- INICIO: ENDPOINTS DE GESTIÓN DE USUARIOS (AGENTS) ---
+
+// GET /api/users - Listar todos los usuarios (de Auth y Firestore)
+router.get('/users', async (req, res) => {
+    try {
+        // 1. Obtener usuarios de Firebase Authentication
+        const listUsersResult = await admin.auth().listUsers();
+        const authUsers = listUsersResult.users.map(userRecord => ({
+            uid: userRecord.uid,
+            email: userRecord.email,
+            displayName: userRecord.displayName,
+            disabled: userRecord.disabled
+        }));
+
+        // 2. Obtener usuarios de la colección 'users' de Firestore
+        const snapshot = await db.collection('users').get();
+        const firestoreUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // 3. Combinar los datos
+        // Usaremos el email como clave para unir, asumiendo que es único.
+        const combinedUsers = authUsers.map(authUser => {
+            // Encontrar el usuario correspondiente en Firestore por email
+            const firestoreUser = firestoreUsers.find(fsUser => fsUser.email && fsUser.email.toLowerCase() === authUser.email.toLowerCase());
+            // Devolver un objeto combinado. Los datos de Firestore (rol, deptos) prevalecen.
+            // El ID de documento de Firestore es el email en minúsculas, así que lo usamos.
+            return {
+                id: authUser.email.toLowerCase(), // Usar email como ID consistente
+                uid: authUser.uid,
+                email: authUser.email,
+                name: firestoreUser?.name || authUser.displayName || authUser.email.split('@')[0],
+                role: firestoreUser?.role || 'agent',
+                assignedDepartments: firestoreUser?.assignedDepartments || [],
+                disabled: authUser.disabled
+            };
+        });
+
+        res.status(200).json({ success: true, users: combinedUsers });
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener la lista de usuarios.' });
+    }
+});
+
+// POST /api/users - Crear un nuevo usuario
+router.post('/users', async (req, res) => {
+    const { email, name, role, assignedDepartments } = req.body;
+
+    if (!email) {
+        return res.status(400).json({ success: false, message: 'El correo electrónico es obligatorio.' });
+    }
+
+    try {
+        // Usar el email como ID del documento para unicidad y fácil acceso
+        // Convertir a minúsculas para evitar duplicados por case sensitivity
+        const userId = email.toLowerCase().trim();
+
+        const newUser = {
+            email: userId, // Guardar email normalizado
+            name: name || '',
+            role: role || 'agent', // 'admin' o 'agent'
+            assignedDepartments: assignedDepartments || [], // Array de IDs de departamentos
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+
+        await db.collection('users').doc(userId).set(newUser);
+
+        res.status(201).json({ success: true, message: 'Usuario creado correctamente.', user: { id: userId, ...newUser } });
+    } catch (error) {
+        console.error('Error creating user:', error);
+        res.status(500).json({ success: false, message: 'Error al crear el usuario.' });
+    }
+});
+
+// PUT /api/users/:userId - Actualizar un usuario
+router.put('/users/:userId', async (req, res) => {
+    const { userId } = req.params; // Esperamos que sea el email (o ID)
+    const { name, role, assignedDepartments } = req.body;
+
+    try {
+        const userRef = db.collection('users').doc(userId);
+        const doc = await userRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+        }
+
+        const updates = {};
+        if (name !== undefined) updates.name = name;
+        if (role !== undefined) updates.role = role;
+        if (assignedDepartments !== undefined) updates.assignedDepartments = assignedDepartments;
+        updates.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+
+        await userRef.update(updates);
+
+        res.status(200).json({ success: true, message: 'Usuario actualizado correctamente.' });
+    } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).json({ success: false, message: 'Error al actualizar el usuario.' });
+    }
+});
+
+// DELETE /api/users/:userId - Eliminar un usuario
+router.delete('/users/:userId', async (req, res) => {
+    const { userId } = req.params;
+
+    try {
+        await db.collection('users').doc(userId).delete();
+        res.status(200).json({ success: true, message: 'Usuario eliminado correctamente.' });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ success: false, message: 'Error al eliminar el usuario.' });
+    }
+});
+
+// GET /api/users/profile/:email - Obtener perfil por email (para login)
+router.get('/users/profile/:email', async (req, res) => {
+    const { email } = req.params;
+    try {
+        const userId = email.toLowerCase().trim();
+        const doc = await db.collection('users').doc(userId).get();
+
+        if (!doc.exists) {
+            // Opcional: Si no existe, podríamos devolver un perfil "default" o un 404.
+            // Por seguridad, devolvemos 404 para que el frontend decida qué hacer (ej. mostrar error o usar modo restringido).
+            return res.status(404).json({ success: false, message: 'Perfil de usuario no encontrado.' });
+        }
+
+        res.status(200).json({ success: true, user: { id: doc.id, ...doc.data() } });
+    } catch (error) {
+        console.error('Error fetching user profile:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener perfil.' });
+    }
+});
+
+// --- FIN: ENDPOINTS DE GESTIÓN DE USUARIOS ---
+
+// --- INICIO: ENDPOINTS DE GESTIÓN DE DEPARTAMENTOS ---
+
+// GET /api/departments - Listar todos los departamentos
+router.get('/departments', async (req, res) => {
+    try {
+        const snapshot = await db.collection('departments').orderBy('name').get();
+        const departments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.status(200).json({ success: true, departments });
+    } catch (error) {
+        console.error('Error fetching departments:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener departamentos.' });
+    }
+});
+
+// POST /api/departments - Crear un nuevo departamento
+router.post('/departments', async (req, res) => {
+    const { name, color } = req.body;
+    if (!name) {
+        return res.status(400).json({ success: false, message: 'El nombre del departamento es obligatorio.' });
+    }
+    try {
+        const newDept = {
+            name,
+            color: color || '#6c757d', // Default color
+            createdAt: admin.firestore.FieldValue.serverTimestamp()
+        };
+        const docRef = await db.collection('departments').add(newDept);
+        res.status(201).json({ success: true, message: 'Departamento creado.', department: { id: docRef.id, ...newDept } });
+    } catch (error) {
+        console.error('Error creating department:', error);
+        res.status(500).json({ success: false, message: 'Error al crear el departamento.' });
+    }
+});
+
+// PUT /api/departments/:id - Actualizar un departamento y sus usuarios
+router.put('/departments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, color, users: userEmails } = req.body; // userEmails es un array de emails
+
+    try {
+        const deptRef = db.collection('departments').doc(id);
+        const batch = db.batch();
+
+        // 1. Actualizar nombre y color del departamento
+        const deptUpdateData = { updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+        if (name) deptUpdateData.name = name;
+        if (color) deptUpdateData.color = color;
+        batch.update(deptRef, deptUpdateData);
+
+        // 2. Actualizar usuarios asignados (si se proporcionó la lista)
+        if (Array.isArray(userEmails)) {
+            // Obtener todos los usuarios para comparar
+            const usersSnapshot = await db.collection('users').get();
+            
+            for (const userDoc of usersSnapshot.docs) {
+                const userRef = userDoc.ref;
+                const userData = userDoc.data();
+                const userEmail = userData.email;
+                const assignedDepts = userData.assignedDepartments || [];
+                
+                const shouldBeAssigned = userEmails.includes(userEmail);
+                const isCurrentlyAssigned = assignedDepts.includes(id);
+
+                if (shouldBeAssigned && !isCurrentlyAssigned) {
+                    // Añadir departamento al usuario
+                    batch.update(userRef, { assignedDepartments: admin.firestore.FieldValue.arrayUnion(id) });
+                } else if (!shouldBeAssigned && isCurrentlyAssigned) {
+                    // Quitar departamento del usuario
+                    batch.update(userRef, { assignedDepartments: admin.firestore.FieldValue.arrayRemove(id) });
+                }
+            }
+        }
+
+        await batch.commit();
+        res.status(200).json({ success: true, message: 'Departamento y asignaciones actualizados.' });
+
+    } catch (error) {
+        console.error(`Error updating department ${id}:`, error);
+        res.status(500).json({ success: false, message: 'Error al actualizar el departamento.' });
+    }
+});
+
+
+// DELETE /api/departments/:id - Eliminar un departamento
+router.delete('/departments/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const batch = db.batch();
+        // 1. Eliminar el departamento
+        batch.delete(db.collection('departments').doc(id));
+
+        // 2. Quitar el departamento de todos los usuarios que lo tengan asignado
+        const usersSnapshot = await db.collection('users').where('assignedDepartments', 'array-contains', id).get();
+        usersSnapshot.forEach(doc => {
+            batch.update(doc.ref, { assignedDepartments: admin.firestore.FieldValue.arrayRemove(id) });
+        });
+
+        await batch.commit();
+        res.status(200).json({ success: true, message: 'Departamento eliminado correctamente.' });
+    } catch (error) {
+        console.error(`Error deleting department ${id}:`, error);
+        res.status(500).json({ success: false, message: 'Error al eliminar el departamento.' });
+    }
+});
+
+// --- FIN: ENDPOINTS DE GESTIÓN DE DEPARTAMENTOS ---
 
 // --- Endpoint GET /api/whatsapp-templates (Obtener plantillas aprobadas) ---
 router.get('/whatsapp-templates', async (req, res) => {
@@ -946,7 +1196,7 @@ router.post('/campaigns/send-template-with-image', async (req, res) => {
         return res.status(400).json({ success: false, message: 'Se requiere el objeto de la plantilla.' });
     }
     if (!imageUrl) {
-         return res.status(400).json({ success: false, message: 'Se requiere la URL de la imagen.' });
+        return res.status(400).json({ success: false, message: 'Se requiere la URL de la imagen.' });
     }
     if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
         return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
@@ -1271,7 +1521,7 @@ router.post('/contacts/:contactId/send-view-content', async (req, res) => {
         const contactData = contactDoc.data();
 
         if (!contactData.wa_id) {
-             return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
+            return res.status(500).json({ success: false, message: "Error interno: El contacto no tiene un ID de WhatsApp guardado para enviar el evento a Meta." });
         }
 
         // Preparar información para el evento
@@ -1352,7 +1602,7 @@ router.post('/quick-replies', async (req, res) => {
         return res.status(400).json({ success: false, message: 'El atajo y un mensaje o archivo adjunto son obligatorios.' });
     }
     if (fileUrl && !fileType) { // Si hay archivo, se necesita el tipo
-         return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
+        return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
     }
 
     try {
@@ -1397,8 +1647,8 @@ router.put('/quick-replies/:id', async (req, res) => {
     if (!shortcut || (!message && !fileUrl)) {
         return res.status(400).json({ success: false, message: 'El atajo y un mensaje o archivo adjunto son obligatorios.' });
     }
-     if (fileUrl && !fileType) {
-         return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
+    if (fileUrl && !fileType) {
+        return res.status(400).json({ success: false, message: 'El tipo de archivo es obligatorio si se adjunta uno.' });
     }
 
     try {
@@ -1550,7 +1800,7 @@ router.post('/ad-responses', async (req, res) => {
                 return acc.concat(overlap);
             }, []);
             if (conflictingIds.length > 0) {
-                 return res.status(409).json({ success: false, message: `Los Ad IDs ya están en uso: ${[...new Set(conflictingIds)].join(', ')}` });
+                return res.status(409).json({ success: false, message: `Los Ad IDs ya están en uso: ${[...new Set(conflictingIds)].join(', ')}` });
             }
         }
 
@@ -2127,7 +2377,7 @@ router.post('/difusion/bulk-send', async (req, res) => {
                     id: sentPhotoData.id, text: sentPhotoData.textForDb, fileUrl: sentPhotoData.fileUrlForDb,
                     fileType: sentPhotoData.fileTypeForDb, isAutoReply: true
                 };
-                 Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]); // Limpiar nulos
+                Object.keys(photoMessageToSave).forEach(key => photoMessageToSave[key] == null && delete photoMessageToSave[key]); // Limpiar nulos
                 await contactRef.collection('messages').add(photoMessageToSave);
                 lastMessageText = sentPhotoData.textForDb;
 
@@ -2212,7 +2462,7 @@ router.get('/metrics/messages-by-ad', async (req, res) => {
         const end = new Date(`${endDate}T23:59:59.999Z`); // UTC para Firestore
 
         if (isNaN(start) || isNaN(end)) {
-             return res.status(400).json({ success: false, message: 'Formato de fecha inválido. Usar YYYY-MM-DD.' });
+            return res.status(400).json({ success: false, message: 'Formato de fecha inválido. Usar YYYY-MM-DD.' });
         }
 
         const startTimestamp = admin.firestore.Timestamp.fromDate(start);
