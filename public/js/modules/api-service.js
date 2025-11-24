@@ -458,22 +458,11 @@ async function fetchAllUsers() {
 function listenForUsers() {
     if (unsubscribeUsersListener) unsubscribeUsersListener();
     
-    // Este listener es más simple, solo escucha la colección `users` de Firestore,
-    // ya que los cambios en Firebase Auth (crear/borrar usuario) no disparan eventos aquí.
-    // La lista principal se carga con fetchAllUsers que sí consulta Auth.
+    // Cuando se detecta un cambio en la colección de usuarios, simplemente volvemos a
+    // cargar la lista completa. Es más simple y robusto que intentar parchear el estado.
     unsubscribeUsersListener = db.collection('users').onSnapshot(snapshot => {
-        const firestoreUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        // Actualizar la información de los usuarios en el estado `allUsers`
-        if (state.allUsers.length > 0) {
-            state.allUsers = state.allUsers.map(user => {
-                const firestoreUser = firestoreUsers.find(fsUser => fsUser.email.toLowerCase() === user.email.toLowerCase());
-                return { ...user, ...firestoreUser }; // Sobrescribe con los datos más recientes de Firestore
-            });
-        }
-        
-        // Si una vista que depende de los usuarios está activa, se podría re-renderizar.
-        // Por ejemplo, si el modal de departamentos está abierto.
+        console.log("Firestore 'users' collection updated, refetching all users.");
+        fetchAllUsers(); 
     }, error => {
         console.error("Error escuchando cambios de usuarios:", error);
     });
