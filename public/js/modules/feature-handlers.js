@@ -393,6 +393,38 @@ async function handleUpdateExistingOrder(event, orderId) {
     }
 }
 
+async function handleMigrateOrphans() {
+    if (!window.confirm("¿Estás seguro de que quieres migrar todos los chats sin departamento al departamento 'General'? Esta acción no se puede deshacer.")) {
+        return;
+    }
+
+    try {
+        showError('Migrando chats huérfanos... Por favor, espera.', 'info');
+
+        const response = await fetch(`${API_BASE_URL}/api/maintenance/migrate-orphans`, {
+            method: 'POST',
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            throw new Error(result.message || 'Ocurrió un error en el servidor durante la migración.');
+        }
+
+        // Usar la función global para mostrar errores/éxitos
+        showError(result.message, 'success');
+
+        // Opcional: Si estás en la vista de chats, recargar la lista para ver los cambios
+        if (state.activeView === 'chats') {
+            fetchInitialContacts();
+        }
+
+    } catch (error) {
+        console.error('Error al migrar chats huérfanos:', error);
+        showError(error.message, 'error');
+    }
+}
+
 
 // --- Campaigns Handlers ---
 
@@ -1453,6 +1485,7 @@ window.handleLoadAdIdMetrics = handleLoadAdIdMetrics; // Hacer global
 window.handleClearAdIdMetricsFilter = handleClearAdIdMetricsFilter; // Hacer global
 window.handleUpdateNote = handleUpdateNote;
 window.handleDeleteNote = handleDeleteNote;
+window.handleMigrateOrphans = handleMigrateOrphans;
 // --- FIN MODIFICACIÓN ---
 
 // --- EXPORTAR NUEVOS MANEJADORES ---
