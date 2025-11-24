@@ -27,17 +27,19 @@ function handleSearchContacts() {
     // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
     let contactsToRender = state.contacts;
     
-    const user = state.currentUserProfile;
+    const user = state.currentUserProfile; // Obtenido en auth.js al iniciar sesión
     
-    // Si el usuario existe y NO es admin, aplicamos el filtro de seguridad
+    // Aplicar filtro de seguridad si el usuario ya cargó y NO es admin
     if (user && user.role !== 'admin') {
         const userDepts = user.assignedDepartments || [];
         
         contactsToRender = contactsToRender.filter(contact => {
-            // Regla 1: Si el chat NO tiene departamento, se muestra a todos.
-            if (!contact.assignedDepartmentId) return true;
+            // Regla 1: Chats SIN departamento asignado son visibles para TODOS los agentes
+            if (!contact.assignedDepartmentId) {
+                return true;
+            }
             
-            // Regla 2: Si tiene departamento, el usuario debe tener ese departamento asignado.
+            // Regla 2: Chats CON departamento solo son visibles si el agente pertenece a ese departamento
             return userDepts.includes(contact.assignedDepartmentId);
         });
     }
@@ -47,9 +49,12 @@ function handleSearchContacts() {
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
 
     if (contactsListEl) {
+        // Si no hay contactos para mostrar (después del filtro), mostrar mensaje vacío
         if (contactsToRender.length === 0 && state.contacts.length > 0) {
-             // Caso especial: Hay contactos cargados pero el filtro los ocultó todos
-             contactsListEl.innerHTML = `<div class="p-4 text-center text-gray-500 italic text-sm">No tienes chats asignados en tus departamentos.</div>`;
+             contactsListEl.innerHTML = `<div class="p-8 text-center text-gray-400 italic text-sm flex flex-col items-center">
+                <i class="fas fa-inbox text-2xl mb-2 opacity-50"></i>
+                <span>No tienes chats asignados en tus departamentos.</span>
+             </div>`;
         } else {
              contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
         }
