@@ -527,8 +527,30 @@ router.post('/', async (req, res) => {
                         console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
                     }
                 } else {
-                    console.log(`[ROUTING] No se encontraron reglas de departamento para el Ad ID: ${adId}`);
-                    // Aquí se podría implementar una lógica de "default department" si se desea
+                     // Fallback: Si el anuncio no tiene regla, asignar a "General"
+                    console.log(`[ROUTING] No se encontraron reglas para Ad ID: ${adId}. Asignando a General.`);
+                    const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+                    if (!generalDeptQuery.empty) {
+                        const generalDeptId = generalDeptQuery.docs[0].id;
+                        await contactRef.update({ assignedDepartmentId: generalDeptId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento General por falta de regla específica.`);
+                    } else {
+                        console.warn(`[ROUTING] No se encontró el departamento "General" para la asignación de fallback.`);
+                    }
+                }
+            } else {
+                // Fallback: si el mensaje NO viene de un anuncio y el contacto aún no tiene departamento, se le asigna a "General"
+                const contactData = (await contactRef.get()).data();
+                if (!contactData.assignedDepartmentId) {
+                    console.log(`[ROUTING] Fallback: El contacto ${from} no tiene departamento. Asignando a General.`);
+                    const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+                    if (!generalDeptQuery.empty) {
+                        const generalDeptId = generalDeptQuery.docs[0].id;
+                        await contactRef.update({ assignedDepartmentId: generalDeptId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento General.`);
+                    } else {
+                        console.warn(`[ROUTING] No se encontró el departamento "General" para la asignación de fallback.`);
+                    }
                 }
             }
             // --- FIN: ENRUTAMIENTO POR DEPARTAMENTO ---
@@ -752,30 +774,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             // Standard response (200 OK)
             console.log(`[PROXY] Respondiendo con ${status} OK.`);
             res.setHeader("Content-Type", headers["content-type"]);
-            res.setHeader("Content-Length", headers["content-length"]);
-            res.setHeader("Accept-Ranges", "bytes"); // Always indicate range support
-        }
-
-        // Pipe the stream from Meta's response to the client's response
-        mediaResponse.data.pipe(res);
-
-    } catch (err) {
-        // --- Error Handling ---
-        if (err.response) {
-            // Error from Meta API
-            console.error("ERROR EN PROXY DE MEDIOS (Respuesta del servidor):", err.response.status, err.response.data);
-            res.status(err.response.status).json({ error: "No se pudo obtener el medio desde el origen.", details: err.response.data });
-        } else if (err.request) {
-            // Request made but no response received
-            console.error("ERROR EN PROXY DE MEDIOS (Sin respuesta):", err.request);
-            res.status(504).json({ error: "No se recibió respuesta del servidor de medios." });
-        } else {
-            // Setup error
-            console.error("ERROR EN PROXY DE MEDIOS (Configuración):", err.message);
-            res.status(500).json({ error: "Error al configurar la solicitud del medio." });
-        }
-    }
-});
-
-
-module.exports = { router };
+            res.setHeader("Content-Length", headers["c
