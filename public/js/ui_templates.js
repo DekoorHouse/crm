@@ -592,6 +592,22 @@ const ContactItemTemplate = (contact, isSelected) => {
     const orderBadgeHTML = contact.lastOrderNumber
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
         : '';
+    
+    // --- Department Color Logic ---
+    let departmentStripe = '';
+    if (!isSelected) { // Apply color only if not selected
+        const defaultColor = '#d1d5db'; // Default gray
+        let color = defaultColor;
+
+        if (contact.assignedDepartmentId) {
+            const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
+            if (department) {
+                color = department.color;
+            }
+        }
+        departmentStripe = `style="border-left-color: ${color};"`;
+    }
+    // --- End Department Color Logic ---
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -615,7 +631,7 @@ const ContactItemTemplate = (contact, isSelected) => {
 
     const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
 
-    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''}" data-contact-id="${contact.id}">
+    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''}" data-contact-id="${contact.id}" ${departmentStripe}>
                 ${UserIcon(contact)}
                 ${mainContent}
             </div>`;
