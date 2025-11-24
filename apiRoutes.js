@@ -2678,5 +2678,46 @@ router.delete('/ad-routing-rules/:id', async (req, res) => {
 
 // --- FIN DE NUEVAS RUTAS ---
 
+// --- Endpoint POST /api/maintenance/migrate-orphans (Mantenimiento) ---
+router.post('/maintenance/migrate-orphans', async (req, res) => {
+    try {
+        // 1. Buscar el ID del departamento "General"
+        const generalDeptSnapshot = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+        if (generalDeptSnapshot.empty) {
+            return res.status(404).json({ success: false, message: 'No se encontró el departamento "General".' });
+        }
+        const generalDeptId = generalDeptSnapshot.docs[0].id;
+
+        // 2. Buscar todos los contactos que no tienen 'assignedDepartmentId' o es null
+        const contactsWithoutDeptQuery = db.collection('contacts_whatsapp').where('assignedDepartmentId', '==', null);
+        const contactsSnapshot = await contactsWithoutDeptQuery.get();
+
+        if (contactsSnapshot.empty) {
+            return res.status(200).json({ success: true, message: 'No se encontraron chats huérfanos para migrar.' });
+        }
+
+        // 3. Crear un batch para actualizar todos los contactos encontrados
+        const batch = db.batch();
+        contactsSnapshot.forEach(doc => {
+            const contactRef = db.collection('contacts_whatsapp').doc(doc.id);
+            batch.update(contactRef, { assignedDepartmentId: generalDeptId });
+        });
+
+        // 4. Ejecutar el batch
+        await batch.commit();
+
+        // 5. Devolver resumen
+        const migratedCount = contactsSnapshot.size;
+        res.status(200).json({
+            success: true,
+            message: `Se migraron ${migratedCount} chats al departamento General.`
+        });
+
+    } catch (error) {
+        console.error('Error en la migración de chats huérfanos:', error);
+        res.status(500).json({ success: false, message: 'Ocurrió un error en el servidor durante la migración.' });
+    }
+});
+
 
 module.exports = router;
