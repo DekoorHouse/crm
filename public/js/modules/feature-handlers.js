@@ -1377,7 +1377,7 @@ async function handleTransferChat(event) {
     event.preventDefault(); // Evita la recarga de la página por el submit del formulario
 
     const contactId = document.getElementById('transfer-contact-id').value;
-    const targetDepartmentId = document.getElementById('transfer-dept-select').value;
+    const targetDepartmentId = document.getElementById('transfer-dept-hidden-input').value;
     const button = event.target.querySelector('button[type="submit"]'); // Selecciona el botón de submit dentro del formulario
 
     if (!targetDepartmentId) {
