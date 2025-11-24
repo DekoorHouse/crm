@@ -329,12 +329,34 @@ function listenForContactUpdates() {
             // Buscar si el contacto ya existe en la lista local
             const existingContactIndex = state.contacts.findIndex(c => c.id === updatedContactData.id);
 
+            // [NUEVO] Obtener el valor actual de la búsqueda
+            const searchInput = document.getElementById('search-contacts-input');
+            const searchTerm = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
             if (existingContactIndex > -1) {
                 // Si existe, reemplazarlo con los datos actualizados
                 state.contacts[existingContactIndex] = updatedContactData;
             } else {
-                // Si es un contacto nuevo (o no estaba en la página actual), añadirlo al INICIO de la lista
-                state.contacts.unshift(updatedContactData);
+                // Si es un contacto nuevo (o no estaba en la página actual)...
+                
+                let shouldAdd = true;
+
+                // [NUEVO] Si hay una búsqueda activa, validamos si el contacto cumple el criterio
+                if (searchTerm) {
+                    const nameMatch = (updatedContactData.name || '').toLowerCase().includes(searchTerm);
+                    const phoneMatch = (updatedContactData.id || '').includes(searchTerm);
+                    const lowerNameMatch = (updatedContactData.name_lowercase || '').includes(searchTerm);
+                    
+                    // Si no coincide con nada, bloqueamos su adición
+                    if (!nameMatch && !phoneMatch && !lowerNameMatch) {
+                        shouldAdd = false;
+                    }
+                }
+
+                // Solo añadimos si pasó el filtro (o si no hay filtro)
+                if (shouldAdd) {
+                    state.contacts.unshift(updatedContactData);
+                }
             }
         });
 
