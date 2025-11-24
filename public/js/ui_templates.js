@@ -594,19 +594,16 @@ const ContactItemTemplate = (contact, isSelected) => {
         : '';
     
     // --- Department Color Logic ---
-    let departmentStripe = '';
-    if (!isSelected) { // Apply color only if not selected
-        const defaultColor = '#d1d5db'; // Default gray
-        let color = defaultColor;
-
-        if (contact.assignedDepartmentId) {
-            const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
-            if (department) {
-                color = department.color;
-            }
+    const defaultColor = '#d1d5db'; // Default gray
+    let color = defaultColor;
+    if (contact.assignedDepartmentId) {
+        const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
+        if (department) {
+            color = department.color;
         }
-        departmentStripe = `style="border-left-color: ${color};"`;
     }
+    // Always apply the stripe style. The .selected class will handle background/text color.
+    const departmentStripe = `style="border-left-color: ${color};"`;
     // --- End Department Color Logic ---
 
     const mainContent = `
@@ -849,6 +846,17 @@ const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
+    // --- Department Color Logic for Header ---
+    let headerStyle = '';
+    if (contact.assignedDepartmentId) {
+        const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
+        if (department && department.color) {
+            // Using a top border for the header
+            headerStyle = `style="border-top: 4px solid ${department.color};"`;
+        }
+    }
+    // --- End Department Color Logic for Header ---
+
     const isSessionExpired = state.isSessionExpired;
 
     const sessionExpiredNotification = isSessionExpired
@@ -909,7 +917,7 @@ const ChatWindowTemplate = (contact) => {
                 <p>Suelta para adjuntar el archivo</p>
             </div>
         </div>
-        <header class="chat-header p-2 shadow-sm flex items-center space-x-2">
+        <header class="chat-header p-2 shadow-sm flex items-center space-x-2" ${headerStyle}>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
                 <h2 class="text-base font-semibold text-gray-800 cursor-pointer" onclick="openContactDetails()">${contact.name}</h2>
