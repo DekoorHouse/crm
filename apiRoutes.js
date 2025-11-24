@@ -1475,6 +1475,36 @@ router.post('/orders', async (req, res) => {
             lastOrderDate: nuevoPedido.createdAt // Usar el mismo timestamp
         });
 
+        // --- INICIO: Enviar evento Purchase a Meta ---
+        try {
+            // Obtener datos actualizados del contacto para el evento
+            const contactDoc = await contactRef.get();
+            if (contactDoc.exists) {
+                const contactData = contactDoc.data();
+                
+                // Verificar si tiene wa_id (necesario para Meta)
+                if (contactData.wa_id) {
+                    const eventInfo = {
+                        wa_id: contactData.wa_id,
+                        profile: { name: contactData.name }
+                    };
+                    
+                    const customData = {
+                        value: parseFloat(precio) || 0,
+                        currency: 'MXN'
+                    };
+
+                    // Enviar evento
+                    await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+                    console.log(`[META EVENT] Evento Purchase enviado por pedido DH${newOrderNumber} valor $${precio}`);
+                }
+            }
+        } catch (metaError) {
+            console.error('[META EVENT] Error al enviar evento Purchase automático:', metaError.message);
+            // No fallar el request principal si falla el evento
+        }
+        // --- FIN: Enviar evento Purchase a Meta ---
+
         // Devolver éxito y el número de pedido generado
         res.status(201).json({
             success: true,
