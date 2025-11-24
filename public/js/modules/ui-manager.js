@@ -1730,12 +1730,28 @@ function openDepartmentModal(dept = null) {
     const colorInput = document.getElementById('dept-color-input');
     const colorPreview = document.getElementById('dept-color-preview');
     const colorHex = document.getElementById('dept-color-hex');
+    const usersContainer = document.getElementById('department-users-container');
 
-    if (!modal) return;
+    if (!modal || !usersContainer) return;
 
     form.reset();
     idInput.value = '';
+    usersContainer.innerHTML = '<p class="text-gray-400">Cargando usuarios...</p>';
     const defaultColor = '#6c757d';
+
+    // Rellenar lista de usuarios
+    if (state.allUsers && state.allUsers.length > 0) {
+        usersContainer.innerHTML = state.allUsers.map(user => `
+            <div class="flex items-center">
+                <input type="checkbox" id="user-${user.uid}" name="department-users" value="${user.email}" class="h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                <label for="user-${user.uid}" class="ml-3 block text-sm font-medium text-gray-700">
+                    ${user.name || user.email}
+                </label>
+            </div>
+        `).join('');
+    } else {
+        usersContainer.innerHTML = '<p class="text-gray-400">No se encontraron usuarios o aún no se han cargado.</p>';
+    }
 
     if (dept) { // Modo Edición
         title.textContent = "Editar Departamento";
@@ -1744,6 +1760,20 @@ function openDepartmentModal(dept = null) {
         colorInput.value = dept.color || defaultColor;
         colorPreview.style.backgroundColor = dept.color || defaultColor;
         colorHex.textContent = dept.color || defaultColor;
+
+        // Marcar los checkboxes de los usuarios asignados
+        // Se buscan los usuarios cuyo array 'assignedDepartments' incluye el ID de este departamento.
+        if (state.allUsers.length > 0) {
+             state.allUsers.forEach(user => {
+                if (user.assignedDepartments && user.assignedDepartments.includes(dept.id)) {
+                    const checkbox = usersContainer.querySelector(`input[value="${user.email}"]`);
+                    if (checkbox) {
+                        checkbox.checked = true;
+                    }
+                }
+            });
+        }
+
     } else { // Modo Añadir
         title.textContent = "Nuevo Departamento";
         colorInput.value = defaultColor;
