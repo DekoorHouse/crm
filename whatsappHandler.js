@@ -507,13 +507,13 @@ router.post('/', async (req, res) => {
             await contactRef.set(contactUpdateData, { merge: true });
             console.log(`[LOG] Contacto ${from} actualizado/creado en Firestore.`);
 
-            // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
-            // Verifica si el mensaje trae referral para asignar el departamento
+                        // --- INICIO: ENRUTAMIENTO Y ASIGNACIÓN DE DEPARTAMENTO ---
+            let departmentAssignedByRule = false;
+            // 1. Asignar por regla de Ad ID si el mensaje viene de un anuncio
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                 const adId = message.referral.source_id;
-                console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
+                console.log([ROUTING] Verificando reglas para Ad ID: );
                 
-                // Buscar si existe una regla para este Ad ID
                 const ruleSnapshot = await db.collection('ad_routing_rules')
                     .where('adIds', 'array-contains', adId)
                     .limit(1)
@@ -522,16 +522,26 @@ router.post('/', async (req, res) => {
                 if (!ruleSnapshot.empty) {
                     const ruleData = ruleSnapshot.docs[0].data();
                     if (ruleData.targetDepartmentId) {
-                        // Asignar al departamento correspondiente
                         await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
-                        console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
+                        console.log([ROUTING] Contacto  asignado al departamento '' por regla: );
+                        departmentAssignedByRule = true; // Se asignó un departamento.
                     }
                 } else {
-                    console.log(`[ROUTING] No se encontraron reglas de departamento para el Ad ID: ${adId}`);
-                    // Aquí se podría implementar una lógica de "default department" si se desea
+                    console.log([ROUTING] No se encontraron reglas de departamento para el Ad ID: );
                 }
             }
-            // --- FIN: ENRUTAMIENTO POR DEPARTAMENTO ---
+
+            // 2. Si no se asignó por regla, verificar si el contacto ya tiene departamento.
+            // Si no lo tiene, asignar el departamento por defecto.
+            if (!departmentAssignedByRule) {
+                const docAfterUpdate = await contactRef.get(); // Re-leer para tener el estado más actual
+                if (!docAfterUpdate.data() || !docAfterUpdate.data().assignedDepartmentId) {
+                    const defaultDeptId = await getSinDepartamentoId();
+                    await contactRef.update({ assignedDepartmentId: defaultDeptId });
+                    console.log([ROUTING] Contacto  asignado al departamento por defecto.);
+                }
+            }
+            // --- FIN: ENRUTAMIENTO Y ASIGNACIÓN DE DEPARTAMENTO ---
 
             // --- INICIO: Enviar evento a Meta Ads si el mensaje proviene de un anuncio ---
             if (message.referral?.source_type === 'ad' && message.referral.source_id) {
@@ -779,3 +789,4 @@ router.get("/wa/media/:mediaId", async (req, res) => {
 
 
 module.exports = { router };
+
