@@ -981,25 +981,40 @@ router.get('/users/profile/:email', async (req, res) => {
         const doc = await db.collection('users').doc(userId).get();
 
         if (!doc.exists) {
-            // --- CORRECCIÓN APLICADA ---
-            // Si es el usuario admin principal y no existe, lo creamos o devolvemos datos dummy de admin
-            if (userId === 'alex@dekoor.com') {
-                 const adminData = {
+            // --- LÓGICA DE AUTO-CREACIÓN MEJORADA ---
+            // Verificar si el usuario existe en Firebase Authentication
+            try {
+                const userRecord = await admin.auth().getUserByEmail(userId);
+                
+                // Si llegamos aquí, el usuario EXISTE en Auth pero NO en la base de datos.
+                // Lo creamos automáticamente.
+                
+                // Determinar rol inicial: Alex es admin, los demás agentes por defecto.
+                const initialRole = (userId === 'alex@dekoor.com') ? 'admin' : 'agent';
+                
+                const newUserData = {
                     email: userId,
-                    name: 'Alex',
-                    role: 'admin',
-                    assignedDepartments: [], // Acceso total si es admin
+                    name: userRecord.displayName || userId.split('@')[0], // Usar nombre de Auth o parte del correo
+                    role: initialRole,
+                    assignedDepartments: [], // Sin departamentos asignados inicialmente (acceso restringido hasta asignar)
                     createdAt: admin.firestore.FieldValue.serverTimestamp()
                 };
-                // Creamos el documento para la próxima vez
-                await db.collection('users').doc(userId).set(adminData);
-                return res.status(200).json({ success: true, user: { id: userId, ...adminData } });
+
+                // Guardar en Firestore
+                await db.collection('users').doc(userId).set(newUserData);
+                console.log(`[AUTO-CREATE] Usuario ${userId} sincronizado de Auth a Firestore con rol ${initialRole}.`);
+
+                return res.status(200).json({ success: true, user: { id: userId, ...newUserData } });
+
+            } catch (authError) {
+                // Si el usuario NO existe en Authentication (error user-not-found), devolvemos 404 real
+                if (authError.code === 'auth/user-not-found') {
+                    console.warn(`[LOGIN] Intento de acceso para email no registrado en Auth: ${userId}`);
+                    return res.status(404).json({ success: false, message: 'Usuario no registrado en el sistema.' });
+                }
+                throw authError; // Otros errores
             }
             // -----------------------------
-
-            // Opcional: Si no existe, podríamos devolver un perfil "default" o un 404.
-            // Por seguridad, devolvemos 404 para que el frontend decida qué hacer (ej. mostrar error o usar modo restringido).
-            return res.status(404).json({ success: false, message: 'Perfil de usuario no encontrado.' });
         }
 
         res.status(200).json({ success: true, user: { id: doc.id, ...doc.data() } });
