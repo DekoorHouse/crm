@@ -389,10 +389,17 @@
             <form id="transfer-form">
                 <input type="hidden" id="transfer-contact-id">
                 <div class="mb-4">
-                    <label for="transfer-dept-select">Departamento</label>
-                    <select id="transfer-dept-select" required class="w-full p-2 border rounded bg-gray-50 border-gray-300">
-                        <!-- Populated dynamically -->
-                    </select>
+                    <label for="transfer-dept-button">Departamento</label>
+                    <div class="custom-select-wrapper" id="custom-dept-select-wrapper">
+                        <input type="hidden" id="transfer-dept-hidden-input" name="departmentId" required>
+                        <button type="button" class="custom-select-button" id="transfer-dept-button">
+                            <span id="transfer-dept-button-text">-- Seleccionar Departamento --</span>
+                            <i class="fas fa-chevron-down custom-select-arrow"></i>
+                        </button>
+                        <div class="custom-select-options hidden" id="transfer-dept-options">
+                            <!-- Options populated by JS -->
+                        </div>
+                    </div>
                 </div>
                 <div class="flex justify-end gap-3">
                     <button type="button" onclick="closeTransferModal()" class="btn btn-subtle">Cancelar</button>
