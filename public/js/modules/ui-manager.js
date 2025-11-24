@@ -1837,39 +1837,82 @@ function closeAdRoutingModal() {
 // --- Modal de Transferencia de Chat ---
 function openTransferModal(contactId) {
     const modal = document.getElementById('transfer-modal');
+    if (!modal) return;
+
+    // Set the hidden input for the contact ID
     const contactIdInput = document.getElementById('transfer-contact-id');
-    const deptSelect = document.getElementById('transfer-dept-select');
-
-    if (!modal || !contactIdInput || !deptSelect) return;
-
     contactIdInput.value = contactId;
 
-    // Poblar select con círculo y data-color
-    deptSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
-        state.departments.map(dept => 
-            `<option value="${dept.id}" data-color="${dept.color || '#d1d5db'}">
-                ● ${dept.name}
-            </option>`
-        ).join('');
-    
-    // Función para actualizar el color del select
-    const updateSelectColor = () => {
-        const selectedOption = deptSelect.options[deptSelect.selectedIndex];
-        const color = selectedOption.dataset.color || '#f9fafb'; // bg-gray-50
-        const isPlaceholder = !selectedOption.value;
+    const wrapper = document.getElementById('custom-dept-select-wrapper');
+    const button = document.getElementById('transfer-dept-button');
+    const buttonText = document.getElementById('transfer-dept-button-text');
+    const optionsContainer = document.getElementById('transfer-dept-options');
+    const hiddenInput = document.getElementById('transfer-dept-hidden-input');
 
-        deptSelect.style.backgroundColor = isPlaceholder ? '' : color + '20'; // Color con opacidad alfa
-        deptSelect.style.borderColor = isPlaceholder ? '' : color;
-        deptSelect.style.color = isPlaceholder ? '' : color;
-        deptSelect.style.fontWeight = isPlaceholder ? '' : '600';
+    // Clear previous options and reset state
+    optionsContainer.innerHTML = '';
+    hiddenInput.value = '';
+    buttonText.textContent = '-- Seleccionar Departamento --';
+    button.classList.remove('open');
+    optionsContainer.classList.add('hidden');
+
+
+    // Populate options
+    state.departments.forEach(dept => {
+        const option = document.createElement('div');
+        option.className = 'custom-select-option';
+        option.dataset.value = dept.id;
+        
+        option.innerHTML = `
+            <span class="color-circle" style="background-color: ${dept.color || '#d1d5db'}"></span>
+            <span>${dept.name}</span>
+        `;
+        
+        // Add click listener to each option
+        option.addEventListener('click', () => {
+            hiddenInput.value = dept.id;
+            buttonText.textContent = dept.name;
+            optionsContainer.classList.add('hidden');
+            button.classList.remove('open');
+        });
+        
+        optionsContainer.appendChild(option);
+    });
+
+    // Toggle options visibility
+    const toggleDropdown = (e) => {
+        e.stopPropagation();
+        const isHidden = optionsContainer.classList.contains('hidden');
+        if (isHidden) {
+            optionsContainer.classList.remove('hidden');
+            button.classList.add('open');
+            // Attach listener to close dropdown when clicking outside
+            // Use timeout to avoid it firing from the same click that opened it
+            setTimeout(() => {
+                document.addEventListener('click', closeDropdown, { once: true });
+            }, 0);
+        } else {
+            optionsContainer.classList.add('hidden');
+            button.classList.remove('open');
+        }
     };
-
-    // Añadir listener para el evento 'change'
-    deptSelect.onchange = updateSelectColor;
     
-    // Resetear color al abrir
-    deptSelect.value = '';
-    updateSelectColor(); // Llamar una vez para establecer el estado inicial
+    // Assign the toggle function to the button click
+    button.onclick = toggleDropdown;
+
+    // Global click listener to close dropdown
+    const closeDropdown = (e) => {
+        if (!wrapper.contains(e.target)) {
+            optionsContainer.classList.add('hidden');
+            button.classList.remove('open');
+        } else {
+             // If the click was inside the wrapper (e.g. on the button again), re-add the listener
+             // because the 'once' option will have removed it. The toggle function will handle closing.
+             setTimeout(() => {
+                document.addEventListener('click', closeDropdown, { once: true });
+            }, 0);
+        }
+    };
 
     modal.classList.remove('hidden');
 }
