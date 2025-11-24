@@ -34,13 +34,22 @@ function handleSearchContacts() {
         const userDepts = user.assignedDepartments || [];
         
         contactsToRender = contactsToRender.filter(contact => {
-            // Regla 1: Chats SIN departamento asignado son visibles para TODOS los agentes
-            if (!contact.assignedDepartmentId) {
+            const deptId = contact.assignedDepartmentId;
+
+            // Regla 1: Si NO tiene ID de departamento, es visible para todos (es "Gris" nativo)
+            if (!deptId) {
+                return true;
+            }
+
+            // Regla 2: Si tiene ID, pero ese departamento YA NO EXISTE en el sistema,
+            // se considera huérfano ("Gris" visualmente) y debe ser visible para todos.
+            const deptExists = state.departments.some(d => d.id === deptId);
+            if (!deptExists) {
                 return true;
             }
             
-            // Regla 2: Chats CON departamento solo son visibles si el agente pertenece a ese departamento
-            return userDepts.includes(contact.assignedDepartmentId);
+            // Regla 3: Si tiene un departamento válido y existente, el usuario debe pertenecer a él
+            return userDepts.includes(deptId);
         });
     }
     // --- FIN DE LA MODIFICACIÓN ---
