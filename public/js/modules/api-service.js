@@ -23,7 +23,7 @@ function processContacts(contacts) {
             }
             // Caso 3: Podría ser ya un string ISO 8601 si viene de otra fuente
             else if (typeof ts === 'string' && !isNaN(Date.parse(ts))) {
-                 contact.lastMessageTimestamp = new Date(ts);
+                contact.lastMessageTimestamp = new Date(ts);
             }
             // Si ya es un objeto Date de JS, no hace nada.
         }
@@ -91,7 +91,7 @@ async function fetchInitialContacts() {
 
         // Determina si hay un filtro de etiqueta activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
-        
+
         // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
         const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
         // --- FIN MODIFICACIÓN ---
@@ -144,7 +144,7 @@ async function fetchMoreContacts() {
     try {
         // Aplicar filtro de etiqueta si está activo
         const tag = (state.activeFilter && state.activeFilter !== 'all') ? state.activeFilter : null;
-        
+
         // --- INICIO MODIFICACIÓN: Filtro de Departamento ---
         const departmentId = (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') ? state.activeDepartmentFilter : null;
         // --- FIN MODIFICACIÓN ---
@@ -252,16 +252,16 @@ function listenForContactUpdates() {
         snapshot.docChanges().forEach(change => {
             // Procesar timestamp del contacto modificado
             const updatedContactData = processContacts([{ id: change.doc.id, ...change.doc.data() }])[0];
-            
+
             // --- INICIO MODIFICACIÓN: Verificar filtro de departamento ---
             // Si hay un filtro de departamento activo y el contacto no pertenece, lo ignoramos (o removemos)
             if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
-                 // Si existe en la lista local, lo removemos
-                 const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
-                 if (idx > -1) {
-                     state.contacts.splice(idx, 1);
-                 }
-                 return; // No añadir/actualizar
+                // Si existe en la lista local, lo removemos
+                const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
+                if (idx > -1) {
+                    state.contacts.splice(idx, 1);
+                }
+                return; // No añadir/actualizar
             }
             // --- FIN MODIFICACIÓN ---
 
@@ -308,32 +308,32 @@ function listenForQuickReplies() {
 
 // Escucha cambios en las etiquetas
 function listenForTags() {
-    if(unsubscribeTagsListener) unsubscribeTagsListener();
+    if (unsubscribeTagsListener) unsubscribeTagsListener();
     unsubscribeTagsListener = db.collection('crm_tags').orderBy('order').onSnapshot(snapshot => {
         // Actualiza el estado global
         state.tags = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         // Re-renderiza componentes que dependen de las etiquetas si están activos
-        if(state.activeView === 'chats') {
+        if (state.activeView === 'chats') {
             renderTagFilters(); // Actualiza filtros en vista de chats
             handleSearchContacts(); // Re-renderiza lista de contactos (para colores de icono)
         }
-        if(state.activeView === 'etiquetas') {
+        if (state.activeView === 'etiquetas') {
             renderTagsView(); // Actualiza tabla de etiquetas
         }
-        if(state.activeView === 'campanas') {
+        if (state.activeView === 'campanas') {
             renderCampaignsView(); // Actualiza select de etiquetas en campañas
         }
-         if(state.activeView === 'pipeline') {
+        if (state.activeView === 'pipeline') {
             renderPipelineView(); // Re-dibuja el pipeline
         }
-         // --- INICIO MODIFICACIÓN: Actualizar select de estatus de pedidos ---
+        // --- INICIO MODIFICACIÓN: Actualizar select de estatus de pedidos ---
         // Actualizar el select de estatus de pedidos en la barra lateral si está abierta
         if (state.contactDetailsOpen && state.selectedContactId) {
             const ordersListEl = document.getElementById('contact-orders-list');
-             if (ordersListEl) {
+            if (ordersListEl) {
                 // Volver a renderizar los items de pedido para actualizar los selects
                 ordersListEl.innerHTML = state.selectedContactOrders.map(OrderHistoryItemTemplate).join('');
-             }
+            }
         }
         // --- FIN MODIFICACIÓN ---
     }, error => {
@@ -404,7 +404,7 @@ function listenForDepartments() {
         const transferSelect = document.getElementById('transfer-dept-select');
         if (transferSelect && !transferSelect.closest('.hidden')) {
             // Simple re-population logic
-             transferSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
+            transferSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' +
                 state.departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('');
         }
     }, error => {
@@ -426,6 +426,56 @@ function listenForAdRoutingRules() {
     }, error => {
         console.error("Error al escuchar reglas de enrutamiento:", error);
         showError("No se pudieron cargar las reglas de enrutamiento.");
+    });
+}
+
+// --- NUEVO: Listeners y fetchers para USUARIOS ---
+let unsubscribeUsersListener = null;
+
+/**
+ * Obtiene la lista completa de usuarios una vez.
+ */
+async function fetchAllUsers() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/users`);
+        const data = await response.json();
+        if (data.success) {
+            state.allUsers = data.users;
+            console.log("All users loaded:", state.allUsers);
+        } else {
+            throw new Error(data.message);
+        }
+    } catch (error) {
+        console.error("Error fetching all users:", error);
+        showError("No se pudieron cargar los usuarios del sistema.");
+    }
+}
+
+/**
+ * Escucha cambios en la colección de usuarios de Firestore.
+ * Esto es útil para actualizar la UI si los roles o departamentos de un usuario cambian en otro lugar.
+ */
+function listenForUsers() {
+    if (unsubscribeUsersListener) unsubscribeUsersListener();
+    
+    // Este listener es más simple, solo escucha la colección `users` de Firestore,
+    // ya que los cambios en Firebase Auth (crear/borrar usuario) no disparan eventos aquí.
+    // La lista principal se carga con fetchAllUsers que sí consulta Auth.
+    unsubscribeUsersListener = db.collection('users').onSnapshot(snapshot => {
+        const firestoreUsers = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+        // Actualizar la información de los usuarios en el estado `allUsers`
+        if (state.allUsers.length > 0) {
+            state.allUsers = state.allUsers.map(user => {
+                const firestoreUser = firestoreUsers.find(fsUser => fsUser.email.toLowerCase() === user.email.toLowerCase());
+                return { ...user, ...firestoreUser }; // Sobrescribe con los datos más recientes de Firestore
+            });
+        }
+        
+        // Si una vista que depende de los usuarios está activa, se podría re-renderizar.
+        // Por ejemplo, si el modal de departamentos está abierto.
+    }, error => {
+        console.error("Error escuchando cambios de usuarios:", error);
     });
 }
 
@@ -586,18 +636,18 @@ async function handleMarkAsUnread(event, contactId) {
         if (contactIndex > -1) {
             state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
             // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
-            state.contacts[contactIndex].lastMessageTimestamp = new Date(); 
+            state.contacts[contactIndex].lastMessageTimestamp = new Date();
             handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
         }
 
         // 2. Actualizar en Firestore
         // IMPORTANTE: Actualizamos lastMessageTimestamp para que el listener en otros dispositivos
         // (que filtra por fecha > carga) detecte este cambio y actualice la UI.
-        await db.collection('contacts_whatsapp').doc(contactId).update({ 
+        await db.collection('contacts_whatsapp').doc(contactId).update({
             unreadCount: 1,
             lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
         });
-        
+
         // Nota: Si el chat está actualmente abierto (seleccionado), permanecerá abierto pero la lista mostrará el badge.
         // Al hacer clic de nuevo en el chat de la lista o enviar un mensaje, se volverá a marcar como leído.
 
@@ -613,6 +663,27 @@ async function handleMarkAsUnread(event, contactId) {
     }
 }
 // --- END: Mark as Unread Logic ---
+// --- NUEVO: Obtener perfil de usuario ---
+async function fetchUserProfile(email) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/users/profile/${email}`);
+        if (!response.ok) {
+            if (response.status === 404) return null; // Usuario no encontrado
+            throw new Error('Error al obtener perfil de usuario');
+        }
+        const result = await response.json();
+        return result.user;
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        return null;
+    }
+}
 
 // Exportar la nueva función globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
+
+// --- Make functions globally accessible ---
+// Funciones que se llaman directamente desde el HTML (onclick)
+window.handleUpdateContact = handleUpdateContact;
+// ... (rest of exports)
+window.fetchUserProfile = fetchUserProfile; // Exportar nueva función
