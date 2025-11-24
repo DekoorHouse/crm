@@ -70,6 +70,7 @@ let state = {
     departments: [], // Lista de departamentos disponibles
     adRoutingRules: [], // Reglas de enrutamiento Ad ID -> Depto
     currentUserProfile: null, // Perfil del usuario actual (incluye assignedDepartments y role)
+    allUsers: [], // Lista de todos los usuarios del sistema
     activeDepartmentFilter: 'all' // Filtro de departamento activo en la lista de chats
 };
 
