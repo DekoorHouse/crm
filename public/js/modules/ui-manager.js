@@ -1840,14 +1840,37 @@ function openTransferModal(contactId) {
     const contactIdInput = document.getElementById('transfer-contact-id');
     const deptSelect = document.getElementById('transfer-dept-select');
 
-    if (!modal) return;
+    if (!modal || !contactIdInput || !deptSelect) return;
 
     contactIdInput.value = contactId;
 
-    // Poblar select
+    // Poblar select con círculo y data-color
     deptSelect.innerHTML = '<option value="">-- Seleccionar Departamento --</option>' + 
-        state.departments.map(dept => `<option value="${dept.id}">${dept.name}</option>`).join('');
+        state.departments.map(dept => 
+            `<option value="${dept.id}" data-color="${dept.color || '#d1d5db'}">
+                ● ${dept.name}
+            </option>`
+        ).join('');
     
+    // Función para actualizar el color del select
+    const updateSelectColor = () => {
+        const selectedOption = deptSelect.options[deptSelect.selectedIndex];
+        const color = selectedOption.dataset.color || '#f9fafb'; // bg-gray-50
+        const isPlaceholder = !selectedOption.value;
+
+        deptSelect.style.backgroundColor = isPlaceholder ? '' : color + '20'; // Color con opacidad alfa
+        deptSelect.style.borderColor = isPlaceholder ? '' : color;
+        deptSelect.style.color = isPlaceholder ? '' : color;
+        deptSelect.style.fontWeight = isPlaceholder ? '' : '600';
+    };
+
+    // Añadir listener para el evento 'change'
+    deptSelect.onchange = updateSelectColor;
+    
+    // Resetear color al abrir
+    deptSelect.value = '';
+    updateSelectColor(); // Llamar una vez para establecer el estado inicial
+
     modal.classList.remove('hidden');
 }
 
