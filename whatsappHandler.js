@@ -774,4 +774,30 @@ router.get("/wa/media/:mediaId", async (req, res) => {
             // Standard response (200 OK)
             console.log(`[PROXY] Respondiendo con ${status} OK.`);
             res.setHeader("Content-Type", headers["content-type"]);
-            res.setHeader("Content-Length", headers["c
+            res.setHeader("Content-Length", headers["content-length"]);
+            res.setHeader("Accept-Ranges", "bytes"); // Always indicate range support
+        }
+
+        // Pipe the stream from Meta's response to the client's response
+        mediaResponse.data.pipe(res);
+
+    } catch (err) {
+        // --- Error Handling ---
+        if (err.response) {
+            // Error from Meta API
+            console.error("ERROR EN PROXY DE MEDIOS (Respuesta del servidor):", err.response.status, err.response.data);
+            res.status(err.response.status).json({ error: "No se pudo obtener el medio desde el origen.", details: err.response.data });
+        } else if (err.request) {
+            // Request made but no response received
+            console.error("ERROR EN PROXY DE MEDIOS (Sin respuesta):", err.request);
+            res.status(504).json({ error: "No se recibió respuesta del servidor de medios." });
+        } else {
+            // Setup error
+            console.error("ERROR EN PROXY DE MEDIOS (Configuración):", err.message);
+            res.status(500).json({ error: "Error al configurar la solicitud del medio." });
+        }
+    }
+});
+
+
+module.exports = { router };
