@@ -681,9 +681,4 @@ async function fetchUserProfile(email) {
 
 // Exportar la nueva función globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
-
-// --- Make functions globally accessible ---
-// Funciones que se llaman directamente desde el HTML (onclick)
-window.handleUpdateContact = handleUpdateContact;
-// ... (rest of exports)
-window.fetchUserProfile = fetchUserProfile; // Exportar nueva función
+window.fetchUserProfile = fetchUserProfile;
