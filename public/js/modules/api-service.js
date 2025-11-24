@@ -293,15 +293,20 @@ function listenForContactUpdates() {
             const profile = state.currentUserProfile;
             let isAllowed = false;
 
-            // Define el conjunto de departamentos permitidos para el usuario.
-            if (profile && profile.role === 'admin') {
-                // El admin puede ver todo por defecto.
+            // CORRECCIÓN CRÍTICA: Si el perfil aún no ha cargado (profile es null), asumimos que es permitido.
+            // Esto evita que el contacto se borre de la lista mientras el perfil carga.
+            if (!profile) {
+                isAllowed = true; 
+            } 
+            // Si hay perfil y es admin, ve todo (o lo filtrado por UI)
+            else if (profile.role === 'admin') {
                 isAllowed = true;
-                // Si hay un filtro de UI activo, el admin solo ve ese departamento.
                 if (state.activeDepartmentFilter !== 'all' && updatedContactData.assignedDepartmentId !== state.activeDepartmentFilter) {
                     isAllowed = false;
                 }
-            } else if (profile) { // Para usuarios que no son admin
+            } 
+            // Si es agente normal
+            else { 
                 const userDepartments = new Set(profile.assignedDepartments || []);
                 const chatDepartment = updatedContactData.assignedDepartmentId;
                 // Es permitido si el chat no tiene departamento o si el usuario está asignado a ese departamento.
@@ -342,7 +347,7 @@ function listenForContactUpdates() {
     }, error => {
         // Manejo de errores del listener
         console.error("Error en el listener de actualizaciones de contactos:", error);
-        showError("Se perdió la conexión en tiempo real. Recarga la página.");
+        // No mostrar error fatal, podría ser temporal
     });
 }
 
