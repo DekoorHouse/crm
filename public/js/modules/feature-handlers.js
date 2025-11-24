@@ -1292,6 +1292,12 @@ async function handleSaveDepartment(event) {
         return;
     }
 
+    // Obtener los emails de los usuarios seleccionados
+    const selectedUsers = Array.from(document.querySelectorAll('#department-users-container input[type="checkbox"]:checked'))
+                                .map(cb => cb.value);
+
+    const data = { name, color, users: selectedUsers };
+
     const method = id ? 'PUT' : 'POST';
     const url = id ? `${API_BASE_URL}/api/departments/${id}` : `${API_BASE_URL}/api/departments`;
 
@@ -1299,9 +1305,12 @@ async function handleSaveDepartment(event) {
         const response = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ name, color })
+            body: JSON.stringify(data)
         });
-        if (!response.ok) throw new Error("Error al guardar departamento.");
+        if (!response.ok) {
+             const errorData = await response.json();
+             throw new Error(errorData.message || "Error al guardar departamento.");
+        }
         
         closeDepartmentModal();
         showError("Departamento guardado correctamente.", "success");
