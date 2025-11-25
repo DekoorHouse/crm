@@ -78,6 +78,12 @@ function stopApp() {
  * ser configurados una vez, como el formulario de login.
  */
 document.addEventListener('DOMContentLoaded', () => {
+    // --- INICIO DE MODIFICACIÓN: Inicializar Tema ---
+    if (window.initTheme) {
+        window.initTheme();
+    }
+    // --- FIN DE MODIFICACIÓN ---
+
     setupAuthEventListeners();
 
     // --- INICIO DE LA SOLUCIÓN ---
