@@ -62,7 +62,13 @@
                 <button id="tag-sidebar-toggle" onclick="toggleTagSidebar()" class="text-xl text-gray-600 hover:text-primary mr-4"><i class="fas fa-bars"></i></button>
                 <h1 class="text-2xl font-bold"><i class="fab fa-whatsapp text-green-500"></i> Dekoor</h1>
              </div>
-             <div id="user-info" class="text-sm text-gray-600"></div>
+             <!-- Botón Dark Mode añadido aquí -->
+             <div class="flex items-center gap-4">
+                 <button onclick="toggleDarkMode()" class="text-gray-600 hover:text-primary transition-colors p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="Alternar Tema Oscuro">
+                    <i id="dark-mode-icon" class="fas fa-moon"></i>
+                 </button>
+                 <div id="user-info" class="text-sm text-gray-600 font-semibold"></div>
+             </div>
         </header>
         <div id="error-container" class="bg-yellow-200 text-yellow-800 p-3 text-center hidden">
             <p><strong><i class="fas fa-exclamation-triangle"></i> Aviso:</strong> <span id="error-message"></span></p>
