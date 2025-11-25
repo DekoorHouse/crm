@@ -1924,6 +1924,77 @@ function closeTransferModal() {
 
 // --- FIN NUEVAS FUNCIONES ---
 
+/**
+ * Establece la pestaña activa (ej. 'chat' o 'notas') y vuelve a renderizar la vista.
+ * @param {string} tabName - El nombre de la pestaña a activar.
+ */
+function setActiveTab(tabName) {
+    if (state.activeTab === tabName) return; // No hacer nada si ya está activa
+
+    state.activeTab = tabName;
+    renderChatWindow(); // Volver a renderizar para mostrar el contenido correcto
+}
+
+
+/**
+ * Alterna entre el modo de visualización y edición de una nota.
+ * @param {string} noteId - El ID de la nota a editar.
+ */
+function toggleEditNote(noteId) {
+    const noteElement = document.querySelector(`.note-item[data-id="${noteId}"]`);
+    if (!noteElement) return;
+
+    const displayContent = noteElement.querySelector('.note-display-content');
+    const editForm = noteElement.querySelector('.note-edit-form');
+
+    if (displayContent && editForm) {
+        displayContent.classList.toggle('hidden');
+        editForm.classList.toggle('hidden');
+    }
+}
+
+// --- NUEVO: Lógica de Tema Oscuro ---
+
+/**
+ * Alterna entre modo claro y oscuro, guardando la preferencia.
+ */
+function toggleDarkMode() {
+    document.body.classList.toggle('dark-mode');
+    const isDark = document.body.classList.contains('dark-mode');
+    localStorage.setItem('crm_theme', isDark ? 'dark' : 'light');
+    updateDarkModeIcon();
+}
+
+/**
+ * Actualiza el icono del botón de tema oscuro según el estado actual.
+ */
+function updateDarkModeIcon() {
+    const icon = document.getElementById('dark-mode-icon');
+    if (icon) {
+        const isDark = document.body.classList.contains('dark-mode');
+        icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+        // Opcional: Cambiar el título del botón padre si fuera necesario
+    }
+}
+
+/**
+ * Inicializa el tema al cargar la página.
+ */
+function initTheme() {
+    const savedTheme = localStorage.getItem('crm_theme');
+    // Si está guardado como 'dark', aplicar clase
+    if (savedTheme === 'dark') {
+        document.body.classList.add('dark-mode');
+    } else {
+        // Opcional: Respetar preferencia del sistema si no hay guardado
+        // if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        //     document.body.classList.add('dark-mode');
+        // }
+    }
+    updateDarkModeIcon();
+}
+
+// --- FIN NUEVO ---
 
 // --- Make functions globally accessible ---
 
@@ -1954,6 +2025,10 @@ window.closeConversationPreviewModal = closeConversationPreviewModal;
 window.openOrderEditModal = openOrderEditModal; 
 window.closeOrderEditModal = closeOrderEditModal; 
 
+// --- EXPORTAR NUEVAS FUNCIONES DE TEMA ---
+window.toggleDarkMode = toggleDarkMode;
+window.initTheme = initTheme;
+
 // --- EXPORTAR NUEVAS FUNCIONES ---
 window.openDepartmentModal = openDepartmentModal;
 window.closeDepartmentModal = closeDepartmentModal;
@@ -1962,35 +2037,6 @@ window.closeAdRoutingModal = closeAdRoutingModal;
 window.openTransferModal = openTransferModal;
 window.closeTransferModal = closeTransferModal;
 // ---------------------------------
-
-/**
- * Establece la pestaña activa (ej. 'chat' o 'notas') y vuelve a renderizar la vista.
- * @param {string} tabName - El nombre de la pestaña a activar.
- */
-function setActiveTab(tabName) {
-    if (state.activeTab === tabName) return; // No hacer nada si ya está activa
-
-    state.activeTab = tabName;
-    renderChatWindow(); // Volver a renderizar para mostrar el contenido correcto
-}
-
-
-/**
- * Alterna entre el modo de visualización y edición de una nota.
- * @param {string} noteId - El ID de la nota a editar.
- */
-function toggleEditNote(noteId) {
-    const noteElement = document.querySelector(`.note-item[data-id="${noteId}"]`);
-    if (!noteElement) return;
-
-    const displayContent = noteElement.querySelector('.note-display-content');
-    const editForm = noteElement.querySelector('.note-edit-form');
-
-    if (displayContent && editForm) {
-        displayContent.classList.toggle('hidden');
-        editForm.classList.toggle('hidden');
-    }
-}
 
 // --- Funciones del template que necesitan acceso global ---
 
