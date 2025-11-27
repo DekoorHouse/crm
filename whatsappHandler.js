@@ -1,1246 +1,828 @@
-// --- START: Event Handlers for the Chat View ---
+const express = require('express');
+const axios = require('axios');
+// SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
+const { db, admin, bucket } = require('./config');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendConversionEvent } = require('./services');
 
-// --- NUEVA LÓGICA DE BÚSQUEDA Y SCROLL ---
+const router = express.Router();
 
-// Variable y función "debounce" para no sobrecargar el servidor con búsquedas
-let searchTimeout;
-function debounceSearch(query) {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(() => {
-        searchContactsAPI(query);
-    }, 300); // Espera 300ms después de que el usuario deja de escribir
-}
+// --- CONSTANTES ---
+const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 
-// Nuevo manejador para el input de búsqueda que llama al debounce
-function handleSearchInput(event) {
-    const searchTerm = event.target.value;
-    const clearButton = document.getElementById('clear-search-btn');
-    if (clearButton) {
-        clearButton.classList.toggle('hidden', searchTerm.length === 0);
-    }
-    debounceSearch(searchTerm.trim());
-}
+// --- HORARIO Y MENSAJES AUTOMÁTICOS ---
+const BUSINESS_HOURS = { 1: [7, 19], 2: [7, 19], 3: [7, 19], 4: [7, 19], 5: [7, 19], 6: [7, 14] }; // Lunes a Sábado
+const TIMEZONE = 'America/Mexico_City';
+const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
+const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
-
-// CORREGIDO: Ahora aplica filtros de departamento y oculta el mensaje de "Cargando..."
-function handleSearchContacts() {
-    // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
-    let contactsToRender = state.contacts;
-    
-    const user = state.currentUserProfile; // Obtenido en auth.js al iniciar sesión
-    
-    // Aplicar filtro de seguridad si el usuario ya cargó y NO es admin
-    if (user && user.role !== 'admin') {
-        const userDepts = user.assignedDepartments || [];
-        
-        contactsToRender = contactsToRender.filter(contact => {
-            const deptId = contact.assignedDepartmentId;
-
-            // Regla 1: Si NO tiene ID de departamento, es visible para todos (es "Gris" nativo)
-            if (!deptId) {
-                return true;
-            }
-
-            // Regla 2: Si tiene ID, pero ese departamento YA NO EXISTE en el sistema,
-            // se considera huérfano ("Gris" visualmente) y debe ser visible para todos.
-            const deptExists = state.departments.some(d => d.id === deptId);
-            if (!deptExists) {
-                return true;
-            }
-            
-            // Regla 3: Si tiene un departamento válido y existente, el usuario debe pertenecer a él
-            return userDepts.includes(deptId);
-        });
-    }
-    // --- FIN DE LA MODIFICACIÓN ---
-
-    const contactsListEl = document.getElementById('contacts-list');
-    const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
-
-    if (contactsListEl) {
-        // Si no hay contactos para mostrar (después del filtro), mostrar mensaje vacío
-        if (contactsToRender.length === 0 && state.contacts.length > 0) {
-             contactsListEl.innerHTML = `<div class="p-8 text-center text-gray-400 italic text-sm flex flex-col items-center">
-                <i class="fas fa-inbox text-2xl mb-2 opacity-50"></i>
-                <span>No tienes chats asignados en tus departamentos.</span>
-             </div>`;
-        } else {
-             contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
-        }
-    }
-
-    // Ocultar el mensaje de "Cargando..." después de que la lista de contactos ha sido renderizada.
-    if (contactsLoadingEl) {
-        contactsLoadingEl.style.display = 'none';
-    }
-}
-
-// Nueva función que configura el scroll infinito y el drag & drop
-function setupChatListEventListeners() {
-    const contactsList = document.getElementById('contacts-list');
-    if (!contactsList) return;
-
-    // Lógica de Scroll Infinito
-    contactsList.addEventListener('scroll', () => {
-        const { scrollTop, scrollHeight, clientHeight } = contactsList;
-        // Si el scroll está cerca del final (a menos de 200px), carga más
-        if (scrollHeight - scrollTop - clientHeight < 200) {
-            fetchMoreContacts();
-        }
-    });
-    
-    // Lógica de Drag & Drop para archivos en el pie de página del chat
-    const chatFooter = document.querySelector('.chat-footer');
-    const footerOverlay = document.getElementById('drag-drop-overlay-footer');
-    
-    const searchInput = document.getElementById('search-contacts-input');
-    const clearSearchBtn = document.getElementById('clear-search-btn');
-
-    if (searchInput && clearSearchBtn) {
-        searchInput.addEventListener('input', handleSearchInput);
-        clearSearchBtn.addEventListener('click', () => {
-            searchInput.value = '';
-            searchInput.dispatchEvent(new Event('input')); 
-            searchInput.focus();
+/**
+ * Downloads media from Meta's temporary URL and uploads it to Firebase Storage.
+ * @param {string} mediaId The WhatsApp media ID.
+ * @param {string} from The sender's phone number, used for storage organization.
+ * @returns {Promise<{publicUrl: string, mimeType: string}>} A promise resolving with the public URL and mime type.
+ */
+async function downloadAndUploadMedia(mediaId, from) {
+    try {
+        console.log(`[MEDIA] Iniciando descarga para mediaId: ${mediaId}`);
+        // 1. Get temporary URL from Meta
+        const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
 
-        clearSearchBtn.classList.toggle('hidden', searchInput.value.length === 0);
-    }
-
-    if (!chatFooter || !footerOverlay) return;
-
-    const showOverlay = () => footerOverlay.classList.remove('hidden');
-    const hideOverlay = () => footerOverlay.classList.add('hidden');
-
-    // Usar un contador para manejar dragenter/dragleave sobre elementos hijos
-    let dragCounter = 0;
-
-    chatFooter.addEventListener('dragenter', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.dataTransfer.types.includes('Files')) {
-            dragCounter++;
-            showOverlay();
+        const mediaUrl = metaUrlResponse.data?.url;
+        if (!mediaUrl) {
+            throw new Error(`No se pudo obtener la URL del medio para el ID: ${mediaId}`);
         }
-    });
+        const mimeType = metaUrlResponse.data?.mime_type || 'application/octet-stream';
+        const fileExtension = mimeType.split('/')[1] || 'bin';
 
-    chatFooter.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-    });
+        // 2. Download file stream from Meta
+        const mediaResponse = await axios.get(mediaUrl, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: "stream",
+        });
 
-    chatFooter.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter--;
-        if (dragCounter === 0) {
-            hideOverlay();
-        }
-    });
+        // 3. Upload stream to Firebase Storage
+        const filePath = `whatsapp_media/${from}/${mediaId}.${fileExtension}`;
+        const file = bucket.file(filePath);
+        const stream = file.createWriteStream({
+            metadata: {
+                contentType: mimeType,
+            },
+        });
 
-    chatFooter.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter = 0;
-        hideOverlay();
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            stageFile(files[0]);
-        }
-    });
-}
-
-
-// --- LÓGICA DE CHAT EXISTENTE (CON LIGEROS CAMBIOS) ---
-
-// MODIFICADO: Aceptar opciones (como preserveScroll) para pasarlas a renderMessages
-function renderChatWindow(options = {}) { 
-    if (state.activeView !== 'chats') return;
-    
-    const chatPanelEl = document.getElementById('chat-panel');
-    if (!chatPanelEl) return;
-
-    const contact = state.contacts.find(c => c.id === state.selectedContactId); 
-    chatPanelEl.innerHTML = ChatWindowTemplate(contact); 
-
-    const searchInput = document.getElementById('search-contacts-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', handleSearchInput);
-    }
-    
-    if (contact) { 
-        const statusWrapper = document.getElementById('contact-status-wrapper');
-        if (statusWrapper) { statusWrapper.innerHTML = StatusButtonsTemplate(contact); }
-        if (state.activeTab === 'chat') {
-            // MODIFICADO: Pasar las opciones a renderMessages para que maneje el scroll correctamente
-            renderMessages(options);
-            
-            const messagesContainer = document.getElementById('messages-container'); 
-            if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
-            
-            // --- INICIO DE LA MODIFICACIÓN: Doble clic en el área del mensaje para responder ---
-            const messagesContent = document.getElementById('messages-content');
-            if (messagesContent) {
-                messagesContent.addEventListener('dblclick', (e) => { // Cambiado a 'dblclick'
-                    // Buscamos si el clic fue dentro de un grupo de mensajes (la fila entera)
-                    const group = e.target.closest('.message-group');
-                    if (!group) return;
-
-                    // Si el clic fue DENTRO de la burbuja del mensaje o sus acciones, no hacemos nada
-                    // (dejamos que sus propios eventos actúen, ej: copiar texto, ver imagen, etc.)
-                    if (e.target.closest('.message-bubble')) return;
-
-                    // Si llegamos aquí, el clic fue en el espacio vacío al lado de la burbuja
-                    const messageDocId = group.dataset.docId;
-                    if (messageDocId) {
-                        // --- Corrección para evitar selección de texto ---
-                        e.preventDefault();
-                        if (window.getSelection) {
-                            window.getSelection().removeAllRanges();
-                        } else if (document.selection) {
-                            document.selection.empty();
-                        }
-                        // -----------------------------------------------
-                        
-                        handleStartReply(e, messageDocId);
-                    }
+        return new Promise((resolve, reject) => {
+            mediaResponse.data.pipe(stream)
+                .on('finish', async () => {
+                    console.log(`[MEDIA] Archivo ${filePath} subido a Firebase Storage.`);
+                    await file.makePublic();
+                    const publicUrl = file.publicUrl();
+                    console.log(`[MEDIA] URL pública generada: ${publicUrl}`);
+                    resolve({ publicUrl, mimeType });
+                })
+                .on('error', (error) => {
+                    console.error(`[MEDIA] Error al subir el archivo a Firebase Storage:`, error);
+                    reject(error);
                 });
-            }
-            // --- FIN DE LA MODIFICACIÓN ---
+        });
 
-            const messageForm = document.getElementById('message-form');
-            const messageInput = document.getElementById('message-input'); 
-            if (messageForm) messageForm.addEventListener('submit', handleSendMessage); 
-            if (messageInput) { 
-                messageInput.addEventListener('paste', handlePaste); 
-                messageInput.addEventListener('input', handleQuickReplyInput);
-                messageInput.addEventListener('keydown', handleMessageInputKeyDown);
-                
-                messageInput.addEventListener('input', () => {
-                    messageInput.style.height = 'auto';
-                    let newHeight = messageInput.scrollHeight;
-                    if (newHeight > 120) {
-                        newHeight = 120;
-                    }
-                    messageInput.style.height = newHeight + 'px';
-                });
-
-                messageInput.focus(); 
-            } 
-            
-        } else if (state.activeTab === 'notes') {
-            renderNotes();
-            document.getElementById('note-form').addEventListener('submit', handleSaveNote);
-        }
-        setupDragAndDropForChatArea(); // Llamada a la nueva función
-    } 
+    } catch (error) {
+        console.error(`[MEDIA] Falló el proceso de descarga y subida para mediaId ${mediaId}:`, error.response ? error.response.data : error.message);
+        throw error;
+    }
 }
 
 /**
- * Configura los listeners de drag and drop para toda el área del chat.
+ * Sends queued messages for a contact.
+ * @param {string} contactId The contact's ID (phone number).
+ * @returns {Promise<boolean>} True if messages were processed, false otherwise.
  */
-function setupDragAndDropForChatArea() {
-    const chatPanel = document.getElementById('chat-panel');
-    const chatOverlay = document.getElementById('drag-drop-overlay-chat');
+async function sendQueuedMessages(contactId) {
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    const queuedMessagesQuery = contactRef.collection('messages')
+        .where('status', '==', 'queued')
+        .orderBy('timestamp', 'asc');
 
-    if (!chatPanel || !chatOverlay) return;
-    
-    let dragCounter = 0;
-
-    const showOverlay = () => chatOverlay.classList.remove('hidden');
-    const hideOverlay = () => chatOverlay.classList.add('hidden');
-
-    chatPanel.addEventListener('dragenter', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        // Solo mostrar overlay si se arrastran archivos
-        if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
-            dragCounter++;
-            showOverlay();
+    try {
+        const snapshot = await queuedMessagesQuery.get();
+        if (snapshot.empty) {
+            return false;
         }
-    });
 
-    chatPanel.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-    });
+        console.log(`[QUEUE] Se encontraron ${snapshot.docs.length} mensajes en cola para ${contactId}. Enviando...`);
 
-    chatPanel.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter--;
-        if (dragCounter === 0) {
-            hideOverlay();
-        }
-    });
+        const batch = db.batch();
+        let lastMessageText = '';
 
-    chatPanel.addEventListener('drop', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        dragCounter = 0;
-        hideOverlay();
-        
-        const files = e.dataTransfer.files;
-        if (files && files.length > 0) {
-            // Solo adjuntar si el input no está deshabilitado (sesión de chat activa)
-            const messageInput = document.getElementById('message-input');
-            if (messageInput && !messageInput.disabled) {
-                stageFile(files[0]); // Usar la función existente para manejar el archivo
+        for (const doc of snapshot.docs) {
+            const queuedMessage = doc.data();
+
+            if (!queuedMessage.text && !queuedMessage.fileUrl) {
+                console.warn(`[QUEUE] Omitiendo mensaje en cola vacío: ${doc.id}`);
+                batch.update(doc.ref, { status: 'failed', error: 'Contenido del mensaje vacío' });
+                continue;
             }
-        }
-    });
-}
 
-async function handleSelectContact(contactId) { 
-    if (state.campaignMode) return;
-    
-    cancelStagedFile(); 
-    cancelReply();
-
-    // Desuscribirse de los listeners del contacto anterior
-    if (unsubscribeMessagesListener) unsubscribeMessagesListener(); 
-    if (unsubscribeNotesListener) unsubscribeNotesListener();
-    if (unsubscribeOrdersListener) {
-        unsubscribeOrdersListener();
-        unsubscribeOrdersListener = null;
-    }
-
-    // Actualizamos el contador de no leídos localmente para una respuesta de UI más rápida
-    const contactIdx = state.contacts.findIndex(c => c.id === contactId);
-    if (contactIdx > -1) {
-        state.contacts[contactIdx].unreadCount = 0;
-    }
-    
-    // La actualización en la base de datos sigue siendo importante
-    db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err)); 
-    
-    state.selectedContactId = contactId; 
-    state.loadingMessages = true; 
-    state.activeTab = 'chat';
-    state.isEditingNote = null;
-    
-    // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
-    handleSearchContacts(); 
-    
-    let isInitialMessageLoad = true;
-    unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
-        .onSnapshot((snapshot) => {
-            hideError();
-            const newMessages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
-
-            if (isInitialMessageLoad) {
-                state.messages = newMessages;
-                state.loadingMessages = false;
-                isInitialMessageLoad = false;
-            } else {
-                snapshot.docChanges().forEach((change) => {
-                    const changedMessage = { docId: change.doc.id, ...change.doc.data() };
-                    const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
-
-                    if (change.type === "added") {
-                        if (existingIndex === -1) {
-                            // --- INICIO CORRECCIÓN: EVITAR DUPLICADOS VISUALES ---
-                            // Si el mensaje es saliente (nuestro)
-                            if (changedMessage.from !== contactId) {
-                                // Buscar si existe un mensaje temporal (optimista) con el mismo texto
-                                const tempIndex = state.messages.findIndex(m => 
-                                    m.docId.startsWith('temp_') && 
-                                    m.text === changedMessage.text
-                                );
-                                
-                                // Si existe, eliminar el temporal antes de agregar el real
-                                if (tempIndex > -1) {
-                                    state.messages.splice(tempIndex, 1);
-                                }
-                            }
-                            // --- FIN CORRECCIÓN ---
-                            state.messages.push(changedMessage);
-                        }
-                    } else if (change.type === "modified") {
-                        if (existingIndex > -1) {
-                            state.messages[existingIndex] = changedMessage;
-                        }
-                    } else if (change.type === "removed") {
-                        if (existingIndex > -1) {
-                            state.messages.splice(existingIndex, 1);
-                        }
-                    }
+            try {
+                // Use the shared send function
+                const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, {
+                    text: queuedMessage.text,
+                    fileUrl: queuedMessage.fileUrl,
+                    fileType: queuedMessage.fileType,
+                    reply_to_wamid: queuedMessage.context?.id
                 });
+
+                batch.update(doc.ref, {
+                    status: 'sent',
+                    id: sentMessageData.id,
+                    timestamp: admin.firestore.FieldValue.serverTimestamp() // Update timestamp to when it was actually sent
+                });
+                lastMessageText = sentMessageData.textForDb; // Track last successfully sent message text
+            } catch (sendError) {
+                console.error(`[QUEUE] Falló el envío del mensaje ${doc.id} para ${contactId}:`, sendError.message);
+                batch.update(doc.ref, { status: 'failed', error: sendError.message });
             }
 
-            // Recalcular el estado de la sesión cada vez que llegan mensajes
-            const lastUserMessage = newMessages.slice().reverse().find(m => m.from === contactId);
-            if (lastUserMessage && lastUserMessage.timestamp) {
-                const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
-                state.isSessionExpired = hoursDiff > 24;
-            } else {
-                state.isSessionExpired = newMessages.length > 0; // Si hay mensajes pero ninguno del usuario, la sesión está expirada
-            }
-
-            if (state.activeTab === 'chat') {
-                renderMessages();
-            }
-
-        }, (error) => {
-            console.error(error);
-            showError(`Error al cargar mensajes.`);
-            state.loadingMessages = false;
-            state.messages = [];
-            if (state.activeTab === 'chat') renderMessages();
-        });
-    
-    unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
-    
-    renderChatWindow();
-    
-    openContactDetails();
-}
-
-async function handleSendMessage(event) {
-    event.preventDefault();
-    const input = document.getElementById('message-input');
-    let text = input.value.trim();
-    
-    // --- CORRECCIÓN: Capturar el ID del contacto y el contexto de respuesta ACTUAL ---
-    const currentContactId = state.selectedContactId;
-    const currentReplyingTo = state.replyingToMessage;
-    
-    const contact = state.contacts.find(c => c.id === currentContactId);
-    if (!contact || state.isUploading) return;
-
-    const fileToSend = state.stagedFile;
-    const remoteFileToSend = state.stagedRemoteFile;
-
-    if (!text && !fileToSend && !remoteFileToSend) return;
-
-    const isExpired = state.isSessionExpired;
-    const endpoint = isExpired ? 'queue-message' : 'messages';
-    
-    const tempId = `temp_${Date.now()}`;
-
-    // --- MEJORA: Definir el texto del mensaje temporal para que coincida con el backend ---
-    // Esto asegura que la lógica de anti-duplicados funcione correctamente.
-    let messageText = text;
-    if (!messageText) {
-        if (fileToSend) {
-             const type = fileToSend.type;
-             if (type.startsWith('image/')) messageText = '📷 Imagen';
-             else if (type.startsWith('video/')) messageText = '🎥 Video';
-             else if (type.startsWith('audio/')) messageText = '🎵 Audio';
-             else messageText = '📄 Documento';
-        } else if (remoteFileToSend) {
-             const type = remoteFileToSend.type;
-             if (type.startsWith('image/')) messageText = '📷 Imagen';
-             else if (type.startsWith('video/')) messageText = '🎥 Video';
-             else if (type.startsWith('audio/')) messageText = '🎵 Audio';
-             else messageText = '📄 Documento';
+            // Small delay between messages to avoid rate limiting
+            await new Promise(resolve => setTimeout(resolve, 300));
         }
-    }
 
-    const pendingMessage = {
-        docId: tempId,
-        from: 'me',
-        status: isExpired ? 'queued' : 'pending',
-        timestamp: { seconds: Math.floor(Date.now() / 1000) },
-        text: messageText,
-    };
-
-    // --- MEJORA: Agregar URL de previsualización para archivos ---
-    // Esto hace que la foto se muestre de inmediato en lugar de "📷 Adjunto"
-    if (fileToSend) {
-        pendingMessage.fileUrl = URL.createObjectURL(fileToSend);
-        pendingMessage.fileType = fileToSend.type;
-    } else if (remoteFileToSend) {
-        pendingMessage.fileUrl = remoteFileToSend.url;
-        pendingMessage.fileType = remoteFileToSend.type;
-    }
-
-    // Solo agregar a la UI si seguimos viendo el mismo chat
-    if (state.selectedContactId === currentContactId) {
-        state.messages.push(pendingMessage);
-        appendMessage(pendingMessage);
-    }
-
-    input.value = '';
-    input.style.height = 'auto';
-    cancelStagedFile();
-
-    try {
-        if (fileToSend) {
-            // Pasamos el ID capturado y el contexto de respuesta capturado
-            const response = await uploadAndSendFile(fileToSend, text, isExpired, currentContactId, currentReplyingTo);
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
-            }
-        } else {
-            if (!isExpired) {
-                await db.collection('contacts_whatsapp').doc(currentContactId).update({ unreadCount: 0 });
-            }
-            const messageData = { text, tempId };
-            if (remoteFileToSend) {
-                messageData.fileUrl = remoteFileToSend.url;
-                messageData.fileType = remoteFileToSend.type;
-            }
-            if (currentReplyingTo) {
-                messageData.reply_to_wamid = currentReplyingTo.id;
-            }
-            // Usar currentContactId en la URL
-            const response = await fetch(`${API_BASE_URL}/api/contacts/${currentContactId}/${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(messageData)
+        // Update contact's last message only if at least one message was sent successfully
+        if (lastMessageText) {
+            batch.update(contactRef, {
+                lastMessage: lastMessageText,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
             });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
-            }
         }
-        // Cancelar respuesta solo si seguimos en el mismo chat
-        if (state.selectedContactId === currentContactId) {
-            cancelReply();
-        }
+
+        await batch.commit();
+        console.log(`[QUEUE] Cola de mensajes para ${contactId} procesada.`);
+        return true; // Indicates queue processing happened
+
     } catch (error) {
-        console.error("Error en el proceso de envío:", error);
-        showError(error.message);
-        
-        // Actualizar estado de error solo si seguimos en el chat o lo encontramos
-        if (state.selectedContactId === currentContactId) {
-            const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
-            if (failedMessageIndex > -1) {
-                state.messages[failedMessageIndex].status = 'failed';
-                renderMessages();
+        console.error(`[QUEUE] Error crítico al procesar la cola de mensajes para ${contactId}:`, error);
+        return false;
+    }
+}
+
+/**
+ * Handles pending contingent sends for a contact.
+ * @param {string} contactId The contact's ID.
+ * @returns {Promise<boolean>} True if a contingent send was handled, false otherwise.
+ */
+async function handleContingentSend(contactId) {
+    const contingentQuery = db.collection('contingentSends')
+        .where('contactId', '==', contactId)
+        .where('status', '==', 'pending')
+        .limit(1);
+
+    const snapshot = await contingentQuery.get();
+    if (snapshot.empty) {
+        return false; // No pending sends for this contact
+    }
+
+    const contingentDoc = snapshot.docs[0];
+    const contingentData = contingentDoc.data();
+    const { payload } = contingentData;
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+
+    console.log(`[CONTINGENT] Envío pendiente encontrado para ${contactId}. Ejecutando ahora.`);
+
+    try {
+        let lastMessageText = '';
+
+        // 1. Send the message sequence (if any)
+        if (payload.messageSequence && payload.messageSequence.length > 0) {
+            for (const qr of payload.messageSequence) {
+                const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: qr.message, fileUrl: qr.fileUrl, fileType: qr.fileType });
+
+                // Save sent message to Firestore
+                const messageToSave = {
+                    from: PHONE_NUMBER_ID,
+                    status: 'sent',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentMessageData.id,
+                    text: sentMessageData.textForDb,
+                    fileUrl: sentMessageData.fileUrlForDb,
+                    fileType: sentMessageData.fileTypeForDb,
+                    isAutoReply: true // Mark as automatic
+                };
+                // Remove null/undefined fields before saving
+                Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
+                await contactRef.collection('messages').add(messageToSave);
+                lastMessageText = sentMessageData.textForDb; // Update last message text
+
+                await new Promise(resolve => setTimeout(resolve, 500)); // Delay between messages
             }
-            if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
+        }
+
+        // 2. Send the main photo
+        const sentPhotoData = await sendAdvancedWhatsAppMessage(contactId, {
+            text: null, // No caption needed here, sequence handled above
+            fileUrl: payload.photoUrl,
+            fileType: 'image/jpeg' // Assume JPEG, adjust if needed
+        });
+
+        // Save sent photo message to Firestore
+        const photoMessageToSave = {
+            from: PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentPhotoData.id,
+            text: sentPhotoData.textForDb, // Will be '📷 Imagen'
+            fileUrl: sentPhotoData.fileUrlForDb,
+            fileType: sentPhotoData.fileTypeForDb,
+            isAutoReply: true
+        };
+        await contactRef.collection('messages').add(photoMessageToSave);
+        lastMessageText = sentPhotoData.textForDb;
+
+        // 3. Mark contingent send as completed
+        await contingentDoc.ref.update({ status: 'completed', completedAt: admin.firestore.FieldValue.serverTimestamp() });
+
+        // 4. Update contact's last message
+        await contactRef.update({
+            lastMessage: lastMessageText,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        console.log(`[CONTINGENT] Envío pendiente para ${contactId} completado exitosamente.`);
+        return true; // Indicates contingent send was handled
+
+    } catch (error) {
+        console.error(`[CONTINGENT] Error al ejecutar el envío pendiente para ${contactId}:`, error);
+        // Mark as failed to prevent retries
+        await contingentDoc.ref.update({ status: 'failed', error: error.message });
+        return false;
+    }
+}
+
+/**
+ * Checks if the current time is within defined business hours.
+ * @returns {boolean} True if within business hours, false otherwise.
+ */
+function isWithinBusinessHours() {
+    try {
+        const now = new Date(new Date().toLocaleString('en-US', { timeZone: TIMEZONE }));
+        const day = now.getDay(); // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+        const hour = now.getHours();
+
+        const hoursToday = BUSINESS_HOURS[day];
+        if (!hoursToday) return false; // Not open on this day
+
+        const [startHour, endHour] = hoursToday;
+        return hour >= startHour && hour < endHour;
+    } catch (error) {
+        console.error("Error checking business hours:", error);
+        return true; // Default to 'open' if time zone check fails
+    }
+}
+
+/**
+ * Sends an automated message (welcome, away, ad response, etc.) and saves it.
+ * @param {FirebaseFirestore.DocumentReference} contactRef Reference to the contact document.
+ * @param {object} messageContent Content of the message { text, fileUrl, fileType }.
+ */
+async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
+    try {
+        // Use the shared send function
+        const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
+
+        // Save the sent message to Firestore
+        await contactRef.collection('messages').add({
+            from: PHONE_NUMBER_ID, // Mark as sent from the business
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentMessageData.id,
+            text: sentMessageData.textForDb,
+            fileUrl: sentMessageData.fileUrlForDb, // Save URL if media was sent
+            fileType: sentMessageData.fileTypeForDb, // Save type if media was sent
+            isAutoReply: true // Mark as automatic
+        });
+
+        // Update the contact's last message preview
+        await contactRef.update({
+            lastMessage: sentMessageData.textForDb,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            // Do not reset unreadCount here, user hasn't seen it yet
+        });
+        console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
+    } catch (error) {
+        console.error(`❌ Fallo al enviar mensaje automático a ${contactRef.id}:`, error.message);
+        // Optionally, save a failed message attempt to Firestore for tracking
+    }
+}
+
+/**
+ * Checks for postal code in message and sends coverage response if found.
+ * @param {object} message The incoming message object.
+ * @param {FirebaseFirestore.DocumentReference} contactRef Reference to the contact document.
+ * @param {string} from Sender's phone number.
+ * @returns {Promise<boolean>} True if postal code was handled, false otherwise.
+ */
+async function handlePostalCodeAuto(message, contactRef, from) {
+    if (message.type !== 'text') return false; // Only check text messages
+
+    // Regex to find "cp", "código postal", "codigo postal" followed by 5 digits, or just 5 digits
+    const postalCodeRegex = /(?:cp|código postal|codigo postal|cp:)\s*(\d{5})|(\d{5})/i;
+    const match = message.text.body.match(postalCodeRegex);
+    const postalCode = match ? (match[1] || match[2]) : null; // Extract the 5 digits
+
+    if (postalCode) {
+        console.log(`[CP] Código postal detectado: ${postalCode} para ${from}.`);
+        try {
+            const coverageResponse = await checkCoverage(postalCode);
+            if (coverageResponse) {
+                await sendAutoMessage(contactRef, { text: coverageResponse });
+                return true; // Indicate that postal code was handled
+            }
+        } catch (error) {
+            console.error(`❌ Fallo al procesar CP para ${from}:`, error.message);
+            // Don't automatically reply if the coverage check itself failed
         }
     }
+    return false; // No postal code found or handled
 }
 
-async function handleSaveNote(event) {
-    event.preventDefault();
-    const input = document.getElementById('note-input');
-    const text = input.value.trim();
-    if (!text || !state.selectedContactId) return;
-    
-    input.disabled = true;
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
-        if (!response.ok) { const errorData = await response.json(); throw new Error(errorData.message || 'Error del servidor'); }
-        input.value = '';
-    } catch (error) { console.error('Error al guardar la nota:', error); showError(error.message); } finally { input.disabled = false; }
-}
+// --- WEBHOOK ENDPOINTS ---
 
-async function handleUpdateNote(noteId) {
-    const input = document.getElementById(`edit-note-input-${noteId}`);
-    const newText = input.value.trim();
-    if (!newText || !state.selectedContactId) return;
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes/${noteId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: newText }) });
-        if (!response.ok) throw new Error('No se pudo actualizar la nota.');
-        toggleEditNote(null);
-    } catch (error) { showError(error.message); }
-}
+// Verification endpoint
+router.get('/', (req, res) => {
+    const mode = req.query['hub.mode'];
+    const token = req.query['hub.verify_token'];
+    const challenge = req.query['hub.challenge'];
 
-async function handleDeleteNote(noteId) {
-    if (!window.confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/notes/${noteId}`, { method: 'DELETE' });
-        if (!response.ok) throw new Error('No se pudo eliminar la nota.');
-    } catch (error) { showError(error.message); }
-}
-
-async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyingToMessage) { 
-    // Usar el contactId pasado o fallback al state (para compatibilidad), pero preferir el pasado
-    const targetContactId = contactId || state.selectedContactId;
-    if (!file || !targetContactId || state.isUploading) return;
-    
-    const progressEl = document.getElementById('upload-progress');
-    const submitButton = document.querySelector('#message-form button[type="submit"]');
-    state.isUploading = true;
-    
-    if (progressEl) {
-        progressEl.textContent = 'Subiendo 0%...';
-        progressEl.classList.remove('hidden');
+    if (mode && token && mode === 'subscribe' && token === VERIFY_TOKEN) {
+        console.log('WEBHOOK_VERIFIED');
+        res.status(200).send(challenge);
+    } else {
+        res.sendStatus(403);
     }
-    if(submitButton) submitButton.disabled = true;
-    
-    const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
-    const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`;
-    
-    const fileRef = storage.ref(filePath);
-    const uploadTask = fileRef.put(file);
-    return new Promise((resolve, reject) => {
-        uploadTask.on('state_changed', 
-            (snapshot) => { 
-                if (progressEl) {
-                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100; 
-                    progressEl.textContent = `Subiendo ${Math.round(progress)}%...`; 
+});
+
+// Message handling endpoint
+router.post('/', async (req, res) => {
+    try {
+        console.log('[WEBHOOK] Payload recibido:', JSON.stringify(req.body, null, 2)); // Log incoming payload
+
+        const entry = req.body.entry?.[0];
+        const change = entry?.changes?.[0];
+        const value = change?.value;
+
+        // Handle incoming messages
+        if (value && value.messages && value.contacts) {
+            const message = value.messages[0];
+            const contactInfo = value.contacts[0];
+            const from = message.from; // Sender's phone number
+            const contactRef = db.collection('contacts_whatsapp').doc(from);
+
+            // Ignore messages sent *by* the business number itself
+            if (from === PHONE_NUMBER_ID) {
+                console.log('[WEBHOOK] Mensaje saliente ignorado (enviado por el bot).');
+                return res.sendStatus(200);
+            }
+
+            // Handle reactions separately
+            if (message.type === 'reaction') {
+                const originalMessageId = message.reaction.message_id;
+                const reactionEmoji = message.reaction.emoji || null; // Null if reaction removed
+                console.log(`[REACTION] Recibida reacción '${reactionEmoji || 'eliminada'}' para mensaje ${originalMessageId} de ${from}`);
+                // Find the original message in Firestore and update its reaction field
+                const messagesQuery = await contactRef.collection('messages').where('id', '==', originalMessageId).limit(1).get();
+                if (!messagesQuery.empty) {
+                    await messagesQuery.docs[0].ref.update({
+                        reaction: reactionEmoji || admin.firestore.FieldValue.delete() // Store emoji or remove field if null
+                    });
+                    console.log(`[REACTION] Reacción actualizada en Firestore para ${originalMessageId}.`);
+                } else {
+                    console.warn(`[REACTION] Mensaje original ${originalMessageId} no encontrado para actualizar reacción.`);
                 }
-            }, 
-            (error) => { 
-                state.isUploading = false; 
-                if (progressEl) progressEl.classList.add('hidden'); 
-                if(submitButton) submitButton.disabled = false; 
-                reject(new Error("Falló la subida del archivo.")); 
-            }, 
-            async () => {
+                return res.sendStatus(200); // Acknowledge reaction webhook
+            }
+
+            // --- Build message data object for Firestore ---
+            const messageData = {
+                timestamp: admin.firestore.Timestamp.fromMillis(parseInt(message.timestamp) * 1000),
+                from: from, // Who sent the message
+                status: 'received', // Incoming messages are always 'received' initially
+                id: message.id, // WhatsApp Message ID (wamid)
+                type: message.type,
+                context: message.context || null, // For replies
+                // --- Store Ad ID if present ---
+                adId: message.referral?.source_id || null
+            };
+
+            // --- Process different message types ---
+            if (message.type === 'text') {
+                messageData.text = message.text.body;
+            } else if (message.type === 'image' && message.image?.id) {
                 try {
-                    const downloadURL = await uploadTask.snapshot.ref.getDownloadURL();
-                    const messageData = { 
-                        fileUrl: downloadURL, 
-                        fileType: file.type,
-                        text: textCaption 
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.image.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    console.log(`[IMAGE] Imagen ${message.image.id} guardada en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[IMAGE] FALLBACK: No se pudo guardar la imagen ${message.image.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.image.id}`; // Store proxy URL for frontend
+                    messageData.fileType = message.image.mime_type || 'image/jpeg';
+                }
+                messageData.text = message.image.caption || '📷 Imagen'; // Use caption or default text
+            } else if (message.type === 'video' && message.video?.id) {
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.video.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    console.log(`[VIDEO] Video ${message.video.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[VIDEO] FALLBACK: No se pudo guardar el video ${message.video.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.video.id}`;
+                    messageData.fileType = message.video.mime_type || 'video/mp4';
+                }
+                messageData.text = message.video.caption || '🎥 Video';
+            } else if (message.type === 'audio' && message.audio?.id) {
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.audio.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    console.log(`[AUDIO] Audio ${message.audio.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[AUDIO] FALLBACK: No se pudo guardar el audio ${message.audio.id} en Storage. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.audio.id}`;
+                    messageData.fileType = message.audio.mime_type || 'audio/ogg'; // Default to ogg
+                }
+                messageData.text = message.audio.voice ? "🎤 Mensaje de voz" : "🎵 Audio"; // Check if it's a voice note
+            } else if (message.type === 'document' && message.document?.id) {
+                try {
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.document.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType;
+                    messageData.document = { filename: message.document.filename }; // Store filename
+                    console.log(`[DOCUMENT] Documento ${message.document.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[DOCUMENT] FALLBACK: No se pudo guardar el documento ${message.document.id}. Usando proxy. Error: ${uploadError.message}`);
+                    messageData.mediaProxyUrl = `/api/wa/media/${message.document.id}`;
+                    messageData.fileType = message.document.mime_type || 'application/pdf'; // Default to pdf
+                    messageData.document = { filename: message.document.filename };
+                }
+                messageData.text = message.document.caption || message.document.filename || '📄 Documento';
+            } else if (message.type === 'sticker' && message.sticker?.id) {
+                 try {
+                    // Attempt to save sticker, but use fallback text if it fails
+                    const { publicUrl, mimeType } = await downloadAndUploadMedia(message.sticker.id, from);
+                    messageData.fileUrl = publicUrl;
+                    messageData.fileType = mimeType; // Usually image/webp
+                    messageData.text = 'Sticker';
+                    console.log(`[STICKER] Sticker ${message.sticker.id} guardado en Storage. URL: ${publicUrl}`);
+                } catch (uploadError) {
+                    console.error(`[STICKER] FALLBACK: No se pudo guardar el sticker ${message.sticker.id}. Error: ${uploadError.message}`);
+                    messageData.text = 'Mensaje multimedia (sticker)'; // Fallback text
+                }
+            } else if (message.type === 'location') {
+                messageData.location = message.location; // Store location object
+                messageData.text = `📍 Ubicación: ${message.location.name || 'Ver en mapa'}`;
+            } else if (message.type === 'button' && message.button) {
+                 messageData.text = message.button.text; // Text from the button clicked
+            } else if (message.type === 'interactive' && message.interactive) {
+                // Handle different interactive types if needed
+                if (message.interactive.type === 'button_reply') {
+                     messageData.text = message.interactive.button_reply.title; // Text from the button reply
+                } else if (message.interactive.type === 'list_reply') {
+                    messageData.text = message.interactive.list_reply.title; // Text from the list item selected
+                } else {
+                     messageData.text = `Respuesta interactiva (${message.interactive.type})`; // Generic text
+                }
+            } else {
+                console.warn(`[WEBHOOK] Tipo de mensaje no manejado completamente: ${message.type}. Payload:`, JSON.stringify(message));
+                messageData.text = `Mensaje multimedia (${message.type})`; // Generic fallback
+            }
+             // --- Remove null/undefined fields before saving ---
+            Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
+
+            // Save the message to the 'messages' subcollection of the contact
+            await contactRef.collection('messages').add(messageData);
+            console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
+
+            // --- Update contact document ---
+            const contactDoc = await contactRef.get();
+            const isNewContact = !contactDoc.exists;
+
+            const contactUpdateData = {
+                name: contactInfo.profile?.name || (contactDoc.exists ? contactDoc.data().name : from), // Use existing name if available
+                name_lowercase: (contactInfo.profile?.name || (contactDoc.exists ? contactDoc.data().name : from)).toLowerCase(),
+                wa_id: contactInfo.wa_id, // WhatsApp ID
+                lastMessage: messageData.text, // Preview text
+                lastMessageTimestamp: messageData.timestamp, // Use message timestamp
+                unreadCount: admin.firestore.FieldValue.increment(1) // Increment unread count
+            };
+
+            // Only add adReferral if it exists in the incoming message AND the contact doesn't already have it (first ad message)
+            if (message.referral && (!contactDoc.exists || !contactDoc.data().adReferral)) {
+                contactUpdateData.adReferral = message.referral;
+                console.log(`[AD] Información de Ad Referral guardada para ${from}. Ad ID: ${message.referral.source_id}`);
+            }
+
+            // Set or merge contact data
+            await contactRef.set(contactUpdateData, { merge: true });
+            console.log(`[LOG] Contacto ${from} actualizado/creado en Firestore.`);
+
+            // --- INICIO: ENRUTAMIENTO POR DEPARTAMENTO (AD ID) ---
+            // Verifica si el mensaje trae referral para asignar el departamento
+            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+                const adId = message.referral.source_id;
+                console.log(`[ROUTING] Verificando reglas para Ad ID: ${adId}`);
+                
+                // Buscar si existe una regla para este Ad ID
+                const ruleSnapshot = await db.collection('ad_routing_rules')
+                    .where('adIds', 'array-contains', adId)
+                    .limit(1)
+                    .get();
+
+                if (!ruleSnapshot.empty) {
+                    const ruleData = ruleSnapshot.docs[0].data();
+                    if (ruleData.targetDepartmentId) {
+                        // Asignar al departamento correspondiente
+                        await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
+                    }
+                } else {
+                     // Fallback: Si el anuncio no tiene regla, asignar a "General"
+                    console.log(`[ROUTING] No se encontraron reglas para Ad ID: ${adId}. Asignando a General.`);
+                    const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+                    if (!generalDeptQuery.empty) {
+                        const generalDeptId = generalDeptQuery.docs[0].id;
+                        await contactRef.update({ assignedDepartmentId: generalDeptId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento General por falta de regla específica.`);
+                    } else {
+                        console.warn(`[ROUTING] No se encontró el departamento "General" para la asignación de fallback.`);
+                    }
+                }
+            } else {
+                // Fallback: si el mensaje NO viene de un anuncio y el contacto aún no tiene departamento, se le asigna a "General"
+                const contactData = (await contactRef.get()).data();
+                if (!contactData.assignedDepartmentId) {
+                    console.log(`[ROUTING] Fallback: El contacto ${from} no tiene departamento. Asignando a General.`);
+                    const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+                    if (!generalDeptQuery.empty) {
+                        const generalDeptId = generalDeptQuery.docs[0].id;
+                        await contactRef.update({ assignedDepartmentId: generalDeptId });
+                        console.log(`[ROUTING] Contacto ${from} asignado al departamento General.`);
+                    } else {
+                        console.warn(`[ROUTING] No se encontró el departamento "General" para la asignación de fallback.`);
+                    }
+                }
+            }
+            // --- FIN: ENRUTAMIENTO POR DEPARTAMENTO ---
+
+            // --- INICIO: Enviar evento a Meta Ads si el mensaje proviene de un anuncio ---
+            if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+                console.log(`[META EVENT] Mensaje de Ad ${message.referral.source_id} detectado para ${from}.`);
+                try {
+                    // Construir la información del contacto para el evento
+                    const eventInfo = {
+                        wa_id: from, // 'from' es el wa_id
+                        profile: { name: contactInfo.profile?.name || from }
                     };
                     
-                    // Usar el contexto capturado si existe, si no, el del estado (riesgoso si cambió chat)
-                    const contextMsg = replyingToMessage !== undefined ? replyingToMessage : state.replyingToMessage;
-                    
-                    if (contextMsg) {
-                        messageData.reply_to_wamid = contextMsg.id;
-                    }
+                    // Enviar el evento "Lead" (o el evento estándar para una conversación iniciada)
+                    // Usamos "Lead" como un evento estándar de CAPI.
+                    // El usuario mencionó "conversación con mensajes iniciada", que es similar a "MessagedConversationStarted"
+                    // o "Lead". Usaremos "Lead".
+                    await sendConversionEvent('Lead', eventInfo, message.referral, {});
+                    console.log(`[META EVENT] Evento 'Lead' enviado a Meta CAPI para ${from}.`);
 
-                    const endpoint = isExpired ? 'queue-message' : 'messages';
-                    const response = await fetch(`${API_BASE_URL}/api/contacts/${targetContactId}/${endpoint}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(messageData) });
-                    resolve(response);
-                } catch (error) { 
-                    reject(error); 
-                } finally { 
-                    state.isUploading = false; 
-                    if (progressEl) progressEl.classList.add('hidden'); 
-                    if(submitButton) submitButton.disabled = false; 
+                } catch (eventError) {
+                    console.error(`[META EVENT] Error al enviar evento 'Lead' a Meta CAPI para ${from}:`, eventError.message);
+                    // No bloquear el resto del flujo, solo registrar el error
                 }
             }
-        );
-    });
-}
+            // --- FIN: Enviar evento a Meta Ads ---
 
-function handleStatusChange(contactId, newStatusKey) {
-    const id = contactId || state.selectedContactId;
-    if (!id) return;
+            // Get potentially updated contact data for automation logic
+            const updatedContactData = (await contactRef.get()).data();
 
-    const contact = state.contacts.find(c => c.id === id);
-    if (!contact) return;
+            // --- Automation Logic ---
 
-    const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
-
-    db.collection('contacts_whatsapp').doc(id).update({ status: finalStatus }).catch(err => {
-        console.error("Error updating status:", err);
-        showError("No se pudo actualizar la etiqueta.");
-    });
-}
-
-function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
-
-function cancelStagedFile() { 
-    if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } 
-    state.stagedFile = null; 
-    state.stagedRemoteFile = null;
-    const fileInput = document.getElementById('file-input'); 
-    if(fileInput) fileInput.value = null; 
-    renderFilePreview(); 
-}
-
-function handleFileInputChange(event) { const file = event.target.files[0]; if (file) stageFile(file); }
-
-function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
-
-function setFilter(filter) { 
-    state.activeFilter = filter; 
-    document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
-    document.getElementById(`filter-${filter}`).classList.add('active'); 
-    
-    // Clear current contacts and trigger a new fetch from the server with the filter
-    state.contacts = [];
-    fetchInitialContacts();
-}
-
-function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
-
-function handleQuickReplyInput(event) { 
-    const input = event.target; 
-    const text = input.value; 
-    if (text.startsWith('/')) { 
-        state.quickReplyPickerOpen = true; 
-        state.templatePickerOpen = false; 
-        state.emojiPickerOpen = false;
-        const searchTerm = text.substring(1); 
-        renderQuickReplyPicker(searchTerm); 
-    } else { 
-        state.quickReplyPickerOpen = false; 
-    }
-    renderAllPickers();
-}
-
-function selectQuickReply(replyId) {
-    const reply = state.quickReplies.find(r => r.id === replyId);
-    if (!reply) return;
-
-    const input = document.getElementById('message-input');
-    if (input) {
-        input.value = reply.message || '';
-        input.focus();
-        const event = new Event('input', { bubbles: true });
-        input.dispatchEvent(event);
-    }
-    
-    state.stagedFile = null; 
-    if (reply.fileUrl) {
-        state.stagedRemoteFile = {
-            url: reply.fileUrl,
-            type: reply.fileType,
-            name: 'Archivo de respuesta rápida'
-        };
-    } else {
-        state.stagedRemoteFile = null;
-    }
-    renderFilePreview();
-
-    state.quickReplyPickerOpen = false;
-    renderAllPickers();
-}
-
-function selectEmoji(emoji) {
-    const input = document.getElementById('message-input');
-    input.value += emoji;
-    input.focus();
-}
-
-function handleStartReply(event, messageDocId) {
-    event.stopPropagation();
-    const message = state.messages.find(m => m.docId === messageDocId);
-    if (message) {
-        state.replyingToMessage = message;
-        // MODIFICADO: Pasar opción preserveScroll: true
-        renderChatWindow({ preserveScroll: true });
-        
-        // CORRECCIÓN MAYOR: Usar setTimeout para asegurar que el DOM esté listo y
-        // el scroll restaurado antes de enfocar el input.
-        setTimeout(() => {
-            const input = document.getElementById('message-input');
-            if (input) {
-                input.focus({ preventScroll: true });
+            // 1. Send Queued Messages (if user replied)
+            const queuedSent = await sendQueuedMessages(from);
+            if (queuedSent) {
+                console.log(`[LOGIC] Mensajes en cola enviados para ${from}. El flujo de respuestas automáticas se detiene aquí.`);
+                return res.sendStatus(200); // Stop further processing if queue was handled
             }
-        }, 0);
-    }
-}
 
-function cancelReply() {
-    if (state.replyingToMessage) {
-        state.replyingToMessage = null;
-        // MODIFICADO: Pasar opción preserveScroll: true también al cancelar
-        renderChatWindow({ preserveScroll: true });
-    }
-}
+            // 2. Handle Contingent Sends (if user replied)
+            const contingentSent = await handleContingentSend(from);
+            if (contingentSent) {
+                console.log(`[LOGIC] Envío de contingencia manejado para ${from}. El flujo regular se detiene aquí.`);
+                return res.sendStatus(200); // Stop further processing
+            }
 
-// --- INICIO DE LA SOLUCIÓN MEJORADA ---
-// Esta versión coloca el menú al lado del mensaje, eligiendo el lado con más espacio.
-function toggleReactionMenu(event) {
-    event.stopPropagation();
-    const targetButton = event.currentTarget;
-    const popoverContainer = targetButton.closest('.reaction-popover-container');
-    const popover = popoverContainer.querySelector('.reaction-popover');
-    const messageBubble = targetButton.closest('.message-bubble');
-    
-    if (!popoverContainer || !popover || !messageBubble) return;
+            // 3. Handle Postal Code (only for text messages)
+            // --- INICIO DE LA MODIFICACIÓN: Comentar el chequeo de CP ---
+            /*
+            const postalCodeHandled = await handlePostalCodeAuto(message, contactRef, from);
+            if (postalCodeHandled) {
+                 console.log(`[LOGIC] Código postal manejado para ${from}. El flujo posterior se detiene aquí.`);
+                 return res.sendStatus(200); // Stop if CP response was sent
+            }
+            */
+            // --- FIN DE LA MODIFICACIÓN ---
 
-    const wasActive = popoverContainer.classList.contains('active');
+            // 4. Handle Wholesale Logic (only for text messages)
+            if (message.type === 'text') {
+                const wholesaleResponse = handleWholesaleMessage(from, message.text.body);
+                if (wholesaleResponse) {
+                    console.log(`[MAYOREO] Respuesta generada para ${from}: "${wholesaleResponse}"`);
+                    await sendAutoMessage(contactRef, { text: wholesaleResponse });
+                    return res.sendStatus(200); // Stop if wholesale response was sent
+                }
+            }
 
-    // Cierra todos los otros menús que puedan estar abiertos.
-    document.querySelectorAll('.reaction-popover-container.active').forEach(container => {
-        container.classList.remove('active');
-        const p = container.querySelector('.reaction-popover');
-        if (p) {
-            p.classList.remove('fixed');
-            p.style.top = '';
-            p.style.left = '';
-            p.style.transform = '';
-        }
-    });
+            // 5. Handle Away Message (if outside business hours)
+            const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
+            const awayMessageActive = generalSettingsDoc.exists ? generalSettingsDoc.data().awayMessageActive : true; // Default to active
 
-    // Si no estaba activo, lo abrimos y calculamos la nueva posición.
-    if (!wasActive) {
-        popoverContainer.classList.add('active');
-        popover.classList.add('fixed');
-        popover.style.transform = 'none';
-        
-        const bubbleRect = messageBubble.getBoundingClientRect();
-        const popoverHeight = popover.offsetHeight;
-        const popoverWidth = popover.offsetWidth;
-        const margin = 8; // Espacio de 8px desde la burbuja
+            if (!isWithinBusinessHours() && awayMessageActive) {
+                // Check if an away message was sent recently to avoid spamming
+                const recentMessages = await contactRef.collection('messages')
+                    .where('isAutoReply', '==', true)
+                    .where('text', '==', AWAY_MESSAGE)
+                    .orderBy('timestamp', 'desc')
+                    .limit(1)
+                    .get();
 
-        // Calcula el espacio disponible a cada lado.
-        const spaceRight = window.innerWidth - bubbleRect.right - margin;
-        const spaceLeft = bubbleRect.left - margin;
-        
-        let top = bubbleRect.top + (bubbleRect.height / 2) - (popoverHeight / 2);
-        let left;
+                let shouldSendAway = true;
+                if (!recentMessages.empty) {
+                    const lastAwayTime = recentMessages.docs[0].data().timestamp.toMillis();
+                    const hoursSinceLastAway = (Date.now() - lastAwayTime) / (1000 * 60 * 60);
+                    if (hoursSinceLastAway < 6) { // Don't send if sent within last 6 hours
+                        shouldSendAway = false;
+                        console.log(`[AWAY] Mensaje de ausencia omitido para ${from} (enviado recientemente).`);
+                    }
+                }
 
-        // Decide dónde colocarlo horizontalmente.
-        if (spaceRight >= popoverWidth) {
-            // Colocar a la derecha.
-            left = bubbleRect.right + margin;
-        } else if (spaceLeft >= popoverWidth) {
-            // Colocar a la izquierda.
-            left = bubbleRect.left - popoverWidth - margin;
+                if (shouldSendAway) {
+                    await sendAutoMessage(contactRef, { text: AWAY_MESSAGE });
+                    console.log(`[AWAY] Mensaje de ausencia enviado a ${from}.`);
+                    return res.sendStatus(200); // Stop after sending away message
+                }
+            }
+
+            // 6. Handle Welcome/Ad Response for NEW contacts OR Trigger AI
+            if (isNewContact) {
+                let adResponseSent = false;
+                if (message.referral?.source_type === 'ad' && message.referral.source_id) {
+                    const adId = message.referral.source_id;
+                    console.log(`[AD] Nuevo contacto desde Ad ID: ${adId}`);
+                    // Query using 'array-contains' for the adId within the 'adIds' array
+                    const snapshot = await db.collection('ad_responses').where('adIds', 'array-contains', adId).limit(1).get();
+                    if (!snapshot.empty) {
+                        const adResponseData = snapshot.docs[0].data();
+                        console.log(`[AD] Mensaje encontrado para Ad ID ${adId}: "${adResponseData.message || 'Archivo adjunto'}"`);
+                        await sendAutoMessage(contactRef, { text: adResponseData.message, fileUrl: adResponseData.fileUrl, fileType: adResponseData.fileType });
+                        adResponseSent = true;
+                    } else {
+                        console.log(`[AD] No se encontró mensaje específico para Ad ID ${adId}. Se enviará mensaje general de bienvenida.`);
+                    }
+                }
+                // Send general welcome message ONLY if no specific ad response was sent
+                if (!adResponseSent) {
+                    await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
+                    await contactRef.update({ welcomed: true }); // Mark as welcomed
+                }
+            } else {
+                // If it's not a new contact and none of the above automations triggered, consider AI reply
+                await triggerAutoReplyAI(message, contactRef, updatedContactData);
+            }
+
+        // Handle status updates (message sent, delivered, read)
+        } else if (value && value.statuses) {
+            const statusUpdate = value.statuses[0];
+            const { id: messageId, recipient_id: recipientId, status: newStatus, errors } = statusUpdate;
+
+            console.log(`[WEBHOOK STATUS] Notificación para mensaje ${messageId} a ${recipientId}. Nuevo estado: ${newStatus.toUpperCase()}`);
+
+            if (newStatus === 'failed') {
+                console.error(`❌ FALLO EN LA ENTREGA DEL MENSAJE ${messageId}. Razón de Meta:`, JSON.stringify(errors, null, 2));
+            }
+
+            // Update message status in Firestore
+            try {
+                // --- INICIO DE LA CORRECCIÓN: RETRY LOGIC PARA STATUS UPDATES ---
+                // Función helper para esperar
+                const wait = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+                let messageDoc = null;
+                let attempts = 0;
+                const maxAttempts = 3;
+                
+                // Intentar buscar el mensaje varias veces (para manejar condiciones de carrera con medios pesados)
+                while (attempts < maxAttempts && !messageDoc) {
+                    // Búsqueda global por ID (wamid) para mayor robustez
+                    const snap = await db.collectionGroup('messages').where('id', '==', messageId).limit(1).get();
+                    if (!snap.empty) {
+                        messageDoc = snap.docs[0];
+                    } else {
+                        attempts++;
+                        if (attempts < maxAttempts) {
+                            const delay = attempts * 1000; // 1s, 2s...
+                            console.log(`[STATUS RETRY] Mensaje ${messageId} no encontrado aún. Reintentando en ${delay}ms... (${attempts}/${maxAttempts})`);
+                            await wait(delay);
+                        }
+                    }
+                }
+                
+                if (messageDoc) {
+                    // Update only if the new status is "later" than the current one (sent -> delivered -> read)
+                    const order = { sent: 1, delivered: 2, read: 3, failed: 4, queued: 0, pending: 0 }; // Define status order
+                    // Asegurarse de que el status actual existe (fallback a 0)
+                    const currentStatusValue = order[messageDoc.data().status] || 0;
+                    const newStatusValue = order[newStatus] || 0;
+
+                    if (newStatusValue > currentStatusValue) {
+                        await messageDoc.ref.update({ status: newStatus });
+                        console.log(`[LOG] Estado del mensaje ${messageId} actualizado a '${newStatus}' en Firestore.`);
+                    } else {
+                         console.log(`[LOG] Estado ${newStatus} para ${messageId} es anterior o igual al actual (${messageDoc.data().status}). No se actualiza.`);
+                    }
+                } else {
+                    console.warn(`[LOG] No se encontró el mensaje ${messageId} en Firestore (búsqueda global) después de ${attempts} intentos. Es posible que el guardado inicial haya fallado.`);
+                }
+                // --- FIN DE LA CORRECCIÓN ---
+
+            } catch (error) {
+                console.error(`❌ Error al actualizar estado ${messageId} en Firestore:`, error.message);
+            }
         } else {
-            // Fallback: Si no hay espacio a los lados, colocarlo arriba.
-            const buttonRect = targetButton.getBoundingClientRect();
-            left = buttonRect.left + (buttonRect.width / 2) - (popoverWidth / 2);
-            top = bubbleRect.top - popoverHeight - margin;
+            console.log('[WEBHOOK] Evento recibido no es mensaje ni estado:', JSON.stringify(value));
         }
 
-        // Se asegura de que no se salga de la pantalla verticalmente.
-        if (top < margin) {
-            top = margin;
-        }
-        if (top + popoverHeight > window.innerHeight - margin) {
-            top = window.innerHeight - popoverHeight - margin;
-        }
-
-        // Se asegura de que no se salga de la pantalla horizontalmente (importante para el fallback).
-        if (left < margin) {
-            left = margin;
-        }
-        if (left + popoverWidth > window.innerWidth - margin) {
-            left = window.innerWidth - popoverWidth - margin;
-        }
-
-        // Aplica la posición final.
-        popover.style.top = `${top}px`;
-        popover.style.left = `${left}px`;
-    }
-}
-// --- FIN DE LA SOLUCIÓN MEJORADA ---
-
-
-// Add a global listener to close the menu when clicking outside
-document.addEventListener('click', (event) => {
-    if (state.activeView !== 'chats') return;
-
-    const openPopover = document.querySelector('.reaction-popover.fixed');
-    
-    if (openPopover && !openPopover.closest('.reaction-popover-container').contains(event.target)) {
-        const container = openPopover.closest('.reaction-popover-container');
-        openPopover.classList.remove('fixed');
-        openPopover.style.top = '';
-        openPopover.style.left = '';
-        if (container) {
-            container.classList.remove('active');
+    } catch (error) {
+        console.error('❌ ERROR CRÍTICO EN EL WEBHOOK:', error);
+    } finally {
+        // CORRECCIÓN APLICADA: Verificar si los headers ya fueron enviados antes de intentar responder
+        if (!res.headersSent) {
+            res.sendStatus(200);
         }
     }
 });
 
-async function handleSelectReaction(event, messageDocId, emoji) {
-    event.stopPropagation();
-    if (!state.selectedContactId) return;
-
-    const message = state.messages.find(m => m.docId === messageDocId);
-    if (!message) return;
-
-    const newReaction = message.reaction === emoji ? null : emoji;
-
+/**
+ * Endpoint Proxy for fetching WhatsApp media for frontend display when direct GCS fails.
+ * Handles range requests for streaming audio/video.
+ */
+router.get("/wa/media/:mediaId", async (req, res) => {
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages/${messageDocId}/react`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reaction: newReaction })
-        });
-        if (!response.ok) {
-            throw new Error('No se pudo guardar la reacción.');
+        const { mediaId } = req.params;
+        if (!WHATSAPP_TOKEN) {
+            return res.status(500).json({ error: "WhatsApp Token no configurado." });
         }
-    } catch (error) {
-        console.error("Error al reaccionar:", error);
-        showError(error.message);
-    }
-}
 
-window.toggleReactionMenu = toggleReactionMenu;
-window.handleSelectReaction = handleSelectReaction;
-window.openConversationPreview = openConversationPreview;
-window.handleSelectContact = handleSelectContact;
-window.setFilter = setFilter;
-window.setActiveTab = setActiveTab;
-window.toggleEmojiPicker = toggleEmojiPicker;
-window.toggleTemplatePicker = toggleTemplatePicker;
-window.handleStartReply = handleStartReply;
-window.cancelReply = cancelReply;
-window.handleStatusChange = handleStatusChange;
-window.selectQuickReply = selectQuickReply;
-window.selectEmoji = selectEmoji;
-window.handleSendTemplate = handleSendTemplate;
-window.cancelStagedFile = cancelStagedFile;
-window.handleFileInputChange = handleFileInputChange;
-
-
-// --- START: Picker Management (ADDED CODE) ---
-
-function updatePickerSelection() {
-    const picker = document.querySelector('.picker-container:not(.hidden)');
-    if (!picker) return;
-
-    const items = picker.querySelectorAll('.picker-item');
-    items.forEach((item, index) => {
-        if (index === state.pickerSelectedIndex) {
-            item.classList.add('selected');
-            item.scrollIntoView({ block: 'nearest' });
-        } else {
-            item.classList.remove('selected');
-        }
-    });
-}
-
-function navigatePicker(direction) {
-    if (!state.pickerItems || state.pickerItems.length === 0) return;
-
-    if (direction === 'down') {
-        state.pickerSelectedIndex = (state.pickerSelectedIndex + 1) % state.pickerItems.length;
-    } else if (direction === 'up') {
-        state.pickerSelectedIndex = (state.pickerSelectedIndex - 1 + state.pickerItems.length) % state.pickerItems.length;
-    }
-    updatePickerSelection();
-}
-
-function handleMessageInputKeyDown(e) {
-    const isPickerOpen = state.quickReplyPickerOpen || state.templatePickerOpen;
-
-    if (isPickerOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        e.preventDefault();
-        navigatePicker(e.key === 'ArrowUp' ? 'up' : 'down');
-        return;
-    }
-
-    if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        if (isPickerOpen && state.pickerSelectedIndex > -1) {
-            const selectedItem = state.pickerItems[state.pickerSelectedIndex];
-            if (selectedItem) {
-                if (state.quickReplyPickerOpen) {
-                    selectQuickReply(selectedItem.id);
-                } else if (state.templatePickerOpen) {
-                    handleSendTemplate(selectedItem);
-                }
-            }
-        } else {
-            document.getElementById('message-form').requestSubmit();
-        }
-        return;
-    }
-    
-    if (e.key === 'Escape') {
-        if (isPickerOpen) {
-            e.preventDefault();
-            state.quickReplyPickerOpen = false;
-            state.templatePickerOpen = false;
-            renderAllPickers();
-        }
-    }
-}
-
-function toggleEmojiPicker() {
-    state.emojiPickerOpen = !state.emojiPickerOpen;
-    if (state.emojiPickerOpen) {
-        state.templatePickerOpen = false;
-        state.quickReplyPickerOpen = false;
-    }
-    renderAllPickers();
-}
-
-function toggleTemplatePicker() {
-    state.templatePickerOpen = !state.templatePickerOpen;
-    if (state.templatePickerOpen) {
-        state.emojiPickerOpen = false;
-        state.quickReplyPickerOpen = false;
-        renderTemplatePicker(); // Re-render to set state
-    }
-    renderAllPickers();
-}
-
-function renderAllPickers() {
-    const qrPicker = document.getElementById('quick-reply-picker');
-    const templatePicker = document.getElementById('template-picker');
-    const emojiPicker = document.getElementById('emoji-picker');
-
-    if (qrPicker) qrPicker.classList.toggle('hidden', !state.quickReplyPickerOpen);
-    if (templatePicker) templatePicker.classList.toggle('hidden', !state.templatePickerOpen);
-    if (emojiPicker) emojiPicker.classList.toggle('hidden', !state.emojiPickerOpen);
-
-    if (state.emojiPickerOpen) renderEmojiPicker();
-}
-
-function renderQuickReplyPicker(searchTerm = '') {
-    const picker = document.getElementById('quick-reply-picker');
-    if (!picker) return;
-
-    const filteredReplies = state.quickReplies.filter(r => r.shortcut.toLowerCase().includes(searchTerm.toLowerCase()));
-
-    state.pickerItems = filteredReplies;
-    state.pickerSelectedIndex = filteredReplies.length > 0 ? 0 : -1;
-
-    if (filteredReplies.length > 0) {
-        picker.innerHTML = filteredReplies.map(reply => `
-            <div class="picker-item" data-reply-id="${reply.id}" onclick="selectQuickReply('${reply.id}')">
-                <strong>/${reply.shortcut}</strong> - <span class="text-gray-500">${(reply.message || '').substring(0, 50)}...</span>
-            </div>
-        `).join('');
-    } else {
-        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay respuestas rápidas que coincidan.</div>`;
-    }
-     picker.innerHTML += `<div class="picker-add-btn" onclick="navigateTo('respuestas-rapidas')"><i class="fas fa-plus-circle mr-2"></i>Añadir nueva respuesta</div>`;
-    
-    updatePickerSelection();
-}
-
-function renderTemplatePicker() {
-    const picker = document.getElementById('template-picker');
-    if (!picker) return;
-
-    state.pickerItems = state.templates || [];
-    state.pickerSelectedIndex = state.pickerItems.length > 0 ? 0 : -1;
-
-    if (state.templates && state.templates.length > 0) {
-        picker.innerHTML = state.templates.map(template => {
-            const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
-            return `
-                <div class="picker-item template-item" data-template-name="${template.name}" onclick="handleSendTemplate(${templateString})">
-                    <div class="flex justify-between items-center">
-                        <span class="font-semibold">${template.name}</span>
-                        <span class="template-category">${template.category}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
-    } else {
-        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles.</div>`;
-    }
-
-    updatePickerSelection();
-}
-
-function renderEmojiPicker() {
-    const picker = document.getElementById('emoji-picker');
-    if (!picker) return;
-
-    const emojis = {
-        'Smileys & People': ['😀', '😂', '😍', '👍', '🙏', '🎉', '❤️', '😊', '🤔', '😢'],
-        'Objects': ['💼', '💻', '📱', '💰', '📦', '📄', '📅', '⏰'],
-    };
-
-    let pickerHTML = '<div class="picker-content">';
-    for (const category in emojis) {
-        pickerHTML += `<div class="emoji-category">${category}</div>`;
-        pickerHTML += emojis[category].map(emoji => `<span class="emoji" onclick="selectEmoji('${emoji}')">${emoji}</span>`).join('');
-    }
-    pickerHTML += '</div>';
-    picker.innerHTML = pickerHTML;
-}
-
-async function handleSendTemplate(templateObject) {
-    if (!state.selectedContactId) return;
-
-    const templateData = {
-        template: templateObject
-    };
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(templateData)
+        // 1. Get the temporary media URL from Meta
+        const metaUrlResponse = await axios.get(`https://graph.facebook.com/v19.0/${mediaId}`, {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
         });
 
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
+        const mediaUrl = metaUrlResponse.data?.url;
+        if (!mediaUrl) {
+            return res.status(404).json({ error: "URL del medio no encontrada." });
         }
-        
-        toggleTemplatePicker();
-    } catch (error) {
-        console.error("Error al enviar la plantilla:", error);
-        showError(error.message);
-    }
-}
-// --- END: Picker Management ---
 
-// --- START: Conversation Preview Logic ---
+        // 2. Forward the request to Meta, including Range header if present
+        const range = req.headers.range;
+        const axiosConfig = {
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` },
+            responseType: "stream", // Important for piping
+        };
 
-// Estado local para el modal de previsualización
-let previewState = {
-    contactId: null,
-    messages: [],
-    lastMessageTimestamp: null,
-    hasMore: true,
-    isLoading: false
-};
-
-async function openConversationPreview(event, contactId) {
-    event.stopPropagation(); // Evita que se seleccione el chat al hacer clic en el ojo
-
-    const contact = state.contacts.find(c => c.id === contactId);
-    if (!contact) return;
-
-    // Resetear el estado de la previsualización
-    previewState = {
-        contactId: contactId,
-        messages: [],
-        lastMessageTimestamp: null,
-        hasMore: true,
-        isLoading: false
-    };
-
-    const modalContainer = document.getElementById('conversation-preview-modal-container');
-    modalContainer.innerHTML = ConversationPreviewModalTemplate(contact);
-    document.body.classList.add('modal-open');
-
-    const messagesContainer = document.getElementById('preview-messages-container');
-    messagesContainer.addEventListener('scroll', handlePreviewScroll);
-
-    await loadMorePreviewMessages();
-}
-
-async function loadMorePreviewMessages() {
-    if (previewState.isLoading || !previewState.hasMore) return;
-
-    previewState.isLoading = true;
-
-    const spinner = document.getElementById('preview-loading-spinner');
-    if (spinner) spinner.style.display = 'flex';
-    
-    try {
-        // La URL del endpoint que crearemos más adelante
-        let url = `${API_BASE_URL}/api/contacts/${previewState.contactId}/messages-paginated?limit=30`;
-        if (previewState.lastMessageTimestamp) {
-            // Pide mensajes *anteriores* al último que ya tenemos
-            url += `&before=${previewState.lastMessageTimestamp}`;
+        if (range) {
+            axiosConfig.headers['Range'] = range;
+            console.log(`[PROXY] Solicitud de rango detectada: ${range}`);
         }
-        
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('No se pudieron cargar los mensajes.');
-        
-        const data = await response.json();
 
-        if (spinner) spinner.style.display = 'none';
+        const mediaResponse = await axios.get(mediaUrl, axiosConfig);
 
-        if (data.messages.length > 0) {
-            // CORRECCIÓN: Convertir timestamps de la API al formato que espera la plantilla
-            const processedMessages = data.messages.map(msg => {
-                if (msg.timestamp && typeof msg.timestamp._seconds === 'number') {
-                    return { ...msg, timestamp: { seconds: msg.timestamp._seconds, nanoseconds: msg.timestamp._nanoseconds } };
-                }
-                return msg;
+        // 3. Pipe the response from Meta back to the client
+        const headers = mediaResponse.headers;
+        const status = mediaResponse.status;
+
+        // Handle partial content (206) for range requests
+        if (status === 206) {
+            console.log('[PROXY] Respondiendo con 206 Partial Content.');
+            res.writeHead(206, {
+                "Content-Range": headers["content-range"],
+                "Accept-Ranges": "bytes", // Inform client that ranges are supported
+                "Content-Length": headers["content-length"],
+                "Content-Type": headers["content-type"],
             });
-
-            // La API devuelve [nuevo..viejo], lo invertimos para tener [viejo..nuevo]
-            const chronologicalMessages = processedMessages.reverse();
-
-            // El `state.selectedContactId` se usa globalmente en MessageBubbleTemplate, 
-            // así que lo seteamos temporalmente para que renderice correctamente
-            const originalSelectedId = state.selectedContactId;
-            state.selectedContactId = previewState.contactId;
-
-            const newMessagesHtml = chronologicalMessages.map(MessageBubbleTemplate).join('');
-            
-            state.selectedContactId = originalSelectedId; // Lo restauramos
-
-            const contentDiv = document.getElementById('preview-messages-content');
-            const container = document.getElementById('preview-messages-container');
-            const isFirstLoad = previewState.messages.length === 0;
-            
-            // Guardamos la altura del scroll antes de añadir contenido nuevo
-            const oldScrollHeight = container.scrollHeight;
-            
-            if (isFirstLoad) {
-                contentDiv.innerHTML = newMessagesHtml;
-            } else {
-                contentDiv.insertAdjacentHTML('afterbegin', newMessagesHtml);
-            }
-
-            previewState.messages.unshift(...chronologicalMessages);
-            
-            // El timestamp para la siguiente página es el del mensaje MÁS ANTIGUO que acabamos de recibir
-            const oldestNewMsg = chronologicalMessages[0];
-            previewState.lastMessageTimestamp = oldestNewMsg.timestamp.seconds;
-
-            if (isFirstLoad) {
-                // Si es la primera carga, hacemos scroll hasta el final para ver los mensajes más recientes
-                container.scrollTop = container.scrollHeight;
-            } else {
-                // Si no, mantenemos la posición del scroll relativa al contenido que había antes
-                container.scrollTop = container.scrollHeight - oldScrollHeight;
-            }
+        } else {
+            // Standard response (200 OK)
+            console.log(`[PROXY] Respondiendo con ${status} OK.`);
+            res.setHeader("Content-Type", headers["content-type"]);
+            res.setHeader("Content-Length", headers["content-length"]);
+            res.setHeader("Accept-Ranges", "bytes"); // Always indicate range support
         }
 
-        if (data.messages.length < 30) {
-            previewState.hasMore = false;
-            const contentDiv = document.getElementById('preview-messages-content');
-            if (contentDiv) {
-                contentDiv.insertAdjacentHTML('afterbegin', `<div class="date-separator">Inicio de la conversación</div>`);
-            }
-        }
+        // Pipe the stream from Meta's response to the client's response
+        mediaResponse.data.pipe(res);
 
-    } catch (error) {
-        console.error("Error cargando mensajes de previsualización:", error);
-        const contentDiv = document.getElementById('preview-messages-content');
-        if (contentDiv && previewState.messages.length === 0) {
-            if(spinner) spinner.style.display = 'none';
-            contentDiv.innerHTML = `<p class="p-4 text-red-500 text-center">${error.message}</p>`;
-        }
-    } finally {
-        previewState.isLoading = false;
-    }
-}
-
-
-function handlePreviewScroll() {
-    const container = document.getElementById('preview-messages-container');
-    // Cargar más cuando el usuario llega a la parte superior del scroll
-    if (container.scrollTop === 0 && previewState.hasMore && !previewState.isLoading) {
-        loadMorePreviewMessages();
-    }
-}
-// --- END: Conversation Preview Logic ---
-
-// --- START: Mark as Unread Logic ---
-async function handleMarkAsUnread(event, contactId) {
-    if (event) {
-        event.preventDefault();
-        event.stopPropagation();
-        // Also try stopping immediate propagation if multiple listeners exist (unlikely here but safe)
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
-    }
-
-    try {
-        // 1. Actualización optimista de la UI
-        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
-        if (contactIndex > -1) {
-            state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
-            // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
-            state.contacts[contactIndex].lastMessageTimestamp = new Date(); 
-            handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
-        }
-
-        // 2. Actualizar en Firestore
-        // IMPORTANTE: Actualizamos lastMessageTimestamp para que el listener en otros dispositivos
-        // (que filtra por fecha > carga) detecte este cambio y actualice la UI.
-        await db.collection('contacts_whatsapp').doc(contactId).update({ 
-            unreadCount: 1,
-            lastMessageTimestamp: firebase.firestore.FieldValue.serverTimestamp()
-        });
-        
-        // Nota: Si el chat está actualmente abierto (seleccionado), permanecerá abierto pero la lista mostrará el badge.
-        // Al hacer clic de nuevo en el chat de la lista o enviar un mensaje, se volverá a marcar como leído.
-
-    } catch (error) {
-        console.error("Error al marcar como no leído:", error);
-        showError("No se pudo marcar como no leído.");
-        // Revertir cambio optimista si falla
-        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
-        if (contactIndex > -1) {
-            state.contacts[contactIndex].unreadCount = 0;
-            handleSearchContacts();
+    } catch (err) {
+        // --- Error Handling ---
+        if (err.response) {
+            // Error from Meta API
+            console.error("ERROR EN PROXY DE MEDIOS (Respuesta del servidor):", err.response.status, err.response.data);
+            res.status(err.response.status).json({ error: "No se pudo obtener el medio desde el origen.", details: err.response.data });
+        } else if (err.request) {
+            // Request made but no response received
+            console.error("ERROR EN PROXY DE MEDIOS (Sin respuesta):", err.request);
+            res.status(504).json({ error: "No se recibió respuesta del servidor de medios." });
+        } else {
+            // Setup error
+            console.error("ERROR EN PROXY DE MEDIOS (Configuración):", err.message);
+            res.status(500).json({ error: "Error al configurar la solicitud del medio." });
         }
     }
-}
-// --- END: Mark as Unread Logic ---
+});
 
-// Exportar la nueva función globalmente
-window.handleMarkAsUnread = handleMarkAsUnread;
+
+module.exports = { router };
