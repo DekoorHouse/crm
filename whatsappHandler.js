@@ -689,9 +689,11 @@ router.post('/', async (req, res) => {
 
             // Update message status in Firestore
             try {
-                // Find the message by its WhatsApp ID (wamid) in the recipient's messages subcollection
-                const snap = await db.collection('contacts_whatsapp').doc(recipientId).collection('messages')
-                                   .where('id', '==', messageId).limit(1).get();
+                // --- CAMBIO CLAVE PARA STATUS UPDATES ---
+                // En lugar de buscar en una subcolección específica (que depende de que el ID del documento coincida exactamente con recipientId),
+                // buscamos el mensaje globalmente por su ID único (wamid). Esto es mucho más robusto.
+                const snap = await db.collectionGroup('messages').where('id', '==', messageId).limit(1).get();
+                
                 if (!snap.empty) {
                     const messageDoc = snap.docs[0];
                     // Update only if the new status is "later" than the current one (sent -> delivered -> read)
@@ -703,7 +705,7 @@ router.post('/', async (req, res) => {
                          console.log(`[LOG] Estado ${newStatus} para ${messageId} es anterior o igual al actual (${messageDoc.data().status}). No se actualiza.`);
                     }
                 } else {
-                    console.warn(`[LOG] No se encontró el mensaje ${messageId} en Firestore para actualizar el estado a ${newStatus}.`);
+                    console.warn(`[LOG] No se encontró el mensaje ${messageId} en Firestore (búsqueda global) para actualizar el estado a ${newStatus}.`);
                 }
             } catch (error) {
                 console.error(`❌ Error al actualizar estado ${messageId} en Firestore:`, error.message);
