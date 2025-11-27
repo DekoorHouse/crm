@@ -71,7 +71,11 @@ let state = {
     adRoutingRules: [], // Reglas de enrutamiento Ad ID -> Depto
     currentUserProfile: null, // Perfil del usuario actual (incluye assignedDepartments y role)
     allUsers: [], // Lista de todos los usuarios del sistema
-    activeDepartmentFilter: 'all' // Filtro de departamento activo en la lista de chats
+    activeDepartmentFilter: 'all', // Filtro de departamento activo en la lista de chats
+
+    // --- NUEVO: Cola de Mensajes ---
+    messageQueue: [], // Cola de mensajes pendientes de envío
+    isProcessingQueue: false // Indicador de si la cola se está procesando
 };
 
 // --- Variables para cancelar listeners de Firestore ---
