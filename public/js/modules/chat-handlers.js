@@ -417,13 +417,43 @@ async function handleSendMessage(event) {
     const endpoint = isExpired ? 'queue-message' : 'messages';
     
     const tempId = `temp_${Date.now()}`;
+
+    // --- MEJORA: Definir el texto del mensaje temporal para que coincida con el backend ---
+    // Esto asegura que la lógica de anti-duplicados funcione correctamente.
+    let messageText = text;
+    if (!messageText) {
+        if (fileToSend) {
+             const type = fileToSend.type;
+             if (type.startsWith('image/')) messageText = '📷 Imagen';
+             else if (type.startsWith('video/')) messageText = '🎥 Video';
+             else if (type.startsWith('audio/')) messageText = '🎵 Audio';
+             else messageText = '📄 Documento';
+        } else if (remoteFileToSend) {
+             const type = remoteFileToSend.type;
+             if (type.startsWith('image/')) messageText = '📷 Imagen';
+             else if (type.startsWith('video/')) messageText = '🎥 Video';
+             else if (type.startsWith('audio/')) messageText = '🎵 Audio';
+             else messageText = '📄 Documento';
+        }
+    }
+
     const pendingMessage = {
         docId: tempId,
         from: 'me',
         status: isExpired ? 'queued' : 'pending',
         timestamp: { seconds: Math.floor(Date.now() / 1000) },
-        text: text || (fileToSend ? '📷 Adjunto' : '📄 Adjunto'),
+        text: messageText,
     };
+
+    // --- MEJORA: Agregar URL de previsualización para archivos ---
+    // Esto hace que la foto se muestre de inmediato en lugar de "📷 Adjunto"
+    if (fileToSend) {
+        pendingMessage.fileUrl = URL.createObjectURL(fileToSend);
+        pendingMessage.fileType = fileToSend.type;
+    } else if (remoteFileToSend) {
+        pendingMessage.fileUrl = remoteFileToSend.url;
+        pendingMessage.fileType = remoteFileToSend.type;
+    }
 
     // Solo agregar a la UI si seguimos viendo el mismo chat
     if (state.selectedContactId === currentContactId) {
