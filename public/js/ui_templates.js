@@ -690,7 +690,16 @@ const MessageBubbleTemplate = (message) => {
     let bubbleExtraClass = '';
     let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
 
-    const hasText = message.text && !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
+    // CORRECCIÓN: Lista explícita de textos por defecto para asegurar que se oculten y solo se vea la imagen
+    const defaultTexts = ['📷 Imagen', '🎥 Video', '🎵 Audio', '📄 Documento', 'Sticker'];
+    
+    // Lógica mejorada para hasText:
+    // 1. Debe tener texto.
+    // 2. NO debe ser uno de los textos por defecto exactos.
+    // 3. NO debe empezar con los emojis de sistema (por si acaso hay variaciones).
+    const hasText = message.text && 
+                    !defaultTexts.includes(message.text) && 
+                    !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
 
     if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
