@@ -873,7 +873,7 @@ async function handleSelectReaction(event, messageDocId, emoji) {
         const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages/${messageDocId}/react`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ reaction: newReaction })
+            body: JSON.stringify({ emoji: newReaction })
         });
         if (!response.ok) {
             throw new Error('No se pudo guardar la reacción.');
