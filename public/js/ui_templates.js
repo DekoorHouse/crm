@@ -53,7 +53,6 @@ const TagsViewTemplate = () => `
     </div>
 `;
 
-// --- NUEVA PLANTILLA: Vista de Departamentos ---
 const DepartmentsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -74,7 +73,6 @@ const DepartmentsViewTemplate = () => `
     </div>
 `;
 
-// --- NUEVA PLANTILLA: Vista de Reglas de Enrutamiento ---
 const AdRoutingViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">
@@ -560,25 +558,21 @@ const MetricsViewTemplate = () => `
 // --- PLANTILLAS DE COMPONENTES ---
 
 const UserIcon = (contact, size = 'h-9 w-9') => {
-    // --- MODIFICACIÓN: Corona para compras ---
-    // Si el contacto ha completado una compra, mostramos un icono de corona dorada
     if (contact && contact.purchaseStatus === 'completed') {
          return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style="background: linear-gradient(135deg, #FFD700, #FFA500); box-shadow: 0 2px 4px rgba(0,0,0,0.2);">
                 <i class="fas fa-crown text-sm"></i>
             </div>`;
     }
-    // --- FIN MODIFICACIÓN ---
 
     if (contact && contact.profileImageUrl) {
         return `<img src="${contact.profileImageUrl}" alt="${contact.name}" class="${size} rounded-full object-cover">`;
     }
-    // Fallback con iniciales y color de etiqueta
+    
     const contactStatusKey = contact.status;
     const tag = state.tags.find(t => t.key === contactStatusKey);
-    const bgColor = tag ? tag.color : '#d1d5db'; // Color gris por defecto
+    const bgColor = tag ? tag.color : '#d1d5db';
     const initial = contact.name ? contact.name.charAt(0).toUpperCase() : '?';
 
-    // Usar clases de Tailwind para tamaño y centrado si es posible
     return `<div class="${size} rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold" style="background-color: ${bgColor};">
                 ${initial}
             </div>`;
@@ -602,8 +596,7 @@ const ContactItemTemplate = (contact, isSelected) => {
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
         : '';
     
-    // --- Department Color Logic ---
-    const defaultColor = '#d1d5db'; // Default gray
+    const defaultColor = '#d1d5db';
     let color = defaultColor;
     if (contact.assignedDepartmentId) {
         const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
@@ -611,9 +604,7 @@ const ContactItemTemplate = (contact, isSelected) => {
             color = department.color;
         }
     }
-    // Always apply the stripe style. The .selected class will handle background/text color.
     const departmentStripe = `style="border-left-color: ${color};"`;
-    // --- End Department Color Logic ---
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -690,13 +681,8 @@ const MessageBubbleTemplate = (message) => {
     let bubbleExtraClass = '';
     let timeAndStatusHTML = `<div class="text-xs text-right mt-1 opacity-70 flex justify-end items-center space-x-2"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div>`;
 
-    // CORRECCIÓN: Lista explícita de textos por defecto para asegurar que se oculten y solo se vea la imagen
     const defaultTexts = ['📷 Imagen', '🎥 Video', '🎵 Audio', '📄 Documento', 'Sticker'];
     
-    // Lógica mejorada para hasText:
-    // 1. Debe tener texto.
-    // 2. NO debe ser uno de los textos por defecto exactos.
-    // 3. NO debe empezar con los emojis de sistema (por si acaso hay variaciones).
     const hasText = message.text && 
                     !defaultTexts.includes(message.text) && 
                     !/^(🎤|🎵|📷|🎥|📄|Sticker)/.test(message.text);
