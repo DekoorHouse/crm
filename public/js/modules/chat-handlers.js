@@ -396,17 +396,82 @@ async function handleSelectContact(contactId) {
     openContactDetails();
 }
 
+// --- NUEVA LÓGICA DE COLA DE MENSAJES ---
+
+/**
+ * Procesa la cola de mensajes secuencialmente (FIFO).
+ */
+async function processMessageQueue() {
+    if (state.isProcessingQueue) return; // Si ya se está procesando, no hacer nada
+    state.isProcessingQueue = true;
+
+    while (state.messageQueue.length > 0) {
+        const task = state.messageQueue[0]; // Obtener el primer mensaje de la cola (sin sacarlo aún)
+        
+        try {
+            if (task.type === 'file') {
+                // Enviar archivo
+                await uploadAndSendFile(task.file, task.text, task.isExpired, task.contactId, task.replyTo);
+            } else {
+                // Enviar texto o archivo remoto
+                if (!task.isExpired) {
+                    await db.collection('contacts_whatsapp').doc(task.contactId).update({ unreadCount: 0 });
+                }
+                
+                const endpoint = task.isExpired ? 'queue-message' : 'messages';
+                const messageData = { text: task.text, tempId: task.tempId };
+                
+                if (task.remoteFile) {
+                    messageData.fileUrl = task.remoteFile.url;
+                    messageData.fileType = task.remoteFile.type;
+                }
+                if (task.replyTo) {
+                    messageData.reply_to_wamid = task.replyTo.id;
+                }
+
+                const response = await fetch(`${API_BASE_URL}/api/contacts/${task.contactId}/${endpoint}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(messageData)
+                });
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.message || 'Error del servidor.');
+                }
+            }
+        } catch (error) {
+            console.error("Error al procesar mensaje de la cola:", error);
+            showError(error.message);
+            // Marcar mensaje como fallido en la UI
+            if (state.selectedContactId === task.contactId) {
+                const failedMessageIndex = state.messages.findIndex(m => m.docId === task.tempId);
+                if (failedMessageIndex > -1) {
+                    state.messages[failedMessageIndex].status = 'failed';
+                    renderMessages();
+                }
+            }
+        } finally {
+            state.messageQueue.shift(); // Eliminar el mensaje procesado de la cola
+        }
+    }
+    
+    state.isProcessingQueue = false;
+}
+
+// --- FIN NUEVA LÓGICA ---
+
 async function handleSendMessage(event) {
     event.preventDefault();
     const input = document.getElementById('message-input');
     let text = input.value.trim();
     
-    // --- CORRECCIÓN: Capturar el ID del contacto y el contexto de respuesta ACTUAL ---
     const currentContactId = state.selectedContactId;
     const currentReplyingTo = state.replyingToMessage;
     
     const contact = state.contacts.find(c => c.id === currentContactId);
-    if (!contact || state.isUploading) return;
+    // REMOVIDO: state.isUploading check. Ahora permitimos enviar mientras se sube.
+    if (!contact) return; 
 
     const fileToSend = state.stagedFile;
     const remoteFileToSend = state.stagedRemoteFile;
@@ -414,12 +479,9 @@ async function handleSendMessage(event) {
     if (!text && !fileToSend && !remoteFileToSend) return;
 
     const isExpired = state.isSessionExpired;
-    const endpoint = isExpired ? 'queue-message' : 'messages';
-    
     const tempId = `temp_${Date.now()}`;
 
-    // --- MEJORA: Definir el texto del mensaje temporal para que coincida con el backend ---
-    // Esto asegura que la lógica de anti-duplicados funcione correctamente.
+    // --- Definir el texto del mensaje temporal ---
     let messageText = text;
     if (!messageText) {
         if (fileToSend) {
@@ -445,8 +507,6 @@ async function handleSendMessage(event) {
         text: messageText,
     };
 
-    // --- MEJORA: Agregar URL de previsualización para archivos ---
-    // Esto hace que la foto se muestre de inmediato en lugar de "📷 Adjunto"
     if (fileToSend) {
         pendingMessage.fileUrl = URL.createObjectURL(fileToSend);
         pendingMessage.fileType = fileToSend.type;
@@ -455,7 +515,7 @@ async function handleSendMessage(event) {
         pendingMessage.fileType = remoteFileToSend.type;
     }
 
-    // Solo agregar a la UI si seguimos viendo el mismo chat
+    // Agregar a la UI inmediatamente (Optimistic UI)
     if (state.selectedContactId === currentContactId) {
         state.messages.push(pendingMessage);
         appendMessage(pendingMessage);
@@ -463,56 +523,26 @@ async function handleSendMessage(event) {
 
     input.value = '';
     input.style.height = 'auto';
-    cancelStagedFile();
+    cancelStagedFile(); // Limpia el archivo del estado, pero ya lo capturamos en fileToSend
 
-    try {
-        if (fileToSend) {
-            // Pasamos el ID capturado y el contexto de respuesta capturado
-            const response = await uploadAndSendFile(fileToSend, text, isExpired, currentContactId, currentReplyingTo);
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
-            }
-        } else {
-            if (!isExpired) {
-                await db.collection('contacts_whatsapp').doc(currentContactId).update({ unreadCount: 0 });
-            }
-            const messageData = { text, tempId };
-            if (remoteFileToSend) {
-                messageData.fileUrl = remoteFileToSend.url;
-                messageData.fileType = remoteFileToSend.type;
-            }
-            if (currentReplyingTo) {
-                messageData.reply_to_wamid = currentReplyingTo.id;
-            }
-            // Usar currentContactId en la URL
-            const response = await fetch(`${API_BASE_URL}/api/contacts/${currentContactId}/${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(messageData)
-            });
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.message || 'Error del servidor.');
-            }
-        }
-        // Cancelar respuesta solo si seguimos en el mismo chat
-        if (state.selectedContactId === currentContactId) {
-            cancelReply();
-        }
-    } catch (error) {
-        console.error("Error en el proceso de envío:", error);
-        showError(error.message);
-        
-        // Actualizar estado de error solo si seguimos en el chat o lo encontramos
-        if (state.selectedContactId === currentContactId) {
-            const failedMessageIndex = state.messages.findIndex(m => m.docId === tempId);
-            if (failedMessageIndex > -1) {
-                state.messages[failedMessageIndex].status = 'failed';
-                renderMessages();
-            }
-            if (text && !fileToSend && !remoteFileToSend) { input.value = text; } 
-        }
+    // --- ENCOLAR MENSAJE ---
+    state.messageQueue.push({
+        type: fileToSend ? 'file' : 'text', // 'file' para subidas locales, 'text' para texto o archivos remotos
+        file: fileToSend,
+        remoteFile: remoteFileToSend,
+        text: text,
+        contactId: currentContactId,
+        replyTo: currentReplyingTo,
+        isExpired: isExpired,
+        tempId: tempId
+    });
+
+    // Iniciar procesamiento de la cola (si no está ya corriendo)
+    processMessageQueue();
+
+    // Cancelar respuesta solo si seguimos en el mismo chat
+    if (state.selectedContactId === currentContactId) {
+        cancelReply();
     }
 }
 
@@ -552,7 +582,7 @@ async function handleDeleteNote(noteId) {
 async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyingToMessage) { 
     // Usar el contactId pasado o fallback al state (para compatibilidad), pero preferir el pasado
     const targetContactId = contactId || state.selectedContactId;
-    if (!file || !targetContactId || state.isUploading) return;
+    if (!file || !targetContactId) return; // Removido state.isUploading check para permitir llamadas desde la cola
     
     const progressEl = document.getElementById('upload-progress');
     const submitButton = document.querySelector('#message-form button[type="submit"]');
@@ -562,7 +592,7 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
         progressEl.textContent = 'Subiendo 0%...';
         progressEl.classList.remove('hidden');
     }
-    if(submitButton) submitButton.disabled = true;
+    // No deshabilitamos el botón de enviar para permitir encolar más mensajes
     
     const userIdentifier = auth.currentUser ? auth.currentUser.uid : 'anonymous_uploads';
     const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`;
@@ -1205,7 +1235,7 @@ async function handleMarkAsUnread(event, contactId) {
         event.preventDefault();
         event.stopPropagation();
         // Also try stopping immediate propagation if multiple listeners exist (unlikely here but safe)
-        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        if (event.stopImmediate propagation) event.stopImmediatePropagation();
     }
 
     try {
