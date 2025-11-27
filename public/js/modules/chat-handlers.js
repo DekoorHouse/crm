@@ -1064,30 +1064,45 @@ function renderEmojiPicker() {
     picker.innerHTML = pickerHTML;
 }
 
-async function handleSendTemplate(templateObject) {
-    if (!state.selectedContactId) return;
+// MODIFICADO: Ahora copia el texto al input en lugar de enviarlo directamente
+function handleSendTemplate(templateObject) {
+    const input = document.getElementById('message-input');
+    if (!input) return;
 
-    const templateData = {
-        template: templateObject
-    };
+    // Extraer las partes de texto de la plantilla
+    const header = templateObject.components.find(c => c.type === 'HEADER' && c.format === 'TEXT')?.text || '';
+    const body = templateObject.components.find(c => c.type === 'BODY')?.text || '';
+    const footer = templateObject.components.find(c => c.type === 'FOOTER')?.text || '';
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(templateData)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
-        }
-        
-        toggleTemplatePicker();
-    } catch (error) {
-        console.error("Error al enviar la plantilla:", error);
-        showError(error.message);
+    // Construir el mensaje final
+    let fullText = '';
+    
+    if (header) {
+        fullText += `*${header}*\n\n`; // Negrita para el encabezado
     }
+    
+    if (body) {
+        fullText += body;
+    }
+    
+    if (footer) {
+        fullText += `\n\n_${footer}_`; // Cursiva para el pie de página
+    }
+
+    // Insertar en la barra de escritura
+    input.value = fullText;
+
+    // Ajustar la altura del área de texto automáticamente
+    input.style.height = 'auto';
+    let newHeight = input.scrollHeight;
+    if (newHeight > 120) newHeight = 120;
+    input.style.height = newHeight + 'px';
+
+    // Enfocar para editar inmediatamente
+    input.focus();
+
+    // Cerrar el menú de plantillas
+    toggleTemplatePicker();
 }
 // --- END: Picker Management ---
 
