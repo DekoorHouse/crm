@@ -1235,7 +1235,7 @@ async function handleMarkAsUnread(event, contactId) {
         event.preventDefault();
         event.stopPropagation();
         // Also try stopping immediate propagation if multiple listeners exist (unlikely here but safe)
-        if (event.stopImmediate propagation) event.stopImmediatePropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
     }
 
     try {
