@@ -339,6 +339,21 @@ async function handleSelectContact(contactId) {
 
                     if (change.type === "added") {
                         if (existingIndex === -1) {
+                            // --- INICIO CORRECCIÓN: EVITAR DUPLICADOS VISUALES ---
+                            // Si el mensaje es saliente (nuestro)
+                            if (changedMessage.from !== contactId) {
+                                // Buscar si existe un mensaje temporal (optimista) con el mismo texto
+                                const tempIndex = state.messages.findIndex(m => 
+                                    m.docId.startsWith('temp_') && 
+                                    m.text === changedMessage.text
+                                );
+                                
+                                // Si existe, eliminar el temporal antes de agregar el real
+                                if (tempIndex > -1) {
+                                    state.messages.splice(tempIndex, 1);
+                                }
+                            }
+                            // --- FIN CORRECCIÓN ---
                             state.messages.push(changedMessage);
                         }
                     } else if (change.type === "modified") {
