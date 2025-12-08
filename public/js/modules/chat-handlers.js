@@ -598,7 +598,14 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
     const filePath = `uploads/${userIdentifier}/${Date.now()}_${file.name}`;
     
     const fileRef = storage.ref(filePath);
-    const uploadTask = fileRef.put(file);
+    
+    // FIX: Agregar metadatos explícitos para evitar error 412 (Precondition Failed) en Firebase Storage
+    const metadata = {
+        contentType: file.type
+    };
+    
+    const uploadTask = fileRef.put(file, metadata);
+    
     return new Promise((resolve, reject) => {
         uploadTask.on('state_changed', 
             (snapshot) => { 
@@ -611,7 +618,8 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
                 state.isUploading = false; 
                 if (progressEl) progressEl.classList.add('hidden'); 
                 if(submitButton) submitButton.disabled = false; 
-                reject(new Error("Falló la subida del archivo.")); 
+                console.error("Error detallado de subida:", error);
+                reject(new Error("Falló la subida del archivo: " + error.message)); 
             }, 
             async () => {
                 try {
