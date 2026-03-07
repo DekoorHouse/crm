@@ -58,7 +58,7 @@ body.dark-mode {
     --color-bubble-sent-bg: #3d59a1; /* Azul más intenso para enviados */
     --color-bubble-sent-text: #ffffff;
     --color-bubble-received-bg: #292e42; /* Gris azulado para recibidos */
-    --color-bubble-received-text: #c0caf5;
+    --color-bubble-received-text: #ffffff;
 }
 
 body { font-family: var(--font-body); background-color: var(--color-bg); color: var(--color-text); font-size: 14px; overflow: hidden; transition: background-color 0.3s ease, color 0.3s ease; }
