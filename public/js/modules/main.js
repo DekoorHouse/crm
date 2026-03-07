@@ -24,8 +24,7 @@ function startApp() {
     listenForQuickReplies();
     listenForTags();
     listenForAdResponses();
-    listenForAIAdPrompts();
-    listenForKnowledgeBase();
+
     
     // --- NUEVOS LISTENERS PARA DEPARTAMENTOS Y REGLAS ---
     listenForDepartments();
@@ -34,9 +33,7 @@ function startApp() {
 
     // Fetch initial non-realtime data
     fetchTemplates();
-    fetchBotSettings();
-    fetchAwayMessageSettings();
-    fetchGlobalBotSettings();
+
     fetchGoogleSheetSettings();
     
     // Setup global event listeners
@@ -57,8 +54,7 @@ function stopApp() {
     if (unsubscribeQuickRepliesListener) unsubscribeQuickRepliesListener();
     if (unsubscribeTagsListener) unsubscribeTagsListener();
     if (unsubscribeAdResponsesListener) unsubscribeAdResponsesListener();
-    if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
-    if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
+
     
     // --- DETENER NUEVOS LISTENERS ---
     if (unsubscribeDepartmentsListener) unsubscribeDepartmentsListener();
@@ -98,21 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
         quickReplyForm.addEventListener('submit', handleSaveQuickReply);
     }
 
-    const kbForm = document.getElementById('kb-form');
-    if (kbForm) {
-        kbForm.addEventListener('submit', handleSaveKnowledgeBaseEntry);
-    }
 
-    // --- AÑADIDO: Listeners para los nuevos modales de IA ---
-    const aiAdPromptForm = document.getElementById('ai-ad-prompt-form');
-    if (aiAdPromptForm) {
-        aiAdPromptForm.addEventListener('submit', handleSaveAIAdPrompt);
-    }
-
-    const botSettingsForm = document.getElementById('bot-settings-form');
-    if (botSettingsForm) {
-        botSettingsForm.addEventListener('submit', handleSaveBotSettings);
-    }
     // --- FIN DE LA SOLUCIÓN ---
 
     // --- NUEVOS LISTENERS PARA DEPARTAMENTOS, REGLAS Y TRANSFERENCIA ---
