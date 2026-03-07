@@ -34,8 +34,8 @@ body.dark-mode {
     --color-bg: #1a1b26; /* Fondo principal oscuro profundo */
     --color-container-bg: #24283b; /* Fondo de contenedores/tarjetas */
     --color-sidebar-bg: #16161e; /* Fondo de la barra lateral un poco más oscuro */
-    --color-text: #c0caf5; /* Texto principal claro */
-    --color-text-light: #a9b1d6; /* Texto secundario */
+    --color-text: #ffffff; /* Texto principal blanco/neón brillante */
+    --color-text-light: #c0caf5; /* Texto secundario más brillante */
     
     /* Ajuste de colores primarios al estilo Tokyo Night */
     --color-primary: #7aa2f7; /* Azul Tokyo */
@@ -118,18 +118,18 @@ body.dark-mode .contact-item:hover { background-color: #292e42; }
 
 .contact-item.selected { background-image: linear-gradient(to right, var(--color-primary) 80%, var(--color-container-bg)); border-left-color: var(--color-primary); }
 .contact-item.selected h3, .contact-item.selected p { color: white !important; }
-body.dark-mode .contact-item.selected h3, body.dark-mode .contact-item.selected p { color: #1a1b26 !important; font-weight: 700; }
+body.dark-mode .contact-item.selected h3, body.dark-mode .contact-item.selected p { color: #ffffff !important; font-weight: 700; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
 
 .contact-item.selected .unread-badge { background-color: white; color: var(--color-primary); }
-body.dark-mode .contact-item.selected .unread-badge { background-color: #1a1b26; }
+body.dark-mode .contact-item.selected .unread-badge { background-color: #ffffff; color: #1a1b26; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
 
 .contact-item.selected .fas, .contact-item.selected .far { color: white !important; }
-body.dark-mode .contact-item.selected .fas, body.dark-mode .contact-item.selected .far { color: #1a1b26 !important; }
+body.dark-mode .contact-item.selected .fas, body.dark-mode .contact-item.selected .far { color: #ffffff !important; text-shadow: 0 0 5px rgba(255,255,255,0.4); }
 
 .contact-item.campaign-mode { cursor: default; }
 .contact-item.campaign-mode:hover { background-color: transparent; }
-.unread-badge { background-color: var(--color-primary); color: white; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 12px; min-width: 20px; text-align: center; line-height: 1.2; }
-body.dark-mode .unread-badge { color: #1a1b26; }
+.unread-badge { background-color: var(--color-primary); color: white; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 12px; min-width: 20px; text-align: center; line-height: 1.2; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+body.dark-mode .unread-badge { color: #1a1b26; background-color: #00ffcc; box-shadow: 0 0 8px rgba(0, 255, 204, 0.6); }
 
 .order-badge {
     background-color: var(--color-accent);
@@ -140,7 +140,7 @@ body.dark-mode .unread-badge { color: #1a1b26; }
     border-radius: 6px;
     flex-shrink: 0;
 }
-body.dark-mode .order-badge { color: #1a1b26; }
+body.dark-mode .order-badge { color: #1a1b26; background-color: #ff9e64; box-shadow: 0 0 8px rgba(255, 158, 100, 0.6); }
 
 #chat-panel { 
     background-color: #e5ddd5;
