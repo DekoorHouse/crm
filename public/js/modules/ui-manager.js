@@ -565,6 +565,9 @@ async function renderAITrainingView() {
 
     // 4. Cargar base de conocimiento desde Firestore
     loadKnowledgeBase();
+
+    // 5. Cargar estadísticas de uso de tokens
+    loadAIUsageStats();
 }
 
 async function handleSaveBotInstructions() {
@@ -686,6 +689,74 @@ async function handleDeleteKnowledge(docId) {
     } catch (error) {
         console.error('Error al eliminar conocimiento:', error);
         showError('No se pudo eliminar el conocimiento.');
+    }
+}
+
+async function loadAIUsageStats() {
+    // Precios por millón de tokens (USD)
+    const INPUT_PRICE_PER_M = 0.10;
+    const OUTPUT_PRICE_PER_M = 0.40;
+
+    function calculateCost(inputTokens, outputTokens) {
+        return ((inputTokens / 1_000_000) * INPUT_PRICE_PER_M) + ((outputTokens / 1_000_000) * OUTPUT_PRICE_PER_M);
+    }
+
+    function formatNumber(num) {
+        if (num >= 1_000_000) return (num / 1_000_000).toFixed(1) + 'M';
+        if (num >= 1_000) return (num / 1_000).toFixed(1) + 'K';
+        return num.toString();
+    }
+
+    try {
+        // --- Datos de HOY ---
+        const today = new Date().toISOString().split('T')[0];
+        const todayDoc = await db.collection('ai_usage_logs').doc(today).get();
+        const todayData = todayDoc.exists ? todayDoc.data() : { inputTokens: 0, outputTokens: 0, requestCount: 0 };
+
+        const todayCost = calculateCost(todayData.inputTokens || 0, todayData.outputTokens || 0);
+
+        const todayReqEl = document.getElementById('usage-today-requests');
+        const todayInEl = document.getElementById('usage-today-input');
+        const todayOutEl = document.getElementById('usage-today-output');
+        const todayCostEl = document.getElementById('usage-today-cost');
+
+        if (todayReqEl) todayReqEl.textContent = todayData.requestCount || 0;
+        if (todayInEl) todayInEl.textContent = formatNumber(todayData.inputTokens || 0);
+        if (todayOutEl) todayOutEl.textContent = formatNumber(todayData.outputTokens || 0);
+        if (todayCostEl) todayCostEl.textContent = '$' + todayCost.toFixed(4);
+
+        // --- Datos del MES ---
+        const yearMonth = today.substring(0, 7); // YYYY-MM
+        const monthStart = yearMonth + '-01';
+        const monthEnd = yearMonth + '-31';
+
+        const monthSnapshot = await db.collection('ai_usage_logs')
+            .where('date', '>=', monthStart)
+            .where('date', '<=', monthEnd)
+            .get();
+
+        let monthInput = 0, monthOutput = 0, monthRequests = 0;
+        monthSnapshot.docs.forEach(doc => {
+            const data = doc.data();
+            monthInput += data.inputTokens || 0;
+            monthOutput += data.outputTokens || 0;
+            monthRequests += data.requestCount || 0;
+        });
+
+        const monthCost = calculateCost(monthInput, monthOutput);
+
+        const monthReqEl = document.getElementById('usage-month-requests');
+        const monthInEl = document.getElementById('usage-month-input');
+        const monthOutEl = document.getElementById('usage-month-output');
+        const monthCostEl = document.getElementById('usage-month-cost');
+
+        if (monthReqEl) monthReqEl.textContent = monthRequests;
+        if (monthInEl) monthInEl.textContent = formatNumber(monthInput);
+        if (monthOutEl) monthOutEl.textContent = formatNumber(monthOutput);
+        if (monthCostEl) monthCostEl.textContent = '$' + monthCost.toFixed(4);
+
+    } catch (error) {
+        console.error('Error al cargar estadísticas de uso de IA:', error);
     }
 }
 

@@ -450,6 +450,60 @@ const AITrainingViewTemplate = () => `
                     <tbody id="knowledge-base-table-body"></tbody>
                 </table>
             </div>
+
+            <!-- Sección: Uso de Tokens -->
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-2">📊 Uso y Costos de IA</h2>
+                <p class="text-sm text-gray-500 mb-4">Monitorea el consumo de tokens y el costo estimado de la IA. Precios basados en Gemini Flash.</p>
+                
+                <!-- Stats de Hoy -->
+                <div class="mb-6">
+                    <h3 class="font-semibold text-lg mb-3">📅 Hoy</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-blue-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Peticiones</p>
+                            <p id="usage-today-requests" class="text-2xl font-bold text-blue-600">-</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Tokens Entrada</p>
+                            <p id="usage-today-input" class="text-2xl font-bold text-green-600">-</p>
+                        </div>
+                        <div class="bg-purple-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Tokens Salida</p>
+                            <p id="usage-today-output" class="text-2xl font-bold text-purple-600">-</p>
+                        </div>
+                        <div class="bg-amber-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Costo Estimado</p>
+                            <p id="usage-today-cost" class="text-2xl font-bold text-amber-600">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats del Mes -->
+                <div>
+                    <h3 class="font-semibold text-lg mb-3">📆 Este Mes</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div class="bg-blue-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Peticiones</p>
+                            <p id="usage-month-requests" class="text-2xl font-bold text-blue-600">-</p>
+                        </div>
+                        <div class="bg-green-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Tokens Entrada</p>
+                            <p id="usage-month-input" class="text-2xl font-bold text-green-600">-</p>
+                        </div>
+                        <div class="bg-purple-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Tokens Salida</p>
+                            <p id="usage-month-output" class="text-2xl font-bold text-purple-600">-</p>
+                        </div>
+                        <div class="bg-amber-50 rounded-lg p-4 text-center">
+                            <p class="text-xs text-gray-500 uppercase font-bold">Costo Estimado</p>
+                            <p id="usage-month-cost" class="text-2xl font-bold text-amber-600">-</p>
+                        </div>
+                    </div>
+                </div>
+
+                <p class="text-xs text-gray-400 mt-4 text-right">* Costos estimados: $0.10 USD / 1M tokens entrada, $0.40 USD / 1M tokens salida (Gemini Flash)</p>
+            </div>
         </div>
     </div>
 `;

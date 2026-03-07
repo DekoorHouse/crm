@@ -222,7 +222,13 @@ async function generateGeminiResponse(prompt) {
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
-    return generatedText;
+    // Extraer metadata de uso de tokens
+    const usage = result.usageMetadata || {};
+    return {
+        text: generatedText,
+        inputTokens: usage.promptTokenCount || 0,
+        outputTokens: usage.candidatesTokenCount || 0
+    };
 }
 
 async function triggerAutoReplyAI(message, contactRef, contactData) {
@@ -281,7 +287,19 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
             **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
         console.log(`[AI] Generando respuesta para ${contactId}.`);
-        const aiResponse = await generateGeminiResponse(prompt);
+        const aiResult = await generateGeminiResponse(prompt);
+        const aiResponse = aiResult.text;
+        
+        // Registrar uso de tokens en Firestore (agregación diaria)
+        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        const usageRef = db.collection('ai_usage_logs').doc(today);
+        await usageRef.set({
+            inputTokens: admin.firestore.FieldValue.increment(aiResult.inputTokens),
+            outputTokens: admin.firestore.FieldValue.increment(aiResult.outputTokens),
+            requestCount: admin.firestore.FieldValue.increment(1),
+            date: today
+        }, { merge: true });
+        console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
         
         const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
         
