@@ -609,7 +609,7 @@ const ContactItemTemplate = (contact, isSelected) => {
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
-                <h3 class="font-semibold text-sm text-gray-800 truncate">${contact.name || 'Desconocido'}</h3>
+                <h3 class="font-semibold text-sm truncate">${contact.name || 'Desconocido'}</h3>
                 <div class="contact-meta">
                      ${timeOrBadgeHTML}
                      <button type="button" class="preview-icon" onclick="event.stopPropagation(); openConversationPreview(event, '${contact.id}')" title="Ver conversación">
@@ -925,7 +925,7 @@ const ChatWindowTemplate = (contact) => {
         <header class="chat-header p-2 shadow-sm flex items-center space-x-2" ${headerStyle}>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
-                <h2 class="text-base font-semibold text-gray-800 cursor-pointer" onclick="openContactDetails()">${contact.name}</h2>
+                <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
                 <div class="flex items-center text-xs text-gray-500">
                     <span>+${contact.id}</span>
                     <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>
@@ -1092,7 +1092,7 @@ const ConversationPreviewModalTemplate = (contact) => `
                     <div class="flex items-center space-x-2">
                         <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
                         <div class="flex-grow">
-                            <h2 class="text-base font-semibold text-gray-800">${contact.name}</h2>
+                            <h2 class="text-base font-semibold" style="color: var(--color-text);">${contact.name}</h2>
                             <p class="text-xs text-gray-500">+${contact.id}</p>
                         </div>
                     </div>
