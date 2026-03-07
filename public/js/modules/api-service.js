@@ -441,37 +441,7 @@ function listenForAdResponses() {
     });
 }
 
-// Escucha cambios en los prompts de IA por anuncio
-function listenForAIAdPrompts() {
-    if (unsubscribeAIAdPromptsListener) unsubscribeAIAdPromptsListener();
-    unsubscribeAIAdPromptsListener = db.collection('ai_ad_prompts').orderBy('adName').onSnapshot(snapshot => {
-        // Actualiza estado global
-        state.aiAdPrompts = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // Re-renderiza la tabla si está activa
-        if (state.activeView === 'prompts-ia') {
-            renderAIAdPromptsView();
-        }
-    }, error => {
-        console.error("Error al escuchar los prompts de IA:", error);
-        showError("No se pudieron cargar los prompts de IA.");
-    });
-}
 
-// Escucha cambios en la base de conocimiento de IA
-function listenForKnowledgeBase() {
-    if (unsubscribeKnowledgeBaseListener) unsubscribeKnowledgeBaseListener();
-    unsubscribeKnowledgeBaseListener = db.collection('ai_knowledge_base').orderBy('topic').onSnapshot(snapshot => {
-        // Actualiza estado global
-        state.knowledgeBase = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        // Re-renderiza la tabla si está activa
-        if (state.activeView === 'respuestas-ia') {
-            renderKnowledgeBaseView();
-        }
-    }, error => {
-        console.error("Error fetching knowledge base:", error);
-        showError("No se pudo cargar la base de conocimiento.");
-    });
-}
 
 // --- NUEVO LISTENER: Escucha cambios en los Departamentos ---
 function listenForDepartments() {
@@ -570,18 +540,7 @@ async function fetchTemplates() {
     }
 }
 
-// Obtiene las instrucciones generales del bot
-async function fetchBotSettings() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/bot/settings`);
-        const data = await response.json();
-        if (data.success) {
-            state.botSettings = data.settings; // Guarda en estado global
-        }
-    } catch (error) {
-        console.error("Error fetching bot settings:", error);
-    }
-}
+
 
 // Obtiene el estado del mensaje de ausencia
 async function fetchAwayMessageSettings() {
@@ -597,19 +556,7 @@ async function fetchAwayMessageSettings() {
     }
 }
 
-// Obtiene el estado del bot global
-async function fetchGlobalBotSettings() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/settings/global-bot`);
-        const data = await response.json();
-        if (data.success) {
-            state.globalBotSettings.isActive = data.settings.isActive; // Guarda en estado global
-        }
-    } catch (error) {
-        console.error("Error fetching global bot settings:", error);
-        showError("No se pudo cargar la configuración del bot global.");
-    }
-}
+
 
 // Obtiene el ID de la Google Sheet de cobertura
 async function fetchGoogleSheetSettings() {
