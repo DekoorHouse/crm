@@ -912,17 +912,28 @@ function renderMessages(options = {}) {
         messagesHtml += MessageBubbleTemplate(message); // Añade burbuja de mensaje
     });
 
-    contentContainer.innerHTML = messagesHtml; // Actualiza el DOM
-    
-    // --- INICIO MODIFICACIÓN: Lógica de scroll condicional ---
+    // --- INICIO MODIFICACIÓN: Lógica de scroll condicional y paginación ---
     const messagesContainer = document.getElementById('messages-container');
     
-    if (options.scrollTop !== undefined) {
-        // Restaurar posición específica si se proporciona
-        messagesContainer.scrollTop = options.scrollTop;
-    } else if (options.scrollToBottom !== false) {
-        // Comportamiento por defecto (scroll al final) SOLO si no se ha desactivado explícitamente
-        messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    // Guardamos la altura del scroll ANTES de insertar los mensajes viejos
+    const previousScrollHeight = messagesContainer ? messagesContainer.scrollHeight : 0;
+    const previousScrollTop = messagesContainer ? messagesContainer.scrollTop : 0;
+
+    contentContainer.innerHTML = messagesHtml; // Actualiza el DOM
+    
+    if (messagesContainer) {
+        if (options.preserveScrollHeight) {
+            // Calculamos cuánto creció el contenedor hacia arriba 
+            const heightDifference = messagesContainer.scrollHeight - previousScrollHeight;
+            // Ajustamos el scroll por esa diferencia para que el usuario se quede "donde estaba" visualmente
+            messagesContainer.scrollTop = previousScrollTop + heightDifference;
+        } else if (options.scrollTop !== undefined) {
+            // Restaurar posición específica si se proporciona
+            messagesContainer.scrollTop = options.scrollTop;
+        } else if (options.scrollToBottom !== false) {
+            // Comportamiento por defecto (scroll al final) SOLO si no se ha desactivado explícitamente
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
     }
     // --- FIN MODIFICACIÓN ---
 
