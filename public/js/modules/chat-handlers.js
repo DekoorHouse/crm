@@ -1448,5 +1448,40 @@ async function handleMarkAsUnread(event, contactId) {
 }
 // --- END: Mark as Unread Logic ---
 
-// Exportar la nueva función globalmente
+// --- START: Bot Toggle Logic ---
+async function handleBotToggle(contactId, isActive) {
+    try {
+        // 1. Actualización optimista de la UI
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].botActive = isActive;
+            // Si el chat está abierto, refrescar para actualizar el icono
+            if (state.selectedContactId === contactId) {
+                renderChatWindow();
+            }
+        }
+
+        // 2. Actualizar en Firestore
+        await db.collection('contacts_whatsapp').doc(contactId).update({ 
+            botActive: isActive 
+        });
+
+    } catch (error) {
+        console.error("Error al cambiar estado de la IA:", error);
+        showError("No se pudo cambiar el estado de la IA.");
+        // Revertir cambio optimista si falla
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].botActive = !isActive;
+            if (state.selectedContactId === contactId) {
+                renderChatWindow();
+            }
+        }
+    }
+}
+// --- END: Bot Toggle Logic ---
+
+// Exportar las funciones globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
+window.handleBotToggle = handleBotToggle;
+
