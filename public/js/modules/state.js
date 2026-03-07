@@ -57,6 +57,13 @@ let state = {
         hasMore: true // Indica si quedan más contactos por cargar
     },
 
+    // --- Paginación para la lista de mensajes (Infinite Scroll) ---
+    messagePagination: {
+        limit: 30, // Iniciar cargando los 30 más recientes
+        hasMore: true, // Indica si hay más historial en Firestore
+        isLoadingMore: false // Previene solicitudes duplicadas
+    },
+
     // --- Estado para los selectores (QR, Plantillas) ---
     pickerItems: [], // Items actualmente mostrados en el selector activo
     pickerSelectedIndex: -1, // Índice del item seleccionado con flechas
