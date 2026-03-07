@@ -8,7 +8,7 @@ let state = {
     notes: [], // Notas internas del chat seleccionado
     quickReplies: [], // Respuestas rápidas disponibles
     adResponses: [], // Mensajes automáticos por Ad ID
-    aiAdPrompts: [], // Prompts de IA por Ad ID
+
     templates: [], // Plantillas de WhatsApp aprobadas
     tags: [], // Etiquetas/Categorías de contactos
     // Lista fija de estatus de pedidos, movida aquí para consistencia
@@ -24,10 +24,9 @@ let state = {
         { key: "Mns Amenazador", label: "Mns Amenazador", color: "#dc3545" },
         { key: "Cancelado", label: "Cancelado", color: "#6c757d" }
     ],
-    knowledgeBase: [], // Entradas de la base de conocimiento para IA
-    botSettings: { instructions: '' }, // Instrucciones generales para el bot IA
+
     awayMessageSettings: { isActive: true }, // Estado del mensaje de ausencia
-    globalBotSettings: { isActive: false }, // Estado del bot IA global
+
     googleSheetSettings: { googleSheetId: '' }, // ID de la hoja de cálculo de cobertura
     selectedContactId: null, // ID del contacto actualmente seleccionado
     selectedContactOrders: [], // Pedidos del contacto seleccionado (para la barra lateral)
@@ -92,8 +91,7 @@ let unsubscribeMessagesListener = null,
     unsubscribeQuickRepliesListener = null,
     unsubscribeTagsListener = null,
     unsubscribeAdResponsesListener = null,
-    unsubscribeKnowledgeBaseListener = null,
-    unsubscribeAIAdPromptsListener = null,
+
     unsubscribeOrdersListener = null, // Listener para pedidos del contacto seleccionado
     // NUEVOS LISTENERS
     unsubscribeDepartmentsListener = null,
