@@ -176,7 +176,23 @@ function renderChatWindow(options = {}) {
             renderMessages(options);
             
             const messagesContainer = document.getElementById('messages-container'); 
-            if (messagesContainer) { messagesContainer.addEventListener('scroll', () => { if (!ticking) { window.requestAnimationFrame(() => { handleScroll(); ticking = false; }); ticking = true; } }); }
+            if (messagesContainer) { 
+                messagesContainer.addEventListener('scroll', () => { 
+                    if (!ticking) { 
+                        window.requestAnimationFrame(() => { 
+                            handleScroll(); 
+                            
+                            // Lógica de Scroll Infinito para Mensajes
+                            if (messagesContainer.scrollTop < 50) {
+                                loadMoreMessages();
+                            }
+                            
+                            ticking = false; 
+                        }); 
+                        ticking = true; 
+                    } 
+                }); 
+            }
             
             // --- INICIO DE LA MODIFICACIÓN: Doble clic en el área del mensaje para responder ---
             const messagesContent = document.getElementById('messages-content');
@@ -323,10 +339,28 @@ async function handleSelectContact(contactId) {
     handleSearchContacts(); 
     
     let isInitialMessageLoad = true;
-    unsubscribeMessagesListener = db.collection('contacts_whatsapp').doc(contactId).collection('messages').orderBy('timestamp', 'asc')
+    
+    // Reset pagination state when selecting a new contact
+    state.messagePagination.limit = 30;
+    state.messagePagination.hasMore = true;
+    state.messagePagination.isLoadingMore = false;
+
+    // --- MODIFICADO: Query invertido con límite para paginación ---
+    unsubscribeMessagesListener = db.collection('contacts_whatsapp')
+        .doc(contactId)
+        .collection('messages')
+        .orderBy('timestamp', 'desc') // Ordenar del más nuevo al más viejo
+        .limit(state.messagePagination.limit) // Limitar la cantidad inicial
         .onSnapshot((snapshot) => {
             hideError();
-            const newMessages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() }));
+            
+            // Si la cantidad de documentos que llegó es MÁS CHICA que el límite actual, significa que ya no hay más mensajes históricos en Firebase
+            if (snapshot.docs.length < state.messagePagination.limit) {
+                state.messagePagination.hasMore = false;
+            }
+
+            // Mapear y revertir para que cronológicamente el más viejo cargado quede arriba y el más nuevo quede abajo
+            const newMessages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })).reverse();
 
             if (isInitialMessageLoad) {
                 state.messages = newMessages;
@@ -340,21 +374,32 @@ async function handleSelectContact(contactId) {
                     if (change.type === "added") {
                         if (existingIndex === -1) {
                             // --- INICIO CORRECCIÓN: EVITAR DUPLICADOS VISUALES ---
-                            // Si el mensaje es saliente (nuestro)
                             if (changedMessage.from !== contactId) {
-                                // Buscar si existe un mensaje temporal (optimista) con el mismo texto
                                 const tempIndex = state.messages.findIndex(m => 
                                     m.docId.startsWith('temp_') && 
                                     m.text === changedMessage.text
                                 );
-                                
-                                // Si existe, eliminar el temporal antes de agregar el real
                                 if (tempIndex > -1) {
                                     state.messages.splice(tempIndex, 1);
                                 }
                             }
                             // --- FIN CORRECCIÓN ---
-                            state.messages.push(changedMessage);
+                            
+                            // MODIFICACIÓN DE PAGINACIÓN:
+                            // Insertar de manera que se mantenga el orden cronológico.
+                            // findIndex busca el primer mensaje cuyo timestamp sea MAYOR al nuevo mensaje.
+                            const insertIndex = state.messages.findIndex(m => {
+                                if (!m.timestamp || !changedMessage.timestamp) return false;
+                                return m.timestamp.seconds > changedMessage.timestamp.seconds;
+                            });
+
+                            if (insertIndex === -1) {
+                                // Si no se encuentra ninguno mayor, es el mensaje más nuevo, va al final.
+                                state.messages.push(changedMessage);
+                            } else {
+                                // De lo contrario, lo insertamos justo antes del mensaje mayor (antiguo cargado)
+                                state.messages.splice(insertIndex, 0, changedMessage);
+                            }
                         }
                     } else if (change.type === "modified") {
                         if (existingIndex > -1) {
@@ -369,16 +414,20 @@ async function handleSelectContact(contactId) {
             }
 
             // Recalcular el estado de la sesión cada vez que llegan mensajes
-            const lastUserMessage = newMessages.slice().reverse().find(m => m.from === contactId);
+            // El usuario envía un mensaje, así que buscamos el último en orden cronológico inverso
+            const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
             if (lastUserMessage && lastUserMessage.timestamp) {
                 const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
                 state.isSessionExpired = hoursDiff > 24;
             } else {
-                state.isSessionExpired = newMessages.length > 0; // Si hay mensajes pero ninguno del usuario, la sesión está expirada
+                state.isSessionExpired = state.messages.length > 0; // Si hay mensajes pero ninguno del usuario, la sesión está expirada
             }
 
             if (state.activeTab === 'chat') {
-                renderMessages();
+                // MODIFICACIÓN PAGINACIÓN:
+                // renderMessages NO debe forzar scroll down automático si estábamos haciendo paginación.
+                // Lo gestionaremos usando la variable booleana isLoadingMore del listado.
+                renderMessages({ preserveScrollHeight: state.messagePagination.isLoadingMore });
             }
 
         }, (error) => {
@@ -394,6 +443,125 @@ async function handleSelectContact(contactId) {
     renderChatWindow();
     
     openContactDetails();
+}
+
+/**
+ * Carga más mensajes antiguos utilizando la función handleSelectContact actualizando el límite.
+ */
+function loadMoreMessages() {
+    if (!state.messagePagination.hasMore || state.messagePagination.isLoadingMore || !state.selectedContactId) return;
+
+    state.messagePagination.isLoadingMore = true;
+    
+    // Mostramos un breve indicador de carga arriba en la vista del chat
+    const messagesContent = document.getElementById('messages-content');
+    if (messagesContent) {
+        const loadingIndicator = document.createElement('div');
+        loadingIndicator.id = 'pagination-loading';
+        loadingIndicator.className = 'text-center py-2 text-sm text-gray-500';
+        loadingIndicator.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Cargando mensajes anteriores...';
+        messagesContent.insertAdjacentElement('afterbegin', loadingIndicator);
+    }
+    
+    // Aumentamos el límite de mensajes que solicitamos
+    state.messagePagination.limit += 30;
+
+    // Al reemplazar el listener, Firestore inteligentemente reutilizará la caché local, 
+    // e irá a buscar solo los documentos antiguos adicionales de acuerdo al nuevo límite.
+    if (unsubscribeMessagesListener) {
+        unsubscribeMessagesListener();
+    }
+
+    const contactId = state.selectedContactId;
+    let isInitialLoad = true;
+    unsubscribeMessagesListener = db.collection('contacts_whatsapp')
+        .doc(contactId)
+        .collection('messages')
+        .orderBy('timestamp', 'desc')
+        .limit(state.messagePagination.limit)
+        .onSnapshot((snapshot) => {
+            hideError();
+            
+            // Evaluar si realmente hay más historial disponible
+            if (snapshot.docs.length < state.messagePagination.limit) {
+                state.messagePagination.hasMore = false;
+            }
+
+            const newMessages = snapshot.docs.map(doc => ({ docId: doc.id, ...doc.data() })).reverse();
+            
+            // Si es la primera vez que responde este nuevo limite
+            if (isInitialLoad) {
+                state.messages = newMessages; 
+                state.messagePagination.isLoadingMore = false;
+                
+                // Mantenemos la posición para que no salte el scroll
+                if (state.activeTab === 'chat') {
+                    renderMessages({ preserveScrollHeight: true });
+                }
+                isInitialLoad = false;
+            } else {
+                // Manejar cambios que ocurran en adelante con el mismo bloque de onSnapshot docChanges anterior
+                snapshot.docChanges().forEach((change) => {
+                    const changedMessage = { docId: change.doc.id, ...change.doc.data() };
+                    const existingIndex = state.messages.findIndex(m => m.docId === change.doc.id);
+
+                    if (change.type === "added") {
+                        if (existingIndex === -1) {
+                            if (changedMessage.from !== contactId) {
+                                const tempIndex = state.messages.findIndex(m => 
+                                    m.docId.startsWith('temp_') && 
+                                    m.text === changedMessage.text
+                                );
+                                if (tempIndex > -1) {
+                                    state.messages.splice(tempIndex, 1);
+                                }
+                            }
+                            
+                            const insertIndex = state.messages.findIndex(m => {
+                                if (!m.timestamp || !changedMessage.timestamp) return false;
+                                return m.timestamp.seconds > changedMessage.timestamp.seconds;
+                            });
+
+                            if (insertIndex === -1) {
+                                state.messages.push(changedMessage);
+                            } else {
+                                state.messages.splice(insertIndex, 0, changedMessage);
+                            }
+                        }
+                    } else if (change.type === "modified") {
+                        if (existingIndex > -1) {
+                            state.messages[existingIndex] = changedMessage;
+                        }
+                    } else if (change.type === "removed") {
+                        if (existingIndex > -1) {
+                            state.messages.splice(existingIndex, 1);
+                        }
+                    }
+                });
+                
+                if (state.activeTab === 'chat') {
+                    // Si entraron mensajes en vivo mientras paginabamos, no forzamos scroll hasta el bottom 
+                    // a menos que ya estuvieramos ahí (lo decide UI-manager)
+                    renderMessages({ preserveScrollHeight: state.messagePagination.isLoadingMore });
+                }
+            }
+            
+            const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
+            if (lastUserMessage && lastUserMessage.timestamp) {
+                const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
+                state.isSessionExpired = hoursDiff > 24;
+            } else {
+                state.isSessionExpired = state.messages.length > 0;
+            }
+
+        }, (error) => {
+            console.error(error);
+            showError(`Error al cargar mensajes históricos.`);
+            state.messagePagination.isLoadingMore = false;
+             // Quitar el indicador de carga si falló
+            const indicator = document.getElementById('pagination-loading');
+            if (indicator) indicator.remove();
+        });
 }
 
 // --- NUEVA LÓGICA DE COLA DE MENSAJES ---
