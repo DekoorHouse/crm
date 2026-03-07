@@ -739,7 +739,7 @@ const StatusButtonsTemplate = (contact) => {
         buttonsHtml += `<button
                             onclick="handleStatusChange('${contact.id}', '${tag.key}')"
                             class="status-btn ${isActive ? 'active' : ''}"
-                            style="${isActive ? `background-color: ${tag.color}; color: white; border-color: ${tag.color};` : `background-color: ${tag.color}20; color: ${tag.color}; border-color: ${tag.color}50;`}"
+                            style="--btn-color: ${tag.color};"
                         >
                             ${tag.label}
                         </button>`;

@@ -392,11 +392,26 @@ body.dark-mode .picker-add-btn:hover { background-color: #1a1b26; }
 #contact-details-panel.open { width: 320px; }
 
 .status-btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
-.status-btn { padding: 3px 10px; font-size: 0.7rem; border-radius: 9999px; border: 1px solid transparent; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
+.status-btn { 
+    padding: 3px 10px; font-size: 0.7rem; border-radius: 9999px; 
+    border: 1px solid color-mix(in srgb, var(--btn-color) 50%, transparent); 
+    font-weight: 600; cursor: pointer; transition: all 0.2s ease; 
+    background-color: color-mix(in srgb, var(--btn-color) 20%, transparent); 
+    color: var(--btn-color);
+}
+.status-btn.active { 
+    background-color: var(--btn-color); 
+    color: white; 
+    border-color: var(--btn-color);
+}
 .status-btn:hover:not(.active) { transform: translateY(-1px); }
 
 /* Ensure inactive tags remain readable on dark mode backgrounds */
-body.dark-mode .status-btn:not(.active) { filter: brightness(1.7) saturate(1.2); }
+body.dark-mode .status-btn:not(.active) { 
+    background-color: color-mix(in srgb, var(--btn-color) 25%, transparent);
+    color: color-mix(in srgb, var(--btn-color) 40%, white);
+    border-color: color-mix(in srgb, var(--btn-color) 30%, white);
+}
 
 #main-sidebar { background-color: var(--color-sidebar-bg); border-right: 1px solid var(--color-border); width: 280px; transition: width 0.3s ease-in-out; flex-shrink: 0; }
 #main-sidebar.collapsed { width: 80px; }
