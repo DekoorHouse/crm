@@ -297,26 +297,7 @@ const MensajesAdsViewTemplate = () => `
     </div>
 `;
 
-const AIAdPromptsViewTemplate = () => `
-    <div class="view-container">
-        <div class="view-header">
-            <h1>Prompts de IA por Anuncio</h1>
-            <button onclick="openAIAdPromptModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Prompt</button>
-        </div>
-        <p class="mb-6 text-gray-600">Asigna instrucciones específicas (prompts) para la IA basadas en el anuncio del que proviene el cliente. Si un anuncio no tiene un prompt aquí, se usarán las instrucciones generales del bot.</p>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Nombre del Anuncio</th>
-                    <th>ID del Anuncio</th>
-                    <th>Prompt</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="ai-ad-prompts-table-body"></tbody>
-        </table>
-    </div>
-`;
+
 
 const ContactsViewTemplate = () => `
     <div class="view-container">
@@ -360,74 +341,7 @@ const QuickRepliesViewTemplate = () => `
     </div>
 `;
 
-const KnowledgeBaseViewTemplate = () => `
-    <div class="view-container">
-        <div class="view-header">
-            <h1>Base de Conocimiento de IA</h1>
-            <button onclick="openKnowledgeBaseModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
-        </div>
-        <p class="mb-6 text-gray-600">Aquí puedes añadir respuestas a preguntas frecuentes. El bot usará esta información para contestar automáticamente.</p>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Tema / Palabras Clave</th>
-                    <th>Respuesta Base</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="kb-table-body"></tbody>
-        </table>
-    </div>
-`;
 
-const AjustesIAViewTemplate = () => `
-    <div class="view-container">
-        <div class="view-header">
-            <h1>Ajustes de Inteligencia Artificial</h1>
-        </div>
-
-        <div class="max-w-4xl space-y-8">
-            <div class="settings-card">
-                <h2 class="text-xl font-bold mb-4">Automatización Global</h2>
-                <div class="flex items-center justify-between">
-                    <div>
-                        <h3 class="font-semibold">Bot IA Global</h3>
-                        <p class="text-sm text-gray-500">Activar la inteligencia artificial para todas las conversaciones nuevas.</p>
-                    </div>
-                    <label class="toggle-switch">
-                        <input type="checkbox" id="global-bot-toggle" onchange="handleGlobalBotToggle(this.checked)">
-                        <span class="slider"></span>
-                    </label>
-                </div>
-            </div>
-
-            <div class="settings-card">
-                <h2 class="text-xl font-bold mb-4">Instrucciones del Bot</h2>
-                <p class="mb-4 text-gray-600">Define el comportamiento general del bot. Estas instrucciones se usarán a menos que un prompt de anuncio específico las anule.</p>
-                <button onclick="openBotSettingsModal()" class="btn btn-secondary"><i class="fas fa-pencil-alt mr-2"></i>Editar Prompt General</button>
-            </div>
-
-            <div class="settings-card">
-                <h2 class="text-xl font-bold mb-4">Anulaciones Individuales del Bot</h2>
-                <p class="mb-4 text-gray-600">Activa o desactiva el bot para conversaciones individuales. Esto anulará el ajuste global.</p>
-                <div class="mb-4">
-                    <input type="text" id="bot-contact-search-input" placeholder="Buscar contacto por nombre o número..." class="!mb-0">
-                </div>
-                <div class="max-h-96 overflow-y-auto">
-                    <table class="table">
-                        <thead>
-                            <tr>
-                                <th>Contacto</th>
-                                <th>Bot Activo</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bot-contacts-table-body"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-`;
 
 const SettingsViewTemplate = () => `
     <div class="view-container">
