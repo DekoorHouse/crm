@@ -212,7 +212,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
 
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.0-flash:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }] };
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
@@ -236,9 +236,8 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         // El bot se activa si el interruptor global está encendido (y no está anulado para este contacto),
         // O si está activado individualmente para este contacto específico.
         const isIndividuallyActive = contactData.botActive === true;
-        const isIndividuallyDeactivated = contactData.botActive === false;
         
-        const shouldRun = (globalBotActive && !isIndividuallyDeactivated) || isIndividuallyActive;
+        const shouldRun = isIndividuallyActive;
 
         if (!shouldRun) {
             console.log(`[AI] El bot no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). No se enviará respuesta.`);

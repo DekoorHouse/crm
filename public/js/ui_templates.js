@@ -812,7 +812,7 @@ const ChatWindowTemplate = (contact) => {
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
 
-    const isBotActiveForContact = contact.botActive !== false;
+    const isBotActiveForContact = contact.botActive === true;
     const botToggleHTML = `
         <button
             onclick="handleBotToggle('${contact.id}', ${!isBotActiveForContact})"
