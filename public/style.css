@@ -142,15 +142,28 @@ body.dark-mode .unread-badge { color: #1a1b26; }
 }
 body.dark-mode .order-badge { color: #1a1b26; }
 
-#chat-panel { background-color: #e5ddd5; background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); }
+#chat-panel { 
+    background-color: #e5ddd5;
+    position: relative;
+    z-index: 1;
+}
+
+#chat-panel::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+    z-index: -1;
+    opacity: 0.8;
+}
+
 body.dark-mode #chat-panel { 
     background-color: #16161e; 
-    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png'); 
-    /* Invert filter to make the background pattern dark */
+}
+
+body.dark-mode #chat-panel::before {
     filter: invert(1) hue-rotate(180deg) brightness(0.6) contrast(0.9);
 }
-/* Fix inner elements of chat panel from inheriting the filter */
-body.dark-mode #chat-panel > * { filter: invert(1) hue-rotate(180deg) brightness(1.6) contrast(1.1); }
 
 
 .chat-header { background-color: #f8f9fa; border-bottom: 1px solid var(--color-border); transition: background-color 0.3s ease; }
@@ -381,6 +394,9 @@ body.dark-mode .picker-add-btn:hover { background-color: #1a1b26; }
 .status-btn-group { display: flex; flex-wrap: wrap; gap: 6px; }
 .status-btn { padding: 3px 10px; font-size: 0.7rem; border-radius: 9999px; border: 1px solid transparent; font-weight: 600; cursor: pointer; transition: all 0.2s ease; }
 .status-btn:hover:not(.active) { transform: translateY(-1px); }
+
+/* Ensure inactive tags remain readable on dark mode backgrounds */
+body.dark-mode .status-btn:not(.active) { filter: brightness(1.7) saturate(1.2); }
 
 #main-sidebar { background-color: var(--color-sidebar-bg); border-right: 1px solid var(--color-border); width: 280px; transition: width 0.3s ease-in-out; flex-shrink: 0; }
 #main-sidebar.collapsed { width: 80px; }
@@ -754,14 +770,25 @@ body.dark-mode .contact-item .preview-icon:hover { background-color: #414868; }
 
 #preview-messages-container {
     background-color: #e5ddd5; /* Fondo tipo WhatsApp */
-    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+    position: relative;
+    z-index: 1;
 }
+
+#preview-messages-container::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');
+    z-index: -1;
+    opacity: 0.8;
+}
+
 body.dark-mode #preview-messages-container {
     background-color: #16161e;
-    filter: invert(1) hue-rotate(180deg) brightness(0.6) contrast(0.9);
 }
-body.dark-mode #preview-messages-content {
-    filter: invert(1) hue-rotate(180deg) brightness(1.6) contrast(1.1);
+
+body.dark-mode #preview-messages-container::before {
+    filter: invert(1) hue-rotate(180deg) brightness(0.6) contrast(0.9);
 }
 
 /* El spinner de carga dentro del modal */
