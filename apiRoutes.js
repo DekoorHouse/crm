@@ -1942,94 +1942,7 @@ router.delete('/ad-responses/:id', async (req, res) => {
     }
 });
 
-// --- Endpoints para Prompts de IA por Anuncio (/api/ai-ad-prompts) ---
-// POST (Crear)
-router.post('/ai-ad-prompts', async (req, res) => {
-    const { adName, adId, prompt } = req.body;
-    if (!adName || !adId || !prompt) {
-        return res.status(400).json({ success: false, message: 'Faltan datos (adName, adId, prompt).' });
-    }
-    try {
-        // Verificar si ya existe un prompt para este Ad ID
-        const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty) {
-            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya tiene un prompt asignado.` });
-        }
-        // Crear nuevo prompt
-        const newPrompt = await db.collection('ai_ad_prompts').add({ adName, adId, prompt });
-        res.status(201).json({ success: true, id: newPrompt.id });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error del servidor al crear prompt.' });
-    }
-});
 
-// PUT (Actualizar)
-router.put('/ai-ad-prompts/:id', async (req, res) => {
-    const { id } = req.params;
-    const { adName, adId, prompt } = req.body;
-    if (!adName || !adId || !prompt) {
-        return res.status(400).json({ success: false, message: 'Faltan datos (adName, adId, prompt).' });
-    }
-    try {
-        // Verificar si el nuevo Ad ID ya existe en *otro* documento
-        const existing = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-        if (!existing.empty && existing.docs[0].id !== id) {
-            return res.status(409).json({ success: false, message: `El Ad ID '${adId}' ya está asignado a otro prompt.` });
-        }
-        // Actualizar el prompt
-        await db.collection('ai_ad_prompts').doc(id).update({ adName, adId, prompt });
-        res.status(200).json({ success: true, message: 'Prompt actualizado.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al actualizar el prompt.' });
-    }
-});
-
-// DELETE (Borrar)
-router.delete('/ai-ad-prompts/:id', async (req, res) => {
-    try {
-        await db.collection('ai_ad_prompts').doc(req.params.id).delete();
-        res.status(200).json({ success: true, message: 'Prompt eliminado.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al eliminar el prompt.' });
-    }
-});
-
-
-// --- Endpoints para Ajustes del Bot (/api/bot/...) ---
-// GET (Obtener instrucciones generales)
-router.get('/bot/settings', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('bot').get();
-        // Devolver instrucciones o un objeto vacío si no existe
-        res.status(200).json({ success: true, settings: doc.exists ? doc.data() : { instructions: '' } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener ajustes del bot.' });
-    }
-});
-
-// POST (Guardar instrucciones generales)
-router.post('/bot/settings', async (req, res) => {
-    try {
-        // Guardar (o sobrescribir) las instrucciones en el documento 'bot'
-        await db.collection('crm_settings').doc('bot').set({ instructions: req.body.instructions });
-        res.status(200).json({ success: true, message: 'Ajustes del bot guardados.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar ajustes del bot.' });
-    }
-});
-
-// POST (Activar/desactivar bot para un contacto)
-router.post('/bot/toggle', async (req, res) => {
-    try {
-        // Actualizar el campo 'botActive' en el documento del contacto
-        await db.collection('contacts_whatsapp').doc(req.body.contactId).update({
-            botActive: req.body.isActive // true o false
-        });
-        res.status(200).json({ success: true, message: `Bot ${req.body.isActive ? 'activado' : 'desactivado'} para el contacto.` });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al actualizar estado del bot para el contacto.' });
-    }
-});
 
 // --- Endpoints para Ajustes Generales (/api/settings/...) ---
 // GET (Obtener estado del mensaje de ausencia)
@@ -2054,27 +1967,7 @@ router.post('/settings/away-message', async (req, res) => {
     }
 });
 
-// GET (Obtener estado del bot global)
-router.get('/settings/global-bot', async (req, res) => {
-    try {
-        const doc = await db.collection('crm_settings').doc('general').get();
-        // Devolver estado o false por defecto si no existe
-        res.status(200).json({ success: true, settings: { isActive: doc.exists ? doc.data().globalBotActive : false } });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al obtener ajuste del bot global.' });
-    }
-});
 
-// POST (Guardar estado del bot global)
-router.post('/settings/global-bot', async (req, res) => {
-    try {
-        // Guardar estado en el documento 'general'
-        await db.collection('crm_settings').doc('general').set({ globalBotActive: req.body.isActive }, { merge: true });
-        res.status(200).json({ success: true, message: 'Ajuste del bot global guardado.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al guardar ajuste.' });
-    }
-});
 
 // GET (Obtener ID de Google Sheet)
 router.get('/settings/google-sheet', async (req, res) => {
@@ -2098,102 +1991,7 @@ router.post('/settings/google-sheet', async (req, res) => {
     }
 });
 
-// --- Endpoints para Base de Conocimiento (/api/knowledge-base) ---
-// POST (Crear entrada)
-router.post('/knowledge-base', async (req, res) => {
-    const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) {
-        return res.status(400).json({ success: false, message: 'El tema y la respuesta base son obligatorios.' });
-    }
-    try {
-        const data = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
-        const newEntry = await db.collection('ai_knowledge_base').add(data);
-        res.status(201).json({ success: true, id: newEntry.id, data });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error del servidor al crear entrada.' });
-    }
-});
 
-// PUT (Actualizar entrada)
-router.put('/knowledge-base/:id', async (req, res) => {
-    const { id } = req.params;
-    const { topic, answer, fileUrl, fileType } = req.body;
-    if (!topic || !answer) {
-        return res.status(400).json({ success: false, message: 'El tema y la respuesta base son obligatorios.' });
-    }
-    try {
-        const data = { topic, answer, fileUrl: fileUrl || null, fileType: fileType || null };
-        await db.collection('ai_knowledge_base').doc(id).update(data);
-        res.status(200).json({ success: true, message: 'Entrada de conocimiento actualizada.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar.' });
-    }
-});
-
-// DELETE (Borrar entrada)
-router.delete('/knowledge-base/:id', async (req, res) => {
-    try {
-        await db.collection('ai_knowledge_base').doc(req.params.id).delete();
-        res.status(200).json({ success: true, message: 'Entrada de conocimiento eliminada.' });
-    } catch (error) {
-        res.status(500).json({ success: false, message: 'Error al eliminar la entrada.' });
-    }
-});
-
-// --- Endpoint POST /api/contacts/:contactId/generate-reply (Generar respuesta con IA) ---
-router.post('/contacts/:contactId/generate-reply', async (req, res) => {
-    const { contactId } = req.params;
-    try {
-        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        const contactDoc = await contactRef.get();
-        if (!contactDoc.exists) {
-            return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
-        }
-        const contactData = contactDoc.data();
-
-        // Obtener historial reciente
-        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
-        if (messagesSnapshot.empty) {
-            return res.status(400).json({ success: false, message: 'No hay mensajes en esta conversación para generar una respuesta.' });
-        }
-        // Formatear historial para el prompt
-        const conversationHistory = messagesSnapshot.docs.map(doc => {
-            const d = doc.data();
-            return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text || '(Mensaje multimedia)'}`; // Usar texto o placeholder
-        }).reverse().join('\n'); // Invertir para orden cronológico
-
-        // Determinar instrucciones del bot (específicas del Ad o generales)
-        let botInstructions = 'Eres un asistente virtual amigable y servicial para ventas.'; // Default
-        const adId = contactData.adReferral?.source_id;
-        if (adId) {
-            const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
-            if (!adPromptSnapshot.empty) botInstructions = adPromptSnapshot.docs[0].data().prompt;
-        } else {
-            const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-            if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
-        }
-
-        // Obtener base de conocimiento
-        const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
-        const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
-
-        // Construir el prompt final para Gemini
-        const prompt = `
-            **Instrucciones:**\n${botInstructions}\n\n
-            **Base de Conocimiento:**\n${knowledgeBase || 'N/A'}\n\n
-            **Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nResponde al ÚLTIMO mensaje del cliente. Sé conciso y útil. Si no sabes, pide ayuda a un humano.
-            Asistente:`; // Pedir explícitamente la respuesta del Asistente
-
-        // Llamar a Gemini
-        const suggestion = await generateGeminiResponse(prompt);
-
-        res.status(200).json({ success: true, message: 'Sugerencia de respuesta generada.', suggestion });
-    } catch (error) {
-        console.error('Error al generar respuesta con IA:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al generar la respuesta.' });
-    }
-});
 
 // --- Endpoint POST /api/test/simulate-ad-message (Simular mensaje de anuncio) ---
 router.post('/test/simulate-ad-message', async (req, res) => {
