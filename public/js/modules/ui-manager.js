@@ -14,7 +14,7 @@ function navigateTo(viewName, force = false) {
 
     state.activeView = viewName;
 
-    const iaSubmenuViews = ['prompts-ia', 'respuestas-ia', 'ajustes-ia'];
+
 
     // Actualiza la barra lateral
     document.querySelectorAll('#main-sidebar .nav-item').forEach(item => {
@@ -22,18 +22,7 @@ function navigateTo(viewName, force = false) {
         item.classList.toggle('active', isDirectMatch);
     });
 
-    // Maneja el submenú de IA
-    const iaMenu = document.getElementById('ia-menu')?.querySelector('.nav-item');
-    if (iaMenu) {
-        const isIAViewActive = iaSubmenuViews.includes(viewName);
-        iaMenu.classList.toggle('active', isIAViewActive);
-        const iaSubmenu = document.getElementById('ia-submenu');
-        const iaChevron = document.getElementById('ia-menu-chevron');
-        if (iaSubmenu && iaChevron) {
-            iaSubmenu.classList.toggle('hidden', !isIAViewActive);
-            iaChevron.classList.toggle('rotate-180', isIAViewActive);
-        }
-    }
+
 
     // Renderiza la vista principal
     const mainViewContainer = document.getElementById('main-view-container');
@@ -83,22 +72,12 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MensajesAdsViewTemplate();
             renderAdResponsesView(); // Dibuja la tabla de mensajes por Ad
             break;
-        case 'prompts-ia':
-            mainViewContainer.innerHTML = AIAdPromptsViewTemplate();
-            renderAIAdPromptsView(); // Dibuja la tabla de prompts de IA
-            break;
+
         case 'respuestas-rapidas':
             mainViewContainer.innerHTML = QuickRepliesViewTemplate();
             renderQuickRepliesView(); // Dibuja la tabla de respuestas rápidas
             break;
-        case 'respuestas-ia':
-            mainViewContainer.innerHTML = KnowledgeBaseViewTemplate();
-            renderKnowledgeBaseView(); // Dibuja la tabla de base de conocimiento
-            break;
-        case 'ajustes-ia':
-            mainViewContainer.innerHTML = AjustesIAViewTemplate();
-            renderAjustesIAView(); // Dibuja la vista de ajustes de IA
-            break;
+
         case 'metricas':
             mainViewContainer.innerHTML = MetricsViewTemplate();
             renderMetricsView(); // Dibuja la vista de métricas (incluyendo la nueva sección)
@@ -460,31 +439,7 @@ function renderAdResponsesView() {
 }
 
 
-// Renderiza la tabla de prompts de IA por anuncio
-function renderAIAdPromptsView() {
-    if (state.activeView !== 'prompts-ia') return;
-    const tableBody = document.getElementById('ai-ad-prompts-table-body');
-    if (!tableBody) return;
 
-    // Mensaje si no hay prompts configurados
-    if (state.aiAdPrompts.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="4" class="text-center text-gray-500 py-4">No has agregado ningún prompt de IA todavía.</td></tr>`;
-        return;
-    }
-
-    // Genera HTML para cada fila
-    tableBody.innerHTML = state.aiAdPrompts.map(prompt => `
-        <tr>
-            <td class="font-semibold">${prompt.adName}</td>
-            <td class="font-mono text-sm">${prompt.adId}</td>
-            <td class="text-gray-600 max-w-sm truncate" title="${prompt.prompt}">${prompt.prompt}</td>
-            <td class="actions-cell">
-                <button onclick="openAIAdPromptModal('${prompt.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
-                <button onclick="handleDeleteAIAdPrompt('${prompt.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
-            </td>
-        </tr>
-    `).join('');
-}
 
 // Renderiza la vista del pipeline de ventas
 function renderPipelineView() {
@@ -543,72 +498,7 @@ function renderPipelineView() {
     });
 }
 
-// Renderiza la tabla de la base de conocimiento
-function renderKnowledgeBaseView() {
-    if (state.activeView !== 'respuestas-ia') return;
-    const kbTableBody = document.getElementById('kb-table-body');
-    if (!kbTableBody) return;
 
-    // Genera HTML para cada fila
-    kbTableBody.innerHTML = state.knowledgeBase.map(entry => `
-        <tr>
-            <td class="font-semibold">${entry.topic}</td>
-            <td class="text-gray-600">${entry.answer} ${entry.fileUrl ? '<i class="fas fa-paperclip text-gray-400 ml-2"></i>' : ''}</td>
-            <td class="actions-cell">
-                <button onclick="openKnowledgeBaseModal('${entry.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
-                <button onclick="handleDeleteKnowledgeBaseEntry('${entry.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
-            </td>
-        </tr>
-    `).join('');
-}
-
-// Renderiza la vista de ajustes de IA
-function renderAjustesIAView() {
-    if (state.activeView !== 'ajustes-ia') return;
-
-    // Actualiza el estado del interruptor global
-    const botToggle = document.getElementById('global-bot-toggle');
-    if (botToggle) {
-        botToggle.checked = state.globalBotSettings.isActive;
-    }
-
-    // Añade listener al input de búsqueda de contactos para anulaciones
-    const searchInput = document.getElementById('bot-contact-search-input');
-    if (searchInput) {
-        searchInput.addEventListener('input', (e) => {
-            renderBotContactsTable(e.target.value); // Filtra la tabla al escribir
-        });
-    }
-
-    // Renderiza la tabla inicial de anulaciones
-    renderBotContactsTable();
-}
-
-// Renderiza la tabla de anulaciones de IA por contacto (filtrada)
-function renderBotContactsTable(searchTerm = '') {
-    const botContactsTableBody = document.getElementById('bot-contacts-table-body');
-    if(!botContactsTableBody) return;
-
-    const lowerCaseSearchTerm = searchTerm.toLowerCase();
-    // Filtra contactos por nombre o ID
-    const filteredContacts = state.contacts.filter(contact =>
-        (contact.name && contact.name.toLowerCase().includes(lowerCaseSearchTerm)) ||
-        (contact.id && contact.id.includes(lowerCaseSearchTerm))
-    );
-
-    // Genera HTML para cada fila
-    botContactsTableBody.innerHTML = filteredContacts.map(contact => `
-        <tr>
-            <td class="font-semibold">${contact.name || contact.id}</td>
-            <td>
-                <label class="toggle-switch">
-                    <input type="checkbox" onchange="handleBotToggle('${contact.id}', this.checked)" ${contact.botActive !== false ? 'checked' : ''}>
-                    <span class="slider"></span>
-                </label>
-            </td>
-        </tr>
-    `).join('');
-}
 
 // Renderiza la vista de ajustes generales
 function renderAjustesView() {
@@ -1448,134 +1338,6 @@ function closeQuickReplyModal() {
     }
 }
 
-// Abre el modal para añadir/editar Base de Conocimiento
-function openKnowledgeBaseModal(entryId = null) {
-    const modal = document.getElementById('knowledge-base-modal');
-    if (!modal) return;
-
-    // Referencias a elementos del form
-    const form = document.getElementById('kb-form');
-    const titleEl = document.getElementById('kb-modal-title');
-    const docIdInput = document.getElementById('kb-doc-id');
-    const topicInput = document.getElementById('kb-topic');
-    const answerTextarea = document.getElementById('kb-answer');
-    const fileUrlInput = document.getElementById('kb-file-url');
-    const fileTypeInput = document.getElementById('kb-file-type');
-    const mediaPreview = document.getElementById('kb-media-preview');
-    const fileInput = document.getElementById('kb-file-input');
-
-    // Resetear form
-    form.reset();
-    docIdInput.value = '';
-    fileUrlInput.value = '';
-    fileTypeInput.value = '';
-    mediaPreview.innerHTML = '';
-
-    if (entryId) {
-        // --- Modo Edición ---
-        const entry = state.knowledgeBase.find(e => e.id === entryId); // Busca en estado
-        if (entry) {
-            titleEl.textContent = 'Editar Entrada de Conocimiento';
-            docIdInput.value = entry.id;
-            topicInput.value = entry.topic || '';
-            answerTextarea.value = entry.answer || '';
-            fileUrlInput.value = entry.fileUrl || '';
-            fileTypeInput.value = entry.fileType || '';
-
-            // Muestra enlace al adjunto actual
-            if (entry.fileUrl) {
-                mediaPreview.innerHTML = `<a href="${entry.fileUrl}" target="_blank" class="text-blue-600 hover:underline">Ver adjunto actual</a>`;
-            }
-        }
-    } else {
-        // --- Modo Añadir ---
-        titleEl.textContent = 'Añadir Respuesta a la Base de Conocimiento';
-    }
-
-    // Listener para NUEVO archivo
-    fileInput.onchange = (event) => {
-        const file = event.target.files[0];
-        if (file) {
-            fileUrlInput.value = ''; // Limpiar URL previa
-            fileTypeInput.value = file.type;
-            mediaPreview.innerHTML = `<span class="text-sm text-gray-600">Seleccionado: <strong>${file.name}</strong></span>`;
-        }
-    };
-
-    modal.classList.remove('hidden'); // Muestra modal
-}
-
-// Cierra el modal de Base de Conocimiento
-function closeKnowledgeBaseModal() {
-    const modal = document.getElementById('knowledge-base-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
-
-// Abre el modal para añadir/editar Prompts de IA por Anuncio
-function openAIAdPromptModal(promptId = null) {
-    const modal = document.getElementById('ai-ad-prompt-modal');
-    if (!modal) return;
-
-    // Referencias a elementos del form
-    const form = document.getElementById('ai-ad-prompt-form');
-    const titleEl = document.getElementById('ai-ad-prompt-modal-title');
-    const docIdInput = document.getElementById('aip-doc-id');
-    const nameInput = document.getElementById('aip-name');
-    const adIdInput = document.getElementById('aip-ad-id');
-    const promptTextarea = document.getElementById('aip-prompt');
-
-    // Resetear form
-    form.reset();
-    docIdInput.value = '';
-
-    if (promptId) {
-        // --- Modo Edición ---
-        const prompt = state.aiAdPrompts.find(p => p.id === promptId); // Busca en estado
-        if (prompt) {
-            titleEl.textContent = 'Editar Prompt de IA';
-            docIdInput.value = prompt.id;
-            nameInput.value = prompt.adName || '';
-            adIdInput.value = prompt.adId || '';
-            promptTextarea.value = prompt.prompt || '';
-        }
-    } else {
-        // --- Modo Añadir ---
-        titleEl.textContent = 'Añadir Prompt de IA';
-    }
-
-    modal.classList.remove('hidden'); // Muestra modal
-}
-
-// Cierra el modal de Prompts de IA
-function closeAIAdPromptModal() {
-    const modal = document.getElementById('ai-ad-prompt-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
-
-// Abre el modal para editar las instrucciones generales del Bot
-function openBotSettingsModal() {
-    const modal = document.getElementById('bot-settings-modal');
-    if (!modal) return;
-
-    // Rellena el textarea con las instrucciones actuales del estado
-    const instructionsTextarea = document.getElementById('bot-instructions');
-    instructionsTextarea.value = state.botSettings.instructions || '';
-
-    modal.classList.remove('hidden'); // Muestra modal
-}
-
-// Cierra el modal de ajustes del Bot
-function closeBotSettingsModal() {
-    const modal = document.getElementById('bot-settings-modal');
-    if (modal) {
-        modal.classList.add('hidden');
-    }
-}
-
 // Abre el modal para editar un contacto (desde barra lateral o vista de contactos)
 function openEditContactModal(contactId = null) {
     const modal = document.getElementById('edit-contact-modal');
@@ -1717,17 +1479,7 @@ function updateCampaignRecipientCount(type = 'text') {
     countEl.textContent = `${recipientCount} destinatarios`;
 }
 
-/**
- * Muestra u oculta el submenú de IA en la barra lateral.
- */
-function toggleIAMenu() {
-    const iaSubmenu = document.getElementById('ia-submenu');
-    const iaChevron = document.getElementById('ia-menu-chevron');
-    if (iaSubmenu && iaChevron) {
-        iaSubmenu.classList.toggle('hidden');
-        iaChevron.classList.toggle('rotate-180');
-    }
-}
+
 
 // --- NUEVAS FUNCIONES PARA MODALES DE DEPARTAMENTOS Y REGLAS ---
 
@@ -2012,7 +1764,7 @@ function initTheme() {
 // Esto permite llamar a las funciones desde los atributos onclick en el HTML
 window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
-window.toggleIAMenu = toggleIAMenu;
+
 window.closeImageModal = closeImageModal;
 window.openContactDetails = openContactDetails;
 window.closeContactDetails = closeContactDetails;
@@ -2024,12 +1776,7 @@ window.openQuickReplyModal = openQuickReplyModal;
 window.closeQuickReplyModal = closeQuickReplyModal;
 window.openAdResponseModal = openAdResponseModal;
 window.closeAdResponseModal = closeAdResponseModal;
-window.openAIAdPromptModal = openAIAdPromptModal;
-window.closeAIAdPromptModal = closeAIAdPromptModal;
-window.openKnowledgeBaseModal = openKnowledgeBaseModal;
-window.closeKnowledgeBaseModal = closeKnowledgeBaseModal;
-window.openBotSettingsModal = openBotSettingsModal;
-window.closeBotSettingsModal = closeBotSettingsModal;
+
 window.openNewOrderModal = openNewOrderModal; 
 window.closeNewOrderModal = closeNewOrderModal; 
 window.closeConversationPreviewModal = closeConversationPreviewModal; 
