@@ -263,6 +263,12 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         }
         const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
         const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
+        // Cargar respuestas rápidas como conocimiento adicional
+        const quickRepliesSnapshot = await db.collection('quick_replies').get();
+        const quickReplies = quickRepliesSnapshot.docs
+            .filter(doc => doc.data().message) // Solo las que tienen texto
+            .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
+            .join('\n');
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
@@ -271,6 +277,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         const prompt = `
             **Instrucciones Generales:**\n${botInstructions}\n\n
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
+            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
             **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
         console.log(`[AI] Generando respuesta para ${contactId}.`);
