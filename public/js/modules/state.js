@@ -79,6 +79,10 @@ let state = {
     allUsers: [], // Lista de todos los usuarios del sistema
     activeDepartmentFilter: 'all', // Filtro de departamento activo en la lista de chats
 
+    // --- NUEVO: Estado para Entrenamiento de IA ---
+    aiKnowledgeBase: [], // Documentos de la base de conocimiento
+    aiBotInstructions: '', // Instrucciones generales del bot
+
     // --- NUEVO: Cola de Mensajes ---
     messageQueue: [], // Cola de mensajes pendientes de envío
     isProcessingQueue: false // Indicador de si la cola se está procesando

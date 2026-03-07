@@ -82,6 +82,10 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MetricsViewTemplate();
             renderMetricsView(); // Dibuja la vista de métricas (incluyendo la nueva sección)
             break;
+        case 'entrenamiento-ia':
+            mainViewContainer.innerHTML = AITrainingViewTemplate();
+            renderAITrainingView();
+            break;
         case 'ajustes':
             mainViewContainer.innerHTML = SettingsViewTemplate();
             renderAjustesView(); // Dibuja la vista de ajustes generales
@@ -529,6 +533,167 @@ function renderAjustesView() {
         simulateAdForm.addEventListener('submit', handleSimulateAdMessage);
     }
 }
+
+// --- INICIO: Renderizado de Entrenamiento de IA ---
+async function renderAITrainingView() {
+    if (state.activeView !== 'entrenamiento-ia') return;
+
+    // 1. Cargar instrucciones del bot desde Firestore
+    try {
+        const botDoc = await db.collection('crm_settings').doc('bot').get();
+        if (botDoc.exists) {
+            state.aiBotInstructions = botDoc.data().instructions || '';
+            const textarea = document.getElementById('ai-bot-instructions');
+            if (textarea) textarea.value = state.aiBotInstructions;
+        }
+    } catch (error) {
+        console.error('Error al cargar instrucciones del bot:', error);
+    }
+
+    // 2. Listener de botón guardar instrucciones
+    const saveBtn = document.getElementById('save-bot-instructions-btn');
+    if (saveBtn) {
+        saveBtn.addEventListener('click', handleSaveBotInstructions);
+    }
+
+    // 3. Listener de formulario de conocimiento
+    const knowledgeForm = document.getElementById('knowledge-form');
+    if (knowledgeForm) {
+        knowledgeForm.removeEventListener('submit', handleSaveKnowledge);
+        knowledgeForm.addEventListener('submit', handleSaveKnowledge);
+    }
+
+    // 4. Cargar base de conocimiento desde Firestore
+    loadKnowledgeBase();
+}
+
+async function handleSaveBotInstructions() {
+    const textarea = document.getElementById('ai-bot-instructions');
+    const btn = document.getElementById('save-bot-instructions-btn');
+    if (!textarea || !btn) return;
+
+    const instructions = textarea.value.trim();
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+    try {
+        await db.collection('crm_settings').doc('bot').set({ instructions }, { merge: true });
+        state.aiBotInstructions = instructions;
+        btn.innerHTML = '<i class="fas fa-check mr-2"></i>¡Guardado!';
+        setTimeout(() => {
+            btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar Instrucciones';
+            btn.disabled = false;
+        }, 2000);
+    } catch (error) {
+        console.error('Error al guardar instrucciones:', error);
+        showError('No se pudieron guardar las instrucciones.');
+        btn.innerHTML = '<i class="fas fa-save mr-2"></i>Guardar Instrucciones';
+        btn.disabled = false;
+    }
+}
+
+async function loadKnowledgeBase() {
+    try {
+        const snapshot = await db.collection('ai_knowledge_base').get();
+        state.aiKnowledgeBase = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        renderKnowledgeBaseTable();
+    } catch (error) {
+        console.error('Error al cargar base de conocimiento:', error);
+    }
+}
+
+function renderKnowledgeBaseTable() {
+    const tableBody = document.getElementById('knowledge-base-table-body');
+    if (!tableBody) return;
+
+    if (state.aiKnowledgeBase.length === 0) {
+        tableBody.innerHTML = `<tr><td colspan="3" class="text-center text-gray-500 py-4">No hay conocimiento agregado aún. ¡Agrega el primero!</td></tr>`;
+        return;
+    }
+
+    tableBody.innerHTML = state.aiKnowledgeBase.map(item => `
+        <tr>
+            <td class="font-semibold">${item.topic || ''}</td>
+            <td class="text-gray-600 max-w-sm truncate" title="${(item.answer || '').replace(/"/g, '&quot;')}">${item.answer || ''}</td>
+            <td class="actions-cell">
+                <button onclick="openKnowledgeModal('${item.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
+                <button onclick="handleDeleteKnowledge('${item.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openKnowledgeModal(docId) {
+    const modal = document.getElementById('knowledge-modal');
+    const title = document.getElementById('knowledge-modal-title');
+    const idInput = document.getElementById('kb-doc-id');
+    const topicInput = document.getElementById('kb-topic');
+    const answerInput = document.getElementById('kb-answer');
+
+    if (!modal) return;
+
+    if (docId) {
+        // Editar
+        const item = state.aiKnowledgeBase.find(k => k.id === docId);
+        if (!item) return;
+        title.textContent = 'Editar Conocimiento';
+        idInput.value = docId;
+        topicInput.value = item.topic || '';
+        answerInput.value = item.answer || '';
+    } else {
+        // Nuevo
+        title.textContent = 'Agregar Conocimiento';
+        idInput.value = '';
+        topicInput.value = '';
+        answerInput.value = '';
+    }
+
+    modal.classList.remove('hidden');
+}
+
+function closeKnowledgeModal() {
+    const modal = document.getElementById('knowledge-modal');
+    if (modal) modal.classList.add('hidden');
+}
+
+async function handleSaveKnowledge(event) {
+    event.preventDefault();
+    const docId = document.getElementById('kb-doc-id').value;
+    const topic = document.getElementById('kb-topic').value.trim();
+    const answer = document.getElementById('kb-answer').value.trim();
+
+    if (!topic || !answer) return;
+
+    try {
+        if (docId) {
+            await db.collection('ai_knowledge_base').doc(docId).update({ topic, answer });
+        } else {
+            await db.collection('ai_knowledge_base').add({ topic, answer });
+        }
+        closeKnowledgeModal();
+        loadKnowledgeBase(); // Recargar tabla
+    } catch (error) {
+        console.error('Error al guardar conocimiento:', error);
+        showError('No se pudo guardar el conocimiento.');
+    }
+}
+
+async function handleDeleteKnowledge(docId) {
+    if (!confirm('¿Estás seguro de que quieres eliminar este conocimiento?')) return;
+    try {
+        await db.collection('ai_knowledge_base').doc(docId).delete();
+        loadKnowledgeBase(); // Recargar tabla
+    } catch (error) {
+        console.error('Error al eliminar conocimiento:', error);
+        showError('No se pudo eliminar el conocimiento.');
+    }
+}
+
+// Exportar funciones globalmente
+window.openKnowledgeModal = openKnowledgeModal;
+window.closeKnowledgeModal = closeKnowledgeModal;
+window.handleDeleteKnowledge = handleDeleteKnowledge;
+// --- FIN: Renderizado de Entrenamiento de IA ---
 
 // --- INICIO DE MODIFICACIÓN: Renderizado de Métricas ---
 // Renderiza la vista de métricas, incluyendo gráficas y la nueva sección de Ad IDs

@@ -412,6 +412,50 @@ const SettingsViewTemplate = () => `
     </div>
 `;
 
+const AITrainingViewTemplate = () => `
+    <div class="view-container">
+        <div class="view-header">
+            <h1><i class="fas fa-brain mr-2"></i>Entrenamiento de IA</h1>
+        </div>
+        <div class="max-w-3xl space-y-8">
+            <!-- Sección: Instrucciones del Bot -->
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-2">🧠 Instrucciones del Bot</h2>
+                <p class="text-sm text-gray-500 mb-4">Define la personalidad, tono y reglas generales de la IA. Este texto se envía como contexto en cada conversación.</p>
+                <textarea id="ai-bot-instructions" rows="8" class="w-full p-3 border border-gray-300 rounded-lg text-sm" placeholder="Ej: Eres el asistente virtual de Mi Empresa. Responde siempre en español, de forma amigable y profesional...">${state.aiBotInstructions || ''}</textarea>
+                <div class="flex justify-end mt-3">
+                    <button id="save-bot-instructions-btn" class="btn btn-primary">
+                        <i class="fas fa-save mr-2"></i>Guardar Instrucciones
+                    </button>
+                </div>
+            </div>
+
+            <!-- Sección: Base de Conocimiento -->
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-2">📚 Base de Conocimiento</h2>
+                <p class="text-sm text-gray-500 mb-4">Agrega preguntas frecuentes. La IA usará esta información para responder a tus clientes con precisión.</p>
+                <div class="flex justify-end mb-4">
+                    <button onclick="openKnowledgeModal()" class="btn btn-primary">
+                        <i class="fas fa-plus mr-2"></i>Agregar Conocimiento
+                    </button>
+                </div>
+                <table class="table">
+                    <thead>
+                        <tr>
+                            <th>Tema</th>
+                            <th>Respuesta</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="knowledge-base-table-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+`;
+
+
+
 const MetricsViewTemplate = () => `
     <div class="view-container">
         <div class="view-header">

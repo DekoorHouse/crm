@@ -128,6 +128,10 @@
                         <i class="fas fa-bolt"></i>
                         <span class="sidebar-text">Respuestas rápidas</span>
                     </a>
+                    <a onclick="navigateTo('entrenamiento-ia')" data-view="entrenamiento-ia" class="nav-item">
+                        <i class="fas fa-brain"></i>
+                        <span class="sidebar-text">Entrenamiento IA</span>
+                    </a>
 
 
 
@@ -371,6 +375,28 @@
     </div>
 
 
+
+    <!-- NUEVO: Modal de Base de Conocimiento de IA -->
+    <div id="knowledge-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <h2 id="knowledge-modal-title">Agregar Conocimiento</h2>
+            <form id="knowledge-form">
+                <input type="hidden" id="kb-doc-id">
+                <div>
+                    <label for="kb-topic">Tema / Pregunta</label>
+                    <input type="text" id="kb-topic" required class="!mb-4" placeholder="Ej: Horario de atención">
+                </div>
+                <div>
+                    <label for="kb-answer">Respuesta</label>
+                    <textarea id="kb-answer" rows="5" required class="!mb-4" placeholder="Ej: Nuestro horario es de lunes a viernes de 9am a 6pm..."></textarea>
+                </div>
+                <div class="flex justify-end gap-3 mt-4">
+                    <button type="button" onclick="closeKnowledgeModal()" class="btn btn-subtle">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <div id="new-order-modal-container"></div>
 
