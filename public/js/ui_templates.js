@@ -12,7 +12,7 @@ const ChatViewTemplate = () => `
                     <i class="fas fa-times-circle"></i>
                 </button>
             </div>
-            <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-gray-200 bg-white items-center"></div>
+            <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-[var(--color-border)] bg-[var(--color-container-bg)] items-center"></div>
             <div id="contacts-loading" class="p-4 text-center text-gray-400">Cargando contactos...</div>
             <div id="contacts-list" class="flex-1 overflow-y-auto"></div>
         </aside>
