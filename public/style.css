@@ -131,6 +131,10 @@ body.dark-mode .contact-item.selected .fas, body.dark-mode .contact-item.selecte
 .unread-badge { background-color: var(--color-primary); color: white; font-size: 0.7rem; font-weight: 700; padding: 2px 7px; border-radius: 12px; min-width: 20px; text-align: center; line-height: 1.2; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
 body.dark-mode .unread-badge { color: #1a1b26; background-color: #00ffcc; box-shadow: 0 0 8px rgba(0, 255, 204, 0.6); }
 
+.contact-time-label { font-size: 0.7rem; font-weight: 500; color: #6b7280; }
+body.dark-mode .contact-time-label { color: #a9b1d6; }
+.contact-item.selected .contact-time-label { color: rgba(255, 255, 255, 0.85); }
+
 .order-badge {
     background-color: var(--color-accent);
     color: var(--color-text);

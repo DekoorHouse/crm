@@ -593,16 +593,20 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
 const ContactItemTemplate = (contact, isSelected) => {
     const typingText = contact.lastMessage || 'Sin mensajes.';
 
-    let timeOrBadgeHTML = '';
-    if (contact.unreadCount > 0) {
-        timeOrBadgeHTML = `<span class="unread-badge">${contact.unreadCount}</span>`;
-    } else if (contact.lastMessageTimestamp) {
+    let timeHTML = '';
+    if (contact.lastMessageTimestamp) {
         const date = contact.lastMessageTimestamp;
         const timeString = isSameDay(new Date(), date)
             ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
             : date.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' });
-        timeOrBadgeHTML = `<span class="text-xs text-gray-400">${timeString}</span>`;
+        timeHTML = `<span class="contact-time-label">${timeString}</span>`;
     }
+
+    const unreadBadgeHTML = contact.unreadCount > 0
+        ? `<span class="unread-badge">${contact.unreadCount}</span>`
+        : '';
+
+    const timeOrBadgeHTML = timeHTML + unreadBadgeHTML;
 
     const orderBadgeHTML = contact.lastOrderNumber
         ? `<span class="order-badge">DH${contact.lastOrderNumber}</span>`
