@@ -23,6 +23,51 @@ const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const PORT = process.env.PORT || 3000;
+
+// --- ENDPOINT SIMULADOR IA ---
+router.post('/simulate-ai', async (req, res) => {
+    try {
+        const { message, history } = req.body;
+        
+        if (!message) {
+            return res.status(400).json({ success: false, message: 'Se requiere un mensaje.' });
+        }
+
+        // Recuperar instrucciones del bot y base de datos
+        const botDoc = await db.collection('crm_settings').doc('bot').get();
+        const systemPrompt = botDoc.exists ? botDoc.data().instructions : '';
+        
+        const kbSnapshot = await db.collection('ai_knowledge_base').get();
+        const knowledgeBase = kbSnapshot.docs.map(doc => {
+            const data = doc.data();
+            return `P: ${data.topic}\nR: ${data.answer}`;
+        }).join('\n\n');
+
+        // Formatear historial para Gemini
+        const formattedHistory = (history || []).map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.content }]
+        }));
+
+        // Añadir el mensaje actual al historial formatado (Gemini requiere history + message por separado en su API normal, pero generateGeminiResponse usa todo junto o por partes dependiendo de como está implementado)
+        // Revisando cómo es `generateGeminiResponse`, recibe (userMessage, systemPrompt, conversationHistory, knowledgeBaseText)
+        
+        // El historial en DB normalemente es { role, text }. Asegurémonos que coincida.
+        const dbHistory = (history || []).map(msg => ({
+            role: msg.role === 'user' ? 'user' : 'model',
+            text: msg.content
+        }));
+
+        const aiResponse = await generateGeminiResponse(message, systemPrompt, dbHistory, knowledgeBase);
+
+        res.status(200).json({ success: true, response: aiResponse });
+    } catch (error) {
+        console.error('Error en simulación de IA:', error);
+        res.status(500).json({ success: false, message: 'Error procesando simulación IA.' });
+    }
+});
+// --- FIN ENDPOINT SIMULADOR IA ---
+
 // --- INICIO: NUEVAS CONSTANTES PARA COMPRESIÓN ---
 const VIDEO_SIZE_LIMIT_MB = 15.5; // Límite seguro de 15.5MB (el de WhatsApp es 16MB)
 const VIDEO_SIZE_LIMIT_BYTES = VIDEO_SIZE_LIMIT_MB * 1024 * 1024;

@@ -509,6 +509,61 @@ const AITrainingViewTemplate = () => `
 `;
 
 
+const AIChatSimulatorViewTemplate = () => `
+    <div class="view-container flex flex-col h-full bg-gray-50">
+        <div class="view-header flex-none bg-white p-4 border-b">
+            <h1><i class="fas fa-robot text-purple-500 mr-2"></i> Simulador de Inteligencia Artificial</h1>
+            <p class="text-sm text-gray-500 mt-1">Prueba la personalidad y respuestas de tu IA sin afectar contactos reales ni pagar costos de envío en WhatsApp.</p>
+        </div>
+        
+        <div class="flex-1 flex flex-col max-w-4xl mx-auto w-full p-4 overflow-hidden">
+            <!-- Simulación de Pantalla de WhatsApp -->
+            <div class="flex-1 bg-[#efeae2] rounded-t-xl border border-gray-300 shadow-inner flex flex-col relative overflow-hidden" style="background-image: url('https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png');">
+                <!-- Chat Header -->
+                <div class="bg-[#075e54] text-white p-3 flex items-center gap-3 z-10 shadow-md">
+                    <div class="w-10 h-10 rounded-full bg-white flex items-center justify-center text-[#075e54]">
+                        <i class="fas fa-robot text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-bold">Asistente IA (Pruebas)</h3>
+                        <p class="text-xs text-white/80">en línea</p>
+                    </div>
+                    <button class="ml-auto hover:bg-white/20 p-2 rounded-full transition-colors" onclick="clearSimulatorChat()">
+                        <i class="fas fa-trash-alt"></i> Limpiar Chat
+                    </button>
+                </div>
+                
+                <!-- Chat History -->
+                <div id="simulator-chat-history" class="flex-1 overflow-y-auto p-4 space-y-3">
+                    <div class="text-center my-4">
+                        <span class="bg-[#e1f3fb] text-[#1f2937] text-xs px-3 py-1 rounded-lg inline-block shadow-sm">
+                            <i class="fas fa-lock mr-1"></i> Los mensajes y llamadas están cifrados de extremo a extremo.
+                        </span>
+                    </div>
+                    <!-- Messages will appear here -->
+                </div>
+                
+                <div id="simulator-typing-indicator" class="hidden absolute bottom-2 left-4 bg-white px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-1 z-10 w-fit">
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></span>
+                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+                </div>
+            </div>
+
+            <!-- Chat Input -->
+            <div class="bg-[#f0f0f0] p-3 rounded-b-xl border border-t-0 border-gray-300 flex items-end gap-2 shadow-md">
+                <button class="text-gray-500 hover:text-gray-700 p-2"><i class="far fa-smile text-xl"></i></button>
+                <div class="flex-1 bg-white rounded-lg px-4 py-2 shadow-sm min-h-[44px] flex items-center">
+                    <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px]" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
+                </div>
+                <button id="simulator-send-btn" onclick="sendSimulatorMessage()" class="bg-[#00a884] text-white w-11 h-11 rounded-full flex items-center justify-center hover:bg-[#008f6f] transition-colors shadow-sm flex-shrink-0">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+`;
+
 
 const MetricsViewTemplate = () => `
     <div class="view-container">

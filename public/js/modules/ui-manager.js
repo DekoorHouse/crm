@@ -86,6 +86,9 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = AITrainingViewTemplate();
             renderAITrainingView();
             break;
+        case 'simulador-ia':
+            mainViewContainer.innerHTML = AIChatSimulatorViewTemplate();
+            break;
         case 'ajustes':
             mainViewContainer.innerHTML = SettingsViewTemplate();
             renderAjustesView(); // Dibuja la vista de ajustes generales
@@ -2122,5 +2125,95 @@ window.setActiveTab = setActiveTab;
 window.toggleEditNote = toggleEditNote;
 window.updateCampaignRecipientCount = updateCampaignRecipientCount; // Definida en ui-manager
 window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-manager
+
+// --- START SIMULADOR IA ---
+let simulatorHistory = [];
+
+async function sendSimulatorMessage() {
+    const input = document.getElementById('simulator-chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // Mostrar mensaje del usuario
+    renderSimulatorMessage(text, 'user');
+    input.value = '';
+    
+    // Ocultar placeholder si es el primer mensaje
+    
+    // Mostrar indicador de typing
+    const typingIndicator = document.getElementById('simulator-typing-indicator');
+    if (typingIndicator) typingIndicator.classList.remove('hidden');
+
+    try {
+        const response = await fetch('/api/simulate-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, history: simulatorHistory })
+        });
+        const data = await response.json();
+
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+
+        if (data.success && data.response) {
+            // Separar la respuesta por [SPLIT] si existe, para simular múltiples mensajes
+            const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
+            
+            // Añadir al historial
+            simulatorHistory.push({ role: 'user', content: text });
+            simulatorHistory.push({ role: 'assistant', content: data.response.replace(/\\[SPLIT\\]/g,"\\n") });
+
+            // Renderizar cada parte con un pequeño retraso
+            for (let i = 0; i < messages.length; i++) {
+                if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
+                renderSimulatorMessage(messages[i], 'assistant');
+            }
+        } else {
+            renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
+        }
+    } catch (error) {
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+        renderSimulatorMessage('Error de conexión con el servidor', 'error');
+    }
+}
+
+function renderSimulatorMessage(text, sender) {
+    const historyContainer = document.getElementById('simulator-chat-history');
+    if (!historyContainer) return;
+
+    const msgDiv = document.createElement('div');
+    const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    
+    if (sender === 'user') {
+        msgDiv.className = 'flex justify-end';
+        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
+    } else if (sender === 'assistant') {
+        msgDiv.className = 'flex justify-start';
+        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
+    } else {
+        msgDiv.className = 'flex justify-center';
+        msgDiv.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs shadow-sm">${text}</div>`;
+    }
+
+    historyContainer.appendChild(msgDiv);
+    historyContainer.scrollTop = historyContainer.scrollHeight;
+}
+
+function clearSimulatorChat() {
+    simulatorHistory = [];
+    const historyContainer = document.getElementById('simulator-chat-history');
+    if (historyContainer) {
+        historyContainer.innerHTML = `
+            <div class="text-center my-4">
+                <span class="bg-[#e1f3fb] text-[#1f2937] text-xs px-3 py-1 rounded-lg inline-block shadow-sm">
+                    <i class="fas fa-lock mr-1"></i> Los mensajes y llamadas están cifrados de extremo a extremo.
+                </span>
+            </div>
+        `;
+    }
+}
+
+window.sendSimulatorMessage = sendSimulatorMessage;
+window.clearSimulatorChat = clearSimulatorChat;
+// --- FIN SIMULADOR IA ---
 window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
 window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
