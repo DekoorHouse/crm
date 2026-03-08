@@ -551,14 +551,23 @@ const AIChatSimulatorViewTemplate = () => `
             </div>
 
             <!-- Chat Input -->
-            <div class="bg-[#f0f0f0] p-3 rounded-b-xl border border-t-0 border-gray-300 flex items-end gap-2 shadow-md">
-                <button class="text-gray-500 hover:text-gray-700 p-2"><i class="far fa-smile text-xl"></i></button>
-                <div class="flex-1 bg-white rounded-lg px-4 py-2 shadow-sm min-h-[44px] flex items-center">
-                    <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px]" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
+            <div class="bg-[#f0f0f0] p-3 rounded-b-xl border border-t-0 border-gray-300 flex flex-col gap-2 shadow-md">
+                <div class="flex items-center gap-2 pl-2">
+                    <label class="text-xs font-bold text-gray-500">Enviar como:</label>
+                    <select id="simulator-role-select" class="text-xs border border-gray-300 rounded p-1 bg-white text-gray-700 outline-none cursor-pointer hover:border-gray-400 focus:border-[#00a884] focus:ring-1 focus:ring-[#00a884]">
+                        <option value="user">Cliente</option>
+                        <option value="assistant">Agente de Dekoor</option>
+                    </select>
                 </div>
-                <button id="simulator-send-btn" onclick="sendSimulatorMessage()" class="bg-[#00a884] text-white w-11 h-11 rounded-full flex items-center justify-center hover:bg-[#008f6f] transition-colors shadow-sm flex-shrink-0">
-                    <i class="fas fa-paper-plane"></i>
-                </button>
+                <div class="flex items-end gap-2">
+                    <button class="text-gray-500 hover:text-gray-700 p-2"><i class="far fa-smile text-xl"></i></button>
+                    <div class="flex-1 bg-white rounded-lg px-4 py-2 shadow-sm min-h-[44px] flex items-center">
+                        <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px]" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
+                    </div>
+                    <button id="simulator-send-btn" onclick="sendSimulatorMessage()" class="bg-[#00a884] text-white w-11 h-11 rounded-full flex items-center justify-center hover:bg-[#008f6f] transition-colors shadow-sm flex-shrink-0">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
             </div>
         </div>
     </div>

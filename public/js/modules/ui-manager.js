@@ -2131,15 +2131,23 @@ let simulatorHistory = [];
 
 async function sendSimulatorMessage() {
     const input = document.getElementById('simulator-chat-input');
+    const roleSelect = document.getElementById('simulator-role-select');
     const text = input.value.trim();
     if (!text) return;
 
-    // Mostrar mensaje del usuario
-    renderSimulatorMessage(text, 'user');
+    const role = roleSelect ? roleSelect.value : 'user';
+
+    // Mostrar mensaje del usuario / agente
+    renderSimulatorMessage(text, role);
     input.value = '';
     
-    // Ocultar placeholder si es el primer mensaje
-    
+    // Si el mensaje es del agente, simplemente lo agregamos al historial
+    // y detenemos aquí para no hacer una petición a la IA en su nombre.
+    if (role === 'assistant') {
+        simulatorHistory.push({ role: 'assistant', content: text });
+        return;
+    }
+
     // Mostrar indicador de typing
     const typingIndicator = document.getElementById('simulator-typing-indicator');
     if (typingIndicator) typingIndicator.classList.remove('hidden');
@@ -2160,7 +2168,7 @@ async function sendSimulatorMessage() {
             
             // Añadir al historial
             simulatorHistory.push({ role: 'user', content: text });
-            simulatorHistory.push({ role: 'assistant', content: data.response.replace(/\\[SPLIT\\]/g,"\\n") });
+            simulatorHistory.push({ role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
 
             // Renderizar cada parte con un pequeño retraso
             for (let i = 0; i < messages.length; i++) {
