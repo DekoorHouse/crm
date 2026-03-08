@@ -373,7 +373,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             console.log(`[AI] Código postal detectado: ${postalCodeMatch[1]}. Cotizando envío...`);
             const quote = await getShippingQuote(postalCodeMatch[1]);
             if (quote) {
-                shippingInfo = `\n\n**Cotización de Envío para CP ${postalCodeMatch[1]} (datos reales de paquetería):**\n${quote}\nSi el cliente pregunta por envío o precio de envío, usa estas tarifas reales para responderle.`;
+                shippingInfo = `\n\n**Cotización de Envío disponible para CP ${postalCodeMatch[1]} (datos reales de paquetería):**\n${quote}\nIMPORTANTE: Solo menciona estas tarifas si el cliente está preguntando sobre envío, costo de envío, paquetería o entrega. Si el número de 5 dígitos es un pedido, monto, teléfono u otro dato que NO es un código postal, ignora esta cotización por completo.`;
             }
         }
 
@@ -382,7 +382,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
             **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}${shippingInfo}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
         console.log(`[AI] Generando respuesta para ${contactId}.`);
         const aiResult = await generateGeminiResponse(prompt);
         const aiResponse = aiResult.text;
