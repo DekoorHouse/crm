@@ -218,6 +218,13 @@ body.dark-mode #message-input:focus { box-shadow: 0 0 0 2px rgba(122, 162, 247, 
 }
 .message-bubble.sent { background-color: var(--color-bubble-sent-bg); color: var(--color-bubble-sent-text); border-bottom-right-radius: 4px; }
 .message-bubble.received { background-color: var(--color-bubble-received-bg); color: var(--color-bubble-received-text); border-bottom-left-radius: 4px; }
+
+/* Styles for links in dark mode */
+.chat-link { text-decoration: underline; }
+body.dark-mode .chat-link { color: #7aa2f7 !important; }
+body.dark-mode .message-bubble.sent .chat-link { color: #7dcfff !important; font-weight: 500; }
+body.dark-mode .message-bubble.received .chat-link { color: #7aa2f7 !important; font-weight: 500; }
+
 .message-bubble.message-queued { background-color: #dbeafe; color: #1e40af; border-bottom-right-radius: 4px; }
 body.dark-mode .message-bubble.message-queued { background-color: #3b4261; color: #c0caf5; }
 

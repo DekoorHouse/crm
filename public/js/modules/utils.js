@@ -19,7 +19,7 @@ function formatWhatsAppText(text) {
         if (!url.startsWith('http')) {
             href = 'https://' + url;
         }
-        return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 hover:underline">${url}</a>`;
+        return `<a href="${href}" target="_blank" rel="noopener noreferrer" class="text-blue-600 chat-link hover:underline">${url}</a>`;
     });
 
     return safeText;
