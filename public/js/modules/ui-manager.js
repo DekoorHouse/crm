@@ -2153,7 +2153,7 @@ async function sendSimulatorMessage() {
     if (typingIndicator) typingIndicator.classList.remove('hidden');
 
     try {
-        const response = await fetch('/api/simulate-ai', {
+        const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ message: text, history: simulatorHistory })
@@ -2179,8 +2179,9 @@ async function sendSimulatorMessage() {
             renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
         }
     } catch (error) {
+        console.error('Simulator error:', error);
         if (typingIndicator) typingIndicator.classList.add('hidden');
-        renderSimulatorMessage('Error de conexión con el servidor', 'error');
+        renderSimulatorMessage(`Error: ${error.message || 'Error de conexión con el servidor'}`, 'error');
     }
 }
 
