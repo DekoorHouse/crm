@@ -9,7 +9,13 @@ const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
-const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN; // SE AÑADIÓ ESTA LÍNEA
+const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+
+// Skydropx
+const SKYDROPX_CLIENT_ID = process.env.SKYDROPX_CLIENT_ID;
+const SKYDROPX_CLIENT_SECRET = process.env.SKYDROPX_CLIENT_SECRET;
+const SKYDROPX_ZIP_ORIGIN = process.env.SKYDROPX_ZIP_ORIGIN || '34188';
+const SKYDROPX_BASE_URL = 'https://pro.skydropx.com';
 
 // =================================================================
 // === LÓGICA DE MAYOREO ===========================================
@@ -210,6 +216,84 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
     }
 }
 
+// =================================================================
+// === SERVICIOS DE SKYDROPX (COTIZACIÓN DE ENVÍOS) =================
+// =================================================================
+let skydropxTokenCache = { token: null, expiresAt: 0 };
+
+async function getSkydropxToken() {
+    if (!SKYDROPX_CLIENT_ID || !SKYDROPX_CLIENT_SECRET) return null;
+    // Usar token cacheado si aún es válido (con 5 min de margen)
+    if (skydropxTokenCache.token && Date.now() < skydropxTokenCache.expiresAt - 300000) {
+        return skydropxTokenCache.token;
+    }
+    try {
+        const res = await fetch(`${SKYDROPX_BASE_URL}/api/v1/oauth/token`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ grant_type: 'client_credentials', client_id: SKYDROPX_CLIENT_ID, client_secret: SKYDROPX_CLIENT_SECRET })
+        });
+        if (!res.ok) throw new Error(`Skydropx OAuth error: ${res.status}`);
+        const data = await res.json();
+        skydropxTokenCache = { token: data.access_token, expiresAt: Date.now() + (data.expires_in * 1000) };
+        console.log('[Skydropx] Token obtenido exitosamente.');
+        return data.access_token;
+    } catch (error) {
+        console.error('[Skydropx] Error al obtener token:', error.message);
+        return null;
+    }
+}
+
+async function getShippingQuote(zipTo) {
+    const token = await getSkydropxToken();
+    if (!token) return null;
+    try {
+        // Crear cotización
+        const createRes = await fetch(`${SKYDROPX_BASE_URL}/api/v1/quotations`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({
+                quotation: {
+                    address_from: { country_code: 'MX', postal_code: SKYDROPX_ZIP_ORIGIN, area_level1: '-', area_level2: '-', area_level3: '-' },
+                    address_to: { country_code: 'MX', postal_code: zipTo, area_level1: '-', area_level2: '-', area_level3: '-' },
+                    parcel: { weight: 0.1, height: 10, width: 10, length: 10 }
+                }
+            })
+        });
+        if (!createRes.ok) throw new Error(`Skydropx quotation error: ${createRes.status}`);
+        const quotation = await createRes.json();
+        const quotationId = quotation.id;
+        console.log(`[Skydropx] Cotización creada: ${quotationId}`);
+
+        // Esperar y consultar resultados (máx 4 intentos, 2s entre cada uno)
+        let result = quotation;
+        for (let i = 0; i < 4 && !result.is_completed; i++) {
+            await new Promise(r => setTimeout(r, 2000));
+            const getRes = await fetch(`${SKYDROPX_BASE_URL}/api/v1/quotations/${quotationId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            result = await getRes.json();
+        }
+
+        // Filtrar tarifas con precio
+        const rates = (result.rates || []).filter(r => r.total !== null && r.status && r.status.includes('price_found'))
+            .sort((a, b) => parseFloat(a.total) - parseFloat(b.total))
+            .slice(0, 5); // Top 5 opciones más baratas
+
+        if (rates.length === 0) return 'No se encontraron opciones de envío para ese código postal.';
+
+        const ratesText = rates.map(r => `- ${r.provider_display_name} (${r.provider_service_name}): $${parseFloat(r.total).toFixed(2)} MXN, ${r.days || '?'} día(s)`).join('\n');
+        console.log(`[Skydropx] ${rates.length} tarifas encontradas para CP ${zipTo}.`);
+        return ratesText;
+    } catch (error) {
+        console.error('[Skydropx] Error al cotizar envío:', error.message);
+        return null;
+    }
+}
+
+// =================================================================
+// === SERVICIOS DE GEMINI (IA) ====================================
+// =================================================================
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
@@ -280,10 +364,23 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             const d = doc.data();
             return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
         }).reverse().join('\n');
+
+        // Detectar código postal en el último mensaje y cotizar envío
+        let shippingInfo = '';
+        const messageText = message.text?.body || message.text || '';
+        const postalCodeMatch = messageText.match(/\b(\d{5})\b/);
+        if (postalCodeMatch && SKYDROPX_CLIENT_ID) {
+            console.log(`[AI] Código postal detectado: ${postalCodeMatch[1]}. Cotizando envío...`);
+            const quote = await getShippingQuote(postalCodeMatch[1]);
+            if (quote) {
+                shippingInfo = `\n\n**Cotización de Envío para CP ${postalCodeMatch[1]} (datos reales de paquetería):**\n${quote}\nSi el cliente pregunta por envío o precio de envío, usa estas tarifas reales para responderle.`;
+            }
+        }
+
         const prompt = `
             **Instrucciones Generales:**\n${botInstructions}\n\n
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
-            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}\n\n
+            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}${shippingInfo}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
             **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
         console.log(`[AI] Generando respuesta para ${contactId}.`);
@@ -382,6 +479,7 @@ module.exports = {
     checkCoverage,
     generateGeminiResponse,
     triggerAutoReplyAI,
+    getShippingQuote,
     sendConversionEvent,
     sendAdvancedWhatsAppMessage
 };
