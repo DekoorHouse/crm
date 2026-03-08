@@ -379,6 +379,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
 
         const prompt = `
             **Instrucciones Generales:**\n${botInstructions}\n\n
+            **Regla Especial de Mensajes Múltiples:** Si tus instrucciones dicen que debes responder en "otro mensaje", "dos mensajes", o enviar algo "seguido de" otra cosa en mensajes separados, DEBES usar obligatoriamente la etiqueta [SPLIT] para dividir las burbujas de chat. (Ejemplo: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
             **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}${shippingInfo}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
@@ -398,14 +399,28 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         }, { merge: true });
         console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
         
-        const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: aiResponse });
+        // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
+        const aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
+        let lastText = "";
+
+        for (let i = 0; i < aiMessages.length; i++) {
+            const msgText = aiMessages[i];
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: msgText });
+            
+            await contactRef.collection('messages').add({
+                from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+            });
+            lastText = sentMessageData.textForDb;
+
+            if (i < aiMessages.length - 1) {
+                // Esperar 1.5s entre mensajes para que aparezcan en orden real en WhatsApp
+                await new Promise(r => setTimeout(r, 1500)); 
+            }
+        }
         
-        await contactRef.collection('messages').add({
-            from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
-        });
-        await contactRef.update({ lastMessage: sentMessageData.textForDb, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
-        console.log(`[AI] Respuesta de IA enviada a ${contactId}.`);
+        await contactRef.update({ lastMessage: lastText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+        console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
     }
