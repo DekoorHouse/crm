@@ -1269,6 +1269,8 @@ function renderFilePreview() {
 // Functions to manage the new order modal, including photo previews and drag & drop.
 let orderPhotosManager = []; // Array para fotos del pedido
 let promoPhotosManager = []; // Array para fotos de la promoción
+let editOrderPhotosManager = []; // Array para fotos del pedido en edición
+let editPromoPhotosManager = []; // Array para fotos de la promoción en edición
 
 // Abre el modal para registrar un nuevo pedido
 function openNewOrderModal() {
@@ -1345,6 +1347,86 @@ function openNewOrderModal() {
              samePhotoContainer.style.display = 'none';
         }
     }
+}
+
+function renderPhotoPreviews(container, managerArray, type) {
+    container.innerHTML = '';
+    managerArray.forEach((photoObj, index) => {
+        const previewUrl = photoObj.isNew ? URL.createObjectURL(photoObj.file) : photoObj.url;
+        const div = document.createElement('div');
+        div.className = 'preview-thumbnail relative';
+        div.innerHTML = `
+            <img src="${previewUrl}" class="w-full h-full object-cover">
+            <button type="button" class="delete-photo-btn" onclick="removePhoto(${index}, '${type}')"><i class="fas fa-times"></i></button>
+        `;
+        container.appendChild(div);
+    });
+
+    // Update checkbox visibility if managing promo
+    const samePhotoContainer = document.getElementById('order-same-photo-container');
+    if (samePhotoContainer && type === 'order') {
+        samePhotoContainer.style.display = managerArray.length > 0 ? 'flex' : 'none';
+    }
+}
+
+// Function to handle global deletion specifically
+window.removePhoto = function(index, type) {
+    if (type === 'order') {
+        orderPhotosManager.splice(index, 1);
+        renderPhotoPreviews(document.getElementById('order-photos-preview-container'), orderPhotosManager, 'order');
+    } else if (type === 'promo') {
+        promoPhotosManager.splice(index, 1);
+        renderPhotoPreviews(document.getElementById('order-promo-photos-preview-container'), promoPhotosManager, 'promo');
+    } else if (type === 'edit-order') {
+        editOrderPhotosManager.splice(index, 1);
+        renderPhotoPreviews(document.getElementById('edit-order-photos-preview-container'), editOrderPhotosManager, 'edit-order');
+    } else if (type === 'edit-promo') {
+        editPromoPhotosManager.splice(index, 1);
+        renderPhotoPreviews(document.getElementById('edit-order-promo-photos-preview-container'), editPromoPhotosManager, 'edit-promo');
+    }
+};
+
+function setupPhotoManager(dropContainer, fileInput, previewContainer, managerArray, type) {
+    if (!dropContainer || !fileInput || !previewContainer) return;
+
+    const handleFiles = (files) => {
+        Array.from(files).forEach(file => {
+            if (file.type.startsWith('image/')) {
+                managerArray.push({ file: file, isNew: true });
+            }
+        });
+        renderPhotoPreviews(previewContainer, managerArray, type);
+    };
+
+    fileInput.addEventListener('change', (e) => {
+        handleFiles(e.target.files);
+        fileInput.value = ''; // Reset
+    });
+
+    dropContainer.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropContainer.classList.add('drag-over', 'bg-green-50');
+    });
+
+    dropContainer.addEventListener('dragleave', () => {
+        dropContainer.classList.remove('drag-over', 'bg-green-50');
+    });
+
+    dropContainer.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropContainer.classList.remove('drag-over', 'bg-green-50');
+        if (e.dataTransfer.files) {
+            handleFiles(e.dataTransfer.files);
+        }
+    });
+
+    // Support paste events
+    dropContainer.addEventListener('paste', (e) => {
+        e.preventDefault();
+        if (e.clipboardData.files) {
+            handleFiles(e.clipboardData.files);
+        }
+    });
 }
 
 
