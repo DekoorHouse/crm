@@ -52,11 +52,22 @@ router.post('/simulate-ai', async (req, res) => {
         // Añadir el mensaje actual al historial formatado (Gemini requiere history + message por separado en su API normal, pero generateGeminiResponse usa todo junto o por partes dependiendo de como está implementado)
         // Revisando cómo es `generateGeminiResponse`, recibe (userMessage, systemPrompt, conversationHistory, knowledgeBaseText)
         
+        // Recuperar respuestas rápidas
+        const qrSnapshot = await db.collection('quick_replies').get();
+        const quickRepliesText = qrSnapshot.docs
+            .filter(doc => doc.data().message)
+            .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
+            .join('\n');
+
         // El historial en DB normalemente es { role, text }. Asegurémonos que coincida.
         const dbHistory = (history || []).map(msg => ({
             role: msg.role === 'user' ? 'user' : 'model',
             text: msg.content
         }));
+
+        // Añadir el mensaje actual al historial, ya que el historial enviado desde el frontend
+        // no incluye el texto más reciente ingresado.
+        dbHistory.push({ role: 'user', text: message });
 
         const conversationHistory = dbHistory.map(d => {
             return `${d.role === 'user' ? 'Cliente' : 'Asistente'}: ${d.text}`;
@@ -66,6 +77,7 @@ router.post('/simulate-ai', async (req, res) => {
             **Instrucciones Generales:**\n${systemPrompt}\n\n
             **Regla Especial de Mensajes Múltiples:** Si tus instrucciones dicen que debes responder en "otro mensaje", "dos mensajes", o enviar algo "seguido de" otra cosa en mensajes separados, DEBES usar obligatoriamente la etiqueta [SPLIT] para dividir las burbujas de chat. (Ejemplo: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
+            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
             **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
