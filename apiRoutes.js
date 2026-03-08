@@ -58,7 +58,19 @@ router.post('/simulate-ai', async (req, res) => {
             text: msg.content
         }));
 
-        const aiResponse = await generateGeminiResponse(message, systemPrompt, dbHistory, knowledgeBase);
+        const conversationHistory = dbHistory.map(d => {
+            return `${d.role === 'user' ? 'Cliente' : 'Asistente'}: ${d.text}`;
+        }).join('\n');
+
+        const prompt = `
+            **Instrucciones Generales:**\n${systemPrompt}\n\n
+            **Regla Especial de Mensajes Múltiples:** Si tus instrucciones dicen que debes responder en "otro mensaje", "dos mensajes", o enviar algo "seguido de" otra cosa en mensajes separados, DEBES usar obligatoriamente la etiqueta [SPLIT] para dividir las burbujas de chat. (Ejemplo: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
+            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
+            **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
+            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+
+        const aiResult = await generateGeminiResponse(prompt);
+        const aiResponse = aiResult.text || '';
 
         res.status(200).json({ success: true, response: aiResponse });
     } catch (error) {
