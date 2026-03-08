@@ -1400,6 +1400,20 @@ router.put('/orders/:orderId', async (req, res) => {
 
         await Promise.all(deletePromises); // Esperar a que terminen los intentos de borrado
 
+        // Hacer públicas las fotos nuevas
+        for (const url of updatedPhotos) {
+            if (url && url.includes(bucket.name) && !existingPhotos.has(url)) {
+                try {
+                    const filePath = new URL(url).pathname.split(`/${bucket.name}/`)[1];
+                    if (filePath) {
+                        await bucket.file(decodeURIComponent(filePath)).makePublic();
+                    }
+                } catch (e) {
+                    console.error('Error al hacer pública la foto nueva de GCS:', e);
+                }
+            }
+        }
+
         // Actualizar el documento del pedido en Firestore con los nuevos datos
         await orderRef.update(updateData);
 
@@ -1465,6 +1479,21 @@ router.post('/orders', async (req, res) => {
             estatusVerificado: false // Checkbox inicial
             // createdBy: userId (si se implementa autenticación de usuarios del CRM)
         };
+
+        // Hacer públicas las fotos para que se vean en la lista de pedidos
+        const allUrls = [...(fotoUrls || []), ...(fotoPromocionUrls || [])];
+        for (const url of allUrls) {
+            if (url && url.includes(bucket.name)) {
+                try {
+                    const filePath = new URL(url).pathname.split(`/${bucket.name}/`)[1];
+                    if (filePath) {
+                        await bucket.file(decodeURIComponent(filePath)).makePublic();
+                    }
+                } catch (e) {
+                    console.error('Error al hacer pública la foto de GCS:', e);
+                }
+            }
+        }
 
         // Añadir el nuevo pedido a la colección 'pedidos'
         const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
