@@ -897,7 +897,7 @@ const ChatWindowTemplate = (contact) => {
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
              <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
-             <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !p-0 !mb-0" rows="1"></textarea>
+             <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
 
