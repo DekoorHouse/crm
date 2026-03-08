@@ -364,6 +364,17 @@ router.post('/', async (req, res) => {
                 return res.sendStatus(200);
             }
 
+            // --- INICIO DE PREVENCIÓN DE DUPLICADOS ---
+            // Revisar si ya procesamos este mensaje verificando su wamid
+            if (message.id) {
+                const isDuplicate = await contactRef.collection('messages').where('id', '==', message.id).limit(1).get();
+                if (!isDuplicate.empty) {
+                    console.log(`[WEBHOOK] Mensaje duplicado detectado (wamid ${message.id}). Meta reenvió el webhook. Ignorando.`);
+                    return res.sendStatus(200);
+                }
+            }
+            // --- FIN DE PREVENCIÓN DE DUPLICADOS ---
+
             // Handle reactions separately
             if (message.type === 'reaction') {
                 const originalMessageId = message.reaction.message_id;
@@ -673,7 +684,11 @@ router.post('/', async (req, res) => {
                 }
             } else {
                 // If it's not a new contact and none of the above automations triggered, consider AI reply
-                await triggerAutoReplyAI(message, contactRef, updatedContactData);
+                // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
+                // y evitar los timeouts del Webhook que producen mensajes dobles.
+                triggerAutoReplyAI(message, contactRef, updatedContactData).catch(err => {
+                    console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);
+                });
             }
 
         // Handle status updates (message sent, delivered, read)
