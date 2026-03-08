@@ -75,7 +75,7 @@ router.post('/simulate-ai', async (req, res) => {
 
         const prompt = `
             **Instrucciones Generales:**\n${systemPrompt}\n\n
-            **Regla Especial de Mensajes Múltiples:** Si tus instrucciones dicen que debes responder en "otro mensaje", "dos mensajes", o enviar algo "seguido de" otra cosa en mensajes separados, DEBES usar obligatoriamente la etiqueta [SPLIT] para dividir las burbujas de chat. (Ejemplo: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
+            **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
             **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
             **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
