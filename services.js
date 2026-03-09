@@ -493,11 +493,11 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         console.log(`[AI] Usuario ${contactId} envió otro mensaje rápidamente. Reiniciando temporizador...`);
     }
 
-    // Creamos un nuevo temporizador de 3.5 segundos
+    // Creamos un nuevo temporizador de 20 segundos
     const timerId = setTimeout(async () => {
         pendingAiRequests.delete(contactId);
         await processAutoReplyAI(contactId, message, contactRef, contactData);
-    }, 3500);
+    }, 20000);
 
     pendingAiRequests.set(contactId, timerId);
 }
