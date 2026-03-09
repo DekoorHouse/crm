@@ -2185,23 +2185,33 @@ async function sendSimulatorMessage() {
     }
 }
 
+function formatWhatsAppText(text) {
+    return text
+        .replace(/\\n/g, '<br>')
+        .replace(/```([\s\S]*?)```/g, '<code class="bg-gray-200 px-1 rounded text-sm">$1</code>')
+        .replace(/\*([^*]+)\*/g, '<b>$1</b>')
+        .replace(/_(.*?)_/g, '<i>$1</i>')
+        .replace(/~(.*?)~/g, '<s>$1</s>');
+}
+
 function renderSimulatorMessage(text, sender, repliedToText = null) {
     const historyContainer = document.getElementById('simulator-chat-history');
     if (!historyContainer) return;
 
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const formattedText = formatWhatsAppText(text);
     
     if (sender === 'user') {
         msgDiv.className = 'flex justify-end';
-        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
+        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
     } else if (sender === 'assistant') {
         msgDiv.className = 'flex justify-start';
         let replyHtml = '';
         if (repliedToText) {
             replyHtml = `<div class="bg-black/5 border-l-4 border-purple-500 rounded p-1 mb-1 text-xs text-gray-600 max-w-full overflow-hidden"><span class="text-purple-600 font-semibold block">Cliente</span><span class="truncate block">${repliedToText}</span></div>`;
         }
-        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative">${replyHtml}<span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
+        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative">${replyHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
     } else {
         msgDiv.className = 'flex justify-center';
         msgDiv.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs shadow-sm">${text}</div>`;
