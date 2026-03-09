@@ -43,7 +43,11 @@ const allowedOrigins = [
 app.use(cors({ origin: allowedOrigins }));
 // --- FIN DE LA SOLUCIÓN DE CORS ---
 
-app.use(express.json());
+// --- SOLUCIÓN DE PAYLOADS GRANDES ---
+// Al convertir imágenes a Base64 pueden superar el megabyte fácilmente, se requiere ampliar el límite
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 module.exports = { app, db, bucket, admin };
