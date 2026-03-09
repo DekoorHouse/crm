@@ -2149,6 +2149,7 @@ function updateSimulatorTokenUI() {
     const totalCost = costInput + costCached + costOutput;
     if (costEl) costEl.textContent = '$' + totalCost.toFixed(6);
 }
+let simulatorAiTimer = null;
 
 async function sendSimulatorMessage() {
     const input = document.getElementById('simulator-chat-input');
@@ -2159,61 +2160,87 @@ async function sendSimulatorMessage() {
     const role = roleSelect ? roleSelect.value : 'user';
     const msgId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
-    // Mostrar mensaje del usuario / agente
+    // Mostrar mensaje del usuario / agente inmediatamente
     renderSimulatorMessage(text, role, null, msgId);
     input.value = '';
+
+    // Añadir al historial INMEDIATAMENTE
+    simulatorHistory.push({ id: msgId, role: role, content: text });
     
-    // Si el mensaje es del agente, simplemente lo agregamos al historial
-    // y detenemos aquí para no hacer una petición a la IA en su nombre.
+    // Si el mensaje es del agente, no hacemos petición a la IA en su nombre
     if (role === 'assistant') {
-        simulatorHistory.push({ id: msgId, role: 'assistant', content: text });
         return;
     }
 
-    // Mostrar indicador de typing
+    // --- REPLICA EL DEBOUNCE DEL SERVIDOR (20 seg) ---
+    if (simulatorAiTimer) {
+        clearTimeout(simulatorAiTimer);
+        console.log(`[SIMULATOR] Reiniciando temporizador de 20s...`);
+    }
+
     const typingIndicator = document.getElementById('simulator-typing-indicator');
     if (typingIndicator) typingIndicator.classList.remove('hidden');
 
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history: simulatorHistory })
-        });
-        const data = await response.json();
+    simulatorAiTimer = setTimeout(async () => {
+        simulatorAiTimer = null;
 
-        if (typingIndicator) typingIndicator.classList.add('hidden');
-
-        if (data.success && data.response) {
-            // Separar la respuesta por [SPLIT] si existe, para simular múltiples mensajes
-            const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
-            
-            // Acumular tokens
-            simulatorTokens.input += (data.inputTokens || 0);
-            simulatorTokens.output += (data.outputTokens || 0);
-            simulatorTokens.cached += (data.cachedTokens || 0);
-            updateSimulatorTokenUI();
-
-            // Añadir al historial
-            simulatorHistory.push({ id: msgId, role: 'user', content: text });
-            
-            const assistId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-            simulatorHistory.push({ id: assistId, role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
-
-            // Renderizar cada parte con un pequeño retraso
-            for (let i = 0; i < messages.length; i++) {
-                if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
-                const replyText = (data.shouldQuote && i === 0) ? text : null;
-                renderSimulatorMessage(messages[i], 'assistant', replyText, assistId);
+        // Clonar historial actual
+        const historyCopy = [...simulatorHistory];
+        
+        // El último mensaje del usuario se pasa como "message" directo, no duplicarlo en "history"
+        let lastUserIndex = -1;
+        for (let i = historyCopy.length - 1; i >= 0; i--) {
+            if (historyCopy[i].role === 'user') {
+                lastUserIndex = i;
+                break;
             }
-        } else {
-            renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
         }
-    } catch (error) {
-        console.error('Simulator error:', error);
-        if (typingIndicator) typingIndicator.classList.add('hidden');
-        renderSimulatorMessage(`Error: ${error.message || 'Error de conexión con el servidor'}`, 'error');
-    }
+        
+        if (lastUserIndex === -1) {
+            if (typingIndicator) typingIndicator.classList.add('hidden');
+            return;
+        }
+
+        const lastMessageText = historyCopy[lastUserIndex].content;
+        historyCopy.splice(lastUserIndex, 1); // Quitar el último para que apiRoutes no lo duplique
+
+        try {
+            const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message: lastMessageText, history: historyCopy })
+            });
+            const data = await response.json();
+
+            if (typingIndicator) typingIndicator.classList.add('hidden');
+
+            if (data.success && data.response) {
+                const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
+                
+                // Acumular tokens
+                simulatorTokens.input += (data.inputTokens || 0);
+                simulatorTokens.output += (data.outputTokens || 0);
+                simulatorTokens.cached += (data.cachedTokens || 0);
+                updateSimulatorTokenUI();
+
+                const assistId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+                simulatorHistory.push({ id: assistId, role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
+
+                // Renderizar cada parte con un pequeño retraso
+                for (let i = 0; i < messages.length; i++) {
+                    if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
+                    const replyText = (data.shouldQuote && i === 0) ? lastMessageText : null;
+                    renderSimulatorMessage(messages[i], 'assistant', replyText, assistId);
+                }
+            } else {
+                renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
+            }
+        } catch (error) {
+            console.error('Simulator error:', error);
+            if (typingIndicator) typingIndicator.classList.add('hidden');
+            renderSimulatorMessage(`Error: ${error.message || 'Error de conexión con el servidor'}`, 'error');
+        }
+    }, 20000);
 }
 
 function formatSimulatorText(text) {
