@@ -2203,9 +2203,10 @@ async function sendSimulatorMessage() {
     }
 }
 
-function formatWhatsAppText(text) {
+function formatSimulatorText(text) {
     return text
         .replace(/\\n/g, '<br>')
+        .replace(/\n/g, '<br>')
         .replace(/```([\s\S]*?)```/g, '<code class="bg-gray-200 px-1 rounded text-sm">$1</code>')
         .replace(/\*([^*]+)\*/g, '<b>$1</b>')
         .replace(/_(.*?)_/g, '<i>$1</i>')
@@ -2218,7 +2219,7 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
 
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    const formattedText = formatWhatsAppText(text);
+    const formattedText = formatSimulatorText(text);
     
     if (sender === 'user') {
         msgDiv.className = 'flex justify-end';
