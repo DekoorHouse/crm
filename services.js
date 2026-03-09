@@ -420,10 +420,10 @@ function invalidateGeminiCache() {
  * Genera una respuesta de Gemini usando el prompt completo (sin caché).
  * Usado como fallback y para el simulador.
  */
-async function generateGeminiResponse(prompt) {
+async function generateGeminiResponse(prompt, imageParts = []) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    const payload = { contents: [{ parts: [{ text: prompt }, ...imageParts] }] };
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     const result = await geminiResponse.json();
@@ -446,12 +446,12 @@ async function generateGeminiResponse(prompt) {
  * El contenido estático (instrucciones, conocimiento, respuestas rápidas) viene del caché.
  * Solo el prompt dinámico (historial + mensaje actual) se envía como tokens nuevos.
  */
-async function generateGeminiResponseWithCache(cacheName, dynamicPrompt) {
+async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imageParts = []) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
     const payload = {
-        contents: [{ parts: [{ text: dynamicPrompt }], role: 'user' }],
+        contents: [{ parts: [{ text: dynamicPrompt }, ...imageParts], role: 'user' }],
         cachedContent: cacheName
     };
 
@@ -537,10 +537,37 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
 
         // --- Contenido dinámico (cambia en cada petición) ---
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').get();
+        const downloadedImages = [];
+        let imageCount = 0;
+
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
-            return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
+            const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
+            
+            // Recolectar hasta las últimas 2 imágenes
+            if (d.type === 'image' && d.fileUrl && imageCount < 2) {
+                downloadedImages.push({ url: d.fileUrl, mimeType: d.fileType || 'image/jpeg' });
+                imageCount++;
+            }
+            return `${fromLabel}: ${d.text}`;
         }).reverse().join('\n');
+
+        // Descargar imágenes para Gemini (en Base64)
+        const imageParts = [];
+        for (const img of downloadedImages.reverse()) { // Voltear para mantener orden cronológico
+            if (img.url.startsWith('http')) {
+                try {
+                    const response = await fetch(img.url);
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    if (buffer.length > 0) {
+                        imageParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: img.mimeType } });
+                        console.log(`[AI] Imagen leída y convertida a Base64 para contexto (${img.mimeType}).`);
+                    }
+                } catch (e) {
+                    console.warn('[AI] Error descargando imagen para contexto:', e.message);
+                }
+            }
+        }
 
         // Detectar código postal y cotizar envío
         let shippingInfo = '';
@@ -554,15 +581,15 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
             }
         }
 
-        const dynamicPrompt = `${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const dynamicPrompt = `${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos, analízalas cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;
         try {
             const cacheName = await getOrCreateCache(botInstructions);
             if (cacheName) {
-                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}.`);
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt);
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (Con ${imageParts.length} imágenes adjuntas)`);
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, imageParts);
                 console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
             } else {
                 throw new Error('Caché no disponible, usando fallback.');
@@ -575,8 +602,8 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
             **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n
             ${await buildStaticContext(botInstructions)}${shippingInfo}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            aiResult = await generateGeminiResponse(fullPrompt);
+            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió fotos, estúdialas. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            aiResult = await generateGeminiResponse(fullPrompt, imageParts);
         }
 
         const aiResponse = aiResult.text;
