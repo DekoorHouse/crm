@@ -292,11 +292,137 @@ async function getShippingQuote(zipTo) {
 }
 
 // =================================================================
-// === SERVICIOS DE GEMINI (IA) ====================================
+// === SERVICIOS DE GEMINI (IA) con Context Caching ================
 // =================================================================
+
+const GEMINI_MODEL = 'gemini-2.0-flash-001';
+const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
+const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
+
+// --- Estado en memoria del caché ---
+let geminiCache = {
+    name: null,          // Nombre del recurso del caché en Gemini (ej: "cachedContents/abc123")
+    contentHash: null,   // Hash del contenido cacheado para detectar cambios
+    createdAt: 0,        // Timestamp de creación
+    ttlMs: 30 * 60 * 1000 // 30 minutos en ms
+};
+
+/**
+ * Genera un hash simple de un string para detectar cambios en el contenido.
+ */
+function simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash |= 0; // Convertir a entero de 32 bits
+    }
+    return hash.toString();
+}
+
+/**
+ * Construye el texto estático del sistema (instrucciones + conocimiento + respuestas rápidas).
+ * Este es el contenido que se cachea.
+ */
+async function buildStaticContext(botInstructions) {
+    const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
+    const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
+
+    const quickRepliesSnapshot = await db.collection('quick_replies').get();
+    const quickReplies = quickRepliesSnapshot.docs
+        .filter(doc => doc.data().message)
+        .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
+        .join('\n');
+
+    const staticText = `**Instrucciones Generales:**\n${botInstructions}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
+
+    return staticText;
+}
+
+/**
+ * Crea o renueva el caché de contexto en la API de Gemini.
+ * Solo se recrea si el contenido cambió o el TTL ha expirado.
+ */
+async function getOrCreateCache(botInstructions) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+
+    const staticText = await buildStaticContext(botInstructions);
+    const currentHash = simpleHash(staticText);
+    const now = Date.now();
+    const cacheExpired = (now - geminiCache.createdAt) > geminiCache.ttlMs;
+
+    // Si el caché es válido y el contenido no cambió, reutilizarlo
+    if (geminiCache.name && geminiCache.contentHash === currentHash && !cacheExpired) {
+        console.log(`[CACHE] Reutilizando caché existente: ${geminiCache.name}`);
+        return geminiCache.name;
+    }
+
+    // Si hay un caché viejo, intentar borrarlo (best effort)
+    if (geminiCache.name) {
+        try {
+            await fetch(`${GEMINI_BASE_URL}/${geminiCache.name}?key=${GEMINI_API_KEY}`, { method: 'DELETE' });
+            console.log(`[CACHE] Caché anterior eliminado: ${geminiCache.name}`);
+        } catch (e) {
+            console.warn(`[CACHE] No se pudo eliminar el caché anterior: ${e.message}`);
+        }
+    }
+
+    // Crear un nuevo caché
+    console.log(`[CACHE] Creando nuevo caché de contexto (hash: ${currentHash})...`);
+    const cachePayload = {
+        model: `models/${GEMINI_MODEL}`,
+        contents: [{
+            parts: [{ text: staticText }],
+            role: 'user'
+        }],
+        systemInstruction: {
+            parts: [{ text: 'Eres un asistente virtual de atención al cliente por WhatsApp. Responde de forma concisa, amigable y útil. Usa la información proporcionada en el contexto para responder.' }]
+        },
+        ttl: CACHE_TTL
+    };
+
+    const response = await fetch(`${GEMINI_BASE_URL}/cachedContents?key=${GEMINI_API_KEY}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cachePayload)
+    });
+
+    if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error(`[CACHE] Error al crear caché:`, JSON.stringify(errorData));
+        // Si falla el caching (ej: contenido muy corto), devolver null para usar fallback
+        return null;
+    }
+
+    const cacheData = await response.json();
+    geminiCache.name = cacheData.name;
+    geminiCache.contentHash = currentHash;
+    geminiCache.createdAt = now;
+
+    const cachedTokens = cacheData.usageMetadata?.totalTokenCount || 'desconocido';
+    console.log(`[CACHE] ✅ Caché creado exitosamente: ${cacheData.name} (${cachedTokens} tokens cacheados)`);
+
+    return cacheData.name;
+}
+
+/**
+ * Invalida el caché para que se reconstruya en la próxima petición.
+ * Llamar cuando se actualicen instrucciones, conocimiento o respuestas rápidas.
+ */
+function invalidateGeminiCache() {
+    console.log('[CACHE] Caché invalidado manualmente. Se recreará en la próxima petición.');
+    geminiCache.name = null;
+    geminiCache.contentHash = null;
+    geminiCache.createdAt = 0;
+}
+
+/**
+ * Genera una respuesta de Gemini usando el prompt completo (sin caché).
+ * Usado como fallback y para el simulador.
+ */
 async function generateGeminiResponse(prompt) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GEMINI_API_KEY}`;
+    const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }] };
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
@@ -306,12 +432,52 @@ async function generateGeminiResponse(prompt) {
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
-    // Extraer metadata de uso de tokens
     const usage = result.usageMetadata || {};
     return {
         text: generatedText,
         inputTokens: usage.promptTokenCount || 0,
-        outputTokens: usage.candidatesTokenCount || 0
+        outputTokens: usage.candidatesTokenCount || 0,
+        cachedTokens: usage.cachedContentTokenCount || 0
+    };
+}
+
+/**
+ * Genera una respuesta de Gemini usando Context Caching.
+ * El contenido estático (instrucciones, conocimiento, respuestas rápidas) viene del caché.
+ * Solo el prompt dinámico (historial + mensaje actual) se envía como tokens nuevos.
+ */
+async function generateGeminiResponseWithCache(cacheName, dynamicPrompt) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    
+    const payload = {
+        contents: [{ parts: [{ text: dynamicPrompt }], role: 'user' }],
+        cachedContent: cacheName
+    };
+
+    const geminiResponse = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+
+    if (!geminiResponse.ok) {
+        const errBody = await geminiResponse.text();
+        throw new Error(`Gemini API con caché respondió ${geminiResponse.status}: ${errBody}`);
+    }
+
+    const result = await geminiResponse.json();
+    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA (cached).');
+    if (generatedText.startsWith('Asistente:')) {
+        generatedText = generatedText.substring('Asistente:'.length).trim();
+    }
+    const usage = result.usageMetadata || {};
+    return {
+        text: generatedText,
+        inputTokens: usage.promptTokenCount || 0,
+        outputTokens: usage.candidatesTokenCount || 0,
+        cachedTokens: usage.cachedContentTokenCount || 0
     };
 }
 
@@ -322,19 +488,15 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
 
-        // --- INICIO DE MODIFICACIÓN: Lógica de activación del Bot ---
-        // El bot se activa si el interruptor global está encendido (y no está anulado para este contacto),
-        // O si está activado individualmente para este contacto específico.
         const isIndividuallyActive = contactData.botActive === true;
-        
         const shouldRun = isIndividuallyActive;
 
         if (!shouldRun) {
             console.log(`[AI] El bot no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). No se enviará respuesta.`);
             return;
         }
-        // --- FIN DE MODIFICACIÓN ---
 
+        // --- Obtener instrucciones del bot ---
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         const adId = contactData.adReferral?.source_id;
         if (adId) {
@@ -351,21 +513,15 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
             if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
         }
-        const knowledgeBaseSnapshot = await db.collection('ai_knowledge_base').get();
-        const knowledgeBase = knowledgeBaseSnapshot.docs.map(doc => `- ${doc.data().topic}: ${doc.data().answer}`).join('\n');
-        // Cargar respuestas rápidas como conocimiento adicional
-        const quickRepliesSnapshot = await db.collection('quick_replies').get();
-        const quickReplies = quickRepliesSnapshot.docs
-            .filter(doc => doc.data().message) // Solo las que tienen texto
-            .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
-            .join('\n');
+
+        // --- Contenido dinámico (cambia en cada petición) ---
         const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
             return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
         }).reverse().join('\n');
 
-        // Detectar código postal en el último mensaje y cotizar envío
+        // Detectar código postal y cotizar envío
         let shippingInfo = '';
         const messageText = message.text?.body || message.text || '';
         const postalCodeMatch = messageText.match(/\b(\d{5})\b/);
@@ -377,27 +533,44 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             }
         }
 
-        const prompt = `
+        const dynamicPrompt = `${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+
+        // --- Intentar usar Context Caching ---
+        let aiResult;
+        try {
+            const cacheName = await getOrCreateCache(botInstructions);
+            if (cacheName) {
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}.`);
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt);
+                console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
+            } else {
+                throw new Error('Caché no disponible, usando fallback.');
+            }
+        } catch (cacheError) {
+            // Fallback: si el caching falla por cualquier razón, usar el método tradicional
+            console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
+            const fullPrompt = `
             **Instrucciones Generales:**\n${botInstructions}\n\n
-            **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
-            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
-            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}${shippingInfo}\n\n
+            **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n
+            ${await buildStaticContext(botInstructions)}${shippingInfo}\n\n
             **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-        console.log(`[AI] Generando respuesta para ${contactId}.`);
-        const aiResult = await generateGeminiResponse(prompt);
+            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            aiResult = await generateGeminiResponse(fullPrompt);
+        }
+
         const aiResponse = aiResult.text;
         
-        // Registrar uso de tokens en Firestore (agregación diaria)
-        const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        // Registrar uso de tokens en Firestore (incluyendo tokens cacheados)
+        const today = new Date().toISOString().split('T')[0];
         const usageRef = db.collection('ai_usage_logs').doc(today);
         await usageRef.set({
             inputTokens: admin.firestore.FieldValue.increment(aiResult.inputTokens),
             outputTokens: admin.firestore.FieldValue.increment(aiResult.outputTokens),
+            cachedTokens: admin.firestore.FieldValue.increment(aiResult.cachedTokens || 0),
             requestCount: admin.firestore.FieldValue.increment(1),
             date: today
         }, { merge: true });
-        console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
+        console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}, Cacheados: ${aiResult.cachedTokens || 0}`);
         
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         const aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
@@ -418,7 +591,6 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
             lastText = sentMessageData.textForDb;
 
             if (i < aiMessages.length - 1) {
-                // Esperar 1.5s entre mensajes para que aparezcan en orden real en WhatsApp
                 await new Promise(r => setTimeout(r, 1500)); 
             }
         }
@@ -500,5 +672,6 @@ module.exports = {
     triggerAutoReplyAI,
     getShippingQuote,
     sendConversionEvent,
-    sendAdvancedWhatsAppMessage
+    sendAdvancedWhatsAppMessage,
+    invalidateGeminiCache
 };

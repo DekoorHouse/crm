@@ -14,7 +14,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
 
 const router = express.Router();
 
