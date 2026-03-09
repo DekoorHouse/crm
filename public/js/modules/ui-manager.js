@@ -2203,7 +2203,8 @@ async function sendSimulatorMessage() {
             // Renderizar cada parte con un pequeño retraso
             for (let i = 0; i < messages.length; i++) {
                 if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
-                renderSimulatorMessage(messages[i], 'assistant', text, assistId);
+                const replyText = (data.shouldQuote && i === 0) ? text : null;
+                renderSimulatorMessage(messages[i], 'assistant', replyText, assistId);
             }
         } else {
             renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
