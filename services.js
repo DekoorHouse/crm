@@ -334,7 +334,7 @@ async function buildStaticContext(botInstructions) {
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
-    const staticText = `**Instrucciones Generales:**\n${botInstructions}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
+    const staticText = `**Instrucciones Generales:**\n${botInstructions}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.\n\n**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
 
     return staticText;
 }
@@ -577,10 +577,20 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         let lastText = "";
 
         for (let i = 0; i < aiMessages.length; i++) {
-            const msgText = aiMessages[i];
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { 
-                text: msgText
-            });
+            let msgText = aiMessages[i];
+            let shouldQuote = false;
+            
+            if (/\[CITA\]/i.test(msgText)) {
+                shouldQuote = true;
+                msgText = msgText.replace(/\[CITA\]/ig, '').trim();
+            }
+
+            const sendOptions = { text: msgText };
+            if (shouldQuote && message.id) {
+                sendOptions.reply_to_wamid = message.id;
+            }
+
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, sendOptions);
             
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),

@@ -71,7 +71,7 @@ router.post('/simulate-ai', async (req, res) => {
             aiResult = await generateGeminiResponse(fullPrompt);
         }
 
-        const aiResponse = aiResult.text || '';
+        const aiResponse = (aiResult.text || '').replace(/\[CITA\]/ig, '').trim();
 
         res.status(200).json({ 
             success: true, 
