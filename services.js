@@ -579,8 +579,7 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         for (let i = 0; i < aiMessages.length; i++) {
             const msgText = aiMessages[i];
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { 
-                text: msgText,
-                reply_to_wamid: message.id 
+                text: msgText
             });
             
             await contactRef.collection('messages').add({
