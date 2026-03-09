@@ -2135,7 +2135,8 @@ function updateSimulatorTokenUI() {
     const outputEl = document.getElementById('simulator-output-tokens');
     const cachedEl = document.getElementById('simulator-cached-tokens');
     const totalEl = document.getElementById('simulator-total-tokens');
-    if (inputEl) inputEl.textContent = simulatorTokens.input.toLocaleString();
+    const newInput = Math.max(0, simulatorTokens.input - simulatorTokens.cached);
+    if (inputEl) inputEl.textContent = newInput.toLocaleString();
     if (outputEl) outputEl.textContent = simulatorTokens.output.toLocaleString();
     if (cachedEl) cachedEl.textContent = simulatorTokens.cached.toLocaleString();
     if (totalEl) totalEl.textContent = (simulatorTokens.input + simulatorTokens.output).toLocaleString();
