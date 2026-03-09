@@ -2173,7 +2173,7 @@ async function sendSimulatorMessage() {
             // Renderizar cada parte con un pequeño retraso
             for (let i = 0; i < messages.length; i++) {
                 if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
-                renderSimulatorMessage(messages[i], 'assistant');
+                renderSimulatorMessage(messages[i], 'assistant', text);
             }
         } else {
             renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
@@ -2185,7 +2185,7 @@ async function sendSimulatorMessage() {
     }
 }
 
-function renderSimulatorMessage(text, sender) {
+function renderSimulatorMessage(text, sender, repliedToText = null) {
     const historyContainer = document.getElementById('simulator-chat-history');
     if (!historyContainer) return;
 
@@ -2197,7 +2197,11 @@ function renderSimulatorMessage(text, sender) {
         msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
     } else if (sender === 'assistant') {
         msgDiv.className = 'flex justify-start';
-        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
+        let replyHtml = '';
+        if (repliedToText) {
+            replyHtml = `<div class="bg-black/5 border-l-4 border-purple-500 rounded p-1 mb-1 text-xs text-gray-600 max-w-full overflow-hidden"><span class="text-purple-600 font-semibold block">Cliente</span><span class="truncate block">${repliedToText}</span></div>`;
+        }
+        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative">${replyHtml}<span class="break-words text-[15px]">${text.replace(/\\n/g, '<br>')}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
     } else {
         msgDiv.className = 'flex justify-center';
         msgDiv.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs shadow-sm">${text}</div>`;
