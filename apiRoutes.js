@@ -37,12 +37,29 @@ router.post('/simulate-ai', async (req, res) => {
         const botDoc = await db.collection('crm_settings').doc('bot').get();
         const systemPrompt = botDoc.exists ? botDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
 
-        // Construir historial de conversación
-        const dbHistory = (history || []).map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            text: msg.content
-        }));
-        dbHistory.push({ role: 'user', text: message });
+        // Construir historial de conversación y recolectar imágenes
+        const imageParts = [];
+        let imageCount = 0;
+
+        const dbHistory = (history || []).map(msg => {
+            if (msg.role === 'user' && msg.imageBase64 && imageCount < 2) {
+                // Remove the prefix (e.g., "data:image/jpeg;base64,")
+                const base64Data = msg.imageBase64.replace(/^data:image\/\w+;base64,/, '');
+                // Detect mime type from prefix or default to jpeg
+                const mimeMatch = msg.imageBase64.match(/^data:(image\/\w+);base64,/);
+                const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+                
+                imageParts.unshift({ inlineData: { data: base64Data, mimeType: mimeType } }); // unshift to keep chronological order logic similar to services.js
+                imageCount++;
+            }
+            return {
+                role: msg.role === 'user' ? 'user' : 'model',
+                text: msg.content
+            };
+        });
+        
+        // Handle current message text, and potentially an image if sent alongside it (handled in history if it's there)
+        dbHistory.push({ role: 'user', text: message || '' });
 
         const conversationHistory = dbHistory.map(d => {
             return `${d.role === 'user' ? 'Cliente' : 'Asistente'}: ${d.text}`;
@@ -55,7 +72,7 @@ router.post('/simulate-ai', async (req, res) => {
         try {
             const cacheName = await getOrCreateCache(systemPrompt);
             if (cacheName) {
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt);
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, imageParts);
             } else {
                 throw new Error('Caché no disponible');
             }
@@ -67,8 +84,8 @@ router.post('/simulate-ai', async (req, res) => {
             const qrSnapshot = await db.collection('quick_replies').get();
             const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
 
-            const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            aiResult = await generateGeminiResponse(fullPrompt);
+            const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió fotos, analízalas cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            aiResult = await generateGeminiResponse(fullPrompt, imageParts);
         }
 
         const rawResponse = aiResult.text || '';

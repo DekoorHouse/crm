@@ -534,7 +534,10 @@ const AIChatSimulatorViewTemplate = () => `
                 </div>
                 
                 <!-- Chat History -->
-                <div id="simulator-chat-history" class="flex-1 overflow-y-auto p-4 space-y-3">
+                <div id="simulator-chat-history" class="flex-1 overflow-y-auto p-4 space-y-3" 
+                     ondragover="event.preventDefault(); this.classList.add('bg-[#dcf8c6]', 'bg-opacity-50')" 
+                     ondragleave="event.preventDefault(); this.classList.remove('bg-[#dcf8c6]', 'bg-opacity-50')" 
+                     ondrop="handleSimulatorDrop(event); this.classList.remove('bg-[#dcf8c6]', 'bg-opacity-50')">
                     <div class="text-center my-4">
                         <span class="bg-[#e1f3fb] text-[#1f2937] text-xs px-3 py-1 rounded-lg inline-block shadow-sm">
                             <i class="fas fa-lock mr-1"></i> Los mensajes y llamadas están cifrados de extremo a extremo.
@@ -577,9 +580,15 @@ const AIChatSimulatorViewTemplate = () => `
                     </select>
                 </div>
                 <div class="flex items-end gap-2">
+                    <input type="file" id="simulator-image-upload" accept="image/*" class="hidden" onchange="handleSimulatorImageUpload(event)">
+                    <button class="text-gray-500 hover:text-gray-700 p-2" onclick="document.getElementById('simulator-image-upload').click()"><i class="fas fa-paperclip text-xl"></i></button>
                     <button class="text-gray-500 hover:text-gray-700 p-2"><i class="far fa-smile text-xl"></i></button>
-                    <div class="flex-1 bg-white rounded-lg px-4 py-2 shadow-sm min-h-[44px] flex items-center">
-                        <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px]" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
+                    <div class="flex-1 bg-white rounded-lg px-2 py-2 shadow-sm flex flex-col justify-center min-h-[44px]">
+                        <div id="simulator-image-preview-container" class="hidden mb-2 relative inline-block w-fit">
+                            <img id="simulator-image-preview" src="" class="h-16 rounded border object-cover">
+                            <button onclick="removeSimulatorImage()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 shadow">&times;</button>
+                        </div>
+                        <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px] px-2" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
                     </div>
                     <button id="simulator-send-btn" onclick="sendSimulatorMessage()" class="bg-[#00a884] text-white w-11 h-11 rounded-full flex items-center justify-center hover:bg-[#008f6f] transition-colors shadow-sm flex-shrink-0">
                         <i class="fas fa-paper-plane"></i>
