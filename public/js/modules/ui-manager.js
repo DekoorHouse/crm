@@ -2193,14 +2193,16 @@ async function processSimulatorAi() {
         return;
     }
 
-    const lastMessageText = historyCopy[lastUserIndex].content;
+    const lastMessageObj = historyCopy[lastUserIndex];
+    const lastMessageText = lastMessageObj.content;
+    const lastImageBase64 = lastMessageObj.imageBase64;
     historyCopy.splice(lastUserIndex, 1); // Quitar el último para que apiRoutes no lo duplique
 
     try {
         const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: lastMessageText, history: historyCopy })
+            body: JSON.stringify({ message: lastMessageText, imageBase64: lastImageBase64, history: historyCopy })
         });
         const data = await response.json();
 

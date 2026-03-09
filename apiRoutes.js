@@ -27,7 +27,7 @@ const PORT = process.env.PORT || 3000;
 // --- ENDPOINT SIMULADOR IA ---
 router.post('/simulate-ai', async (req, res) => {
     try {
-        const { message, history } = req.body;
+        const { message, imageBase64, history } = req.body;
         
         if (!message) {
             return res.status(400).json({ success: false, message: 'Se requiere un mensaje.' });
@@ -58,7 +58,14 @@ router.post('/simulate-ai', async (req, res) => {
             };
         });
         
-        // Handle current message text, and potentially an image if sent alongside it (handled in history if it's there)
+        // Handle current message text, and potentially an image if sent alongside it
+        if (imageBase64 && imageCount < 2) {
+            const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+            const mimeMatch = imageBase64.match(/^data:(image\/\w+);base64,/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            imageParts.push({ inlineData: { data: base64Data, mimeType: mimeType } });
+            imageCount++;
+        }
         dbHistory.push({ role: 'user', text: message || '' });
 
         const conversationHistory = dbHistory.map(d => {
