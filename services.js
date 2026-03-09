@@ -481,9 +481,30 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt) {
     };
 }
 
+// Cola de temporizadores para esperar a que el usuario termine de escribir varios mensajes
+const pendingAiRequests = new Map();
+
 async function triggerAutoReplyAI(message, contactRef, contactData) {
     const contactId = contactRef.id;
-    console.log(`[AI] Iniciando proceso de IA para ${contactId}.`);
+
+    // Si ya había un temporizador corriendo para este contacto, lo cancelamos
+    if (pendingAiRequests.has(contactId)) {
+        clearTimeout(pendingAiRequests.get(contactId));
+        console.log(`[AI] Usuario ${contactId} envió otro mensaje rápidamente. Reiniciando temporizador...`);
+    }
+
+    // Creamos un nuevo temporizador de 3.5 segundos
+    const timerId = setTimeout(async () => {
+        pendingAiRequests.delete(contactId);
+        await processAutoReplyAI(contactId, message, contactRef, contactData);
+    }, 3500);
+
+    pendingAiRequests.set(contactId, timerId);
+}
+
+// Lógica principal movida a otra función
+async function processAutoReplyAI(contactId, message, contactRef, contactData) {
+    console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
     try {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
