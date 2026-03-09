@@ -405,11 +405,15 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
 
         for (let i = 0; i < aiMessages.length; i++) {
             const msgText = aiMessages[i];
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text: msgText });
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { 
+                text: msgText,
+                reply_to_wamid: message.id 
+            });
             
             await contactRef.collection('messages').add({
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true
+                id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true,
+                context: { id: message.id }
             });
             lastText = sentMessageData.textForDb;
 
