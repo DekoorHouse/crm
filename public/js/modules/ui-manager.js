@@ -2157,15 +2157,16 @@ async function sendSimulatorMessage() {
     if (!text) return;
 
     const role = roleSelect ? roleSelect.value : 'user';
+    const msgId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
     // Mostrar mensaje del usuario / agente
-    renderSimulatorMessage(text, role);
+    renderSimulatorMessage(text, role, null, msgId);
     input.value = '';
     
     // Si el mensaje es del agente, simplemente lo agregamos al historial
     // y detenemos aquí para no hacer una petición a la IA en su nombre.
     if (role === 'assistant') {
-        simulatorHistory.push({ role: 'assistant', content: text });
+        simulatorHistory.push({ id: msgId, role: 'assistant', content: text });
         return;
     }
 
@@ -2194,13 +2195,15 @@ async function sendSimulatorMessage() {
             updateSimulatorTokenUI();
 
             // Añadir al historial
-            simulatorHistory.push({ role: 'user', content: text });
-            simulatorHistory.push({ role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
+            simulatorHistory.push({ id: msgId, role: 'user', content: text });
+            
+            const assistId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+            simulatorHistory.push({ id: assistId, role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
 
             // Renderizar cada parte con un pequeño retraso
             for (let i = 0; i < messages.length; i++) {
                 if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
-                renderSimulatorMessage(messages[i], 'assistant', text);
+                renderSimulatorMessage(messages[i], 'assistant', text, assistId);
             }
         } else {
             renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
@@ -2222,11 +2225,10 @@ function formatSimulatorText(text) {
         .replace(/~(.*?)~/g, '<s>$1</s>');
 }
 
-function renderSimulatorMessage(text, sender, repliedToText = null) {
+function renderSimulatorMessage(text, sender, repliedToText = null, msgId = null) {
     const historyContainer = document.getElementById('simulator-chat-history');
     if (!historyContainer) return;
 
-    const msgIndex = simulatorHistory.length; // Will be set after push in sendSimulatorMessage
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const formattedText = formatSimulatorText(text);
@@ -2234,9 +2236,11 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
     
     if (sender === 'user') {
         msgDiv.className = 'flex justify-end sim-msg-wrapper';
+        if (msgId) msgDiv.setAttribute('data-msg-id', msgId);
         msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
     } else if (sender === 'assistant') {
         msgDiv.className = 'flex justify-start sim-msg-wrapper';
+        if (msgId) msgDiv.setAttribute('data-msg-id', msgId);
         let replyHtml = '';
         if (repliedToText) {
             replyHtml = `<div class="bg-black/5 border-l-4 border-purple-500 rounded p-1 mb-1 text-xs text-gray-600 max-w-full overflow-hidden"><span class="text-purple-600 font-semibold block">Cliente</span><span class="truncate block">${repliedToText}</span></div>`;
@@ -2255,17 +2259,20 @@ function deleteSimulatorMessage(btnElement) {
     const msgWrapper = btnElement.closest('.sim-msg-wrapper');
     if (!msgWrapper) return;
     
-    const historyContainer = document.getElementById('simulator-chat-history');
-    if (!historyContainer) return;
+    const msgId = msgWrapper.getAttribute('data-msg-id');
     
-    // Find index of this message among all sim-msg-wrapper elements
-    const allMsgs = Array.from(historyContainer.querySelectorAll('.sim-msg-wrapper'));
-    const domIndex = allMsgs.indexOf(msgWrapper);
+    // Eliminar del historial de mensajes
+    if (msgId) {
+        const index = simulatorHistory.findIndex(m => m.id === msgId);
+        if (index > -1) {
+            simulatorHistory.splice(index, 1);
+        }
+    }
     
-    if (domIndex > -1 && domIndex < simulatorHistory.length) {
-        // Remove from history array
-        simulatorHistory.splice(domIndex, 1);
-        // Remove from DOM
+    // Eliminar del DOM (si hay varios mensajes con el mismo ID por culpa del [SPLIT], borramos todos)
+    if (msgId) {
+        document.querySelectorAll(`.sim-msg-wrapper[data-msg-id="${msgId}"]`).forEach(el => el.remove());
+    } else {
         msgWrapper.remove();
     }
 }
