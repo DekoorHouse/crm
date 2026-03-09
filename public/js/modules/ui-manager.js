@@ -2135,11 +2135,19 @@ function updateSimulatorTokenUI() {
     const outputEl = document.getElementById('simulator-output-tokens');
     const cachedEl = document.getElementById('simulator-cached-tokens');
     const totalEl = document.getElementById('simulator-total-tokens');
+    const costEl = document.getElementById('simulator-cost');
     const newInput = Math.max(0, simulatorTokens.input - simulatorTokens.cached);
     if (inputEl) inputEl.textContent = newInput.toLocaleString();
     if (outputEl) outputEl.textContent = simulatorTokens.output.toLocaleString();
     if (cachedEl) cachedEl.textContent = simulatorTokens.cached.toLocaleString();
     if (totalEl) totalEl.textContent = (simulatorTokens.input + simulatorTokens.output).toLocaleString();
+    // Costos gemini-3-flash-preview (por 1M tokens)
+    // Input: $0.50, Output: $3.00, Cached: $0.125 (75% descuento)
+    const costInput = (newInput / 1_000_000) * 0.50;
+    const costCached = (simulatorTokens.cached / 1_000_000) * 0.125;
+    const costOutput = (simulatorTokens.output / 1_000_000) * 3.00;
+    const totalCost = costInput + costCached + costOutput;
+    if (costEl) costEl.textContent = '$' + totalCost.toFixed(6);
 }
 
 async function sendSimulatorMessage() {

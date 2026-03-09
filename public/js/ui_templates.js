@@ -557,7 +557,10 @@ const AIChatSimulatorViewTemplate = () => `
                     <span><i class="fas fa-database text-purple-400"></i> Cacheados: <b id="simulator-cached-tokens" class="text-purple-600">0</b></span>
                     <span><i class="fas fa-arrow-down text-green-400"></i> Salida: <b id="simulator-output-tokens" class="text-gray-700">0</b></span>
                 </div>
-                <span class="text-gray-400"><i class="fas fa-coins"></i> Total: <b id="simulator-total-tokens" class="text-gray-600">0</b></span>
+                <div class="flex items-center gap-3">
+                    <span class="text-gray-400"><i class="fas fa-coins"></i> Total: <b id="simulator-total-tokens" class="text-gray-600">0</b></span>
+                    <span class="text-green-600 font-semibold"><i class="fas fa-dollar-sign"></i> Costo: <b id="simulator-cost">$0.000000</b></span>
+                </div>
             </div>
             <div class="bg-[#f0f0f0] p-3 rounded-b-xl border border-t-0 border-gray-300 flex flex-col gap-2 shadow-md">
                 <div class="flex items-center gap-2 pl-2">
