@@ -14,7 +14,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
 
 const router = express.Router();
 
@@ -33,62 +33,52 @@ router.post('/simulate-ai', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Se requiere un mensaje.' });
         }
 
-        // Recuperar instrucciones del bot y base de datos
+        // Recuperar instrucciones del bot
         const botDoc = await db.collection('crm_settings').doc('bot').get();
-        const systemPrompt = botDoc.exists ? botDoc.data().instructions : '';
-        
-        const kbSnapshot = await db.collection('ai_knowledge_base').get();
-        const knowledgeBase = kbSnapshot.docs.map(doc => {
-            const data = doc.data();
-            return `P: ${data.topic}\nR: ${data.answer}`;
-        }).join('\n\n');
+        const systemPrompt = botDoc.exists ? botDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
 
-        // Formatear historial para Gemini
-        const formattedHistory = (history || []).map(msg => ({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.content }]
-        }));
-
-        // Añadir el mensaje actual al historial formatado (Gemini requiere history + message por separado en su API normal, pero generateGeminiResponse usa todo junto o por partes dependiendo de como está implementado)
-        // Revisando cómo es `generateGeminiResponse`, recibe (userMessage, systemPrompt, conversationHistory, knowledgeBaseText)
-        
-        // Recuperar respuestas rápidas
-        const qrSnapshot = await db.collection('quick_replies').get();
-        const quickRepliesText = qrSnapshot.docs
-            .filter(doc => doc.data().message)
-            .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
-            .join('\n');
-
-        // El historial en DB normalemente es { role, text }. Asegurémonos que coincida.
+        // Construir historial de conversación
         const dbHistory = (history || []).map(msg => ({
             role: msg.role === 'user' ? 'user' : 'model',
             text: msg.content
         }));
-
-        // Añadir el mensaje actual al historial, ya que el historial enviado desde el frontend
-        // no incluye el texto más reciente ingresado.
         dbHistory.push({ role: 'user', text: message });
 
         const conversationHistory = dbHistory.map(d => {
             return `${d.role === 'user' ? 'Cliente' : 'Asistente'}: ${d.text}`;
         }).join('\n');
 
-        const prompt = `
-            **Instrucciones Generales:**\n${systemPrompt}\n\n
-            **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n
-            **Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n
-            **Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n
-            **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const dynamicPrompt = `**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
-        const aiResult = await generateGeminiResponse(prompt);
+        // Intentar con Context Caching
+        let aiResult;
+        try {
+            const cacheName = await getOrCreateCache(systemPrompt);
+            if (cacheName) {
+                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt);
+            } else {
+                throw new Error('Caché no disponible');
+            }
+        } catch (cacheError) {
+            // Fallback: construir prompt completo sin caché
+            console.warn(`[SIMULATOR] Caché falló (${cacheError.message}). Usando método sin caché.`);
+            const kbSnapshot = await db.collection('ai_knowledge_base').get();
+            const knowledgeBase = kbSnapshot.docs.map(doc => `P: ${doc.data().topic}\nR: ${doc.data().answer}`).join('\n\n');
+            const qrSnapshot = await db.collection('quick_replies').get();
+            const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
+
+            const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            aiResult = await generateGeminiResponse(fullPrompt);
+        }
+
         const aiResponse = aiResult.text || '';
 
         res.status(200).json({ 
             success: true, 
             response: aiResponse,
             inputTokens: aiResult.inputTokens || 0,
-            outputTokens: aiResult.outputTokens || 0
+            outputTokens: aiResult.outputTokens || 0,
+            cachedTokens: aiResult.cachedTokens || 0
         });
     } catch (error) {
         console.error('Error en simulación de IA:', error);

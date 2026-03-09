@@ -669,6 +669,8 @@ module.exports = {
     handleWholesaleMessage,
     checkCoverage,
     generateGeminiResponse,
+    generateGeminiResponseWithCache,
+    getOrCreateCache,
     triggerAutoReplyAI,
     getShippingQuote,
     sendConversionEvent,

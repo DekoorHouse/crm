@@ -2128,14 +2128,16 @@ window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-mana
 
 // --- START SIMULADOR IA ---
 let simulatorHistory = [];
-let simulatorTokens = { input: 0, output: 0 };
+let simulatorTokens = { input: 0, output: 0, cached: 0 };
 
 function updateSimulatorTokenUI() {
     const inputEl = document.getElementById('simulator-input-tokens');
     const outputEl = document.getElementById('simulator-output-tokens');
+    const cachedEl = document.getElementById('simulator-cached-tokens');
     const totalEl = document.getElementById('simulator-total-tokens');
     if (inputEl) inputEl.textContent = simulatorTokens.input.toLocaleString();
     if (outputEl) outputEl.textContent = simulatorTokens.output.toLocaleString();
+    if (cachedEl) cachedEl.textContent = simulatorTokens.cached.toLocaleString();
     if (totalEl) totalEl.textContent = (simulatorTokens.input + simulatorTokens.output).toLocaleString();
 }
 
@@ -2179,6 +2181,7 @@ async function sendSimulatorMessage() {
             // Acumular tokens
             simulatorTokens.input += (data.inputTokens || 0);
             simulatorTokens.output += (data.outputTokens || 0);
+            simulatorTokens.cached += (data.cachedTokens || 0);
             updateSimulatorTokenUI();
 
             // Añadir al historial
@@ -2238,7 +2241,7 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
 
 function clearSimulatorChat() {
     simulatorHistory = [];
-    simulatorTokens = { input: 0, output: 0 };
+    simulatorTokens = { input: 0, output: 0, cached: 0 };
     updateSimulatorTokenUI();
     const historyContainer = document.getElementById('simulator-chat-history');
     if (historyContainer) {
