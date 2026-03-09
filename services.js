@@ -295,7 +295,7 @@ async function getShippingQuote(zipTo) {
 // === SERVICIOS DE GEMINI (IA) con Context Caching ================
 // =================================================================
 
-const GEMINI_MODEL = 'gemini-2.0-flash-001';
+const GEMINI_MODEL = 'gemini-3-flash-preview';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
 
