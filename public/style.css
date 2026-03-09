@@ -1201,3 +1201,38 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
          margin-right: 12px; 
          flex-shrink: 0; 
  }
+
+/* --- Simulator Message Delete Button --- */
+.sim-msg-delete {
+    display: none;
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    width: 20px;
+    height: 20px;
+    background-color: #ef4444;
+    color: white;
+    border: 2px solid white;
+    border-radius: 50%;
+    font-size: 9px;
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    padding: 0;
+    line-height: 1;
+    transition: transform 0.15s ease, background-color 0.15s ease;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+}
+.sim-msg-bubble:hover .sim-msg-delete {
+    display: flex;
+}
+.sim-msg-delete:hover {
+    background-color: #dc2626;
+    transform: scale(1.15);
+}
+/* Adjust position for sent messages (right-aligned) */
+.sim-msg-wrapper.flex.justify-end .sim-msg-delete {
+    right: auto;
+    left: -8px;
+}

@@ -2226,20 +2226,22 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
     const historyContainer = document.getElementById('simulator-chat-history');
     if (!historyContainer) return;
 
+    const msgIndex = simulatorHistory.length; // Will be set after push in sendSimulatorMessage
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const formattedText = formatSimulatorText(text);
+    const deleteBtn = `<button class="sim-msg-delete" onclick="deleteSimulatorMessage(this)" title="Eliminar mensaje"><i class="fas fa-times"></i></button>`;
     
     if (sender === 'user') {
-        msgDiv.className = 'flex justify-end';
-        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative"><span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
+        msgDiv.className = 'flex justify-end sim-msg-wrapper';
+        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
     } else if (sender === 'assistant') {
-        msgDiv.className = 'flex justify-start';
+        msgDiv.className = 'flex justify-start sim-msg-wrapper';
         let replyHtml = '';
         if (repliedToText) {
             replyHtml = `<div class="bg-black/5 border-l-4 border-purple-500 rounded p-1 mb-1 text-xs text-gray-600 max-w-full overflow-hidden"><span class="text-purple-600 font-semibold block">Cliente</span><span class="truncate block">${repliedToText}</span></div>`;
         }
-        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative">${replyHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
+        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}${replyHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
     } else {
         msgDiv.className = 'flex justify-center';
         msgDiv.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs shadow-sm">${text}</div>`;
@@ -2248,6 +2250,26 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
     historyContainer.appendChild(msgDiv);
     historyContainer.scrollTop = historyContainer.scrollHeight;
 }
+
+function deleteSimulatorMessage(btnElement) {
+    const msgWrapper = btnElement.closest('.sim-msg-wrapper');
+    if (!msgWrapper) return;
+    
+    const historyContainer = document.getElementById('simulator-chat-history');
+    if (!historyContainer) return;
+    
+    // Find index of this message among all sim-msg-wrapper elements
+    const allMsgs = Array.from(historyContainer.querySelectorAll('.sim-msg-wrapper'));
+    const domIndex = allMsgs.indexOf(msgWrapper);
+    
+    if (domIndex > -1 && domIndex < simulatorHistory.length) {
+        // Remove from history array
+        simulatorHistory.splice(domIndex, 1);
+        // Remove from DOM
+        msgWrapper.remove();
+    }
+}
+window.deleteSimulatorMessage = deleteSimulatorMessage;
 
 function clearSimulatorChat() {
     simulatorHistory = [];
