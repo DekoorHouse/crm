@@ -144,8 +144,8 @@ function setupChatListEventListeners() {
         dragCounter = 0;
         hideOverlay();
         const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            stageFile(files[0]);
+        for (let i = 0; i < files.length; i++) {
+            stageFile(files[i]);
         }
     });
 }
@@ -298,10 +298,11 @@ function setupDragAndDropForChatArea() {
         
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
-            // Solo adjuntar si el input no está deshabilitado (sesión de chat activa)
             const messageInput = document.getElementById('message-input');
             if (messageInput && !messageInput.disabled) {
-                stageFile(files[0]); // Usar la función existente para manejar el archivo
+                for (let i = 0; i < files.length; i++) {
+                    stageFile(files[i]);
+                }
             }
         }
     });
@@ -860,7 +861,16 @@ function handleStatusChange(contactId, newStatusKey) {
     });
 }
 
-function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFiles.push(file); state.stagedRemoteFile = null; renderFilePreview(); }
+function stageFile(file) { 
+    if (!file || state.isUploading) return; 
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } 
+    // Evitar duplicados (mismo archivo adjuntado dos veces)
+    const isDuplicate = state.stagedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
+    if (isDuplicate) return;
+    state.stagedFiles.push(file); 
+    state.stagedRemoteFile = null; 
+    renderFilePreview(); 
+}
 
 function cancelStagedFile() { 
     state.stagedFiles.forEach(f => URL.revokeObjectURL(f)); 
