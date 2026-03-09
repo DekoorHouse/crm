@@ -641,10 +641,10 @@ async function handleSendMessage(event) {
     // REMOVIDO: state.isUploading check. Ahora permitimos enviar mientras se sube.
     if (!contact) return; 
 
-    const fileToSend = state.stagedFile;
+    const filesToSend = [...state.stagedFiles];
     const remoteFileToSend = state.stagedRemoteFile;
 
-    if (!text && !fileToSend && !remoteFileToSend) return;
+    if (!text && filesToSend.length === 0 && !remoteFileToSend) return;
 
     const isExpired = state.isSessionExpired;
     const tempId = `temp_${Date.now()}`;
@@ -652,12 +652,13 @@ async function handleSendMessage(event) {
     // --- Definir el texto del mensaje temporal ---
     let messageText = text;
     if (!messageText) {
-        if (fileToSend) {
-             const type = fileToSend.type;
+        if (filesToSend.length > 0) {
+             const type = filesToSend[0].type;
              if (type.startsWith('image/')) messageText = '📷 Imagen';
              else if (type.startsWith('video/')) messageText = '🎥 Video';
              else if (type.startsWith('audio/')) messageText = '🎵 Audio';
              else messageText = '📄 Documento';
+             if (filesToSend.length > 1) messageText += ` (+${filesToSend.length - 1} más)`;
         } else if (remoteFileToSend) {
              const type = remoteFileToSend.type;
              if (type.startsWith('image/')) messageText = '📷 Imagen';
@@ -675,9 +676,9 @@ async function handleSendMessage(event) {
         text: messageText,
     };
 
-    if (fileToSend) {
-        pendingMessage.fileUrl = URL.createObjectURL(fileToSend);
-        pendingMessage.fileType = fileToSend.type;
+    if (filesToSend.length > 0) {
+        pendingMessage.fileUrl = URL.createObjectURL(filesToSend[0]);
+        pendingMessage.fileType = filesToSend[0].type;
     } else if (remoteFileToSend) {
         pendingMessage.fileUrl = remoteFileToSend.url;
         pendingMessage.fileType = remoteFileToSend.type;
@@ -693,17 +694,41 @@ async function handleSendMessage(event) {
     input.style.height = 'auto';
     cancelStagedFile(); // Limpia el archivo del estado, pero ya lo capturamos en fileToSend
 
-    // --- ENCOLAR MENSAJE ---
-    state.messageQueue.push({
-        type: fileToSend ? 'file' : 'text', // 'file' para subidas locales, 'text' para texto o archivos remotos
-        file: fileToSend,
-        remoteFile: remoteFileToSend,
-        text: text,
-        contactId: currentContactId,
-        replyTo: currentReplyingTo,
-        isExpired: isExpired,
-        tempId: tempId
-    });
+    // --- ENCOLAR MENSAJES ---
+    if (filesToSend.length > 0) {
+        // Primer archivo lleva el texto como caption
+        state.messageQueue.push({
+            type: 'file',
+            file: filesToSend[0],
+            text: text,
+            contactId: currentContactId,
+            replyTo: currentReplyingTo,
+            isExpired: isExpired,
+            tempId: tempId
+        });
+        // Archivos adicionales van sin texto
+        for (let i = 1; i < filesToSend.length; i++) {
+            state.messageQueue.push({
+                type: 'file',
+                file: filesToSend[i],
+                text: '',
+                contactId: currentContactId,
+                replyTo: null,
+                isExpired: isExpired,
+                tempId: `temp_${Date.now()}_${i}`
+            });
+        }
+    } else {
+        state.messageQueue.push({
+            type: 'text',
+            remoteFile: remoteFileToSend,
+            text: text,
+            contactId: currentContactId,
+            replyTo: currentReplyingTo,
+            isExpired: isExpired,
+            tempId: tempId
+        });
+    }
 
     // Iniciar procesamiento de la cola (si no está ya corriendo)
     processMessageQueue();
@@ -835,20 +860,28 @@ function handleStatusChange(contactId, newStatusKey) {
     });
 }
 
-function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFile = file; state.stagedRemoteFile = null; renderFilePreview(); }
+function stageFile(file) { if (!file || state.isUploading) return; if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } state.stagedFiles.push(file); state.stagedRemoteFile = null; renderFilePreview(); }
 
 function cancelStagedFile() { 
-    if (state.stagedFile) { URL.revokeObjectURL(state.stagedFile); } 
-    state.stagedFile = null; 
+    state.stagedFiles.forEach(f => URL.revokeObjectURL(f)); 
+    state.stagedFiles = []; 
     state.stagedRemoteFile = null;
     const fileInput = document.getElementById('file-input'); 
     if(fileInput) fileInput.value = null; 
     renderFilePreview(); 
 }
 
-function handleFileInputChange(event) { const file = event.target.files[0]; if (file) stageFile(file); }
+function removeStagedFile(index) {
+    if (index >= 0 && index < state.stagedFiles.length) {
+        URL.revokeObjectURL(state.stagedFiles[index]);
+        state.stagedFiles.splice(index, 1);
+        renderFilePreview();
+    }
+}
 
-function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); break; } } } }
+function handleFileInputChange(event) { const files = event.target.files; if (files) { for (let i = 0; i < files.length; i++) { stageFile(files[i]); } } }
+
+function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); } } } }
 
 function setFilter(filter) { 
     state.activeFilter = filter; 
@@ -889,7 +922,7 @@ function selectQuickReply(replyId) {
         input.dispatchEvent(event);
     }
     
-    state.stagedFile = null; 
+    state.stagedFiles = []; 
     if (reply.fileUrl) {
         state.stagedRemoteFile = {
             url: reply.fileUrl,
@@ -1075,6 +1108,7 @@ window.selectQuickReply = selectQuickReply;
 window.selectEmoji = selectEmoji;
 window.handleSendTemplate = handleSendTemplate;
 window.cancelStagedFile = cancelStagedFile;
+window.removeStagedFile = removeStagedFile;
 window.handleFileInputChange = handleFileInputChange;
 
 

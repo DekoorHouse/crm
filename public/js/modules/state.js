@@ -32,7 +32,7 @@ let state = {
     selectedContactOrders: [], // Pedidos del contacto seleccionado (para la barra lateral)
     loadingMessages: false, // Indicador de carga de mensajes
     isUploading: false, // Indicador de subida de archivos
-    stagedFile: null, // Archivo local preparado para enviar
+    stagedFiles: [], // Archivos locales preparados para enviar (multiple)
     stagedRemoteFile: null, // Archivo remoto (de QR) preparado para enviar
     activeFilter: 'all', // Filtro de etiqueta activo ('all' o key de la etiqueta)
     activeTab: 'chat', // Pestaña activa en el chat ('chat' o 'notes')

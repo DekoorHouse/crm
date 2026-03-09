@@ -1256,8 +1256,8 @@ function renderFilePreview() {
     const container = document.getElementById('file-preview-container');
     if (!container) return;
 
-    if (state.stagedFile) { // Si hay un archivo local seleccionado
-        container.innerHTML = LocalFilePreviewTemplate(state.stagedFile);
+    if (state.stagedFiles.length > 0) { // Si hay archivos locales seleccionados
+        container.innerHTML = LocalFilePreviewTemplate(state.stagedFiles);
         container.classList.remove('hidden');
     } else if (state.stagedRemoteFile) { // Si hay un archivo remoto (de respuesta rápida)
         container.innerHTML = RemoteFilePreviewTemplate(state.stagedRemoteFile);

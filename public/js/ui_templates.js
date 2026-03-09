@@ -871,22 +871,36 @@ const NoteItemTemplate = (note) => {
            </div>`;
 };
 
-const LocalFilePreviewTemplate = (file) => {
-    const objectURL = URL.createObjectURL(file);
-    const isImage = file.type.startsWith('image/');
-    const isVideo = file.type.startsWith('video/');
-    const isAudio = file.type.startsWith('audio/');
-    let previewElement;
-    if (isImage) {
-        previewElement = `<img src="${objectURL}" alt="Vista previa">`;
-    } else if (isVideo) {
-        previewElement = `<video src="${objectURL}" alt="Vista previa"></video>`;
-    } else if (isAudio) {
-        previewElement = `<div class="p-3"><i class="fas fa-music text-2xl text-gray-500"></i></div>`;
-    } else {
-        previewElement = `<div class="p-3"><i class="fas fa-file text-2xl text-gray-500"></i></div>`;
-    }
-    return ` <div class="file-preview-content"> <div id="cancel-file-btn" onclick="cancelStagedFile()"><i class="fas fa-times"></i></div> ${previewElement} <div class="ml-3 text-sm text-gray-600 truncate"> <p class="font-semibold">${file.name}</p> <p>${(file.size / 1024).toFixed(1)} KB</p> </div> </div>`;
+const LocalFilePreviewTemplate = (files) => {
+    if (!Array.isArray(files)) files = [files];
+    const items = files.map((file, index) => {
+        const objectURL = URL.createObjectURL(file);
+        const isImage = file.type.startsWith('image/');
+        const isVideo = file.type.startsWith('video/');
+        const isAudio = file.type.startsWith('audio/');
+        const sizeMB = file.size / (1024 * 1024);
+        const sizeText = sizeMB >= 1 ? `${sizeMB.toFixed(1)} MB` : `${(file.size / 1024).toFixed(0)} KB`;
+        const shortName = file.name.length > 18 ? file.name.substring(0, 15) + '...' : file.name;
+        let thumb;
+        if (isImage) {
+            thumb = `<img src="${objectURL}" alt="Vista previa" class="file-thumb">`;
+        } else if (isVideo) {
+            thumb = `<div class="file-thumb file-thumb-icon video"><i class="fas fa-play"></i></div>`;
+        } else if (isAudio) {
+            thumb = `<div class="file-thumb file-thumb-icon audio"><i class="fas fa-music"></i></div>`;
+        } else {
+            thumb = `<div class="file-thumb file-thumb-icon doc"><i class="fas fa-file-alt"></i></div>`;
+        }
+        return `<div class="file-preview-item">
+            <button type="button" class="file-remove-btn" onclick="removeStagedFile(${index})" title="Quitar"><i class="fas fa-times"></i></button>
+            ${thumb}
+            <div class="file-preview-info">
+                <span class="file-preview-name">${shortName}</span>
+                <span class="file-preview-size">${sizeText}</span>
+            </div>
+        </div>`;
+    }).join('');
+    return `<div class="file-preview-grid">${items}</div>`;
 };
 
 const RemoteFilePreviewTemplate = (file) => {
@@ -965,7 +979,7 @@ const ChatWindowTemplate = (contact) => {
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
-             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*">
+             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*" multiple>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
              <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
