@@ -2128,6 +2128,16 @@ window.handleOrderStatusChange = handleOrderStatusChange; // Definida en ui-mana
 
 // --- START SIMULADOR IA ---
 let simulatorHistory = [];
+let simulatorTokens = { input: 0, output: 0 };
+
+function updateSimulatorTokenUI() {
+    const inputEl = document.getElementById('simulator-input-tokens');
+    const outputEl = document.getElementById('simulator-output-tokens');
+    const totalEl = document.getElementById('simulator-total-tokens');
+    if (inputEl) inputEl.textContent = simulatorTokens.input.toLocaleString();
+    if (outputEl) outputEl.textContent = simulatorTokens.output.toLocaleString();
+    if (totalEl) totalEl.textContent = (simulatorTokens.input + simulatorTokens.output).toLocaleString();
+}
 
 async function sendSimulatorMessage() {
     const input = document.getElementById('simulator-chat-input');
@@ -2166,6 +2176,11 @@ async function sendSimulatorMessage() {
             // Separar la respuesta por [SPLIT] si existe, para simular múltiples mensajes
             const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
             
+            // Acumular tokens
+            simulatorTokens.input += (data.inputTokens || 0);
+            simulatorTokens.output += (data.outputTokens || 0);
+            updateSimulatorTokenUI();
+
             // Añadir al historial
             simulatorHistory.push({ role: 'user', content: text });
             simulatorHistory.push({ role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
@@ -2223,6 +2238,8 @@ function renderSimulatorMessage(text, sender, repliedToText = null) {
 
 function clearSimulatorChat() {
     simulatorHistory = [];
+    simulatorTokens = { input: 0, output: 0 };
+    updateSimulatorTokenUI();
     const historyContainer = document.getElementById('simulator-chat-history');
     if (historyContainer) {
         historyContainer.innerHTML = `

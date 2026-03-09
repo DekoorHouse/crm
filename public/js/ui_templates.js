@@ -551,6 +551,13 @@ const AIChatSimulatorViewTemplate = () => `
             </div>
 
             <!-- Chat Input -->
+            <div id="simulator-token-bar" class="bg-gradient-to-r from-purple-50 to-blue-50 px-4 py-1.5 border border-t-0 border-gray-300 flex items-center justify-between text-xs text-gray-500 font-mono">
+                <div class="flex items-center gap-3">
+                    <span><i class="fas fa-arrow-up text-orange-400"></i> Entrada: <b id="simulator-input-tokens" class="text-gray-700">0</b></span>
+                    <span><i class="fas fa-arrow-down text-green-400"></i> Salida: <b id="simulator-output-tokens" class="text-gray-700">0</b></span>
+                </div>
+                <span class="text-gray-400"><i class="fas fa-coins"></i> Total: <b id="simulator-total-tokens" class="text-gray-600">0</b></span>
+            </div>
             <div class="bg-[#f0f0f0] p-3 rounded-b-xl border border-t-0 border-gray-300 flex flex-col gap-2 shadow-md">
                 <div class="flex items-center gap-2 pl-2">
                     <label class="text-xs font-bold text-gray-500">Enviar como:</label>

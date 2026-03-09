@@ -84,7 +84,12 @@ router.post('/simulate-ai', async (req, res) => {
         const aiResult = await generateGeminiResponse(prompt);
         const aiResponse = aiResult.text || '';
 
-        res.status(200).json({ success: true, response: aiResponse });
+        res.status(200).json({ 
+            success: true, 
+            response: aiResponse,
+            inputTokens: aiResult.inputTokens || 0,
+            outputTokens: aiResult.outputTokens || 0
+        });
     } catch (error) {
         console.error('Error en simulación de IA:', error);
         res.status(500).json({ success: false, message: 'Error procesando simulación IA.' });
