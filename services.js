@@ -536,7 +536,7 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
         }
 
         // --- Contenido dinámico (cambia en cada petición) ---
-        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').limit(10).get();
+        const messagesSnapshot = await contactRef.collection('messages').orderBy('timestamp', 'desc').get();
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
             return `${d.from === contactId ? 'Cliente' : 'Asistente'}: ${d.text}`;
