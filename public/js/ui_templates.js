@@ -543,10 +543,16 @@ const AIChatSimulatorViewTemplate = () => `
                     <!-- Messages will appear here -->
                 </div>
                 
-                <div id="simulator-typing-indicator" class="hidden absolute bottom-2 left-4 bg-white px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-1 z-10 w-fit">
-                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
-                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></span>
-                    <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+                <div id="simulator-typing-indicator" class="hidden absolute bottom-2 left-4 bg-white px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-2 z-10 w-fit">
+                    <div class="flex items-center gap-1">
+                        <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
+                        <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></span>
+                        <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
+                    </div>
+                    <span id="simulator-timer-text" class="text-xs text-gray-500 ml-2">Esperando (20s)</span>
+                    <button onclick="skipSimulatorTimer()" class="ml-2 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition-colors" title="Responder ahora">
+                        <i class="fas fa-forward"></i>
+                    </button>
                 </div>
             </div>
 

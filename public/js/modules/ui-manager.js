@@ -2149,7 +2149,90 @@ function updateSimulatorTokenUI() {
     const totalCost = costInput + costCached + costOutput;
     if (costEl) costEl.textContent = '$' + totalCost.toFixed(6);
 }
+
 let simulatorAiTimer = null;
+let simulatorCountdownInterval = null;
+let simulatorCountdownValue = 20;
+
+window.skipSimulatorTimer = function() {
+    if (simulatorAiTimer) {
+        clearTimeout(simulatorAiTimer);
+        simulatorAiTimer = null;
+    }
+    if (simulatorCountdownInterval) {
+        clearInterval(simulatorCountdownInterval);
+        simulatorCountdownInterval = null;
+    }
+    const typingIndicator = document.getElementById('simulator-typing-indicator');
+    if (typingIndicator) {
+        const timerText = document.getElementById('simulator-timer-text');
+        if (timerText) timerText.textContent = "Procesando...";
+    }
+    
+    // Ejecutar inmediatamente
+    processSimulatorAi();
+};
+
+async function processSimulatorAi() {
+    const typingIndicator = document.getElementById('simulator-typing-indicator');
+    
+    // Clonar historial actual
+    const historyCopy = [...simulatorHistory];
+    
+    // El último mensaje del usuario se pasa como "message" directo, no duplicarlo en "history"
+    let lastUserIndex = -1;
+    for (let i = historyCopy.length - 1; i >= 0; i--) {
+        if (historyCopy[i].role === 'user') {
+            lastUserIndex = i;
+            break;
+        }
+    }
+    
+    if (lastUserIndex === -1) {
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+        return;
+    }
+
+    const lastMessageText = historyCopy[lastUserIndex].content;
+    historyCopy.splice(lastUserIndex, 1); // Quitar el último para que apiRoutes no lo duplique
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: lastMessageText, history: historyCopy })
+        });
+        const data = await response.json();
+
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+
+        if (data.success && data.response) {
+            const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
+            
+            // Acumular tokens
+            simulatorTokens.input += (data.inputTokens || 0);
+            simulatorTokens.output += (data.outputTokens || 0);
+            simulatorTokens.cached += (data.cachedTokens || 0);
+            updateSimulatorTokenUI();
+
+            const assistId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
+            simulatorHistory.push({ id: assistId, role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
+
+            // Renderizar cada parte con un pequeño retraso
+            for (let i = 0; i < messages.length; i++) {
+                if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
+                const replyText = (data.shouldQuote && i === 0) ? lastMessageText : null;
+                renderSimulatorMessage(messages[i], 'assistant', replyText, assistId);
+            }
+        } else {
+            renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
+        }
+    } catch (error) {
+        console.error('Simulator error:', error);
+        if (typingIndicator) typingIndicator.classList.add('hidden');
+        renderSimulatorMessage(`Error: ${error.message || 'Error de conexión con el servidor'}`, 'error');
+    }
+}
 
 async function sendSimulatorMessage() {
     const input = document.getElementById('simulator-chat-input');
@@ -2175,71 +2258,33 @@ async function sendSimulatorMessage() {
     // --- REPLICA EL DEBOUNCE DEL SERVIDOR (20 seg) ---
     if (simulatorAiTimer) {
         clearTimeout(simulatorAiTimer);
-        console.log(`[SIMULATOR] Reiniciando temporizador de 20s...`);
+    }
+    if (simulatorCountdownInterval) {
+        clearInterval(simulatorCountdownInterval);
     }
 
     const typingIndicator = document.getElementById('simulator-typing-indicator');
+    const timerText = document.getElementById('simulator-timer-text');
+    
     if (typingIndicator) typingIndicator.classList.remove('hidden');
+    
+    simulatorCountdownValue = 20;
+    if (timerText) timerText.textContent = `Esperando (${simulatorCountdownValue}s)`;
+
+    simulatorCountdownInterval = setInterval(() => {
+        simulatorCountdownValue--;
+        if (simulatorCountdownValue > 0) {
+            if (timerText) timerText.textContent = `Esperando (${simulatorCountdownValue}s)`;
+        } else {
+            clearInterval(simulatorCountdownInterval);
+            if (timerText) timerText.textContent = "Procesando...";
+        }
+    }, 1000);
 
     simulatorAiTimer = setTimeout(async () => {
         simulatorAiTimer = null;
-
-        // Clonar historial actual
-        const historyCopy = [...simulatorHistory];
-        
-        // El último mensaje del usuario se pasa como "message" directo, no duplicarlo en "history"
-        let lastUserIndex = -1;
-        for (let i = historyCopy.length - 1; i >= 0; i--) {
-            if (historyCopy[i].role === 'user') {
-                lastUserIndex = i;
-                break;
-            }
-        }
-        
-        if (lastUserIndex === -1) {
-            if (typingIndicator) typingIndicator.classList.add('hidden');
-            return;
-        }
-
-        const lastMessageText = historyCopy[lastUserIndex].content;
-        historyCopy.splice(lastUserIndex, 1); // Quitar el último para que apiRoutes no lo duplique
-
-        try {
-            const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: lastMessageText, history: historyCopy })
-            });
-            const data = await response.json();
-
-            if (typingIndicator) typingIndicator.classList.add('hidden');
-
-            if (data.success && data.response) {
-                const messages = data.response.split('[SPLIT]').map(m => m.trim()).filter(m => m);
-                
-                // Acumular tokens
-                simulatorTokens.input += (data.inputTokens || 0);
-                simulatorTokens.output += (data.outputTokens || 0);
-                simulatorTokens.cached += (data.cachedTokens || 0);
-                updateSimulatorTokenUI();
-
-                const assistId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
-                simulatorHistory.push({ id: assistId, role: 'assistant', content: data.response.replace(/\[SPLIT\]/g,"\\n") });
-
-                // Renderizar cada parte con un pequeño retraso
-                for (let i = 0; i < messages.length; i++) {
-                    if(i > 0) await new Promise(resolve => setTimeout(resolve, 800));
-                    const replyText = (data.shouldQuote && i === 0) ? lastMessageText : null;
-                    renderSimulatorMessage(messages[i], 'assistant', replyText, assistId);
-                }
-            } else {
-                renderSimulatorMessage('Error: No se pudo obtener respuesta de la IA', 'error');
-            }
-        } catch (error) {
-            console.error('Simulator error:', error);
-            if (typingIndicator) typingIndicator.classList.add('hidden');
-            renderSimulatorMessage(`Error: ${error.message || 'Error de conexión con el servidor'}`, 'error');
-        }
+        clearInterval(simulatorCountdownInterval);
+        await processSimulatorAi();
     }, 20000);
 }
 
