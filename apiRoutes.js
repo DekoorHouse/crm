@@ -1133,7 +1133,7 @@ router.get('/departments', async (req, res) => {
 
 // POST /api/departments - Crear un nuevo departamento
 router.post('/departments', async (req, res) => {
-    const { name, color } = req.body;
+    const { name, color, users: userEmails } = req.body;
     if (!name) {
         return res.status(400).json({ success: false, message: 'El nombre del departamento es obligatorio.' });
     }
@@ -1144,7 +1144,24 @@ router.post('/departments', async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
         const docRef = await db.collection('departments').add(newDept);
-        res.status(201).json({ success: true, message: 'Departamento creado.', department: { id: docRef.id, ...newDept } });
+        const deptId = docRef.id;
+
+        // Asignar los usuarios seleccionados al nuevo departamento
+        if (Array.isArray(userEmails) && userEmails.length > 0) {
+            const batch = db.batch();
+            const usersSnapshot = await db.collection('users').get();
+            
+            for (const userDoc of usersSnapshot.docs) {
+                if (userEmails.includes(userDoc.data().email)) {
+                    batch.update(userDoc.ref, { 
+                        assignedDepartments: admin.firestore.FieldValue.arrayUnion(deptId) 
+                    });
+                }
+            }
+            await batch.commit();
+        }
+
+        res.status(201).json({ success: true, message: 'Departamento creado.', department: { id: deptId, ...newDept } });
     } catch (error) {
         console.error('Error creating department:', error);
         res.status(500).json({ success: false, message: 'Error al crear el departamento.' });
@@ -2494,68 +2511,6 @@ router.get('/metrics/messages-by-ad', async (req, res) => {
 // --- FIN: Nuevo Endpoint ---
 
 // --- INICIO DE NUEVAS RUTAS PARA DEPARTAMENTOS Y REGLAS DE ENRUTAMIENTO ---
-
-// 1. DEPARTAMENTOS (/api/departments)
-
-// GET /api/departments: Listar todos los departamentos
-router.get('/departments', async (req, res) => {
-    try {
-        const snapshot = await db.collection('departments').get();
-        const departments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        res.status(200).json({ success: true, departments });
-    } catch (error) {
-        console.error('Error al obtener departamentos:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al obtener departamentos.' });
-    }
-});
-
-// POST /api/departments: Crear nuevo departamento
-router.post('/departments', async (req, res) => {
-    const { name, color } = req.body;
-    if (!name) return res.status(400).json({ success: false, message: 'El nombre es obligatorio.' });
-
-    try {
-        const newDept = {
-            name,
-            color: color || '#6c757d', // Color por defecto (gris)
-            createdAt: admin.firestore.FieldValue.serverTimestamp()
-        };
-        const docRef = await db.collection('departments').add(newDept);
-        res.status(201).json({ success: true, id: docRef.id, ...newDept });
-    } catch (error) {
-        console.error('Error al crear departamento:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al crear departamento.' });
-    }
-});
-
-// PUT /api/departments/:id: Actualizar departamento
-router.put('/departments/:id', async (req, res) => {
-    const { id } = req.params;
-    const { name, color } = req.body;
-
-    try {
-        await db.collection('departments').doc(id).update({
-            name,
-            color
-        });
-        res.status(200).json({ success: true, message: 'Departamento actualizado.' });
-    } catch (error) {
-        console.error('Error al actualizar departamento:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al actualizar departamento.' });
-    }
-});
-
-// DELETE /api/departments/:id: Eliminar departamento
-router.delete('/departments/:id', async (req, res) => {
-    const { id } = req.params;
-    try {
-        await db.collection('departments').doc(id).delete();
-        res.status(200).json({ success: true, message: 'Departamento eliminado.' });
-    } catch (error) {
-        console.error('Error al eliminar departamento:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al eliminar departamento.' });
-    }
-});
 
 
 // 2. REGLAS DE ENRUTAMIENTO DE ANUNCIOS (/api/ad-routing-rules)

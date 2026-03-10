@@ -495,6 +495,27 @@ async function fetchAllUsers() {
         if (data.success) {
             state.allUsers = data.users;
             console.log("All users loaded:", state.allUsers);
+
+            // Mantener sincronizado el perfil actual para que ventanas ya abiertas
+            // detecten instantáneamente si se les asignó/quitó un departamento.
+            if (state.currentUserProfile && state.currentUserProfile.email) {
+                const updatedProfile = state.allUsers.find(u => u.email === state.currentUserProfile.email);
+                if (updatedProfile) {
+                    const oldDepts = (state.currentUserProfile.assignedDepartments || []).sort().join(',');
+                    const newDepts = (updatedProfile.assignedDepartments || []).sort().join(',');
+                    
+                    state.currentUserProfile = updatedProfile;
+                    
+                    if (oldDepts !== newDepts) {
+                        console.log("Departamentos del usuario actualizados en tiempo real. Recargando contactos...");
+                        // Si se agregó o quitó un departamento, necesitamos recargar los contactos iniciales
+                        // para que se vean los mensajes antiguos del nuevo departamento.
+                        if (state.activeView === 'chats' && typeof fetchInitialContacts === 'function') {
+                            fetchInitialContacts();
+                        }
+                    }
+                }
+            }
         } else {
             throw new Error(data.message);
         }
