@@ -117,6 +117,26 @@ body.dark-mode #contacts-panel { background-color: #1a1b26; }
 .contact-item:hover { background-color: #eef2f7; }
 body.dark-mode .contact-item:hover { background-color: #292e42; }
 
+/* Mesh Gradient para chats atendidos por IA */
+.contact-item.ai-mesh-active:not(.selected) {
+    background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #f0f9ff 100%);
+    background-size: 200% 200%;
+    animation: mesh-flow 6s ease infinite;
+    position: relative;
+}
+
+body.dark-mode .contact-item.ai-mesh-active:not(.selected) {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 50%, #1e293b 100%);
+    background-size: 200% 200%;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+}
+
+@keyframes mesh-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
 .contact-item.selected { background-image: linear-gradient(to right, var(--color-primary) 80%, var(--color-container-bg)); border-left-color: var(--color-primary); }
 .contact-item.selected h3, .contact-item.selected p { color: white !important; }
 body.dark-mode .contact-item.selected h3, body.dark-mode .contact-item.selected p { color: #ffffff !important; font-weight: 700; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
