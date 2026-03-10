@@ -118,6 +118,8 @@ body.dark-mode #contacts-panel { background-color: #1a1b26; }
 body.dark-mode .contact-item:hover { background-color: #292e42; }
 
 .contact-item.selected { background-image: linear-gradient(to right, var(--color-primary) 80%, var(--color-container-bg)); border-left-color: var(--color-primary); }
+.contact-item.ai-active:not(.selected) { background-color: #f0fff4; }
+body.dark-mode .contact-item.ai-active:not(.selected) { background-color: rgba(158, 206, 106, 0.1); }
 .contact-item.selected h3, .contact-item.selected p { color: white !important; }
 body.dark-mode .contact-item.selected h3, body.dark-mode .contact-item.selected p { color: #ffffff !important; font-weight: 700; text-shadow: 0 0 5px rgba(255,255,255,0.3); }
 
