@@ -733,6 +733,7 @@ const ContactItemTemplate = (contact, isSelected) => {
             </div>
         </div>`;
 
+    const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
     const aiActive = contact.aiEnabled || false;
     const aiClass = aiActive ? 'ai-mesh-active' : '';
 
