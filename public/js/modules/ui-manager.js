@@ -2484,9 +2484,23 @@ function checkAiTimer() {
             clearInterval(aiCountdownInterval);
             aiCountdownInterval = null;
         } else {
+            const wasHidden = indicator.classList.contains('hidden');
             indicator.classList.remove('hidden');
             if (spacer) spacer.classList.remove('hidden'); // Nuevo
             timerText.textContent = `Esperando (${diff}s)`;
+            
+            // Si el indicador estaba oculto y ahora se muestra, hacemos scroll 
+            // para que el espaciador (que empuja el contenido arriba) se haga visible.
+            if (wasHidden) {
+                const container = document.getElementById('messages-container');
+                if (container) {
+                    // Solo hacemos scroll si el usuario ya estaba cerca del fondo
+                    const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
+                    if (isNearBottom || container.scrollHeight < container.clientHeight * 2) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                }
+            }
         }
     };
 
