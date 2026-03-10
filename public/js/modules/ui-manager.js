@@ -270,6 +270,11 @@ function renderAdRoutingView() {
                 <td class="font-semibold">${rule.ruleName}</td>
                 <td class="font-mono text-sm max-w-xs truncate" title="${adIdsText}">${adIdsText}</td>
                 <td><span class="px-2 py-1 rounded text-xs font-bold text-white" style="background-color: ${dept?.color || '#6c757d'}">${deptName}</span></td>
+                <td class="text-center font-bold">
+                    ${rule.enableAi 
+                        ? '<span class="text-green-500" title="IA Activada"><i class="fas fa-robot animate-pulse mr-1"></i>Sí</span>' 
+                        : '<span class="text-gray-400">No</span>'}
+                </td>
                 <td class="actions-cell">
                     <button onclick="openAdRoutingModal(state.adRoutingRules.find(r => r.id === '${rule.id}'))" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                     <button onclick="handleDeleteAdRoutingRule('${rule.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>

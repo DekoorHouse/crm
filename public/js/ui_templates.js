@@ -86,6 +86,7 @@ const AdRoutingViewTemplate = () => `
                     <th>Nombre de la Regla</th>
                     <th>Ad IDs</th>
                     <th>Departamento Destino</th>
+                    <th>IA Activa</th>
                     <th>Acciones</th>
                 </tr>
             </thead>
