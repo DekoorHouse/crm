@@ -1521,7 +1521,11 @@ async function handleBotToggle(contactId, isActive) {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);
         if (contactIndex > -1) {
             state.contacts[contactIndex].botActive = isActive;
-            // Si el chat está abierto, refrescar para actualizar el icono
+            
+            // Refrescar lista de contactos para ver el aro pulsante/icono
+            handleSearchContacts();
+            
+            // Si el chat está abierto, refrescar cabecera
             if (state.selectedContactId === contactId) {
                 renderChatWindow();
             }

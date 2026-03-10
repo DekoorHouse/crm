@@ -716,7 +716,10 @@ const ContactItemTemplate = (contact, isSelected) => {
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
-                <h3 class="font-semibold text-sm truncate">${contact.name || 'Desconocido'}</h3>
+                <h3 class="font-semibold text-sm truncate">
+                    ${contact.name || 'Desconocido'}
+                    ${contact.botActive ? '<i class="fas fa-robot text-green-500 ml-1 text-[10px]" title="IA Activa"></i>' : ''}
+                </h3>
                 <div class="contact-meta">
                      ${timeOrBadgeHTML}
                      <button type="button" class="preview-icon" onclick="event.stopPropagation(); openConversationPreview(event, '${contact.id}')" title="Ver conversación">
@@ -734,7 +737,7 @@ const ContactItemTemplate = (contact, isSelected) => {
         </div>`;
 
     const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
-    const aiActive = contact.aiEnabled || false;
+    const aiActive = contact.botActive === true;
     const aiClass = aiActive ? 'ai-active' : '';
 
     return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass}" data-contact-id="${contact.id}" ${departmentStripe}>
