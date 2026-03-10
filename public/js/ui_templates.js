@@ -1006,21 +1006,23 @@ const ChatWindowTemplate = (contact) => {
         </form>`;
 
     const mainContent = state.activeTab === 'chat'
-        ? `<main id="messages-container" class="relative flex-1 p-4 overflow-y-auto">
-             <div id="sticky-date-header" class="date-separator"></div>
-             <div id="messages-content"></div>
-             <div id="ai-typing-indicator" class="hidden absolute bottom-4 left-4 bg-white px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-2 z-10 w-fit">
+        ? `<div class="relative flex-1 flex flex-col min-h-0 bg-[#f0f2f5] dark:bg-gray-900">
+             <main id="messages-container" class="flex-1 p-4 overflow-y-auto">
+                <div id="sticky-date-header" class="date-separator"></div>
+                <div id="messages-content"></div>
+             </main>
+             <div id="ai-typing-indicator" class="hidden absolute bottom-4 left-4 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-2 z-10 w-fit border border-gray-100 dark:border-gray-700">
                 <div class="flex items-center gap-1">
                     <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></span>
                     <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.1s"></span>
                     <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
                 </div>
-                <span id="ai-timer-text" class="text-xs text-gray-500 ml-2">Esperando (20s)</span>
-                <button onclick="skipAiWait()" class="ml-2 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition-colors" title="Responder ahora">
+                <span id="ai-timer-text" class="text-xs text-gray-500 dark:text-gray-400 ml-2 font-medium">Esperando (20s)</span>
+                <button onclick="skipAiWait()" class="ml-2 text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 px-2 py-0.5 rounded transition-colors" title="Responder ahora">
                     <i class="fas fa-forward"></i>
                 </button>
              </div>
-           </main>`
+           </div>`
         : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">
              <form id="note-form" class="mb-4">
                <textarea id="note-input" placeholder="Escribe una nota interna..." class="!mb-2" rows="3"></textarea>
