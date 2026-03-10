@@ -694,8 +694,9 @@ router.post('/', async (req, res) => {
 
             // 7. Trigger AI Reply if applicable
             // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
-            if (updatedContactData.botActive) {
-                const delay = (isNewContact && isAiRuleEnabled) ? 10000 : 20000;
+            // MODIFICACIÓN: No disparamos la IA si es un contacto nuevo, para que NO responda al mensaje inicial del Ad
+            if (updatedContactData.botActive && !isNewContact) {
+                const delay = 20000; // Delay estándar de 20s para conversaciones en curso
                 console.log(`[AI] Programando respuesta de IA para ${from} en ${delay/1000}s (Bot activo: ${updatedContactData.botActive})`);
                 triggerAutoReplyAI(message, contactRef, updatedContactData, delay).catch(err => {
                     console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);
