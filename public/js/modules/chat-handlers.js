@@ -917,11 +917,24 @@ function handlePaste(event) { const items = (event.clipboardData || event.origin
 
 function setFilter(filter) { 
     state.activeFilter = filter; 
+    renderTagFilters(); 
+    
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
-    document.getElementById(`filter-${filter}`).classList.add('active'); 
+    if (document.getElementById(`filter-${filter}`)) {
+        document.getElementById(`filter-${filter}`).classList.add('active'); 
+    }
     
     // Clear current contacts and trigger a new fetch from the server with the filter
     state.contacts = [];
+    fetchInitialContacts();
+}
+
+/**
+ * Alterna el filtro de mensajes no leídos.
+ */
+function toggleUnreadFilter() {
+    state.unreadOnly = !state.unreadOnly;
+    renderTagFilters();
     fetchInitialContacts();
 }
 

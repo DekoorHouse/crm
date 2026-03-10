@@ -122,6 +122,10 @@ function renderTagFilters() {
     // Botón "Todos"
     let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
+    // Separador visual y botón "No leídos"
+    buttonsHtml += `<div class="w-px h-5 bg-gray-300 mx-1"></div>`;
+    buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active text-blue-600 border-blue-600 bg-blue-50' : ''}" onclick="toggleUnreadFilter()"><i class="fas fa-envelope text-xs mr-1"></i> No leídos</button>`;
+
     // Botones para cada etiqueta
     state.tags.forEach(tag => {
         buttonsHtml += `<button

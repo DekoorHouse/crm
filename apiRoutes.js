@@ -437,6 +437,11 @@ router.get('/contacts', async (req, res) => {
             query = query.where('status', '==', tag);
         }
 
+        // Aplicar filtro de no leídos si se proporciona
+        if (req.query.unreadOnly === 'true') {
+            query = query.where('unreadCount', '>', 0);
+        }
+
         // --- INICIO: Filtro por Departamento ---
         // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
         if (departmentId && departmentId !== 'all') {

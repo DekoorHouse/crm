@@ -109,6 +109,10 @@ async function fetchInitialContacts() {
             url += `&tag=${tag}`;
         }
         
+        if (state.unreadOnly) {
+            url += `&unreadOnly=true`;
+        }
+        
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -177,6 +181,10 @@ async function fetchMoreContacts() {
         let url = `${API_BASE_URL}/api/contacts?limit=30&startAfterId=${state.pagination.lastVisibleId}`;
         if (tag) {
             url += `&tag=${tag}`;
+        }
+
+        if (state.unreadOnly) {
+            url += `&unreadOnly=true`;
         }
         
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
