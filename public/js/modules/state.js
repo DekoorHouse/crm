@@ -97,6 +97,7 @@ let unsubscribeMessagesListener = null,
     unsubscribeAdResponsesListener = null,
 
     unsubscribeOrdersListener = null, // Listener para pedidos del contacto seleccionado
+    unsubscribeContactListener = null, // NUEVO
     // NUEVOS LISTENERS
     unsubscribeDepartmentsListener = null,
     unsubscribeAdRoutingRulesListener = null;

@@ -59,6 +59,7 @@ function stopApp() {
     // --- DETENER NUEVOS LISTENERS ---
     if (unsubscribeDepartmentsListener) unsubscribeDepartmentsListener();
     if (unsubscribeAdRoutingRulesListener) unsubscribeAdRoutingRulesListener();
+    if (unsubscribeContactListener) unsubscribeContactListener();
     // -------------------------------
 
     // Remove global listeners

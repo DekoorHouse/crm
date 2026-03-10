@@ -249,6 +249,9 @@ function renderChatWindow(options = {}) {
             document.getElementById('note-form').addEventListener('submit', handleSaveNote);
         }
         setupDragAndDropForChatArea(); // Llamada a la nueva función
+        
+        // --- NUEVO: Asegurar que el indicator de IA se evalúe tras cada render ---
+        if (window.checkAiTimer) window.checkAiTimer();
     } 
 }
 
@@ -441,6 +444,22 @@ async function handleSelectContact(contactId) {
     
     unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
     
+    // --- NUEVO: Listener para el documento del contacto seleccionado ---
+    if (unsubscribeContactListener) unsubscribeContactListener();
+    unsubscribeContactListener = db.collection('contacts_whatsapp').doc(contactId).onSnapshot((doc) => {
+        if (doc.exists) {
+            const updatedContact = processContacts([{ id: doc.id, ...doc.data() }])[0];
+            const idx = state.contacts.findIndex(c => c.id === contactId);
+            if (idx > -1) {
+                state.contacts[idx] = updatedContact;
+            } else {
+                state.contacts.unshift(updatedContact);
+            }
+            // Si el timer cambió o se activó, actualizarlo en la UI
+            if (window.checkAiTimer) window.checkAiTimer();
+        }
+    });
+
     renderChatWindow();
     
     openContactDetails();
