@@ -540,8 +540,11 @@ async function skipAiTimer(contactId) {
 async function processAutoReplyAI(contactId, message, contactRef, contactData) {
     console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
     
-    // Limpiar el campo aiNextRun al empezar el procesamiento
-    await contactRef.update({ aiNextRun: admin.firestore.FieldValue.delete() });
+    // Limpiar el campo aiNextRun al empezar el procesamiento y poner estado de generación
+    await contactRef.update({ 
+        aiNextRun: admin.firestore.FieldValue.delete(),
+        aiStatus: 'generating'
+    });
     try {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
@@ -689,10 +692,16 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
             }
         }
         
-        await contactRef.update({ lastMessage: lastText, lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() });
+        await contactRef.update({ 
+            lastMessage: lastText, 
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            aiStatus: admin.firestore.FieldValue.delete()
+        });
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
+        // Asegurarse de limpiar el estado incluso en error
+        await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
     }
 }
 

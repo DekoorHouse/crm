@@ -2471,13 +2471,27 @@ function checkAiTimer() {
     }
 
     const contact = state.contacts.find(c => c.id === contactId);
+    if (!contact) return; 
+
     const indicator = document.getElementById('ai-typing-indicator');
     const timerText = document.getElementById('ai-timer-text');
-    const spacer = document.getElementById('ai-typing-spacer'); // Nuevo
+    const spacer = document.getElementById('ai-typing-spacer');
 
-    if (!contact || !contact.aiNextRun || !indicator || !timerText) {
+    // 1. Caso: AI está generando realmente (procesando el mensaje)
+    if (contact.aiStatus === 'generating') {
+        if (indicator && timerText) {
+            indicator.classList.remove('hidden');
+            if (spacer) spacer.classList.remove('hidden');
+            timerText.textContent = `Generando respuesta...`;
+            // Animación de puntos ya está activa en el CSS/HTML
+        }
+        return;
+    }
+
+    // 2. Caso: Cuenta regresiva (esperando a que el usuario termine de escribir)
+    if (!contact.aiNextRun || !indicator || !timerText) {
         if (indicator) indicator.classList.add('hidden');
-        if (spacer) spacer.classList.add('hidden'); // Nuevo
+        if (spacer) spacer.classList.add('hidden');
         return;
     }
 
@@ -2486,22 +2500,23 @@ function checkAiTimer() {
         const diff = Math.ceil((contact.aiNextRun - now) / 1000);
 
         if (diff <= 0) {
-            indicator.classList.add('hidden');
-            if (spacer) spacer.classList.add('hidden'); // Nuevo
+            // No ocultamos inmediatamente aquí, dejamos que el aiStatus tome el control 
+            // cuando el servidor lo actualice. Pero por si acaso:
+            if (contact.aiStatus !== 'generating') {
+                indicator.classList.add('hidden');
+                if (spacer) spacer.classList.add('hidden');
+            }
             clearInterval(aiCountdownInterval);
             aiCountdownInterval = null;
         } else {
             const wasHidden = indicator.classList.contains('hidden');
             indicator.classList.remove('hidden');
-            if (spacer) spacer.classList.remove('hidden'); // Nuevo
+            if (spacer) spacer.classList.remove('hidden');
             timerText.textContent = `Esperando (${diff}s)`;
             
-            // Si el indicador estaba oculto y ahora se muestra, hacemos scroll 
-            // para que el espaciador (que empuja el contenido arriba) se haga visible.
             if (wasHidden) {
                 const container = document.getElementById('messages-container');
                 if (container) {
-                    // Solo hacemos scroll si el usuario ya estaba cerca del fondo
                     const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 150;
                     if (isNearBottom || container.scrollHeight < container.clientHeight * 2) {
                         container.scrollTop = container.scrollHeight;
