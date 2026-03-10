@@ -498,7 +498,7 @@ router.post('/', async (req, res) => {
             // --- Update contact document ---
             const contactDoc = await contactRef.get();
             const isNewContact = !contactDoc.exists;
-            let aiTriggeredByRule = false;
+            let isAiRuleEnabled = false; // Nueva bandera para saber si la regla tiene IA
 
             const contactUpdateData = {
                 name: contactInfo.profile?.name || (contactDoc.exists ? contactDoc.data().name : from), // Use existing name if available
@@ -541,20 +541,9 @@ router.post('/', async (req, res) => {
                     
                     // --- NUEVO: ACTIVACIÓN DE IA POR REGLA ---
                     if (ruleData.enableAi) {
-                        console.log(`[ROUTING-AI] Activando IA automáticamente por regla para ${from}`);
+                        console.log(`[ROUTING-AI] Regla con IA detectada para ${from}`);
                         await contactRef.update({ botActive: true });
-                        // Actualizamos los datos para que el flujo posterior sepa que la IA está activa
-                        if (updatedContactData) updatedContactData.botActive = true;
-                        
-                        // Solo disparamos la IA con 10s si es el primer mensaje del anuncio
-                        // (Si ya existía, disparará con el flujo normal más abajo)
-                        if (isNewContact) {
-                            console.log(`[ROUTING-AI] Primer mensaje: Disparando IA en 10s...`);
-                            triggerAutoReplyAI(message, contactRef, updatedContactData || {}, 10000).catch(err => {
-                                console.error('[ROUTING-AI] Error en AI:', err);
-                            });
-                            aiTriggeredByRule = true; // Evitar mensaje de bienvenida manual
-                        }
+                        isAiRuleEnabled = true;
                     }
                 } else {
                      // Fallback: Si el anuncio no tiene regla, asignar a "General"
@@ -679,8 +668,8 @@ router.post('/', async (req, res) => {
                 }
             }
 
-            // 6. Handle Welcome/Ad Response for NEW contacts OR Trigger AI
-            if (isNewContact && !aiTriggeredByRule) {
+            // 6. Handle Welcome/Ad Response for NEW contacts
+            if (isNewContact) {
                 let adResponseSent = false;
                 if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                     const adId = message.referral.source_id;
@@ -701,11 +690,14 @@ router.post('/', async (req, res) => {
                     await sendAutoMessage(contactRef, { text: GENERAL_WELCOME_MESSAGE });
                     await contactRef.update({ welcomed: true }); // Mark as welcomed
                 }
-            } else {
-                // If it's not a new contact and none of the above automations triggered, consider AI reply
-                // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
-                // y evitar los timeouts del Webhook que producen mensajes dobles.
-                triggerAutoReplyAI(message, contactRef, updatedContactData).catch(err => {
+            }
+
+            // 7. Trigger AI Reply if applicable
+            // Lanzamos la IA pero no hacemos un AWAIT de modo que podamos responder el 200 rápido a Meta
+            if (updatedContactData.botActive) {
+                const delay = (isNewContact && isAiRuleEnabled) ? 10000 : 20000;
+                console.log(`[AI] Programando respuesta de IA para ${from} en ${delay/1000}s (Bot activo: ${updatedContactData.botActive})`);
+                triggerAutoReplyAI(message, contactRef, updatedContactData, delay).catch(err => {
                     console.error('[WEBHOOK] Error asíncrono en respuesta de IA:', err);
                 });
             }
