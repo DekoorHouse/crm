@@ -494,17 +494,54 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
     }
 
     // Creamos un nuevo temporizador de 20 segundos
+    const aiNextRun = Date.now() + 20000;
     const timerId = setTimeout(async () => {
         pendingAiRequests.delete(contactId);
         await processAutoReplyAI(contactId, message, contactRef, contactData);
     }, 20000);
 
     pendingAiRequests.set(contactId, timerId);
+    
+    // Guardar el tiempo de la próxima ejecución en Firestore para que el frontend pueda mostrarlo
+    await contactRef.update({ aiNextRun: admin.firestore.Timestamp.fromMillis(aiNextRun) });
+}
+
+/**
+ * Salta el temporizador de la IA para un contacto y procesa la respuesta inmediatamente.
+ */
+async function skipAiTimer(contactId) {
+    if (pendingAiRequests.has(contactId)) {
+        console.log(`[AI] Saltando temporizador para ${contactId} a petición del usuario...`);
+        clearTimeout(pendingAiRequests.get(contactId));
+        pendingAiRequests.delete(contactId);
+        
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (contactDoc.exists) {
+            // Intentar recuperar el último mensaje del cliente para procesarlo
+            const lastMsgSnap = await contactRef.collection('messages')
+                .where('from', '==', contactId)
+                .orderBy('timestamp', 'desc')
+                .limit(1)
+                .get();
+            
+            if (!lastMsgSnap.empty) {
+                await processAutoReplyAI(contactId, lastMsgSnap.docs[0].data(), contactRef, contactDoc.data());
+            } else {
+                console.warn(`[AI] No se encontró el último mensaje para procesar el salto del bot para ${contactId}.`);
+            }
+        }
+        return true;
+    }
+    return false;
 }
 
 // Lógica principal movida a otra función
 async function processAutoReplyAI(contactId, message, contactRef, contactData) {
     console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
+    
+    // Limpiar el campo aiNextRun al empezar el procesamiento
+    await contactRef.update({ aiNextRun: admin.firestore.FieldValue.delete() });
     try {
         const generalSettingsDoc = await db.collection('crm_settings').doc('general').get();
         const globalBotActive = generalSettingsDoc.exists && generalSettingsDoc.data().globalBotActive === true;
@@ -729,6 +766,7 @@ module.exports = {
     generateGeminiResponseWithCache,
     getOrCreateCache,
     triggerAutoReplyAI,
+    skipAiTimer,
     getShippingQuote,
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,

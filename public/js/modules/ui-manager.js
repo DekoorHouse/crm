@@ -2419,3 +2419,87 @@ window.clearSimulatorChat = clearSimulatorChat;
 // --- FIN SIMULADOR IA ---
 window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
 window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
+
+// --- START: AI TIMER FOR NORMAL CHATS ---
+let aiCountdownInterval = null;
+
+window.skipAiWait = async function() {
+    const contactId = state.selectedContactId;
+    if (!contactId) return;
+
+    const timerText = document.getElementById('ai-timer-text');
+    if (timerText) timerText.textContent = "Saltando...";
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/skip-ai`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+        if (data.success) {
+            // Actualizar localmente para esconder el indicador de inmediato
+            const contact = state.contacts.find(c => c.id === contactId);
+            if (contact) delete contact.aiNextRun;
+            checkAiTimer();
+        } else {
+            console.warn("[AI] No se pudo saltar el timer:", data.message);
+            if (timerText) timerText.textContent = "Error";
+            setTimeout(checkAiTimer, 2000);
+        }
+    } catch (error) {
+        console.error("[AI] Error saltando el timer:", error);
+    }
+};
+
+function checkAiTimer() {
+    if (aiCountdownInterval) {
+        clearInterval(aiCountdownInterval);
+        aiCountdownInterval = null;
+    }
+
+    const contactId = state.selectedContactId;
+    if (!contactId || state.activeView !== 'chats') {
+        const indicator = document.getElementById('ai-typing-indicator');
+        if (indicator) indicator.classList.add('hidden');
+        return;
+    }
+
+    const contact = state.contacts.find(c => c.id === contactId);
+    const indicator = document.getElementById('ai-typing-indicator');
+    const timerText = document.getElementById('ai-timer-text');
+
+    if (!contact || !contact.aiNextRun || !indicator || !timerText) {
+        if (indicator) indicator.classList.add('hidden');
+        return;
+    }
+
+    const updateCountdown = () => {
+        const now = new Date();
+        const diff = Math.ceil((contact.aiNextRun - now) / 1000);
+
+        if (diff <= 0) {
+            indicator.classList.add('hidden');
+            clearInterval(aiCountdownInterval);
+            aiCountdownInterval = null;
+        } else {
+            indicator.classList.remove('hidden');
+            timerText.textContent = `Esperando (${diff}s)`;
+        }
+    };
+
+    updateCountdown();
+    aiCountdownInterval = setInterval(updateCountdown, 1000);
+}
+
+// Escuchar cambios en la vista para detener/iniciar el timer
+window.addEventListener('popstate', checkAiTimer);
+// Envolver navigateTo para llamar a checkAiTimer
+const originalNavigateTo = window.navigateTo;
+window.navigateTo = function(...args) {
+    const res = originalNavigateTo.apply(this, args);
+    setTimeout(checkAiTimer, 100);
+    return res;
+};
+
+// Exportar para que otros módulos puedan lanzarlo
+window.checkAiTimer = checkAiTimer;
+// --- END: AI TIMER FOR NORMAL CHATS ---

@@ -444,6 +444,9 @@ async function handleSelectContact(contactId) {
     renderChatWindow();
     
     openContactDetails();
+    
+    // Nueva llamada para verificar si hay un timer de IA activo
+    if (window.checkAiTimer) window.checkAiTimer();
 }
 
 /**

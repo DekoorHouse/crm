@@ -14,7 +14,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
 
 const router = express.Router();
 
@@ -632,6 +632,22 @@ router.put('/contacts/:contactId/status', async (req, res) => {
     } catch (error) {
         console.error(`Error al actualizar el estatus para el contacto ${contactId}:`, error);
         res.status(500).json({ success: false, message: 'Error del servidor al actualizar el estatus del contacto.' });
+    }
+});
+
+// --- Endpoint POST /api/contacts/:contactId/skip-ai (Saltar temporizador de IA) ---
+router.post('/contacts/:contactId/skip-ai', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const skipped = await skipAiTimer(contactId);
+        if (skipped) {
+            res.status(200).json({ success: true, message: 'Temporizador saltado correctamente.' });
+        } else {
+            res.status(404).json({ success: false, message: 'No se encontró un temporizador activo para este contacto.' });
+        }
+    } catch (error) {
+        console.error(`Error al saltar el timer de la IA para ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error interno al saltar el temporizador.' });
     }
 });
 

@@ -27,6 +27,16 @@ function processContacts(contacts) {
             }
             // Si ya es un objeto Date de JS, no hace nada.
         }
+        const aiTs = contact.aiNextRun;
+        if (aiTs) {
+            if (typeof aiTs.toDate === 'function') {
+                contact.aiNextRun = aiTs.toDate();
+            } else if (typeof aiTs === 'object' && typeof aiTs._seconds === 'number') {
+                contact.aiNextRun = new Date(aiTs._seconds * 1000);
+            } else if (typeof aiTs === 'string' && !isNaN(Date.parse(aiTs))) {
+                contact.aiNextRun = new Date(aiTs);
+            }
+        }
         return contact;
     });
 }
@@ -365,6 +375,11 @@ function listenForContactUpdates() {
 
         // Re-renderizar la lista de contactos
         handleSearchContacts();
+        
+        // Si el contacto actualizado es el seleccionado, revisar si el timer de IA cambió
+        if (snapshot.docChanges().some(change => change.doc.id === state.selectedContactId)) {
+            if (window.checkAiTimer) window.checkAiTimer();
+        }
 
     }, error => {
         // Manejo de errores del listener
