@@ -483,7 +483,7 @@ router.get('/contacts', async (req, res) => {
         res.status(200).json({ success: true, contacts, lastVisibleId });
     } catch (error) {
         console.error('Error fetching paginated contacts:', error);
-        res.status(500).json({ success: false, message: 'Error del servidor al obtener contactos.' });
+        res.status(500).json({ success: false, message: 'Error del servidor al obtener contactos.', errorDetails: error.message || error.details || error.toString() });
     }
 });
 

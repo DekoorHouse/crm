@@ -142,9 +142,25 @@ async function fetchInitialContacts() {
 
         // Realiza la petición a la API
         const response = await fetch(url);
-        if (!response.ok) throw new Error('Error al cargar contactos iniciales.');
+        let data;
+        try {
+             data = await response.json();
+        } catch (e) {
+             throw new Error('Error de red o de servidor.');
+        }
 
-        const data = await response.json();
+        if (!response.ok) {
+            let errorMsg = data.message || 'Error al cargar contactos iniciales.';
+            if (data.errorDetails) {
+                 errorMsg += `\nDetalles: ${data.errorDetails}`;
+                 console.error("Detalles del servidor:", data.errorDetails);
+                 if (data.errorDetails.includes('requires an index')) {
+                     alert("Se requiere crear un índice en Firebase para el filtro de No leídos.\nRevisa el enlace en la consola del navegador para crearlo con un clic.");
+                     console.error("➡️ Enlace para crear el índice: ", data.errorDetails);
+                 }
+            }
+            throw new Error(errorMsg);
+        }
 
         // Procesa los timestamps y actualiza el estado
         state.contacts = processContacts(data.contacts);
@@ -216,9 +232,25 @@ async function fetchMoreContacts() {
 
         // Realizar petición
         const response = await fetch(url);
-        if (!response.ok) throw new Error('Error al cargar más contactos.');
+        let data;
+        try {
+             data = await response.json();
+        } catch (e) {
+             throw new Error('Error de red al cargar más contactos.');
+        }
 
-        const data = await response.json();
+        if (!response.ok) {
+            let errorMsg = data.message || 'Error al cargar más contactos.';
+            if (data.errorDetails) {
+                 errorMsg += `\nDetalles: ${data.errorDetails}`;
+                 console.error("Detalles del servidor:", data.errorDetails);
+                 if (data.errorDetails.includes('requires an index')) {
+                     alert("Se requiere crear un índice en Firebase para el filtro de No leídos.\nRevisa el enlace en la consola del navegador para crearlo.");
+                     console.error("➡️ Enlace para crear el índice: ", data.errorDetails);
+                 }
+            }
+            throw new Error(errorMsg);
+        }
 
         // Procesar timestamps
         const newContacts = processContacts(data.contacts);
