@@ -660,11 +660,28 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
         }, { merge: true });
         console.log(`[AI] Tokens usados - Entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}, Cacheados: ${aiResult.cachedTokens || 0}`);
         
+        // Antes de enviar mensajes, verificar si el usuario canceló
+        const currentContactDoc = await contactRef.get();
+        if (currentContactDoc.exists && currentContactDoc.data().aiStatus === 'cancelled') {
+            console.log(`[AI] Generación cancelada por el usuario para ${contactId}. Omitiendo envío.`);
+            await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
+            return;
+        }
+
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
         const aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
 
         for (let i = 0; i < aiMessages.length; i++) {
+            // Verificar cancelación entre mensajes si hay SPLIT
+            if (i > 0) {
+                const checkDoc = await contactRef.get();
+                if (checkDoc.exists && checkDoc.data().aiStatus === 'cancelled') {
+                    console.log(`[AI] Generación cancelada por el usuario entre mensajes SPLIT para ${contactId}.`);
+                    await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
+                    return;
+                }
+            }
             let msgText = aiMessages[i];
             let shouldQuote = false;
             
@@ -776,8 +793,25 @@ module.exports = {
     getOrCreateCache,
     triggerAutoReplyAI,
     skipAiTimer,
+    cancelAiResponse,
     getShippingQuote,
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,
     invalidateGeminiCache
 };
+
+/**
+ * Cancela la generación de respuesta de IA activa.
+ */
+async function cancelAiResponse(contactId) {
+    const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+    await contactRef.update({ aiStatus: 'cancelled' });
+    
+    // Si todavía está en el temporizador de espera (antes de generar),
+    // llamar a skips manuales no sirve, pero podemos limpiar el temporizador si existe
+    const { skipAiTimer } = require('./services'); // Auto-referencia para limpiar
+    // Nota: El temporizador de triggerAutoReplyAI se limpia solo si llega mensaje nuevo, 
+    // pero aquí lo forzamos a 'cancelled' para que processAutoReplyAI se detenga al iniciar.
+    
+    return true;
+}

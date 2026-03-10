@@ -1026,9 +1026,14 @@ const ChatWindowTemplate = (contact) => {
                     <span class="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style="animation-delay: 0.2s"></span>
                 </div>
                 <span id="ai-timer-text" class="text-xs text-gray-500 ml-2 font-medium">Esperando (20s)</span>
-                <button onclick="skipAiWait()" class="ml-2 text-xs bg-gray-200 hover:bg-gray-300 text-gray-700 px-2 py-0.5 rounded transition-colors" title="Responder ahora">
-                    <i class="fas fa-forward"></i>
-                </button>
+                <div class="flex items-center gap-1 ml-2">
+                    <button id="ai-skip-btn" onclick="skipAiWait()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2 py-0.5 rounded transition-colors" title="Responder ahora">
+                        <i class="fas fa-forward"></i>
+                    </button>
+                    <button id="ai-cancel-btn" onclick="cancelAiResponse()" class="hidden text-xs bg-red-100 hover:bg-red-200 text-red-600 px-2 py-0.5 rounded transition-colors" title="Cancelar respuesta">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
              </div>
            </div>`
         : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">

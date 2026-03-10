@@ -651,6 +651,19 @@ router.post('/contacts/:contactId/skip-ai', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/contacts/:contactId/cancel-ai (Cancelar generación de IA) ---
+router.post('/contacts/:contactId/cancel-ai', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const { cancelAiResponse } = require('./services');
+        await cancelAiResponse(contactId);
+        res.status(200).json({ success: true, message: 'Generación cancelada.' });
+    } catch (error) {
+        console.error(`Error al cancelar la IA para ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'Error al cancelar.' });
+    }
+});
+
 // --- Endpoint GET /api/contacts/:contactId/orders (Historial de pedidos) ---
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {

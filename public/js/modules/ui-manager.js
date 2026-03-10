@@ -2476,6 +2476,8 @@ function checkAiTimer() {
     const indicator = document.getElementById('ai-typing-indicator');
     const timerText = document.getElementById('ai-timer-text');
     const spacer = document.getElementById('ai-typing-spacer');
+    const skipBtn = document.getElementById('ai-skip-btn');
+    const cancelBtn = document.getElementById('ai-cancel-btn');
 
     // 1. Caso: AI está generando realmente (procesando el mensaje)
     if (contact.aiStatus === 'generating') {
@@ -2483,7 +2485,8 @@ function checkAiTimer() {
             indicator.classList.remove('hidden');
             if (spacer) spacer.classList.remove('hidden');
             timerText.textContent = `Generando respuesta...`;
-            // Animación de puntos ya está activa en el CSS/HTML
+            if (skipBtn) skipBtn.classList.add('hidden');
+            if (cancelBtn) cancelBtn.classList.remove('hidden');
         }
         return;
     }
@@ -2495,13 +2498,14 @@ function checkAiTimer() {
         return;
     }
 
+    if (skipBtn) skipBtn.classList.remove('hidden');
+    if (cancelBtn) cancelBtn.classList.add('hidden');
+
     const updateCountdown = () => {
         const now = new Date();
         const diff = Math.ceil((contact.aiNextRun - now) / 1000);
 
         if (diff <= 0) {
-            // No ocultamos inmediatamente aquí, dejamos que el aiStatus tome el control 
-            // cuando el servidor lo actualice. Pero por si acaso:
             if (contact.aiStatus !== 'generating') {
                 indicator.classList.add('hidden');
                 if (spacer) spacer.classList.add('hidden');
@@ -2529,6 +2533,33 @@ function checkAiTimer() {
     updateCountdown();
     aiCountdownInterval = setInterval(updateCountdown, 1000);
 }
+
+// Nueva función para cancelar la IA
+async function cancelAiResponse() {
+    const contactId = state.selectedContactId;
+    if (!contactId) return;
+
+    try {
+        // Actualización optimista
+        const indicator = document.getElementById('ai-typing-indicator');
+        if (indicator) indicator.classList.add('hidden');
+        
+        const contact = state.contacts.find(c => c.id === contactId);
+        if (contact) {
+            delete contact.aiStatus;
+            delete contact.aiNextRun;
+        }
+
+        await fetch(`/api/wa/contacts/${contactId}/cancel-ai`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+    } catch (error) {
+        console.error("Error al cancelar IA:", error);
+    }
+}
+window.cancelAiResponse = cancelAiResponse;
 
 // Escuchar cambios en la vista para detener/iniciar el timer
 window.addEventListener('popstate', checkAiTimer);
