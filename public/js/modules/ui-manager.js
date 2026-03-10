@@ -2202,14 +2202,15 @@ async function processSimulatorAi() {
 
     const lastMessageObj = historyCopy[lastUserIndex];
     const lastMessageText = lastMessageObj.content;
-    const lastImageBase64 = lastMessageObj.imageBase64;
+    const lastMediaBase64 = lastMessageObj.mediaBase64;
+    const lastMediaMimeType = lastMessageObj.mediaMimeType;
     historyCopy.splice(lastUserIndex, 1); // Quitar el último para que apiRoutes no lo duplique
 
     try {
         const response = await fetch(`${API_BASE_URL}/api/simulate-ai`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: lastMessageText, imageBase64: lastImageBase64, history: historyCopy })
+            body: JSON.stringify({ message: lastMessageText, mediaBase64: lastMediaBase64, mediaMimeType: lastMediaMimeType, history: historyCopy })
         });
         const data = await response.json();
 
@@ -2243,37 +2244,53 @@ async function processSimulatorAi() {
     }
 }
 
-let currentSimulatorImageBase64 = null;
+let currentSimulatorMediaBase64 = null;
+let currentSimulatorMediaMimeType = null;
 
-window.handleSimulatorImageUpload = function(event) {
+window.handleSimulatorMediaUpload = function(event) {
     const file = event.target.files[0];
-    if (file) processSimulatorImage(file);
+    if (file) processSimulatorMedia(file);
 };
 
 window.handleSimulatorDrop = function(event) {
     event.preventDefault();
     if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
-        processSimulatorImage(event.dataTransfer.files[0]);
+        processSimulatorMedia(event.dataTransfer.files[0]);
     }
 };
 
-window.removeSimulatorImage = function() {
-    currentSimulatorImageBase64 = null;
-    document.getElementById('simulator-image-preview-container').classList.add('hidden');
+window.removeSimulatorMedia = function() {
+    currentSimulatorMediaBase64 = null;
+    currentSimulatorMediaMimeType = null;
+    document.getElementById('simulator-media-preview-container').classList.add('hidden');
     document.getElementById('simulator-image-preview').src = '';
-    document.getElementById('simulator-image-upload').value = '';
+    document.getElementById('simulator-image-preview').classList.add('hidden');
+    document.getElementById('simulator-audio-preview').src = '';
+    document.getElementById('simulator-audio-preview').classList.add('hidden');
+    document.getElementById('simulator-media-upload').value = '';
 };
 
-function processSimulatorImage(file) {
-    if (!file.type.startsWith('image/')) {
-        alert('Por favor selecciona un archivo de imagen válido.');
+function processSimulatorMedia(file) {
+    if (!file.type.startsWith('image/') && !file.type.startsWith('audio/')) {
+        alert('Por favor selecciona un archivo de imagen o audio válido.');
         return;
     }
     const reader = new FileReader();
     reader.onload = (e) => {
-        currentSimulatorImageBase64 = e.target.result;
-        document.getElementById('simulator-image-preview').src = currentSimulatorImageBase64;
-        document.getElementById('simulator-image-preview-container').classList.remove('hidden');
+        currentSimulatorMediaBase64 = e.target.result;
+        currentSimulatorMediaMimeType = file.type;
+        
+        if (file.type.startsWith('image/')) {
+            document.getElementById('simulator-image-preview').src = currentSimulatorMediaBase64;
+            document.getElementById('simulator-image-preview').classList.remove('hidden');
+            document.getElementById('simulator-audio-preview').classList.add('hidden');
+        } else if (file.type.startsWith('audio/')) {
+            document.getElementById('simulator-audio-preview').src = currentSimulatorMediaBase64;
+            document.getElementById('simulator-audio-preview').classList.remove('hidden');
+            document.getElementById('simulator-image-preview').classList.add('hidden');
+        }
+        
+        document.getElementById('simulator-media-preview-container').classList.remove('hidden');
     };
     reader.readAsDataURL(file);
 }
@@ -2282,22 +2299,27 @@ async function sendSimulatorMessage() {
     const input = document.getElementById('simulator-chat-input');
     const roleSelect = document.getElementById('simulator-role-select');
     const text = input.value.trim();
-    // Allow ending message if there's text OR an image
-    if (!text && !currentSimulatorImageBase64) return;
+    // Allow ending message if there's text OR media
+    if (!text && !currentSimulatorMediaBase64) return;
 
     const role = roleSelect ? roleSelect.value : 'user';
     const msgId = 'msg-' + Date.now() + '-' + Math.floor(Math.random() * 10000);
 
-    // Save image before clearing
-    const imageToAttach = currentSimulatorImageBase64;
+    // Save media before clearing
+    const mediaToAttach = currentSimulatorMediaBase64;
+    const mediaMimeType = currentSimulatorMediaMimeType;
 
     // Mostrar mensaje del usuario / agente inmediatamente
-    renderSimulatorMessage(text, role, null, msgId, imageToAttach);
+    renderSimulatorMessage(text, role, null, msgId, mediaToAttach, mediaMimeType);
     input.value = '';
-    removeSimulatorImage(); // Clear preview
+    removeSimulatorMedia(); // Clear preview
 
     // Añadir al historial INMEDIATAMENTE
-    simulatorHistory.push({ id: msgId, role: role, content: text || '📷 Imagen', imageBase64: imageToAttach });
+    let defaultContent = '📷 Imagen';
+    if (mediaMimeType && mediaMimeType.startsWith('audio/')) {
+        defaultContent = '🎵 Audio';
+    }
+    simulatorHistory.push({ id: msgId, role: role, content: text || defaultContent, mediaBase64: mediaToAttach, mediaMimeType: mediaMimeType });
     
     // Si el mensaje es del agente, no hacemos petición a la IA en su nombre
     if (role === 'assistant') {
@@ -2347,24 +2369,27 @@ function formatSimulatorText(text) {
         .replace(/~(.*?)~/g, '<s>$1</s>');
 }
 
-function renderSimulatorMessage(text, sender, repliedToText = null, msgId = null, imageBase64 = null) {
+function renderSimulatorMessage(text, sender, repliedToText = null, msgId = null, mediaBase64 = null, mediaMimeType = null) {
     const historyContainer = document.getElementById('simulator-chat-history');
     if (!historyContainer) return;
+
+    let mediaHtml = '';
+    if (mediaBase64) {
+        if (mediaMimeType && mediaMimeType.startsWith('audio/')) {
+            mediaHtml = `<audio controls src="${mediaBase64}" class="mb-1 w-full max-w-[200px] h-10 rounded-lg"></audio>`;
+        } else {
+            mediaHtml = `<img src="${mediaBase64}" class="rounded-lg mb-1 max-w-full cursor-pointer hover:opacity-90 transition-opacity" onclick="openImageModal('${mediaBase64}')">`;
+        }
+    }
 
     const msgDiv = document.createElement('div');
     const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const formattedText = formatSimulatorText(text);
     const deleteBtn = `<button class="sim-msg-delete" onclick="deleteSimulatorMessage(this)" title="Eliminar mensaje"><i class="fas fa-times"></i></button>`;
-    
-    let imgHtml = '';
-    if (imageBase64) {
-        imgHtml = `<img src="${imageBase64}" class="w-full rounded-md mb-2 object-cover max-h-60" alt="Adjunto">`;
-    }
-
     if (sender === 'user') {
         msgDiv.className = 'flex justify-end sim-msg-wrapper';
         if (msgId) msgDiv.setAttribute('data-msg-id', msgId);
-        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}${imgHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
+        msgDiv.innerHTML = `<div class="bg-[#d9fdd3] text-[#111b21] rounded-lg rounded-tr-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}${mediaHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time} <i class="fas fa-check-double text-[#53bdeb]"></i></span></div>`;
     } else if (sender === 'assistant') {
         msgDiv.className = 'flex justify-start sim-msg-wrapper';
         if (msgId) msgDiv.setAttribute('data-msg-id', msgId);
@@ -2372,7 +2397,7 @@ function renderSimulatorMessage(text, sender, repliedToText = null, msgId = null
         if (repliedToText) {
             replyHtml = `<div class="bg-black/5 border-l-4 border-purple-500 rounded p-1 mb-1 text-xs text-gray-600 max-w-full overflow-hidden"><span class="text-purple-600 font-semibold block">Cliente</span><span class="truncate block">${repliedToText}</span></div>`;
         }
-        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}${replyHtml}${imgHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
+        msgDiv.innerHTML = `<div class="bg-white text-[#111b21] rounded-lg rounded-tl-sm px-3 py-2 max-w-[85%] shadow-sm relative sim-msg-bubble">${deleteBtn}${replyHtml}${mediaHtml}<span class="break-words text-[15px]">${formattedText}</span><span class="text-[11px] text-gray-500 float-right ml-2 mt-1">${time}</span></div>`;
     } else {
         msgDiv.className = 'flex justify-center';
         msgDiv.innerHTML = `<div class="bg-red-100 text-red-600 rounded-lg px-3 py-1 text-xs shadow-sm">${text}</div>`;

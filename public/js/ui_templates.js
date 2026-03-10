@@ -581,13 +581,14 @@ const AIChatSimulatorViewTemplate = () => `
                     </select>
                 </div>
                 <div class="flex items-end gap-2">
-                    <input type="file" id="simulator-image-upload" accept="image/*" class="hidden" onchange="handleSimulatorImageUpload(event)">
-                    <button class="text-gray-500 hover:text-gray-700 p-2" onclick="document.getElementById('simulator-image-upload').click()"><i class="fas fa-paperclip text-xl"></i></button>
+                    <input type="file" id="simulator-media-upload" accept="image/*, audio/*" class="hidden" onchange="handleSimulatorMediaUpload(event)">
+                    <button class="text-gray-500 hover:text-gray-700 p-2" onclick="document.getElementById('simulator-media-upload').click()"><i class="fas fa-paperclip text-xl"></i></button>
                     <button class="text-gray-500 hover:text-gray-700 p-2"><i class="far fa-smile text-xl"></i></button>
                     <div class="flex-1 bg-white rounded-lg px-2 py-2 shadow-sm flex flex-col justify-center min-h-[44px]">
-                        <div id="simulator-image-preview-container" class="hidden mb-2 relative inline-block w-fit">
-                            <img id="simulator-image-preview" src="" class="h-16 rounded border object-cover">
-                            <button onclick="removeSimulatorImage()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 shadow">&times;</button>
+                        <div id="simulator-media-preview-container" class="hidden mb-2 relative inline-block w-fit">
+                            <img id="simulator-image-preview" src="" class="hidden h-16 rounded border object-cover">
+                            <audio id="simulator-audio-preview" controls class="hidden h-10 w-48 rounded"></audio>
+                            <button onclick="removeSimulatorMedia()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs hover:bg-red-600 shadow">&times;</button>
                         </div>
                         <textarea id="simulator-chat-input" class="w-full bg-transparent focus:outline-none resize-none max-h-32 text-[15px] px-2" rows="1" placeholder="Escribe un mensaje..." onkeydown="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendSimulatorMessage(); }"></textarea>
                     </div>
