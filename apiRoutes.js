@@ -458,8 +458,12 @@ router.get('/contacts', async (req, res) => {
         }
         // --- FIN: Filtro por Departamento ---
 
-        // Ordenar por último mensaje y limitar resultados
-        query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+        // Ordenar por último mensaje y limitar resultados (Firestore requiere ordenar primero por el campo de la desigualdad)
+        if (req.query.unreadOnly === 'true') {
+            query = query.orderBy('unreadCount', 'desc').orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+        } else {
+            query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+        }
 
         // Paginación: Empezar después del último documento de la página anterior
         if (startAfterId) {
