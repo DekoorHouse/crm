@@ -1112,9 +1112,10 @@ async function handleSaveAdRoutingRule(event) {
     const ruleName = document.getElementById('rule-name').value.trim();
     const adIds = document.getElementById('rule-ad-ids').value.trim();
     const targetDepartmentId = document.getElementById('rule-target-dept').value;
+    const enableAi = document.getElementById('rule-enable-ai').checked; // Nuevo
 
     if (!ruleName || !adIds || !targetDepartmentId) {
-        showError("Todos los campos son obligatorios.");
+        showError("Nombre, Ad IDs y Departamento son obligatorios.");
         return;
     }
 
@@ -1125,7 +1126,7 @@ async function handleSaveAdRoutingRule(event) {
         const response = await fetch(url, {
             method,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ ruleName, adIds, targetDepartmentId })
+            body: JSON.stringify({ ruleName, adIds, targetDepartmentId, enableAi })
         });
         if (!response.ok) throw new Error("Error al guardar regla.");
         

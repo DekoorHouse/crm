@@ -1905,8 +1905,10 @@ function openAdRoutingModal(rule = null) {
         nameInput.value = rule.ruleName || '';
         adIdsInput.value = Array.isArray(rule.adIds) ? rule.adIds.join(', ') : '';
         deptSelect.value = rule.targetDepartmentId || '';
+        document.getElementById('rule-enable-ai').checked = rule.enableAi || false;
     } else { // Modo Añadir
         title.textContent = "Nueva Regla de Enrutamiento";
+        document.getElementById('rule-enable-ai').checked = false;
     }
 
     modal.classList.remove('hidden');

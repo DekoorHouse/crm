@@ -484,7 +484,7 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
 // Cola de temporizadores para esperar a que el usuario termine de escribir varios mensajes
 const pendingAiRequests = new Map();
 
-async function triggerAutoReplyAI(message, contactRef, contactData) {
+async function triggerAutoReplyAI(message, contactRef, contactData, delay = 20000) {
     const contactId = contactRef.id;
 
     // Si ya había un temporizador corriendo para este contacto, lo cancelamos
@@ -493,12 +493,12 @@ async function triggerAutoReplyAI(message, contactRef, contactData) {
         console.log(`[AI] Usuario ${contactId} envió otro mensaje rápidamente. Reiniciando temporizador...`);
     }
 
-    // Creamos un nuevo temporizador de 20 segundos
-    const aiNextRun = Date.now() + 20000;
+    // Usamos el delay especificado (por defecto 20s)
+    const aiNextRun = Date.now() + delay;
     const timerId = setTimeout(async () => {
         pendingAiRequests.delete(contactId);
         await processAutoReplyAI(contactId, message, contactRef, contactData);
-    }, 20000);
+    }, delay);
 
     pendingAiRequests.set(contactId, timerId);
     

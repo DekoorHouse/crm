@@ -2545,7 +2545,7 @@ router.get('/ad-routing-rules', async (req, res) => {
 
 // POST /api/ad-routing-rules: Crear nueva regla
 router.post('/ad-routing-rules', async (req, res) => {
-    const { ruleName, adIds: adIdsInput, targetDepartmentId } = req.body;
+    const { ruleName, adIds: adIdsInput, targetDepartmentId, enableAi } = req.body;
     const adIds = parseAdIds(adIdsInput); // Usa la función helper existente para limpiar IDs
 
     if (!ruleName || adIds.length === 0 || !targetDepartmentId) {
@@ -2557,6 +2557,7 @@ router.post('/ad-routing-rules', async (req, res) => {
             ruleName,
             adIds,
             targetDepartmentId,
+            enableAi: !!enableAi,
             createdAt: admin.firestore.FieldValue.serverTimestamp()
         };
         const docRef = await db.collection('ad_routing_rules').add(newRule);
@@ -2570,14 +2571,15 @@ router.post('/ad-routing-rules', async (req, res) => {
 // PUT /api/ad-routing-rules/:id: Actualizar regla
 router.put('/ad-routing-rules/:id', async (req, res) => {
     const { id } = req.params;
-    const { ruleName, adIds: adIdsInput, targetDepartmentId } = req.body;
+    const { ruleName, adIds: adIdsInput, targetDepartmentId, enableAi } = req.body;
     const adIds = parseAdIds(adIdsInput);
 
     try {
         await db.collection('ad_routing_rules').doc(id).update({
             ruleName,
             adIds,
-            targetDepartmentId
+            targetDepartmentId,
+            enableAi: !!enableAi
         });
         res.status(200).json({ success: true, message: 'Regla actualizada.' });
     } catch (error) {

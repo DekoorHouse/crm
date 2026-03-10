@@ -340,7 +340,15 @@
                         <!-- Options populated dynamically -->
                     </select>
                 </div>
+                <div class="flex items-center gap-3 !mb-4 mt-2">
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="rule-enable-ai">
+                        <span class="slider"></span>
+                    </label>
+                    <label for="rule-enable-ai" class="!mb-0 font-semibold cursor-pointer">Activar IA para esta regla</label>
+                </div>
                 <div class="flex justify-end gap-3 mt-4">
+
                     <button type="button" onclick="closeAdRoutingModal()" class="btn btn-subtle">Cancelar</button>
                     <button type="submit" class="btn btn-primary">Guardar</button>
                 </div>

@@ -498,6 +498,7 @@ router.post('/', async (req, res) => {
             // --- Update contact document ---
             const contactDoc = await contactRef.get();
             const isNewContact = !contactDoc.exists;
+            let aiTriggeredByRule = false;
 
             const contactUpdateData = {
                 name: contactInfo.profile?.name || (contactDoc.exists ? contactDoc.data().name : from), // Use existing name if available
@@ -536,6 +537,24 @@ router.post('/', async (req, res) => {
                         // Asignar al departamento correspondiente
                         await contactRef.update({ assignedDepartmentId: ruleData.targetDepartmentId });
                         console.log(`[ROUTING] Contacto ${from} asignado al departamento '${ruleData.targetDepartmentId}' por regla: ${ruleData.ruleName || 'Sin nombre'}`);
+                    }
+                    
+                    // --- NUEVO: ACTIVACIÓN DE IA POR REGLA ---
+                    if (ruleData.enableAi) {
+                        console.log(`[ROUTING-AI] Activando IA automáticamente por regla para ${from}`);
+                        await contactRef.update({ botActive: true });
+                        // Actualizamos los datos para que el flujo posterior sepa que la IA está activa
+                        if (updatedContactData) updatedContactData.botActive = true;
+                        
+                        // Solo disparamos la IA con 10s si es el primer mensaje del anuncio
+                        // (Si ya existía, disparará con el flujo normal más abajo)
+                        if (isNewContact) {
+                            console.log(`[ROUTING-AI] Primer mensaje: Disparando IA en 10s...`);
+                            triggerAutoReplyAI(message, contactRef, updatedContactData || {}, 10000).catch(err => {
+                                console.error('[ROUTING-AI] Error en AI:', err);
+                            });
+                            aiTriggeredByRule = true; // Evitar mensaje de bienvenida manual
+                        }
                     }
                 } else {
                      // Fallback: Si el anuncio no tiene regla, asignar a "General"
@@ -661,7 +680,7 @@ router.post('/', async (req, res) => {
             }
 
             // 6. Handle Welcome/Ad Response for NEW contacts OR Trigger AI
-            if (isNewContact) {
+            if (isNewContact && !aiTriggeredByRule) {
                 let adResponseSent = false;
                 if (message.referral?.source_type === 'ad' && message.referral.source_id) {
                     const adId = message.referral.source_id;
