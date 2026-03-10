@@ -735,7 +735,7 @@ const ContactItemTemplate = (contact, isSelected) => {
 
     const onClickAction = `onclick="handleSelectContact('${contact.id}')"`;
     const aiActive = contact.aiEnabled || false;
-    const aiClass = aiActive ? 'ai-mesh-active' : '';
+    const aiClass = aiActive ? 'ai-active' : '';
 
     return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass}" data-contact-id="${contact.id}" ${departmentStripe}>
                 ${UserIcon(contact)}
