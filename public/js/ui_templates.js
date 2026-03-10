@@ -1006,10 +1006,12 @@ const ChatWindowTemplate = (contact) => {
         </form>`;
 
     const mainContent = state.activeTab === 'chat'
-        ? `<div class="relative flex-1 flex flex-col min-h-0 bg-[#f0f2f5] dark:bg-gray-900">
+        ? `<div class="relative flex-1 flex flex-col min-h-0 dark:bg-gray-900">
              <main id="messages-container" class="flex-1 p-4 overflow-y-auto">
                 <div id="sticky-date-header" class="date-separator"></div>
                 <div id="messages-content"></div>
+                <!-- Espaciador para que el indicador flotante no tape el último mensaje -->
+                <div id="ai-typing-spacer" class="h-16 hidden"></div>
              </main>
              <div id="ai-typing-indicator" class="hidden absolute bottom-4 left-4 bg-white dark:bg-gray-800 px-4 py-2 rounded-xl rounded-bl-sm shadow-md flex items-center gap-2 z-10 w-fit border border-gray-100 dark:border-gray-700">
                 <div class="flex items-center gap-1">

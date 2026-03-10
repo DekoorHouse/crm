@@ -2466,9 +2466,11 @@ function checkAiTimer() {
     const contact = state.contacts.find(c => c.id === contactId);
     const indicator = document.getElementById('ai-typing-indicator');
     const timerText = document.getElementById('ai-timer-text');
+    const spacer = document.getElementById('ai-typing-spacer'); // Nuevo
 
     if (!contact || !contact.aiNextRun || !indicator || !timerText) {
         if (indicator) indicator.classList.add('hidden');
+        if (spacer) spacer.classList.add('hidden'); // Nuevo
         return;
     }
 
@@ -2478,10 +2480,12 @@ function checkAiTimer() {
 
         if (diff <= 0) {
             indicator.classList.add('hidden');
+            if (spacer) spacer.classList.add('hidden'); // Nuevo
             clearInterval(aiCountdownInterval);
             aiCountdownInterval = null;
         } else {
             indicator.classList.remove('hidden');
+            if (spacer) spacer.classList.remove('hidden'); // Nuevo
             timerText.textContent = `Esperando (${diff}s)`;
         }
     };
