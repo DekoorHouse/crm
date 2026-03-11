@@ -445,15 +445,13 @@ async function handleSelectContact(contactId) {
     
     unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { 
         state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
-        if(state.selectedContactId === contactId) {
-            renderChatWindow();
-            if (state.contactDetailsOpen) renderSidebarNotes(); // Asegurar que el sidebar se actualice
+        if(state.selectedContactId === contactId && state.contactDetailsOpen) {
+            renderSidebarNotes(); // Solo actualizar el sidebar ya que el tab de notas no existe
         }
     }, (error) => { 
         console.error(error); 
         showError('Error al cargar notas.'); 
         state.notes = []; 
-        if(state.activeTab === 'notes') renderNotes(); 
         if(state.contactDetailsOpen) renderSidebarNotes();
     });
     

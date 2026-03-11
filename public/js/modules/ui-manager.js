@@ -1104,18 +1104,6 @@ function appendMessage(message) {
 }
 
 
-// Renderiza la lista de notas internas
-function renderNotes() {
-    const contentContainer = document.getElementById('notes-content');
-    if (contentContainer) {
-        contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); // Genera HTML para cada nota
-    }
-    
-    // También actualizamos la barra lateral si está abierta
-    if (state.contactDetailsOpen) {
-        renderSidebarNotes();
-    }
-}
 
 /**
  * Renderiza las notas en la barra lateral de detalles del contacto

@@ -1012,8 +1012,7 @@ const ChatWindowTemplate = (contact) => {
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
         </form>`;
 
-    const mainContent = state.activeTab === 'chat'
-        ? `<div class="relative flex-1 flex flex-col min-h-0">
+    const mainContent = `<div class="relative flex-1 flex flex-col min-h-0">
              <main id="messages-container" class="flex-1 p-4 overflow-y-auto">
                 <div id="sticky-date-header" class="date-separator"></div>
                 <div id="messages-content"></div>
@@ -1036,14 +1035,7 @@ const ChatWindowTemplate = (contact) => {
                     </button>
                 </div>
              </div>
-           </div>`
-        : `<main id="notes-container" class="relative flex-1 p-4 overflow-y-auto bg-white">
-             <form id="note-form" class="mb-4">
-               <textarea id="note-input" placeholder="Escribe una nota interna..." class="!mb-2" rows="3"></textarea>
-               <button type="submit" class="btn btn-primary btn-sm">Guardar Nota</button>
-             </form>
-             <div id="notes-content"></div>
-           </main>`;
+           </div>`;
 
     const notesBadge = state.notes.length > 0 ? `<span class="note-count-badge">${state.notes.length}</span>` : '';
     const replyContextBarHTML = state.replyingToMessage ? `<div id="reply-context-bar">${ReplyContextBarTemplate(state.replyingToMessage)}</div>` : '';
@@ -1088,8 +1080,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
         </header>
         <div class="bg-white border-b border-gray-200 flex">
-            <button class="tab-btn ${state.activeTab === 'chat' ? 'active' : ''}" onclick="setActiveTab('chat')"><i class="fas fa-comments mr-2"></i>Chat</button>
-            <button class="tab-btn ${state.activeTab === 'notes' ? 'active' : ''}" onclick="setActiveTab('notes')"><i class="fas fa-sticky-note mr-2"></i>Notas Internas ${notesBadge}</button>
+            <button class="tab-btn active"><i class="fas fa-comments mr-2"></i>Chat</button>
         </div>
         ${mainContent}
         <div id="file-preview-container"></div>
