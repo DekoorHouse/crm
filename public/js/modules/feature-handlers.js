@@ -985,28 +985,29 @@ async function handleDeleteAllTags() {
 
 /**
  * Maneja la actualización del contenido de una nota existente.
- * @param {Event} event El evento de envío del formulario.
  * @param {string} noteId El ID de la nota a actualizar.
  */
-async function handleUpdateNote(event, noteId) {
-    event.preventDefault();
-    const form = event.target;
-    const newContent = form.querySelector('textarea').value.trim();
-    const button = form.querySelector('button[type="submit"]');
+async function handleUpdateNote(noteId) {
+    const input = document.getElementById(`edit-note-input-${noteId}`);
+    if (!input) {
+        console.error(`No se encontró el input para la nota ${noteId}`);
+        return;
+    }
+    const newContent = input.value.trim();
 
     if (!newContent) {
         showError("La nota no puede estar vacía.");
         return;
     }
 
-    button.disabled = true;
-    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
     try {
-        const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+        const contactId = state.selectedContactId;
+        if (!contactId) throw new Error("No hay un contacto seleccionado.");
+
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/notes/${noteId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ content: newContent })
+            body: JSON.stringify({ text: newContent })
         });
 
         if (!response.ok) {
@@ -1016,7 +1017,7 @@ async function handleUpdateNote(event, noteId) {
 
         // La UI se actualizará automáticamente gracias al listener de Firestore.
         // Simplemente volvemos a la vista de solo lectura.
-        toggleEditNote(noteId);
+        toggleEditNote(null);
 
     } catch (error) {
         console.error("Error updating note:", error);
@@ -1035,7 +1036,10 @@ async function handleDeleteNote(noteId) {
     if (!window.confirm('¿Estás seguro de que quieres eliminar esta nota?')) return;
 
     try {
-        const response = await fetch(`${API_BASE_URL}/api/notes/${noteId}`, {
+        const contactId = state.selectedContactId;
+        if (!contactId) throw new Error("No hay un contacto seleccionado.");
+
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/notes/${noteId}`, {
             method: 'DELETE'
         });
 
