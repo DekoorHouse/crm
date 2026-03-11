@@ -1348,7 +1348,7 @@ const OrderEditModalTemplate = (order) => `
             <button onclick="closeOrderEditModal()" class="modal-close-btn" title="Cerrar">&times;</button>
             <div id="editPedidoContainer">
                  <h2 id="editModalTitle"><i class="fas fa-edit"></i> Editar Pedido DH${order.consecutiveOrderNumber}</h2>
-                 <form id="order-edit-form">
+                 <form id="edit-order-form">
                      <div class="form-grid">
                          <div class="form-item">
                              <label for="edit-order-product-select">Producto (*):</label>
