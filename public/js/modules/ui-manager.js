@@ -1137,7 +1137,7 @@ function renderSidebarNotes() {
                 <div class="note-item sidebar-note group relative !p-2 !mb-2 !text-xs !bg-transparent border-l-2 border-accent !shadow-none hover:bg-gray-50 rounded transition-colors" data-id="${note.id}">
                     <div class="flex justify-between items-start">
                         <p class="flex-grow pr-4">${note.text}</p>
-                        <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+                        <div class="note-actions-visible items-center gap-1 flex-shrink-0">
                             <button onclick="toggleEditNote('${note.id}')" class="text-gray-400 hover:text-blue-500 p-0.5" title="Editar"><i class="fas fa-pencil-alt text-[10px]"></i></button>
                             <button onclick="handleDeleteNote('${note.id}')" class="text-gray-400 hover:text-red-500 p-0.5" title="Eliminar"><i class="fas fa-trash-alt text-[10px]"></i></button>
                         </div>

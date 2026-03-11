@@ -73,6 +73,8 @@ body.dark-mode ::-webkit-scrollbar-thumb:hover { background: #565f89; }
 
 /* CORRECCIÓN AQUÍ: Se agrega !important para asegurar que oculte los elementos */
 .hidden { display: none !important; }
+.note-actions-visible { display: none; }
+.sidebar-note:hover .note-actions-visible { display: flex !important; }
 
 input[type="file"], input[type="color"] { display: none; }
 .btn { font-family: var(--font-heading); font-weight: 600; padding: 8px 18px; border: none; border-radius: var(--border-radius-md); cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
