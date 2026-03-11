@@ -984,6 +984,74 @@ async function handleDeleteAllTags() {
 
 
 /**
+ * Alterna la visibilidad del campo de entrada para nuevas notas en el sidebar.
+ */
+function toggleSidebarNoteInput() {
+    const container = document.getElementById('sidebar-note-input-container');
+    if (!container) return;
+    container.classList.toggle('hidden');
+    if (!container.classList.contains('hidden')) {
+        const input = document.getElementById('sidebar-note-input');
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+    }
+}
+
+/**
+ * Guarda una nueva nota desde el sidebar.
+ */
+async function handleSaveSidebarNote() {
+    const input = document.getElementById('sidebar-note-input');
+    const text = input.value.trim();
+    if (!text) {
+        showError("La nota no puede estar vacía.");
+        return;
+    }
+
+    const contactId = state.selectedContactId;
+    if (!contactId) {
+        showError("No hay un contacto seleccionado.");
+        return;
+    }
+
+    const button = document.querySelector('[onclick="handleSaveSidebarNote()"]');
+    if (button) {
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+    }
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/notes`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.message || 'Error del servidor');
+        }
+
+        // Limpiar y ocultar
+        input.value = '';
+        toggleSidebarNoteInput();
+        showError("Nota guardada.", "success");
+        // La UI se actualizará automáticamente gracias al listener de Firestore.
+    } catch (error) {
+        console.error('Error al guardar la nota desde el sidebar:', error);
+        showError(error.message);
+    } finally {
+        if (button) {
+            button.disabled = false;
+            button.textContent = 'Guardar';
+        }
+    }
+}
+
+
+/**
  * Maneja la actualización del contenido de una nota existente.
  * @param {string} noteId El ID de la nota a actualizar.
  */
@@ -1226,6 +1294,8 @@ window.handleLoadAdIdMetrics = handleLoadAdIdMetrics; // Hacer global
 window.handleClearAdIdMetricsFilter = handleClearAdIdMetricsFilter; // Hacer global
 window.handleUpdateNote = handleUpdateNote;
 window.handleDeleteNote = handleDeleteNote;
+window.toggleSidebarNoteInput = toggleSidebarNoteInput;
+window.handleSaveSidebarNote = handleSaveSidebarNote;
 window.handleMigrateOrphans = handleMigrateOrphans;
 // --- FIN MODIFICACIÓN ---
 

@@ -1136,7 +1136,19 @@ const ContactDetailsSidebarTemplate = (contact) => {
                 </div>
 
                 <div id="sidebar-notes-container" class="mt-6 border-t pt-4">
-                     <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Notas Internas</h4>
+                     <div class="flex justify-between items-center mb-3">
+                         <h4 class="font-semibold text-gray-500 text-sm uppercase tracking-wider">Notas Internas</h4>
+                         <button onclick="toggleSidebarNoteInput()" class="text-blue-500 hover:text-blue-700 p-1" title="Agregar nota">
+                             <i class="fas fa-plus"></i>
+                         </button>
+                     </div>
+                     <div id="sidebar-note-input-container" class="hidden mb-3 bg-gray-50 p-2 rounded border border-gray-100">
+                         <textarea id="sidebar-note-input" class="w-full p-2 text-xs border rounded mb-2 focus:ring-1 focus:ring-blue-400 outline-none" rows="2" placeholder="Escribe una nota interna..."></textarea>
+                         <div class="flex justify-end gap-2">
+                             <button onclick="toggleSidebarNoteInput()" class="text-[10px] text-gray-400 hover:text-gray-600">Cancelar</button>
+                             <button onclick="handleSaveSidebarNote()" class="btn btn-primary !py-1 !px-2 !text-[10px] rounded">Guardar</button>
+                         </div>
+                     </div>
                      <div id="sidebar-notes-list" class="p-2 min-h-[40px] transition-all duration-300">
                         <!-- Las notas se cargarán aquí -->
                      </div>
