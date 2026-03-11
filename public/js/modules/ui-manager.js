@@ -1111,20 +1111,43 @@ function appendMessage(message) {
  */
 function renderSidebarNotes() {
     const sidebarNotesList = document.getElementById('sidebar-notes-list');
-    const sidebarNotesContainer = document.getElementById('sidebar-notes-list'); // Aplicamos el glow aquí o al contenedor
     const mainContainer = document.getElementById('sidebar-notes-container');
 
     if (!sidebarNotesList || !mainContainer) return;
 
     if (state.notes && state.notes.length > 0) {
-        sidebarNotesList.innerHTML = state.notes.map(note => `
-            <div class="note-item !p-2 !mb-2 !text-xs !bg-transparent border-l-2 !shadow-none">
-                <p>${note.text}</p>
-                <div class="text-[10px] text-gray-400 mt-1">
-                    ${note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) : 'Reciente'}
+        sidebarNotesList.innerHTML = state.notes.map(note => {
+            const isEditing = state.isEditingNote === note.id;
+            const time = note.timestamp 
+                ? new Date(note.timestamp.seconds * 1000).toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) 
+                : 'Reciente';
+
+            if (isEditing) {
+                return `
+                    <div class="note-item editing !p-2 !mb-2 !text-xs bg-gray-50 rounded border-l-2 border-primary">
+                        <textarea id="edit-note-input-${note.id}" class="w-full p-2 text-xs border rounded mb-2 focus:ring-1 focus:ring-blue-400 outline-none" rows="3">${note.text}</textarea>
+                        <div class="flex justify-end gap-2">
+                             <button onclick="toggleEditNote(null)" class="text-[10px] text-gray-400 hover:text-gray-600">Cancelar</button>
+                             <button onclick="handleUpdateNote('${note.id}')" class="btn btn-primary !py-1 !px-2 !text-[10px] rounded">Guardar</button>
+                        </div>
+                    </div>`;
+            }
+
+            return `
+                <div class="note-item sidebar-note group relative !p-2 !mb-2 !text-xs !bg-transparent border-l-2 border-accent !shadow-none hover:bg-gray-50 rounded transition-colors" data-id="${note.id}">
+                    <div class="flex justify-between items-start">
+                        <p class="flex-grow pr-4">${note.text}</p>
+                        <div class="hidden group-hover:flex items-center gap-1 flex-shrink-0">
+                            <button onclick="toggleEditNote('${note.id}')" class="text-gray-400 hover:text-blue-500 p-0.5" title="Editar"><i class="fas fa-pencil-alt text-[10px]"></i></button>
+                            <button onclick="handleDeleteNote('${note.id}')" class="text-gray-400 hover:text-red-500 p-0.5" title="Eliminar"><i class="fas fa-trash-alt text-[10px]"></i></button>
+                        </div>
+                    </div>
+                    <div class="text-[10px] text-gray-400 mt-1">
+                        ${time}
+                    </div>
                 </div>
-            </div>
-        `).join('');
+            `;
+        }).join('');
         
         // Aplicar animación de glow
         mainContainer.classList.add('notes-glow');
@@ -2063,16 +2086,8 @@ function setActiveTab(tabName) {
  * @param {string} noteId - El ID de la nota a editar.
  */
 function toggleEditNote(noteId) {
-    const noteElement = document.querySelector(`.note-item[data-id="${noteId}"]`);
-    if (!noteElement) return;
-
-    const displayContent = noteElement.querySelector('.note-display-content');
-    const editForm = noteElement.querySelector('.note-edit-form');
-
-    if (displayContent && editForm) {
-        displayContent.classList.toggle('hidden');
-        editForm.classList.toggle('hidden');
-    }
+    state.isEditingNote = noteId;
+    renderSidebarNotes();
 }
 
 // --- NUEVO: Lógica de Tema Oscuro ---
