@@ -403,6 +403,26 @@ body.dark-mode .note-count-badge { color: #1a1b26; }
 
 .note-item { background-color: #fffbeb; border-left: 4px solid #facc15; padding: 12px; border-radius: var(--border-radius-md); margin-bottom: 10px; }
 body.dark-mode .note-item { background-color: #2e2c22; border-left-color: #e0af68; }
+
+/* Animación de glow en movimiento para la zona de notas en el sidebar */
+@keyframes sidebar-glow {
+    0% { background-position: 0% 50%; box-shadow: 0 0 10px rgba(242, 204, 143, 0.2); }
+    50% { background-position: 100% 50%; box-shadow: 0 0 20px rgba(242, 204, 143, 0.4); }
+    100% { background-position: 0% 50%; box-shadow: 0 0 10px rgba(242, 204, 143, 0.2); }
+}
+
+.notes-glow {
+    background: linear-gradient(-45deg, #fffbeb, #fef3c7, #fff9db, #fffbeb);
+    background-size: 400% 400%;
+    animation: sidebar-glow 5s ease infinite;
+    border-radius: var(--border-radius-lg);
+}
+
+body.dark-mode .notes-glow {
+    background: linear-gradient(-45deg, #2e2c22, #3d3a2b, #2e2c22, #1f1d16);
+    background-size: 400% 400%;
+    box-shadow: 0 0 15px rgba(224, 175, 104, 0.1);
+}
 .note-item p { margin: 0; white-space: pre-wrap; }
 .note-item .note-meta { font-size: 0.75rem; color: var(--color-text-light); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
 .note-actions button { background: none; border: none; color: var(--color-text-light); cursor: pointer; padding: 4px; }

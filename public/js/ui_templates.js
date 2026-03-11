@@ -1135,6 +1135,13 @@ const ContactDetailsSidebarTemplate = (contact) => {
                      </div>
                 </div>
 
+                <div id="sidebar-notes-container" class="mt-6 border-t pt-4">
+                     <h4 class="font-semibold text-gray-500 mb-3 text-sm uppercase tracking-wider">Notas Internas</h4>
+                     <div id="sidebar-notes-list" class="p-2 min-h-[40px] transition-all duration-300">
+                        <!-- Las notas se cargarán aquí -->
+                     </div>
+                </div>
+
                 <div class="mt-6 border-t pt-6 space-y-2">
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>

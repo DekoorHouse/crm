@@ -1107,8 +1107,43 @@ function appendMessage(message) {
 // Renderiza la lista de notas internas
 function renderNotes() {
     const contentContainer = document.getElementById('notes-content');
-    if (!contentContainer) return;
-    contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); // Genera HTML para cada nota
+    if (contentContainer) {
+        contentContainer.innerHTML = state.notes.map(NoteItemTemplate).join(''); // Genera HTML para cada nota
+    }
+    
+    // También actualizamos la barra lateral si está abierta
+    if (state.contactDetailsOpen) {
+        renderSidebarNotes();
+    }
+}
+
+/**
+ * Renderiza las notas en la barra lateral de detalles del contacto
+ * y aplica la animación de glow si hay notas.
+ */
+function renderSidebarNotes() {
+    const sidebarNotesList = document.getElementById('sidebar-notes-list');
+    const sidebarNotesContainer = document.getElementById('sidebar-notes-list'); // Aplicamos el glow aquí o al contenedor
+    const mainContainer = document.getElementById('sidebar-notes-container');
+
+    if (!sidebarNotesList || !mainContainer) return;
+
+    if (state.notes && state.notes.length > 0) {
+        sidebarNotesList.innerHTML = state.notes.map(note => `
+            <div class="note-item !p-2 !mb-2 !text-xs !bg-transparent border-l-2 !shadow-none">
+                <p>${note.text}</p>
+                <div class="text-[10px] text-gray-400 mt-1">
+                    ${note.timestamp ? new Date(note.timestamp.seconds * 1000).toLocaleDateString('es-ES', {day:'2-digit', month:'short'}) : 'Reciente'}
+                </div>
+            </div>
+        `).join('');
+        
+        // Aplicar animación de glow
+        mainContainer.classList.add('notes-glow');
+    } else {
+        sidebarNotesList.innerHTML = `<p class="text-xs text-gray-400 italic text-center py-2">Sin notas internas.</p>`;
+        mainContainer.classList.remove('notes-glow');
+    }
 }
 
 /**
@@ -1210,6 +1245,9 @@ async function openContactDetails() {
     contactDetailsPanelEl.innerHTML = ContactDetailsSidebarTemplate(contact);
     contactDetailsPanelEl.classList.add('open'); // Muestra la barra lateral
     state.contactDetailsOpen = true;
+
+    // Renderizar notas iniciales si existen
+    renderSidebarNotes();
 
     // Carga y muestra el historial de pedidos
     const ordersListEl = document.getElementById('contact-orders-list');
