@@ -710,11 +710,20 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
             }
         }
         
-        await contactRef.update({ 
+        const updateData = { 
             lastMessage: lastText, 
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
             aiStatus: admin.firestore.FieldValue.delete()
-        });
+        };
+
+        // Detectar comando /final para desactivar bot y mover chat
+        if (aiResponse.includes('/final')) {
+            updateData.botActive = false;
+            updateData.status = 'pendientes_ia';
+            console.log(`[AI] Detectado "/final" para ${contactId}. Desactivando bot y moviendo a Pendientes IA.`);
+        }
+
+        await contactRef.update(updateData);
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);

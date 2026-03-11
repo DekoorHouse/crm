@@ -125,6 +125,7 @@ function renderTagFilters() {
     // Separador visual y botón "No leídos"
     buttonsHtml += `<div class="w-px h-5 bg-gray-300 mx-1"></div>`;
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active text-blue-600 border-blue-600 bg-blue-50' : ''}" onclick="toggleUnreadFilter()"><i class="fas fa-envelope text-xs mr-1"></i> No leídos</button>`;
+    buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active text-purple-600 border-purple-600 bg-purple-50' : ''}" onclick="setFilter('pendientes_ia')"><i class="fas fa-robot text-xs mr-1"></i> Pendientes IA</button>`;
 
     // Botones para cada etiqueta
     state.tags.forEach(tag => {
