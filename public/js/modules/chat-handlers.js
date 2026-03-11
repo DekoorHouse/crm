@@ -338,6 +338,7 @@ async function handleSelectContact(contactId) {
     state.loadingMessages = true; 
     state.activeTab = 'chat';
     state.isEditingNote = null;
+    state.notes = []; // LIMPIAR NOTAS al cambiar de contacto
     
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
     handleSearchContacts(); 
@@ -442,7 +443,19 @@ async function handleSelectContact(contactId) {
             if (state.activeTab === 'chat') renderMessages();
         });
     
-    unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); if(state.selectedContactId === contactId) renderChatWindow(); }, (error) => { console.error(error); showError('Error al cargar notas.'); state.notes = []; if(state.activeTab === 'notes') renderNotes(); });
+    unsubscribeNotesListener = db.collection('contacts_whatsapp').doc(contactId).collection('notes').orderBy('timestamp', 'desc').onSnapshot( (snapshot) => { 
+        state.notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })); 
+        if(state.selectedContactId === contactId) {
+            renderChatWindow();
+            if (state.contactDetailsOpen) renderSidebarNotes(); // Asegurar que el sidebar se actualice
+        }
+    }, (error) => { 
+        console.error(error); 
+        showError('Error al cargar notas.'); 
+        state.notes = []; 
+        if(state.activeTab === 'notes') renderNotes(); 
+        if(state.contactDetailsOpen) renderSidebarNotes();
+    });
     
     // --- NUEVO: Listener para el documento del contacto seleccionado ---
     if (unsubscribeContactListener) unsubscribeContactListener();
