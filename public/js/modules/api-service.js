@@ -365,6 +365,24 @@ function listenForContactUpdates() {
                 }
             }
 
+            // --- INICIO NUEVA VALIDACIÓN DE FILTROS (TAG Y NO LEÍDOS) ---
+            if (isAllowed) {
+                // Filtro de etiquetas (status)
+                if (state.activeFilter !== 'all') {
+                    if (updatedContactData.status !== state.activeFilter) {
+                        isAllowed = false;
+                    }
+                }
+                
+                // Filtro de no leídos
+                if (state.unreadOnly) {
+                    if (!updatedContactData.unreadCount || updatedContactData.unreadCount <= 0) {
+                        isAllowed = false;
+                    }
+                }
+            }
+            // --- FIN NUEVA VALIDACIÓN ---
+
             if (!isAllowed) {
                 // Si no está permitido, lo eliminamos de la lista local y detenemos el procesamiento.
                 const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
