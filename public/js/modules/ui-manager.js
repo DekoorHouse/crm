@@ -144,16 +144,21 @@ function renderTagFilters() {
 }
 
 /**
- * Obtiene la cantidad total de chats pendientes de IA desde el servidor y actualiza el contador visual.
- * Esto soluciona la inconsistencia causada por el cargado paginado (Lazy Loading) del frontend.
+ * Actualiza el contador visual de chats pendientes de IA.
+ * Puede recibir un conteo pre-calculado (desde un listener en tiempo real) o consultarlo al servidor.
+ * @param {number|null} precomputedCount El conteo actual, si ya se conoce.
  */
-async function actualizarContadorPendientesIA() {
+async function actualizarContadorPendientesIA(precomputedCount = null) {
     const filterBtn = document.getElementById('filter-pendientes_ia');
     if (!filterBtn) return;
 
-    // 1. Obtener el total real desde el servidor (fuente de la verdad global)
-    // Usamos fetchPendingAiCount() que consulta directamente a Firestore (count query)
-    const totalPendientes = await fetchPendingAiCount();
+    // 1. Obtener el total (usar el valor del listener si existe, sino consultar API)
+    let totalPendientes;
+    if (precomputedCount !== null) {
+        totalPendientes = precomputedCount;
+    } else {
+        totalPendientes = await fetchPendingAiCount();
+    }
 
     // 2. Buscar o crear el badge del contador
     let badge = document.getElementById('pending-ai-counter');

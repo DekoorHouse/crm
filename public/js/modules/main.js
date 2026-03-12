@@ -29,6 +29,7 @@ function startApp() {
     // --- NUEVOS LISTENERS PARA DEPARTAMENTOS Y REGLAS ---
     listenForDepartments();
     listenForAdRoutingRules();
+    listenForPendingAiCount(); // Listener en tiempo real para el conteo de IA
     // ----------------------------------------------------
 
     // Fetch initial non-realtime data
@@ -60,6 +61,7 @@ function stopApp() {
     if (unsubscribeDepartmentsListener) unsubscribeDepartmentsListener();
     if (unsubscribeAdRoutingRulesListener) unsubscribeAdRoutingRulesListener();
     if (unsubscribeContactListener) unsubscribeContactListener();
+    if (unsubscribePendingAiCountListener) unsubscribePendingAiCountListener();
     // -------------------------------
 
     // Remove global listeners

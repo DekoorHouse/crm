@@ -218,6 +218,44 @@ async function fetchPendingAiCount() {
     }
 }
 
+/**
+ * Inicia un listener en tiempo real para el conteo de chats pendientes de IA.
+ * Esto permite que el badge se actualice automáticamente sin recargar, solucionando
+ * la falta de reactividad.
+ */
+function listenForPendingAiCount() {
+    if (unsubscribePendingAiCountListener) unsubscribePendingAiCountListener();
+    
+    const profile = state.currentUserProfile;
+    // Consulta base: chats con estado 'pendientes_ia'
+    let query = db.collection('contacts_whatsapp').where('status', '==', 'pendientes_ia');
+
+    // Mantenemos la lógica de filtrado por departamentos para que el conteo sea veraz para el usuario
+    if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
+        query = query.where('assignedDepartmentId', '==', state.activeDepartmentFilter);
+    } else if (profile && profile.role !== 'admin') {
+        if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
+            // Un agente solo ve el conteo de sus departamentos asignados (límite de 10 para Firestore 'in')
+            query = query.where('assignedDepartmentId', 'in', profile.assignedDepartments.slice(0, 10));
+        } else {
+            // Si el agente no tiene departamentos asignados, el conteo debe ser 0
+            query = query.where('assignedDepartmentId', '==', 'none');
+        }
+    }
+
+    unsubscribePendingAiCountListener = query.onSnapshot(snapshot => {
+        console.log(`[Real-time] Actualizando conteo de Pendientes IA: ${snapshot.size}`);
+        state.pendingAiCount = snapshot.size;
+        
+        // Actualizar el contador en la UI cada vez que hay un cambio en Firestore
+        if (typeof actualizarContadorPendientesIA === 'function') {
+            actualizarContadorPendientesIA(snapshot.size);
+        }
+    }, error => {
+        console.error("Error en real-time listener de conteo IA:", error);
+    });
+}
+
 
 /**
  * Carga la siguiente página de contactos desde la API (scroll infinito).
