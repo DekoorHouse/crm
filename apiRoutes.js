@@ -730,9 +730,13 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         let isFinalCommand = false;
         let cleanedText = text;
 
-        if (text && text.toLowerCase().includes('/final')) {
+        if (text && (text.toLowerCase().includes('/final') || text.toLowerCase().includes('ya registramos tu pedido'))) {
             isFinalCommand = true;
-            cleanedText = text.replace(/\/final/gi, '').trim();
+            if (text.toLowerCase().includes('/final')) {
+                cleanedText = text.replace(/\/final/gi, '').trim();
+            } else {
+                cleanedText = text; // Mantenemos la frase intacta si no es el comando técnico /final
+            }
         }
 
         // --- Lógica para enviar PLANTILLA ---
@@ -867,9 +871,13 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         let isFinalCommand = false;
         let cleanedText = text;
 
-        if (text && text.toLowerCase().includes('/final')) {
+        if (text && (text.toLowerCase().includes('/final') || text.toLowerCase().includes('ya registramos tu pedido'))) {
             isFinalCommand = true;
-            cleanedText = text.replace(/\/final/gi, '').trim();
+            if (text.toLowerCase().includes('/final')) {
+                cleanedText = text.replace(/\/final/gi, '').trim();
+            } else {
+                cleanedText = text;
+            }
         }
 
         // Determinar texto para DB (igual que en envío normal)

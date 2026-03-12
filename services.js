@@ -734,11 +734,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             aiStatus: admin.firestore.FieldValue.delete()
         };
 
-        // Si se detectó /final, desactivar bot y mover a Pendientes IA
+        // Si se detectó /final o la frase de registro de pedido, desactivar bot y mover a Pendientes IA
         if (shouldDeactivate) {
             updateData.botActive = false;
             updateData.status = 'pendientes_ia';
-            console.log(`[AI] Comando "/final" ejecutado para ${contactId}. Desactivando bot y moviendo a Pendientes IA.`);
+            console.log(`[AI] Desactivación automática activada para ${contactId} por comando o frase clave. Moviendo a Pendientes IA.`);
         }
 
         await contactRef.update(updateData);
