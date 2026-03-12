@@ -179,6 +179,45 @@ async function fetchInitialContacts() {
     }
 }
 
+/**
+ * Obtiene el conteo total de chats pendientes de IA desde el servidor.
+ * Respeta el perfil del usuario (departamentos asignados) para que el número sea veraz.
+ */
+async function fetchPendingAiCount() {
+    try {
+        let departmentIdParam = null;
+        const profile = state.currentUserProfile;
+
+        // Prioridad: 1. Filtro activo en UI. 2. Departamentos del usuario (si no es admin).
+        if (state.activeDepartmentFilter && state.activeDepartmentFilter !== 'all') {
+            departmentIdParam = state.activeDepartmentFilter;
+        } else if (profile && profile.role !== 'admin') {
+            if (profile.assignedDepartments && profile.assignedDepartments.length > 0) {
+                departmentIdParam = profile.assignedDepartments.join(',');
+            } else {
+                departmentIdParam = 'none';
+            }
+        }
+
+        let url = `${API_BASE_URL}/api/contacts/pending-ia-count`;
+        if (departmentIdParam) {
+            url += `?departmentId=${departmentIdParam}`;
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (response.ok && data.success) {
+            state.pendingAiCount = data.count; // Guardar en el estado global
+            return data.count;
+        }
+        return 0;
+    } catch (error) {
+        console.error('Error fetching pending AI count:', error);
+        return state.pendingAiCount || 0;
+    }
+}
+
 
 /**
  * Carga la siguiente página de contactos desde la API (scroll infinito).

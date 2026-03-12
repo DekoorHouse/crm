@@ -144,15 +144,16 @@ function renderTagFilters() {
 }
 
 /**
- * Calcula la cantidad de chats pendientes de IA y actualiza el contador visual.
+ * Obtiene la cantidad total de chats pendientes de IA desde el servidor y actualiza el contador visual.
+ * Esto soluciona la inconsistencia causada por el cargado paginado (Lazy Loading) del frontend.
  */
-function actualizarContadorPendientesIA() {
+async function actualizarContadorPendientesIA() {
     const filterBtn = document.getElementById('filter-pendientes_ia');
     if (!filterBtn) return;
 
-    // 1. Calcular el total de chats pendientes de IA en el estado actual
-    // Contamos tanto los contactos en la lista principal como los filtrados si aplica.
-    const totalPendientes = (state.contacts || []).filter(c => c.status === 'pendientes_ia').length;
+    // 1. Obtener el total real desde el servidor (fuente de la verdad global)
+    // Usamos fetchPendingAiCount() que consulta directamente a Firestore (count query)
+    const totalPendientes = await fetchPendingAiCount();
 
     // 2. Buscar o crear el badge del contador
     let badge = document.getElementById('pending-ai-counter');

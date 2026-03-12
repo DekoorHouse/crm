@@ -79,6 +79,7 @@ let state = {
     currentUserProfile: null, // Perfil del usuario actual (incluye assignedDepartments y role)
     allUsers: [], // Lista de todos los usuarios del sistema
     activeDepartmentFilter: 'all', // Filtro de departamento activo en la lista de chats
+    pendingAiCount: 0, // Conteo global de chats pendientes de IA
 
     // --- NUEVO: Estado para Entrenamiento de IA ---
     aiKnowledgeBase: [], // Documentos de la base de conocimiento

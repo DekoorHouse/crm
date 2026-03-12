@@ -426,6 +426,34 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
 
 // --- El resto de las rutas no necesitan cambios ---
 // ... (todas las demás rutas permanecen igual) ...
+// --- Endpoint GET /api/contacts/pending-ia-count (Conteo global de pendientes IA) ---
+router.get('/contacts/pending-ia-count', async (req, res) => {
+    try {
+        const { departmentId } = req.query;
+        let query = db.collection('contacts_whatsapp').where('status', '==', 'pendientes_ia');
+
+        // Filtrar por departamento si es necesario (para que el conteo sea relevante al usuario)
+        if (departmentId && departmentId !== 'all') {
+            if (departmentId.includes(',')) {
+                const ids = departmentId.split(',').map(id => id.trim()).filter(id => id);
+                if (ids.length > 0) {
+                    query = query.where('assignedDepartmentId', 'in', ids.slice(0, 10));
+                }
+            } else {
+                query = query.where('assignedDepartmentId', '==', departmentId);
+            }
+        }
+
+        const countSnapshot = await query.count().get();
+        const totalCount = countSnapshot.data().count;
+
+        res.status(200).json({ success: true, count: totalCount });
+    } catch (error) {
+        console.error('Error getting pending IA count:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener el conteo.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/contacts (Paginado y con filtro de etiqueta) ---
 router.get('/contacts', async (req, res) => {
     try {
