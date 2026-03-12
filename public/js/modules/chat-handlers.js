@@ -54,6 +54,15 @@ function handleSearchContacts() {
     }
     // --- FIN DE LA MODIFICACIÓN ---
 
+    // --- NUEVO: Filtros de Etiqueta y No Leídos (Reactividad Frontend) ---
+    if (state.activeFilter && state.activeFilter !== 'all') {
+        contactsToRender = contactsToRender.filter(c => c.status === state.activeFilter);
+    }
+    if (state.unreadOnly) {
+        contactsToRender = contactsToRender.filter(c => c.unreadCount > 0);
+    }
+    // --------------------------------------------------------------------
+
     const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
 
@@ -879,20 +888,6 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
     });
 }
 
-function handleStatusChange(contactId, newStatusKey) {
-    const id = contactId || state.selectedContactId;
-    if (!id) return;
-
-    const contact = state.contacts.find(c => c.id === id);
-    if (!contact) return;
-
-    const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
-
-    db.collection('contacts_whatsapp').doc(id).update({ status: finalStatus }).catch(err => {
-        console.error("Error updating status:", err);
-        showError("No se pudo actualizar la etiqueta.");
-    });
-}
 
 function stageFile(file) { 
     if (!file || state.isUploading) return; 
