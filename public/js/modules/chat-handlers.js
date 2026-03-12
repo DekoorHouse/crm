@@ -24,19 +24,9 @@ function handleSearchInput(event) {
 
 // CORREGIDO: Ahora aplica filtros de departamento y oculta el mensaje de "Cargando..."
 function handleSearchContacts() {
+    // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
     let contactsToRender = state.contacts;
     
-    // 1. Filtrar por etiqueta activa (excepto si es 'all')
-    if (state.activeFilter && state.activeFilter !== 'all') {
-        contactsToRender = contactsToRender.filter(contact => contact.status === state.activeFilter);
-    }
-
-    // 2. Filtrar por no leídos si el toggle está activo
-    if (state.unreadOnly) {
-        contactsToRender = contactsToRender.filter(contact => (contact.unreadCount || 0) > 0);
-    }
-
-    // 3. Filtro por Departamentos del Usuario (Seguridad)
     const user = state.currentUserProfile; // Obtenido en auth.js al iniciar sesión
     
     // Aplicar filtro de seguridad si el usuario ya cargó y NO es admin
@@ -45,12 +35,12 @@ function handleSearchContacts() {
         
         contactsToRender = contactsToRender.filter(contact => {
             const deptId = contact.assignedDepartmentId;
-            
+
             // Regla 1: Si NO tiene ID de departamento, es visible para todos (es "Gris" nativo)
             if (!deptId) {
                 return true;
             }
-            
+
             // Regla 2: Si tiene ID, pero ese departamento YA NO EXISTE en el sistema,
             // se considera huérfano ("Gris" visualmente) y debe ser visible para todos.
             const deptExists = state.departments.some(d => d.id === deptId);
@@ -62,6 +52,7 @@ function handleSearchContacts() {
             return userDepts.includes(deptId);
         });
     }
+    // --- FIN DE LA MODIFICACIÓN ---
 
     const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
@@ -475,9 +466,6 @@ async function handleSelectContact(contactId) {
             } else {
                 state.contacts.unshift(updatedContact);
             }
-            // Refrescar lista de contactos para aplicar filtros (ej. si cambia estatus)
-            handleSearchContacts();
-            
             // Si el timer cambió o se activó, actualizarlo en la UI
             if (window.checkAiTimer) window.checkAiTimer();
         }
@@ -900,17 +888,9 @@ function handleStatusChange(contactId, newStatusKey) {
 
     const finalStatus = contact.status === newStatusKey ? null : newStatusKey;
 
-    // Actualización optimista
-    contact.status = finalStatus;
-    handleSearchContacts();
-    if (state.selectedContactId === id) renderChatWindow();
-
     db.collection('contacts_whatsapp').doc(id).update({ status: finalStatus }).catch(err => {
         console.error("Error updating status:", err);
         showError("No se pudo actualizar la etiqueta.");
-        // Revertir en caso de error
-        contact.status = !finalStatus; // Simplificado, idealmente guardar original
-        handleSearchContacts();
     });
 }
 

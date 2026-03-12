@@ -733,10 +733,7 @@ const ContactItemTemplate = (contact, isSelected) => {
             </div>
             <div class="flex justify-between items-center">
                 <p class="text-xs truncate pr-2 text-gray-500">${typingText}</p>
-                <div class="flex items-center gap-1">
-                    ${contact.aiLastError ? `<span class="text-[10px] text-red-500 bg-red-50 px-1 rounded animate-pulse" title="${contact.aiLastError.replace(/"/g, '&quot;')}"><i class="fas fa-exclamation-triangle"></i> Error IA</span>` : ''}
-                    ${orderBadgeHTML}
-                </div>
+                ${orderBadgeHTML}
             </div>
         </div>`;
 

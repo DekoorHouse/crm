@@ -649,13 +649,13 @@ router.post('/contacts/:contactId/skip-ai', async (req, res) => {
     const { contactId } = req.params;
     try {
         const skipped = await skipAiTimer(contactId);
-        // Devolvemos 200 siempre que no haya error interno, ya que el objetivo final (que no haya espera) se cumple
-        res.status(200).json({ 
-            success: true, 
-            message: skipped ? 'Temporizador saltado correctamente.' : 'No había un temporizador activo o ya se procesó.' 
-        });
+        if (skipped) {
+            res.status(200).json({ success: true, message: 'Temporizador saltado correctamente.' });
+        } else {
+            res.status(404).json({ success: false, message: 'No se encontró un temporizador activo para este contacto.' });
+        }
     } catch (error) {
-        console.error(`[API] Error al saltar el timer de la IA para ${contactId}:`, error);
+        console.error(`Error al saltar el timer de la IA para ${contactId}:`, error);
         res.status(500).json({ success: false, message: 'Error interno al saltar el temporizador.' });
     }
 });
