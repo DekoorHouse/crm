@@ -430,17 +430,47 @@ function invalidateGeminiCache() {
 async function generateGeminiResponse(prompt, imageParts = []) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
-    const payload = { contents: [{ parts: [{ text: prompt }, ...imageParts] }] };
+    const safetySettings = [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+    ];
+    const payload = { 
+        contents: [{ parts: [{ text: prompt }, ...imageParts] }],
+        safetySettings
+    };
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts
-        ?.filter(part => !part.thought) // Filtramos las partes de "pensamiento/razonamiento" si existen
-        ?.map(part => part.text)
-        ?.join('')
-        ?.trim();
+    
+    if (!result.candidates || result.candidates.length === 0) {
+        console.error(`[AI] Respuesta sin candidatos. Result:`, JSON.stringify(result));
+        throw new Error('La IA no generó ninguna respuesta (sin candidatos).');
+    }
 
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    const candidate = result.candidates[0];
+    const parts = candidate.content?.parts || [];
+    
+    // Filtrar partes: nos quedamos solo con las que tienen texto y NO son pensamientos/razonamiento
+    let generatedText = parts
+        .filter(part => part.text && part.thought !== true) // Asegurar que tenga texto y no sea pensamiento explícito
+        .map(part => part.text)
+        .join('')
+        .trim();
+
+    if (!generatedText) {
+        const finishReason = candidate.finishReason || 'UNKNOWN';
+        console.warn(`[AI] No se obtuvo texto. Razón de finalización: ${finishReason}. Result:`, JSON.stringify(result));
+        
+        // Si no hay texto filtrado pero hay texto en algún lado, intentar recuperarlo como último recurso
+        if (parts.length > 0 && parts[0].text) {
+             generatedText = parts[0].text.trim();
+             console.log(`[AI] Intentando recuperación de texto de la primera parte disponible.`);
+        } else {
+             throw new Error(`No se recibió una respuesta válida de la IA. Razón: ${finishReason}`);
+        }
+    }
     
     // Limpieza de prefijos comunes si el modelo los añade
     if (generatedText.startsWith('Asistente:')) {
@@ -464,9 +494,16 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     
+    const safetySettings = [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+    ];
     const payload = {
         contents: [{ parts: [{ text: dynamicPrompt }, ...imageParts], role: 'user' }],
-        cachedContent: cacheName
+        cachedContent: cacheName,
+        safetySettings
     };
 
     const geminiResponse = await fetch(apiUrl, {
@@ -481,13 +518,34 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
     }
 
     const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts
-        ?.filter(part => !part.thought) // Filtramos las partes de "pensamiento/razonamiento" si existen
-        ?.map(part => part.text)
-        ?.join('')
-        ?.trim();
+    
+    if (!result.candidates || result.candidates.length === 0) {
+        console.error(`[AI-Cache] Respuesta sin candidatos. Result:`, JSON.stringify(result));
+        throw new Error('La IA no generó ninguna respuesta (sin candidatos).');
+    }
 
-    if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA (cached).');
+    const candidate = result.candidates[0];
+    const parts = candidate.content?.parts || [];
+    
+    // Filtrar partes: nos quedamos solo con las que tienen texto y NO son pensamientos/razonamiento
+    let generatedText = parts
+        .filter(part => part.text && part.thought !== true) // Asegurar que tenga texto y no sea pensamiento explícito
+        .map(part => part.text)
+        .join('')
+        .trim();
+
+    if (!generatedText) {
+        const finishReason = candidate.finishReason || 'UNKNOWN';
+        console.warn(`[AI-Cache] No se obtuvo texto. Razón de finalización: ${finishReason}. Result:`, JSON.stringify(result));
+        
+        // Si no hay texto filtrado pero hay texto en algún lado, intentar recuperarlo como último recurso
+        if (parts.length > 0 && parts[0].text) {
+             generatedText = parts[0].text.trim();
+             console.log(`[AI-Cache] Intentando recuperación de texto de la primera parte disponible.`);
+        } else {
+             throw new Error(`No se recibió una respuesta válida de la IA (cached). Razón: ${finishReason}`);
+        }
+    }
     
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
@@ -744,8 +802,14 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         const updateData = { 
             lastMessage: lastText, 
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
-            aiStatus: admin.firestore.FieldValue.delete()
+            aiStatus: admin.firestore.FieldValue.delete(),
+            aiLastError: admin.firestore.FieldValue.delete() // Limpiar error si tuvo éxito
         };
+
+        if (aiMessages.length === 0) {
+            console.warn(`[AI] La respuesta terminó pero no se enviaron mensajes. aiResponse: "${aiResponse}"`);
+            updateData.aiLastError = "Respuesta vacía tras filtrado.";
+        }
 
         // Si se detectó /final o la frase de registro de pedido, desactivar bot y mover a Pendientes IA
         if (shouldDeactivate) {
@@ -758,8 +822,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
-        // Asegurarse de limpiar el estado incluso en error
-        await contactRef.update({ aiStatus: admin.firestore.FieldValue.delete() });
+        // Guardar el error en el contacto para diagnóstico
+        await contactRef.update({ 
+            aiStatus: admin.firestore.FieldValue.delete(),
+            aiLastError: error.message 
+        });
     }
 }
 
