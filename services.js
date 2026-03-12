@@ -302,7 +302,7 @@ async function getShippingQuote(zipTo) {
 // === SERVICIOS DE GEMINI (IA) con Context Caching ================
 // =================================================================
 
-const GEMINI_MODEL = 'gemini-3-flash-preview';
+const GEMINI_MODEL = 'gemini-2.0-flash'; // Cambiado de 'gemini-3-flash-preview' a un modelo existente
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
 
@@ -383,7 +383,7 @@ async function getOrCreateCache(botInstructions) {
             role: 'user'
         }],
         systemInstruction: {
-            parts: [{ text: 'Eres un asistente virtual de atención al cliente por WhatsApp. Responde de forma concisa, amigable y útil. Usa la información proporcionada en el contexto para responder.' }]
+            parts: [{ text: 'Eres un asistente virtual de atención al cliente por WhatsApp. Responde de forma concisa, amigable y útil. Usa la información proporcionada en el contexto para responder. NO incluyas tu razonamiento interno en la respuesta final, solo entrega el mensaje para el cliente.' }]
         },
         ttl: CACHE_TTL
     };
@@ -434,8 +434,15 @@ async function generateGeminiResponse(prompt, imageParts = []) {
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    let generatedText = result.candidates[0]?.content?.parts
+        ?.filter(part => !part.thought) // Filtramos las partes de "pensamiento/razonamiento" si existen
+        ?.map(part => part.text)
+        ?.join('')
+        ?.trim();
+
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA.');
+    
+    // Limpieza de prefijos comunes si el modelo los añade
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
@@ -474,8 +481,14 @@ async function generateGeminiResponseWithCache(cacheName, dynamicPrompt, imagePa
     }
 
     const result = await geminiResponse.json();
-    let generatedText = result.candidates[0]?.content?.parts[0]?.text?.trim();
+    let generatedText = result.candidates[0]?.content?.parts
+        ?.filter(part => !part.thought) // Filtramos las partes de "pensamiento/razonamiento" si existen
+        ?.map(part => part.text)
+        ?.join('')
+        ?.trim();
+
     if (!generatedText) throw new Error('No se recibió una respuesta válida de la IA (cached).');
+    
     if (generatedText.startsWith('Asistente:')) {
         generatedText = generatedText.substring('Asistente:'.length).trim();
     }
