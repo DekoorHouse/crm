@@ -673,6 +673,44 @@ router.post('/contacts/:contactId/cancel-ai', async (req, res) => {
     }
 });
 
+// --- Endpoint DELETE /api/contacts/:contactId/messages (Borrar historial de chat) ---
+router.delete('/contacts/:contactId/messages', async (req, res) => {
+    const { contactId } = req.params;
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        
+        // Función interna para borrar en lotes (evita límites de batch de Firestore)
+        async function deleteMessages(query) {
+            const snapshot = await query.get();
+            if (snapshot.size === 0) return;
+
+            const batch = db.batch();
+            snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+            await batch.commit();
+
+            // Llamada recursiva para el siguiente lote
+            if (snapshot.size > 0) {
+                return deleteMessages(query);
+            }
+        }
+
+        // Ejecutar borrado en lotes de 400
+        await deleteMessages(contactRef.collection('messages').limit(400));
+
+        // Actualizar datos de contacto para reflejar el borrado
+        await contactRef.update({
+            lastMessage: 'Historial borrado por el equipo.',
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: 0
+        });
+
+        res.status(200).json({ success: true, message: 'Historial de chat borrado correctamente.' });
+    } catch (error) {
+        console.error(`❌ Error al borrar el historial para ${contactId}:`, error);
+        res.status(500).json({ success: false, message: 'No se pudo borrar el historial del chat.' });
+    }
+});
+
 // --- Endpoint GET /api/contacts/:contactId/orders (Historial de pedidos) ---
 router.get('/contacts/:contactId/orders', async (req, res) => {
     try {

@@ -1057,6 +1057,12 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
+    const clearHistoryButtonHTML = `
+        <button onclick="handleClearChatHistory('${contact.id}')" class="p-2 rounded-full hover:bg-red-50 transition-colors text-red-500 ml-2" title="Borrar Historial de Chat">
+            <i class="fas fa-trash-alt"></i>
+        </button>
+    `;
+
     return `
         <div id="drag-drop-overlay-chat" class="drag-overlay hidden">
             <div class="drag-overlay-content">
@@ -1077,6 +1083,7 @@ const ChatWindowTemplate = (contact) => {
             <div class="flex items-center pr-2">
                 ${botToggleHTML}
                 ${transferButtonHTML}
+                ${clearHistoryButtonHTML}
             </div>
         </header>
         <div class="bg-white border-b border-gray-200 flex">

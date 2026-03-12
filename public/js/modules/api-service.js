@@ -691,6 +691,26 @@ async function fetchSingleOrder(orderId) {
 }
 
 /**
+ * Borra todo el historial de mensajes de un contacto.
+ * @param {string} contactId ID del contacto.
+ * @returns {Promise<object>} El resultado de la operación.
+ */
+async function deleteContactMessagesAPI(contactId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${contactId}/messages`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.message || 'Error al borrar historial.');
+        return data;
+    } catch (error) {
+        console.error('API Error (deleteContactMessages):', error);
+        throw error;
+    }
+}
+
+
+/**
  * Obtiene el conteo de mensajes entrantes por Ad ID para un rango de fechas específico.
  * Llama al nuevo endpoint del backend.
  * @param {string} startDate Fecha de inicio en formato YYYY-MM-DD.
