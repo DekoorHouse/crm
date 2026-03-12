@@ -619,7 +619,7 @@ router.put('/contacts/:contactId/status', async (req, res) => {
     const { contactId } = req.params;
     const { status } = req.body; // El nuevo estatus (ej. 'seguimiento')
 
-    if (!status) {
+    if (status === undefined) {
         return res.status(400).json({ success: false, message: 'El campo "status" es obligatorio.' });
     }
 
