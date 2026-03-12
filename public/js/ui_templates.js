@@ -947,6 +947,18 @@ const RemoteFilePreviewTemplate = (file) => {
 
 const StatusButtonsTemplate = (contact) => {
     let buttonsHtml = '<div class="status-btn-group">';
+    
+    // Botón especial para Pendientes IA
+    const isIAActive = contact.status === 'pendientes_ia';
+    buttonsHtml += `<button
+                        onclick="handleStatusChange('${contact.id}', 'pendientes_ia')"
+                        class="status-btn ${isIAActive ? 'active' : ''}"
+                        style="--btn-color: #8b5cf6;"
+                        title="Marcar como Pendiente de Revisión IA"
+                    >
+                        <i class="fas fa-robot text-[10px] mr-1"></i> Pendientes IA
+                    </button>`;
+
     state.tags.forEach(tag => {
         const isActive = contact.status === tag.key;
         buttonsHtml += `<button
