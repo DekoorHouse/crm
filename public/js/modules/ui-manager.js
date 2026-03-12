@@ -139,6 +139,41 @@ function renderTagFilters() {
     });
 
     container.innerHTML = buttonsHtml;
+    // Actualizar el contador después de renderizar los filtros
+    actualizarContadorPendientesIA();
+}
+
+/**
+ * Calcula la cantidad de chats pendientes de IA y actualiza el contador visual.
+ */
+function actualizarContadorPendientesIA() {
+    const filterBtn = document.getElementById('filter-pendientes_ia');
+    if (!filterBtn) return;
+
+    // 1. Calcular el total de chats pendientes de IA en el estado actual
+    // Contamos tanto los contactos en la lista principal como los filtrados si aplica.
+    const totalPendientes = (state.contacts || []).filter(c => c.status === 'pendientes_ia').length;
+
+    // 2. Buscar o crear el badge del contador
+    let badge = document.getElementById('pending-ai-counter');
+    
+    if (!badge) {
+        // Si no existe, lo insertamos al final del botón
+        badge = document.createElement('span');
+        badge.id = 'pending-ai-counter';
+        badge.className = 'ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-500 text-white shadow-sm transition-all duration-300';
+        filterBtn.appendChild(badge);
+    }
+
+    // 3. Actualizar el valor y la visibilidad
+    if (totalPendientes > 0) {
+        badge.textContent = totalPendientes;
+        badge.classList.remove('hidden');
+        badge.style.display = 'inline-block';
+    } else {
+        badge.classList.add('hidden');
+        badge.style.display = 'none';
+    }
 }
 
 // Renderiza la ventana principal de chat (cabecera, mensajes/notas, footer)

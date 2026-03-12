@@ -71,7 +71,7 @@ function handleSearchContacts() {
 
     // Ocultar el mensaje de "Cargando..." después de que la lista de contactos ha sido renderizada.
     if (contactsLoadingEl) {
-        contactsLoadingEl.style.display = 'none';
+        contactsLoadingEl.style.display = 'none'; if (typeof actualizarContadorPendientesIA === 'function') actualizarContadorPendientesIA();
     }
 }
 
