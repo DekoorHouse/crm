@@ -727,6 +727,13 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         let messageToSave; // Objeto para guardar en Firestore
         let messageId; // ID del mensaje de WhatsApp (wamid)
+        let isFinalCommand = false;
+        let cleanedText = text;
+
+        if (text && text.toLowerCase().includes('/final')) {
+            isFinalCommand = true;
+            cleanedText = text.replace(/\/final/gi, '').trim();
+        }
 
         // --- Lógica para enviar PLANTILLA ---
         if (template) {
@@ -770,9 +777,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                     fileType.startsWith('audio/') ? 'audio' : 'document';
 
             const mediaObject = { id: mediaId };
-            // Añadir caption si es relevante y hay texto
-            if (type !== 'audio' && text) {
-                mediaObject.caption = text;
+            // Añadir caption si es relevante y hay texto (usar texto filtrado de comandos)
+            if (type !== 'audio' && cleanedText) {
+                mediaObject.caption = cleanedText;
             }
 
             // Construir payload para la API de WhatsApp
@@ -823,11 +830,19 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         await messageRef.set(messageToSave); // Usar set() para manejar tanto creación como posible sobreescritura (en caso de tempId)
 
         // Actualizar último mensaje y resetear contador de no leídos en el contacto
-        await contactRef.update({
+        const contactUpdateData = {
             lastMessage: messageToSave.text,
             lastMessageTimestamp: messageToSave.timestamp, // Usar el timestamp del servidor
             unreadCount: 0 // Resetear contador al enviar un mensaje
-        });
+        };
+
+        // Si se detectó el comando /final, desactivar bot y mover a la cola de pendientes IA
+        if (isFinalCommand) {
+            contactUpdateData.botActive = false;
+            contactUpdateData.status = 'pendientes_ia';
+        }
+
+        await contactRef.update(contactUpdateData);
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
@@ -849,13 +864,20 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        let isFinalCommand = false;
+        let cleanedText = text;
+
+        if (text && text.toLowerCase().includes('/final')) {
+            isFinalCommand = true;
+            cleanedText = text.replace(/\/final/gi, '').trim();
+        }
 
         // Determinar texto para DB (igual que en envío normal)
-        let messageToSaveText = text;
-        if (fileUrl && !text) {
+        let messageToSaveText = cleanedText;
+        if (fileUrl && !cleanedText) {
             const type = fileType.startsWith('image/') ? 'image' :
                 fileType.startsWith('video/') ? 'video' :
-                    fileType.startsWith('audio/') ? 'audio' : 'document';
+                fileType.startsWith('audio/') ? 'audio' : 'document';
             messageToSaveText = (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : '🎵 Audio');
         }
 
@@ -877,12 +899,18 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         // Guardar el mensaje en la subcolección 'messages'
         await contactRef.collection('messages').add(messageToSave);
 
-        // Actualizar la vista previa del último mensaje en el documento del contacto
-        await contactRef.update({
+        // Actualizar la vista previa del último mensaje y el estado del bot
+        const contactUpdateData = {
             lastMessage: `[En cola] ${messageToSave.text}`, // Añadir prefijo para UI
             lastMessageTimestamp: messageToSave.timestamp,
-            // No resetear unreadCount aquí
-        });
+        };
+
+        if (isFinalCommand) {
+            contactUpdateData.botActive = false;
+            contactUpdateData.status = 'pendientes_ia';
+        }
+
+        await contactRef.update(contactUpdateData);
 
         res.status(200).json({ success: true, message: 'Mensaje encolado con éxito.' });
 

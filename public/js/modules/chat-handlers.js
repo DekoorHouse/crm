@@ -972,7 +972,12 @@ function selectQuickReply(replyId) {
 
     const input = document.getElementById('message-input');
     if (input) {
-        input.value = reply.message || '';
+        let text = reply.message || '';
+        // Si el atajo es 'final', añadimos la marca para que el backend desactive el bot e identifique el comando
+        if (reply.shortcut && reply.shortcut.toLowerCase() === 'final') {
+            text += ' /final';
+        }
+        input.value = text;
         input.focus();
         const event = new Event('input', { bubbles: true });
         input.dispatchEvent(event);

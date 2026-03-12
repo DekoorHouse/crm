@@ -176,6 +176,13 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         await contactRef.set(contactUpdateData, { merge: true });
     }
 
+    let cleanedText = text;
+    let isFinalCommand = false;
+    if (text && text.toLowerCase().includes('/final')) {
+        isFinalCommand = true;
+        cleanedText = text.replace(/\/final/gi, '').trim();
+    }
+
     if (fileUrl && fileType) {
         const type = fileType.startsWith('image/') ? 'image' :
                      fileType.startsWith('video/') ? 'video' :
@@ -184,18 +191,18 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         // --- INICIO DE LA CORRECCIÓN ---
         const mediaObject = { link: fileUrl };
         // La API de WhatsApp no permite 'caption' para audios.
-        if (type !== 'audio' && text) {
-            mediaObject.caption = text;
+        if (type !== 'audio' && cleanedText) {
+            mediaObject.caption = cleanedText;
         }
         // --- FIN DE LA CORRECCIÓN ---
 
         messagePayload = { messaging_product: 'whatsapp', to, type, [type]: mediaObject };
-        messageToSaveText = text || (type === 'image' ? '📷 Imagen' :
-                                     type === 'video' ? '🎥 Video' :
-                                     type === 'audio' ? '🎵 Audio' : '📄 Documento');
-    } else if (text) {
-        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: text } };
-        messageToSaveText = text;
+        messageToSaveText = cleanedText || (type === 'image' ? '📷 Imagen' :
+                                      type === 'video' ? '🎥 Video' :
+                                      type === 'audio' ? '🎵 Audio' : '📄 Documento');
+    } else if (cleanedText) {
+        messagePayload = { messaging_product: 'whatsapp', to, type: 'text', text: { body: cleanedText } };
+        messageToSaveText = cleanedText;
     } else {
         throw new Error("Se requiere texto o un archivo para enviar un mensaje.");
     }
@@ -209,7 +216,7 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         const response = await axios.post(url, messagePayload, { headers });
         console.log(`[LOG] Mensaje enviado a la API de WhatsApp con éxito para ${to}.`);
         const messageId = response.data.messages[0].id;
-        return { id: messageId, textForDb: messageToSaveText, fileUrlForDb: fileUrl || null, fileTypeForDb: fileType || null };
+        return { id: messageId, textForDb: messageToSaveText, fileUrlForDb: fileUrl || null, fileTypeForDb: fileType || null, isFinalCommand };
     } catch (error) {
         console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
