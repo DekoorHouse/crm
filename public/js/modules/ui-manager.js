@@ -2194,7 +2194,7 @@ function updateSimulatorTokenUI() {
     if (outputEl) outputEl.textContent = simulatorTokens.output.toLocaleString();
     if (cachedEl) cachedEl.textContent = simulatorTokens.cached.toLocaleString();
     if (totalEl) totalEl.textContent = (simulatorTokens.input + simulatorTokens.output).toLocaleString();
-    // Costos gemini-3.1-flash-preview (por 1M tokens)
+    // Costos gemini-3.0-flash (por 1M tokens)
     // Input: $0.50, Output: $3.00, Cached: $0.05 (90% descuento)
     const costInput = (newInput / 1_000_000) * 0.50;
     const costCached = (simulatorTokens.cached / 1_000_000) * 0.05;

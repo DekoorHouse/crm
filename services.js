@@ -302,7 +302,7 @@ async function getShippingQuote(zipTo) {
 // === SERVICIOS DE GEMINI (IA) con Context Caching ================
 // =================================================================
 
-const GEMINI_MODEL = 'gemini-3.1-flash-preview';
+const GEMINI_MODEL = 'gemini-3.0-flash';
 const GEMINI_BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
 const CACHE_TTL = '1800s'; // 30 minutos de TTL para el caché
 
@@ -311,7 +311,8 @@ let geminiCache = {
     name: null,          // Nombre del recurso del caché en Gemini (ej: "cachedContents/abc123")
     contentHash: null,   // Hash del contenido cacheado para detectar cambios
     createdAt: 0,        // Timestamp de creación
-    ttlMs: 30 * 60 * 1000 // 30 minutos en ms
+    ttlMs: 30 * 60 * 1000, // 30 minutos en ms
+    isSupported: true    // Bandera para saber si el modelo soporta createCachedContent
 };
 
 /**
@@ -352,6 +353,12 @@ async function buildStaticContext(botInstructions) {
  */
 async function getOrCreateCache(botInstructions) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    
+    // Si ya detectamos que el modelo no soporta caché explícito, salimos rápido
+    if (!geminiCache.isSupported) {
+        console.log(`[CACHE] Saltando caché porque el modelo ${GEMINI_MODEL} no lo soporta.`);
+        return null;
+    }
 
     const staticText = await buildStaticContext(botInstructions);
     const currentHash = simpleHash(staticText);
@@ -397,6 +404,13 @@ async function getOrCreateCache(botInstructions) {
     if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         console.error(`[CACHE] Error al crear caché:`, JSON.stringify(errorData));
+        
+        // Si el error indica que el modelo no es compatible con el método o no existe el endpoint, marcar como no soportado
+        if (response.status === 404 || (errorData.error && errorData.error.message.includes('not supported for createCachedContent'))) {
+            console.warn(`[CACHE] El modelo ${GEMINI_MODEL} no parece soportar Context Caching. Deshabilitando para esta sesión.`);
+            geminiCache.isSupported = false;
+        }
+        
         // Si falla el caching (ej: contenido muy corto), devolver null para usar fallback
         return null;
     }
