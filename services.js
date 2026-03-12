@@ -537,9 +537,14 @@ async function skipAiTimer(contactId) {
 }
 
 // Lógica principal movida a otra función
-async function processAutoReplyAI(contactId, message, contactRef, contactData) {
+async function processAutoReplyAI(contactId, message, contactRef, passedContactData) {
     console.log(`[AI] Iniciando proceso de IA para ${contactId} tras esperar que deje de escribir.`);
     
+    // Obtener los datos más frescos del contacto justo ahora
+    const freshContactSnap = await contactRef.get();
+    if (!freshContactSnap.exists) return;
+    const contactData = freshContactSnap.data();
+
     // Limpiar el campo aiNextRun al empezar el procesamiento y poner estado de generación
     await contactRef.update({ 
         aiNextRun: admin.firestore.FieldValue.delete(),
@@ -553,7 +558,7 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
         const shouldRun = isIndividuallyActive;
 
         if (!shouldRun) {
-            console.log(`[AI] El bot no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). No se enviará respuesta.`);
+            console.log(`[AI] El bot ya no está activo para ${contactId} (Global: ${globalBotActive}, Individual: ${contactData.botActive}). Abortando respuesta.`);
             return;
         }
 
@@ -670,8 +675,14 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
         }
 
         // Separar la respuesta en múltiples mensajes si contiene [SPLIT]
-        const aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
+        let aiMessages = aiResponse.split(/\[SPLIT\]/i).map(m => m.trim()).filter(m => m.length > 0);
         let lastText = "";
+
+        // Detectar si el bot debe desactivarse (/final) de forma insensible a mayúsculas
+        const shouldDeactivate = /\/final/i.test(aiResponse);
+
+        // Limpiar el comando /final de los mensajes individuales antes de enviar
+        aiMessages = aiMessages.map(m => m.replace(/\/final/ig, '').trim()).filter(m => m.length > 0);
 
         for (let i = 0; i < aiMessages.length; i++) {
             // Verificar cancelación entre mensajes si hay SPLIT
@@ -716,15 +727,15 @@ async function processAutoReplyAI(contactId, message, contactRef, contactData) {
             aiStatus: admin.firestore.FieldValue.delete()
         };
 
-        // Detectar comando /final para desactivar bot y mover chat
-        if (aiResponse.includes('/final')) {
+        // Si se detectó /final, desactivar bot y mover a Pendientes IA
+        if (shouldDeactivate) {
             updateData.botActive = false;
             updateData.status = 'pendientes_ia';
-            console.log(`[AI] Detectado "/final" para ${contactId}. Desactivando bot y moviendo a Pendientes IA.`);
+            console.log(`[AI] Comando "/final" ejecutado para ${contactId}. Desactivando bot y moviendo a Pendientes IA.`);
         }
 
         await contactRef.update(updateData);
-        console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas: ${aiMessages.length})`);
+        console.log(`[AI] Respuesta de IA enviada a ${contactId}. (Burbujas enviadas: ${aiMessages.length})`);
     } catch (error) {
         console.error(`❌ [AI] Error en el proceso de IA para ${contactId}:`, error.message);
         // Asegurarse de limpiar el estado incluso en error
