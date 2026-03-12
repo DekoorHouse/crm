@@ -628,12 +628,13 @@ router.put('/contacts/:contactId', async (req, res) => {
     }
 
     try {
-        // Actualizar documento del contacto
+        // Actualizar documento del contacto y notificar cambios en tiempo real
         await db.collection('contacts_whatsapp').doc(contactId).update({
             name: name,
             email: email || null, // Guardar null si está vacío
             nickname: nickname || null, // Guardar null si está vacío
-            name_lowercase: name.toLowerCase() // Actualizar campo para búsquedas
+            name_lowercase: name.toLowerCase(), // Actualizar campo para búsquedas
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp() // Trigger sync
         });
         res.status(200).json({ success: true, message: 'Contacto actualizado.' });
     } catch (error) {
@@ -660,9 +661,10 @@ router.put('/contacts/:contactId/status', async (req, res) => {
             return res.status(404).json({ success: false, message: 'Contacto no encontrado.' });
         }
 
-        // Actualizar solo el campo 'status' del contacto
+        // Actualizar el campo 'status' y el timestamp para notificar a todos los dispositivos en tiempo real
         await contactRef.update({
-            status: status
+            status: status,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
         });
 
         res.status(200).json({ success: true, message: `Estatus del contacto actualizado a "${status}".` });
