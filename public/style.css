@@ -450,17 +450,20 @@ body.dark-mode .picker-item:hover, body.dark-mode .picker-item.selected { backgr
 body.dark-mode .picker-add-btn:hover { background-color: #1a1b26; }
 .template-item .template-category { font-size: 0.75rem; background-color: var(--color-subtle-bg); color: var(--color-subtle-text); padding: 2px 6px; border-radius: 9999px; text-transform: uppercase; font-weight: 600; }
 
-.modal-backdrop { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
+.modal-backdrop, .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0, 0, 0, 0.5); z-index: 998; display: flex; align-items: center; justify-content: center; }
+body.dark-mode .modal-overlay { background-color: rgba(0, 0, 0, 0.8); }
+
 .modal-content {
     background-color: var(--color-container-bg);
-    padding: 25px;
+    padding: 30px 40px;
     border-radius: var(--border-radius-lg);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
     width: 90%;
     max-width: 500px;
     max-height: 90vh;
     overflow-y: auto;
     position: relative;
+    transition: all 0.3s ease;
 }
 .modal-content h2 { margin-top: 0; margin-bottom: 20px; font-size: 1.5rem; }
 .modal-content label { display: block; font-weight: 600; margin-bottom: 8px; }
@@ -653,29 +656,63 @@ label.disabled-icon {
 
 /* --- START: STYLES FOR NEW ORDER MODAL --- */
 #new-order-modal .modal-content {
-    max-width: 750px; /* Wider modal */
+    max-width: 750px;
     padding: 30px 40px;
 }
-#new-order-modal .modal-content h2 {
+#nuevoPedidoContainer h2, #editPedidoContainer h2 {
     text-align: center;
     font-size: 1.5em;
-    color: var(--color-primary); /* Green title */
+    color: var(--color-secondary);
     margin-bottom: 25px;
 }
-#new-order-form .form-grid {
+#formularioNuevoPedido .form-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
     gap: 18px 25px;
     margin-bottom: 25px;
 }
-#new-order-form .form-item-full {
+.form-item-full {
     grid-column: 1 / -1;
 }
-#new-order-form .form-actions {
+#formularioNuevoPedido .form-actions, #edit-order-form .form-actions {
     text-align: right;
     margin-top: 25px;
     padding-top: 20px;
     border-top: 1px solid var(--color-border);
+}
+
+#new-order-modal button, #order-edit-modal button {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    padding: 12px 25px;
+    border: none;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-size: 1rem;
+    margin-top: 10px;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: 12px;
+}
+
+#btnGuardarPedido, #order-update-btn {
+    background-color: var(--color-secondary) !important;
+    color: white !important;
+}
+
+#btnGuardarPedido:hover, #order-update-btn:hover {
+    background-color: #d8684a !important;
+}
+
+#new-order-modal button:not([type="submit"]), #order-edit-modal button:not([type="submit"]):not(#order-update-btn) {
+    background-color: #f0f0f0;
+    color: var(--color-text-light);
+}
+#new-order-modal button:not([type="submit"]):hover, #order-edit-modal button:not([type="submit"]):not(#order-update-btn):hover {
+    background-color: #e0e0e0;
+    color: var(--color-text);
 }
 #new-order-modal .modal-close-btn {
     position: absolute;
@@ -694,7 +731,7 @@ label.disabled-icon {
 
 
 /* Photo Upload Styling */
-#new-order-modal .file-input-container {
+#new-order-modal .file-input-container, #order-edit-modal .file-input-container {
     border: 2px dashed var(--color-border);
     border-radius: var(--border-radius-md);
     padding: 15px;
@@ -702,35 +739,47 @@ label.disabled-icon {
     transition: all 0.3s ease;
     outline: none;
 }
-#new-order-modal .file-input-container:focus-within {
+#new-order-modal .file-input-container:focus-within, #order-edit-modal .file-input-container:focus-within {
     border-color: var(--color-primary);
     box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2);
 }
-#new-order-modal .file-input-container.drag-over {
+#new-order-modal .file-input-container.drag-over, #order-edit-modal .file-input-container.drag-over {
     border-color: var(--color-primary);
     background-color: rgba(129, 178, 154, 0.1);
 }
-#new-order-modal .file-input-header {
+#new-order-modal .file-input-header, #order-edit-modal .file-input-header {
     display: flex;
     align-items: center;
     gap: 15px;
     margin-bottom: 15px;
 }
-#new-order-modal .custom-file-upload {
-    background-color: var(--color-primary);
+#new-order-modal .custom-file-upload, #order-edit-modal .custom-file-upload {
+    display: inline-block;
+    background-color: var(--color-secondary);
     color: white;
+    padding: 10px 20px;
+    border-radius: var(--border-radius-md);
+    cursor: pointer;
+    font-family: var(--font-heading);
+    font-weight: 600;
+    font-size: 1rem;
+    transition: background-color 0.2s ease, transform 0.1s ease, box-shadow 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
 }
-body.dark-mode #new-order-modal .custom-file-upload { color: #1a1b26; }
 #new-order-modal .custom-file-upload:hover {
-    background-color: #70a087; /* Darker primary */
+    background-color: #6aa88d;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
 }
-#new-order-modal .previews-container {
+#new-order-modal .previews-container, #order-edit-modal .previews-container {
     display: flex;
     flex-wrap: wrap;
     gap: 10px;
     min-height: 50px;
 }
-#new-order-modal .preview-thumbnail {
+#new-order-modal .preview-thumbnail, #order-edit-modal .preview-thumbnail {
     position: relative;
     width: 100px;
     height: 100px;
@@ -741,21 +790,21 @@ body.dark-mode #new-order-modal .custom-file-upload { color: #1a1b26; }
     cursor: grab;
     transition: border-color 0.2s ease, opacity 0.2s ease;
 }
-body.dark-mode #new-order-modal .preview-thumbnail { background-color: #1a1b26; }
-#new-order-modal .preview-thumbnail.dragging {
+body.dark-mode #new-order-modal .preview-thumbnail, body.dark-mode #order-edit-modal .preview-thumbnail { background-color: #1a1b26; }
+#new-order-modal .preview-thumbnail.dragging, #order-edit-modal .preview-thumbnail.dragging {
     opacity: 0.4;
     cursor: grabbing;
 }
-#new-order-modal .preview-thumbnail.selected {
+#new-order-modal .preview-thumbnail.selected, #order-edit-modal .preview-thumbnail.selected {
     border-color: var(--color-secondary);
     box-shadow: 0 0 8px var(--color-secondary);
 }
-#new-order-modal .preview-thumbnail img {
+#new-order-modal .preview-thumbnail img, #order-edit-modal .preview-thumbnail img {
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
-#new-order-modal .preview-thumbnail .delete-photo-btn {
+#new-order-modal .preview-thumbnail .delete-photo-btn, #order-edit-modal .preview-thumbnail .delete-photo-btn {
     position: absolute;
     top: 5px;
     right: 5px;
@@ -774,24 +823,24 @@ body.dark-mode #new-order-modal .preview-thumbnail { background-color: #1a1b26; 
     padding: 0;
     z-index: 2;
 }
-#new-order-modal .preview-thumbnail .delete-photo-btn:hover {
+#new-order-modal .preview-thumbnail .delete-photo-btn:hover, #order-edit-modal .preview-thumbnail .delete-photo-btn:hover {
     background-color: var(--color-danger);
-     transform: scale(1.1);
+    transform: scale(1.1);
 }
 
 /* Checkbox Style */
-#new-order-modal .checkbox-container {
+#new-order-modal .checkbox-container, #order-edit-modal .checkbox-container {
     display: flex;
     align-items: center;
     gap: 8px;
     margin-bottom: 12px;
 }
-#new-order-modal .checkbox-container input[type="checkbox"] {
+#new-order-modal .checkbox-container input[type="checkbox"], #order-edit-modal .checkbox-container input[type="checkbox"] {
     width: auto;
     margin-bottom: 0;
     flex-shrink: 0;
 }
-#new-order-modal .checkbox-container label {
+#new-order-modal .checkbox-container label, #order-edit-modal .checkbox-container label {
     margin-bottom: 0;
     font-weight: normal;
     font-size: 0.9em;

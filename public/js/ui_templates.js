@@ -1180,110 +1180,90 @@ const DateSeparatorTemplate = (dateString) => {
 };
 
 const NewOrderModalTemplate = () => `
-    <div id="new-order-modal" class="modal-backdrop">
-        <div class="modal-content !max-w-4xl !p-8 !rounded-2xl !shadow-2xl">
-            <button onclick="closeNewOrderModal()" class="modal-close-btn !top-4 !right-6 hover:text-red-500 transition-colors" title="Cerrar">&times;</button>
-            <h2 class="text-2xl font-bold text-primary mb-6 text-center border-b pb-4 border-gray-100"><i class="fas fa-pencil-alt mr-2"></i> Registrar Nuevo Pedido</h2>
-            <form id="formularioNuevoPedido" class="space-y-6">
-                 
-                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                     <div class="flex flex-col">
-                         <label for="pedidoProductoSelect" class="text-sm font-semibold text-gray-700 mb-2">Producto <span class="text-red-500">*</span></label>
-                         <select id="pedidoProductoSelect" required class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 transition-all outline-none">
-                            <option value="Modelo 7">Modelo 7</option>
-                            <option value="Portallaves">Portallaves</option>
-                            <option value="Calendario">Calendario</option>
-                            <option value="Placa de perro">Placa de perro</option>
-                            <option value="Otro">Otro</option>
-                         </select>
-                         <input type="text" id="pedidoProductoOtro" class="mt-3 w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" style="display: none;" placeholder="Nombre del producto">
-                     </div>
-                     <div class="flex flex-col">
-                         <label for="pedidoTelefono" class="text-sm font-semibold text-gray-700 mb-2">Teléfono <span class="text-red-500">*</span></label>
-                         <input type="tel" id="pedidoTelefono" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" placeholder="Ej: 521..." required>
-                     </div>
-                     <div class="flex flex-col">
-                          <label for="pedidoPrecio" class="text-sm font-semibold text-gray-700 mb-2">Precio (MXN)</label>
-                          <div class="relative">
-                              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
-                              <input type="number" id="pedidoPrecio" class="w-full pl-8 pr-4 rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" step="0.01" placeholder="Ej: 275.00" value="275">
+    <div id="new-order-modal" class="modal-overlay">
+        <div class="modal-content" id="modalContentNuevoPedido">
+            <button onclick="closeNewOrderModal()" class="modal-close-btn" title="Cerrar">&times;</button>
+            <div id="nuevoPedidoContainer">
+                 <h2 id="modalTitle"><i class="fas fa-pencil-alt"></i> Registrar Nuevo Pedido</h2>
+                 <form id="formularioNuevoPedido">
+                     <div class="form-grid">
+                         <div class="form-item">
+                             <label for="pedidoProductoSelect">Producto (*):</label>
+                             <select id="pedidoProductoSelect" required>
+                                <option value="Modelo 7">Modelo 7</option>
+                                <option value="Portallaves">Portallaves</option>
+                                <option value="Calendario">Calendario</option>
+                                <option value="Placa de perro">Placa de perro</option>
+                                <option value="Otro">Otro</option>
+                             </select>
+                             <input type="text" id="pedidoProductoOtro" style="display: none;" placeholder="Nombre del producto">
+                         </div>
+                         <div class="form-item">
+                             <label for="pedidoTelefono">Teléfono (*):</label>
+                             <input type="tel" id="pedidoTelefono" placeholder="Ej: 521..." required>
+                         </div>
+                         <div class="form-item">
+                              <label for="pedidoPrecio">Precio (MXN):</label>
+                              <input type="number" id="pedidoPrecio" step="0.01" placeholder="Ej: 275.00" value="275">
                           </div>
-                      </div>
-                  </div>
 
-                  <div class="space-y-6 mt-4">
-                      <!-- Bloque Pedido -->
-                      <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200/60 shadow-sm">
-                           <h3 class="text-lg font-bold text-gray-800 mb-1"><i class="fas fa-box-open mr-2 text-primary"></i>Datos del Pedido</h3>
-                           <p class="text-sm text-gray-500 mb-4">Adjunta imágenes y describe lo que el cliente desea.</p>
-                           
-                           <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-primary hover:bg-green-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="fileInputContainerProducto" tabindex="0">
-                               <input type="file" id="pedidoFotoFile" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                               <div class="flex flex-col items-center justify-center gap-3 relative z-0">
-                                   <div class="w-14 h-14 bg-green-100 text-primary rounded-full flex items-center justify-center text-2xl mb-1 group-hover:scale-110 transition-transform">
-                                       <i class="fas fa-cloud-upload-alt"></i>
+                          <div class="form-item form-item-full">
+                               <label for="pedidoFotoFile">Fotos del Pedido (Clic derecho o Ctrl+C para copiar):</label>
+                               <div class="file-input-container" id="fileInputContainerProducto" tabindex="0">
+                                   <input type="file" id="pedidoFotoFile" accept="image/*" multiple>
+                                   <div class="file-input-header">
+                                       <label for="pedidoFotoFile" class="custom-file-upload">
+                                           <i class="fas fa-upload"></i> Seleccionar
+                                       </label>
+                                       <span>O arrastra y suelta imágenes aquí</span>
                                    </div>
-                                   <div class="px-6 py-2 bg-primary text-white rounded-full shadow-md font-medium inline-flex items-center">
-                                       Seleccionar fotos
-                                   </div>
-                                   <span class="text-slate-500/80 text-sm font-medium">o arrastra y suelta aquí</span>
+                                   <div class="previews-container" id="fotosPreviewContainer">
+                                       </div>
                                </div>
-                               <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="fotosPreviewContainer"></div>
-                           </div>
-                           
-                           <div class="mt-5">
-                             <label for="pedidoDatosProducto" class="block text-sm font-semibold text-gray-700 mb-2">Detalles del Producto</label>
-                             <textarea id="pedidoDatosProducto" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[90px] p-3 text-sm outline-none resize-y" placeholder="Ej: Llavero de perrito con el nombre 'Firulais', grabado por detrás..."></textarea>
-                           </div>
-                      </div>
+                          </div>
+                         <div class="form-item form-item-full">
+                             <label for="pedidoDatosProducto">Detalles del Producto:</label>
+                             <textarea id="pedidoDatosProducto" placeholder="Describe los detalles específicos del producto solicitado..."></textarea>
+                         </div>
 
-                      <!-- Bloque Promoción -->
-                      <div class="bg-slate-50 p-6 rounded-2xl border border-slate-200/60 shadow-sm">
-                        <div class="flex items-center justify-between mb-4 border-b border-slate-200 pb-3">
-                            <div>
-                                <h3 class="text-lg font-bold text-gray-800 mb-1"><i class="fas fa-gift mr-2 text-orange-500"></i>Fotos de la Promoción</h3>
-                                <p class="text-sm text-gray-500">Imágenes adicionales para el cliente (opcional).</p>
+                         <div class="form-item form-item-full">
+                            <label for="pedidoFotoPromocionFile">Fotos de la Promoción (Clic derecho o Ctrl+C para copiar):</label>
+                            
+                            <!-- NEW CHECKBOX CONTAINER -->
+                            <div class="checkbox-container" id="mismaFotoContainer" style="display: none;">
+                                <input type="checkbox" id="mismaFotoCheckbox">
+                                <label for="mismaFotoCheckbox">Usar la(s) misma(s) foto(s) del pedido</label>
                             </div>
-                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm" id="mismaFotoContainer" style="display: none;">
-                                <input type="checkbox" id="mismaFotoCheckbox" class="rounded text-primary focus:ring-primary cursor-pointer w-4 h-4">
-                                <label for="mismaFotoCheckbox" class="text-sm font-medium text-gray-700 cursor-pointer select-none">Usar foto(s) del pedido</label>
-                            </div>
-                        </div>
-                        
-                        <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-orange-400 hover:bg-orange-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="fileInputContainerPromocion" tabindex="0">
-                            <input type="file" id="pedidoFotoPromocionFile" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
-                            <div class="flex flex-col items-center justify-center gap-3 relative z-0">
-                                <div class="w-14 h-14 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center text-2xl mb-1 group-hover:scale-110 transition-transform">
-                                    <i class="fas fa-images"></i>
+                            
+                            <div class="file-input-container" id="fileInputContainerPromocion" tabindex="0">
+                                <input type="file" id="pedidoFotoPromocionFile" accept="image/*" multiple>
+                                <div class="file-input-header">
+                                    <label for="pedidoFotoPromocionFile" class="custom-file-upload">
+                                        <i class="fas fa-upload"></i> Seleccionar
+                                    </label>
+                                    <span>O arrastra y suelta imágenes aquí</span>
                                 </div>
-                                <div class="px-6 py-2 bg-orange-500 text-white rounded-full shadow-md font-medium inline-flex items-center">
-                                    Seleccionar promos
-                                </div>
-                                <span class="text-slate-500/80 text-sm font-medium">o arrastra y suelta aquí</span>
+                                <div class="previews-container" id="promoFotosPreviewContainer">
+                                    </div>
                             </div>
-                            <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="promoFotosPreviewContainer"></div>
                         </div>
-                        
-                        <div class="mt-5">
-                            <label for="pedidoDatosPromocion" class="block text-sm font-semibold text-gray-700 mb-2">Detalles de la Promoción</label>
-                            <textarea id="pedidoDatosPromocion" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-orange-400 focus:ring focus:ring-orange-400 focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Describe la promoción aplicada, si existe..."></textarea>
+                        <div class="form-item form-item-full">
+                            <label for="pedidoDatosPromocion">Detalles de la Promoción:</label>
+                            <textarea id="pedidoDatosPromocion" placeholder="Describe la promoción aplicada, si existe..."></textarea>
                         </div>
-                    </div>
 
-                    <!-- Comentarios Adicionales -->
-                    <div>
-                           <label for="pedidoComentarios" class="block text-sm font-semibold text-gray-700 mb-2 ml-1">Comentarios Adicionales</label>
-                           <textarea id="pedidoComentarios" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Añade cualquier otra nota relevante para nosotros..."></textarea>
-                    </div>
-                  </div>
-                  
-                  <div id="mensajeErrorPedido" class="text-red-500 text-sm font-medium text-center bg-red-50 p-2 rounded-lg empty:hidden"></div>
-                  
-                  <div class="flex justify-end gap-4 pt-6 mt-6 border-t border-gray-100">
-                       <button type="button" onclick="closeNewOrderModal()" class="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-colors focus:ring-2 focus:ring-gray-300 outline-none"><i class="fas fa-times mr-2 text-gray-500"></i> Cancelar</button>
-                       <button type="submit" id="btnGuardarPedido" class="px-6 py-2.5 bg-primary text-white rounded-xl hover:bg-opacity-90 shadow-[0_4px_14px_0_rgba(129,178,154,0.39)] font-bold transition-transform active:scale-95 focus:ring-2 focus:ring-primary focus:ring-offset-2 outline-none"><i class="fas fa-check-circle mr-2"></i> Guardar Pedido</button>
-                  </div>
-             </form>
+                        <div class="form-item form-item-full">
+                               <label for="pedidoComentarios">Comentarios Adicionales:</label>
+                               <textarea id="pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
+                        </div>
+                     </div>
+                     <div id="mensajeErrorPedido"></div>
+                     <div class="form-actions">
+                          <button type="button" onclick="closeNewOrderModal()"><i class="fas fa-times"></i> Cancelar</button>
+                          <button type="submit" id="btnGuardarPedido"><i class="fas fa-save"></i> Guardar Pedido</button>
+                     </div>
+                 </form>
+            </div>
         </div>
     </div>
 `;
@@ -1448,8 +1428,8 @@ const OrderEditModalTemplate = (order) => `
                      </div>
                      <div id="edit-order-error-message"></div>
                      <div class="form-actions">
-                          <button type="button" onclick="closeOrderEditModal()" class="btn btn-subtle"><i class="fas fa-times mr-2"></i> Cancelar</button>
-                          <button type="submit" id="order-update-btn" class="btn btn-primary"><i class="fas fa-save mr-2"></i> Guardar Cambios</button>
+                          <button type="button" onclick="closeOrderEditModal()"><i class="fas fa-times"></i> Cancelar</button>
+                          <button type="submit" id="order-update-btn"><i class="fas fa-save"></i> Guardar Cambios</button>
                      </div>
                  </form>
             </div>
