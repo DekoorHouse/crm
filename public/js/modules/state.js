@@ -103,7 +103,8 @@ let unsubscribeMessagesListener = null,
     // NUEVOS LISTENERS
     unsubscribeDepartmentsListener = null,
     unsubscribeAdRoutingRulesListener = null,
-    unsubscribePendingAiCountListener = null;
+    unsubscribePendingAiCountListener = null,
+    unsubscribeDailyOrdersListener = null;
 
 // --- Instancias de Gráficas (Chart.js) ---
 let dailyMessagesChart = null; // Gráfica de mensajes diarios (general)

@@ -258,6 +258,35 @@ function listenForPendingAiCount() {
 
 
 /**
+ * Inicia un listener en tiempo real para el conteo de pedidos registrados HOY.
+ * Esto permite que el badge del header se actualice automáticamente.
+ */
+function listenForDailyOrderCount() {
+    if (unsubscribeDailyOrdersListener) unsubscribeDailyOrdersListener();
+
+    // Obtener el inicio del día de hoy (medianoche)
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    // Consulta: pedidos donde createdAt sea mayor o igual al inicio de hoy
+    const q = db.collection('pedidos')
+                .where('createdAt', '>=', firebase.firestore.Timestamp.fromDate(todayStart));
+
+    unsubscribeDailyOrdersListener = q.onSnapshot(snapshot => {
+        const count = snapshot.size;
+        console.log(`[Real-time] Actualizando conteo de Pedidos de Hoy: ${count}`);
+        
+        // Actualizar la UI
+        if (typeof actualizarBadgePedidosHoy === 'function') {
+            actualizarBadgePedidosHoy(count);
+        }
+    }, error => {
+        console.error("Error en real-time listener de conteo de pedidos:", error);
+    });
+}
+
+
+/**
  * Carga la siguiente página de contactos desde la API (scroll infinito).
  */
 async function fetchMoreContacts() {

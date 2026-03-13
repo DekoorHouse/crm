@@ -30,6 +30,7 @@ function startApp() {
     listenForDepartments();
     listenForAdRoutingRules();
     listenForPendingAiCount(); // Listener en tiempo real para el conteo de IA
+    listenForDailyOrderCount(); // Listener en tiempo real para el conteo de pedidos de hoy
     // ----------------------------------------------------
 
     // Fetch initial non-realtime data
@@ -62,6 +63,7 @@ function stopApp() {
     if (unsubscribeAdRoutingRulesListener) unsubscribeAdRoutingRulesListener();
     if (unsubscribeContactListener) unsubscribeContactListener();
     if (unsubscribePendingAiCountListener) unsubscribePendingAiCountListener();
+    if (unsubscribeDailyOrdersListener) unsubscribeDailyOrdersListener();
     // -------------------------------
 
     // Remove global listeners

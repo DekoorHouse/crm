@@ -2726,3 +2726,26 @@ window.navigateTo = function(...args) {
 // Exportar para que otros módulos puedan lanzarlo
 window.checkAiTimer = checkAiTimer;
 // --- END: AI TIMER FOR NORMAL CHATS ---
+
+/**
+ * Actualiza el contenido del badge de pedidos diarios en el header.
+ * Si el conteo es 0, oculta el badge.
+ * @param {number} count El número de pedidos registrados hoy.
+ */
+function actualizarBadgePedidosHoy(count) {
+    const badge = document.getElementById('header-daily-orders-badge');
+    if (!badge) return;
+
+    badge.textContent = count;
+    
+    // Si hay pedidos, mostrar el badge; si no, ocultarlo
+    if (count > 0) {
+        badge.classList.remove('hidden');
+    } else {
+        badge.classList.add('hidden');
+    }
+
+    // Efecto de animación jumpy cuando cambia el número (opcional, ya tiene la animación de pop por CSS al aparecer)
+}
+
+window.actualizarBadgePedidosHoy = actualizarBadgePedidosHoy;

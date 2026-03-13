@@ -242,6 +242,33 @@ body.dark-mode .contact-time-label { color: #a9b1d6; }
 }
 body.dark-mode .order-badge { color: #1a1b26; background-color: #ff9e64; box-shadow: 0 0 8px rgba(255, 158, 100, 0.6); }
 
+/* Badge de pedidos diarios en el header */
+.orders-badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    background-color: var(--color-danger);
+    color: white;
+    font-size: 0.65rem;
+    font-weight: 800;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    z-index: 10;
+    border: 2px solid var(--color-container-bg);
+    animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badge-pop {
+    0% { transform: scale(0); }
+    100% { transform: scale(1); }
+}
+
 #chat-panel { 
     background-color: #e5ddd5;
     position: relative;
