@@ -1774,6 +1774,58 @@ router.put('/orders/:orderId', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
+router.get('/orders/today', async (req, res) => {
+    try {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+        const firestoreTodayStart = admin.firestore.Timestamp.fromDate(todayStart);
+
+        const ordersSnapshot = await db.collection('pedidos')
+            .where('createdAt', '>=', firestoreTodayStart)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        if (ordersSnapshot.empty) {
+            return res.status(200).json({ success: true, orders: [] });
+        }
+
+        const orders = [];
+        for (const doc of ordersSnapshot.docs) {
+            const orderData = doc.data();
+            const contactId = orderData.contactId || orderData.telefono;
+            let adSource = 'Desconocido';
+            let clientName = 'Sin nombre';
+
+            if (contactId) {
+                const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+                if (contactDoc.exists) {
+                    const contactData = contactDoc.data();
+                    clientName = contactData.name || clientName;
+                    if (contactData.adReferral) {
+                        adSource = contactData.adReferral.ad_name || contactData.adReferral.source_id || adSource;
+                    }
+                }
+            }
+
+            orders.push({
+                id: doc.id,
+                consecutiveOrderNumber: orderData.consecutiveOrderNumber,
+                clientName: clientName,
+                total: orderData.precio || 0,
+                createdAt: orderData.createdAt ? orderData.createdAt.toDate() : null,
+                adSource: adSource,
+                producto: orderData.producto
+            });
+        }
+
+        res.status(200).json({ success: true, orders: orders });
+    } catch (error) {
+        console.error("Error fetching today's orders:", error);
+        res.status(500).json({ success: false, message: 'Error al obtener los pedidos de hoy.', error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/orders (Crear nuevo pedido) ---
 router.post('/orders', async (req, res) => {
     // Extraer datos del cuerpo de la solicitud

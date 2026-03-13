@@ -9,7 +9,11 @@ const PORT = process.env.PORT || 3000;
 app.use('/webhook', whatsappRouter);
 app.use('/api', apiRouter);
 
-// --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---
+// --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
+app.get('/ads', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'ads.html'));
+});
+
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'public', 'index.html'));

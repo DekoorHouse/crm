@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventas de Hoy | Dekoor Ads</title>
+    <!-- Librerías Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    
+    <!-- Estilos del CRM -->
+    <link rel="stylesheet" href="style.css">
+    
+    <style>
+        body { 
+            overflow: auto !important; /* Permitir scroll en esta vista */
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+        }
+        .ads-container { max-width: 1100px; margin: 40px auto; padding: 0 20px; }
+        
+        .table-card { 
+            background: var(--color-container-bg); 
+            border-radius: var(--border-radius-lg); 
+            border: 1px solid var(--color-border);
+            box-shadow: 0 4px 20px var(--color-shadow);
+            overflow: hidden; 
+        }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            background: var(--color-subtle-bg); 
+            text-align: left; 
+            padding: 16px; 
+            font-weight: 700; 
+            color: var(--color-text-light); 
+            text-transform: uppercase; 
+            font-size: 0.7rem; 
+            letter-spacing: 0.05em;
+        }
+        td { 
+            padding: 18px 16px; 
+            border-bottom: 1px solid var(--color-border); 
+            color: var(--color-text); 
+            font-size: 0.9rem; 
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background-color: var(--color-subtle-hover-bg); }
+        
+        .badge-source { 
+            background: var(--color-primary); 
+            color: white; 
+            padding: 4px 12px; 
+            border-radius: 9999px; 
+            font-weight: 700; 
+            font-size: 0.75rem; 
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        body.dark-mode .badge-source {
+            color: #1a1b26;
+            box-shadow: 0 0 10px rgba(122, 162, 247, 0.4);
+        }
+        
+        .total-amount { font-weight: 800; color: var(--color-success); font-size: 1.1rem; }
+        .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-light); }
+        
+        .header-stats {
+            background: var(--color-container-bg);
+            padding: 16px 24px;
+            border-radius: var(--border-radius-lg);
+            border: 1px solid var(--color-border);
+            box-shadow: 0 2px 10px var(--color-shadow);
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .stat-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--color-primary);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            box-shadow: 0 4px 12px rgba(129, 178, 154, 0.3);
+        }
+        body.dark-mode .stat-icon {
+            color: #1a1b26;
+            box-shadow: 0 4px 12px rgba(122, 162, 247, 0.3);
+        }
+        
+        .dark-mode-toggle {
+            padding: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--color-container-bg);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+            box-shadow: 0 2px 5px var(--color-shadow);
+        }
+        .dark-mode-toggle:hover { 
+            transform: scale(1.1);
+            background: var(--color-subtle-bg); 
+        }
+
+        .refresh-btn {
+            background: var(--color-container-bg);
+            color: var(--color-text-light);
+            border: 1px solid var(--color-border);
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover { background: var(--color-subtle-bg); color: var(--color-primary); transform: rotate(180deg); }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="ads-container">
+        <header class="flex items-center justify-between mb-10">
+            <div>
+                <h1 class="text-3xl font-black text-primary flex items-center gap-3" style="color: var(--color-primary)">
+                    <i class="fab fa-whatsapp"></i> Dekoor Ads
+                </h1>
+                <p class="text-gray-500 font-medium mt-1">Monitoreo de ventas por anuncios en tiempo real</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <button onclick="fetchTodayOrders()" class="refresh-btn" title="Actualizar Datos">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+                <div class="header-stats">
+                    <div class="text-right">
+                        <p class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Total de Hoy</p>
+                        <p id="total-today" class="text-2xl font-black text-primary" style="color: var(--color-primary)">$0.00</p>
+                    </div>
+                    <div class="stat-icon">
+                        <i class="fas fa-shopping-cart"></i>
+                    </div>
+                </div>
+                <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
+                    <i id="mode-icon" class="fas fa-moon"></i>
+                </button>
+            </div>
+        </header>
+
+        <div class="table-card">
+            <table id="orders-table">
+                <thead>
+                    <tr>
+                        <th>Cliente / Pedido</th>
+                        <th>Hora</th>
+                        <th>Producto</th>
+                        <th>Total</th>
+                        <th>Anuncio / Origen</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-body">
+                    <!-- Filas dinámicas -->
+                </tbody>
+            </table>
+            <div id="loading-state" class="p-20 text-center text-gray-400 flex flex-col items-center gap-5">
+                <div class="relative">
+                    <i class="fas fa-circle-notch fa-spin text-5xl text-primary" style="color: var(--color-primary)"></i>
+                </div>
+                <div class="space-y-1">
+                    <p class="font-bold text-gray-600 dark:text-gray-300">Sincronizando con Firestore</p>
+                    <p class="text-xs">Obteniendo los pedidos más recientes de hoy...</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-12 text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-[10px] text-gray-400 font-black uppercase tracking-tighter">Live Dashboard Active</span>
+            </div>
+            <p class="mt-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-50">Dekoor CRM &copy; 2024</p>
+        </footer>
+    </div>
+
+    <script>
+        // Lógica de Modo Oscuro
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('darkMode', isDark);
+            updateModeIcon(isDark);
+        }
+
+        function updateModeIcon(isDark) {
+            const icon = document.getElementById('mode-icon');
+            icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+        }
+
+        // Cargar preferencia
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+            updateModeIcon(true);
+        }
+
+        async function fetchTodayOrders() {
+            try {
+                // Reiniciar estado visual si es recarga manual
+                const body = document.getElementById('orders-body');
+                const loading = document.getElementById('loading-state');
+                const refreshBtn = document.querySelector('.refresh-btn i');
+                
+                if (refreshBtn) refreshBtn.classList.add('fa-spin');
+                
+                const response = await fetch('/api/orders/today');
+                const data = await response.json();
+                
+                if (refreshBtn) refreshBtn.classList.remove('fa-spin');
+                const totalText = document.getElementById('total-today');
+                
+                loading.classList.add('hidden');
+                body.innerHTML = '';
+                
+                if (data.success && data.orders.length > 0) {
+                    let totalSum = 0;
+                    data.orders.forEach(order => {
+                        totalSum += parseFloat(order.total) || 0;
+                        const date = order.createdAt ? new Date(order.createdAt) : new Date();
+                        const timeStr = date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        
+                        const row = `
+                            <tr class="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                <td>
+                                    <div class="flex items-center gap-4">
+                                        <div class="bg-primary/10 dark:bg-primary/20 w-10 h-10 rounded-xl flex items-center justify-center text-primary" style="background-color: var(--color-subtle-bg); color: var(--color-primary)">
+                                            <i class="fas fa-user-tag"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-black text-gray-800 dark:text-white text-base">DH${order.consecutiveOrderNumber || '????'}</div>
+                                            <div class="text-[0.65rem] text-gray-400 font-black uppercase tracking-wider">${order.clientName || 'Cliente desconocido'}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="font-bold text-gray-500 text-xs uppercase tracking-tighter">${timeStr}</td>
+                                <td class="text-gray-600 dark:text-gray-300 font-semibold italic text-xs">${order.producto || 'Sin descripción'}</td>
+                                <td class="total-amount">$${parseFloat(order.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td><span class="badge-source">${order.adSource || 'Orgánico / Directo'}</span></td>
+                            </tr>
+                        `;
+                        body.insertAdjacentHTML('beforeend', row);
+                    });
+                    totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                } else {
+                    body.innerHTML = `
+                        <tr>
+                            <td colspan="5" class="empty-state">
+                                <div class="opacity-10 mb-6 text-7xl"><i class="fas fa-shopping-basket"></i></div>
+                                <p class="text-xl font-black text-gray-400 uppercase tracking-tighter">Sin actividad detectada</p>
+                                <p class="text-xs font-bold text-gray-400 mt-2 uppercase">Los pedidos realizados hoy aparecerán en esta tabla automáticamente.</p>
+                            </td>
+                        </tr>
+                    `;
+                    totalText.textContent = '$0.00';
+                }
+            } catch (error) {
+                console.error('Error fetching orders:', error);
+                document.getElementById('loading-state').innerHTML = `
+                    <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30">
+                        <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
+                        <p class="text-red-500 font-black uppercase tracking-tighter">Fallo de Conexión</p>
+                        <p class="text-xs text-red-400 mt-1">No se pudo recuperar la información de Firestore. Reintenta en unos momentos.</p>
+                        <button onclick="fetchTodayOrders()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
+                    </div>
+                `;
+            }
+        }
+
+        // Recargar cada 3 minutos
+        setInterval(fetchTodayOrders, 3 * 60 * 1000);
+        document.addEventListener('DOMContentLoaded', fetchTodayOrders);
+    </script>
+</body>
+</html>
