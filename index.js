@@ -7,7 +7,13 @@ const PORT = process.env.PORT || 3000;
 
 // --- MONTAJE DE RUTAS ---
 app.use('/webhook', whatsappRouter);
+
+// IMPORTANTE: Definir rutas críticas antes que el router general o estáticos
+app.get('/api/orders/today', apiRouter); // apiRouter manejará el subpath si es router.get('/orders/today')
 app.use('/api', apiRouter);
+
+// --- SERVIR ARCHIVOS ESTÁTICOS ---
+app.use(express.static(path.join(__dirname, 'public')));
 
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('/ads', (req, res) => {

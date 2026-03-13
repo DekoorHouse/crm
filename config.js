@@ -48,7 +48,9 @@ app.use(cors({ origin: allowedOrigins }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-app.use(express.static(path.join(__dirname, 'public')));
+// El middleware estático debe ir después si queremos que las rutas de la API tengan prioridad
+// o manejarse en el index.js principal. Lo dejamos aquí pero movido abajo.
+// app.use(express.static(path.join(__dirname, 'public')));
 
 // Logger de Peticiones Globales
 app.use((req, res, next) => {
