@@ -396,6 +396,14 @@ export function initEventListeners() {
         } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
             e.preventDefault();
             services.undoLastAction();
+        } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'i') {
+            // Activar botón de carga con Ctrl+I, excepto si se está escribiendo
+            const activeEl = document.activeElement;
+            const isInput = activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable;
+            if (!isInput) {
+                e.preventDefault();
+                if (elements.uploadBtn) elements.uploadBtn.click();
+            }
         }
     });
 }
