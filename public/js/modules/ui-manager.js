@@ -1459,10 +1459,7 @@ function cerrarModalPedido() {
     promoPhotosManager = [];
 }
 
-// Alias para compatibilidad con plantillas si es necesario
-window.closeNewOrderModal = cerrarModalPedido;
-window.cerrarModalPedido = cerrarModalPedido;
-window.abrirModalPedido = abrirModalPedido;
+// Los alias globales se definen al final del archivo para mayor claridad
 
 /**
  * Cierra el modal de confirmacin de pedido.
@@ -2234,8 +2231,10 @@ window.closeQuickReplyModal = closeQuickReplyModal;
 window.openAdResponseModal = openAdResponseModal;
 window.closeAdResponseModal = closeAdResponseModal;
 
-window.openNewOrderModal = openNewOrderModal; 
-window.closeNewOrderModal = closeNewOrderModal; 
+window.openNewOrderModal = abrirModalPedido; 
+window.closeNewOrderModal = cerrarModalPedido; 
+window.cerrarModalPedido = cerrarModalPedido;
+window.abrirModalPedido = abrirModalPedido;
 window.closeConversationPreviewModal = closeConversationPreviewModal; 
 window.openOrderEditModal = openOrderEditModal; 
 window.closeOrderEditModal = closeOrderEditModal; 
