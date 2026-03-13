@@ -815,16 +815,16 @@ const MessageBubbleTemplate = (message) => {
     if (message.fileUrl && message.fileType) {
         if (message.fileType.startsWith('image/')) {
             bubbleExtraClass = 'has-image';
-            const sentBgClass = isSent ? `bg-[${'var(--color-bubble-sent-bg)'}]` : `bg-[${'var(--color-bubble-received-bg)'}]`;
+            const bubbleBgColor = isSent ? 'var(--color-bubble-sent-bg)' : 'var(--color-bubble-received-bg)';
             const fullImageUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
-            contentHTML += `<div class="${sentBgClass} rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
+            contentHTML += `<div style="background-color: ${bubbleBgColor}" class="rounded-lg overflow-hidden"><img src="${fullImageUrl}" alt="Imagen enviada" class="chat-image-preview" onclick="openImageModal('${fullImageUrl}')">${hasText ? `<div class="p-2 pt-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>` : ''}<div class="time-overlay"><span>${time}</span>${isSent ? MessageStatusIconTemplate(message.status) : ''}</div></div>`;
             timeAndStatusHTML = '';
         } else if (message.fileType.startsWith('video/')) {
             bubbleExtraClass = 'has-video';
             const separator = message.fileUrl.includes('?') ? '&' : '?';
             const videoUrl = message.timestamp ? `${message.fileUrl}${separator}v=${message.timestamp.seconds}` : message.fileUrl;
             const fullVideoUrl = videoUrl.startsWith('http') ? videoUrl : `${API_BASE_URL}${videoUrl}`;
-            contentHTML += `<video controls playsinline preload="metadata" class="video rounded-lg mb-1" src="${fullVideoUrl}">Tu navegador no soporta videos.</video>`;
+            contentHTML += `<video controls playsinline preload="metadata" class="video rounded-lg mb-1" src="${fullVideoUrl}" onclick="event.stopPropagation()">Tu navegador no soporta videos.</video>`;
             if(hasText) contentHTML += `<div class="px-1"><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
         } else if (message.fileType.startsWith('audio/')) {
              const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
