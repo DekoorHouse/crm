@@ -20,17 +20,22 @@ const router = express.Router();
 
 // --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
 router.get('/admin/test-update-ads-20h', async (req, res) => {
+    console.log('[DEBUG] Entrando a la ruta test-update-ads-20h');
     try {
         const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
         const firestoreTimestamp = admin.firestore.Timestamp.fromDate(twentyHoursAgo);
 
-        console.log(`[ADMIN-TEST] Buscando chats con anuncios desde: ${twentyHoursAgo.toISOString()}`);
-
+        console.log(`[DEBUG] Buscando chats con anuncios desde: ${twentyHoursAgo.toISOString()}`);
+        console.log('[DEBUG] Iniciando consulta a Firestore: contacts_whatsapp...');
+        
         const snapshot = await db.collection('contacts_whatsapp')
             .where('lastMessageTimestamp', '>=', firestoreTimestamp)
             .get();
 
+        console.log(`[DEBUG] Consulta a Firestore finalizada. Documentos encontrados: ${snapshot.size}`);
+
         if (snapshot.empty) {
+            console.log('[DEBUG] No se encontraron resultados. Enviando respuesta 200.');
             return res.status(200).json({ success: true, message: 'No se encontraron chats en las últimas 20 horas.', found: 0, updated: 0 });
         }
 
@@ -50,7 +55,9 @@ router.get('/admin/test-update-ads-20h', async (req, res) => {
                 const adId = adReferral.source_id;
 
                 try {
-                    console.log(`[ADMIN-TEST] Consultando Graph API para Ad ID: ${adId} (Contacto: ${doc.id})`);
+                    console.log(`[DEBUG] Procesando contacto: ${doc.id}, Ad ID: ${adId}`);
+                    console.log(`[DEBUG] Llamando a Meta Graph API para el Ad ID: ${adId}`);
+                    
                     const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${adId}`, {
                         params: {
                             fields: 'name',
@@ -58,27 +65,36 @@ router.get('/admin/test-update-ads-20h', async (req, res) => {
                         }
                     });
 
+                    console.log(`[DEBUG] Respuesta de Meta recibida para ${adId}: ${JSON.stringify(metaResponse.data)}`);
+
                     if (metaResponse.data && metaResponse.data.name) {
                         const adName = metaResponse.data.name;
                         
+                        console.log(`[DEBUG] Actualizando Firestore para el contacto ${doc.id} con ad_name: ${adName}`);
                         // Actualizar en Firestore
                         await doc.ref.update({
                             'adReferral.ad_name': adName
                         });
+                        console.log(`[DEBUG] Actualización en Firestore exitosa para ${doc.id}`);
                         
                         updatedCount++;
                         results.push({ id: doc.id, adId, status: 'updated', name: adName });
                     } else {
+                        console.log(`[DEBUG] Meta no devolvió un nombre para ${adId}`);
                         results.push({ id: doc.id, adId, status: 'no_name_returned' });
                     }
                 } catch (error) {
-                    console.error(`[ADMIN-TEST] Error actualizando Ad ID ${adId}:`, error.message);
+                    console.error(`[ERROR CRÍTICO EN BUCLE] test-update-ads-20h (Ad ID ${adId}):`, error.message);
+                    if (error.response) {
+                        console.error('[DEBUG] Detalles del error de Meta:', JSON.stringify(error.response.data));
+                    }
                     errorsCount++;
                     results.push({ id: doc.id, adId, status: 'error', error: error.message });
                 }
             }
         }
 
+        console.log('[DEBUG] Finalizando procesamiento. Enviando respuesta summary.');
         res.status(200).json({
             success: true,
             summary: {
@@ -91,8 +107,13 @@ router.get('/admin/test-update-ads-20h', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('[ADMIN-TEST] Error crítico en la ruta de prueba:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
+        console.error('[ERROR CRÍTICO] test-update-ads-20h falló:', error);
+        res.status(500).json({ 
+            success: false, 
+            message: 'Error interno en test-update-ads-20h.', 
+            error: error.message,
+            stack: error.stack 
+        });
     }
 });
 

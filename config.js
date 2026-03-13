@@ -50,4 +50,10 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 app.use(express.static(path.join(__dirname, 'public')));
 
+// Logger de Peticiones Globales
+app.use((req, res, next) => {
+    console.log(`[REQUEST] ${new Date().toISOString()} ${req.method} ${req.originalUrl}`);
+    next();
+});
+
 module.exports = { app, db, bucket, admin };
