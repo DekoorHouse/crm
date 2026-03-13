@@ -66,14 +66,22 @@ async function handleFileUpload(e) {
             const duplicateGroups = [];
 
             for (const [sig, group] of newExpensesBySig.entries()) {
+                const firstExpense = group[0];
+                const concept = (firstExpense.concept || '').toUpperCase();
+                
+                // Conceptos especiales que permitimos duplicar
+                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO / 000000000000000 EN COMERCIO") || 
+                                       concept.includes("PAY PAL*FACEBOOK");
+
                 const isExisting = existingSignatures.has(sig);
                 const isIntraFile = group.length > 1;
 
-                if (isExisting || isIntraFile) {
+                if (!isSpecialConcept && (isExisting || isIntraFile)) {
                     let reason = isExisting ? 'Ya existe en la base de datos' : 'Duplicado dentro del archivo';
                     duplicateGroups.push({ signature: sig, expenses: group, reason: reason });
                 } else {
-                    nonDuplicates.push(group[0]);
+                    // Agregamos todos los del grupo (sean 1 o varios) a los procesables
+                    group.forEach(expense => nonDuplicates.push(expense));
                 }
             }
 
