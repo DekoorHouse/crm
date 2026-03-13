@@ -1148,6 +1148,14 @@ async function handleSelectReaction(event, messageDocId, emoji) {
         showError(error.message);
     }
 }
+// Estado local para el modal de previsualización
+let previewState = {
+    contactId: null,
+    messages: [],
+    lastMessageTimestamp: null,
+    hasMore: true,
+    isLoading: false
+};
 
 window.toggleReactionMenu = toggleReactionMenu;
 window.handleSelectReaction = handleSelectReaction;
@@ -1358,15 +1366,6 @@ async function handleSendTemplate(templateObject) {
 // --- END: Picker Management ---
 
 // --- START: Conversation Preview Logic ---
-
-// Estado local para el modal de previsualización
-let previewState = {
-    contactId: null,
-    messages: [],
-    lastMessageTimestamp: null,
-    hasMore: true,
-    isLoading: false
-};
 
 async function openConversationPreview(event, contactId) {
     event.stopPropagation(); // Evita que se seleccione el chat al hacer clic en el ojo
