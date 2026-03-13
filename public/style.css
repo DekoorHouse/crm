@@ -463,13 +463,8 @@ body.dark-mode .date-separator { background-color: #292e42; color: #a9b1d6; }
 .chat-sticker-preview { width: 75px; height: 75px; object-fit: contain; }
 .message-bubble video { 
     max-width: 100%; 
-    max-height: 350px; 
-    width: auto; 
     height: auto; 
-    object-fit: contain; 
-    border-radius: var(--border-radius-sm); 
-    display: block; 
-    background-color: #000; 
+    border-radius: 8px; 
 }
 .chat-audio-player { width: 250px; min-width: 250px; height: 45px; }
 
