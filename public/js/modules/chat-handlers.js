@@ -497,7 +497,10 @@ async function handleSelectContact(contactId) {
 
     renderChatWindow();
     
-    openContactDetails();
+    // Solo abrir detalles automáticamente en escritorio
+    if (window.innerWidth > 768) {
+        openContactDetails();
+    }
     
     // Nueva llamada para verificar si hay un timer de IA activo
     if (window.checkAiTimer) window.checkAiTimer();

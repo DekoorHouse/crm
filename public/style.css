@@ -1546,7 +1546,7 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
         position: fixed !important;
         top: 0;
         right: -100%;
-        width: 85% !important;
+        width: 100% !important;
         height: 100%;
         z-index: 1100 !important;
         transition: right 0.3s ease;
