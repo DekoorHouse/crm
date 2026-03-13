@@ -353,6 +353,12 @@ async function handleSelectContact(contactId) {
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
     handleSearchContacts(); 
     
+    // En móviles, activamos la clase para mostrar el panel de mensajes
+    const chatView = document.getElementById('chat-view');
+    if (chatView) {
+        chatView.classList.add('contact-selected');
+    }
+    
     let isInitialMessageLoad = true;
     
     // Reset pagination state when selecting a new contact

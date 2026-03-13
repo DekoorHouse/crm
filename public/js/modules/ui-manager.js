@@ -13,6 +13,14 @@ function navigateTo(viewName, force = false) {
         return;
     }
 
+    // Cerramos el sidebar en móvil al navegar
+    if (window.innerWidth <= 768) {
+        const sidebar = document.getElementById('main-sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        if (sidebar) sidebar.classList.remove('mobile-open');
+        if (overlay) overlay.classList.remove('active');
+    }
+
     state.activeView = viewName;
 
 
@@ -104,9 +112,21 @@ function navigateTo(viewName, force = false) {
  */
 function toggleTagSidebar() {
     const sidebar = document.getElementById('main-sidebar');
+    const overlay = document.getElementById('sidebar-overlay');
+    
     if (sidebar) {
-        sidebar.classList.toggle('collapsed');
-        state.isTagSidebarOpen = !sidebar.classList.contains('collapsed');
+        // En móviles y tablets (menor a 768px), usamos el modo drawer lateral
+        if (window.innerWidth <= 768) {
+            sidebar.classList.toggle('mobile-open');
+            if (overlay) overlay.classList.toggle('active');
+            
+            // Si abrimos la barra lateral en móvil, aseguramos que pierda el modo colapsado de escritorio
+            sidebar.classList.remove('collapsed');
+        } else {
+            // En escritorio mantemos la lógica actual de expandir/colapsar
+            sidebar.classList.toggle('collapsed');
+            state.isTagSidebarOpen = !sidebar.classList.contains('collapsed');
+        }
     }
 }
 
@@ -2748,4 +2768,19 @@ function actualizarBadgePedidosHoy(count) {
     // Efecto de animación jumpy cuando cambia el número (opcional, ya tiene la animación de pop por CSS al aparecer)
 }
 
+/**
+ * Cierra la ventana de chat en móviles para volver a la lista de contactos.
+ */
+function closeChatOnMobile() {
+    state.selectedContactId = null;
+    const chatView = document.getElementById('chat-view');
+    if (chatView) {
+        chatView.classList.remove('contact-selected');
+    }
+    // Opcional: Re-renderizar para limpiar el estado visual si es necesario
+    // renderChatWindow(); 
+}
+
 window.actualizarBadgePedidosHoy = actualizarBadgePedidosHoy;
+window.closeChatOnMobile = closeChatOnMobile;
+window.toggleTagSidebar = toggleTagSidebar;

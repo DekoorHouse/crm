@@ -39,17 +39,19 @@ const TagsViewTemplate = () => `
                 <button onclick="handleDeleteAllTags()" class="btn btn-danger"><i class="fas fa-trash-alt mr-2"></i>Eliminar Todas</button>
             </div>
         </div>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th class="w-10"></th>
-                    <th>Nombre</th>
-                    <th>Color</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="tags-table-body"></tbody>
-        </table>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th class="w-10"></th>
+                        <th>Nombre</th>
+                        <th>Color</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="tags-table-body"></tbody>
+            </table>
+        </div>
     </div>
 `;
 
@@ -60,16 +62,18 @@ const DepartmentsViewTemplate = () => `
             <button onclick="openDepartmentModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Departamento</button>
         </div>
         <p class="mb-6 text-gray-600">Crea departamentos (bandejas de entrada) para organizar tus chats y asignar agentes específicos.</p>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Nombre</th>
-                    <th>Color</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="departments-table-body"></tbody>
-        </table>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Color</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="departments-table-body"></tbody>
+            </table>
+        </div>
     </div>
 `;
 
@@ -80,18 +84,20 @@ const AdRoutingViewTemplate = () => `
             <button onclick="openAdRoutingModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Regla</button>
         </div>
         <p class="mb-6 text-gray-600">Define a qué departamento deben llegar automáticamente los chats nuevos según el anuncio de origen (Ad ID).</p>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Nombre de la Regla</th>
-                    <th>Ad IDs</th>
-                    <th>Departamento Destino</th>
-                    <th>IA Activa</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="ad-routing-table-body"></tbody>
-        </table>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nombre de la Regla</th>
+                        <th>Ad IDs</th>
+                        <th>Departamento Destino</th>
+                        <th>IA Activa</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="ad-routing-table-body"></tbody>
+            </table>
+        </div>
     </div>
 `;
 
@@ -245,6 +251,7 @@ const DifusionViewTemplate = () => `
             </div>
 
             <div class="overflow-x-auto border-t pt-6">
+            <div class="table-responsive-wrapper">
                 <table class="table w-full">
                     <thead>
                         <tr class="bg-gray-50">
@@ -266,6 +273,7 @@ const DifusionViewTemplate = () => `
                         </tr>
                     </tbody>
                 </table>
+            </div>
             </div>
 
             <div class="mt-6 flex justify-start">
@@ -308,18 +316,20 @@ const ContactsViewTemplate = () => `
                 <button onclick="openEditContactModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Contacto</button>
             </div>
         </div>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Nombre</th>
-                    <th>WhatsApp</th>
-                    <th>Correo Electrónico</th>
-                    <th>Etiquetas</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="contacts-table-body"></tbody>
-        </table>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>WhatsApp</th>
+                        <th>Correo Electrónico</th>
+                        <th>Etiquetas</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="contacts-table-body"></tbody>
+            </table>
+        </div>
     </div>
 `;
 
@@ -329,16 +339,18 @@ const QuickRepliesViewTemplate = () => `
             <h1>Respuestas Rápidas</h1>
             <button onclick="openQuickReplyModal()" class="btn btn-primary"><i class="fas fa-plus mr-2"></i>Agregar Respuesta</button>
         </div>
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Atajo</th>
-                    <th>Mensaje</th>
-                    <th>Acciones</th>
-                </tr>
-            </thead>
-            <tbody id="quick-replies-table-body"></tbody>
-        </table>
+        <div class="table-responsive-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Atajo</th>
+                        <th>Mensaje</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="quick-replies-table-body"></tbody>
+            </table>
+        </div>
     </div>
 `;
 
@@ -1112,6 +1124,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
         </div>
         <header class="chat-header p-2 shadow-sm flex items-center space-x-2" ${headerStyle}>
+            <button id="chat-back-btn" onclick="closeChatOnMobile()" class="hidden"><i class="fas fa-arrow-left"></i></button>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
                 <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
