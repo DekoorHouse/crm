@@ -511,8 +511,34 @@ router.post('/', async (req, res) => {
 
             // Only add adReferral if it exists in the incoming message AND the contact doesn't already have it (first ad message)
             if (message.referral && (!contactDoc.exists || !contactDoc.data().adReferral)) {
-                contactUpdateData.adReferral = message.referral;
-                console.log(`[AD] Información de Ad Referral guardada para ${from}. Ad ID: ${message.referral.source_id}`);
+                let adName = message.referral.headline || message.referral.body || `ID: ${message.referral.source_id}`;
+                
+                // Intentar obtener el nombre interno del anuncio vía Graph API
+                if (message.referral.source_type === 'ad' && message.referral.source_id && process.env.META_GRAPH_TOKEN) {
+                    try {
+                        console.log(`[META GRAPH] Consultando nombre del anuncio para ID: ${message.referral.source_id}`);
+                        const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${message.referral.source_id}`, {
+                            params: {
+                                fields: 'name',
+                                access_token: process.env.META_GRAPH_TOKEN
+                            }
+                        });
+                        
+                        if (metaResponse.data && metaResponse.data.name) {
+                            adName = metaResponse.data.name;
+                            console.log(`[META GRAPH] Nombre obtenido: ${adName}`);
+                        }
+                    } catch (error) {
+                        console.error(`[META GRAPH] Error al consultar nombre de anuncio: ${error.message}`);
+                        // Fallback ya está en adName (headline o body)
+                    }
+                }
+
+                contactUpdateData.adReferral = {
+                    ...message.referral,
+                    ad_name: adName
+                };
+                console.log(`[AD] Información de Ad Referral guardada para ${from}. Ad ID: ${message.referral.source_id}, Name: ${adName}`);
             }
 
             // Set or merge contact data

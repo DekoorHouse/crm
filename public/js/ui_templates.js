@@ -994,8 +994,8 @@ const AdReferralBannerTemplate = (adReferral) => {
     const icon = isPost ? 'fa-share-square' : 'fa-bullhorn';
     const typeLabel = isPost ? 'Publicación' : 'Anuncio';
     
-    // Extraer título/headline o ID
-    const title = adReferral.headline || adReferral.body || `ID: ${adReferral.source_id}`;
+    // Extraer título/nombre interno o fallback
+    const title = adReferral.ad_name || adReferral.headline || adReferral.body || `ID: ${adReferral.source_id}`;
     const url = adReferral.source_url || '#';
     
     return `
