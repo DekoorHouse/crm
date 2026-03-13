@@ -2,14 +2,14 @@ const { app } = require('./config');
 const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const path = require('path');
+const express = require('express');
 
 const PORT = process.env.PORT || 3000;
 
 // --- MONTAJE DE RUTAS ---
 app.use('/webhook', whatsappRouter);
 
-// IMPORTANTE: Definir rutas críticas antes que el router general o estáticos
-app.get('/api/orders/today', apiRouter); // apiRouter manejará el subpath si es router.get('/orders/today')
+// IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
