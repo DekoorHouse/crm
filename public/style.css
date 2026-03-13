@@ -106,6 +106,73 @@ body.dark-mode input[type="email"], body.dark-mode input[type="password"], body.
 input:focus, textarea:focus, select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px rgba(129, 178, 154, 0.2); }
 body.dark-mode input:focus, body.dark-mode textarea:focus, body.dark-mode select:focus { box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.2); }
 
+/* --- AD REFERRAL BANNER --- */
+.ad-referral-banner {
+    background: linear-gradient(135deg, #fff9c4 0%, #fffde7 100%);
+    border-bottom: 1px solid #fff59d;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    animation: slideDown 0.3s ease-out;
+}
+
+.ad-referral-icon {
+    width: 36px;
+    height: 36px;
+    background: #fbc02d;
+    color: white;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.2rem;
+    box-shadow: 0 2px 4px rgba(251, 192, 45, 0.3);
+}
+
+.ad-referral-content {
+    flex-grow: 1;
+}
+
+.ad-referral-label {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #f57f17;
+    margin: 0;
+    letter-spacing: 0.5px;
+}
+
+.ad-referral-title {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #424242;
+    margin: 1px 0 0 0;
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.ad-referral-link {
+    color: #fbc02d;
+    font-size: 1.1rem;
+    padding: 8px;
+    border-radius: 50%;
+    transition: all 0.2s;
+}
+
+.ad-referral-link:hover {
+    background: rgba(251, 192, 45, 0.1);
+    transform: scale(1.1);
+}
+
+@keyframes slideDown {
+    from { transform: translateY(-10px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
 input:disabled { background-color: #f0f2f5; cursor: not-allowed; }
 #search-contacts-input { margin-bottom: 0; background-color: var(--color-container-bg); }
 #search-contacts-input.pr-8 { padding-right: 2.5rem; } /* Asegura espacio para el botón */

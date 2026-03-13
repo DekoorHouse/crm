@@ -986,6 +986,35 @@ const ReplyContextBarTemplate = (message) => {
     `;
 };
 
+const AdReferralBannerTemplate = (adReferral) => {
+    if (!adReferral || !adReferral.source_id) return '';
+    
+    // Diferenciar entre anuncio (ad) y publicación (post)
+    const isPost = adReferral.source_type === 'post';
+    const icon = isPost ? 'fa-share-square' : 'fa-bullhorn';
+    const typeLabel = isPost ? 'Publicación' : 'Anuncio';
+    
+    // Extraer título/headline o ID
+    const title = adReferral.headline || adReferral.body || `ID: ${adReferral.source_id}`;
+    const url = adReferral.source_url || '#';
+    
+    return `
+        <div class="ad-referral-banner">
+            <div class="ad-referral-icon">
+                <i class="fas ${icon}"></i>
+            </div>
+            <div class="ad-referral-content">
+                <p class="ad-referral-label">Origen: Meta ${typeLabel}</p>
+                <p class="ad-referral-title">${title}</p>
+            </div>
+            ${adReferral.source_url ? `
+            <a href="${url}" target="_blank" class="ad-referral-link" title="Ver anuncio original">
+                <i class="fas fa-external-link-alt"></i>
+            </a>` : ''}
+        </div>
+    `;
+};
+
 const ChatWindowTemplate = (contact) => {
     const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
@@ -1098,6 +1127,8 @@ const ChatWindowTemplate = (contact) => {
                 ${clearHistoryButtonHTML}
             </div>
         </header>
+
+        ${AdReferralBannerTemplate(contact.adReferral)}
         <div class="bg-white border-b border-gray-200 flex">
             <button class="tab-btn active"><i class="fas fa-comments mr-2"></i>Chat</button>
         </div>
