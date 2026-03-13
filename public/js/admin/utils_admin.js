@@ -309,13 +309,12 @@ export function getFilteredExpenses(includeFinancial = false) {
         const dateMatch = (!startTs || expenseTs >= startTs) && (!endTs || expenseTs <= endTs);
         if (!dateMatch) return false;
 
-        // Filtro de categoría
+        // Filtro de categoría: cuando se activa, solo muestra gastos (cargos), no ingresos
         if (categoryFilter && categoryFilter !== 'all') {
+            const charge = parseFloat(expense.charge) || 0;
+            if (charge <= 0) return false;
+
             const expenseCategory = expense.category || 'SinCategorizar';
-            // MEJORA: Permitir ingresos en SinCategorizar si no tienen categoría
-            if (categoryFilter === 'SinCategorizar') {
-                return expenseCategory === 'SinCategorizar';
-            }
             return expenseCategory === categoryFilter;
         }
 
