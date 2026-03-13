@@ -7,13 +7,6 @@ const PORT = process.env.PORT || 3000;
 
 // --- MONTAJE DE RUTAS ---
 app.use('/webhook', whatsappRouter);
-
-// Trace para depuración de rutas API
-app.use('/api', (req, res, next) => {
-    console.log(`[INDEX-TRACE] Petición entrante a /api: ${req.method} ${req.originalUrl}`);
-    next();
-});
-
 app.use('/api', apiRouter);
 
 // --- RUTA PARA SERVIR LA APLICACIÓN FRONTEND ---

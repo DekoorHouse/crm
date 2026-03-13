@@ -18,12 +18,6 @@ const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithC
 
 const router = express.Router();
 
-// Trace para depuración interna del router
-router.use((req, res, next) => {
-    console.log(`[ROUTER-TRACE] Procesando en apiRoutes.js: ${req.method} ${req.url}`);
-    next();
-});
-
 // --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
 router.get('/admin/test-update-ads-20h', async (req, res) => {
     console.log('[DEBUG] Entrando a la ruta test-update-ads-20h');
