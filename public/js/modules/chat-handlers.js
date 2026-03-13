@@ -1167,7 +1167,6 @@ window.toggleEmojiPicker = toggleEmojiPicker;
 window.toggleTemplatePicker = toggleTemplatePicker;
 window.handleStartReply = handleStartReply;
 window.cancelReply = cancelReply;
-window.handleStatusChange = handleStatusChange;
 window.selectQuickReply = selectQuickReply;
 window.selectEmoji = selectEmoji;
 window.handleSendTemplate = handleSendTemplate;

@@ -1312,6 +1312,7 @@ window.handleDeleteAdRoutingRule = handleDeleteAdRoutingRule;
 // Vamos a añadir el listener al formulario dinámicamente cuando se abre el modal en ui-manager, 
 // O, para seguir el patrón de este archivo, lo exponemos y cambiamos el template para usar onsubmit="handleTransferChat(event)"
 window.handleTransferChat = handleTransferChat; 
+window.handleStatusChange = handleStatusChange;
 
 // IMPORTANTE: Asegúrate de actualizar ui_templates.js para que el formulario use onsubmit="handleTransferChat(event)"
 // O asigna el listener aquí si prefieres. 
