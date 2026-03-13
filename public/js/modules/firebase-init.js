@@ -15,4 +15,5 @@ const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
 
-const API_BASE_URL = 'https://crm-rzon.onrender.com';
+// Usa la variable de entorno proporcionada por el servidor si existe, de lo contrario fallback
+const API_BASE_URL = window.API_BASE_URL || 'https://crm-rzon.onrender.com';

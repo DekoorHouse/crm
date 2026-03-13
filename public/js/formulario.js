@@ -6,7 +6,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const confirmationContainer = document.getElementById('confirmation-container');
     
     // La URL base de tu API que ya existe en otros archivos.
-    const API_BASE_URL = 'https://crm-rzon.onrender.com';
+    const API_BASE_URL = window.API_BASE_URL || 'https://crm-rzon.onrender.com';
 
     form.addEventListener('submit', async (e) => {
         e.preventDefault();

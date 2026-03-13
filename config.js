@@ -26,21 +26,28 @@ const bucket = getStorage().bucket();
 const app = express();
 
 // --- SOLUCIÓN DE CORS ---
-// Define los orígenes (dominios) que tienen permiso para hacer solicitudes a este servidor.
 const allowedOrigins = [
     'https://dekoormx.onrender.com', // El frontend de producción del CRM
-    'https://crm-rzon.onrender.com', // El propio backend para auto-llamadas si es necesario
+    'https://crm-rzon.onrender.com', // El propio backend para auto-llamadas
     'http://localhost:3000',        // Para pruebas locales del backend
     'http://127.0.0.1:5500',       // Para desarrollo del frontend con Live Server
     'http://localhost:5500',          // Otra variación común para Live Server
-    // Si tienes otra URL de desarrollo, agrégala aquí.
 ];
 
-// Aplica la configuración de CORS a todas las rutas de la aplicación.
-// Esta configuración le dice al servidor que acepte solicitudes únicamente de los
-// dominios listados en 'allowedOrigins'. Esto soluciona el error al incluir
-// el encabezado 'Access-Control-Allow-Origin' en las respuestas del servidor.
-app.use(cors({ origin: allowedOrigins }));
+app.use(cors({
+    origin: function (origin, callback) {
+        // Permitir peticiones sin origen (como aplicaciones móviles o curl)
+        if (!origin) return callback(null, true);
+        if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.onrender.com')) {
+            callback(null, true);
+        } else {
+            callback(new Error('No permitido por CORS'));
+        }
+    },
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    credentials: true
+}));
 // --- FIN DE LA SOLUCIÓN DE CORS ---
 
 // --- SOLUCIÓN DE PAYLOADS GRANDES ---

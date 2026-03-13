@@ -191,7 +191,13 @@
         </footer>
     </div>
 
+    <!-- Configuración Dinámica -->
+    <script src="/env-config.js"></script>
+
     <script>
+        // Obtener la URL base dinámicamente
+        const API_BASE = window.API_BASE_URL || 'https://crm-rzon.onrender.com';
+
         // Lógica de Modo Oscuro
         function toggleDarkMode() {
             document.body.classList.toggle('dark-mode');
@@ -221,7 +227,8 @@
                 
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
-                const response = await fetch('/api/orders/today');
+                // Usar la URL base dinámica para evitar errores de CORS y conexión
+                const response = await fetch(`${API_BASE}/api/orders/today`);
                 console.log('Respuesta recibida:', response.status);
                 
                 if (!response.ok) {

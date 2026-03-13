@@ -9,6 +9,12 @@ const PORT = process.env.PORT || 3000;
 // --- MONTAJE DE RUTAS ---
 app.use('/webhook', whatsappRouter);
 
+// Endpoint para servir variables de entorno al frontend de forma segura
+app.get('/env-config.js', (req, res) => {
+    res.type('application/javascript');
+    res.send(`window.API_BASE_URL = "${process.env.API_URL || 'https://crm-rzon.onrender.com'}";`);
+});
+
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
 
