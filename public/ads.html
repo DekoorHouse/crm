@@ -176,6 +176,20 @@
                     </div>
                 </div>
 
+                <!-- Stats: Efectividad (Conversión) -->
+                <div class="header-stats border-blue-500/30 bg-blue-50/50 dark:bg-blue-900/10">
+                    <div class="text-right">
+                        <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
+                        <div class="flex flex-col items-end leading-none gap-1">
+                            <p id="orders-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
+                            <p id="money-conv-pct" class="text-sm font-black text-blue-500">0% <span class="text-[10px] opacity-70">DINERO</span></p>
+                        </div>
+                    </div>
+                    <div class="stat-icon bg-blue-500">
+                        <i class="fas fa-bullseye"></i>
+                    </div>
+                </div>
+
                 <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
                     <i id="mode-icon" class="fas fa-moon"></i>
                 </button>
@@ -263,6 +277,8 @@
                 const confirmedText = document.getElementById('confirmed-total');
                 const totalLabel = document.getElementById('total-label');
                 const confirmedLabel = document.getElementById('confirmed-label');
+                const ordersConvText = document.getElementById('orders-conv-pct');
+                const moneyConvText = document.getElementById('money-conv-pct');
                 
                 // Asegurar que el estado de carga tenga el HTML original si fue reemplazado por error
                 if (loading.querySelector('.bg-red-50')) {
@@ -307,6 +323,8 @@
                 if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
                     let totalSum = 0;
                     let confirmedSum = 0;
+                    let confirmedCount = 0;
+                    const totalCount = data.orders.length;
 
                     data.orders.forEach((order) => {
                         const amount = parseFloat(order.total) || 0;
@@ -319,6 +337,7 @@
                         if (isConfirmed) {
                             confirmedAmount = amount;
                             confirmedSum += amount;
+                            confirmedCount++;
                         }
 
                         const date = order.createdAt ? new Date(order.createdAt) : new Date();
@@ -348,6 +367,13 @@
                     });
                     totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
                     confirmedText.textContent = '$' + confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+
+                    // Calcular porcentajes de conversión
+                    const orderPct = (confirmedCount / totalCount) * 100;
+                    const moneyPct = totalSum > 0 ? (confirmedSum / totalSum) * 100 : 0;
+                    
+                    ordersConvText.innerHTML = `${orderPct.toFixed(1)}% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    moneyConvText.innerHTML = `${moneyPct.toFixed(1)}% <span class="text-[10px] opacity-70">DINERO</span>`;
                 } else {
                     body.innerHTML = `
                         <tr>
@@ -360,6 +386,8 @@
                     `;
                     totalText.textContent = '$0.00';
                     confirmedText.textContent = '$0.00';
+                    ordersConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    moneyConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">DINERO</span>`;
                 }
 
                 // Manejar auto-refresh
