@@ -18,6 +18,84 @@ const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithC
 
 const router = express.Router();
 
+// --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
+router.get('/admin/test-update-ads-20h', async (req, res) => {
+    try {
+        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
+        const firestoreTimestamp = admin.firestore.Timestamp.fromDate(twentyHoursAgo);
+
+        console.log(`[ADMIN-TEST] Buscando chats con anuncios desde: ${twentyHoursAgo.toISOString()}`);
+
+        const snapshot = await db.collection('contacts_whatsapp')
+            .where('lastMessageTimestamp', '>=', firestoreTimestamp)
+            .get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, message: 'No se encontraron chats en las últimas 20 horas.', found: 0, updated: 0 });
+        }
+
+        let foundCount = 0;
+        let updatedCount = 0;
+        let errorsCount = 0;
+
+        const results = [];
+
+        for (const doc of snapshot.docs) {
+            const data = doc.data();
+            const adReferral = data.adReferral;
+
+            // Solo procesar si tiene un source_id de anuncio
+            if (adReferral && adReferral.source_id && adReferral.source_type === 'ad') {
+                foundCount++;
+                const adId = adReferral.source_id;
+
+                try {
+                    console.log(`[ADMIN-TEST] Consultando Graph API para Ad ID: ${adId} (Contacto: ${doc.id})`);
+                    const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${adId}`, {
+                        params: {
+                            fields: 'name',
+                            access_token: process.env.META_GRAPH_TOKEN
+                        }
+                    });
+
+                    if (metaResponse.data && metaResponse.data.name) {
+                        const adName = metaResponse.data.name;
+                        
+                        // Actualizar en Firestore
+                        await doc.ref.update({
+                            'adReferral.ad_name': adName
+                        });
+                        
+                        updatedCount++;
+                        results.push({ id: doc.id, adId, status: 'updated', name: adName });
+                    } else {
+                        results.push({ id: doc.id, adId, status: 'no_name_returned' });
+                    }
+                } catch (error) {
+                    console.error(`[ADMIN-TEST] Error actualizando Ad ID ${adId}:`, error.message);
+                    errorsCount++;
+                    results.push({ id: doc.id, adId, status: 'error', error: error.message });
+                }
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            summary: {
+                total_recent_chats: snapshot.size,
+                chats_with_ads: foundCount,
+                updated_successfully: updatedCount,
+                errors: errorsCount
+            },
+            details: results
+        });
+
+    } catch (error) {
+        console.error('[ADMIN-TEST] Error crítico en la ruta de prueba:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
+    }
+});
+
 // --- CONSTANTES ---
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
@@ -2775,85 +2853,6 @@ router.post('/maintenance/migrate-orphans', async (req, res) => {
     } catch (error) {
         console.error('Error en la migración de chats huérfanos:', error);
         res.status(500).json({ success: false, message: 'Ocurrió un error en el servidor durante la migración.' });
-    }
-});
-
-
-// --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
-router.get('/admin/test-update-ads-20h', async (req, res) => {
-    try {
-        const twentyHoursAgo = new Date(Date.now() - 20 * 60 * 60 * 1000);
-        const firestoreTimestamp = admin.firestore.Timestamp.fromDate(twentyHoursAgo);
-
-        console.log(`[ADMIN-TEST] Buscando chats con anuncios desde: ${twentyHoursAgo.toISOString()}`);
-
-        const snapshot = await db.collection('contacts_whatsapp')
-            .where('lastMessageTimestamp', '>=', firestoreTimestamp)
-            .get();
-
-        if (snapshot.empty) {
-            return res.status(200).json({ success: true, message: 'No se encontraron chats en las últimas 20 horas.', found: 0, updated: 0 });
-        }
-
-        let foundCount = 0;
-        let updatedCount = 0;
-        let errorsCount = 0;
-
-        const results = [];
-
-        for (const doc of snapshot.docs) {
-            const data = doc.data();
-            const adReferral = data.adReferral;
-
-            // Solo procesar si tiene un source_id de anuncio
-            if (adReferral && adReferral.source_id && adReferral.source_type === 'ad') {
-                foundCount++;
-                const adId = adReferral.source_id;
-
-                try {
-                    console.log(`[ADMIN-TEST] Consultando Graph API para Ad ID: ${adId} (Contacto: ${doc.id})`);
-                    const metaResponse = await axios.get(`https://graph.facebook.com/v18.0/${adId}`, {
-                        params: {
-                            fields: 'name',
-                            access_token: process.env.META_GRAPH_TOKEN
-                        }
-                    });
-
-                    if (metaResponse.data && metaResponse.data.name) {
-                        const adName = metaResponse.data.name;
-                        
-                        // Actualizar en Firestore
-                        await doc.ref.update({
-                            'adReferral.ad_name': adName
-                        });
-                        
-                        updatedCount++;
-                        results.push({ id: doc.id, adId, status: 'updated', name: adName });
-                    } else {
-                        results.push({ id: doc.id, adId, status: 'no_name_returned' });
-                    }
-                } catch (error) {
-                    console.error(`[ADMIN-TEST] Error actualizando Ad ID ${adId}:`, error.message);
-                    errorsCount++;
-                    results.push({ id: doc.id, adId, status: 'error', error: error.message });
-                }
-            }
-        }
-
-        res.status(200).json({
-            success: true,
-            summary: {
-                total_recent_chats: snapshot.size,
-                chats_with_ads: foundCount,
-                updated_successfully: updatedCount,
-                errors: errorsCount
-            },
-            details: results
-        });
-
-    } catch (error) {
-        console.error('[ADMIN-TEST] Error crítico en la ruta de prueba:', error);
-        res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
     }
 });
 
