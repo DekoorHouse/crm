@@ -1116,6 +1116,10 @@ function renderMessages(options = {}) {
     // --- INICIO MODIFICACIÓN: Lógica de scroll condicional y paginación ---
     const messagesContainer = document.getElementById('messages-container');
     
+    // Calculamos si el usuario está en el fondo ANTES de actualizar el contenido
+    const isAtBottom = messagesContainer ? (messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 150) : true;
+    const isInitialLoad = messagesContainer && messagesContainer.scrollHeight === 0;
+
     // Guardamos la altura del scroll ANTES de insertar los mensajes viejos
     const previousScrollHeight = messagesContainer ? messagesContainer.scrollHeight : 0;
     const previousScrollTop = messagesContainer ? messagesContainer.scrollTop : 0;
@@ -1132,8 +1136,11 @@ function renderMessages(options = {}) {
             // Restaurar posición específica si se proporciona
             messagesContainer.scrollTop = options.scrollTop;
         } else if (options.scrollToBottom !== false) {
-            // Comportamiento por defecto (scroll al final) SOLO si no se ha desactivado explícitamente
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            // Comportamiento de scroll condicional:
+            // Scroll al final solo si ya estaba en el fondo o si es la carga inicial
+            if (isAtBottom || isInitialLoad) {
+                messagesContainer.scrollTop = messagesContainer.scrollHeight;
+            }
         }
     }
     // --- FIN MODIFICACIÓN ---
@@ -1160,9 +1167,14 @@ function appendMessage(message) {
     const messageHtml = MessageBubbleTemplate(message);
     contentContainer.insertAdjacentHTML('beforeend', messageHtml);
 
-    // Scroll hasta el final
+    // Scroll condicional hasta el final
     const messagesContainer = document.getElementById('messages-container');
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    if (messagesContainer) {
+        const isAtBottom = messagesContainer.scrollHeight - messagesContainer.scrollTop - messagesContainer.clientHeight < 150;
+        if (isAtBottom) {
+            messagesContainer.scrollTop = messagesContainer.scrollHeight;
+        }
+    }
 }
 
 
