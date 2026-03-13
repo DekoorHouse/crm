@@ -312,8 +312,9 @@
                         const amount = parseFloat(order.total) || 0;
                         totalSum += amount;
                         
-                        // Lógica de Venta Real (Fabricar o Pagado)
-                        const isConfirmed = order.estatus === 'fabricar' || order.estatus === 'pagado';
+                        // Lógica de Venta Real (Fabricar o Pagado) - Más robusta
+                        const rawStatus = (order.estatus || order.status || '').toLowerCase();
+                        const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
                         let confirmedAmount = 0;
                         if (isConfirmed) {
                             confirmedAmount = amount;
@@ -339,7 +340,7 @@
                                 <td class="font-bold text-gray-500 text-xs uppercase tracking-tighter">${timeStr}</td>
                                 <td class="text-gray-600 dark:text-gray-300 font-semibold italic text-xs">${order.producto || 'Sin descripción'}</td>
                                 <td class="text-gray-400 font-bold">$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
-                                <td class="font-black ${isConfirmed ? 'text-green-600' : 'text-gray-300'}">$${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td class="font-black ${isConfirmed ? 'text-green-600' : 'text-gray-300'}" title="Estatus: ${order.estatus || order.status || 'N/A'}">$${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
                                 <td><span class="badge-source">${order.adSource || 'Orgánico / Directo'}</span></td>
                             </tr>
                         `;
