@@ -1167,11 +1167,9 @@ const ContactDetailsSidebarTemplate = (contact) => {
                 <div class="mt-6 border-t pt-6 space-y-2">
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
-                   <button onclick="openNewOrderModal()" class="btn btn-primary w-full btn-sm mt-4"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
+                   <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm mt-4"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
                 </div>
             </div>
-            <footer class="p-4 border-t border-gray-200">
-                <button onclick="openEditContactModal('${contact.id}')" class="btn btn-secondary w-full">Editar Contacto</button>
             </footer>
         </div>
     `;
@@ -1186,29 +1184,29 @@ const NewOrderModalTemplate = () => `
         <div class="modal-content !max-w-4xl !p-8 !rounded-2xl !shadow-2xl">
             <button onclick="closeNewOrderModal()" class="modal-close-btn !top-4 !right-6 hover:text-red-500 transition-colors" title="Cerrar">&times;</button>
             <h2 class="text-2xl font-bold text-primary mb-6 text-center border-b pb-4 border-gray-100"><i class="fas fa-pencil-alt mr-2"></i> Registrar Nuevo Pedido</h2>
-            <form id="new-order-form" class="space-y-6">
+            <form id="formularioNuevoPedido" class="space-y-6">
                  
                  <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                      <div class="flex flex-col">
-                         <label for="order-product-select" class="text-sm font-semibold text-gray-700 mb-2">Producto <span class="text-red-500">*</span></label>
-                         <select id="order-product-select" required class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 transition-all outline-none">
+                         <label for="pedidoProductoSelect" class="text-sm font-semibold text-gray-700 mb-2">Producto <span class="text-red-500">*</span></label>
+                         <select id="pedidoProductoSelect" required class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 transition-all outline-none">
                             <option value="Modelo 7">Modelo 7</option>
                             <option value="Portallaves">Portallaves</option>
                             <option value="Calendario">Calendario</option>
                             <option value="Placa de perro">Placa de perro</option>
                             <option value="Otro">Otro</option>
                          </select>
-                         <input type="text" id="order-product-other" class="mt-3 w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" style="display: none;" placeholder="Nombre del producto">
+                         <input type="text" id="pedidoProductoOtro" class="mt-3 w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" style="display: none;" placeholder="Nombre del producto">
                      </div>
                      <div class="flex flex-col">
-                         <label for="order-phone" class="text-sm font-semibold text-gray-700 mb-2">Teléfono <span class="text-red-500">*</span></label>
-                         <input type="tel" id="order-phone" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" placeholder="Ej: 521..." required>
+                         <label for="pedidoTelefono" class="text-sm font-semibold text-gray-700 mb-2">Teléfono <span class="text-red-500">*</span></label>
+                         <input type="tel" id="pedidoTelefono" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" placeholder="Ej: 521..." required>
                      </div>
                      <div class="flex flex-col">
-                          <label for="order-price" class="text-sm font-semibold text-gray-700 mb-2">Precio (MXN)</label>
+                          <label for="pedidoPrecio" class="text-sm font-semibold text-gray-700 mb-2">Precio (MXN)</label>
                           <div class="relative">
                               <span class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-medium">$</span>
-                              <input type="number" id="order-price" class="w-full pl-8 pr-4 rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" step="0.01" placeholder="Ej: 275.00" value="275">
+                              <input type="number" id="pedidoPrecio" class="w-full pl-8 pr-4 rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 py-2.5 outline-none" step="0.01" placeholder="Ej: 275.00" value="275">
                           </div>
                       </div>
                   </div>
@@ -1219,8 +1217,8 @@ const NewOrderModalTemplate = () => `
                            <h3 class="text-lg font-bold text-gray-800 mb-1"><i class="fas fa-box-open mr-2 text-primary"></i>Datos del Pedido</h3>
                            <p class="text-sm text-gray-500 mb-4">Adjunta imágenes y describe lo que el cliente desea.</p>
                            
-                           <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-primary hover:bg-green-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="order-file-input-container-product" tabindex="0">
-                               <input type="file" id="order-photo-file" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                           <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-primary hover:bg-green-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="fileInputContainerProducto" tabindex="0">
+                               <input type="file" id="pedidoFotoFile" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
                                <div class="flex flex-col items-center justify-center gap-3 relative z-0">
                                    <div class="w-14 h-14 bg-green-100 text-primary rounded-full flex items-center justify-center text-2xl mb-1 group-hover:scale-110 transition-transform">
                                        <i class="fas fa-cloud-upload-alt"></i>
@@ -1230,12 +1228,12 @@ const NewOrderModalTemplate = () => `
                                    </div>
                                    <span class="text-slate-500/80 text-sm font-medium">o arrastra y suelta aquí</span>
                                </div>
-                               <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="order-photos-preview-container"></div>
+                               <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="fotosPreviewContainer"></div>
                            </div>
                            
                            <div class="mt-5">
-                             <label for="order-product-details" class="block text-sm font-semibold text-gray-700 mb-2">Detalles del Producto</label>
-                             <textarea id="order-product-details" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[90px] p-3 text-sm outline-none resize-y" placeholder="Ej: Llavero de perrito con el nombre 'Firulais', grabado por detrás..."></textarea>
+                             <label for="pedidoDatosProducto" class="block text-sm font-semibold text-gray-700 mb-2">Detalles del Producto</label>
+                             <textarea id="pedidoDatosProducto" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[90px] p-3 text-sm outline-none resize-y" placeholder="Ej: Llavero de perrito con el nombre 'Firulais', grabado por detrás..."></textarea>
                            </div>
                       </div>
 
@@ -1246,14 +1244,14 @@ const NewOrderModalTemplate = () => `
                                 <h3 class="text-lg font-bold text-gray-800 mb-1"><i class="fas fa-gift mr-2 text-orange-500"></i>Fotos de la Promoción</h3>
                                 <p class="text-sm text-gray-500">Imágenes adicionales para el cliente (opcional).</p>
                             </div>
-                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm" id="order-same-photo-container" style="display: none;">
-                                <input type="checkbox" id="order-same-photo-checkbox" class="rounded text-primary focus:ring-primary cursor-pointer w-4 h-4">
-                                <label for="order-same-photo-checkbox" class="text-sm font-medium text-gray-700 cursor-pointer select-none">Usar foto(s) del pedido</label>
+                            <div class="flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border shadow-sm" id="mismaFotoContainer" style="display: none;">
+                                <input type="checkbox" id="mismaFotoCheckbox" class="rounded text-primary focus:ring-primary cursor-pointer w-4 h-4">
+                                <label for="mismaFotoCheckbox" class="text-sm font-medium text-gray-700 cursor-pointer select-none">Usar foto(s) del pedido</label>
                             </div>
                         </div>
                         
-                        <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-orange-400 hover:bg-orange-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="order-file-input-container-promo" tabindex="0">
-                            <input type="file" id="order-promo-photo-file" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+                        <div class="file-input-container bg-white border-2 border-dashed border-slate-300 hover:border-orange-400 hover:bg-orange-50/30 transition-all duration-300 rounded-xl p-8 text-center cursor-pointer relative overflow-hidden group" id="fileInputContainerPromocion" tabindex="0">
+                            <input type="file" id="pedidoFotoPromocionFile" accept="image/*" multiple class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
                             <div class="flex flex-col items-center justify-center gap-3 relative z-0">
                                 <div class="w-14 h-14 bg-orange-100 text-orange-500 rounded-full flex items-center justify-center text-2xl mb-1 group-hover:scale-110 transition-transform">
                                     <i class="fas fa-images"></i>
@@ -1263,29 +1261,52 @@ const NewOrderModalTemplate = () => `
                                 </div>
                                 <span class="text-slate-500/80 text-sm font-medium">o arrastra y suelta aquí</span>
                             </div>
-                            <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="order-promo-photos-preview-container"></div>
+                            <div class="previews-container mt-6 flex flex-wrap gap-3 justify-center relative z-20" id="promoFotosPreviewContainer"></div>
                         </div>
                         
                         <div class="mt-5">
-                            <label for="order-promo-details" class="block text-sm font-semibold text-gray-700 mb-2">Detalles de la Promoción</label>
-                            <textarea id="order-promo-details" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-orange-400 focus:ring focus:ring-orange-400 focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Describe la promoción aplicada, si existe..."></textarea>
+                            <label for="pedidoDatosPromocion" class="block text-sm font-semibold text-gray-700 mb-2">Detalles de la Promoción</label>
+                            <textarea id="pedidoDatosPromocion" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-orange-400 focus:ring focus:ring-orange-400 focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Describe la promoción aplicada, si existe..."></textarea>
                         </div>
                     </div>
 
                     <!-- Comentarios Adicionales -->
                     <div>
-                           <label for="order-comments" class="block text-sm font-semibold text-gray-700 mb-2 ml-1">Comentarios Adicionales</label>
-                           <textarea id="order-comments" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Añade cualquier otra nota relevante para nosotros..."></textarea>
+                           <label for="pedidoComentarios" class="block text-sm font-semibold text-gray-700 mb-2 ml-1">Comentarios Adicionales</label>
+                           <textarea id="pedidoComentarios" class="w-full rounded-xl border-gray-200 shadow-sm focus:border-primary focus:ring focus:ring-primary focus:ring-opacity-20 min-h-[70px] p-3 text-sm outline-none resize-y" placeholder="Añade cualquier otra nota relevante para nosotros..."></textarea>
                     </div>
-                 </div>
-                 
-                 <div id="order-error-message" class="text-red-500 text-sm font-medium text-center bg-red-50 p-2 rounded-lg empty:hidden"></div>
-                 
-                 <div class="flex justify-end gap-4 pt-6 mt-6 border-t border-gray-100">
-                      <button type="button" onclick="closeNewOrderModal()" class="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-colors focus:ring-2 focus:ring-gray-300 outline-none"><i class="fas fa-times mr-2 text-gray-500"></i> Cancelar</button>
-                      <button type="submit" id="order-save-btn" class="px-6 py-2.5 bg-primary text-white rounded-xl hover:bg-opacity-90 shadow-[0_4px_14px_0_rgba(129,178,154,0.39)] font-bold transition-transform active:scale-95 focus:ring-2 focus:ring-primary focus:ring-offset-2 outline-none"><i class="fas fa-check-circle mr-2"></i> Guardar Pedido</button>
-                 </div>
+                  </div>
+                  
+                  <div id="mensajeErrorPedido" class="text-red-500 text-sm font-medium text-center bg-red-50 p-2 rounded-lg empty:hidden"></div>
+                  
+                  <div class="flex justify-end gap-4 pt-6 mt-6 border-t border-gray-100">
+                       <button type="button" onclick="closeNewOrderModal()" class="px-5 py-2.5 bg-gray-100 text-gray-700 rounded-xl hover:bg-gray-200 font-semibold transition-colors focus:ring-2 focus:ring-gray-300 outline-none"><i class="fas fa-times mr-2 text-gray-500"></i> Cancelar</button>
+                       <button type="submit" id="btnGuardarPedido" class="px-6 py-2.5 bg-primary text-white rounded-xl hover:bg-opacity-90 shadow-[0_4px_14px_0_rgba(129,178,154,0.39)] font-bold transition-transform active:scale-95 focus:ring-2 focus:ring-primary focus:ring-offset-2 outline-none"><i class="fas fa-check-circle mr-2"></i> Guardar Pedido</button>
+                  </div>
              </form>
+        </div>
+    </div>
+`;
+
+const OrderConfirmationModalTemplate = (orderNumber) => `
+    <div id="order-confirmation-modal" class="modal-backdrop">
+        <div class="modal-content !max-w-md !p-8 text-center">
+            <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-6">
+                <i class="fas fa-check-circle"></i>
+            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">¡Pedido Registrado!</h2>
+            <p class="text-gray-600 mb-8">El pedido ha sido guardado exitosamente con el número:</p>
+            
+            <div class="flex items-center justify-center gap-3 bg-slate-100 p-4 rounded-2xl mb-8 group cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('DH${orderNumber}', this)">
+                <span id="numeroPedidoConfirmacion" class="text-3xl font-black text-primary tracking-wider">DH${orderNumber}</span>
+                <div class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 group-hover:text-primary transition-colors">
+                    <i class="fas fa-copy"></i>
+                </div>
+            </div>
+
+            <button onclick="closeOrderConfirmationModal()" class="w-full py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-all active:scale-95 shadow-lg">
+                Cerrar
+            </button>
         </div>
     </div>
 `;

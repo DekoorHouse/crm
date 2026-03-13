@@ -1374,10 +1374,14 @@ let orderPhotosManager = []; // Array para fotos del pedido
 let promoPhotosManager = []; // Array para fotos de la promoción
 let editOrderPhotosManager = []; // Array para fotos del pedido en edición
 let editPromoPhotosManager = []; // Array para fotos de la promoción en edición
-
-// Abre el modal para registrar un nuevo pedido
-function openNewOrderModal() {
-    const contact = state.contacts.find(c => c.id === state.selectedContactId);
+/**
+ * Abre el modal para registrar un nuevo pedido, pre-rellenando datos si es posible.
+ * Unificado con la lgica de Lista de Pedidos (pedidos.html / logica.js).
+ */
+function abrirModalPedido(contactData = null) {
+    // Si viene de un evento, ignoramos el primer argumento
+    if (contactData instanceof Event) contactData = null;
+    const contact = contactData || state.contacts.find(c => c.id === state.selectedContactId);
     if (!contact) {
         showError("Por favor, selecciona un contacto para registrar un pedido.");
         return;
@@ -1386,25 +1390,22 @@ function openNewOrderModal() {
     const modalContainer = document.getElementById('new-order-modal-container');
     if (!modalContainer) return;
 
-    // Renderiza la plantilla del modal
     modalContainer.innerHTML = NewOrderModalTemplate();
-
-    // Rellena el teléfono del contacto seleccionado
-    const phoneInput = document.getElementById('order-phone');
-    if (phoneInput) {
-        phoneInput.value = contact.id;
+    
+    const phoneInput = document.getElementById('pedidoTelefono');
+    if (phoneInput && contact) {
+        phoneInput.value = contact.phone || '';
     }
 
-    // Resetea los arrays de fotos
     orderPhotosManager = [];
     promoPhotosManager = [];
 
-    // Configura listeners para el modal recién creado
-    document.getElementById('new-order-form').addEventListener('submit', handleSaveOrder);
+    // Configura listeners para el modal recin creado
+    document.getElementById('formularioNuevoPedido').addEventListener('submit', handleSaveOrder);
 
-    // Lógica para mostrar/ocultar input "Otro producto"
-    const productSelect = document.getElementById('order-product-select');
-    const productOtherInput = document.getElementById('order-product-other');
+    // Lgica para mostrar/ocultar input "Otro producto"
+    const productSelect = document.getElementById('pedidoProductoSelect');
+    const productOtherInput = document.getElementById('pedidoProductoOtro');
     if(productSelect && productOtherInput) {
         productSelect.addEventListener('change', () => {
             const isOther = productSelect.value === 'Otro';
@@ -1415,42 +1416,82 @@ function openNewOrderModal() {
     }
 
     // Configura drag & drop y vista previa para fotos del pedido
-    const orderPhotoContainer = document.getElementById('order-file-input-container-product');
-    const orderPhotoInput = document.getElementById('order-photo-file');
-    const orderPreviewContainer = document.getElementById('order-photos-preview-container');
+    const orderPhotoContainer = document.getElementById('fileInputContainerProducto');
+    const orderPhotoInput = document.getElementById('pedidoFotoFile');
+    const orderPreviewContainer = document.getElementById('fotosPreviewContainer');
     setupPhotoManager(orderPhotoContainer, orderPhotoInput, orderPreviewContainer, orderPhotosManager, 'order');
 
-    // Configura drag & drop y vista previa para fotos de promoción
-    const promoPhotoContainer = document.getElementById('order-file-input-container-promo');
-    const promoPhotoInput = document.getElementById('order-promo-photo-file');
-    const promoPreviewContainer = document.getElementById('order-promo-photos-preview-container');
+    // Configura drag & drop y vista previa para fotos de promocin
+    const promoPhotoContainer = document.getElementById('fileInputContainerPromocion');
+    const promoPhotoInput = document.getElementById('pedidoFotoPromocionFile');
+    const promoPreviewContainer = document.getElementById('promoFotosPreviewContainer');
     setupPhotoManager(promoPhotoContainer, promoPhotoInput, promoPreviewContainer, promoPhotosManager, 'promo');
 
-    // Lógica del checkbox "Usar misma foto"
-    const samePhotoCheckbox = document.getElementById('order-same-photo-checkbox');
-    const samePhotoContainer = document.getElementById('order-same-photo-container'); // Contenedor del checkbox
-    const promoFileInputContainer = document.getElementById('order-file-input-container-promo'); // Contenedor de subida de promo
+    // Lgica del checkbox "Usar misma foto"
+    const samePhotoCheckbox = document.getElementById('mismaFotoCheckbox');
+    const samePhotoContainer = document.getElementById('mismaFotoContainer'); // Contenedor del checkbox
+    const promoFileInputContainer = document.getElementById('fileInputContainerPromocion'); // Contenedor de subida de promo
 
     if(samePhotoCheckbox && samePhotoContainer && promoFileInputContainer) {
         samePhotoCheckbox.addEventListener('change', (e) => {
             if (e.target.checked) {
-                // Copia las fotos del pedido a la promoción
+                // Copia las fotos del pedido a la promocin
                 promoPhotosManager = [...orderPhotosManager];
-                renderPhotoPreviews(promoPreviewContainer, promoPhotosManager, 'promo'); // Actualiza vista previa de promo
-                promoFileInputContainer.classList.add('hidden'); // Oculta área de subida de promo
+                renderPhotoPreviews(promoPreviewContainer, promoPhotosManager, 'promo');
+                promoFileInputContainer.classList.add('hidden');
             } else {
-                promoFileInputContainer.classList.remove('hidden'); // Muestra área de subida de promo
+                promoPhotosManager = [];
+                renderPhotoPreviews(promoPreviewContainer, promoPhotosManager, 'promo');
+                promoFileInputContainer.classList.remove('hidden');
             }
         });
-
-        // Mostrar/ocultar el checkbox basado en si hay fotos de pedido
-        if(orderPhotosManager.length > 0) {
-            samePhotoContainer.style.display = 'flex';
-        } else {
-             samePhotoContainer.style.display = 'none';
-        }
     }
 }
+
+/**
+ * Cierra el modal de nuevo pedido.
+ */
+function cerrarModalPedido() {
+    const modalContainer = document.getElementById('new-order-modal-container');
+    if (modalContainer) modalContainer.innerHTML = '';
+    orderPhotosManager = [];
+    promoPhotosManager = [];
+}
+
+// Alias para compatibilidad con plantillas si es necesario
+window.closeNewOrderModal = cerrarModalPedido;
+window.cerrarModalPedido = cerrarModalPedido;
+window.abrirModalPedido = abrirModalPedido;
+
+/**
+ * Cierra el modal de confirmacin de pedido.
+ */
+function closeOrderConfirmationModal() {
+    const modalContainer = document.getElementById('order-confirmation-modal-container');
+    if (modalContainer) modalContainer.innerHTML = '';
+}
+window.closeOrderConfirmationModal = closeOrderConfirmationModal;
+
+/**
+ * Copia el nmero de pedido al portapapeles y da feedback visual.
+ */
+window.copyOrderNumber = (text, btn) => {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalContent = btn.innerHTML;
+        btn.classList.add('bg-green-100', 'text-green-600');
+        btn.innerHTML = `
+            <span class="text-3xl font-black tracking-wider">${text}</span>
+            <div class="w-10 h-10 bg-green-500 text-white rounded-xl shadow-sm flex items-center justify-center">
+                <i class="fas fa-check"></i>
+            </div>
+        `;
+        showError("Nmero de pedido copiado al portapapeles.", "success");
+        setTimeout(() => {
+            btn.classList.remove('bg-green-100', 'text-green-600');
+            btn.innerHTML = originalContent;
+        }, 2000);
+    });
+};
 
 function renderPhotoPreviews(container, managerArray, type) {
     container.innerHTML = '';

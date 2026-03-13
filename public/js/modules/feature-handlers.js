@@ -183,9 +183,9 @@ async function handleSendViewContent() {
  */
 async function handleSaveOrder(event) {
     event.preventDefault(); // Evita recarga
-    const form = document.getElementById('new-order-form');
-    const saveButton = document.getElementById('order-save-btn');
-    const errorMessageEl = document.getElementById('order-error-message');
+    const form = document.getElementById('formularioNuevoPedido');
+    const saveButton = document.getElementById('btnGuardarPedido');
+    const errorMessageEl = document.getElementById('mensajeErrorPedido');
 
     // Validación: debe haber un contacto seleccionado
     if (!state.selectedContactId) {
@@ -194,15 +194,15 @@ async function handleSaveOrder(event) {
     }
 
     // --- 1. Recolectar datos del formulario ---
-    let productoFinal = document.getElementById('order-product-select').value;
+    let productoFinal = document.getElementById('pedidoProductoSelect').value;
     if (productoFinal === 'Otro') { // Si eligió "Otro"
-        productoFinal = document.getElementById('order-product-other').value.trim();
+        productoFinal = document.getElementById('pedidoProductoOtro').value.trim();
         if (!productoFinal) { // Validar que no esté vacío
             errorMessageEl.textContent = 'El nombre del producto (Otro) es obligatorio.';
             return;
         }
     }
-    const telefono = document.getElementById('order-phone').value.trim();
+    const telefono = document.getElementById('pedidoTelefono').value.trim();
     if (!telefono) { // Validar teléfono
         errorMessageEl.textContent = 'El número de teléfono es obligatorio.';
         return;
@@ -213,10 +213,10 @@ async function handleSaveOrder(event) {
         contactId: state.selectedContactId, // ID del contacto actual
         producto: productoFinal,
         telefono: telefono,
-        precio: Number(document.getElementById('order-price').value) || 0,
-        datosProducto: document.getElementById('order-product-details').value.trim(),
-        datosPromocion: document.getElementById('order-promo-details').value.trim(),
-        comentarios: document.getElementById('order-comments').value.trim(),
+        precio: Number(document.getElementById('pedidoPrecio').value) || 0,
+        datosProducto: document.getElementById('pedidoDatosProducto').value.trim(),
+        datosPromocion: document.getElementById('pedidoDatosPromocion').value.trim(),
+        comentarios: document.getElementById('pedidoComentarios').value.trim(),
         // Los arrays de fotos se manejarán después
     };
 
@@ -227,17 +227,9 @@ async function handleSaveOrder(event) {
 
     try {
         // --- 3. Manejar subida de fotos ---
-        /**
-         * Sube las fotos de un array (manager) a GCS usando URLs firmadas.
-         * @param {Array<object>} photoManager Array de objetos de foto ({file, url, isNew}).
-         * @param {string} storagePath Prefijo de la ruta en GCS (ej. 'pedidos').
-         * @returns {Promise<string[]>} Promesa que resuelve con las URLs públicas de las fotos subidas/existentes.
-         */
         async function uploadPhotos(photoManager, storagePath) {
-            // Mapea cada foto a una promesa de subida/resolución
             const uploadPromises = photoManager.map(async photo => {
-                if (photo.isNew) { // Si es una foto nueva (recién seleccionada)
-                    // a. Pide una URL firmada al backend
+                if (photo.isNew) {
                     const signedUrlResponse = await fetch(`${API_BASE_URL}/api/storage/generate-signed-url`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -246,22 +238,18 @@ async function handleSaveOrder(event) {
                     if (!signedUrlResponse.ok) throw new Error('No se pudo preparar la subida de archivo.');
                     const { signedUrl, publicUrl } = await signedUrlResponse.json();
 
-                    // b. Sube el archivo a GCS usando la URL firmada
                     await fetch(signedUrl, { method: 'PUT', headers: { 'Content-Type': photo.file.type }, body: photo.file });
-                    return publicUrl; // Devuelve la URL pública
+                    return publicUrl;
                 }
-                return Promise.resolve(photo.url); // Si no es nueva, devuelve la URL existente
+                return Promise.resolve(photo.url);
             });
-            return await Promise.all(uploadPromises); // Espera a que todas las subidas terminen
+            return await Promise.all(uploadPromises);
         }
 
         saveButton.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Subiendo fotos...';
-
-        // Sube las fotos del pedido y de la promoción
         const finalOrderPhotoUrls = await uploadPhotos(orderPhotosManager, 'pedidos');
         const finalPromoPhotoUrls = await uploadPhotos(promoPhotosManager, 'promociones');
 
-        // Añade las URLs al objeto de datos del pedido
         orderData.fotoUrls = finalOrderPhotoUrls;
         orderData.fotoPromocionUrls = finalPromoPhotoUrls;
 
@@ -270,25 +258,27 @@ async function handleSaveOrder(event) {
         const response = await fetch(`${API_BASE_URL}/api/orders`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(orderData) // Envía todos los datos
+            body: JSON.stringify(orderData)
         });
 
         const result = await response.json();
-        if (!response.ok || !result.success) { // Manejo de error del backend
+        if (!response.ok || !result.success) {
             throw new Error(result.message || "Ocurrió un error en el servidor.");
         }
 
         // --- 5. Manejar éxito ---
-        closeNewOrderModal(); // Cierra el modal
-        showError(`Pedido ${result.orderNumber} registrado con éxito.`, 'success'); // Muestra mensaje
-        // Nota: El listener de pedidos actualizará la barra lateral automáticamente
+        cerrarModalPedido(); // Cierra el modal de entrada
+        
+        // Renderiza el modal de confirmación unificado
+        const confirmationContainer = document.getElementById('order-confirmation-modal-container');
+        if (confirmationContainer) {
+            confirmationContainer.innerHTML = OrderConfirmationModalTemplate(result.orderNumber);
+        }
 
     } catch (error) {
-        // --- Manejo de errores (subida o creación) ---
         console.error("Error al guardar el pedido:", error);
-        errorMessageEl.textContent = error.message; // Muestra error en el modal
+        errorMessageEl.textContent = error.message;
     } finally {
-        // --- Rehabilita el botón ---
         saveButton.disabled = false;
         saveButton.innerHTML = '<i class="fas fa-save mr-2"></i> Guardar Pedido';
     }
