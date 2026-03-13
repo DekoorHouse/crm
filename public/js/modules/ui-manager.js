@@ -1394,7 +1394,7 @@ function abrirModalPedido(contactData = null) {
     
     const phoneInput = document.getElementById('pedidoTelefono');
     if (phoneInput && contact) {
-        phoneInput.value = contact.phone || '';
+        phoneInput.value = contact.phone || contact.id || '';
     }
 
     orderPhotosManager = [];
