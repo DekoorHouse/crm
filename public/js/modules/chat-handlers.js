@@ -348,6 +348,7 @@ async function handleSelectContact(contactId) {
     state.activeTab = 'chat';
     state.isEditingNote = null;
     state.notes = []; // LIMPIAR NOTAS al cambiar de contacto
+    state.isSessionExpired = false; // Resetear al cambiar de contacto
     
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
     handleSearchContacts(); 
@@ -378,8 +379,6 @@ async function handleSelectContact(contactId) {
 
             if (isInitialMessageLoad) {
                 state.messages = newMessages;
-                state.loadingMessages = false;
-                isInitialMessageLoad = false;
             } else {
                 snapshot.docChanges().forEach((change) => {
                     const changedMessage = { docId: change.doc.id, ...change.doc.data() };
@@ -427,6 +426,9 @@ async function handleSelectContact(contactId) {
                 });
             }
 
+            // Guardar estado previo para detectar cambios y decidir qué renderizar
+            const wasExpired = state.isSessionExpired;
+
             // Recalcular el estado de la sesión cada vez que llegan mensajes
             // El usuario envía un mensaje, así que buscamos el último en orden cronológico inverso
             const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
@@ -434,14 +436,21 @@ async function handleSelectContact(contactId) {
                 const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
                 state.isSessionExpired = hoursDiff > 24;
             } else {
-                state.isSessionExpired = state.messages.length > 0; // Si hay mensajes pero ninguno del usuario, la sesión está expirada
+                state.isSessionExpired = true; // Si no hay mensajes del usuario, la sesión está expirada (necesita plantilla)
             }
 
             if (state.activeTab === 'chat') {
-                // MODIFICACIÓN PAGINACIÓN:
-                // renderMessages NO debe forzar scroll down automático si estábamos haciendo paginación.
-                // Lo gestionaremos usando la variable booleana isLoadingMore del listado.
-                renderMessages({ preserveScrollHeight: state.messagePagination.isLoadingMore });
+                // Si el estado de expiración cambió (o es la primera carga), re-renderizamos la ventana entera para actualizar el footer/banner
+                if (isInitialMessageLoad || wasExpired !== state.isSessionExpired) {
+                    renderChatWindow({ preserveScroll: !isInitialMessageLoad });
+                } else {
+                    renderMessages({ preserveScrollHeight: state.messagePagination.isLoadingMore });
+                }
+            }
+
+            if (isInitialMessageLoad) {
+                state.loadingMessages = false;
+                isInitialMessageLoad = false;
             }
 
         }, (error) => {
@@ -589,12 +598,18 @@ function loadMoreMessages() {
                 }
             }
             
+            const wasExpired = state.isSessionExpired;
             const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
             if (lastUserMessage && lastUserMessage.timestamp) {
                 const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
                 state.isSessionExpired = hoursDiff > 24;
             } else {
-                state.isSessionExpired = state.messages.length > 0;
+                state.isSessionExpired = true;
+            }
+
+            // Si al cargar más mensajes descubrimos que la sesión cambió de estado (poco probable pero posible), re-renderizamos
+            if (state.activeTab === 'chat' && wasExpired !== state.isSessionExpired) {
+                renderChatWindow({ preserveScroll: true });
             }
 
         }, (error) => {
