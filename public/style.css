@@ -244,24 +244,27 @@ body.dark-mode .order-badge { color: #1a1b26; background-color: #ff9e64; box-sha
 
 /* Badge de pedidos diarios en el header */
 .orders-badge {
-    position: absolute;
-    top: -4px;
-    right: -4px;
-    background-color: var(--color-danger);
+    background-color: #81B29A; /* Verde salvia pacífico (Sage Green) */
     color: white;
-    font-size: 0.65rem;
-    font-weight: 800;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 4px;
-    border-radius: 10px;
+    font-size: 0.95rem; /* Casi el doble de grande (era 0.65rem) */
+    font-weight: 700;
+    min-width: 30px; /* Más grande */
+    height: 30px; /* Más grande */
+    padding: 0 10px;
+    border-radius: 15px;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     z-index: 10;
     border: 2px solid var(--color-container-bg);
     animation: badge-pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    cursor: default;
+}
+
+body.dark-mode .orders-badge {
+    background-color: #5d8e76; /* Versión un poco más profunda para modo oscuro */
+    border-color: var(--color-container-bg);
 }
 
 @keyframes badge-pop {
