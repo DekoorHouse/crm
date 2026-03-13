@@ -221,6 +221,9 @@
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
                 const response = await fetch('/api/orders/today');
+                if (!response.ok) {
+                    throw new Error(`Error en el servidor: ${response.status}`);
+                }
                 const data = await response.json();
                 
                 if (refreshBtn) refreshBtn.classList.remove('fa-spin');
