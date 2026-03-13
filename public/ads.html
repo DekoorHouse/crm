@@ -13,6 +13,10 @@
     
     <!-- Estilos del CRM -->
     <link rel="stylesheet" href="style.css">
+
+    <!-- Litepicker Date Picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
     
     <style>
         body { 
@@ -138,12 +142,20 @@
                 <p class="text-gray-500 font-medium mt-1">Monitoreo de ventas por anuncios en tiempo real</p>
             </div>
             <div class="flex items-center gap-4">
-                <button onclick="fetchTodayOrders()" class="refresh-btn" title="Actualizar Datos">
+                <!-- Selector de Fecha -->
+                <div class="flex items-center gap-3">
+                    <div class="relative min-w-[180px]">
+                        <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-10" readonly>
+                        <i class="fas fa-calendar-day absolute right-4 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none"></i>
+                    </div>
+                </div>
+
+                <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
                     <i class="fas fa-sync-alt"></i>
                 </button>
                 <div class="header-stats">
                     <div class="text-right">
-                        <p class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Total de Hoy</p>
+                        <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Total de Hoy</p>
                         <p id="total-today" class="text-2xl font-black text-primary" style="color: var(--color-primary)">$0.00</p>
                     </div>
                     <div class="stat-icon">
@@ -217,26 +229,45 @@
             updateModeIcon(true);
         }
 
-        async function fetchTodayOrders() {
+        let currentSelectedDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        let refreshInterval = null;
+
+        function handleRefreshClick() {
+            fetchOrders(currentSelectedDate);
+        }
+
+        async function fetchOrders(dateISO) {
             try {
-                console.log('Iniciando fetch de pedidos...');
+                const isToday = dateISO === new Date().toISOString().split('T')[0];
+                console.log(`Iniciando fetch de pedidos para la fecha: ${dateISO} (Hoy: ${isToday})`);
+                
                 const body = document.getElementById('orders-body');
                 const loading = document.getElementById('loading-state');
                 const refreshBtn = document.querySelector('.refresh-btn i');
                 const totalText = document.getElementById('total-today');
+                const totalLabel = document.getElementById('total-label');
+                const loadingText = loading.querySelector('p.font-bold');
                 
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
-                // Usar la URL base dinámica para evitar errores de CORS y conexión
-                const response = await fetch(`${API_BASE}/api/orders/today`);
-                console.log('Respuesta recibida:', response.status);
+                // Actualizar labels según la fecha
+                if (isToday) {
+                    totalLabel.textContent = 'Total de Hoy';
+                    loadingText.textContent = 'Sincronizando con Firestore';
+                } else {
+                    totalLabel.textContent = `Total del ${dateISO}`;
+                    loadingText.textContent = `Cargando histórico del ${dateISO}`;
+                }
+
+                // Determinar URL según si es hoy o histórico
+                const endpoint = isToday ? '/api/orders/today' : `/api/orders/history?date=${dateISO}`;
+                const response = await fetch(`${API_BASE}${endpoint}`);
                 
                 if (!response.ok) {
                     throw new Error(`Error en el servidor: ${response.status}`);
                 }
                 
                 const data = await response.json();
-                console.log('Datos procesados:', data);
                 
                 if (refreshBtn) refreshBtn.classList.remove('fa-spin');
                 
@@ -245,10 +276,7 @@
                 
                 if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
                     let totalSum = 0;
-                    data.orders.forEach((order, index) => {
-                        console.log(`Procesando pedido ${index}:`, order);
-                        
-                        // Asegurar que el total sea numérico
+                    data.orders.forEach((order) => {
                         const amount = parseFloat(order.total) || 0;
                         totalSum += amount;
                         
@@ -278,20 +306,34 @@
                     });
                     totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
                 } else {
-                    console.log('No se encontraron pedidos o la estructura es inválida.');
                     body.innerHTML = `
                         <tr>
                             <td colspan="5" class="empty-state">
                                 <div class="opacity-10 mb-6 text-7xl"><i class="fas fa-shopping-basket"></i></div>
                                 <p class="text-xl font-black text-gray-400 uppercase tracking-tighter">Sin actividad detectada</p>
-                                <p class="text-xs font-bold text-gray-400 mt-2 uppercase">Los pedidos realizados hoy aparecerán en esta tabla automáticamente.</p>
+                                <p class="text-xs font-bold text-gray-400 mt-2 uppercase">No se encontraron pedidos para el día seleccionado.</p>
                             </td>
                         </tr>
                     `;
                     totalText.textContent = '$0.00';
                 }
+
+                // Manejar auto-refresh
+                if (isToday) {
+                    if (!refreshInterval) {
+                        refreshInterval = setInterval(() => fetchOrders(currentSelectedDate), 3 * 60 * 1000);
+                        console.log("Auto-refresh activado (cada 3 min)");
+                    }
+                } else {
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                        refreshInterval = null;
+                        console.log("Auto-refresh desactivado (viendo histórico)");
+                    }
+                }
+
             } catch (error) {
-                console.error('Error detallado en fetchTodayOrders:', error);
+                console.error('Error detallado en fetchOrders:', error);
                 const loadingState = document.getElementById('loading-state');
                 if (loadingState) {
                     loadingState.innerHTML = `
@@ -299,7 +341,7 @@
                             <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
                             <p class="text-red-500 font-black uppercase tracking-tighter">Error de Aplicación</p>
                             <p class="text-xs text-red-400 mt-1">${error.message}</p>
-                            <button onclick="fetchTodayOrders()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
+                            <button onclick="handleRefreshClick()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
                         </div>
                     `;
                     loadingState.classList.remove('hidden');
@@ -307,9 +349,34 @@
             }
         }
 
-        // Recargar cada 3 minutos
-        setInterval(fetchTodayOrders, 3 * 60 * 1000);
-        document.addEventListener('DOMContentLoaded', fetchTodayOrders);
+        // Inicializar DatePicker
+        document.addEventListener('DOMContentLoaded', () => {
+            const picker = new Litepicker({
+                element: document.getElementById('datepicker'),
+                format: 'YYYY-MM-DD',
+                singleMode: true,
+                numberOfMonths: 1,
+                numberOfColumns: 1,
+                maxDate: new Date(),
+                lang: 'es-ES',
+                setup: (picker) => {
+                    picker.on('selected', (date) => {
+                        const dateISO = date.format('YYYY-MM-DD');
+                        currentSelectedDate = dateISO;
+                        
+                        // Mostrar loading antes de fetch
+                        document.getElementById('loading-state').classList.remove('hidden');
+                        document.getElementById('orders-body').innerHTML = '';
+                        
+                        fetchOrders(dateISO);
+                    });
+                },
+            });
+
+            // Establecer fecha inicial (hoy)
+            picker.setDate(new Date());
+            fetchOrders(currentSelectedDate);
+        });
     </script>
 </body>
 </html>
