@@ -153,15 +153,29 @@
                 <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
                     <i class="fas fa-sync-alt"></i>
                 </button>
+                
+                <!-- Stats: Proyectado -->
                 <div class="header-stats">
                     <div class="text-right">
-                        <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Total de Hoy</p>
-                        <p id="total-today" class="text-2xl font-black text-primary" style="color: var(--color-primary)">$0.00</p>
+                        <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Venta Proyectada</p>
+                        <p id="total-today" class="text-xl font-black text-gray-500">$0.00</p>
                     </div>
-                    <div class="stat-icon">
-                        <i class="fas fa-shopping-cart"></i>
+                    <div class="stat-icon bg-gray-400 opacity-60">
+                        <i class="fas fa-chart-line"></i>
                     </div>
                 </div>
+
+                <!-- Stats: Real (Fabricar/Pagado) -->
+                <div class="header-stats border-green-500/30 bg-green-50/50 dark:bg-green-900/10">
+                    <div class="text-right">
+                        <p id="confirmed-label" class="text-[0.6rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1">Venta Real (Confirmada)</p>
+                        <p id="confirmed-total" class="text-2xl font-black text-green-600 dark:text-green-400">$0.00</p>
+                    </div>
+                    <div class="stat-icon bg-green-500">
+                        <i class="fas fa-cash-register"></i>
+                    </div>
+                </div>
+
                 <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
                     <i id="mode-icon" class="fas fa-moon"></i>
                 </button>
@@ -175,8 +189,9 @@
                         <th>Cliente / Pedido</th>
                         <th>Hora</th>
                         <th>Producto</th>
-                        <th>Total</th>
-                        <th>Anuncio / Origen</th>
+                        <th>Venta Bruta</th>
+                        <th>Ingreso Real</th>
+                        <th>Origen</th>
                     </tr>
                 </thead>
                 <tbody id="orders-body">
@@ -245,18 +260,33 @@
                 const loading = document.getElementById('loading-state');
                 const refreshBtn = document.querySelector('.refresh-btn i');
                 const totalText = document.getElementById('total-today');
+                const confirmedText = document.getElementById('confirmed-total');
                 const totalLabel = document.getElementById('total-label');
+                const confirmedLabel = document.getElementById('confirmed-label');
+                
+                // Asegurar que el estado de carga tenga el HTML original si fue reemplazado por error
+                if (loading.querySelector('.bg-red-50')) {
+                    loading.innerHTML = `
+                        <div class="relative"><i class="fas fa-circle-notch fa-spin text-5xl text-primary" style="color: var(--color-primary)"></i></div>
+                        <div class="space-y-1">
+                            <p class="font-bold text-gray-600 dark:text-gray-300">Sincronizando con Firestore</p>
+                            <p class="text-xs">Obteniendo los pedidos...</p>
+                        </div>
+                    `;
+                }
                 const loadingText = loading.querySelector('p.font-bold');
                 
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
                 // Actualizar labels según la fecha
                 if (isToday) {
-                    totalLabel.textContent = 'Total de Hoy';
-                    loadingText.textContent = 'Sincronizando con Firestore';
+                    totalLabel.textContent = 'Venta Proyectada (Hoy)';
+                    confirmedLabel.textContent = 'Venta Real (Hoy)';
+                    if (loadingText) loadingText.textContent = 'Sincronizando con Firestore';
                 } else {
-                    totalLabel.textContent = `Total del ${dateISO}`;
-                    loadingText.textContent = `Cargando histórico del ${dateISO}`;
+                    totalLabel.textContent = `Proyectado (${dateISO})`;
+                    confirmedLabel.textContent = `Real (${dateISO})`;
+                    if (loadingText) loadingText.textContent = `Cargando histórico del ${dateISO}`;
                 }
 
                 // Determinar URL según si es hoy o histórico
@@ -276,10 +306,20 @@
                 
                 if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
                     let totalSum = 0;
+                    let confirmedSum = 0;
+
                     data.orders.forEach((order) => {
                         const amount = parseFloat(order.total) || 0;
                         totalSum += amount;
                         
+                        // Lógica de Venta Real (Fabricar o Pagado)
+                        const isConfirmed = order.estatus === 'fabricar' || order.estatus === 'pagado';
+                        let confirmedAmount = 0;
+                        if (isConfirmed) {
+                            confirmedAmount = amount;
+                            confirmedSum += amount;
+                        }
+
                         const date = order.createdAt ? new Date(order.createdAt) : new Date();
                         const timeStr = isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
                         
@@ -298,17 +338,19 @@
                                 </td>
                                 <td class="font-bold text-gray-500 text-xs uppercase tracking-tighter">${timeStr}</td>
                                 <td class="text-gray-600 dark:text-gray-300 font-semibold italic text-xs">${order.producto || 'Sin descripción'}</td>
-                                <td class="total-amount">$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td class="text-gray-400 font-bold">$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td class="font-black ${isConfirmed ? 'text-green-600' : 'text-gray-300'}">$${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
                                 <td><span class="badge-source">${order.adSource || 'Orgánico / Directo'}</span></td>
                             </tr>
                         `;
                         body.insertAdjacentHTML('beforeend', row);
                     });
                     totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                    confirmedText.textContent = '$' + confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
                 } else {
                     body.innerHTML = `
                         <tr>
-                            <td colspan="5" class="empty-state">
+                            <td colspan="6" class="empty-state">
                                 <div class="opacity-10 mb-6 text-7xl"><i class="fas fa-shopping-basket"></i></div>
                                 <p class="text-xl font-black text-gray-400 uppercase tracking-tighter">Sin actividad detectada</p>
                                 <p class="text-xs font-bold text-gray-400 mt-2 uppercase">No se encontraron pedidos para el día seleccionado.</p>
@@ -316,6 +358,7 @@
                         </tr>
                     `;
                     totalText.textContent = '$0.00';
+                    confirmedText.textContent = '$0.00';
                 }
 
                 // Manejar auto-refresh
@@ -337,7 +380,7 @@
                 const loadingState = document.getElementById('loading-state');
                 if (loadingState) {
                     loadingState.innerHTML = `
-                        <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30">
+                        <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30 w-full max-w-md">
                             <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
                             <p class="text-red-500 font-black uppercase tracking-tighter">Error de Aplicación</p>
                             <p class="text-xs text-red-400 mt-1">${error.message}</p>

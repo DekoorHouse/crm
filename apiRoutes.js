@@ -45,7 +45,8 @@ async function processOrdersData(ordersSnapshot) {
             total: orderData.precio || 0,
             createdAt: orderData.createdAt ? orderData.createdAt.toDate() : null,
             adSource: adSource,
-            producto: orderData.producto
+            producto: orderData.producto,
+            estatus: orderData.estatus || 'Sin estatus'
         });
     }
     return orders;
