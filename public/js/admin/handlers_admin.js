@@ -306,8 +306,8 @@ export function initEventListeners() {
         }
     });
 
-    if (elements.monthFilterContainer) {
-        elements.monthFilterContainer.addEventListener('click', handleMonthFilterClick);
+    if (elements.monthFilterSelect) {
+        elements.monthFilterSelect.addEventListener('change', handleMonthFilterChange);
     }
 
     // KPI Listeners
@@ -439,33 +439,33 @@ function handleTabClick(tab) {
  * Maneja el clic en un botón de filtro de mes.
  * @param {Event} e - El evento de clic.
  */
-function handleMonthFilterClick(e) {
-    const button = e.target.closest('button');
-    if (!button) return;
+/**
+ * Maneja el cambio en el selector de filtro de mes.
+ * @param {Event} e - El evento de cambio.
+ */
+function handleMonthFilterChange(e) {
+    const select = e.target;
+    if (!select.value) return;
 
-    if (window.app.picker) { // CORREGIDO: usar window.app
-        window.app.picker.clearSelection(); // CORREGIDO: usar window.app
+    if (window.app.picker) {
+        window.app.picker.clearSelection();
     }
 
-    const month = parseInt(button.dataset.month);
-    const year = parseInt(button.dataset.year);
+    const [month, year] = select.value.split('-').map(Number);
 
     state.activeMonth = { month, year };
     
-    // --- CORRECCIÓN: Usar Date.UTC para consistencia con el filtro ---
     // Crear la fecha de inicio en UTC
     state.dateFilter.start = new Date(Date.UTC(year, month, 1));
     
     // Crear la fecha de fin en UTC (fin de mes)
     const endDate = new Date(Date.UTC(year, month + 1, 0));
-    endDate.setUTCHours(23, 59, 59, 999); // Asegurar que cubre todo el día
+    endDate.setUTCHours(23, 59, 59, 999);
     state.dateFilter.end = endDate;
-    // --- FIN DE LA CORRECCIÓN ---
 
-    ui.renderMonthFilter();
-    window.app.renderData(); // CORREGIDO: usar window.app
-    window.app.renderSummary(); // CORREGIDO: usar window.app
-    window.app.renderAllCharts(); // CORREGIDO: usar window.app
+    window.app.renderData();
+    window.app.renderSummary();
+    window.app.renderAllCharts();
 }
 
 function confirmDeleteAllData() {

@@ -30,7 +30,7 @@ export function cacheElements() {
     elements.dateRangeFilter = document.getElementById('date-range-filter');
     elements.categoryFilter = document.getElementById('category-filter');
     elements.actionsContainer = document.getElementById('actions-container');
-    elements.monthFilterContainer = document.getElementById('month-filter-container');
+    elements.monthFilterSelect = document.getElementById('month-filter-select');
     elements.dataTableContainer = document.getElementById('data-table-container');
     elements.chartContexts = {
         pie: document.getElementById("pieChart")?.getContext("2d"),
@@ -504,14 +504,14 @@ export function openExpenseModal(expense = {}) {
 }
 
 export function renderMonthFilter() {
-    const container = elements.monthFilterContainer;
-    if (!container) return;
+    const select = elements.monthFilterSelect;
+    if (!select) return;
 
     const monthNames = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"];
     const today = new Date();
-    let buttonsHtml = '';
+    let optionsHtml = '<option value="" disabled selected>Mes...</option>';
 
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < 12; i++) {
         const date = new Date(today.getFullYear(), today.getMonth() - i, 1);
         const monthIndex = date.getMonth();
         const year = date.getFullYear();
@@ -520,10 +520,13 @@ export function renderMonthFilter() {
                          monthIndex === state.activeMonth.month && 
                          year === state.activeMonth.year;
 
-        buttonsHtml = `<button class="btn btn-sm btn-outline ${isActive ? 'active' : ''}" data-month="${monthIndex}" data-year="${year}">${monthNames[monthIndex]} '${year.toString().slice(-2)}</button>` + buttonsHtml;
+        const val = `${monthIndex}-${year}`;
+        const label = `${monthNames[monthIndex]} '${year.toString().slice(-2)}`;
+        
+        optionsHtml += `<option value="${val}" ${isActive ? 'selected' : ''}>${label}</option>`;
     }
     
-    container.innerHTML = buttonsHtml;
+    select.innerHTML = optionsHtml;
 }
 
 export function populateCategoryFilter() {
