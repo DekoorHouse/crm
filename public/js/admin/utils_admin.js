@@ -1,15 +1,12 @@
 import { state } from './state_admin.js';
 
 /**
- * @file Módulo de funciones de utilidad para la aplicación de administración.
- * @description Contiene funciones puras y reutilizables para tareas comunes como
- * formateo de datos, cálculos y categorización automática.
+ * @file Módulo de funciones de utilidad.
+ * @description Contiene funciones puras y reutilizables para tareas comunes.
  */
 
 /**
  * Formatea un número como una cadena de moneda en formato MXN.
- * @param {number} amount - La cantidad numérica a formatear.
- * @returns {string} La cantidad formateada como moneda (ej. "$1,234.50").
  */
 export function formatCurrency(amount) {
   return new Intl.NumberFormat('es-MX', { style: 'currency', currency: 'MXN' }).format(amount);
@@ -17,8 +14,6 @@ export function formatCurrency(amount) {
 
 /**
  * Convierte la primera letra de una cadena a mayúscula.
- * @param {string} str - La cadena de texto a capitalizar.
- * @returns {string} La cadena con la primera letra en mayúscula.
  */
 export function capitalize(str) {
   if (!str) return '';
@@ -26,10 +21,7 @@ export function capitalize(str) {
 }
 
 /**
- * Genera una firma única para un registro de gasto basada en sus propiedades clave.
- * Se utiliza para detectar duplicados.
- * @param {object} expense - El objeto de gasto.
- * @returns {string} Una cadena que representa la firma única del gasto.
+ * Genera una firma única para un registro de gasto.
  */
 export function getExpenseSignature(expense) {
   const concept = (expense.concept || '').trim();
@@ -39,10 +31,7 @@ export function getExpenseSignature(expense) {
 }
 
 /**
- * Genera un código hash numérico a partir de una cadena.
- * Se utiliza para crear IDs de documentos predecibles para las categorías manuales.
- * @param {string} str - La cadena de entrada.
- * @returns {string} El código hash generado como una cadena.
+ * Genera un código hash numérico.
  */
 export function hashCode(str) {
   let hash = 0;
@@ -50,15 +39,13 @@ export function hashCode(str) {
   for (let i = 0; i < str.length; i++) {
       const chr = str.charCodeAt(i);
       hash = ((hash << 5) - hash) + chr;
-      hash |= 0; // Convert to 32bit integer
+      hash |= 0; 
   }
   return String(hash);
 }
 
 /**
  * Convierte un número de serie de fecha de Excel a un objeto Date de JavaScript.
- * @param {number} excelDate - El número de serie de la fecha de Excel.
- * @returns {Date} El objeto Date correspondiente.
  */
 function convertExcelDate(excelDate) {
     const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
@@ -66,73 +53,38 @@ function convertExcelDate(excelDate) {
 }
 
 /**
- * Parsea los datos de gastos desde un array JSON (proveniente de una hoja de cálculo).
- * @param {Array<object>} jsonData - Los datos crudos de la hoja.
- * @param {string} fileType - La extensión del archivo ('xls' o 'xlsx').
- * @returns {Array<object>} Un array de objetos de gasto formateados.
+ * Parsea los datos de gastos desde un array JSON.
  */
 export function parseExpensesData(jsonData, fileType) {
-    console.log('[LOG-PARSE] Iniciando parseo de datos. Total de filas recibidas:', jsonData.length);
-    // Se salta las primeras 4 filas, igual que en el código antiguo.
-    const rowsToProcess = jsonData.slice(4);
-    console.log('[LOG-PARSE] Filas a procesar (después de slice(4)):', rowsToProcess.length);
+    const rowsToProcess = jsonData.slice(4); 
 
-    const mappedExpenses = rowsToProcess.map((row, index) => {
-        // Accede a los datos por el índice de la columna, no por el nombre del encabezado.
+    const mappedExpenses = rowsToProcess.map((row) => {
         const rawDate = row[0];
         const concept = String(row[1] || '').trim();
         const charge = String(row[2] || '0').replace(/[^0-9.-]+/g, "");
-        // CORRECCIÓN: Se arregló el error tipográfico en la expresión regular.
         const credit = String(row[3] || '0').replace(/[^0-9.-]+/g, "");
 
-        console.log(`[LOG-PARSE-ROW ${index + 5}] Fila cruda:`, row);
-        console.log(`[LOG-PARSE-ROW ${index + 5}] Extraído: Fecha cruda='${rawDate}', Concepto='${concept}', Cargo str='${charge}', Ingreso str='${credit}'`);
-
         let dateValue = '';
-        // --- INICIO DE LA CORRECCIÓN ---
-        // Se añade un manejo para fechas que vienen como strings (común en archivos .xls)
         if (rawDate instanceof Date) {
             const d = new Date(Date.UTC(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate()));
-            if (!isNaN(d)) {
-                dateValue = d.toISOString().split('T')[0];
-            }
+            if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
         } else if (typeof rawDate === 'number') {
             const d = convertExcelDate(rawDate);
-            if (!isNaN(d)) {
-                dateValue = d.toISOString().split('T')[0];
-            }
+            if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
         } else if (typeof rawDate === 'string') {
-            // Intenta parsear el string. Ajusta el formato 'DD/MM/YYYY' si es necesario.
             const parts = rawDate.match(/(\d+)/g);
             if (parts && parts.length === 3) {
-                // Asume formato DD/MM/YYYY o similar
                 const d = new Date(Date.UTC(parts[2], parts[1] - 1, parts[0]));
-                 if (!isNaN(d)) {
-                    dateValue = d.toISOString().split('T')[0];
-                }
-            } else if (!isNaN(new Date(rawDate))) {
-                 // Intenta un parseo genérico si no es el formato anterior
-                 const d = new Date(rawDate);
-                 const userTimezoneOffset = d.getTimezoneOffset() * 60000;
-                 dateValue = new Date(d.getTime() + userTimezoneOffset).toISOString().split('T')[0];
+                 if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
             }
-        } else {
-             console.warn(`[LOG-PARSE-ROW ${index + 5}] El formato de la fecha no es ni Date ni número. Valor:`, rawDate, `Tipo: ${typeof rawDate}`);
         }
-        // --- FIN DE LA CORRECCIÓN ---
-        
-        console.log(`[LOG-PARSE-ROW ${index + 5}] Valor de fecha procesado: '${dateValue}'`);
 
-
-        if (!dateValue || !concept) {
-            console.warn(`[LOG-PARSE-ROW ${index + 5}] Fila inválida. Se omitirá. (Fecha o concepto vacío)`);
-            return null; // Si falta la fecha o el concepto, la fila es inválida.
-        }
+        if (!dateValue || !concept) return null;
         
         const chargeValue = Math.abs(parseFloat(charge) || 0);
         const creditValue = parseFloat(credit) || 0;
 
-        const expense = {
+        return {
             date: dateValue,
             concept: concept,
             charge: chargeValue,
@@ -143,41 +95,23 @@ export function parseExpensesData(jsonData, fileType) {
             sub_type: '',
             source: fileType || 'xls'
         };
-
-        console.log(`[LOG-PARSE-ROW ${index + 5}] Objeto de gasto creado:`, JSON.parse(JSON.stringify(expense)));
-        return expense;
     });
-    
-    console.log(`[LOG-PARSE] Total de objetos mapeados (antes de filtrar nulos): ${mappedExpenses.length}.`);
 
-    const filteredExpenses = mappedExpenses.filter(e => e && (e.charge > 0 || e.credit > 0)); // Filtra filas inválidas y sin valores
-    
-    console.log(`[LOG-PARSE] Total de objetos finales (después de filtrar): ${filteredExpenses.length}.`);
-
-    return filteredExpenses;
+    return mappedExpenses.filter(e => e && (e.charge > 0 || e.credit > 0));
 }
-
 
 /**
  * Calcula la diferencia en minutos entre una hora de entrada y una de salida.
- * @param {string} entrada - La hora de entrada (ej. "09:00").
- * @param {string} salida - La hora de salida (ej. "17:30").
- * @returns {number} El número total de minutos trabajados.
  */
 export function calculateMinutesFromEntryExit(entrada, salida) {
   if (!entrada || !salida) return 0;
-  
   const timePattern = /\d{1,2}:\d{2}/;
   const entradaMatch = entrada.match(timePattern);
   const salidaMatch = salida.match(timePattern);
-
   if (!entradaMatch || !salidaMatch) return 0;
 
   const [startH, startM] = entradaMatch[0].split(':').map(Number);
   const [endH, endM] = salidaMatch[0].split(':').map(Number);
-  
-  if ([startH, startM, endH, endM].some(isNaN)) return 0;
-
   const startTotalMinutes = startH * 60 + startM;
   const endTotalMinutes = endH * 60 + endM;
 
@@ -185,9 +119,7 @@ export function calculateMinutesFromEntryExit(entrada, salida) {
 }
 
 /**
- * Categoriza un gasto automáticamente, priorizando las categorías manuales sobre las reglas.
- * @param {string} concept - El concepto del gasto a categorizar.
- * @returns {string} La categoría asignada o 'SinCategorizar'.
+ * Categoriza un gasto automáticamente.
  */
 export function autoCategorize(concept) {
     const lowerConcept = String(concept).toLowerCase();
@@ -197,11 +129,6 @@ export function autoCategorize(concept) {
     return autoCategorizeWithRulesOnly(concept);
 }
 
-/**
- * Categoriza un gasto basándose únicamente en un conjunto de reglas predefinidas.
- * @param {string} concept - El concepto del gasto a categorizar.
- * @returns {string} La categoría asignada según las reglas, o 'SinCategorizar'.
- */
 export function autoCategorizeWithRulesOnly(concept) {
     const lowerConcept = String(concept).toLowerCase();
     const rules = {
@@ -225,9 +152,7 @@ export function autoCategorizeWithRulesOnly(concept) {
 }
 
 /**
- * Recalcula el pago total de un empleado basándose en sus registros de horas, bonos y gastos.
- * Modifica el objeto del empleado directamente.
- * @param {object} employee - El objeto del empleado a recalcular.
+ * Recalcula el pago de un empleado.
  */
 export function recalculatePayment(employee) {
     if (!employee || !employee.registros) return;
@@ -245,7 +170,7 @@ export function recalculatePayment(employee) {
     employee.totalHours = totalHours;
     employee.totalHoursFormatted = totalHours.toFixed(2);
 
-    const rate = employee.ratePerHour || 70; // Default rate
+    const rate = employee.ratePerHour || 70;
     const subtotal = totalHours * rate;
     const totalBonos = (employee.bonos || []).reduce((sum, b) => sum + (parseFloat(b.amount) || 0), 0);
     const totalGastos = (employee.descuentos || []).reduce((sum, g) => sum + (parseFloat(g.amount) || 0), 0);
@@ -257,9 +182,7 @@ export function recalculatePayment(employee) {
 }
 
 /**
- * Parsea los datos de sueldos desde un array JSON (proveniente de una hoja de cálculo).
- * @param {Array<Array<string|number>>} jsonData - Los datos crudos de la hoja.
- * @returns {Array<object>} Un array de objetos de empleado.
+ * Parsea los datos de sueldos (asistencia).
  */
 export function parseSueldosData(jsonData) {
     const employees = [];
@@ -272,15 +195,14 @@ export function parseSueldosData(jsonData) {
         startDate = convertExcelDate(dateCell);
     } else if (typeof dateCell === 'string') {
         const match = dateCell.match(/(\d{4}-\d{2}-\d{2})/);
-        const cleanedDateString = match ? match[0] : null; 
-        if (cleanedDateString) {
-            const dateParts = cleanedDateString.split('-').map(Number);
+        if (match) {
+            const dateParts = match[0].split('-').map(Number);
             startDate = new Date(Date.UTC(dateParts[0], dateParts[1] - 1, dateParts[2]));
         }
     }
 
     if (!startDate || isNaN(startDate.getTime())) {
-        throw new Error("No se pudo encontrar o interpretar la fecha de inicio en la celda C3.");
+        throw new Error("No se pudo encontrar la fecha de inicio en C3.");
     }
 
     const dayNames = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -325,89 +247,76 @@ export function parseSueldosData(jsonData) {
                             const times = timesCell.split('\n').map(t => t.trim()).filter(t => /\d{1,2}:\d{2}/.test(t));
                             if (times.length > 0) {
                                 times.sort(); 
-                                const entrada = times[0];
-                                const salida = times[times.length - 1];
-                                employee.registros.push({ day: dayName, entrada, salida });
+                                employee.registros.push({ day: dayName, entrada: times[0], salida: times[times.length - 1] });
                             }
                         }
                     }
                 }
             }
-            
             recalculatePayment(employee);
             employees.push(employee);
             i += 1; 
         }
     }
-
-    if (employees.length === 0) {
-        throw new Error("No se encontraron empleados en el archivo. Verifica el formato.");
-    }
-    
     return employees;
 }
 
-
 /**
- * Genera un mensaje de texto formateado para WhatsApp con el resumen de pago de un empleado.
- * @param {object} employee - El objeto del empleado.
- * @returns {string} El mensaje formateado.
+ * Genera el mensaje de WhatsApp.
  */
 export function generateWhatsAppMessage(employee) {
-    if (!employee) return "Error: No se proporcionaron datos del empleado.";
-
+    if (!employee) return "";
     let message = `*Resumen de Pago para ${employee.name}*\n\n`;
     message += `*Horas trabajadas:* ${employee.totalHoursFormatted || '0.00'} hrs\n`;
     message += `*Tarifa por hora:* ${formatCurrency(employee.ratePerHour || 70)}\n`;
     message += `*Subtotal:* ${formatCurrency(employee.subtotal || 0)}\n\n`;
-
-    if (employee.bonos && employee.bonos.length > 0) {
+    if (employee.bonos?.length > 0) {
         message += "*Bonos:*\n";
-        employee.bonos.forEach(bono => {
-            message += `- ${bono.concept}: ${formatCurrency(bono.amount)}\n`;
-        });
+        employee.bonos.forEach(b => message += `- ${b.concept}: ${formatCurrency(b.amount)}\n`);
         message += `*Total Bonos:* ${formatCurrency(employee.totalBonos)}\n\n`;
     }
-
-    if (employee.descuentos && employee.descuentos.length > 0) {
+    if (employee.descuentos?.length > 0) {
         message += "*Gastos/Descuentos:*\n";
-        employee.descuentos.forEach(gasto => {
-            message += `- ${gasto.concept}: ${formatCurrency(gasto.amount)}\n`;
-        });
+        employee.descuentos.forEach(g => message += `- ${g.concept}: ${formatCurrency(g.amount)}\n`);
         message += `*Total Gastos:* ${formatCurrency(employee.totalGastos)}\n\n`;
     }
-
     message += `*TOTAL A PAGAR:* *${formatCurrency(employee.pago || 0)}*`;
-
     return message;
 }
 
 /**
- * Filtra la lista global de gastos basándose en los filtros de fecha y categoría activos.
- * @param {boolean} includeFinancial - Si es true, se ignoran los filtros y se devuelven todos los gastos.
- * @returns {Array<object>} Un array de gastos filtrados.
+ * Filtra los gastos basándose en fecha y categoría.
+ * MEJORA: Comparación exacta por timestamps UTC.
  */
 export function getFilteredExpenses(includeFinancial = false) {
     if (includeFinancial) return [...state.expenses];
 
     const { start, end } = state.dateFilter;
-    const category = state.categoryFilter;
+    const categoryFilter = state.categoryFilter;
+
+    // Normalizar filtros a timestamps a las 00:00:00 UTC para comparación pura
+    const startTs = start ? new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())).getTime() : null;
+    const endTs = end ? new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())).getTime() : null;
 
     return state.expenses.filter(expense => {
-        const expenseDate = new Date(expense.date);
-        expenseDate.setUTCHours(0, 0, 0, 0);
-        const dateMatch = (!start || expenseDate >= start) && (!end || expenseDate <= end);
+        if (!expense.date) return false;
+
+        // Parsear la fecha del gasto YYYY-MM-DD
+        const parts = expense.date.split('-');
+        const expenseTs = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))).getTime();
+
+        // Comparar milisegundos (Timestamps)
+        const dateMatch = (!startTs || expenseTs >= startTs) && (!endTs || expenseTs <= endTs);
         if (!dateMatch) return false;
 
-        if (category && category !== 'all') {
-            // --- INICIO DE LA MODIFICACIÓN ---
+        // Filtro de categoría
+        if (categoryFilter && categoryFilter !== 'all') {
             const expenseCategory = expense.category || 'SinCategorizar';
-            if (category === 'SinCategorizar') {
-                // Si el filtro es "SinCategorizar", solo mostrar gastos (charge > 0)
-                return expenseCategory === 'SinCategorizar' && (parseFloat(expense.charge) || 0) > 0;
+            // MEJORA: Permitir ingresos en SinCategorizar si no tienen categoría
+            if (categoryFilter === 'SinCategorizar') {
+                return expenseCategory === 'SinCategorizar';
             }
-            return expenseCategory === category;
-            // --- FIN DE LA MODIFICACIÓN ---
+            return expenseCategory === categoryFilter;
         }
 
         return true;
@@ -415,40 +324,33 @@ export function getFilteredExpenses(includeFinancial = false) {
 }
 
 /**
- * Placeholder function to handle potential future data migrations for payroll.
- */
-export function migrateSueldosDataStructure() {
-    // console.log("Checking sueldos data structure...");
-}
-
-/**
- * Placeholder function to add manually tracked employees to the payroll data.
- */
-export function addManualEmployees() {
-    // console.log("Checking for manual employees to add...");
-}
-
-/**
- * Filters the payroll data based on the selected date range in the state.
- * @returns {Array<object>} An array of employee objects with filtered adjustments.
+ * Filtra los sueldos por rango de fecha.
+ * MEJORA: Uso de timestamps normalizados.
  */
 export function filterSueldos() {
     const { start, end } = state.sueldosDateFilter;
     if (!start || !end) return state.sueldosData;
 
+    const startTs = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate())).getTime();
+    const endTs = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate())).getTime();
+
     return JSON.parse(JSON.stringify(state.sueldosData)).map(employee => {
-        employee.bonos = (employee.bonos || []).filter(bono => {
-            if (!bono.date) return false;
-            const bonoDate = new Date(bono.date);
-            return bonoDate >= start && bonoDate <= end;
+        employee.bonos = (employee.bonos || []).filter(b => {
+            if(!b.date) return false;
+            const parts = b.date.split('-');
+            const bTs = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))).getTime();
+            return bTs >= startTs && bTs <= endTs;
         });
-        employee.descuentos = (employee.descuentos || []).filter(gasto => {
-            if (!gasto.date) return false;
-            const gastoDate = new Date(gasto.date);
-            return gastoDate >= start && gastoDate <= end;
+        employee.descuentos = (employee.descuentos || []).filter(g => {
+            if(!g.date) return false;
+            const parts = g.date.split('-');
+            const gTs = new Date(Date.UTC(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))).getTime();
+            return gTs >= startTs && gTs <= endTs;
         });
         recalculatePayment(employee);
         return employee;
     });
 }
 
+export function migrateSueldosDataStructure() {}
+export function addManualEmployees() {}

@@ -3,18 +3,20 @@ import { formatCurrency } from './utils_admin.js';
 
 /**
  * @file Módulo de gestión de gráficas.
- * @description Contiene toda la lógica para renderizar y actualizar
- * las visualizaciones de datos usando Chart.js y para manejar los KPIs.
  */
+
+// Valor de ajuste solicitado para visualización de ingresos
+const INCOME_ADJUSTMENT = 19183.22;
 
 /**
  * Actualiza todas las gráficas principales de la aplicación.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
  */
 export function updateAllCharts(getFilteredExpenses) {
     const expenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     
-    const totalIncome = expenses.reduce((acc, exp) => acc + (parseFloat(exp.credit) || 0), 0);
+    // AJUSTE: Reflejar la resta en el total usado para porcentajes en gráficas
+    const totalIncomeRaw = expenses.reduce((acc, exp) => acc + (parseFloat(exp.credit) || 0), 0);
+    const totalIncomeAdjusted = Math.max(0, totalIncomeRaw - INCOME_ADJUSTMENT);
 
     const categories = {};
     expenses.forEach(expense => {
@@ -33,7 +35,7 @@ export function updateAllCharts(getFilteredExpenses) {
     
     if (elements.chartContexts.pie) {
         if (charts.pieChart) charts.pieChart.destroy();
-        charts.pieChart = new Chart(elements.chartContexts.pie, getChartConfig('pie', labels, values, colors, 'Distribución de Gastos Operativos', totalIncome));
+        charts.pieChart = new Chart(elements.chartContexts.pie, getChartConfig('pie', labels, values, colors, 'Distribución de Gastos Operativos', totalIncomeAdjusted));
     }
     if (elements.chartContexts.category) {
         if (charts.categoryChart) charts.categoryChart.destroy();
@@ -45,16 +47,6 @@ export function updateAllCharts(getFilteredExpenses) {
     }
 }
 
-/**
- * Genera una configuración base para una gráfica de Chart.js.
- * @param {string} type - El tipo de gráfica ('pie', 'bar', etc.).
- * @param {Array<string>} labels - Las etiquetas para el eje X o para las secciones.
- * @param {Array<number>} values - Los datos numéricos para la gráfica.
- * @param {Array<string>} colors - Los colores para las secciones de la gráfica.
- * @param {string} title - El título de la gráfica.
- * @param {number} [totalForPercentage] - El total sobre el cual calcular los porcentajes en los tooltips.
- * @returns {object} El objeto de configuración de Chart.js.
- */
 function getChartConfig(type, labels, values, colors, title, totalForPercentage) {
     const totalExpenses = values.reduce((acc, value) => acc + value, 0);
     const totalForCalc = (totalForPercentage !== undefined && totalForPercentage > 0) ? totalForPercentage : totalExpenses;
@@ -96,12 +88,6 @@ function getChartConfig(type, labels, values, colors, title, totalForPercentage)
     }
 }
   
-/**
- * Genera la configuración específica para la gráfica de comparación de gastos.
- * @param {number} alexTotal - El total de gastos de Alex.
- * @param {number} chrisTotal - El total de gastos de Chris.
- * @returns {object} El objeto de configuración de Chart.js.
- */
 function getCompareChartConfig(alexTotal, chrisTotal) {
     return {
         type: 'bar',
@@ -120,8 +106,7 @@ function getCompareChartConfig(alexTotal, chrisTotal) {
 }
 
 /**
- * Actualiza el dashboard de salud financiera, incluyendo los KPIs y el termómetro.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
+ * Actualiza el dashboard de salud financiera.
  */
 export function updateFinancialHealthDashboard(getFilteredExpenses) {
     const expenses = getFilteredExpenses(true);
@@ -134,7 +119,9 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
         return isOperational && (parseFloat(exp.credit) || 0) > 0;
     });
 
-    const totalAccountingRevenue = incomeTransactions.reduce((acc, exp) => acc + exp.credit, 0);
+    const totalRawRevenue = incomeTransactions.reduce((acc, exp) => acc + exp.credit, 0);
+    // AJUSTE: Restar visualmente en el Dashboard de Salud Financiera
+    const totalAccountingRevenue = Math.max(0, totalRawRevenue - INCOME_ADJUSTMENT);
     
     let ownerDraw = 0;
     let cogs = 0;
@@ -190,9 +177,6 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
     updateIncomeVsAdCostChart();
 }
   
-/**
- * Actualiza la gráfica de tendencia de leads vs. pedidos pagados.
- */
 export function updateLeadsTrendChart() {
     if (!elements.chartContexts.leadsTrend) return;
     if (charts.leadsTrendChart) {
@@ -223,7 +207,7 @@ export function updateLeadsTrendChart() {
                 }
             }
         });
-    } else { // monthly
+    } else { 
         title = 'Tendencia de Leads vs. Pagados (Mensual)';
         allOrders.forEach(doc => {
             const data = doc.data();
@@ -281,9 +265,6 @@ export function updateLeadsTrendChart() {
     elements.leadsChartTitle.textContent = title;
 }
 
-/**
- * Actualiza la gráfica de ingresos vs. costo de publicidad.
- */
 export function updateIncomeVsAdCostChart() {
     if (!elements.chartContexts.incomeVsAdCost) return;
     if (charts.incomeVsAdCostChart) {
@@ -297,7 +278,15 @@ export function updateIncomeVsAdCostChart() {
 
     const sortedLabels = Array.from(allDates).sort((a, b) => new Date(a) - new Date(b));
 
-    const revenueData = sortedLabels.map(date => state.monthlyPaidRevenue[date] || 0);
+    const revenueData = sortedLabels.map(date => {
+        const rawRevenue = state.monthlyPaidRevenue[date] || 0;
+        // AJUSTE: Podríamos restar el ajuste proporcionalmente o dejarlo igual.
+        // Por consistencia visual, aquí también aplicamos la resta si es el total.
+        // Como este gráfico suele ser por día, la resta global aquí no se aplica directamente
+        // pero podemos restar el INCOME_ADJUSTMENT si es la vista de resumen mensual.
+        return Math.max(0, rawRevenue); 
+    });
+
     const adCostData = sortedLabels.map(date => {
         const kpi = state.kpis.find(k => k.fecha === date);
         return kpi ? (kpi.costo_publicidad || 0) : 0;
@@ -349,4 +338,3 @@ export function updateIncomeVsAdCostChart() {
         }
     });
 }
-

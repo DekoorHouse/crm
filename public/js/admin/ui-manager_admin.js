@@ -4,13 +4,11 @@ import * as services from './services_admin.js';
 
 /**
  * @file Módulo de gestión de la interfaz de usuario (UI).
- * @description Contiene todas las funciones que manipulan directamente el DOM,
- * como renderizar tablas, actualizar vistas, mostrar y ocultar modales.
  */
 
-/**
- * Almacena en caché los elementos del DOM en el objeto 'elements'.
- */
+// Valor de ajuste solicitado para visualización de ingresos
+const INCOME_ADJUSTMENT = 19183.22;
+
 export function cacheElements() {
     elements.uploadBtn = document.getElementById('upload-btn');
     elements.uploadInput = document.getElementById('file-upload-input');
@@ -39,10 +37,9 @@ export function cacheElements() {
         category: document.getElementById("categoryChart")?.getContext("2d"),
         compare: document.getElementById("compareChart")?.getContext("2d"),
         leadsTrend: document.getElementById("leadsTrendChart")?.getContext("2d"),
-        incomeVsAdCost: document.getElementById("incomeVsAdCostChart")?.getContext("2d"), // Nuevo
+        incomeVsAdCost: document.getElementById("incomeVsAdCostChart")?.getContext("2d"),
     };
     
-    // Sueldos tab elements
     elements.addEmployeeBtn = document.getElementById('add-employee-btn');
     elements.sueldosUploadBtn = document.getElementById('sueldos-upload-btn');
     elements.sueldosUploadInput = document.getElementById('sueldos-file-upload-input');
@@ -54,7 +51,6 @@ export function cacheElements() {
     elements.closeWeekBtn = document.getElementById('close-week-btn');
     elements.deleteSueldosBtn = document.getElementById('delete-sueldos-btn');
 
-    // Financial Health elements
     elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
     elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
     elements.leadsChartToggle = document.getElementById('leads-chart-toggle');
@@ -72,7 +68,7 @@ export function cacheElements() {
     elements.kpiAvgTicketSales = document.getElementById('kpi-avg-ticket-sales');
     elements.kpiConversionRate = document.getElementById('kpi-conversion-rate');
 
-    // KPI Summary Dashboard elements
+    elements.kpiSummaryTitle = document.getElementById('kpi-summary-title'); 
     elements.kpiTotalLeads = document.getElementById('kpi-total-leads');
     elements.kpiTotalPaidLeads = document.getElementById('kpi-total-paid-leads');
     elements.kpiTotalCancelledLeads = document.getElementById('kpi-total-cancelled-leads');
@@ -82,12 +78,15 @@ export function cacheElements() {
     elements.kpiAvgCpvKpis = document.getElementById('kpi-avg-cpv-kpis');
     elements.kpiAvgConversionRateKpis = document.getElementById('kpi-avg-conversion-rate-kpis');
     
-    // KPIs Tab elements
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
+    elements.syncMetaBtn = document.getElementById('sync-meta-btn');
     elements.kpisTableBody = document.querySelector('#kpis-table tbody');
     elements.kpisEmptyState = document.getElementById('kpis-empty-state');
 
-    // Custom Prompt Elements
+    elements.notesEditor = document.getElementById('notes-editor');
+    elements.notesToolbar = document.getElementById('notes-toolbar');
+    elements.notesSaveStatus = document.getElementById('notes-save-status');
+
     elements.promptModal = document.getElementById('prompt-modal');
     elements.promptModalTitle = document.getElementById('prompt-modal-title');
     elements.promptModalInput = document.getElementById('prompt-modal-input');
@@ -96,10 +95,6 @@ export function cacheElements() {
     elements.promptModalCancelBtn = document.getElementById('prompt-modal-cancel-btn');
 }
 
-/**
- * Renderiza la tabla principal de gastos con los datos filtrados.
- * @param {Array<object>} expenses - Un array de objetos de gastos para mostrar.
- */
 export function renderTable(expenses) {
     elements.dataTableBody.innerHTML = '';
     const sorted = [...expenses].sort((a,b) => (b.date > a.date) ? 1 : -1);
@@ -114,7 +109,7 @@ export function renderTable(expenses) {
         const isOperational = expense.type === 'operativo' || !expense.type; 
 
         if (isOperational && credit > 0) {
-            displayCategory = expense.channel || ''; // Show channel or blank
+            displayCategory = expense.channel || ''; 
         } else if (isOperational || expense.sub_type === 'pago_intereses') {
             displayCategory = expense.category || 'SinCategorizar';
         }
@@ -132,7 +127,7 @@ export function renderTable(expenses) {
         const categoriesWithoutSubcategory = ['Alex', 'Chris', 'Publicidad'];
 
         if (credit > 0 || categoriesWithoutSubcategory.includes(displayCategory)) {
-            subcategoryHtml = ''; // Deja el espacio en blanco para estas categorías
+            subcategoryHtml = ''; 
         } else if (displayCategory !== 'N/A' && displayCategory !== '' && displayCategory !== 'SinCategorizar') {
             const availableSubcategories = state.subcategories[displayCategory] || [];
             const subcategoryOptions = availableSubcategories.map(sub => `<option value="${sub}" ${expense.subcategory === sub ? 'selected' : ''}>${sub}</option>`).join('');
@@ -164,10 +159,6 @@ export function renderTable(expenses) {
     });
 }
   
-/**
- * Actualiza los totales en el pie de la tabla principal de gastos.
- * @param {Array<object>} expenses - El array de gastos que se está mostrando actualmente.
- */
 export function updateTableTotals(expenses) {
     const { totalCharge, totalCredit } = expenses.reduce((acc, exp) => {
         acc.totalCharge += parseFloat(exp.charge) || 0;
@@ -184,14 +175,7 @@ export function updateTableTotals(expenses) {
     `;
 }
 
-/**
- * Renderiza la sección de resumen con tarjetas para cada categoría.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
- */
 export function updateSummary(getFilteredExpenses) {
-    // --- INICIO DE LA MODIFICACIÓN ---
-    
-    // 1. Calcular totales para las tarjetas de categorías basadas en los filtros actuales.
     const filteredOperationalExpenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     
     const summaryData = filteredOperationalExpenses.reduce((acc, exp) => {
@@ -209,17 +193,17 @@ export function updateSummary(getFilteredExpenses) {
         }
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
+
+    // AJUSTE: Aplicar resta de visualización a Ingresos Operativos
+    summaryData.TotalIngresos = Math.max(0, summaryData.TotalIngresos - INCOME_ADJUSTMENT);
     
-    // 2. Calcular la Utilidad Operativa total usando TODOS los movimientos, ignorando los filtros.
     const allOperationalExpenses = state.expenses.filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     const totalOverallIncome = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
     const totalOverallCharges = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
     
-    // Asignar el cálculo global a la propiedad TotalNeto
-    summaryData.TotalNeto = totalOverallIncome - totalOverallCharges;
+    // AJUSTE: El Neto también debe reflejar la resta para ser coherente
+    summaryData.TotalNeto = (totalOverallIncome - INCOME_ADJUSTMENT) - totalOverallCharges;
     
-    // --- FIN DE LA MODIFICACIÓN ---
-
     elements.summarySection.innerHTML = '';
     const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
     const sortedSummary = Object.entries(summaryData).sort(([keyA], [keyB]) => {
@@ -239,13 +223,6 @@ export function updateSummary(getFilteredExpenses) {
     });
 }
   
-/**
- * Crea el HTML para una tarjeta de resumen individual.
- * @param {string} title - El título de la tarjeta (generalmente la categoría).
- * @param {number} amount - El monto total para esa categoría.
- * @param {boolean} isClickable - Si la tarjeta debe tener la clase 'clickable'.
- * @returns {HTMLElement} El elemento de la tarjeta creado.
- */
 export function createSummaryCard(title, amount, isClickable) {
       const icons = {
         TotalNeto: "fas fa-balance-scale", TotalCargos: "fas fa-arrow-up-from-bracket", TotalIngresos: "fas fa-hand-holding-usd", Alex: "fas fa-user", Chris: "fas fa-user-friends",
@@ -266,11 +243,6 @@ export function createSummaryCard(title, amount, isClickable) {
       return card;
 }
   
-/**
- * Muestra un modal con el desglose de gastos para una categoría específica.
- * @param {string} category - La categoría a detallar.
- * @param {Function} getFilteredExpenses - Función para obtener los gastos filtrados.
- */
 export function showCategoryDetailsModal(category, getFilteredExpenses) {
     const categoryExpenses = getFilteredExpenses().filter(e => (e.category || 'SinCategorizar') === category && (parseFloat(e.charge) || 0) > 0);
     let total = 0;
@@ -290,10 +262,6 @@ export function showCategoryDetailsModal(category, getFilteredExpenses) {
     showModal({ title: `Detalles de: ${category}`, body: tableHtml, confirmText: 'Cerrar', showCancel: false });
 }
   
-/**
- * Muestra u oculta el modal principal, configurando su contenido y acciones.
- * @param {object} options - Las opciones para configurar el modal.
- */
 export function showModal({ show = true, title, body, onConfirm, onModalOpen, confirmText = 'Confirmar', confirmClass = '', showCancel = true, showConfirm = true }) {
       if (!show) { elements.modal.classList.remove('visible'); return; }
       elements.modalTitle.textContent = title;
@@ -308,15 +276,6 @@ export function showModal({ show = true, title, body, onConfirm, onModalOpen, co
       if (onModalOpen) onModalOpen();
 }
 
-/**
- * Muestra un modal de prompt personalizado.
- * @param {object} options - Opciones para el modal.
- * @param {string} options.title - El título del modal.
- * @param {string} [options.placeholder=''] - El placeholder para el input.
- * @param {string} [options.confirmText='Aceptar'] - El texto para el botón de confirmación.
- * @param {string} [options.value=''] - Valor inicial del input.
- * @returns {Promise<string|null>} Una promesa que resuelve con el valor del input o null si se cancela.
- */
 export function showPromptModal({ title, placeholder = '', confirmText = 'Aceptar', value = '' }) {
     return new Promise((resolve) => {
         const { 
@@ -344,13 +303,13 @@ export function showPromptModal({ title, placeholder = '', confirmText = 'Acepta
                 cleanup();
                 resolve(inputValue);
             } else {
-                promptModalInput.focus(); // Simple validation
+                promptModalInput.focus();
             }
         };
 
         const handleCancel = () => {
             cleanup();
-            resolve(null); // Resolve with null on cancel
+            resolve(null);
         };
 
         promptModalForm.onsubmit = handleConfirm;
@@ -370,10 +329,6 @@ export function showPromptModal({ title, placeholder = '', confirmText = 'Acepta
     });
 }
   
-/**
- * Abre el modal para agregar o editar un movimiento operativo.
- * @param {object} [expense={}] - El objeto de gasto a editar. Si está vacío, se crea uno nuevo.
- */
 export function openExpenseModal(expense = {}) {
     const isEditing = !!expense.id;
     const title = isEditing ? 'Editar Movimiento' : 'Agregar Movimiento Operativo';
@@ -475,7 +430,7 @@ export function openExpenseModal(expense = {}) {
                     optionsHtml += '<option value="__add_new__">+ Crear nueva...</option>';
                     
                     subcategorySelect.innerHTML = optionsHtml;
-                    subcategorySelect.dataset.category = selectedCategory; // Guardar categoría padre
+                    subcategorySelect.dataset.category = selectedCategory; 
                     subcategoryGroup.style.display = 'block';
                 } else {
                     subcategoryGroup.style.display = 'none';
@@ -520,8 +475,6 @@ export function openExpenseModal(expense = {}) {
                     if (newSubcategoryName) {
                         const trimmedName = newSubcategoryName.trim();
                         await services.saveNewSubcategory(trimmedName, parentCategory);
-                        // El listener de Firestore actualizará el estado global. Para mejorar la UX,
-                        // actualizamos el estado local y repoblamos el select inmediatamente.
                         if (!state.subcategories[parentCategory]) {
                            state.subcategories[parentCategory] = [];
                         }
@@ -533,7 +486,7 @@ export function openExpenseModal(expense = {}) {
                         populateSubcategories();
                         e.target.value = trimmedName;
                     } else {
-                        e.target.value = originalSubcategory; // Revertir si se cancela
+                        e.target.value = originalSubcategory; 
                     }
                 }
             });
@@ -541,7 +494,7 @@ export function openExpenseModal(expense = {}) {
             conceptInput.addEventListener('input', () => {
                 if (!isFinancial && !(parseFloat(creditInput.value) > 0)) {
                     categorySelect.value = autoCategorize(conceptInput.value);
-                    populateSubcategories(); // Actualizar subcategorías cuando la categoría principal cambia
+                    populateSubcategories(); 
                 }
             });
 
@@ -550,9 +503,6 @@ export function openExpenseModal(expense = {}) {
     });
 }
 
-/**
- * Renderiza los botones de filtro por mes. Muestra los últimos 6 meses.
- */
 export function renderMonthFilter() {
     const container = elements.monthFilterContainer;
     if (!container) return;
@@ -570,16 +520,12 @@ export function renderMonthFilter() {
                          monthIndex === state.activeMonth.month && 
                          year === state.activeMonth.year;
 
-        // unshift equivalent for strings
         buttonsHtml = `<button class="btn btn-sm btn-outline ${isActive ? 'active' : ''}" data-month="${monthIndex}" data-year="${year}">${monthNames[monthIndex]} '${year.toString().slice(-2)}</button>` + buttonsHtml;
     }
     
     container.innerHTML = buttonsHtml;
 }
 
-/**
- * Rellena el select de filtro de categorías con las categorías existentes.
- */
 export function populateCategoryFilter() {
     const categories = [...new Set(state.expenses
         .filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses') 
@@ -596,7 +542,6 @@ export function populateCategoryFilter() {
     elements.categoryFilter.value = currentCategory;
 }
 
-// --- Litepicker Initialization ---
 export function initDateRangePicker(callback) {
     if (elements.dateRangeFilter) {
         return new Litepicker({
@@ -750,6 +695,7 @@ export function renderSueldosData(employees, isFiltered) {
                         <button class="btn btn-sm add-gasto-btn"><i class="fas fa-minus"></i> Gasto</button>
                         <button class="btn btn-sm btn-outline share-text-btn"><i class="fab fa-whatsapp"></i></button>
                         <button class="btn btn-sm btn-outline download-pdf-btn"><i class="fas fa-file-pdf"></i></button>
+                        <button class="btn btn-sm btn-outline delete-employee-btn" style="color:var(--danger); border-color:var(--danger); margin-left: auto;" title="Eliminar Empleado"><i class="fas fa-trash"></i> Eliminar</button>
                     </div>
                 </div>
             </div>
@@ -760,6 +706,14 @@ export function renderSueldosData(employees, isFiltered) {
 
 export function renderKpisTable() {
     if (!elements.kpisTableBody) return;
+
+    if (elements.kpiSummaryTitle) {
+        const today = new Date();
+        const monthName = today.toLocaleString('es-MX', { month: 'long' });
+        const year = today.getFullYear();
+        elements.kpiSummaryTitle.textContent = `Resumen de KPIs del Mes (${capitalize(monthName)} ${year})`;
+    }
+
     elements.kpisTableBody.innerHTML = '';
 
     const allDates = new Set([
@@ -771,7 +725,7 @@ export function renderKpisTable() {
 
     if (allDates.size === 0) {
         elements.kpisEmptyState.style.display = 'block';
-        calculateAndDisplayAverages([]); // Reset summary dashboard
+        calculateAndDisplayAverages([]); 
         return;
     }
 
@@ -827,12 +781,10 @@ export function renderKpisTable() {
         elements.kpisTableBody.appendChild(tr);
     });
 
-    // Calcular y mostrar promedios
     calculateAndDisplayAverages(combinedData);
 }
 
 function calculateAndDisplayAverages(data) {
-    // Reset dashboard if no data
     if (data.length === 0) {
         if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = '0';
         if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = '0';
@@ -858,19 +810,18 @@ function calculateAndDisplayAverages(data) {
     const avgCpv = totals.paidLeads > 0 ? totals.adCost / totals.paidLeads : 0;
     const avgConversionRate = totals.leads > 0 ? (totals.paidLeads / totals.leads) * 100 : 0;
 
-    // Update Total cards
     if (elements.kpiTotalLeads) elements.kpiTotalLeads.textContent = totals.leads;
     if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = totals.paidLeads;
     if (elements.kpiTotalCancelledLeads) elements.kpiTotalCancelledLeads.textContent = totals.cancelledLeads;
-    if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(totals.revenue);
+    
+    // AJUSTE: Restar visualmente en KPIs si aplica (coherencia con dashboard contable)
+    if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(Math.max(0, totals.revenue - INCOME_ADJUSTMENT));
     if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(totals.adCost);
 
-    // Update Average cards
     if (elements.kpiAvgCpl) elements.kpiAvgCpl.textContent = formatCurrency(avgCpl);
     if (elements.kpiAvgCpvKpis) elements.kpiAvgCpvKpis.textContent = formatCurrency(avgCpv);
     if (elements.kpiAvgConversionRateKpis) elements.kpiAvgConversionRateKpis.textContent = `${avgConversionRate.toFixed(2)}%`;
 }
-
 
 export function openKpiModal(kpi = {}) {
     const isEditing = !!kpi.id;
@@ -913,12 +864,59 @@ export function openKpiModal(kpi = {}) {
     });
 }
 
+export function openMetaSyncModal() {
+    const savedAdAccount = localStorage.getItem('meta_ad_account_id') || '';
+    const savedToken = localStorage.getItem('meta_access_token') || '';
+    
+    const today = new Date();
+    const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
 
-/**
- * Opens a modal to add a bonus or an expense/discount for an employee.
- * @param {string} employeeId - The ID of the employee.
- * @param {string} type - The type of adjustment ('bono' or 'gasto').
- */
+    showModal({
+        title: 'Sincronizar Gastos de Meta Ads',
+        body: `
+            <div style="margin-bottom: 15px; font-size: 13px; color: var(--text-secondary);">
+                Ingresa tu ID de cuenta publicitaria (ej. <code>act_12345678</code>) y tu Token de Acceso (System User o Graph API Explorer).
+            </div>
+            <form id="meta-sync-form" style="display: grid; gap: 15px;">
+                <div class="form-group">
+                    <label for="meta-account-id">Ad Account ID (comienza con 'act_')</label>
+                    <input type="text" id="meta-account-id" class="modal-input" placeholder="act_1234567890" value="${savedAdAccount}" required>
+                </div>
+                <div class="form-group">
+                    <label for="meta-token">Access Token</label>
+                    <input type="password" id="meta-token" class="modal-input" placeholder="EAA..." value="${savedToken}" required>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                    <div class="form-group">
+                        <label for="meta-start-date">Desde</label>
+                        <input type="date" id="meta-start-date" class="modal-input" value="${firstDay}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="meta-end-date">Hasta</label>
+                        <input type="date" id="meta-end-date" class="modal-input" value="${lastDay}" required>
+                    </div>
+                </div>
+            </form>
+        `,
+        confirmText: 'Sincronizar',
+        onConfirm: async () => {
+            const form = document.getElementById('meta-sync-form');
+            if (form.reportValidity()) {
+                const accountId = document.getElementById('meta-account-id').value.trim();
+                const token = document.getElementById('meta-token').value.trim();
+                const startDate = document.getElementById('meta-start-date').value;
+                const endDate = document.getElementById('meta-end-date').value;
+
+                localStorage.setItem('meta_ad_account_id', accountId);
+                localStorage.setItem('meta_access_token', token);
+
+                await services.syncMetaSpend(accountId, token, startDate, endDate);
+            }
+        }
+    });
+}
+
 function openAdjustmentModal(employeeId, type) {
     const employee = state.sueldosData.find(emp => emp.id === employeeId);
     if (!employee) return;
@@ -963,98 +961,172 @@ function openAdjustmentModal(employeeId, type) {
     });
 }
 
-/**
- * Opens the modal specifically for adding a bonus.
- * @param {string} employeeId - The ID of the employee.
- */
 export function openBonoModal(employeeId) {
     openAdjustmentModal(employeeId, 'bono');
 }
 
-/**
- * Opens the modal specifically for adding an expense/discount.
- * @param {string} employeeId - The ID of the employee.
- */
 export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
 
-/**
- * Displays a modal for selecting from a list of duplicate expenses.
- * @param {Array<object>} duplicateGroups - Groups of duplicate expenses found.
- * @param {Array<object>} nonDuplicates - Expenses that were not found to be duplicates.
- */
+export function renderNotes(content) {
+    if (elements.notesEditor && elements.notesEditor.innerHTML !== content) {
+        elements.notesEditor.innerHTML = content;
+    }
+}
+
+export function showNotesSaveStatus(text) {
+    if (!elements.notesSaveStatus) return;
+    const statusEl = elements.notesSaveStatus;
+    statusEl.textContent = text;
+    statusEl.style.opacity = '1';
+    
+    if (text === 'Guardado') {
+        setTimeout(() => {
+            if (statusEl.textContent === 'Guardado') {
+                 statusEl.style.opacity = '0';
+            }
+        }, 2000); 
+    }
+}
+
 export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
     let duplicateHtml = duplicateGroups.map((group, index) => {
-        return `
-            <div class="duplicate-group" style="margin-bottom: 15px; padding: 10px; border: 1px solid #ddd; border-radius: 8px;">
-                <p><strong>Motivo:</strong> ${group.reason}</p>
-                <table class="duplicate-table" style="width: 100%; font-size: 13px;">
-                    <thead>
-                        <tr>
-                            <th><input type="checkbox" class="group-checkbox" data-group-index="${index}"></th>
-                            <th>Fecha</th>
-                            <th>Concepto</th>
-                            <th>Cargo</th>
-                            <th>Ingreso</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${group.expenses.map((exp, expIndex) => `
-                            <tr>
-                                <td><input type="checkbox" class="expense-checkbox" data-group-index="${index}" value="${expIndex}"></td>
-                                <td>${exp.date}</td>
-                                <td>${exp.concept}</td>
-                                <td>${formatCurrency(exp.charge)}</td>
-                                <td>${formatCurrency(exp.credit)}</td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
+        const header = `
+            <tr class="group-header">
+                <td colspan="5">
+                    <strong>${group.reason}</strong> (Firma: ${group.signature})
+                </td>
+            </tr>`;
+        const rows = group.expenses.map((exp, expIndex) => `
+            <tr data-group-index="${index}" data-expense-index="${expIndex}">
+                <td><input type="checkbox" class="duplicate-checkbox" data-expense-sig="${group.signature}"></td>
+                <td>${exp.date}</td>
+                <td>${exp.concept}</td>
+                <td>${formatCurrency(exp.charge)}</td>
+                <td>${formatCurrency(exp.credit)}</td>
+            </tr>`).join('');
+        return header + rows;
     }).join('');
 
     const body = `
-        <p>Se encontraron ${duplicateGroups.length} grupo(s) de movimientos duplicados. Por favor, selecciona los que deseas importar. ${nonDuplicates.length > 0 ? `Se importarán ${nonDuplicates.length} registros únicos automáticamente.` : ''}</p>
-        <div id="duplicates-container" style="max-height: 40vh; overflow-y: auto; margin-top: 15px;">
-            ${duplicateHtml}
+        <p>Se encontraron ${duplicateGroups.length} grupos de registros duplicados. Por favor, revisa y selecciona los que deseas importar.</p>
+        <div class="table-container" style="max-height: 40vh; margin-top: 15px;">
+            <table class="duplicate-table">
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="select-all-duplicates"></th>
+                        <th>Fecha</th>
+                        <th>Concepto</th>
+                        <th>Cargo</th>
+                        <th>Ingreso</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${duplicateHtml}
+                </tbody>
+            </table>
         </div>
+        <p style="margin-top: 10px;">Se importarán <strong>${nonDuplicates.length}</strong> registros no duplicados automáticamente.</p>
     `;
 
     showModal({
-        title: "Manejar Duplicados",
+        title: 'Confirmar Duplicados',
         body: body,
-        confirmText: "Importar Selección",
+        confirmText: 'Importar Selección',
+        showCancel: true,
         onConfirm: async () => {
-            const selectedExpenses = [...nonDuplicates];
-            document.querySelectorAll('.expense-checkbox:checked').forEach(checkbox => {
-                const groupIndex = parseInt(checkbox.dataset.groupIndex);
-                const expenseIndex = parseInt(checkbox.value);
-                selectedExpenses.push(duplicateGroups[groupIndex].expenses[expenseIndex]);
-            });
+            const expensesToAddFromDuplicates = [];
             
-            if (selectedExpenses.length > 0) {
-                await services.saveBulkExpenses(selectedExpenses);
+            document.querySelectorAll('.duplicate-checkbox:checked').forEach(checkbox => {
+                const row = checkbox.closest('tr');
+                const groupIndex = row.dataset.groupIndex;
+                const expenseIndex = row.dataset.expenseIndex;
+                
+                if (groupIndex !== undefined && expenseIndex !== undefined) {
+                    const group = duplicateGroups[groupIndex];
+                    const expense = group.expenses[expenseIndex];
+                    if (expense && !expensesToAddFromDuplicates.includes(expense)) {
+                       expensesToAddFromDuplicates.push(expense);
+                    }
+                }
+            });
+
+            try {
+                await services.saveBulkExpenses([...nonDuplicates, ...expensesToAddFromDuplicates]);
                 showModal({
                     title: 'Éxito',
-                    body: `Se importaron ${selectedExpenses.length} registros.`,
+                    body: `Se importaron ${nonDuplicates.length} registros únicos y ${expensesToAddFromDuplicates.length} duplicados seleccionados.`,
                     confirmText: 'Entendido',
                     showCancel: false
                 });
-            } else {
-                showModal({ show: false });
+            } catch (e) {
+                 showModal({
+                    title: 'Error',
+                    body: `Error al guardar: ${e.message}`,
+                    confirmText: 'Cerrar',
+                    showCancel: false
+                });
             }
         },
         onModalOpen: () => {
-            document.querySelectorAll('.group-checkbox').forEach(groupCheckbox => {
-                groupCheckbox.addEventListener('change', (e) => {
-                    const groupIndex = e.target.dataset.groupIndex;
-                    document.querySelectorAll(`.expense-checkbox[data-group-index="${groupIndex}"]`).forEach(expCheckbox => {
-                        expCheckbox.checked = e.target.checked;
-                    });
+            document.getElementById('select-all-duplicates').addEventListener('change', (e) => {
+                document.querySelectorAll('.duplicate-checkbox').forEach(cb => {
+                    cb.checked = e.target.checked;
                 });
             });
         }
     });
+}
+
+// --- TOAST NOTIFICATIONS --- //
+export function showToast(message, type = 'success') {
+    const container = document.getElementById('toast-container');
+    if (!container) return;
+
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    // Iconos según el tipo
+    let iconClass = 'fas fa-check-circle'; // success by default
+    if (type === 'error') iconClass = 'fas fa-exclamation-circle';
+    if (type === 'warning') iconClass = 'fas fa-exclamation-triangle';
+
+    toast.innerHTML = `<i class="${iconClass}"></i> <span>${message}</span>`;
+    container.appendChild(toast);
+
+    // Ocultar e inyectar animación de salida despues de 3 segundos
+    setTimeout(() => {
+        toast.classList.add('hide');
+        toast.addEventListener('animationend', () => {
+            toast.remove();
+        });
+    }, 3000);
+}
+
+// --- DARK MODE --- //
+export function initDarkMode() {
+    const toggleBtn = document.getElementById('theme-toggle');
+    const body = document.body;
+    const isDark = localStorage.getItem('darkMode') === 'true';
+
+    // Aplicar estado inicial
+    if (isDark) {
+        body.classList.add('dark-mode');
+        if(toggleBtn) toggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
+    }
+
+    if (toggleBtn) {
+        toggleBtn.addEventListener('click', () => {
+            body.classList.toggle('dark-mode');
+            const isNowDark = body.classList.contains('dark-mode');
+            localStorage.setItem('darkMode', isNowDark);
+            
+            if (isNowDark) {
+                toggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
+            } else {
+                toggleBtn.innerHTML = '<i class="fas fa-moon"></i>';
+            }
+        });
+    }
 }

@@ -1,4 +1,4 @@
-import { elements, state, app } from './state_admin.js';
+import { elements, state } from './state_admin.js';
 import * as utils from './utils_admin.js';
 import * as ui from './ui-manager_admin.js';
 import * as services from './services_admin.js';
@@ -247,7 +247,7 @@ export function initEventListeners() {
     elements.addEmployeeBtn.addEventListener('click', () => ui.openAddEmployeeModal());
     elements.sueldosUploadBtn.addEventListener('click', () => elements.sueldosUploadInput.click());
     elements.sueldosUploadInput.addEventListener('change', handleSueldosFileUpload);
-    elements.resetSueldosFilterBtn.addEventListener('click', () => app.resetSueldosFilter());
+    elements.resetSueldosFilterBtn.addEventListener('click', () => window.app.resetSueldosFilter()); // CORREGIDO: usar window.app
     elements.closeWeekBtn.addEventListener('click', confirmCloseWeek);
     elements.deleteSueldosBtn.addEventListener('click', confirmDeleteSueldosData);
 
@@ -264,6 +264,9 @@ export function initEventListeners() {
         if (e.target.closest('.delete-adjustment-btn')) {
             const { adjustmentId, adjustmentType } = e.target.closest('.delete-adjustment-btn').dataset;
             confirmDeleteAdjustment(employeeId, adjustmentId, adjustmentType);
+        }
+        if (e.target.closest('.delete-employee-btn')) {
+            confirmDeleteEmployee(employeeId);
         }
         if (e.target.closest('.toggle-details-btn')) {
             toggleEmployeeCard(employeeCard);
@@ -291,7 +294,7 @@ export function initEventListeners() {
     });
 
     elements.resetHealthFilterBtn.addEventListener('click', () => {
-        if (app.healthPicker) app.healthPicker.clearSelection();
+        if (window.app.healthPicker) window.app.healthPicker.clearSelection(); // CORREGIDO: usar window.app
     });
     elements.leadsChartToggle.addEventListener('click', (e) => {
         const button = e.target.closest('button');
@@ -311,6 +314,18 @@ export function initEventListeners() {
     if (elements.addKpiBtn) {
         elements.addKpiBtn.addEventListener('click', () => ui.openKpiModal());
     }
+    
+    // NUEVO: Listener para botón de Meta (Corregido y reforzado)
+    const syncMetaBtn = elements.syncMetaBtn || document.getElementById('sync-meta-btn');
+    if (syncMetaBtn) {
+        syncMetaBtn.addEventListener('click', () => {
+            console.log("Click en botón Sincronizar Meta"); // Log para debug
+            ui.openMetaSyncModal();
+        });
+    } else {
+        console.warn("No se encontró el botón de Sincronizar con Meta");
+    }
+
     if (elements.kpisTableBody) {
         elements.kpisTableBody.addEventListener('click', (e) => {
             const editBtn = e.target.closest('.edit-kpi-btn');
@@ -334,6 +349,38 @@ export function initEventListeners() {
                 const kpiId = deleteBtn.dataset.id;
                 if (kpiId) {
                     confirmDeleteKpi(kpiId);
+                }
+            }
+        });
+    }
+
+    // --- NUEVO: Listeners para Notas ---
+    if (elements.notesEditor) {
+        let saveTimeout;
+        elements.notesEditor.addEventListener('input', () => {
+            ui.showNotesSaveStatus('Escribiendo...');
+            clearTimeout(saveTimeout);
+            saveTimeout = setTimeout(async () => {
+                ui.showNotesSaveStatus('Guardando...');
+                const content = elements.notesEditor.innerHTML;
+                const success = await services.saveNotes(content);
+                if (success) {
+                    ui.showNotesSaveStatus('Guardado');
+                } else {
+                    ui.showNotesSaveStatus('Error al guardar');
+                }
+            }, 1000); // Guardar 1 segundo después de dejar de escribir
+        });
+    }
+
+    if (elements.notesToolbar) {
+        elements.notesToolbar.addEventListener('click', (e) => {
+            const btn = e.target.closest('button');
+            if (btn) {
+                const command = btn.dataset.command;
+                if (command) {
+                    document.execCommand(command, false, null);
+                    elements.notesEditor.focus();
                 }
             }
         });
@@ -396,21 +443,29 @@ function handleMonthFilterClick(e) {
     const button = e.target.closest('button');
     if (!button) return;
 
-    if (app.picker) {
-        app.picker.clearSelection();
+    if (window.app.picker) { // CORREGIDO: usar window.app
+        window.app.picker.clearSelection(); // CORREGIDO: usar window.app
     }
 
     const month = parseInt(button.dataset.month);
     const year = parseInt(button.dataset.year);
 
     state.activeMonth = { month, year };
-    state.dateFilter.start = new Date(year, month, 1);
-    state.dateFilter.end = new Date(year, month + 1, 0);
+    
+    // --- CORRECCIÓN: Usar Date.UTC para consistencia con el filtro ---
+    // Crear la fecha de inicio en UTC
+    state.dateFilter.start = new Date(Date.UTC(year, month, 1));
+    
+    // Crear la fecha de fin en UTC (fin de mes)
+    const endDate = new Date(Date.UTC(year, month + 1, 0));
+    endDate.setUTCHours(23, 59, 59, 999); // Asegurar que cubre todo el día
+    state.dateFilter.end = endDate;
+    // --- FIN DE LA CORRECCIÓN ---
 
     ui.renderMonthFilter();
-    app.renderData();
-    app.renderSummary();
-    app.renderAllCharts();
+    window.app.renderData(); // CORREGIDO: usar window.app
+    window.app.renderSummary(); // CORREGIDO: usar window.app
+    window.app.renderAllCharts(); // CORREGIDO: usar window.app
 }
 
 function confirmDeleteAllData() {
@@ -455,9 +510,9 @@ function confirmRemoveDuplicates() {
 
 function handleFilterChange(e) { 
     state.categoryFilter = e.target.value;
-    app.renderData();
-    app.renderSummary();
-    app.renderAllCharts();
+    window.app.renderData(); // CORREGIDO: usar window.app
+    window.app.renderSummary(); // CORREGIDO: usar window.app
+    window.app.renderAllCharts(); // CORREGIDO: usar window.app
 }
 
 function handleCategoryChange(e) {
@@ -480,7 +535,7 @@ async function handleSubcategoryChange(e) {
 
     if (newSubcategory === '__add_new__') {
         if (!parentCategory) {
-            alert("Primero debe seleccionar una categoría principal.");
+            ui.showToast("Primero debe seleccionar una categoría principal.", "warning");
             select.value = expense.subcategory || '';
             return;
         }
@@ -567,7 +622,17 @@ function confirmDeleteAdjustment(empId, adjId, type) {
     });
 }
 
+function confirmDeleteEmployee(employeeId) {
+    const employee = state.sueldosData.find(emp => emp.id === employeeId);
+    if (!employee) return;
+    ui.showModal({
+        title: "Eliminar Empleado",
+        body: `¿Estás seguro de que quieres eliminar a <strong>${utils.capitalize(employee.name)}</strong> y todo su historial de esta semana? Esta acción es irreversible.`,
+        confirmText: "Eliminar", confirmClass: "btn-danger",
+        onConfirm: () => services.deleteEmployee(employeeId)
+    });
+}
+
 function toggleEmployeeCard(card) {
     card.classList.toggle('collapsed');
 }
-

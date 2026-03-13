@@ -53,6 +53,19 @@ export function listenForSubcategories(onDataChange) {
     }, (error) => console.error("Subcategories Listener Error:", error));
 }
 
+// NUEVO: Listener para Notas
+export function listenForNotes(onDataChange) {
+    const notesDocRef = doc(db, "admin_data", "notes");
+    return onSnapshot(notesDocRef, (docSnap) => {
+        if (docSnap.exists()) {
+            state.notes = docSnap.data().content || '';
+        } else {
+            state.notes = 'Escribe tus ideas aquí...'; // Default text
+        }
+        onDataChange(state.notes); // Pass the notes content to the callback
+    }, (error) => console.error("Notes Listener Error:", error));
+}
+
 
 export function listenForKpis(onDataChange) {
     return onSnapshot(collection(db, "daily_kpis"), (snapshot) => {
@@ -62,8 +75,10 @@ export function listenForKpis(onDataChange) {
 }
 
 export function listenForMonthlyLeads(onDataChange) {
-    const year = 2025;
-    const month = 8; // Septiembre es el mes 8 (0-indexed)
+    // MODIFICADO: Carga el mes actual dinámicamente
+    const today = new Date();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth(); // 0-indexed
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
@@ -89,8 +104,10 @@ export function listenForMonthlyLeads(onDataChange) {
 }
 
 export function listenForMonthlyPaidLeads(onDataChange) {
-    const year = 2025;
-    const month = 8; // Septiembre es el mes 8 (0-indexed)
+    // MODIFICADO: Carga el mes actual dinámicamente
+    const today = new Date();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth(); // 0-indexed
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
@@ -122,8 +139,10 @@ export function listenForMonthlyPaidLeads(onDataChange) {
 }
 
 export function listenForMonthlyCancelledLeads(onDataChange) {
-    const year = 2025;
-    const month = 8; // Septiembre es el mes 8 (0-indexed)
+    // MODIFICADO: Carga el mes actual dinámicamente
+    const today = new Date();
+    const year = today.getUTCFullYear();
+    const month = today.getUTCMonth(); // 0-indexed
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
@@ -231,6 +250,19 @@ export async function saveExpense(expenseData, originalCategory) {
     }
 }
 
+// NUEVO: Función para guardar notas
+export async function saveNotes(content) {
+    try {
+        const notesDocRef = doc(db, "admin_data", "notes");
+        await setDoc(notesDocRef, { content: content }, { merge: true });
+        return true; // Indicate success
+    } catch (error) {
+        console.error("Error saving notes:", error);
+        return false; // Indicate failure
+    }
+}
+
+
 export async function saveNewSubcategory(subcategoryName, parentCategory) {
     try {
         // ID único basado en el padre y el nombre de la subcategoría
@@ -271,10 +303,75 @@ export async function saveKpi(kpiData) {
                 await addDoc(collection(db, "daily_kpis"), dataToSave);
             }
         }
-        showModal({ show: false });
+        // showModal({ show: false }); // Comentado para permitir llamadas batch sin cerrar modales prematuramente si se usa externamente
     } catch (error) {
         console.error("Error saving KPI:", error);
         showModal({ title: 'Error', body: 'No se pudo guardar el registro de KPI.' });
+    }
+}
+
+/**
+ * Sincroniza el gasto publicitario desde la API de Meta.
+ */
+export async function syncMetaSpend(accountId, token, startDate, endDate) {
+    showModal({ 
+        title: 'Sincronizando...', 
+        body: '<p><i class="fas fa-spinner fa-spin"></i> Conectando con Meta Graph API...</p>', 
+        showConfirm: false, showCancel: false 
+    });
+
+    try {
+        // Construir URL para Insights API (desglose diario)
+        // time_increment=1 asegura que nos de el gasto por día
+        const url = `https://graph.facebook.com/v19.0/${accountId}/insights?level=account&fields=spend,date_start&time_increment=1&time_range={'since':'${startDate}','until':'${endDate}'}&access_token=${token}`;
+
+        const response = await fetch(url);
+        const json = await response.json();
+
+        if (json.error) {
+            throw new Error(json.error.message);
+        }
+
+        const data = json.data || [];
+        let updatedCount = 0;
+
+        // Procesar cada día devuelto por Meta
+        for (const dayData of data) {
+            const fecha = dayData.date_start; // Formato YYYY-MM-DD
+            const spend = parseFloat(dayData.spend) || 0;
+
+            if (spend > 0) {
+                // Buscar si ya existe el KPI para esta fecha
+                const q = query(collection(db, "daily_kpis"), where("fecha", "==", fecha));
+                const querySnapshot = await getDocs(q);
+                
+                if (!querySnapshot.empty) {
+                    const docSnap = querySnapshot.docs[0];
+                    await updateDoc(docSnap.ref, { costo_publicidad: spend });
+                } else {
+                    await addDoc(collection(db, "daily_kpis"), {
+                        fecha: fecha,
+                        costo_publicidad: spend
+                    });
+                }
+                updatedCount++;
+            }
+        }
+
+        showModal({ 
+            title: 'Sincronización Exitosa', 
+            body: `Se actualizaron los costos de publicidad para <strong>${updatedCount}</strong> días desde Meta Ads.`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+
+    } catch (error) {
+        console.error("Meta Sync Error:", error);
+        showModal({ 
+            title: 'Error de Conexión', 
+            body: `No se pudo obtener datos de Meta: <br><strong>${error.message}</strong><br><br>Verifica que el ID de cuenta comience con "act_" y el token sea válido.`,
+            confirmText: 'Cerrar'
+        });
     }
 }
 
@@ -463,6 +560,19 @@ export async function deleteSueldosData() {
         showModal({ title: 'Éxito', body: 'Datos de sueldos eliminados.', showCancel: false, confirmText: 'Entendido' });
     } catch (error) {
         console.error("Error deleting payroll data:", error);
+    }
+}
+
+export async function deleteEmployee(employeeId) {
+    saveStateToHistory('sueldos');
+    try {
+        const updatedEmployees = state.sueldosData.filter(e => e.id !== employeeId);
+        await saveSueldosDataToFirestore(updatedEmployees);
+        showModal({ show: false });
+    } catch (error) {
+        console.error("Error al eliminar empleado:", error);
+        actionHistory.pop();
+        showModal({ title: 'Error', body: 'No se pudo eliminar el empleado.', showCancel: false });
     }
 }
 
