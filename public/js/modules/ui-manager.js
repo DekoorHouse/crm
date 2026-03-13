@@ -5,6 +5,7 @@
 let ticking = false; // For scroll event throttling
 let tagsSortable = null;
 let adMetricsPicker = null; // Variable para la instancia del datepicker de métricas de Ad ID
+let aiCountdownInterval = null; // Intervalo para la cuenta regresiva de la IA (declarado arriba para evitar TDZ)
 
 // --- Navigation & Main View Rendering ---
 function navigateTo(viewName, force = false) {
@@ -2581,7 +2582,6 @@ window.loadAdIdMetrics = loadAdIdMetrics; // Definida en ui-manager
 window.clearAdIdMetricsFilter = clearAdIdMetricsFilter; // Definida en ui-manager
 
 // --- START: AI TIMER FOR NORMAL CHATS ---
-let aiCountdownInterval = null;
 
 window.skipAiWait = async function() {
     const contactId = state.selectedContactId;
