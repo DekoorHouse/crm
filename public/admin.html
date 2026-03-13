@@ -11,6 +11,11 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+  <!-- PWA Meta Tags -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1e40af">
+  <link rel="apple-touch-icon" href="icon-192x192.png">
+
   <link
     rel="stylesheet"
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
@@ -184,7 +189,10 @@
     <div class="card">
        <div class="card-header" style="display: flex; justify-content: space-between; align-items: center;">
         <h2><i class="fas fa-chart-line"></i> Gestor de Negocio v6.29</h2>
-        <button id="logout-btn" class="btn btn-outline btn-sm">Salir <i class="fas fa-sign-out-alt" style="margin-left: 8px;"></i></button>
+        <div style="display: flex; gap: 10px;">
+            <button id="theme-toggle" class="btn btn-outline btn-sm" style="color: white; border-color: rgba(255,255,255,0.5);" title="Cambiar Tema"><i class="fas fa-moon"></i></button>
+            <button id="logout-btn" class="btn btn-outline btn-sm" style="color: white; border-color: rgba(255,255,255,0.5);">Salir <i class="fas fa-sign-out-alt" style="margin-left: 8px;"></i></button>
+        </div>
       </div>
       <div class="card-body" style="padding: 10px;">
          <div class="tabs">
@@ -194,6 +202,7 @@
           <div class="tab" data-tab="sueldos"><i class="fas fa-file-invoice-dollar"></i> Sueldos</div>
           <div class="tab" data-tab="health"><i class="fas fa-heartbeat"></i> Salud Financiera</div>
           <div class="tab" data-tab="kpis"><i class="fas fa-tachometer-alt"></i> KPI's</div>
+          <div class="tab" data-tab="notes"><i class="fas fa-sticky-note"></i> Notas</div>
         </div>
 
         <!-- Tab Content: Data (Now default) -->
@@ -390,7 +399,10 @@
             <!-- KPI SUMMARY DASHBOARD -->
             <div class="card" style="margin-bottom: 25px; background-color: var(--gray-light); border: none; box-shadow: none;">
               <div class="card-body" style="padding: 20px;">
-                  <h3 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; text-align: center;">Resumen de KPIs del Mes (Septiembre 2025)</h3>
+                  <!-- MODIFICADO: Se cambió el H3 por uno con ID para control dinámico -->
+                  <h3 id="kpi-summary-title" style="font-size: 1.25rem; font-weight: 600; margin-bottom: 20px; text-align: center;">
+                      Resumen de KPIs del Mes
+                  </h3>
                   <div id="kpi-summary-grid" class="summary-section" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 15px;">
                       <div class="kpi-card total-leads">
                           <div class="kpi-icon-container">
@@ -469,6 +481,8 @@
             </div>
              <div class="btn-group" style="margin-bottom: 20px;">
                 <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro Diario</button>
+                <!-- BOTON NUEVO DE META -->
+                <button id="sync-meta-btn" class="btn" style="background-color: #1877F2;"><i class="fab fa-facebook-f"></i> Sincronizar con Meta</button>
              </div>
              <div class="table-container" id="kpis-table-container">
                <table id="kpis-table">
@@ -493,6 +507,23 @@
                </div>
              </div>
            </div>
+        </div>
+
+        <!-- Tab Content: Notes (NUEVO) -->
+        <div class="tab-content" id="notes-tab">
+          <div class="card-body">
+            <div id="notes-toolbar">
+              <button class="btn btn-sm btn-outline" data-command="bold" title="Negrita (Ctrl+B)"><i class="fas fa-bold"></i></button>
+              <button class="btn btn-sm btn-outline" data-command="italic" title="Cursiva (Ctrl+I)"><i class="fas fa-italic"></i></button>
+              <button class="btn btn-sm btn-outline" data-command="underline" title="Subrayado (Ctrl+U)"><i class="fas fa-underline"></i></button>
+              <button class="btn btn-sm btn-outline" data-command="insertUnorderedList" title="Lista"><i class="fas fa-list-ul"></i></button>
+              <button class="btn btn-sm btn-outline" data-command="insertOrderedList" title="Lista numerada"><i class="fas fa-list-ol"></i></button>
+              <span id="notes-save-status" style="margin-left: auto; font-size: 14px; color: var(--text-secondary); opacity: 0;"></span>
+            </div>
+            <div id="notes-editor" contenteditable="true" spellcheck="false">
+              <!-- El contenido de las notas se cargará aquí -->
+            </div>
+          </div>
         </div>
 
       </div>
@@ -527,7 +558,9 @@
       </div>
   </div>
   
-  <script type="module" src="js/script_admin.js"></script>
+  <!-- Toast Container -->
+  <div id="toast-container"></div>
+
+  <script type="module" src="js/main_admin.js"></script>
 </body>
 </html>
-
