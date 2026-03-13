@@ -213,31 +213,40 @@
 
         async function fetchTodayOrders() {
             try {
-                // Reiniciar estado visual si es recarga manual
+                console.log('Iniciando fetch de pedidos...');
                 const body = document.getElementById('orders-body');
                 const loading = document.getElementById('loading-state');
                 const refreshBtn = document.querySelector('.refresh-btn i');
+                const totalText = document.getElementById('total-today');
                 
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
                 const response = await fetch('/api/orders/today');
+                console.log('Respuesta recibida:', response.status);
+                
                 if (!response.ok) {
                     throw new Error(`Error en el servidor: ${response.status}`);
                 }
+                
                 const data = await response.json();
+                console.log('Datos procesados:', data);
                 
                 if (refreshBtn) refreshBtn.classList.remove('fa-spin');
-                const totalText = document.getElementById('total-today');
                 
                 loading.classList.add('hidden');
                 body.innerHTML = '';
                 
-                if (data.success && data.orders.length > 0) {
+                if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
                     let totalSum = 0;
-                    data.orders.forEach(order => {
-                        totalSum += parseFloat(order.total) || 0;
+                    data.orders.forEach((order, index) => {
+                        console.log(`Procesando pedido ${index}:`, order);
+                        
+                        // Asegurar que el total sea numérico
+                        const amount = parseFloat(order.total) || 0;
+                        totalSum += amount;
+                        
                         const date = order.createdAt ? new Date(order.createdAt) : new Date();
-                        const timeStr = date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        const timeStr = isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
                         
                         const row = `
                             <tr class="animate-in fade-in slide-in-from-bottom-2 duration-500">
@@ -254,7 +263,7 @@
                                 </td>
                                 <td class="font-bold text-gray-500 text-xs uppercase tracking-tighter">${timeStr}</td>
                                 <td class="text-gray-600 dark:text-gray-300 font-semibold italic text-xs">${order.producto || 'Sin descripción'}</td>
-                                <td class="total-amount">$${parseFloat(order.total || 0).toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td class="total-amount">$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
                                 <td><span class="badge-source">${order.adSource || 'Orgánico / Directo'}</span></td>
                             </tr>
                         `;
@@ -262,6 +271,7 @@
                     });
                     totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
                 } else {
+                    console.log('No se encontraron pedidos o la estructura es inválida.');
                     body.innerHTML = `
                         <tr>
                             <td colspan="5" class="empty-state">
@@ -274,15 +284,19 @@
                     totalText.textContent = '$0.00';
                 }
             } catch (error) {
-                console.error('Error fetching orders:', error);
-                document.getElementById('loading-state').innerHTML = `
-                    <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30">
-                        <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
-                        <p class="text-red-500 font-black uppercase tracking-tighter">Fallo de Conexión</p>
-                        <p class="text-xs text-red-400 mt-1">No se pudo recuperar la información de Firestore. Reintenta en unos momentos.</p>
-                        <button onclick="fetchTodayOrders()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
-                    </div>
-                `;
+                console.error('Error detallado en fetchTodayOrders:', error);
+                const loadingState = document.getElementById('loading-state');
+                if (loadingState) {
+                    loadingState.innerHTML = `
+                        <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30">
+                            <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
+                            <p class="text-red-500 font-black uppercase tracking-tighter">Error de Aplicación</p>
+                            <p class="text-xs text-red-400 mt-1">${error.message}</p>
+                            <button onclick="fetchTodayOrders()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
+                        </div>
+                    `;
+                    loadingState.classList.remove('hidden');
+                }
             }
         }
 
