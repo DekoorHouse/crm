@@ -58,19 +58,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentStatus = document.getElementById('current-status');
         
         if (events.length > 0) {
-            currentStatus.innerText = events[0].scanTypeName || 'EN TRÁNSITO';
+            currentStatus.innerText = events[0].scanType || 'EN TRÁNSITO';
             
             events.forEach((event, index) => {
                 const item = document.createElement('div');
                 item.className = `timeline-item ${index === 0 ? 'active' : ''}`;
                 item.innerHTML = `
                     <div class="time">${event.scanTime}</div>
-                    <div class="status-text">${event.scanTypeName}</div>
-                    <div class="location">${event.desc || ''}</div>
+                    <div class="status-text">${event.scanType || 'Información de envío'}</div>
+                    <div class="location">${event.desc || (event.scanNetworkName || '')}</div>
                 `;
                 timeline.appendChild(item);
             });
         }
+
 
         // Update official link
         officialLink.href = `https://www.jtexpress.mx/trajectoryQuery?waybillNo=${waybill}`;
