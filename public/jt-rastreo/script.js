@@ -96,7 +96,7 @@ document.addEventListener('DOMContentLoaded', () => {
             status = "Tu pedido va en camino";
             reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
             icon.style.background = "transparent"; // Remove solid red circle
-            iconInner.innerHTML = '<i data-lucide="truck" style="width: 60px; height: 60px; color: #E50012;"></i>';
+            iconInner.innerHTML = '<i data-lucide="truck" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
         } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
             reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
             icon.style.background = "transparent";
@@ -104,8 +104,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
             reassurance.innerText = "Estamos trabajando para que recibas tu pedido lo antes posible. Tu información se actualizará pronto.";
             icon.style.background = "transparent";
-            iconInner.innerHTML = '<i data-lucide="package" style="width: 60px; height: 60px; color: #E50012;"></i>';
+            iconInner.innerHTML = '<i data-lucide="package" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
         }
+
 
         title.innerText = status;
         desc.innerText = details;
