@@ -4,7 +4,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resultsContainer = document.getElementById('results');
     const displayWaybill = document.getElementById('display-waybill');
     const timeline = document.getElementById('tracking-timeline');
-    const officialLink = document.getElementById('official-link');
 
     // Simulated tracking data for demonstration
     const mockResponses = {
@@ -150,9 +149,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
 
-        // Update official link
-        officialLink.href = `https://www.jtexpress.mx/trajectoryQuery?waybillNo=${waybill}`;
-        
         // Show container
         resultsContainer.classList.add('active');
         
