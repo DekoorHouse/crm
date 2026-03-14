@@ -79,22 +79,70 @@ document.addEventListener('DOMContentLoaded', () => {
         return translated;
     };
 
-    const showSummaryModal = (latestEvent) => {
+    const calculateEstimatedDate = (startDateStr) => {
+        // Parse "YYYY-MM-DD HH:mm:ss"
+        const date = new Date(startDateStr.replace(/-/g, '/'));
+        if (isNaN(date.getTime())) return null;
+
+        // Mexican Holidays (Approximate list for 2024-2026)
+        const holidays = [
+            '1/1',   // New Year
+            '5/2',   // Constitution Day (approx)
+            '21/3',  // Juarez birthday (approx)
+            '1/5',   // Labor Day
+            '16/9',  // Independence Day
+            '1/10',  // Transicion Poder Ejecutivo (every 6 years, 2024)
+            '20/11', // Revolution Day (approx)
+            '25/12'  // Christmas
+        ];
+
+        let businessDaysAdded = 0;
+        const targetBusinessDays = 7;
+
+        while (businessDaysAdded < targetBusinessDays) {
+            date.setDate(date.getDate() + 1);
+            const dayOfWeek = date.getDay(); // 0 = Sun, 6 = Sat
+            const holidayKey = `${date.getDate()}/${date.getMonth() + 1}`;
+
+            // Check if it's a weekend or holiday
+            if (dayOfWeek !== 0 && dayOfWeek !== 6 && !holidays.includes(holidayKey)) {
+                businessDaysAdded++;
+            }
+        }
+
+        const options = { weekday: 'long', day: 'numeric', month: 'long' };
+        let formatted = date.toLocaleDateString('es-MX', options);
+        // Capitalize first letter
+        return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+    };
+
+    const showSummaryModal = (latestEvent, oldestEvent) => {
         const modal = document.getElementById('status-modal');
         const title = document.getElementById('modal-status-title');
         const desc = document.getElementById('modal-description');
         const reassurance = document.getElementById('modal-reassurance');
         const icon = document.getElementById('modal-icon');
         const iconInner = document.getElementById('icon-inner');
+        const estimatedBox = document.getElementById('estimated-box');
+        const estimatedDateEl = document.getElementById('estimated-date');
 
         let status = translateText(latestEvent.status);
         const details = translateText(latestEvent.customerTracking);
+
+        // Calculate Estimated Delivery
+        const estimatedDate = calculateEstimatedDate(oldestEvent.scanTime);
+        if (estimatedDate && !(status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado'))) {
+            estimatedDateEl.innerText = estimatedDate;
+            estimatedBox.style.display = 'flex';
+        } else {
+            estimatedBox.style.display = 'none';
+        }
 
         // Mensaje de confianza dinámico e iconos
         if (status.toLowerCase().includes('tránsito') || status.toLowerCase().includes('camino') || status.toLowerCase().includes('recolectado')) {
             status = "Tu pedido va en camino";
             reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
-            icon.style.background = "transparent"; // Remove solid red circle
+            icon.style.background = "transparent"; 
             iconInner.innerHTML = '<i data-lucide="truck" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
         } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
             reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
@@ -106,14 +154,13 @@ document.addEventListener('DOMContentLoaded', () => {
             iconInner.innerHTML = '<i data-lucide="package" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
         }
 
-
         title.innerText = status;
         desc.innerText = details;
 
-        // Initialize Lucide icons
         lucide.createIcons();
         modal.classList.add('active');
     };
+
 
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
@@ -144,9 +191,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 timeline.appendChild(item);
             });
 
+            // Identificar el primer registro para calcular fecha estimada
+            const oldest = events[events.length - 1];
+
             // Mostrar el modal de resumen después de un breve delay
-            setTimeout(() => showSummaryModal(latest), 500);
+            setTimeout(() => showSummaryModal(latest, oldest), 500);
         }
+
 
 
         // Show container

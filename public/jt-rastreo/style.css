@@ -350,8 +350,33 @@ button:hover {
     line-height: 1.6;
 }
 
+.estimate-box {
+    background: rgba(255, 142, 65, 0.1);
+    border: 1px solid rgba(255, 142, 65, 0.3);
+    border-radius: 16px;
+    padding: 1.25rem;
+    margin-bottom: 2rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.estimate-label {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-gray);
+}
+
+.estimate-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
 .reassurance-box {
     background: var(--glass-background);
+
     border: 1px solid var(--glass-border);
     padding: 1.5rem;
     border-radius: 16px;
