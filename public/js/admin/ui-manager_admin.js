@@ -972,6 +972,132 @@ export function openGastoModal(employeeId) {
     openAdjustmentModal(employeeId, 'gasto');
 }
 
+export function openAddEmployeeModal() {
+    showModal({
+        title: 'Agregar Nuevo Empleado',
+        body: `
+            <div class="form-group">
+                <label for="new-employee-name">Nombre Completo</label>
+                <input type="text" id="new-employee-name" class="modal-input" placeholder="Nombre completo del empleado" required>
+            </div>
+            <div class="form-group" style="margin-top: 15px;">
+                <label for="new-employee-rate">Tarifa por Hora ($)</label>
+                <input type="number" id="new-employee-rate" class="modal-input" value="70" step="0.01">
+            </div>
+        `,
+        confirmText: 'Agregar',
+        onConfirm: async () => {
+            const nameInput = document.getElementById('new-employee-name');
+            const name = nameInput.value.trim();
+            const rate = parseFloat(document.getElementById('new-employee-rate').value) || 70;
+            
+            if (!name) {
+                nameInput.classList.add('error');
+                return;
+            }
+            
+            const employeeId = name.toLowerCase().replace(/\s+/g, '_');
+            
+            // Check if already exists
+            if (state.sueldosData.find(e => e.id === employeeId)) {
+                showToast("Este empleado ya existe.", "warning");
+                return;
+            }
+            
+            const newEmployee = {
+                id: employeeId,
+                name: name,
+                ratePerHour: rate,
+                registros: [],
+                bonos: [],
+                descuentos: [],
+                paymentHistory: []
+            };
+            
+            const updatedEmployees = [...state.sueldosData, newEmployee];
+            await services.saveSueldosDataToFirestore(updatedEmployees);
+            showModal({ show: false });
+            showToast(`Empleado ${name} agregado.`);
+        }
+    });
+}
+
+export function generateReportPdf(employee) {
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF();
+    const margin = 20;
+    let y = 30;
+
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(30, 64, 175); // Primary color
+    doc.text("Resumen de Pago", margin, y);
+    y += 15;
+
+    doc.setFontSize(12);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`Empleado: ${employee.name}`, margin, y);
+    doc.text(`Fecha: ${new Date().toLocaleDateString()}`, doc.internal.pageSize.getWidth() - margin - 40, y);
+    y += 20;
+
+    // Table Header
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59);
+    doc.text("Detalle de Asistencia", margin, y);
+    y += 10;
+
+    doc.setFontSize(10);
+    doc.text("Día", margin, y);
+    doc.text("Entrada", margin + 40, y);
+    doc.text("Salida", margin + 80, y);
+    doc.text("Horas", margin + 120, y);
+    y += 5;
+    doc.line(margin, y, doc.internal.pageSize.getWidth() - margin, y);
+    y += 10;
+
+    const dayNames = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    dayNames.forEach(day => {
+        const reg = (employee.registros || []).find(r => r.day === day) || { entrada: '--', salida: '--', horas: '0.00' };
+        doc.text(day, margin, y);
+        doc.text(reg.entrada, margin + 40, y);
+        doc.text(reg.salida, margin + 80, y);
+        doc.text(reg.horas, margin + 120, y);
+        y += 8;
+    });
+
+    y += 10;
+    doc.line(margin, y, doc.internal.pageSize.getWidth() - margin, y);
+    y += 15;
+
+    // Totals
+    doc.setFontSize(14);
+    doc.text("Resumen Económico", margin, y);
+    y += 10;
+
+    doc.setFontSize(11);
+    doc.text(`Total Horas: ${employee.totalHoursFormatted || '0.00'} hrs`, margin, y);
+    doc.text(`Subtotal: ${formatCurrency(employee.subtotal || 0)}`, margin + 80, y);
+    y += 10;
+
+    if (employee.bonos?.length > 0) {
+        doc.text(`Bonos: ${formatCurrency(employee.totalBonos)}`, margin + 80, y);
+        y += 8;
+    }
+    if (employee.descuentos?.length > 0) {
+        doc.text(`Descuentos: -${formatCurrency(employee.totalGastos)}`, margin + 80, y);
+        y += 8;
+    }
+
+    y += 5;
+    doc.setFontSize(16);
+    doc.setFont("helvetica", "bold");
+    doc.text(`TOTAL A PAGAR: ${formatCurrency(employee.pago || 0)}`, margin + 80, y);
+
+    // Save
+    doc.save(`Recibo_Pago_${employee.name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`);
+    showToast("PDF generado con éxito.");
+}
+
 export function renderNotes(content) {
     if (elements.notesEditor && elements.notesEditor.innerHTML !== content) {
         elements.notesEditor.innerHTML = content;

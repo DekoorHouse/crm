@@ -70,7 +70,7 @@ async function handleFileUpload(e) {
                 const concept = (firstExpense.concept || '').toUpperCase();
                 
                 // Conceptos especiales que permitimos duplicar
-                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO / 000000000000000 EN COMERCIO") || 
+                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO") || 
                                        concept.includes("PAY PAL*FACEBOOK");
 
                 const isExisting = existingSignatures.has(sig);
@@ -598,7 +598,23 @@ function confirmDeleteKpi(id) {
 }
 
 
-function confirmCloseWeek() { console.log('Confirm close week'); }
+function confirmCloseWeek() { 
+    ui.showModal({
+        title: "Cerrar Semana",
+        body: "Esta acción guardará los totales actuales en el historial de cada empleado y limpiará los registros de asistencia, bonos y descuentos para iniciar una nueva semana. <br><br>¿Estás seguro?",
+        confirmText: "Sí, Cerrar Semana",
+        confirmClass: "btn-success",
+        onConfirm: async () => {
+            ui.showModal({ title: "Procesando...", body: "Cerrando semana y guardando historial...", showConfirm: false, showCancel: false });
+            const success = await services.closeWeek();
+            if (success) {
+                ui.showModal({ title: "¡Semana Cerrada!", body: "El historial se ha actualizado y los registros semanales se han limpiado.", confirmText: "Entendido", showCancel: false });
+            } else {
+                ui.showModal({ title: "Error", body: "Hubo un problema al cerrar la semana. Por favor intenta de nuevo.", confirmText: "Cerrar", showCancel: false });
+            }
+        }
+    });
+}
 
 function confirmDeleteSueldosData() { 
     ui.showModal({

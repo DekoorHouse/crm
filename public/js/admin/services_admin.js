@@ -413,6 +413,46 @@ export async function saveSueldosDataToFirestore(dataToSave) {
     }
 }
 
+export async function closeWeek() {
+    saveStateToHistory('sueldos');
+    try {
+        const today = new Date();
+        // Label format: DD/MM/YYYY
+        const weekLabel = today.toLocaleDateString('es-MX', { day: '2-digit', month: '2-digit', year: 'numeric' });
+        
+        const updatedEmployees = JSON.parse(JSON.stringify(state.sueldosData)).map(emp => {
+            // Recalculate everything before closing to be sure
+            recalculatePayment(emp);
+            
+            const historyEntry = {
+                week: weekLabel,
+                hours: parseFloat(emp.totalHours) || 0,
+                payment: parseFloat(emp.pago) || 0,
+                timestamp: Timestamp.now()
+            };
+            
+            if (!emp.paymentHistory) emp.paymentHistory = [];
+            emp.paymentHistory.unshift(historyEntry); // Add to the top of history
+            
+            // Clear current week
+            emp.registros = [];
+            emp.bonos = [];
+            emp.descuentos = [];
+            
+            // Recalculate once more (should result in 0s)
+            recalculatePayment(emp);
+            
+            return emp;
+        });
+        
+        await saveSueldosDataToFirestore(updatedEmployees);
+        return true;
+    } catch (error) {
+        console.error("Error closing week:", error);
+        return false;
+    }
+}
+
 export async function saveAdjustment(employeeId, type, adjustmentData) {
     saveStateToHistory('sueldos'); 
     try {
