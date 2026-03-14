@@ -64,9 +64,31 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Modal de Resumen de Estado -->
+            <div id="status-modal" class="modal-overlay">
+                <div class="modal-content">
+                    <button id="close-modal" class="close-btn">&times;</button>
+                    <div class="modal-header">
+                        <div class="pulse-icon" id="modal-icon"></div>
+                        <h2 id="modal-status-title">Estado del Pedido</h2>
+                    </div>
+                    <div class="modal-body">
+                        <p id="modal-description" class="main-description">Estamos procesando tu solicitud...</p>
+                        <div class="reassurance-box">
+                            <p id="modal-reassurance">Tu paquete está en buenas manos.</p>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button id="view-details-btn">ENTENDIDO</button>
+                    </div>
+                </div>
+            </div>
         </main>
     </div>
 
     <script src="script.js"></script>
+
+
 </body>
 </html>

@@ -75,6 +75,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return translated;
     };
 
+    const showSummaryModal = (latestEvent) => {
+        const modal = document.getElementById('status-modal');
+        const title = document.getElementById('modal-status-title');
+        const desc = document.getElementById('modal-description');
+        const reassurance = document.getElementById('modal-reassurance');
+        const icon = document.getElementById('modal-icon');
+
+        const status = translateText(latestEvent.status);
+        const details = translateText(latestEvent.customerTracking);
+
+        title.innerText = status;
+        desc.innerText = details;
+
+        // Mensaje de confianza dinámico
+        if (status.toLowerCase().includes('tránsito') || status.toLowerCase().includes('camino') || status.toLowerCase().includes('recolectado')) {
+            reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
+            icon.style.background = "#E50012"; // Rojo J&T
+        } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
+            reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
+            icon.style.background = "#28a745"; // Verde éxito
+        } else {
+            reassurance.innerText = "Estamos trabajando para que recibas tu pedido lo antes posible. Tu información se actualizará pronto.";
+            icon.style.background = "#E50012";
+        }
+
+        modal.classList.add('active');
+    };
+
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
         timeline.innerHTML = '';
@@ -83,7 +111,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentStatus = document.getElementById('current-status');
         
         if (events.length > 0) {
-            currentStatus.innerText = translateText(events[0].status || 'EN TRÁNSITO');
+            const latest = events[0];
+            currentStatus.innerText = translateText(latest.status || 'EN TRÁNSITO');
             
             events.forEach((event, index) => {
                 const item = document.createElement('div');
@@ -95,11 +124,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
                 timeline.appendChild(item);
             });
+
+            // Mostrar el modal de resumen después de un breve delay
+            setTimeout(() => showSummaryModal(latest), 500);
         }
-
-
-
-
 
         // Update official link
         officialLink.href = `https://www.jtexpress.mx/trajectoryQuery?waybillNo=${waybill}`;
@@ -110,6 +138,23 @@ document.addEventListener('DOMContentLoaded', () => {
         // Scroll to results
         resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
+
+    // Controladores del Modal
+    document.getElementById('close-modal').addEventListener('click', () => {
+        document.getElementById('status-modal').classList.remove('active');
+    });
+
+    document.getElementById('view-details-btn').addEventListener('click', () => {
+        document.getElementById('status-modal').classList.remove('active');
+    });
+
+    // Cerrar al hacer clic fuera del contenido
+    document.getElementById('status-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'status-modal') {
+            document.getElementById('status-modal').classList.remove('active');
+        }
+    });
+
 
 
     trackBtn.addEventListener('click', trackPackage);
