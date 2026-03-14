@@ -95,16 +95,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (status.toLowerCase().includes('tránsito') || status.toLowerCase().includes('camino') || status.toLowerCase().includes('recolectado')) {
             status = "Tu pedido va en camino";
             reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
-            icon.style.background = "#E50012"; // Rojo J&T
-            iconInner.innerHTML = '<i data-lucide="truck" style="width: 40px; height: 40px; color: white;"></i>';
+            icon.style.background = "transparent"; // Remove solid red circle
+            iconInner.innerHTML = '<i data-lucide="truck" style="width: 60px; height: 60px; color: #E50012;"></i>';
         } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
             reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
-            icon.style.background = "#28a745"; // Verde éxito
-            iconInner.innerHTML = '<i data-lucide="package-check" style="width: 40px; height: 40px; color: white;"></i>';
+            icon.style.background = "transparent";
+            iconInner.innerHTML = '<i data-lucide="package-check" style="width: 60px; height: 60px; color: #28a745;"></i>';
         } else {
             reassurance.innerText = "Estamos trabajando para que recibas tu pedido lo antes posible. Tu información se actualizará pronto.";
-            icon.style.background = "#E50012";
-            iconInner.innerHTML = '<i data-lucide="package" style="width: 40px; height: 40px; color: white;"></i>';
+            icon.style.background = "transparent";
+            iconInner.innerHTML = '<i data-lucide="package" style="width: 60px; height: 60px; color: #E50012;"></i>';
         }
 
         title.innerText = status;
@@ -115,7 +115,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modal.classList.add('active');
     };
 
-
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
         timeline.innerHTML = '';
@@ -125,7 +124,14 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (events.length > 0) {
             const latest = events[0];
-            currentStatus.innerText = translateText(latest.status || 'EN TRÁNSITO');
+            let statusText = translateText(latest.status || 'EN TRÁNSITO');
+            
+            // Personalizar texto para tránsito
+            if (statusText.toLowerCase().includes('tránsito') || statusText.toLowerCase().includes('camino')) {
+                statusText = "Tu pedido va en camino";
+            }
+            
+            currentStatus.innerText = statusText;
             
             events.forEach((event, index) => {
                 const item = document.createElement('div');
@@ -141,6 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
             // Mostrar el modal de resumen después de un breve delay
             setTimeout(() => showSummaryModal(latest), 500);
         }
+
 
         // Update official link
         officialLink.href = `https://www.jtexpress.mx/trajectoryQuery?waybillNo=${waybill}`;
