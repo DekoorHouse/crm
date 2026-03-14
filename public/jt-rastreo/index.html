@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rastreo Premium | J&T Express</title>
+    <!-- SEO Meta Tags -->
+    <meta name="description" content="Rastrea tus envíos de J&T Express en tiempo real con nuestra plataforma premium. Ingresa tu número de guía para obtener actualizaciones instantáneas.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="bg-gradient"></div>
+
+    <div class="container fade-in">
+        <header>
+            <div class="logo">
+                <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect width="32" height="32" rx="8" fill="#E50012"/>
+                    <path d="M8 12H12V24H8V12ZM16 8H20V24H16V8ZM24 16H28V24H24V16Z" fill="white"/>
+                </svg>
+                J&T <span>Express</span>
+            </div>
+            <nav id="main-nav">
+                <!-- Navigation items if needed -->
+            </nav>
+        </header>
+
+        <main>
+            <section class="hero">
+                <h1>Sigue tus envíos</h1>
+                <p>Ingresa tu número de guía de J&T Express para conocer el estado y la ubicación exacta de tu paquete en tiempo real.</p>
+            </section>
+
+            <div class="search-container">
+                <div class="search-inner">
+                    <input type="text" id="waybill-input" placeholder="Ingresa tu número de guía (ej. JMX12345678)" autocomplete="off">
+                    <button id="track-btn">RASTREAR</button>
+                </div>
+            </div>
+
+            <div id="results" class="results-container">
+                <div class="tracking-card">
+                    <div class="card-header">
+                        <div class="meta-info">
+                            <h3 id="display-waybill">---</h3>
+                            <p>Última actualización: <span id="last-update">Hace un momento</span></p>
+                        </div>
+                        <div class="status-badge" id="current-status">EN TRÁNSITO</div>
+                    </div>
+
+                    <div class="timeline" id="tracking-timeline">
+                        <!-- Timeline items will be injected by JavaScript -->
+                    </div>
+
+                    <div style="margin-top: 3rem; text-align: center;">
+                        <a href="#" id="official-link" target="_blank" style="color: var(--text-gray); text-decoration: none; font-size: 0.9rem; transition: var(--transition);">
+                            Ver en la página oficial de J&T Express →
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
