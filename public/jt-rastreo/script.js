@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const trackPackage = async () => {
         const waybill = waybillInput.value.trim().toUpperCase();
-        const phone = document.getElementById('phone-input').value.trim();
+        const phone = '7167'; 
         
         if (!waybill) {
             alert('Por favor, ingresa un número de guía válido.');
@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(`/api/jt/track?waybill=${waybill}&phoneVerify=${phone}`);
             const result = await response.json();
+
 
             if (result.success && result.data) {
                 renderResults(waybill, result.data);
