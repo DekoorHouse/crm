@@ -49,28 +49,54 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    const translateText = (text) => {
+        if (!text) return text;
+        const dictionary = {
+            '已签收': 'Entregado / Firmado',
+            '派件中': 'En ruta de entrega',
+            '运送中': 'En tránsito',
+            '待取件': 'Pendiente de recolección',
+            '取件中': 'En proceso de recolección',
+            '已取件': 'Recolectado',
+            '快件到达': 'El paquete ha llegado a',
+            '快件离开': 'El paquete ha salido de',
+            '已发往': 'con destino a',
+            '包裹已签收!': '¡Paquete entregado!',
+            '签收人是': 'Recibido por:',
+            '正在派件': 'En camino',
+            '如有异常问题或需投诉请拨打网点电话': 'Para dudas o aclaraciones contactar a la sucursal'
+        };
+        
+        let translated = text;
+        Object.keys(dictionary).forEach(key => {
+            translated = translated.split(key).join(dictionary[key]);
+        });
+        return translated;
+    };
+
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
         timeline.innerHTML = '';
 
-        // J&T structure usually has 'details' or 'traces'
         const events = data.details || [];
         const currentStatus = document.getElementById('current-status');
         
         if (events.length > 0) {
-            currentStatus.innerText = events[0].status || 'EN TRÁNSITO';
+            currentStatus.innerText = translateText(events[0].status || 'EN TRÁNSITO');
             
             events.forEach((event, index) => {
                 const item = document.createElement('div');
                 item.className = `timeline-item ${index === 0 ? 'active' : ''}`;
                 item.innerHTML = `
                     <div class="time">${event.scanTime}</div>
-                    <div class="status-text">${event.status || 'Información de envío'}</div>
-                    <div class="location">${event.customerTracking || ''}</div>
+                    <div class="status-text">${translateText(event.status || 'Información de envío')}</div>
+                    <div class="location">${translateText(event.customerTracking || '')}</div>
                 `;
                 timeline.appendChild(item);
             });
         }
+
+
 
 
 

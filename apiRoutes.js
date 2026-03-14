@@ -2980,15 +2980,18 @@ router.get('/jt/track', async (req, res) => {
         const response = await axios.get('https://official.jtjms-mx.com/official/logisticsTracking/v3/getDetailByWaybillNo', {
             params: {
                 waybillNo: waybill,
-                langType: 'ES',
+                langType: 'es', 
                 phoneVerify: phoneVerify || ''
             },
             headers: {
                 'Referer': 'https://www.jtexpress.mx/',
                 'Origin': 'https://www.jtexpress.mx',
+                'langtype': 'es',
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
             }
         });
+
+
 
         if (response.data && response.data.succ) {
             return res.status(200).json({ success: true, data: response.data.data });
