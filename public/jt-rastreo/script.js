@@ -18,8 +18,9 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
 
-    const trackPackage = () => {
+    const trackPackage = async () => {
         const waybill = waybillInput.value.trim().toUpperCase();
+        const phone = document.getElementById('phone-input').value.trim();
         
         if (!waybill) {
             alert('Por favor, ingresa un número de guía válido.');
@@ -30,30 +31,46 @@ document.addEventListener('DOMContentLoaded', () => {
         trackBtn.innerText = 'BUSCANDO...';
         trackBtn.disabled = true;
 
-        // Simulate API delay
-        setTimeout(() => {
-            const data = mockResponses[waybill] || mockResponses['default'];
-            renderResults(waybill, data);
-            
+        try {
+            const response = await fetch(`/api/jt/track?waybill=${waybill}&phoneVerify=${phone}`);
+            const result = await response.json();
+
+            if (result.success && result.data) {
+                renderResults(waybill, result.data);
+            } else {
+                alert(result.message || 'Error consultando la guía. Revisa que los datos sean correctos.');
+            }
+        } catch (error) {
+            console.error('Error:', error);
+            alert('Error de conexión con el servidor.');
+        } finally {
             trackBtn.innerText = 'RASTREAR';
             trackBtn.disabled = false;
-        }, 800);
+        }
     };
 
-    const renderResults = (waybill, events) => {
+    const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
         timeline.innerHTML = '';
 
-        events.forEach((event, index) => {
-            const item = document.createElement('div');
-            item.className = `timeline-item ${event.active ? 'active' : ''}`;
-            item.innerHTML = `
-                <div class="time">${event.time}</div>
-                <div class="status-text">${event.status}</div>
-                <div class="location">${event.location}</div>
-            `;
-            timeline.appendChild(item);
-        });
+        // J&T structure usually has 'details' or 'traces'
+        const events = data.details || [];
+        const currentStatus = document.getElementById('current-status');
+        
+        if (events.length > 0) {
+            currentStatus.innerText = events[0].scanTypeName || 'EN TRÁNSITO';
+            
+            events.forEach((event, index) => {
+                const item = document.createElement('div');
+                item.className = `timeline-item ${index === 0 ? 'active' : ''}`;
+                item.innerHTML = `
+                    <div class="time">${event.scanTime}</div>
+                    <div class="status-text">${event.scanTypeName}</div>
+                    <div class="location">${event.desc || ''}</div>
+                `;
+                timeline.appendChild(item);
+            });
+        }
 
         // Update official link
         officialLink.href = `https://www.jtexpress.mx/trajectoryQuery?waybillNo=${waybill}`;
@@ -64,6 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Scroll to results
         resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     };
+
 
     trackBtn.addEventListener('click', trackPackage);
     

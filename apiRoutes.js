@@ -2966,4 +2966,45 @@ router.post('/maintenance/migrate-orphans', async (req, res) => {
     }
 });
 
+// --- Endpoint para Rastreo de J&T Express ---
+router.get('/jt/track', async (req, res) => {
+    const { waybill, phoneVerify } = req.query;
+
+    if (!waybill) {
+        return res.status(400).json({ success: false, message: 'Se requiere un número de guía.' });
+    }
+
+    try {
+        console.log(`[J&T TRACK] Consultando guía: ${waybill}, Verificación: ${phoneVerify || 'No proporcionada'}`);
+        
+        const response = await axios.get('https://official.jtjms-mx.com/official/logisticsTracking/v3/getDetailByWaybillNo', {
+            params: {
+                waybillNo: waybill,
+                langType: 'ES',
+                phoneVerify: phoneVerify || ''
+            },
+            headers: {
+                'Referer': 'https://www.jtexpress.mx/',
+                'Origin': 'https://www.jtexpress.mx',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            }
+        });
+
+        if (response.data && response.data.succ) {
+            return res.status(200).json({ success: true, data: response.data.data });
+        } else {
+            // Manejar errores específicos de la API de J&T
+            return res.status(200).json({ 
+                success: false, 
+                message: response.data.msg || 'No se encontró información para esta guía.',
+                code: response.data.code 
+            });
+        }
+    } catch (error) {
+        console.error('Error consultando J&T Tracking:', error.message);
+        res.status(500).json({ success: false, message: 'Error interno conectando con el servidor de J&T.' });
+    }
+});
+
 module.exports = router;
+
