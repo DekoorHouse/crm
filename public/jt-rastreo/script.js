@@ -65,8 +65,13 @@ document.addEventListener('DOMContentLoaded', () => {
             '包裹已签收!': '¡Paquete entregado!',
             '签收人是': 'Recibido por:',
             '正在派件': 'En camino',
-            '如有异常问题或需投诉请拨打网点电话': 'Para dudas o aclaraciones contactar a la sucursal'
+            '如有异常问题或需投诉请拨打网点电话': '',
+            'Si requieres mayor información, contáctanos al: 5571001047': '',
+            '5571001047': '',
+            '【': ' [',
+            '】': '] '
         };
+
         
         let translated = text;
         Object.keys(dictionary).forEach(key => {
