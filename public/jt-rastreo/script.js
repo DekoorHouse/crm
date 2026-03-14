@@ -86,27 +86,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const desc = document.getElementById('modal-description');
         const reassurance = document.getElementById('modal-reassurance');
         const icon = document.getElementById('modal-icon');
+        const iconInner = document.getElementById('icon-inner');
 
-        const status = translateText(latestEvent.status);
+        let status = translateText(latestEvent.status);
         const details = translateText(latestEvent.customerTracking);
+
+        // Mensaje de confianza dinámico e iconos
+        if (status.toLowerCase().includes('tránsito') || status.toLowerCase().includes('camino') || status.toLowerCase().includes('recolectado')) {
+            status = "Tu pedido va en camino";
+            reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
+            icon.style.background = "#E50012"; // Rojo J&T
+            iconInner.innerHTML = '<i data-lucide="truck" style="width: 40px; height: 40px; color: white;"></i>';
+        } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
+            reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
+            icon.style.background = "#28a745"; // Verde éxito
+            iconInner.innerHTML = '<i data-lucide="package-check" style="width: 40px; height: 40px; color: white;"></i>';
+        } else {
+            reassurance.innerText = "Estamos trabajando para que recibas tu pedido lo antes posible. Tu información se actualizará pronto.";
+            icon.style.background = "#E50012";
+            iconInner.innerHTML = '<i data-lucide="package" style="width: 40px; height: 40px; color: white;"></i>';
+        }
 
         title.innerText = status;
         desc.innerText = details;
 
-        // Mensaje de confianza dinámico
-        if (status.toLowerCase().includes('tránsito') || status.toLowerCase().includes('camino') || status.toLowerCase().includes('recolectado')) {
-            reassurance.innerText = "¡Todo va según lo previsto! Tu paquete sigue avanzando con seguridad hacia su destino. Gracias por tu paciencia.";
-            icon.style.background = "#E50012"; // Rojo J&T
-        } else if (status.toLowerCase().includes('entregado') || status.toLowerCase().includes('firmado')) {
-            reassurance.innerText = "¡Excelente noticia! Tu paquete ha sido entregado exitosamente. Esperamos que disfrutes tu compra.";
-            icon.style.background = "#28a745"; // Verde éxito
-        } else {
-            reassurance.innerText = "Estamos trabajando para que recibas tu pedido lo antes posible. Tu información se actualizará pronto.";
-            icon.style.background = "#E50012";
-        }
-
+        // Initialize Lucide icons
+        lucide.createIcons();
         modal.classList.add('active');
     };
+
 
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;

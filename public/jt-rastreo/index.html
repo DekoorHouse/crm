@@ -10,7 +10,9 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
 </head>
+
 <body>
     <div class="bg-gradient"></div>
 
@@ -70,9 +72,12 @@
                 <div class="modal-content">
                     <button id="close-modal" class="close-btn">&times;</button>
                     <div class="modal-header">
-                        <div class="pulse-icon" id="modal-icon"></div>
+                        <div class="pulse-icon" id="modal-icon">
+                            <div id="icon-inner"></div>
+                        </div>
                         <h2 id="modal-status-title">Estado del Pedido</h2>
                     </div>
+
                     <div class="modal-body">
                         <p id="modal-description" class="main-description">Estamos procesando tu solicitud...</p>
                         <div class="reassurance-box">
