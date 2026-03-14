@@ -58,19 +58,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const currentStatus = document.getElementById('current-status');
         
         if (events.length > 0) {
-            currentStatus.innerText = events[0].scanType || 'EN TRÁNSITO';
+            currentStatus.innerText = events[0].status || 'EN TRÁNSITO';
             
             events.forEach((event, index) => {
                 const item = document.createElement('div');
                 item.className = `timeline-item ${index === 0 ? 'active' : ''}`;
                 item.innerHTML = `
                     <div class="time">${event.scanTime}</div>
-                    <div class="status-text">${event.scanType || 'Información de envío'}</div>
-                    <div class="location">${event.desc || (event.scanNetworkName || '')}</div>
+                    <div class="status-text">${event.status || 'Información de envío'}</div>
+                    <div class="location">${event.customerTracking || ''}</div>
                 `;
                 timeline.appendChild(item);
             });
         }
+
 
 
         // Update official link
