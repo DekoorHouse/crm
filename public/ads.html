@@ -182,11 +182,22 @@
                         <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
                         <div class="flex flex-col items-end leading-none gap-1">
                             <p id="orders-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
-                            <p id="money-conv-pct" class="text-sm font-black text-blue-500">0% <span class="text-[10px] opacity-70">DINERO</span></p>
+                            <p id="roas-val" class="text-sm font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
                         </div>
                     </div>
                     <div class="stat-icon bg-blue-500">
                         <i class="fas fa-bullseye"></i>
+                    </div>
+                </div>
+
+                <!-- Stats: Gasto Publicidad -->
+                <div class="header-stats border-orange-500/30 bg-orange-50/50 dark:bg-orange-900/10">
+                    <div class="text-right">
+                        <p id="ad-spend-label" class="text-[0.6rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1">Inversión Ads</p>
+                        <p id="ad-spend-total" class="text-2xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
+                    </div>
+                    <div class="stat-icon bg-orange-500">
+                        <i class="fas fa-ad"></i>
                     </div>
                 </div>
 
@@ -278,7 +289,9 @@
                 const totalLabel = document.getElementById('total-label');
                 const confirmedLabel = document.getElementById('confirmed-label');
                 const ordersConvText = document.getElementById('orders-conv-pct');
-                const moneyConvText = document.getElementById('money-conv-pct');
+                const adSpendText = document.getElementById('ad-spend-total');
+                const adSpendLabel = document.getElementById('ad-spend-label');
+                const roasText = document.getElementById('roas-val');
                 
                 // Asegurar que el estado de carga tenga el HTML original si fue reemplazado por error
                 if (loading.querySelector('.bg-red-50')) {
@@ -302,8 +315,22 @@
                 } else {
                     totalLabel.textContent = `Proyectado (${dateISO})`;
                     confirmedLabel.textContent = `Real (${dateISO})`;
+                    adSpendLabel.textContent = `Ads (${dateISO})`;
                     if (loadingText) loadingText.textContent = `Cargando histórico del ${dateISO}`;
                 }
+
+                // --- NUEVO: Obtener gasto publicitario ---
+                let adSpend = 0;
+                try {
+                    const kpiRes = await fetch(`${API_BASE}/api/kpi/daily?date=${dateISO}`);
+                    const kpiData = await kpiRes.json();
+                    if (kpiData.success) {
+                        adSpend = kpiData.spend || 0;
+                    }
+                } catch (e) {
+                    console.error("Error fetching KPI spend:", e);
+                }
+                adSpendText.textContent = '$' + adSpend.toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
                 // Determinar URL según si es hoy o histórico
                 const endpoint = isToday ? '/api/orders/today' : `/api/orders/history?date=${dateISO}`;
@@ -368,12 +395,12 @@
                     totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
                     confirmedText.textContent = '$' + confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
-                    // Calcular porcentajes de conversión
+                    // Calcular porcentajes de conversión y ROAS
                     const orderPct = (confirmedCount / totalCount) * 100;
-                    const moneyPct = totalSum > 0 ? (confirmedSum / totalSum) * 100 : 0;
+                    const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
                     
                     ordersConvText.innerHTML = `${orderPct.toFixed(1)}% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
-                    moneyConvText.innerHTML = `${moneyPct.toFixed(1)}% <span class="text-[10px] opacity-70">DINERO</span>`;
+                    roasText.innerHTML = `${roas.toFixed(1)} <span class="text-[10px] opacity-70">ROAS</span>`;
                 } else {
                     body.innerHTML = `
                         <tr>
@@ -386,8 +413,9 @@
                     `;
                     totalText.textContent = '$0.00';
                     confirmedText.textContent = '$0.00';
+                    adSpendText.textContent = '$0.00';
                     ordersConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
-                    moneyConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">DINERO</span>`;
+                    roasText.innerHTML = `0.0 <span class="text-[10px] opacity-70">ROAS</span>`;
                 }
 
                 // Manejar auto-refresh

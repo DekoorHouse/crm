@@ -105,6 +105,31 @@ router.get('/orders/history', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
+router.get('/kpi/daily', async (req, res) => {
+    try {
+        let { date } = req.query; // Formato YYYY-MM-DD
+        if (!date) {
+            date = new Date().toISOString().split('T')[0];
+        }
+
+        const kpiSnapshot = await db.collection('daily_kpis')
+            .where('fecha', '==', date)
+            .limit(1)
+            .get();
+
+        let spend = 0;
+        if (!kpiSnapshot.empty) {
+            spend = kpiSnapshot.docs[0].data().costo_publicidad || 0;
+        }
+
+        res.status(200).json({ success: true, spend: spend });
+    } catch (error) {
+        console.error("Error fetching daily KPI:", error);
+        res.status(500).json({ success: false, message: 'Error al obtener el gasto publicitario.', error: error.message });
+    }
+});
+
 
 // --- Endpoint Temporal: Actualizar nombres de anuncios de las últimas 20 horas ---
 router.get('/admin/test-update-ads-20h', async (req, res) => {
