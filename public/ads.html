@@ -182,6 +182,7 @@
                         <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
                         <div class="flex flex-col items-end leading-none gap-1">
                             <p id="orders-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
+                            <p id="revenue-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
                             <p id="roas-val" class="text-sm font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
                         </div>
                     </div>
@@ -289,6 +290,7 @@
                 const totalLabel = document.getElementById('total-label');
                 const confirmedLabel = document.getElementById('confirmed-label');
                 const ordersConvText = document.getElementById('orders-conv-pct');
+                const revenueConvText = document.getElementById('revenue-conv-pct');
                 const adSpendText = document.getElementById('ad-spend-total');
                 const adSpendLabel = document.getElementById('ad-spend-label');
                 const roasText = document.getElementById('roas-val');
@@ -397,9 +399,11 @@
 
                     // Calcular porcentajes de conversión y ROAS
                     const orderPct = (confirmedCount / totalCount) * 100;
+                    const revenuePct = totalSum > 0 ? (confirmedSum / totalSum) * 100 : 0;
                     const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
                     
                     ordersConvText.innerHTML = `${orderPct.toFixed(1)}% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    revenueConvText.innerHTML = `${revenuePct.toFixed(1)}% <span class="text-[10px] opacity-70">DINERO</span>`;
                     roasText.innerHTML = `${roas.toFixed(1)} <span class="text-[10px] opacity-70">ROAS</span>`;
                 } else {
                     body.innerHTML = `
@@ -415,6 +419,7 @@
                     confirmedText.textContent = '$0.00';
                     adSpendText.textContent = '$0.00';
                     ordersConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    revenueConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">DINERO</span>`;
                     roasText.innerHTML = `0.0 <span class="text-[10px] opacity-70">ROAS</span>`;
                 }
 
