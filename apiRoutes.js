@@ -113,78 +113,17 @@ router.get('/kpi/daily', async (req, res) => {
             date = new Date().toISOString().split('T')[0];
         }
 
-        console.log(`[KPI DEBUG] Solicitud para fecha: "${date}"`);
-        let spend = 0;
-        let source = 'none';
-
-        // 1. Intentar obtener de daily_kpis (Sincronización de Meta o Manual)
         const kpiSnapshot = await db.collection('daily_kpis')
             .where('fecha', '==', date)
             .limit(1)
             .get();
 
+        let spend = 0;
         if (!kpiSnapshot.empty) {
             spend = kpiSnapshot.docs[0].data().costo_publicidad || 0;
-            source = 'daily_kpis';
         }
 
-        // 2. Si es 0, intentar buscar en la colección de gastos (expenses) 
-        // filtrando por categorías comunes de publicidad o conceptos clave
-        if (spend === 0) {
-            const expensesSnapshot = await db.collection('expenses')
-                .where('date', '==', date)
-                .get();
-            
-            if (!expensesSnapshot.empty) {
-                let expenseSpend = 0;
-                expensesSnapshot.forEach(doc => {
-                    const data = doc.data();
-                    const concept = (data.concept || '').toUpperCase();
-                    const category = (data.category || '').toUpperCase();
-                    
-                    // Si la categoría es Publicidad o Marketing, o el concepto menciona Facebook/Ads/Google
-                    if (category.includes('PUBLICIDAD') || 
-                        category.includes('MARKETING') || 
-                        concept.includes('FACEBOOK') || 
-                        concept.includes('ADS') || 
-                        concept.includes('GOOGLE')) {
-                        expenseSpend += (parseFloat(data.charge) || 0);
-                    }
-                });
-                
-                if (expenseSpend > 0) {
-                    spend = expenseSpend;
-                    source = 'expenses_collection';
-                }
-            }
-        }
-
-        // 3. Intento desesperado: buscar en daily_kpis con formato de fecha alternate o Timestamp
-        if (spend === 0) {
-            try {
-                // Tal vez está guardado como Date objeto
-                const startOfDay = new Date(date + 'T00:00:00Z');
-                const endOfDay = new Date(date + 'T23:59:59Z');
-                const altSnapshot = await db.collection('daily_kpis')
-                    .where('fecha', '>=', startOfDay)
-                    .where('fecha', '<=', endOfDay)
-                    .limit(1)
-                    .get();
-                
-                if (!altSnapshot.empty) {
-                    spend = altSnapshot.docs[0].data().costo_publicidad || 0;
-                    source = 'daily_kpis_timestamp';
-                }
-            } catch (e) {}
-        }
-
-        console.log(`[KPI DEBUG] Resultado: ${spend} (Fuente: ${source})`);
-        res.status(200).json({ 
-            success: true, 
-            spend: spend, 
-            source: source,
-            debug_date: date
-        });
+        res.status(200).json({ success: true, spend: spend });
     } catch (error) {
         console.error("Error fetching daily KPI:", error);
         res.status(500).json({ success: false, message: 'Error al obtener el gasto publicitario.', error: error.message });
