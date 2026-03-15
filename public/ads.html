@@ -134,102 +134,114 @@
 </head>
 <body class="antialiased">
     <div class="ads-container">
-        <header class="flex items-center justify-between mb-10">
-            <div>
-                <h1 class="text-3xl font-black text-primary flex items-center gap-3" style="color: var(--color-primary)">
-                    <i class="fab fa-whatsapp"></i> Dekoor Ads
-                </h1>
-                <p class="text-gray-500 font-medium mt-1">Monitoreo de ventas por anuncios en tiempo real</p>
+        <header class="flex flex-col xl:flex-row items-center justify-between gap-8 mb-10">
+            <div class="w-full xl:w-auto flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-black text-primary flex items-center gap-3" style="color: var(--color-primary)">
+                        <i class="fab fa-whatsapp"></i> Dekoor Ads
+                    </h1>
+                    <p class="text-gray-500 font-medium mt-1">Monitoreo de ventas en tiempo real</p>
+                </div>
+                <div class="flex xl:hidden items-center gap-2">
+                    <button onclick="handleRefreshClick()" class="refresh-btn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button onclick="toggleDarkMode()" class="dark-mode-toggle">
+                        <i id="mode-icon-mobile" class="fas fa-moon"></i>
+                    </button>
+                </div>
             </div>
-            <div class="flex items-center gap-4">
-                <!-- Selector de Fecha -->
+
+            <div class="flex flex-wrap items-center justify-center xl:justify-end gap-6 w-full xl:w-auto">
+                <!-- Selector de Fecha Principal -->
                 <div class="flex items-center gap-3">
                     <div class="flex flex-col">
-                        <span class="text-[0.5rem] uppercase font-black opacity-30 mb-0.5">Vista Principal</span>
-                        <div class="relative min-w-[150px]">
-                            <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-8" readonly title="Fecha Principal">
-                            <i class="fas fa-calendar-day absolute right-3 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none text-xs"></i>
+                        <span class="text-[0.6rem] uppercase font-black opacity-30 mb-1">Vista Principal</span>
+                        <div class="relative min-w-[160px]">
+                            <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-10" readonly>
+                            <i class="fas fa-calendar-alt absolute right-4 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none text-sm"></i>
                         </div>
                     </div>
                 </div>
-
-                <!-- Separador -->
-                <div class="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div>
 
                 <!-- Snapshot Histórico -->
                 <div class="flex items-center gap-3">
                     <div class="flex flex-col">
-                        <span class="text-[0.5rem] uppercase font-black text-orange-400 mb-0.5">Snapshot Histórico (Comparativo)</span>
+                        <span class="text-[0.6rem] uppercase font-black text-orange-400 mb-1">Snapshot Comparativo</span>
                         <div class="flex gap-2">
-                            <div class="relative min-w-[130px]">
-                                <input type="text" id="snapshot-datepicker" class="w-full bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300 pr-8" readonly title="Fecha del Snapshot">
-                                <i class="fas fa-history absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 opacity-50 pointer-events-none text-xs"></i>
+                            <div class="relative min-w-[150px]">
+                                <input type="text" id="snapshot-datepicker" class="w-full bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300 pr-10" readonly placeholder="FECHA SNAPSHOT">
+                                <i class="fas fa-history absolute right-4 top-1/2 -translate-y-1/2 text-orange-400 opacity-50 pointer-events-none text-sm"></i>
                             </div>
-                            <input type="time" id="snapshot-time" class="bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300" title="Hora del Snapshot">
+                            <input type="time" id="snapshot-time" class="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300">
                         </div>
                     </div>
                 </div>
 
-                <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
-                    <i class="fas fa-sync-alt"></i>
-                </button>
-                
-                <!-- Stats: Proyectado -->
-                <div class="header-stats">
-                    <div class="text-right">
-                        <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Venta Proyectada</p>
-                        <p id="total-today" class="text-xl font-black text-gray-500">$0.00</p>
-                        <p id="snapshot-total" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
-                    </div>
-                    <div class="stat-icon bg-gray-400 opacity-60">
-                        <i class="fas fa-chart-line"></i>
-                    </div>
+                <div class="hidden xl:flex items-center gap-2">
+                    <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
+                        <i id="mode-icon" class="fas fa-moon"></i>
+                    </button>
                 </div>
-
-                <!-- Stats: Real (Fabricar/Pagado) -->
-                <div class="header-stats border-green-500/30 bg-green-50/50 dark:bg-green-900/10">
-                    <div class="text-right">
-                        <p id="confirmed-label" class="text-[0.6rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1">Venta Real (Confirmada)</p>
-                        <p id="confirmed-total" class="text-2xl font-black text-green-600 dark:text-green-400">$0.00</p>
-                        <p id="snapshot-confirmed" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
-                    </div>
-                    <div class="stat-icon bg-green-500">
-                        <i class="fas fa-cash-register"></i>
-                    </div>
-                </div>
-
-                <!-- Stats: Efectividad (Conversión) -->
-                <div class="header-stats border-blue-500/30 bg-blue-50/50 dark:bg-blue-900/10">
-                    <div class="text-right">
-                        <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
-                        <div class="flex flex-col items-end leading-none gap-1">
-                            <p id="orders-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
-                            <p id="revenue-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
-                            <p id="roas-val" class="text-sm font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
-                            <p id="snapshot-conv" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: 0% / 0.0 ROAS</p>
-                        </div>
-                    </div>
-                    <div class="stat-icon bg-blue-500">
-                        <i class="fas fa-bullseye"></i>
-                    </div>
-                </div>
-
-                <!-- Stats: Gasto Publicidad -->
-                <div class="header-stats border-orange-500/30 bg-orange-50/50 dark:bg-orange-900/10">
-                    <div class="text-right">
-                        <p id="ad-spend-label" class="text-[0.6rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1">Inversión Ads</p>
-                        <p id="ad-spend-total" class="text-2xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
-                    </div>
-                    <div class="stat-icon bg-orange-500">
-                        <i class="fas fa-ad"></i>
-                    </div>
-                </div>
-
-                <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
-                    <i id="mode-icon" class="fas fa-moon"></i>
-                </button>
             </div>
         </header>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+            <!-- Stats: Proyectado -->
+            <div class="header-stats justify-between">
+                <div class="text-right flex-1">
+                    <p id="total-label" class="text-[0.65rem] text-gray-400 uppercase font-black tracking-widest mb-1">Venta Proyectada</p>
+                    <p id="total-today" class="text-2xl font-black text-gray-500">$0.00</p>
+                    <p id="snapshot-total" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
+                </div>
+                <div class="stat-icon bg-gray-400 opacity-20">
+                    <i class="fas fa-chart-line"></i>
+                </div>
+            </div>
+
+            <!-- Stats: Real -->
+            <div class="header-stats justify-between border-green-500/20 bg-green-50/30 dark:bg-green-900/5">
+                <div class="text-right flex-1">
+                    <p id="confirmed-label" class="text-[0.65rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1">Venta Real</p>
+                    <p id="confirmed-total" class="text-3xl font-black text-green-600 dark:text-green-400">$0.00</p>
+                    <p id="snapshot-confirmed" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
+                </div>
+                <div class="stat-icon bg-green-500">
+                    <i class="fas fa-cash-register"></i>
+                </div>
+            </div>
+
+            <!-- Stats: Efectividad -->
+            <div class="header-stats justify-between border-blue-500/20 bg-blue-50/30 dark:bg-blue-900/5">
+                <div class="text-right flex-1">
+                    <p class="text-[0.65rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
+                    <div class="flex flex-col items-end leading-none gap-1.5">
+                        <p id="orders-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
+                        <p id="revenue-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
+                        <p id="roas-val" class="font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
+                        <p id="snapshot-conv" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: 0% / 0.0 ROAS</p>
+                    </div>
+                </div>
+                <div class="stat-icon bg-blue-500">
+                    <i class="fas fa-bullseye"></i>
+                </div>
+            </div>
+
+            <!-- Stats: Gasto -->
+            <div class="header-stats justify-between border-orange-500/20 bg-orange-50/30 dark:bg-orange-900/5">
+                <div class="text-right flex-1">
+                    <p id="ad-spend-label" class="text-[0.65rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1">Inversión Ads</p>
+                    <p id="ad-spend-total" class="text-3xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
+                </div>
+                <div class="stat-icon bg-orange-500">
+                    <i class="fas fa-ad"></i>
+                </div>
+            </div>
+        </div>
 
         <div class="table-card">
             <table id="orders-table">
@@ -284,7 +296,10 @@
 
         function updateModeIcon(isDark) {
             const icon = document.getElementById('mode-icon');
-            icon.className = isDark ? 'fas fa-sun' : 'fas fa-moon';
+            const iconMobile = document.getElementById('mode-icon-mobile');
+            const iconClass = isDark ? 'fas fa-sun' : 'fas fa-moon';
+            if (icon) icon.className = iconClass;
+            if (iconMobile) iconMobile.className = iconClass;
         }
 
         // Cargar preferencia
