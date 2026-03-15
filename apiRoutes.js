@@ -96,7 +96,7 @@ router.get('/orders/history', async (req, res) => {
 
         // Crear rango de fecha (desde el inicio hasta el final del día)
         const start = new Date(date + 'T00:00:00');
-        const end = new Date(date + 'T23:59:59');
+        let end = new Date(date + 'T23:59:59');
 
         const firestoreStart = admin.firestore.Timestamp.fromDate(start);
         const { time } = req.query; // HH:mm
