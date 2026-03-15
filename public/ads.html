@@ -144,9 +144,29 @@
             <div class="flex items-center gap-4">
                 <!-- Selector de Fecha -->
                 <div class="flex items-center gap-3">
-                    <div class="relative min-w-[180px]">
-                        <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-10" readonly>
-                        <i class="fas fa-calendar-day absolute right-4 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none"></i>
+                    <div class="flex flex-col">
+                        <span class="text-[0.5rem] uppercase font-black opacity-30 mb-0.5">Vista Principal</span>
+                        <div class="relative min-w-[150px]">
+                            <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-8" readonly title="Fecha Principal">
+                            <i class="fas fa-calendar-day absolute right-3 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none text-xs"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Separador -->
+                <div class="h-8 w-px bg-gray-200 dark:bg-gray-700 mx-1"></div>
+
+                <!-- Snapshot Histórico -->
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col">
+                        <span class="text-[0.5rem] uppercase font-black text-orange-400 mb-0.5">Snapshot Histórico (Comparativo)</span>
+                        <div class="flex gap-2">
+                            <div class="relative min-w-[130px]">
+                                <input type="text" id="snapshot-datepicker" class="w-full bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300 pr-8" readonly title="Fecha del Snapshot">
+                                <i class="fas fa-history absolute right-3 top-1/2 -translate-y-1/2 text-orange-400 opacity-50 pointer-events-none text-xs"></i>
+                            </div>
+                            <input type="time" id="snapshot-time" class="bg-orange-50/50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300" title="Hora del Snapshot">
+                        </div>
                     </div>
                 </div>
 
@@ -159,6 +179,7 @@
                     <div class="text-right">
                         <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1">Venta Proyectada</p>
                         <p id="total-today" class="text-xl font-black text-gray-500">$0.00</p>
+                        <p id="snapshot-total" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
                     </div>
                     <div class="stat-icon bg-gray-400 opacity-60">
                         <i class="fas fa-chart-line"></i>
@@ -170,6 +191,7 @@
                     <div class="text-right">
                         <p id="confirmed-label" class="text-[0.6rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1">Venta Real (Confirmada)</p>
                         <p id="confirmed-total" class="text-2xl font-black text-green-600 dark:text-green-400">$0.00</p>
+                        <p id="snapshot-confirmed" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
                     </div>
                     <div class="stat-icon bg-green-500">
                         <i class="fas fa-cash-register"></i>
@@ -184,6 +206,7 @@
                             <p id="orders-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
                             <p id="revenue-conv-pct" class="text-sm font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
                             <p id="roas-val" class="text-sm font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
+                            <p id="snapshot-conv" class="text-[10px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: 0% / 0.0 ROAS</p>
                         </div>
                     </div>
                     <div class="stat-icon bg-blue-500">
@@ -271,10 +294,70 @@
         }
 
         let currentSelectedDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        let snapshotSelectedDate = '';
+        let snapshotSelectedTime = '';
         let refreshInterval = null;
 
         function handleRefreshClick() {
             fetchOrders(currentSelectedDate);
+        }
+
+        async function fetchSnapshot() {
+            if (!snapshotSelectedDate || !snapshotSelectedTime) return;
+
+            const snapTotalText = document.getElementById('snapshot-total');
+            const snapConfirmedText = document.getElementById('snapshot-confirmed');
+            const snapConvText = document.getElementById('snapshot-conv');
+
+            // Mostrar cargando
+            snapTotalText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+            snapConfirmedText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+            snapConvText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+            
+            snapTotalText.classList.remove('opacity-0');
+            snapConfirmedText.classList.remove('opacity-0');
+            snapConvText.classList.remove('opacity-0');
+
+            try {
+                // Obtener gasto ads para esa fecha (es diario)
+                let adSpend = 0;
+                const kpiRes = await fetch(`${API_BASE}/api/kpi/daily?date=${snapshotSelectedDate}`);
+                const kpiData = await kpiRes.json();
+                if (kpiData.success) adSpend = kpiData.spend || 0;
+
+                // Obtener pedidos filtrados por hora
+                const endpoint = `/api/orders/history?date=${snapshotSelectedDate}&time=${snapshotSelectedTime}`;
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error('Error al obtener snapshot');
+                
+                const data = await response.json();
+                if (data.success && Array.isArray(data.orders)) {
+                    let totalSum = 0;
+                    let confirmedSum = 0;
+                    let confirmedCount = 0;
+                    const totalCount = data.orders.length;
+
+                    data.orders.forEach(order => {
+                        const amount = parseFloat(order.total) || 0;
+                        totalSum += amount;
+                        const rawStatus = (order.estatus || order.status || '').toLowerCase();
+                        if (rawStatus.includes('fabricar') || rawStatus.includes('pagado')) {
+                            confirmedSum += amount;
+                            confirmedCount++;
+                        }
+                    });
+
+                    const orderPct = totalCount > 0 ? (confirmedCount / totalCount) * 100 : 0;
+                    const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
+
+                    snapTotalText.textContent = `Snap: $${totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `Snap: $${confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `Snap: ${orderPct.toFixed(1)}% / ${roas.toFixed(1)} ROAS`;
+                }
+            } catch (e) {
+                console.error("Snapshot error:", e);
+                snapTotalText.textContent = 'Error Snap';
+            }
         }
 
         async function fetchOrders(dateISO) {
@@ -477,14 +560,34 @@
                     picker.on('selected', (date) => {
                         const dateISO = date.format('YYYY-MM-DD');
                         currentSelectedDate = dateISO;
-                        
-                        // Mostrar loading antes de fetch
                         document.getElementById('loading-state').classList.remove('hidden');
                         document.getElementById('orders-body').innerHTML = '';
-                        
                         fetchOrders(dateISO);
                     });
                 },
+            });
+
+            // Picker para Snapshot
+            const snapshotPicker = new Litepicker({
+                element: document.getElementById('snapshot-datepicker'),
+                format: 'YYYY-MM-DD',
+                singleMode: true,
+                numberOfMonths: 1,
+                numberOfColumns: 1,
+                maxDate: new Date(),
+                lang: 'es-ES',
+                setup: (picker) => {
+                    picker.on('selected', (date) => {
+                        snapshotSelectedDate = date.format('YYYY-MM-DD');
+                        fetchSnapshot();
+                    });
+                },
+            });
+
+            // Listener para el input de tiempo del snapshot
+            document.getElementById('snapshot-time').addEventListener('change', (e) => {
+                snapshotSelectedTime = e.target.value;
+                fetchSnapshot();
             });
 
             // Establecer fecha inicial (hoy)

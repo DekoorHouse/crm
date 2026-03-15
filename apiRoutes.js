@@ -59,10 +59,20 @@ router.get('/orders/today', async (req, res) => {
         todayStart.setHours(0, 0, 0, 0);
         const firestoreTodayStart = admin.firestore.Timestamp.fromDate(todayStart);
 
-        const ordersSnapshot = await db.collection('pedidos')
-            .where('createdAt', '>=', firestoreTodayStart)
-            .orderBy('createdAt', 'desc')
-            .get();
+        let query = db.collection('pedidos')
+            .where('createdAt', '>=', firestoreTodayStart);
+
+        const { time } = req.query; // HH:mm
+        if (time) {
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const limitDate = new Date(`${year}-${month}-${day}T${time}:59`);
+            query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromDate(limitDate));
+        }
+
+        const ordersSnapshot = await query.orderBy('createdAt', 'desc').get();
 
         if (ordersSnapshot.empty) {
             return res.status(200).json({ success: true, orders: [] });
@@ -89,6 +99,10 @@ router.get('/orders/history', async (req, res) => {
         const end = new Date(date + 'T23:59:59');
 
         const firestoreStart = admin.firestore.Timestamp.fromDate(start);
+        const { time } = req.query; // HH:mm
+        if (time) {
+            end = new Date(date + 'T' + time + ':59');
+        }
         const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
 
         const ordersSnapshot = await db.collection('pedidos')
