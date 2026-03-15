@@ -309,6 +309,15 @@
                 
                 if (refreshBtn) refreshBtn.classList.add('fa-spin');
                 
+                // Mostrar cargando en las tarjetas
+                const statLoader = '<i class="fas fa-circle-notch fa-spin opacity-40"></i>';
+                totalText.innerHTML = statLoader;
+                confirmedText.innerHTML = statLoader;
+                adSpendText.innerHTML = statLoader;
+                ordersConvText.innerHTML = statLoader;
+                revenueConvText.innerHTML = statLoader;
+                roasText.innerHTML = statLoader;
+                
                 // Actualizar labels según la fecha
                 if (isToday) {
                     totalLabel.textContent = 'Venta Proyectada (Hoy)';
