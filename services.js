@@ -16,6 +16,7 @@ const SKYDROPX_CLIENT_ID = process.env.SKYDROPX_CLIENT_ID;
 const SKYDROPX_CLIENT_SECRET = process.env.SKYDROPX_CLIENT_SECRET;
 const SKYDROPX_ZIP_ORIGIN = process.env.SKYDROPX_ZIP_ORIGIN || '34188';
 const SKYDROPX_BASE_URL = 'https://pro.skydropx.com';
+const META_GRAPH_TOKEN = process.env.META_GRAPH_TOKEN;
 
 // =================================================================
 // === LÓGICA DE MAYOREO ===========================================
@@ -829,7 +830,8 @@ module.exports = {
     getShippingQuote,
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,
-    invalidateGeminiCache
+    invalidateGeminiCache,
+    getMetaSpend
 };
 
 /**
@@ -846,4 +848,46 @@ async function cancelAiResponse(contactId) {
     // pero aquí lo forzamos a 'cancelled' para que processAutoReplyAI se detenga al iniciar.
     
     return true;
+}
+
+/**
+ * Obtiene el gasto publicitario de una cuenta de Meta para una fecha específica.
+ * @param {string} date Fecha en formato YYYY-MM-DD.
+ * @param {string} accountId ID de la cuenta publicitaria (sin o con prefijo act_).
+ * @returns {Promise<number|null>} Gasto en formato numérico o null si hubo error.
+ */
+async function getMetaSpend(date, accountId = '1890131678412987') {
+    const token = META_GRAPH_TOKEN || process.env.WHATSAPP_TOKEN; // Usar token de WA como fallback si es el mismo
+    if (!token) {
+        console.warn('[META SPEND] No se encontró un token válido para Meta Graph API.');
+        return null;
+    }
+
+    try {
+        const actId = accountId.startsWith('act_') ? accountId : `act_${accountId}`;
+        const url = `https://graph.facebook.com/v19.0/${actId}/insights`;
+        
+        console.log(`[META SPEND] Consultando Meta para ${actId} en fecha ${date}...`);
+        
+        const response = await axios.get(url, {
+            params: {
+                fields: 'spend',
+                time_range: JSON.stringify({ since: date, until: date }),
+                access_token: token
+            }
+        });
+
+        const data = response.data;
+        if (data && data.data && data.data.length > 0) {
+            const spend = parseFloat(data.data[0].spend) || 0;
+            console.log(`[META SPEND] Gasto encontrado: ${spend}`);
+            return spend;
+        }
+
+        console.log(`[META SPEND] No se encontró gasto para la fecha ${date}.`);
+        return 0;
+    } catch (error) {
+        console.error(`[META SPEND] Error en la API de Meta:`, error.response ? JSON.stringify(error.response.data) : error.message);
+        return null;
+    }
 }

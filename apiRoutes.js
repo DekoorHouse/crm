@@ -14,7 +14,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, invalidateGeminiCache } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 
 const router = express.Router();
 
@@ -113,14 +113,34 @@ router.get('/kpi/daily', async (req, res) => {
             date = new Date().toISOString().split('T')[0];
         }
 
-        const kpiSnapshot = await db.collection('daily_kpis')
-            .where('fecha', '==', date)
-            .limit(1)
-            .get();
-
+        // 1. Intentar obtener el gasto directamente de Meta Ads
+        // El ID de la cuenta publicitaria es el solicitado por el usuario: 1890131678412987
+        const metaSpend = await getMetaSpend(date, '1890131678412987');
+        
         let spend = 0;
-        if (!kpiSnapshot.empty) {
-            spend = kpiSnapshot.docs[0].data().costo_publicidad || 0;
+
+        if (metaSpend !== null) {
+            // Si logramos obtenerlo de Meta, lo usamos y actualizamos Firestore como respaldo
+            spend = metaSpend;
+            console.log(`[KPI] Gasto de Meta obtenido para ${date}: ${spend}. Sincronizando Firestore...`);
+            
+            await db.collection('daily_kpis').doc(date).set({
+                fecha: date,
+                costo_publicidad: spend,
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                source: 'meta_ads'
+            }, { merge: true });
+        } else {
+            // Si Meta falló, intentamos leer lo último que tengamos en Firestore
+            console.log(`[KPI] Meta falló o no disponible. Buscando en Firestore para ${date}...`);
+            const kpiSnapshot = await db.collection('daily_kpis')
+                .where('fecha', '==', date)
+                .limit(1)
+                .get();
+
+            if (!kpiSnapshot.empty) {
+                spend = kpiSnapshot.docs[0].data().costo_publicidad || 0;
+            }
         }
 
         res.status(200).json({ success: true, spend: spend });
