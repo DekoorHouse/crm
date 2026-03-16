@@ -140,28 +140,64 @@ function renderTagFilters() {
     const container = document.getElementById('tag-filters-container');
     if (!container) return;
 
-    // Botón "Todos"
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    // Verificar si algún filtro del dropdown está activo
+    const dropdownFilters = ['unread', ...state.tags.map(t => t.key)];
+    const activeDropdownFilter = dropdownFilters.includes(state.activeFilter) || state.unreadOnly;
+    const activeDropdownLabel = state.unreadOnly
+        ? 'No leídos'
+        : state.tags.find(t => t.key === state.activeFilter)?.label || null;
 
-    // Separador visual y botón "No leídos"
-    buttonsHtml += `<div class="w-px h-5 bg-gray-300 mx-1"></div>`;
-    buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active text-blue-600 border-blue-600 bg-blue-50' : ''}" onclick="toggleUnreadFilter()"><i class="fas fa-envelope text-xs mr-1"></i> No leídos</button>`;
+    // Botón "Todos"
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+
+    // Botón "Pendientes IA"
     buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active text-purple-600 border-purple-600 bg-purple-50' : ''}" onclick="setFilter('pendientes_ia')"><i class="fas fa-robot text-xs mr-1"></i> Pendientes IA</button>`;
 
-    // Botones para cada etiqueta
+    // Menú desplegable de tres puntos con los demás filtros
+    let dropdownItems = '';
+    dropdownItems += `<button id="filter-unread" class="tag-dropdown-item ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter(); closeTagDropdown();"><i class="fas fa-envelope text-xs mr-2"></i>No leídos</button>`;
     state.tags.forEach(tag => {
-        buttonsHtml += `<button
-                            id="filter-${tag.key}"
-                            class="filter-btn ${state.activeFilter === tag.key ? 'active' : ''}"
-                            onclick="setFilter('${tag.key}')"
-                        >
-                            ${tag.label}
-                        </button>`;
+        dropdownItems += `<button id="filter-${tag.key}" class="tag-dropdown-item ${state.activeFilter === tag.key ? 'active' : ''}" onclick="setFilter('${tag.key}'); closeTagDropdown();">${tag.label}</button>`;
     });
+
+    buttonsHtml += `<div class="tag-dropdown-wrapper">
+        <button class="filter-btn tag-dropdown-toggle ${activeDropdownFilter ? 'active' : ''}" onclick="toggleTagDropdown(event)">
+            ${activeDropdownLabel ? activeDropdownLabel : '<i class="fas fa-ellipsis-h"></i>'}
+        </button>
+        <div id="tag-dropdown-menu" class="tag-dropdown-menu hidden">
+            ${dropdownItems}
+        </div>
+    </div>`;
 
     container.innerHTML = buttonsHtml;
     // Actualizar el contador después de renderizar los filtros
     actualizarContadorPendientesIA();
+}
+
+function toggleTagDropdown(event) {
+    event.stopPropagation();
+    const menu = document.getElementById('tag-dropdown-menu');
+    if (!menu) return;
+    menu.classList.toggle('hidden');
+
+    // Cerrar al hacer clic fuera
+    if (!menu.classList.contains('hidden')) {
+        setTimeout(() => {
+            document.addEventListener('click', closeTagDropdownOnOutside, { once: true });
+        }, 0);
+    }
+}
+
+function closeTagDropdown() {
+    const menu = document.getElementById('tag-dropdown-menu');
+    if (menu) menu.classList.add('hidden');
+}
+
+function closeTagDropdownOnOutside(e) {
+    const wrapper = document.querySelector('.tag-dropdown-wrapper');
+    if (wrapper && !wrapper.contains(e.target)) {
+        closeTagDropdown();
+    }
 }
 
 /**
@@ -2250,6 +2286,8 @@ function initTheme() {
 // Esto permite llamar a las funciones desde los atributos onclick en el HTML
 window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
+window.toggleTagDropdown = toggleTagDropdown;
+window.closeTagDropdown = closeTagDropdown;
 
 window.closeImageModal = closeImageModal;
 window.openContactDetails = openContactDetails;

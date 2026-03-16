@@ -1186,6 +1186,7 @@ window.handleSelectReaction = handleSelectReaction;
 window.openConversationPreview = openConversationPreview;
 window.handleSelectContact = handleSelectContact;
 window.setFilter = setFilter;
+window.toggleUnreadFilter = toggleUnreadFilter;
 window.setActiveTab = setActiveTab;
 window.toggleEmojiPicker = toggleEmojiPicker;
 window.toggleTemplatePicker = toggleTemplatePicker;

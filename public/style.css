@@ -497,10 +497,21 @@ body.dark-mode .date-separator { background-color: #292e42; color: #a9b1d6; }
 }
 body.dark-mode .sticker-fallback { background-color: #3b4261; color: #a9b1d6; }
 
-.filter-btn { background-color: #e2e8f0; color: #4a5568; font-weight: 600; padding: 5px 10px; border-radius: 9999px; font-size: 0.75rem; transition: all 0.2s ease; }
+.filter-btn { background-color: #e2e8f0; color: #4a5568; font-weight: 600; padding: 5px 10px; border-radius: 9999px; font-size: 0.75rem; transition: all 0.2s ease; cursor: pointer; border: none; }
 body.dark-mode .filter-btn { background-color: #414868; color: #a9b1d6; }
 .filter-btn.active { background-color: var(--color-primary); color: white; }
 body.dark-mode .filter-btn.active { color: #1a1b26; }
+
+.tag-dropdown-wrapper { position: relative; display: inline-block; }
+.tag-dropdown-toggle { display: flex; align-items: center; gap: 4px; }
+.tag-dropdown-menu { position: absolute; top: calc(100% + 6px); right: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); z-index: 50; min-width: 160px; padding: 4px 0; }
+body.dark-mode .tag-dropdown-menu { background: #24283b; border-color: #414868; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.tag-dropdown-menu.hidden { display: none; }
+.tag-dropdown-item { display: flex; align-items: center; width: 100%; padding: 8px 14px; font-size: 0.8rem; font-weight: 500; color: #4a5568; background: none; border: none; cursor: pointer; text-align: left; transition: background 0.15s ease; }
+.tag-dropdown-item:hover { background-color: #f1f5f9; }
+body.dark-mode .tag-dropdown-item { color: #a9b1d6; }
+body.dark-mode .tag-dropdown-item:hover { background-color: #414868; }
+.tag-dropdown-item.active { color: var(--color-primary); font-weight: 700; }
 
 .tab-btn { position: relative; padding: 6px 14px; font-weight: 600; color: var(--color-text-light); border-bottom: 3px solid transparent; transition: all 0.2s ease; font-size: 0.9rem; }
 .tab-btn.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
