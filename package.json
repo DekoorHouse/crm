@@ -2,9 +2,9 @@
   "name": "whatsapp-crm-backend",
   "version": "1.0.0",
   "description": "Backend for WhatsApp CRM",
-  "main": "index.js",
+  "main": "server/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node server/index.js"
   },
   "dependencies": {
     "@ffmpeg-installer/ffmpeg": "^1.1.0",

@@ -20,7 +20,7 @@ app.get('/env-config.js', (req, res) => {
 app.use('/api', apiRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('/ads', (req, res) => {

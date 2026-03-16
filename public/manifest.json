@@ -1,7 +1,7 @@
 {
   "name": "Gestor de Negocio",
   "short_name": "CRM Admin",
-  "start_url": "/admon.html",
+  "start_url": "/admon",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#1e40af",
