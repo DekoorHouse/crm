@@ -603,11 +603,22 @@ body.dark-mode .modal-overlay { background-color: rgba(0, 0, 0, 0.8); }
 .status-btn:hover:not(.active) { transform: translateY(-1px); }
 
 /* Ensure inactive tags remain readable on dark mode backgrounds */
-body.dark-mode .status-btn:not(.active) { 
+body.dark-mode .status-btn:not(.active) {
     background-color: color-mix(in srgb, var(--btn-color) 25%, transparent);
     color: color-mix(in srgb, var(--btn-color) 40%, white);
     border-color: color-mix(in srgb, var(--btn-color) 30%, white);
 }
+
+.status-dropdown-wrapper { position: relative; display: inline-block; }
+.status-dropdown-menu { position: absolute; top: calc(100% + 6px); left: 0; background: white; border: 1px solid #e2e8f0; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.12); z-index: 50; min-width: 150px; padding: 4px 0; }
+body.dark-mode .status-dropdown-menu { background: #24283b; border-color: #414868; box-shadow: 0 4px 16px rgba(0,0,0,0.4); }
+.status-dropdown-menu.hidden { display: none; }
+.status-dropdown-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 14px; font-size: 0.75rem; font-weight: 500; color: #4a5568; background: none; border: none; cursor: pointer; text-align: left; transition: background 0.15s ease; }
+.status-dropdown-item:hover { background-color: #f1f5f9; }
+body.dark-mode .status-dropdown-item { color: #a9b1d6; }
+body.dark-mode .status-dropdown-item:hover { background-color: #414868; }
+.status-dropdown-item.active { font-weight: 700; color: var(--btn-color); }
+.status-dropdown-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
 #main-sidebar { background-color: var(--color-sidebar-bg); border-right: 1px solid var(--color-border); width: 280px; transition: width 0.3s ease-in-out; flex-shrink: 0; }
 #main-sidebar.collapsed { width: 80px; }

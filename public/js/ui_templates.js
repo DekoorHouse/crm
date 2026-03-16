@@ -961,8 +961,8 @@ const RemoteFilePreviewTemplate = (file) => {
 
 const StatusButtonsTemplate = (contact) => {
     let buttonsHtml = '<div class="status-btn-group">';
-    
-    // Botón especial para Pendientes IA
+
+    // Botón especial para Pendientes IA (siempre visible)
     const isIAActive = contact.status === 'pendientes_ia';
     buttonsHtml += `<button
                         onclick="handleStatusChange('${contact.id}', 'pendientes_ia')"
@@ -973,16 +973,35 @@ const StatusButtonsTemplate = (contact) => {
                         <i class="fas fa-robot text-[10px] mr-1"></i> Pendientes IA
                     </button>`;
 
+    // Verificar si algún tag del dropdown está activo
+    const activeTag = state.tags.find(t => t.key === contact.status);
+    const dropdownLabel = activeTag ? activeTag.label : '<i class="fas fa-ellipsis-h"></i>';
+
+    // Dropdown con los demás tags
+    let dropdownItems = '';
     state.tags.forEach(tag => {
         const isActive = contact.status === tag.key;
-        buttonsHtml += `<button
-                            onclick="handleStatusChange('${contact.id}', '${tag.key}')"
-                            class="status-btn ${isActive ? 'active' : ''}"
+        dropdownItems += `<button
+                            onclick="handleStatusChange('${contact.id}', '${tag.key}'); closeStatusDropdown();"
+                            class="status-dropdown-item ${isActive ? 'active' : ''}"
                             style="--btn-color: ${tag.color};"
                         >
+                            <span class="status-dropdown-dot" style="background-color: ${tag.color};"></span>
                             ${tag.label}
                         </button>`;
     });
+
+    buttonsHtml += `<div class="status-dropdown-wrapper">
+        <button class="status-btn status-dropdown-toggle ${activeTag ? 'active' : ''}"
+                style="--btn-color: ${activeTag ? activeTag.color : '#6b7280'};"
+                onclick="toggleStatusDropdown(event)">
+            ${dropdownLabel}
+        </button>
+        <div class="status-dropdown-menu hidden">
+            ${dropdownItems}
+        </div>
+    </div>`;
+
     buttonsHtml += '</div>';
     return buttonsHtml;
 };

@@ -200,6 +200,32 @@ function closeTagDropdownOnOutside(e) {
     }
 }
 
+function toggleStatusDropdown(event) {
+    event.stopPropagation();
+    const wrapper = event.target.closest('.status-dropdown-wrapper');
+    const menu = wrapper?.querySelector('.status-dropdown-menu');
+    if (!menu) return;
+    // Cerrar otros dropdowns de status abiertos
+    document.querySelectorAll('.status-dropdown-menu').forEach(m => {
+        if (m !== menu) m.classList.add('hidden');
+    });
+    menu.classList.toggle('hidden');
+    if (!menu.classList.contains('hidden')) {
+        setTimeout(() => {
+            document.addEventListener('click', function closeOnOutside(e) {
+                if (!wrapper.contains(e.target)) {
+                    menu.classList.add('hidden');
+                    document.removeEventListener('click', closeOnOutside);
+                }
+            });
+        }, 0);
+    }
+}
+
+function closeStatusDropdown() {
+    document.querySelectorAll('.status-dropdown-menu').forEach(m => m.classList.add('hidden'));
+}
+
 /**
  * Actualiza el contador visual de chats pendientes de IA.
  * Puede recibir un conteo pre-calculado (desde un listener en tiempo real) o consultarlo al servidor.
@@ -2288,6 +2314,8 @@ window.navigateTo = navigateTo;
 window.toggleTagSidebar = toggleTagSidebar;
 window.toggleTagDropdown = toggleTagDropdown;
 window.closeTagDropdown = closeTagDropdown;
+window.toggleStatusDropdown = toggleStatusDropdown;
+window.closeStatusDropdown = closeStatusDropdown;
 
 window.closeImageModal = closeImageModal;
 window.openContactDetails = openContactDetails;
