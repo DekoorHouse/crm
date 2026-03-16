@@ -24,7 +24,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('/ads', (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'ads.html'));
+    res.sendFile(path.join(__dirname, 'public', 'ads', 'index.html'));
 });
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
