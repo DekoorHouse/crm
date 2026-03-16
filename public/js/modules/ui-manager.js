@@ -1992,7 +1992,16 @@ async function handleOrderStatusChange(orderId, newStatus) {
 
     try {
         const orderRef = db.collection('pedidos').doc(orderId);
-        await orderRef.update({ estatus: newStatus });
+        const updatePayload = { estatus: newStatus };
+
+        // Registrar confirmedAt cuando el pedido se confirma por primera vez
+        const isConfirming = newStatus.toLowerCase().includes('fabricar') || newStatus.toLowerCase().includes('pagado');
+        const wasConfirmed = originalStatus && (originalStatus.toLowerCase().includes('fabricar') || originalStatus.toLowerCase().includes('pagado'));
+        if (isConfirming && !wasConfirmed) {
+            updatePayload.confirmedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+
+        await orderRef.update(updatePayload);
 
         showError(`Estatus del pedido actualizado.`, 'success');
 

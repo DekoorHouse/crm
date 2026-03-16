@@ -252,6 +252,30 @@
             </div>
         </div>
 
+        <!-- Progresión de Cobro -->
+        <div class="table-card mb-12" id="progression-section" style="display:none;">
+            <div class="flex items-center justify-between mb-4 px-2">
+                <h2 class="text-sm font-black uppercase tracking-widest" style="color: var(--color-primary)">
+                    <i class="fas fa-chart-bar mr-2"></i>Progresión de Cobro
+                </h2>
+                <div id="progression-summary" class="text-xs font-bold text-gray-400"></div>
+            </div>
+            <div class="overflow-x-auto">
+                <table style="width:100%; border-collapse: collapse;">
+                    <thead>
+                        <tr>
+                            <th class="text-left text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Día</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Cobrado ese día</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Pedidos</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Acumulado</th>
+                            <th class="text-left text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4" style="min-width:200px;">Progreso</th>
+                        </tr>
+                    </thead>
+                    <tbody id="progression-body"></tbody>
+                </table>
+            </div>
+        </div>
+
         <div class="table-card">
             <table id="orders-table">
                 <thead>
@@ -430,6 +454,51 @@
             }
         }
 
+        async function fetchProgression(dateISO) {
+            const section = document.getElementById('progression-section');
+            const body = document.getElementById('progression-body');
+            const summary = document.getElementById('progression-summary');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/orders/cohort-progression?date=${dateISO}`);
+                const data = await response.json();
+
+                if (!data.success || data.progression.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+
+                section.style.display = '';
+                const pct = data.proyectado > 0 ? ((data.totalConfirmed / data.proyectado) * 100).toFixed(1) : 0;
+                summary.textContent = `$${data.totalConfirmed.toLocaleString('es-MX', {minimumFractionDigits:2})} / $${data.proyectado.toLocaleString('es-MX', {minimumFractionDigits:2})} (${pct}%) — ${data.totalConfirmedOrders}/${data.totalOrders} pedidos`;
+
+                body.innerHTML = data.progression.map((row, i) => {
+                    const barPct = data.proyectado > 0 ? Math.min((row.cumAmount / data.proyectado) * 100, 100) : 0;
+                    const dayLabel = row.date === dateISO ? 'Mismo día' : `Día ${i + 1}`;
+                    return `
+                        <tr style="border-top: 1px solid var(--color-border);">
+                            <td class="py-3 px-4">
+                                <div class="font-black text-xs">${dayLabel}</div>
+                                <div class="text-[10px] text-gray-400">${row.date}</div>
+                            </td>
+                            <td class="py-3 px-4 text-right font-bold text-green-500 text-sm">+$${row.dayAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">+${row.dayCount}</td>
+                            <td class="py-3 px-4 text-right font-black text-sm" style="color: var(--color-primary)">$${row.cumAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td class="py-3 px-4">
+                                <div style="background: var(--color-border); border-radius: 999px; height: 8px; overflow: hidden;">
+                                    <div style="background: var(--color-success); height: 100%; width: ${barPct}%; border-radius: 999px; transition: width 0.5s;"></div>
+                                </div>
+                                <div class="text-[10px] text-gray-400 mt-1">${barPct.toFixed(1)}%</div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Error fetching progression:', e);
+                section.style.display = 'none';
+            }
+        }
+
         async function fetchOrders(dateISO) {
             try {
                 const isToday = dateISO === new Date().toISOString().split('T')[0];
@@ -598,6 +667,9 @@
                         console.log("Auto-refresh desactivado (viendo histórico)");
                     }
                 }
+
+                // Cargar progresión de cobro
+                fetchProgression(dateISO);
 
             } catch (error) {
                 console.error('Error detallado en fetchOrders:', error);
