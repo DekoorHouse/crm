@@ -130,6 +130,9 @@
             transition: all 0.2s;
         }
         .refresh-btn:hover { background: var(--color-subtle-bg); color: var(--color-primary); transform: rotate(180deg); }
+
+        #desktop-toggle-group { display: none; }
+        @media (min-width: 1280px) { #desktop-toggle-group { display: flex; } }
     </style>
 </head>
 <body class="antialiased">
@@ -178,7 +181,7 @@
                     </div>
                 </div>
 
-                <div class="hidden xl:flex items-center gap-2">
+                <div class="items-center gap-2" id="desktop-toggle-group">
                     <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
                         <i class="fas fa-sync-alt"></i>
                     </button>
