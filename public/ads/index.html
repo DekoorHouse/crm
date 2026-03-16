@@ -149,6 +149,9 @@
                     <button onclick="handleRefreshClick()" class="refresh-btn">
                         <i class="fas fa-sync-alt"></i>
                     </button>
+                    <button onclick="saveSnapshot()" class="refresh-btn" title="Congelar snapshot" style="background: var(--color-success); color: white; border-color: var(--color-success);">
+                        <i class="fas fa-camera"></i>
+                    </button>
                     <button onclick="toggleDarkMode()" class="dark-mode-toggle">
                         <i id="mode-icon-mobile" class="fas fa-moon"></i>
                     </button>
@@ -184,6 +187,9 @@
                 <div class="items-center gap-2" id="desktop-toggle-group">
                     <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
                         <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button id="save-snapshot-btn" onclick="saveSnapshot()" class="refresh-btn" title="Congelar snapshot del día seleccionado" style="background: var(--color-success); color: white; border-color: var(--color-success);">
+                        <i class="fas fa-camera"></i>
                     </button>
                     <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
                         <i id="mode-icon" class="fas fa-moon"></i>
@@ -321,33 +327,58 @@
         }
 
         async function fetchSnapshot() {
-            if (!snapshotSelectedDate || !snapshotSelectedTime) return;
+            if (!snapshotSelectedDate) return;
 
             const snapTotalText = document.getElementById('snapshot-total');
             const snapConfirmedText = document.getElementById('snapshot-confirmed');
             const snapConvText = document.getElementById('snapshot-conv');
+            const timeInput = document.getElementById('snapshot-time');
 
             // Mostrar cargando
             snapTotalText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
             snapConfirmedText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
             snapConvText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
-            
+
             snapTotalText.classList.remove('opacity-0');
             snapConfirmedText.classList.remove('opacity-0');
             snapConvText.classList.remove('opacity-0');
 
             try {
-                // Obtener gasto ads para esa fecha (es diario)
+                // Intentar obtener snapshot guardado
+                const snapRes = await fetch(`${API_BASE}/api/snapshots/daily?date=${snapshotSelectedDate}`);
+                const snapData = await snapRes.json();
+
+                if (snapData.success && snapData.source === 'snapshot') {
+                    // Snapshot congelado — mostrar directo, ignorar time picker
+                    const s = snapData.snapshot;
+                    timeInput.style.display = 'none';
+                    snapTotalText.textContent = `\u{1F512} Snap: $${s.proyectado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{1F512} Snap: $${s.real.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{1F512} Snap: ${s.efectividadPedidos.toFixed(1)}% / ${s.roas.toFixed(1)} ROAS`;
+                    return;
+                }
+
+                // Fallback en vivo — permitir filtro por hora
+                timeInput.style.display = '';
+                if (!snapshotSelectedTime) {
+                    // Sin hora, mostrar snapshot en vivo del día completo
+                    const s = snapData.snapshot;
+                    snapTotalText.textContent = `\u{26A1} Snap: $${s.proyectado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{26A1} Snap: $${s.real.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{26A1} Snap: ${s.efectividadPedidos.toFixed(1)}% / ${s.roas.toFixed(1)} ROAS`;
+                    return;
+                }
+
+                // Con hora seleccionada — consulta en vivo filtrada por hora (comportamiento original)
                 let adSpend = 0;
                 const kpiRes = await fetch(`${API_BASE}/api/kpi/daily?date=${snapshotSelectedDate}`);
                 const kpiData = await kpiRes.json();
                 if (kpiData.success) adSpend = kpiData.spend || 0;
 
-                // Obtener pedidos filtrados por hora
                 const endpoint = `/api/orders/history?date=${snapshotSelectedDate}&time=${snapshotSelectedTime}`;
                 const response = await fetch(`${API_BASE}${endpoint}`);
                 if (!response.ok) throw new Error('Error al obtener snapshot');
-                
+
                 const data = await response.json();
                 if (data.success && Array.isArray(data.orders)) {
                     let totalSum = 0;
@@ -368,13 +399,34 @@
                     const orderPct = totalCount > 0 ? (confirmedCount / totalCount) * 100 : 0;
                     const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
 
-                    snapTotalText.textContent = `Snap: $${totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-                    snapConfirmedText.textContent = `Snap: $${confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
-                    snapConvText.textContent = `Snap: ${orderPct.toFixed(1)}% / ${roas.toFixed(1)} ROAS`;
+                    snapTotalText.textContent = `\u{26A1} Snap: $${totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{26A1} Snap: $${confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{26A1} Snap: ${orderPct.toFixed(1)}% / ${roas.toFixed(1)} ROAS`;
                 }
             } catch (e) {
                 console.error("Snapshot error:", e);
                 snapTotalText.textContent = 'Error Snap';
+            }
+        }
+
+        async function saveSnapshot() {
+            if (!confirm(`\u00BFCongelar snapshot inmutable para ${currentSelectedDate}?\n\nUna vez guardado, los valores de ese d\u00EDa no cambiar\u00E1n aunque se modifiquen pedidos.`)) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/snapshots/daily`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: currentSelectedDate })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`Snapshot guardado para ${currentSelectedDate}`);
+                    // Si el snapshot comparativo es la misma fecha, refrescar
+                    if (snapshotSelectedDate === currentSelectedDate) fetchSnapshot();
+                } else {
+                    alert(data.message);
+                }
+            } catch (e) {
+                alert('Error al guardar snapshot: ' + e.message);
             }
         }
 

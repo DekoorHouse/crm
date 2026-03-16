@@ -52,6 +52,70 @@ async function processOrdersData(ordersSnapshot) {
     return orders;
 }
 
+// --- Helper para generar snapshot diario de KPIs ---
+async function generateDailySnapshot(dateISO) {
+    const start = new Date(dateISO + 'T00:00:00-06:00'); // Hora México
+    const end = new Date(dateISO + 'T23:59:59-06:00');
+    const firestoreStart = admin.firestore.Timestamp.fromDate(start);
+    const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
+
+    const ordersSnap = await db.collection('pedidos')
+        .where('createdAt', '>=', firestoreStart)
+        .where('createdAt', '<=', firestoreEnd)
+        .get();
+
+    let proyectado = 0;
+    let real = 0;
+    let totalOrders = 0;
+    let confirmedOrders = 0;
+
+    ordersSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const amount = parseFloat(data.precio) || 0;
+        const rawStatus = (data.estatus || '').toLowerCase();
+
+        proyectado += amount;
+        totalOrders++;
+
+        if (rawStatus.includes('fabricar') || rawStatus.includes('pagado')) {
+            real += amount;
+            confirmedOrders++;
+        }
+    });
+
+    // Obtener gasto publicitario
+    let adSpend = 0;
+    try {
+        const metaSpend = await getMetaSpend(dateISO, '1890131678412987');
+        if (metaSpend !== null) {
+            adSpend = metaSpend;
+        } else {
+            const kpiDoc = await db.collection('daily_kpis').doc(dateISO).get();
+            if (kpiDoc.exists) {
+                adSpend = kpiDoc.data().costo_publicidad || 0;
+            }
+        }
+    } catch (e) {
+        console.error('[SNAPSHOT] Error obteniendo ad spend:', e.message);
+    }
+
+    const efectividadPedidos = totalOrders > 0 ? (confirmedOrders / totalOrders) * 100 : 0;
+    const efectividadDinero = proyectado > 0 ? (real / proyectado) * 100 : 0;
+    const roas = adSpend > 0 ? (real / adSpend) : 0;
+
+    return {
+        date: dateISO,
+        proyectado: Math.round(proyectado * 100) / 100,
+        real: Math.round(real * 100) / 100,
+        totalOrders,
+        confirmedOrders,
+        efectividadPedidos: Math.round(efectividadPedidos * 10) / 10,
+        efectividadDinero: Math.round(efectividadDinero * 10) / 10,
+        adSpend: Math.round(adSpend * 100) / 100,
+        roas: Math.round(roas * 10) / 10
+    };
+}
+
 // --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
 router.get('/orders/today', async (req, res) => {
     try {
@@ -3065,6 +3129,73 @@ router.get('/jt/track', async (req, res) => {
     } catch (error) {
         console.error('Error consultando J&T Tracking:', error.message);
         res.status(500).json({ success: false, message: 'Error interno conectando con el servidor de J&T.' });
+    }
+});
+
+// --- Endpoint GET /api/snapshots/daily (Leer snapshot guardado o generar en vivo) ---
+router.get('/snapshots/daily', async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) {
+            return res.status(400).json({ success: false, message: 'Se requiere una fecha (date).' });
+        }
+
+        // Intentar leer snapshot guardado
+        const snapshotDoc = await db.collection('daily_snapshots').doc(date).get();
+
+        if (snapshotDoc.exists) {
+            return res.status(200).json({
+                success: true,
+                source: 'snapshot',
+                snapshot: snapshotDoc.data()
+            });
+        }
+
+        // Fallback: generar en vivo (sin guardar)
+        const liveSnapshot = await generateDailySnapshot(date);
+        return res.status(200).json({
+            success: true,
+            source: 'live',
+            snapshot: liveSnapshot
+        });
+    } catch (error) {
+        console.error('Error fetching daily snapshot:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener el snapshot diario.', error: error.message });
+    }
+});
+
+// --- Endpoint POST /api/snapshots/daily (Guardar snapshot inmutable) ---
+router.post('/snapshots/daily', async (req, res) => {
+    try {
+        let { date } = req.body;
+        if (!date) {
+            // Por defecto: ayer
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            date = yesterday.toISOString().split('T')[0];
+        }
+
+        // Verificar si ya existe (inmutabilidad)
+        const existing = await db.collection('daily_snapshots').doc(date).get();
+        if (existing.exists) {
+            return res.status(409).json({
+                success: false,
+                message: `Ya existe un snapshot para ${date}. Los snapshots son inmutables.`,
+                snapshot: existing.data()
+            });
+        }
+
+        // Generar y guardar
+        const snapshotData = await generateDailySnapshot(date);
+        snapshotData.createdAt = admin.firestore.FieldValue.serverTimestamp();
+        snapshotData.source = 'manual';
+
+        await db.collection('daily_snapshots').doc(date).set(snapshotData);
+
+        res.status(201).json({ success: true, message: `Snapshot guardado para ${date}.`, snapshot: snapshotData });
+    } catch (error) {
+        console.error('Error saving daily snapshot:', error);
+        res.status(500).json({ success: false, message: 'Error al guardar el snapshot.', error: error.message });
     }
 });
 
