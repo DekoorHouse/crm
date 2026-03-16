@@ -1891,6 +1891,122 @@ router.post('/storage/generate-signed-url', async (req, res) => {
 });
 
 
+// --- Endpoint GET /api/orders/cohort-progression (Progresión de cobro por cohorte) ---
+router.get('/orders/cohort-progression', async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) {
+            return res.status(400).json({ success: false, message: 'Se requiere una fecha (date).' });
+        }
+
+        const start = new Date(date + 'T00:00:00-06:00');
+        const end = new Date(date + 'T23:59:59-06:00');
+        const firestoreStart = admin.firestore.Timestamp.fromDate(start);
+        const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
+
+        const ordersSnap = await db.collection('pedidos')
+            .where('createdAt', '>=', firestoreStart)
+            .where('createdAt', '<=', firestoreEnd)
+            .get();
+
+        let proyectado = 0;
+        const totalOrders = ordersSnap.docs.length;
+        const confirmations = [];
+
+        ordersSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const amount = parseFloat(data.precio) || 0;
+            const rawStatus = (data.estatus || '').toLowerCase();
+            const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
+
+            proyectado += amount;
+
+            if (isConfirmed) {
+                let confirmDate = date;
+                if (data.confirmedAt && data.confirmedAt.toDate) {
+                    const d = data.confirmedAt.toDate();
+                    const mx = new Date(d.getTime() - 6 * 60 * 60 * 1000);
+                    confirmDate = mx.toISOString().split('T')[0];
+                }
+                confirmations.push({ date: confirmDate, amount, orderId: doc.id });
+            }
+        });
+
+        const byDay = {};
+        confirmations.forEach(c => {
+            if (!byDay[c.date]) byDay[c.date] = { amount: 0, count: 0 };
+            byDay[c.date].amount += c.amount;
+            byDay[c.date].count += 1;
+        });
+
+        const sortedDays = Object.keys(byDay).sort();
+        let cumAmount = 0;
+        let cumCount = 0;
+        const progression = sortedDays.map(day => {
+            cumAmount += byDay[day].amount;
+            cumCount += byDay[day].count;
+            return {
+                date: day,
+                dayAmount: Math.round(byDay[day].amount * 100) / 100,
+                dayCount: byDay[day].count,
+                cumAmount: Math.round(cumAmount * 100) / 100,
+                cumCount: cumCount
+            };
+        });
+
+        const totalConfirmed = Math.round(cumAmount * 100) / 100;
+
+        res.status(200).json({
+            success: true,
+            cohortDate: date,
+            proyectado: Math.round(proyectado * 100) / 100,
+            totalOrders,
+            totalConfirmed,
+            totalConfirmedOrders: cumCount,
+            progression
+        });
+    } catch (error) {
+        console.error('Error fetching cohort progression:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener la progresión.', error: error.message });
+    }
+});
+
+// --- Endpoint POST /api/orders/backfill-confirmed (Rellenar confirmedAt en pedidos existentes) ---
+router.post('/orders/backfill-confirmed', async (req, res) => {
+    try {
+        const ordersSnap = await db.collection('pedidos').get();
+        let updated = 0;
+        let skipped = 0;
+        const batch = db.batch();
+
+        ordersSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.confirmedAt) { skipped++; return; }
+
+            const rawStatus = (data.estatus || '').toLowerCase();
+            const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
+            if (!isConfirmed) { skipped++; return; }
+
+            if (data.createdAt) {
+                batch.update(doc.ref, { confirmedAt: data.createdAt });
+                updated++;
+            }
+        });
+
+        if (updated > 0) await batch.commit();
+
+        res.status(200).json({
+            success: true,
+            message: `Backfill completado. ${updated} pedidos actualizados, ${skipped} omitidos.`,
+            updated,
+            skipped
+        });
+    } catch (error) {
+        console.error('Error en backfill:', error);
+        res.status(500).json({ success: false, message: 'Error en backfill.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/orders/:orderId (Obtener un pedido por ID) ---
 router.get('/orders/:orderId', async (req, res) => {
     try {
@@ -3207,128 +3323,6 @@ router.post('/snapshots/daily', async (req, res) => {
     } catch (error) {
         console.error('Error saving daily snapshot:', error);
         res.status(500).json({ success: false, message: 'Error al guardar el snapshot.', error: error.message });
-    }
-});
-
-// --- Endpoint GET /api/orders/cohort-progression (Progresión de cobro por cohorte) ---
-router.get('/orders/cohort-progression', async (req, res) => {
-    try {
-        const { date } = req.query; // Fecha de creación de los pedidos (YYYY-MM-DD)
-        if (!date) {
-            return res.status(400).json({ success: false, message: 'Se requiere una fecha (date).' });
-        }
-
-        // Obtener todos los pedidos creados en esa fecha
-        const start = new Date(date + 'T00:00:00-06:00');
-        const end = new Date(date + 'T23:59:59-06:00');
-        const firestoreStart = admin.firestore.Timestamp.fromDate(start);
-        const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
-
-        const ordersSnap = await db.collection('pedidos')
-            .where('createdAt', '>=', firestoreStart)
-            .where('createdAt', '<=', firestoreEnd)
-            .get();
-
-        // Calcular totales y progresión
-        let proyectado = 0;
-        const totalOrders = ordersSnap.docs.length;
-        const confirmations = []; // { date: 'YYYY-MM-DD', amount, orderId }
-
-        ordersSnap.docs.forEach(doc => {
-            const data = doc.data();
-            const amount = parseFloat(data.precio) || 0;
-            const rawStatus = (data.estatus || '').toLowerCase();
-            const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
-
-            proyectado += amount;
-
-            if (isConfirmed) {
-                let confirmDate = date; // fallback: asumir mismo día
-                if (data.confirmedAt && data.confirmedAt.toDate) {
-                    const d = data.confirmedAt.toDate();
-                    // Ajustar a hora México (UTC-6)
-                    const mx = new Date(d.getTime() - 6 * 60 * 60 * 1000);
-                    confirmDate = mx.toISOString().split('T')[0];
-                }
-                confirmations.push({ date: confirmDate, amount, orderId: doc.id });
-            }
-        });
-
-        // Agrupar por día y calcular acumulado
-        const byDay = {};
-        confirmations.forEach(c => {
-            if (!byDay[c.date]) byDay[c.date] = { amount: 0, count: 0 };
-            byDay[c.date].amount += c.amount;
-            byDay[c.date].count += 1;
-        });
-
-        // Ordenar por fecha y calcular acumulado
-        const sortedDays = Object.keys(byDay).sort();
-        let cumAmount = 0;
-        let cumCount = 0;
-        const progression = sortedDays.map(day => {
-            cumAmount += byDay[day].amount;
-            cumCount += byDay[day].count;
-            return {
-                date: day,
-                dayAmount: Math.round(byDay[day].amount * 100) / 100,
-                dayCount: byDay[day].count,
-                cumAmount: Math.round(cumAmount * 100) / 100,
-                cumCount: cumCount
-            };
-        });
-
-        const totalConfirmed = Math.round(cumAmount * 100) / 100;
-
-        res.status(200).json({
-            success: true,
-            cohortDate: date,
-            proyectado: Math.round(proyectado * 100) / 100,
-            totalOrders,
-            totalConfirmed,
-            totalConfirmedOrders: cumCount,
-            progression
-        });
-    } catch (error) {
-        console.error('Error fetching cohort progression:', error);
-        res.status(500).json({ success: false, message: 'Error al obtener la progresión.', error: error.message });
-    }
-});
-
-// --- Endpoint POST /api/orders/backfill-confirmed (Rellenar confirmedAt en pedidos existentes) ---
-router.post('/orders/backfill-confirmed', async (req, res) => {
-    try {
-        const ordersSnap = await db.collection('pedidos').get();
-        let updated = 0;
-        let skipped = 0;
-        const batch = db.batch();
-
-        ordersSnap.docs.forEach(doc => {
-            const data = doc.data();
-            if (data.confirmedAt) { skipped++; return; } // Ya tiene confirmedAt
-
-            const rawStatus = (data.estatus || '').toLowerCase();
-            const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
-            if (!isConfirmed) { skipped++; return; }
-
-            // Usar createdAt como aproximación para pedidos históricos
-            if (data.createdAt) {
-                batch.update(doc.ref, { confirmedAt: data.createdAt });
-                updated++;
-            }
-        });
-
-        if (updated > 0) await batch.commit();
-
-        res.status(200).json({
-            success: true,
-            message: `Backfill completado. ${updated} pedidos actualizados, ${skipped} omitidos.`,
-            updated,
-            skipped
-        });
-    } catch (error) {
-        console.error('Error en backfill:', error);
-        res.status(500).json({ success: false, message: 'Error en backfill.', error: error.message });
     }
 });
 
