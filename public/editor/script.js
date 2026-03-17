@@ -169,7 +169,7 @@ function createObject(type, props) {
         rotation: 0,
         ...props,
     };
-    if (type === 'group' || type === 'image') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
+    if (type === 'group' || type === 'image' || type === 'powerclip') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
     const elem = buildSVGElement(obj);
     obj.element = elem;
     elem.dataset.objectId = obj.id;
@@ -217,8 +217,36 @@ function buildSVGElement(obj) {
                 elem.appendChild(ce);
             }
             break;
+        case 'powerclip': {
+            elem = document.createElementNS(ns, 'g');
+            const clipId = 'clip-' + obj.id;
+            const defs = document.createElementNS(ns, 'defs');
+            const clipPath = document.createElementNS(ns, 'clipPath');
+            clipPath.setAttribute('id', clipId);
+            // Build clip shape from container
+            const clipShape = buildClipShape(obj.container, ns);
+            clipPath.appendChild(clipShape);
+            defs.appendChild(clipPath);
+            elem.appendChild(defs);
+            // Draw the container shape (visible border)
+            const containerElem = buildSVGElement(obj.container);
+            obj.container.element = containerElem;
+            containerElem.dataset.objectId = obj.id;
+            elem.appendChild(containerElem);
+            // Clipped content group
+            const contentGroup = document.createElementNS(ns, 'g');
+            contentGroup.setAttribute('clip-path', `url(#${clipId})`);
+            for (const content of obj.contents) {
+                const ce = buildSVGElement(content);
+                content.element = ce;
+                ce.dataset.objectId = obj.id;
+                contentGroup.appendChild(ce);
+            }
+            elem.appendChild(contentGroup);
+            break;
+        }
     }
-    if (obj.type !== 'group' && obj.type !== 'image') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -226,6 +254,34 @@ function buildSVGElement(obj) {
     applyRotation(obj, elem);
     elem.style.cursor = 'pointer';
     return elem;
+}
+
+function buildClipShape(container, ns) {
+    let shape;
+    switch (container.type) {
+        case 'rect':
+            shape = document.createElementNS(ns, 'rect');
+            shape.setAttribute('x', container.x); shape.setAttribute('y', container.y);
+            shape.setAttribute('width', container.width); shape.setAttribute('height', container.height);
+            break;
+        case 'ellipse':
+            shape = document.createElementNS(ns, 'ellipse');
+            shape.setAttribute('cx', container.cx); shape.setAttribute('cy', container.cy);
+            shape.setAttribute('rx', container.rx); shape.setAttribute('ry', container.ry);
+            break;
+        default:
+            shape = document.createElementNS(ns, 'rect');
+            const b = getObjBounds(container);
+            shape.setAttribute('x', b.x); shape.setAttribute('y', b.y);
+            shape.setAttribute('width', b.w); shape.setAttribute('height', b.h);
+            break;
+    }
+    if (container.rotation) {
+        const b = getObjBounds(container);
+        const cx = b.x + b.w/2, cy = b.y + b.h/2;
+        shape.setAttribute('transform', `rotate(${container.rotation} ${cx} ${cy})`);
+    }
+    return shape;
 }
 
 function applyRotation(obj, elem) {
@@ -264,8 +320,12 @@ function refreshElement(obj) {
         case 'group':
             for (const child of obj.children) refreshElement(child);
             break;
+        case 'powerclip':
+            // Rebuild entirely since clip path needs updating
+            rebuildPowerClipElement(obj);
+            return; // rebuildPowerClipElement handles everything
     }
-    if (obj.type !== 'group' && obj.type !== 'image') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -300,6 +360,9 @@ function hitTest(obj, pt) {
             if (hitTest(obj.children[i], pt)) return true;
         }
         return false;
+    }
+    if (obj.type === 'powerclip') {
+        return hitTest(obj.container, pt);
     }
     switch (obj.type) {
         case 'rect': case 'image':
@@ -436,6 +499,8 @@ function getObjBounds(obj) {
             if(!isFinite(x1)) return {x:0,y:0,w:0,h:0};
             return {x:x1,y:y1,w:x2-x1,h:y2-y1};
         }
+        case 'powerclip':
+            return getObjBounds(obj.container);
     }
 }
 
@@ -475,6 +540,8 @@ function getSnapPoints(obj) {
         pts.push({...rp1,type:'endpoint'},{...rp2,type:'endpoint'});
         const mid = rotatePoint((obj.x1+obj.x2)/2,(obj.y1+obj.y2)/2,cx,cy,rot);
         pts.push({...mid,type:'edge'});
+    } else if (obj.type === 'powerclip') {
+        return getSnapPoints(obj.container);
     }
     return pts;
 }
@@ -530,6 +597,8 @@ function nearestEdgePoint(obj, pt) {
         if (!best) return null;
         const rp = rotatePoint(best.x, best.y, ccx, ccy, rot);
         return { point: rp, dist: bestD };
+    } else if (obj.type === 'powerclip') {
+        return nearestEdgePoint(obj.container, pt);
     }
     return null;
 }
@@ -760,7 +829,24 @@ function handleMouseMove(e) {
 
 function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
-    if (state.isDragging) { state.isDragging = false; drawSelection(); updatePropsPanel(); return; }
+    if (state.isDragging) {
+        state.isDragging = false;
+        // Auto-insert into PowerClip: if dragging a single non-powerclip obj and dropped on a powerclip
+        if (state.selectedIds.length === 1) {
+            const draggedId = state.selectedIds[0];
+            const dragged = findObject(draggedId);
+            if (dragged && dragged.type !== 'powerclip') {
+                const b = getObjBounds(dragged);
+                const center = { x: b.x + b.w/2, y: b.y + b.h/2 };
+                const pcTarget = findPowerClipAtPoint(center, draggedId);
+                if (pcTarget) {
+                    addToPowerClip(draggedId, pcTarget.id);
+                    return;
+                }
+            }
+        }
+        drawSelection(); updatePropsPanel(); return;
+    }
     if (state.isDrawing) handleDrawEnd();
 }
 
@@ -804,6 +890,12 @@ function snapshotPos(obj) {
             for (const c of obj.children) snaps[c.id] = snapshotPos(c);
             return {children: snaps};
         }
+        case 'powerclip': {
+            const containerSnap = snapshotPos(obj.container);
+            const contentSnaps = {};
+            for (const c of obj.contents) contentSnaps[c.id] = snapshotPos(c);
+            return { container: containerSnap, contents: contentSnaps };
+        }
     }
 }
 
@@ -816,6 +908,12 @@ function applyMove(obj, snap, dx, dy) {
         case 'group':
             for (const c of obj.children) {
                 if (snap.children[c.id]) applyMove(c, snap.children[c.id], dx, dy);
+            }
+            break;
+        case 'powerclip':
+            applyMove(obj.container, snap.container, dx, dy);
+            for (const c of obj.contents) {
+                if (snap.contents[c.id]) applyMove(c, snap.contents[c.id], dx, dy);
             }
             break;
     }
@@ -991,6 +1089,157 @@ function ungroupSelected() {
 }
 
 // =============================================
+// POWERCLIP
+// =============================================
+// A PowerClip is a special object: { type:'powerclip', container: <shape obj>, contents: [<obj>...] }
+// The container defines the clip shape, contents are clipped inside it.
+
+function makePowerClip(objId) {
+    const obj = findObject(objId);
+    if (!obj || obj.type === 'powerclip' || obj.type === 'line' || obj.type === 'bspline' || obj.type === 'image') return;
+    const idx = state.objects.findIndex(o => o.id === objId);
+    if (idx === -1) return;
+    // Remove from DOM
+    obj.element.remove();
+    // Create powerclip wrapper
+    const pc = {
+        id: state.nextId++,
+        type: 'powerclip',
+        container: { ...obj, element: null },
+        contents: [],
+        rotation: 0,
+    };
+    const elem = buildSVGElement(pc);
+    pc.element = elem;
+    elem.dataset.objectId = pc.id;
+    objectsLayer.appendChild(elem);
+    state.objects.splice(idx, 1, pc);
+    selectObject(pc.id);
+}
+
+function addToPowerClip(contentId, powerclipId) {
+    const pc = findObject(powerclipId);
+    const content = findObject(contentId);
+    if (!pc || !content || pc.type !== 'powerclip') return;
+    // Remove content from objects array and DOM
+    content.element.remove();
+    const idx = state.objects.findIndex(o => o.id === contentId);
+    if (idx !== -1) state.objects.splice(idx, 1);
+    state.selectedIds = state.selectedIds.filter(i => i !== contentId);
+    // Add to powerclip contents
+    pc.contents.push(content);
+    // Rebuild powerclip element
+    rebuildPowerClipElement(pc);
+    selectObject(pc.id);
+}
+
+function rebuildPowerClipElement(pc) {
+    const oldElem = pc.element;
+    const parent = oldElem.parentNode;
+    const newElem = buildSVGElement(pc);
+    pc.element = newElem;
+    newElem.dataset.objectId = pc.id;
+    parent.replaceChild(newElem, oldElem);
+}
+
+function findPowerClipAtPoint(pt, excludeId) {
+    for (let i = state.objects.length - 1; i >= 0; i--) {
+        const obj = state.objects[i];
+        if (obj.type === 'powerclip' && obj.id !== excludeId) {
+            if (hitTest({...obj.container, type: obj.container.type}, pt)) return obj;
+        }
+    }
+    return null;
+}
+
+// =============================================
+// CONTEXT MENU
+// =============================================
+let contextMenu;
+let contextTarget = null;
+
+function showContextMenu(e, obj) {
+    contextMenu = document.getElementById('context-menu');
+    contextTarget = obj;
+    const makeOpt = contextMenu.querySelector('[data-ctx="make-powerclip"]');
+    const addOpt = contextMenu.querySelector('[data-ctx="add-to-powerclip"]');
+
+    // Show/hide options based on context
+    if (obj.type === 'powerclip') {
+        makeOpt.classList.add('disabled');
+        makeOpt.textContent = '✓ Es PowerClip';
+    } else if (obj.type === 'line' || obj.type === 'bspline' || obj.type === 'image') {
+        makeOpt.classList.add('disabled');
+        makeOpt.innerHTML = contextMenu.querySelector('[data-ctx="make-powerclip"]').innerHTML;
+    } else {
+        makeOpt.classList.remove('disabled');
+        makeOpt.innerHTML = '<svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><rect x="5" y="5" width="10" height="10" rx="1" stroke-dasharray="2 1"/></svg> Crear PowerClip';
+    }
+
+    // Check if there are any powerclips to add into
+    const powerclips = state.objects.filter(o => o.type === 'powerclip' && o.id !== obj.id);
+    if (powerclips.length > 0 && obj.type !== 'powerclip') {
+        addOpt.classList.remove('disabled');
+    } else {
+        addOpt.classList.add('disabled');
+    }
+
+    contextMenu.style.left = e.clientX + 'px';
+    contextMenu.style.top = e.clientY + 'px';
+    contextMenu.classList.remove('hidden');
+
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', closeContextMenu, { once: true });
+    }, 10);
+}
+
+function closeContextMenu() {
+    const cm = document.getElementById('context-menu');
+    cm.classList.add('hidden');
+    contextTarget = null;
+}
+
+function setupContextMenu() {
+    document.querySelectorAll('.ctx-option').forEach(opt => {
+        opt.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (opt.classList.contains('disabled')) return;
+            const action = opt.dataset.ctx;
+            if (!contextTarget) return;
+            switch (action) {
+                case 'make-powerclip':
+                    makePowerClip(contextTarget.id);
+                    break;
+                case 'add-to-powerclip': {
+                    // Find powerclips and pick nearest one or first
+                    const pcs = state.objects.filter(o => o.type === 'powerclip' && o.id !== contextTarget.id);
+                    if (pcs.length === 1) {
+                        addToPowerClip(contextTarget.id, pcs[0].id);
+                    } else if (pcs.length > 1) {
+                        // Find the powerclip under/nearest the content
+                        const b = getObjBounds(contextTarget);
+                        const center = { x: b.x + b.w/2, y: b.y + b.h/2 };
+                        const under = findPowerClipAtPoint(center, contextTarget.id);
+                        if (under) {
+                            addToPowerClip(contextTarget.id, under.id);
+                        } else {
+                            addToPowerClip(contextTarget.id, pcs[0].id);
+                        }
+                    }
+                    break;
+                }
+                case 'delete':
+                    for (const id of [...state.selectedIds]) deleteObject(id);
+                    updatePropsPanel();
+                    break;
+            }
+            closeContextMenu();
+        });
+    });
+}
+
+// =============================================
 // COLOR PALETTE
 // =============================================
 function buildColorPalette() {
@@ -1072,32 +1321,44 @@ function exportSVG() {
     root.setAttribute('xmlns:xlink', xlink);
     root.setAttribute('width', state.pageWidth); root.setAttribute('height', state.pageHeight);
     root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
-    const bg = document.createElementNS(ns, 'rect');
-    bg.setAttribute('width', state.pageWidth); bg.setAttribute('height', state.pageHeight); bg.setAttribute('fill', '#ffffff');
-    root.appendChild(bg);
-    for (const obj of state.objects) {
+    function exportObj(obj, parent) {
         if (obj.type === 'image') {
-            // Build image element from scratch for maximum compatibility
             const img = document.createElementNS(ns, 'image');
-            img.setAttribute('x', obj.x);
-            img.setAttribute('y', obj.y);
-            img.setAttribute('width', obj.width);
-            img.setAttribute('height', obj.height);
+            img.setAttribute('x', obj.x); img.setAttribute('y', obj.y);
+            img.setAttribute('width', obj.width); img.setAttribute('height', obj.height);
             img.setAttribute('preserveAspectRatio', 'none');
-            // Set both href and xlink:href for compatibility with CorelDRAW and other apps
             img.setAttributeNS(xlink, 'xlink:href', obj.href);
             img.setAttribute('href', obj.href);
             if (obj.rotation) {
                 const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
             }
-            root.appendChild(img);
+            parent.appendChild(img);
+        } else if (obj.type === 'powerclip') {
+            // Export powerclip as group with clipPath
+            const g = document.createElementNS(ns, 'g');
+            const clipId = 'export-clip-' + obj.id;
+            const defs = document.createElementNS(ns, 'defs');
+            const cp = document.createElementNS(ns, 'clipPath');
+            cp.setAttribute('id', clipId);
+            cp.appendChild(buildClipShape(obj.container, ns));
+            defs.appendChild(cp);
+            g.appendChild(defs);
+            // Container shape (visible)
+            exportObj(obj.container, g);
+            // Clipped contents
+            const cg = document.createElementNS(ns, 'g');
+            cg.setAttribute('clip-path', `url(#${clipId})`);
+            for (const c of obj.contents) exportObj(c, cg);
+            g.appendChild(cg);
+            parent.appendChild(g);
         } else {
             const clone = obj.element.cloneNode(true);
             clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
-            root.appendChild(clone);
+            parent.appendChild(clone);
         }
     }
+    for (const obj of state.objects) exportObj(obj, root);
     let str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
     // Fix namespace: some serializers output "ns0:href" instead of "xlink:href"
     str = str.replace(/ns\d+:href/g, 'xlink:href');
@@ -1214,6 +1475,10 @@ function applyPropPosition(obj, newXu, newYu) {
         case 'line':    obj.x1+=dx;obj.y1+=dy;obj.x2+=dx;obj.y2+=dy; break;
         case 'bspline': obj.points=obj.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
         case 'group':   for(const c of obj.children) { const cb=getObjBounds(c); applyPropPosition(c,toUnit(cb.x+dx),toUnit(cb.y+dy)); } break;
+        case 'powerclip':
+            applyPropPosition(obj.container, newXu, newYu);
+            for(const c of obj.contents) { const cb=getObjBounds(c); applyPropPosition(c,toUnit(cb.x+dx),toUnit(cb.y+dy)); }
+            break;
     }
 }
 
@@ -1236,6 +1501,17 @@ function applyPropSize(obj, newWpx, newHpx) {
         case 'group': {
             const ox=b.x,oy=b.y;
             for (const c of obj.children) {
+                const cb=getObjBounds(c);
+                const nx=ox+(cb.x-ox)*sx, ny=oy+(cb.y-oy)*sy;
+                applyPropSize(c, cb.w*sx, cb.h*sy);
+                applyPropPosition(c, toUnit(nx), toUnit(ny));
+            }
+            break;
+        }
+        case 'powerclip': {
+            const ox=b.x,oy=b.y;
+            applyPropSize(obj.container, newWpx, newHpx);
+            for (const c of obj.contents) {
                 const cb=getObjBounds(c);
                 const nx=ox+(cb.x-ox)*sx, ny=oy+(cb.y-oy)*sy;
                 applyPropSize(c, cb.w*sx, cb.h*sy);
@@ -1299,7 +1575,17 @@ function setupEventListeners() {
     svg.addEventListener('mousemove', handleMouseMove);
     svg.addEventListener('mouseup', handleMouseUp);
     svg.addEventListener('wheel', handleWheel, {passive:false});
-    svg.addEventListener('contextmenu', (e) => e.preventDefault());
+    svg.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        const pt = screenToSVG(e.clientX, e.clientY);
+        const obj = objectAtPoint(pt);
+        if (obj) {
+            selectObject(obj.id);
+            showContextMenu(e, obj);
+        } else {
+            closeContextMenu();
+        }
+    });
     svg.addEventListener('dblclick', () => { if (state.tool === 'bspline') handleBSplineDblClick(); });
 
     document.querySelectorAll('.tool-btn').forEach(btn => {
@@ -1384,6 +1670,7 @@ function setupEventListeners() {
     setupMenus();
     setupPageSizeModal();
     setupPropsPanel();
+    setupContextMenu();
 }
 
 function setTool(tool) {

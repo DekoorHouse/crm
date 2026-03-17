@@ -34,10 +34,6 @@
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l4 4 4-4M7 17V7"/><path d="M13 3h4v14h-4"/></svg>
                             Exportar SVG
                         </div>
-                        <div class="menu-option" data-action="export-png">
-                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l4 4 4-4M7 17V7"/><rect x="12" y="3" width="6" height="6" rx="1"/></svg>
-                            Exportar PNG
-                        </div>
                         <div class="menu-separator"></div>
                         <div class="menu-option" data-action="clear-all">
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
@@ -175,7 +171,7 @@
                         <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#3d2e5c" flood-opacity="0.06"/>
                     </filter>
                 </defs>
-                <rect id="page" fill="#FFFFFF" filter="url(#page-shadow-filter)" rx="2"/>
+                <rect id="page" fill="#f7f7f5" filter="url(#page-shadow-filter)" rx="2"/>
                 <g id="objects-layer"></g>
                 <g id="selection-layer"></g>
                 <g id="snap-layer"></g>
@@ -203,6 +199,23 @@
             <span id="status-zoom">100%</span>
             <span class="status-spacer"></span>
             <span id="status-coords">X: 0  Y: 0</span>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu hidden">
+        <div class="ctx-option" data-ctx="make-powerclip">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><rect x="5" y="5" width="10" height="10" rx="1" stroke-dasharray="2 1"/></svg>
+            Crear PowerClip
+        </div>
+        <div class="ctx-option" data-ctx="add-to-powerclip">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><path d="M10 6v8M6 10h8"/></svg>
+            Meter en PowerClip...
+        </div>
+        <div class="ctx-separator"></div>
+        <div class="ctx-option" data-ctx="delete">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
+            Eliminar
         </div>
     </div>
 
