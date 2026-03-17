@@ -97,15 +97,16 @@ class M2Nano {
      * Formato: [0xA6][0x00][payload (30 bytes)][0x00][CRC-8]
      *   - Byte 0:     0xA6 (comando de escritura paralela CH341A)
      *   - Byte 1:     0x00 (byte de inicio de trama M2 Nano)
-     *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x00)
+     *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x46 'F')
      *   - Byte 32:    0x00 (byte de fin de datos)
      *   - Byte 33:    CRC-8 Dallas/Maxim sobre bytes 2-31
      */
     sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes, inicializado en 0
+            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
             pkt[0] = PKT_FRAME;   // 0xA6
             pkt[1] = 0x00;        // Inicio de trama M2 Nano
+            pkt.fill(0x46, 2, 32);  // Padding con 'F' en zona de payload
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
             src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
             pkt[32] = 0x00;       // Fin de datos
@@ -183,14 +184,17 @@ class M2Nano {
 
     /**
      * Envía un comando EGV dividido en chunks de 30 bytes.
-     * El EGV format es una cadena ASCII de instrucciones.
+     * Itera sobre todo el buffer enviando cada paquete secuencialmente.
      */
     async sendEGV(cmd) {
         const bytes = Buffer.from(cmd, 'ascii');
-        let first = true;
+        const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
+        this.log(`sendEGV: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
-            await this.sendPacket(bytes.slice(i, i + DATA_SIZE), first);
-            first = false;
+            const chunk = bytes.slice(i, i + DATA_SIZE);
+            const pktIdx = Math.floor(i / DATA_SIZE);
+            await this.sendPacket(chunk, true);
+            this.log(`  PKT[${pktIdx}/${totalPkts - 1}]: ${chunk.length} bytes enviados`);
             await sleep(5);
         }
     }
@@ -218,13 +222,13 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección
-        // NO incluir N (activa el láser) ni F (cierra EGV — no necesario entre jogs).
-        // Formato K40 Whisperer: I{dirs}SE
+        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección, F=finish
+        // NO incluir N (activa el láser).
+        // F es obligatorio: la placa buferea y no ejecuta hasta leer 'F'.
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'SE';
+        cmd += 'SEF';
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
 
