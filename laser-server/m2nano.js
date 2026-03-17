@@ -92,16 +92,34 @@ class M2Nano {
     // ───────── Comunicación de bajo nivel ─────────
 
     /**
-     * Envía un paquete de 32 bytes a la controladora.
-     * Formato M2 Nano: [0xA6][30 bytes de datos][0xA6]
+     * Envía un paquete de datos EGV de 32 bytes a la controladora.
+     * Formato: [0xA6][30 bytes de datos][0x00]
+     * El header 0xA6 indica que es un paquete de datos EGV.
      */
     sendPacket(data) {
         return new Promise((resolve, reject) => {
             const pkt = Buffer.alloc(PKT_SIZE, 0);
-            pkt[0] = PKT_FRAME;
+            pkt[0] = PKT_FRAME;   // 0xA6 header = paquete de datos EGV
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
             src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));
-            pkt[PKT_SIZE - 1] = PKT_FRAME;
+            // Byte 31 queda en 0x00 (NO 0xA6 — el footer causaba corrupción)
+
+            this.epOut.transfer(pkt, err => {
+                if (err) reject(err);
+                else resolve();
+            });
+        });
+    }
+
+    /**
+     * Envía un paquete de comando (status, reset, etc.) de 32 bytes.
+     * Formato: [cmd][0x00...0x00]
+     * NO usa framing 0xA6 — el primer byte es el comando directamente.
+     */
+    sendCommand(cmd) {
+        return new Promise((resolve, reject) => {
+            const pkt = Buffer.alloc(PKT_SIZE, 0);
+            pkt[0] = cmd;  // Comando directo (ej: 0xA0 para status)
 
             this.epOut.transfer(pkt, err => {
                 if (err) reject(err);
@@ -131,8 +149,8 @@ class M2Nano {
         let logged = false;
         while (Date.now() < deadline) {
             try {
-                // Enviar solicitud de estado (0xA0 como primer byte de datos)
-                await this.sendPacket(Buffer.from([CMD_STATUS]));
+                // Enviar solicitud de estado (0xA0 como comando directo, sin framing 0xA6)
+                await this.sendCommand(CMD_STATUS);
                 const resp = await this.readStatus(readTimeout);
 
                 if (!logged) {
