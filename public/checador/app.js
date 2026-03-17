@@ -344,15 +344,85 @@ function openEditModal(idx) {
     document.getElementById('edit-log-modal').style.display = 'flex';
 }
 
+function dateToInput(dateStr) {
+    // "17/3/2026" → "2026-03-17"
+    const [d, m, y] = dateStr.split('/');
+    return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+}
+
+function inputToDate(val) {
+    // "2026-03-17" → "17/3/2026"
+    const [y, m, d] = val.split('-');
+    return `${parseInt(d)}/${parseInt(m)}/${y}`;
+}
+
 function renderEditEntries() {
     const container = document.getElementById('edit-log-entries');
     container.innerHTML = '';
+
+    // Selector de empleado
+    const empOptions = employeesCache.map(e =>
+        `<option value="${e.id}" data-name="${e.name}" ${e.id === editingMeta.id ? 'selected' : ''}>${e.name} (${e.id})</option>`
+    ).join('');
+    const metaDiv = document.createElement('div');
+    metaDiv.style.cssText = 'margin-bottom:14px; display:flex; gap:10px;';
+    metaDiv.innerHTML = `
+        <div style="flex:1;">
+            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">Empleado</label>
+            <select id="edit-employee" style="width:100%; padding:9px; font-size:0.9rem; margin:0; background:rgba(255,255,255,0.08); border:1px solid var(--glass-border); border-radius:8px; color:white;">
+                ${empOptions}
+                <option value="__manual__" ${!employeesCache.find(e=>e.id===editingMeta.id) ? 'selected':''}>✏️ Manual...</option>
+            </select>
+        </div>
+        <div style="flex:1;">
+            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">Fecha</label>
+            <input type="date" id="edit-date" value="${dateToInput(editingMeta.date)}"
+                style="width:100%; padding:9px; font-size:0.9rem; margin:0; background:rgba(255,255,255,0.08); border:1px solid var(--glass-border); border-radius:8px; color:white;">
+        </div>
+    `;
+    container.appendChild(metaDiv);
+
+    // Campo manual si seleccionan "Manual..."
+    const manualDiv = document.createElement('div');
+    manualDiv.id = 'edit-manual-emp';
+    manualDiv.style.cssText = 'margin-bottom:14px; display:flex; gap:10px;' + (!employeesCache.find(e=>e.id===editingMeta.id) ? '' : 'display:none;');
+    manualDiv.innerHTML = `
+        <div style="flex:1;">
+            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">Nombre</label>
+            <input type="text" id="edit-emp-name" value="${editingMeta.name}" placeholder="Nombre" style="width:100%; padding:9px; font-size:0.9rem; margin:0;">
+        </div>
+        <div style="flex:1;">
+            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">ID</label>
+            <input type="text" id="edit-emp-id" value="${editingMeta.id}" placeholder="ID" style="width:100%; padding:9px; font-size:0.9rem; margin:0;">
+        </div>
+    `;
+    container.appendChild(manualDiv);
+
+    metaDiv.querySelector('#edit-employee').addEventListener('change', e => {
+        if (e.target.value === '__manual__') {
+            manualDiv.style.display = 'flex';
+        } else {
+            manualDiv.style.display = 'none';
+            const opt = e.target.selectedOptions[0];
+            document.getElementById('edit-emp-name').value = opt.dataset.name;
+            document.getElementById('edit-emp-id').value = opt.value;
+        }
+    });
+
+    // Separador
+    const sep = document.createElement('div');
+    sep.style.cssText = 'border-top:1px solid var(--glass-border); margin-bottom:12px;';
+    container.appendChild(sep);
+
+    // Lista de registros de hora
     const visible = editingEntries.filter(e => !e.isDeleted);
     if (visible.length === 0) {
-        container.innerHTML = `<p style="color:var(--text-muted); text-align:center; padding:20px;">Sin registros. Agrega uno abajo.</p>`;
-        return;
+        const empty = document.createElement('p');
+        empty.style.cssText = 'color:var(--text-muted); text-align:center; padding:10px 0;';
+        empty.textContent = 'Sin registros de hora. Agrega uno abajo.';
+        container.appendChild(empty);
     }
-    visible.forEach((entry, visIdx) => {
+    visible.forEach(entry => {
         const realIdx = editingEntries.indexOf(entry);
         const color = entry.type === 'IN' ? 'var(--success)' : 'var(--warning)';
         const div = document.createElement('div');
@@ -391,23 +461,39 @@ async function saveEditChanges() {
     saveBtn.disabled = true;
     saveBtn.textContent = 'Guardando...';
 
+    // Leer fecha y empleado actuales del modal
+    const dateInput = document.getElementById('edit-date').value;
+    const newDate = inputToDate(dateInput);
+    const empSelect = document.getElementById('edit-employee');
+    let newName, newId;
+    if (empSelect.value === '__manual__') {
+        newName = document.getElementById('edit-emp-name').value.trim() || editingMeta.name;
+        newId   = document.getElementById('edit-emp-id').value.trim()   || editingMeta.id;
+    } else {
+        newId   = empSelect.value;
+        newName = empSelect.selectedOptions[0].dataset.name;
+    }
+
+    const [d, mo, y] = newDate.split('/').map(Number);
     const batch = db.batch();
-    const [day, month, year] = editingMeta.date.split('/').map(Number);
 
     for (const entry of editingEntries) {
         const [h, m] = entry.time.split(':').map(Number);
-        const timestamp = new Date(year, month - 1, day, h, m, 0).getTime();
+        const timestamp = new Date(y, mo - 1, d, h, m, 0).getTime();
 
         if (entry.isDeleted && !entry.isNew && entry._docId) {
             batch.delete(db.collection('checador_logs').doc(entry._docId));
         } else if (!entry.isDeleted && entry.isNew) {
             batch.set(db.collection('checador_logs').doc(), {
-                id: editingMeta.id, name: editingMeta.name,
+                id: newId, name: newName,
                 type: entry.type, time: entry.time,
-                date: editingMeta.date, timestamp
+                date: newDate, timestamp
             });
         } else if (!entry.isDeleted && !entry.isNew && entry._docId) {
-            batch.update(db.collection('checador_logs').doc(entry._docId), { time: entry.time, timestamp });
+            batch.update(db.collection('checador_logs').doc(entry._docId), {
+                id: newId, name: newName,
+                time: entry.time, date: newDate, timestamp
+            });
         }
     }
 
