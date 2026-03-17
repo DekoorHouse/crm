@@ -541,6 +541,17 @@ function drawSnapIndicators(mousePt) {
 
 function drawSnapMarker(ns, sp, r, sw) {
     const color = '#7c5cf0';
+    const fontSize = sw * 10;
+    const labelOffset = r * 2.2;
+    function addLabel(x, y, text) {
+        const txt = document.createElementNS(ns, 'text');
+        txt.setAttribute('x', x); txt.setAttribute('y', y);
+        txt.setAttribute('fill', color); txt.setAttribute('font-size', fontSize);
+        txt.setAttribute('font-family', 'Inter, system-ui, sans-serif');
+        txt.setAttribute('pointer-events', 'none');
+        txt.textContent = text;
+        snapLayer.appendChild(txt);
+    }
     if (sp.type === 'center') {
         const sz = r * 2;
         const l1 = document.createElementNS(ns, 'line');
@@ -555,6 +566,7 @@ function drawSnapMarker(ns, sp, r, sw) {
         l2.setAttribute('stroke', color); l2.setAttribute('stroke-width', sw);
         l2.setAttribute('pointer-events', 'none');
         snapLayer.appendChild(l2);
+        addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, 'centro');
     } else if (sp.type === 'corner' || sp.type === 'endpoint') {
         const sq = document.createElementNS(ns, 'rect');
         sq.setAttribute('x', sp.x - r); sq.setAttribute('y', sp.y - r);
@@ -563,6 +575,7 @@ function drawSnapMarker(ns, sp, r, sw) {
         sq.setAttribute('stroke-width', sw);
         sq.setAttribute('pointer-events', 'none');
         snapLayer.appendChild(sq);
+        addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, sp.type === 'corner' ? 'esquina' : 'punto');
     } else if (sp.type === 'edge') {
         const tr = document.createElementNS(ns, 'polygon');
         tr.setAttribute('points', `${sp.x},${sp.y-r*1.3} ${sp.x-r},${sp.y+r*0.7} ${sp.x+r},${sp.y+r*0.7}`);
@@ -570,6 +583,7 @@ function drawSnapMarker(ns, sp, r, sw) {
         tr.setAttribute('stroke-width', sw);
         tr.setAttribute('pointer-events', 'none');
         snapLayer.appendChild(tr);
+        addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, 'medio');
     } else if (sp.type === 'quadrant') {
         const c = document.createElementNS(ns, 'circle');
         c.setAttribute('cx', sp.x); c.setAttribute('cy', sp.y); c.setAttribute('r', r);
@@ -577,16 +591,40 @@ function drawSnapMarker(ns, sp, r, sw) {
         c.setAttribute('stroke-width', sw);
         c.setAttribute('pointer-events', 'none');
         snapLayer.appendChild(c);
+        addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, 'cuadrante');
     } else if (sp.type === 'edge-dynamic') {
-        // Diamond marker for nearest edge point
-        const s = r * 1.2;
-        const diamond = document.createElementNS(ns, 'polygon');
-        diamond.setAttribute('points',
-            `${sp.x},${sp.y-s} ${sp.x+s},${sp.y} ${sp.x},${sp.y+s} ${sp.x-s},${sp.y}`);
-        diamond.setAttribute('fill', color); diamond.setAttribute('fill-opacity', '0.3');
-        diamond.setAttribute('stroke', color); diamond.setAttribute('stroke-width', sw);
-        diamond.setAttribute('pointer-events', 'none');
-        snapLayer.appendChild(diamond);
+        // Square with cross + "borde" label (CorelDRAW style)
+        const s = r * 1.3;
+        // Square outline
+        const sq = document.createElementNS(ns, 'rect');
+        sq.setAttribute('x', sp.x - s); sq.setAttribute('y', sp.y - s);
+        sq.setAttribute('width', s*2); sq.setAttribute('height', s*2);
+        sq.setAttribute('fill', '#fff'); sq.setAttribute('fill-opacity', '0.85');
+        sq.setAttribute('stroke', color); sq.setAttribute('stroke-width', sw);
+        sq.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(sq);
+        // Horizontal line of cross
+        const lh = document.createElementNS(ns, 'line');
+        lh.setAttribute('x1', sp.x - s*0.6); lh.setAttribute('y1', sp.y);
+        lh.setAttribute('x2', sp.x + s*0.6); lh.setAttribute('y2', sp.y);
+        lh.setAttribute('stroke', color); lh.setAttribute('stroke-width', sw);
+        lh.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(lh);
+        // Vertical line of cross
+        const lv = document.createElementNS(ns, 'line');
+        lv.setAttribute('x1', sp.x); lv.setAttribute('y1', sp.y - s*0.6);
+        lv.setAttribute('x2', sp.x); lv.setAttribute('y2', sp.y + s*0.6);
+        lv.setAttribute('stroke', color); lv.setAttribute('stroke-width', sw);
+        lv.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(lv);
+        // "borde" label
+        const txt = document.createElementNS(ns, 'text');
+        txt.setAttribute('x', sp.x + s*2); txt.setAttribute('y', sp.y + s*0.5);
+        txt.setAttribute('fill', color); txt.setAttribute('font-size', sw * 10);
+        txt.setAttribute('font-family', 'Inter, system-ui, sans-serif');
+        txt.setAttribute('pointer-events', 'none');
+        txt.textContent = 'borde';
+        snapLayer.appendChild(txt);
     }
 }
 
