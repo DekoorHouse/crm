@@ -2389,28 +2389,15 @@ async function loadOTFont(fontName) {
     if (loadedOTFonts[fontName]) return loadedOTFonts[fontName];
     const fontDef = FONTS.find(f => f.name === fontName);
     if (!fontDef || !fontDef.url) return null;
-    // Try fetch + parse first
     try {
         const resp = await fetch(fontDef.url);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const buf = await resp.arrayBuffer();
-        const font = opentype.parse(buf);
+        const font = opentype.parse(buf, { lowMemory: true });
         loadedOTFonts[fontName] = font;
         return font;
     } catch(e) {
-        console.warn('fetch+parse failed for', fontName, e);
-    }
-    // Fallback: try opentype.load (uses XMLHttpRequest)
-    try {
-        const font = await new Promise((resolve, reject) => {
-            opentype.load(fontDef.url, (err, font) => {
-                if (err) reject(err); else resolve(font);
-            });
-        });
-        loadedOTFonts[fontName] = font;
-        return font;
-    } catch(e) {
-        console.warn('opentype.load also failed for', fontName, e);
+        console.warn('Could not load font:', fontName, e);
         return null;
     }
 }
