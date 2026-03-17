@@ -1053,7 +1053,6 @@ function setupMenus() {
 function handleMenuAction(action) {
     switch (action) {
         case 'export-svg':  exportSVG(); break;
-        case 'export-png':  exportPNG(); break;
         case 'clear-all':   clearAll(); break;
         case 'page-size':   showPageSizeModal(); break;
         case 'fit-page':    resetView(); break;
@@ -1077,71 +1076,36 @@ function exportSVG() {
     bg.setAttribute('width', state.pageWidth); bg.setAttribute('height', state.pageHeight); bg.setAttribute('fill', '#ffffff');
     root.appendChild(bg);
     for (const obj of state.objects) {
-        const clone = obj.element.cloneNode(true);
-        clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
-        // Ensure image href uses inline data URL (already embedded from paste)
         if (obj.type === 'image') {
-            clone.setAttribute('href', obj.href);
-            clone.setAttributeNS(xlink, 'xlink:href', obj.href);
+            // Build image element from scratch for maximum compatibility
+            const img = document.createElementNS(ns, 'image');
+            img.setAttribute('x', obj.x);
+            img.setAttribute('y', obj.y);
+            img.setAttribute('width', obj.width);
+            img.setAttribute('height', obj.height);
+            img.setAttribute('preserveAspectRatio', 'none');
+            // Set both href and xlink:href for compatibility with CorelDRAW and other apps
+            img.setAttributeNS(xlink, 'xlink:href', obj.href);
+            img.setAttribute('href', obj.href);
+            if (obj.rotation) {
+                const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
+                img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+            }
+            root.appendChild(img);
+        } else {
+            const clone = obj.element.cloneNode(true);
+            clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
+            root.appendChild(clone);
         }
-        root.appendChild(clone);
     }
-    const str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
+    let str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
+    // Fix namespace: some serializers output "ns0:href" instead of "xlink:href"
+    str = str.replace(/ns\d+:href/g, 'xlink:href');
     const blob = new Blob([str], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'dibujo.svg';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
-}
-
-function exportPNG() {
-    // Build a clean SVG string (reuse exportSVG logic)
-    const ns = 'http://www.w3.org/2000/svg';
-    const xlink = 'http://www.w3.org/1999/xlink';
-    const root = document.createElementNS(ns, 'svg');
-    root.setAttribute('xmlns', ns);
-    root.setAttribute('xmlns:xlink', xlink);
-    root.setAttribute('width', state.pageWidth);
-    root.setAttribute('height', state.pageHeight);
-    root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
-    const bg = document.createElementNS(ns, 'rect');
-    bg.setAttribute('width', state.pageWidth);
-    bg.setAttribute('height', state.pageHeight);
-    bg.setAttribute('fill', '#ffffff');
-    root.appendChild(bg);
-    for (const obj of state.objects) {
-        const clone = obj.element.cloneNode(true);
-        clone.removeAttribute('data-object-id');
-        clone.removeAttribute('style');
-        if (obj.type === 'image') {
-            clone.setAttribute('href', obj.href);
-            clone.setAttributeNS(xlink, 'xlink:href', obj.href);
-        }
-        root.appendChild(clone);
-    }
-    const svgStr = new XMLSerializer().serializeToString(root);
-    const svgBlob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
-    const svgUrl = URL.createObjectURL(svgBlob);
-    const img = new Image();
-    img.onload = () => {
-        const canvas = document.createElement('canvas');
-        canvas.width = state.pageWidth;
-        canvas.height = state.pageHeight;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0);
-        URL.revokeObjectURL(svgUrl);
-        canvas.toBlob((blob) => {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = 'dibujo.png';
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-        }, 'image/png');
-    };
-    img.src = svgUrl;
 }
 
 // =============================================
