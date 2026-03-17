@@ -35,6 +35,10 @@ app.get('/datos', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'datos', 'index.html'));
 });
 
+app.get('/laser', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'laser', 'index.html'));
+});
+
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

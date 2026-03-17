@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Laser Controller - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/laser/style.css">
+</head>
+<body>
+
+<!-- Header -->
+<header>
+    <div class="header-left">
+        <img src="/favicon.png" alt="Dekoor" class="logo">
+        <span class="app-title"><i class="fas fa-crosshairs"></i> Laser K40</span>
+    </div>
+    <div class="header-center">
+        <div class="machine-status" id="machineStatus">
+            <span class="status-dot"></span>
+            <span class="status-text" id="statusText">Desconectado</span>
+        </div>
+    </div>
+    <div class="header-right">
+        <button class="btn-connect" id="connectBtn">
+            <i class="fas fa-plug"></i> Conectar
+        </button>
+    </div>
+</header>
+
+<!-- Workspace -->
+<div class="workspace">
+
+    <!-- Left Panel -->
+    <aside class="left-panel">
+
+        <!-- File Upload -->
+        <section class="panel-section">
+            <h3><i class="fas fa-file-image"></i> Diseño</h3>
+            <div class="drop-zone" id="dropZone">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Arrastra un archivo aquí</p>
+                <span>SVG, PNG, JPG, BMP</span>
+                <input type="file" id="fileInput" accept=".svg,.png,.jpg,.jpeg,.bmp" hidden>
+            </div>
+            <div class="file-info" id="fileInfo" style="display:none">
+                <i class="fas fa-file-alt"></i>
+                <span id="fileName">archivo.svg</span>
+                <button class="btn-icon-danger" id="removeFileBtn" title="Quitar archivo"><i class="fas fa-times"></i></button>
+            </div>
+        </section>
+
+        <!-- Operation Mode -->
+        <section class="panel-section">
+            <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
+            <div class="setting-group">
+                <label>Modo</label>
+                <div class="mode-selector">
+                    <button class="mode-btn active" data-mode="engrave">
+                        <i class="fas fa-pen-nib"></i> Grabar
+                    </button>
+                    <button class="mode-btn" data-mode="cut">
+                        <i class="fas fa-scissors"></i> Cortar
+                    </button>
+                </div>
+            </div>
+            <div class="setting-group">
+                <label>Potencia <span class="param-value" id="powerLabel">50%</span></label>
+                <input type="range" class="param-slider" id="powerSlider" min="0" max="100" value="50">
+                <div class="range-limits"><span>0%</span><span>100%</span></div>
+            </div>
+            <div class="setting-group">
+                <label>Velocidad <span class="param-value" id="speedLabel">200 mm/min</span></label>
+                <input type="range" class="param-slider" id="speedSlider" min="10" max="600" value="200">
+                <div class="range-limits"><span>10</span><span>600 mm/min</span></div>
+            </div>
+            <div class="setting-group">
+                <label>Pasadas <span class="param-value" id="passesLabel">1×</span></label>
+                <input type="range" class="param-slider" id="passesSlider" min="1" max="10" value="1">
+                <div class="range-limits"><span>1</span><span>10×</span></div>
+            </div>
+        </section>
+
+        <!-- Material Presets -->
+        <section class="panel-section">
+            <h3><i class="fas fa-layer-group"></i> Material</h3>
+            <select id="materialSelect">
+                <option value="">— Personalizado —</option>
+                <optgroup label="Madera">
+                    <option value="plywood3">Triplay 3mm</option>
+                    <option value="plywood6">Triplay 6mm</option>
+                    <option value="mdf3">MDF 3mm</option>
+                    <option value="mdf6">MDF 6mm</option>
+                </optgroup>
+                <optgroup label="Acrílico">
+                    <option value="acrylic3">Acrílico 3mm</option>
+                    <option value="acrylic5">Acrílico 5mm</option>
+                </optgroup>
+                <optgroup label="Otros">
+                    <option value="leather">Piel / Cuero</option>
+                    <option value="paper">Papel / Cartón</option>
+                    <option value="rubber">Hule / Goma</option>
+                    <option value="foam">Foamy</option>
+                </optgroup>
+            </select>
+        </section>
+
+        <!-- Position & Jog -->
+        <section class="panel-section">
+            <h3><i class="fas fa-crosshairs"></i> Posición</h3>
+            <div class="position-display">
+                <div class="pos-item">
+                    <span class="pos-label">X</span>
+                    <span class="pos-value mono" id="posX">0.0</span>
+                    <span class="pos-unit">mm</span>
+                </div>
+                <div class="pos-item">
+                    <span class="pos-label">Y</span>
+                    <span class="pos-value mono" id="posY">0.0</span>
+                    <span class="pos-unit">mm</span>
+                </div>
+            </div>
+            <div class="jog-grid">
+                <button class="jog-btn" id="jogUpLeft"   title="↖"><i class="fas fa-arrow-up"    style="transform:rotate(-45deg)"></i></button>
+                <button class="jog-btn" id="jogUp"       title="↑"><i class="fas fa-arrow-up"></i></button>
+                <button class="jog-btn" id="jogUpRight"  title="↗"><i class="fas fa-arrow-up"    style="transform:rotate(45deg)"></i></button>
+                <button class="jog-btn" id="jogLeft"     title="←"><i class="fas fa-arrow-left"></i></button>
+                <button class="jog-btn home-btn" id="jogHome" title="Origen"><i class="fas fa-home"></i></button>
+                <button class="jog-btn" id="jogRight"    title="→"><i class="fas fa-arrow-right"></i></button>
+                <button class="jog-btn" id="jogDownLeft" title="↙"><i class="fas fa-arrow-down"  style="transform:rotate(45deg)"></i></button>
+                <button class="jog-btn" id="jogDown"     title="↓"><i class="fas fa-arrow-down"></i></button>
+                <button class="jog-btn" id="jogDownRight"title="↘"><i class="fas fa-arrow-down"  style="transform:rotate(-45deg)"></i></button>
+            </div>
+            <div class="jog-step-row">
+                <span>Paso:</span>
+                <button class="step-btn active" data-step="1">1mm</button>
+                <button class="step-btn" data-step="5">5mm</button>
+                <button class="step-btn" data-step="10">10mm</button>
+            </div>
+        </section>
+
+    </aside>
+
+    <!-- Canvas Area -->
+    <main class="canvas-area">
+        <div class="canvas-toolbar">
+            <div class="toolbar-group">
+                <button class="tool-btn" id="toolZoomIn"  title="Zoom +"><i class="fas fa-search-plus"></i></button>
+                <button class="tool-btn" id="toolZoomOut" title="Zoom -"><i class="fas fa-search-minus"></i></button>
+                <button class="tool-btn" id="toolFit"     title="Ajustar vista"><i class="fas fa-expand-arrows-alt"></i></button>
+            </div>
+            <span class="zoom-display mono" id="zoomDisplay">100%</span>
+            <div class="canvas-info">
+                Área de trabajo: 300 × 200 mm (K40)
+            </div>
+        </div>
+
+        <div class="canvas-wrapper" id="canvasWrapper">
+            <canvas id="laserCanvas"></canvas>
+            <div class="laser-dot" id="laserDot"></div>
+        </div>
+
+        <div class="job-bar">
+            <div class="job-bar-info">
+                <span id="jobStatusText">Sin trabajo activo</span>
+                <span class="mono" id="jobTimeText"></span>
+            </div>
+            <div class="progress-track">
+                <div class="progress-fill" id="progressFill" style="width:0%"></div>
+            </div>
+            <span class="mono" id="progressPct">0%</span>
+        </div>
+    </main>
+
+    <!-- Right Panel -->
+    <aside class="right-panel">
+
+        <!-- Job Controls -->
+        <section class="panel-section">
+            <h3><i class="fas fa-gamepad"></i> Control</h3>
+            <div class="ctrl-grid">
+                <button class="ctrl-btn frame-btn" id="frameBtn" disabled>
+                    <i class="fas fa-border-style"></i>
+                    <span>Frame</span>
+                </button>
+                <button class="ctrl-btn start-btn" id="startBtn" disabled>
+                    <i class="fas fa-play"></i>
+                    <span>Iniciar</span>
+                </button>
+                <button class="ctrl-btn pause-btn" id="pauseBtn" disabled>
+                    <i class="fas fa-pause"></i>
+                    <span>Pausar</span>
+                </button>
+                <button class="ctrl-btn stop-btn" id="stopBtn" disabled>
+                    <i class="fas fa-stop"></i>
+                    <span>Detener</span>
+                </button>
+            </div>
+            <button class="estop-btn" id="estopBtn">
+                <i class="fas fa-exclamation-triangle"></i>
+                PARO DE EMERGENCIA
+            </button>
+        </section>
+
+        <!-- Laser Test -->
+        <section class="panel-section">
+            <h3><i class="fas fa-dot-circle"></i> Prueba</h3>
+            <button class="btn-laser-test" id="laserTestBtn" disabled>
+                <i class="fas fa-bullseye"></i> Pulso de prueba
+            </button>
+            <div class="setting-group" style="margin-top:10px">
+                <label>Duración <span class="param-value" id="pulseLabel">50ms</span></label>
+                <input type="range" class="param-slider" id="pulseSlider" min="10" max="500" value="50">
+                <div class="range-limits"><span>10ms</span><span>500ms</span></div>
+            </div>
+        </section>
+
+        <!-- Console -->
+        <section class="panel-section console-section">
+            <h3>
+                <i class="fas fa-terminal"></i> Consola
+                <button class="btn-clear-console" id="clearConsoleBtn">Limpiar</button>
+            </h3>
+            <div class="console-output" id="consoleOutput">
+                <div class="log info">Sistema listo. Conecta tu láser K40.</div>
+            </div>
+        </section>
+
+    </aside>
+</div>
+
+<script src="/laser/script.js"></script>
+</body>
+</html>
