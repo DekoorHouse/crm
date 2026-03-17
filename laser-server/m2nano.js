@@ -93,16 +93,19 @@ class M2Nano {
 
     /**
      * Envía un paquete de datos EGV de 32 bytes a la controladora.
-     * Formato: [0xA6][30 bytes de datos][0x00]
-     * El header 0xA6 indica que es un paquete de datos EGV.
+     * Formato M2 Nano: [0xA6][count][data bytes][0x00 padding]
+     *   - Byte 0: 0xA6 (header de paquete de datos)
+     *   - Byte 1: cantidad de bytes válidos de datos (1-30)
+     *   - Bytes 2-31: datos EGV + padding ceros
      */
     sendPacket(data) {
         return new Promise((resolve, reject) => {
             const pkt = Buffer.alloc(PKT_SIZE, 0);
-            pkt[0] = PKT_FRAME;   // 0xA6 header = paquete de datos EGV
+            pkt[0] = PKT_FRAME;   // 0xA6 header
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));
-            // Byte 31 queda en 0x00 (NO 0xA6 — el footer causaba corrupción)
+            const len = Math.min(src.length, DATA_SIZE);
+            pkt[1] = len;         // Byte count — le dice al FPGA cuántos bytes leer
+            src.copy(pkt, 2, 0, len);  // Datos empiezan en byte 2
 
             this.epOut.transfer(pkt, err => {
                 if (err) reject(err);
@@ -204,12 +207,12 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección, F=salir
-        // NO incluir S1PN — eso activa el láser (modo corte). Para jog solo movimiento rápido.
+        // EGV rapid move: I=init, dirs (1 char=1 paso), N=ejecutar, SE=fin sección, F=salir
+        // Sin S{vel}P el movimiento es rápido (sin láser). N dispara la ejecución del movimiento.
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'SEF';
+        cmd += 'NSEF';
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
 
