@@ -91,33 +91,11 @@ class M2Nano {
             throw new Error('Endpoints USB no encontrados en el dispositivo.');
         }
 
-        this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType}`);
+        this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType} maxPkt=${this.epOut.descriptor.wMaxPacketSize}`);
 
-        // Inicializar CH341 en modo paralelo EPP.
-        // El chip CH341 arranca en modo UART; este control transfer lo pone en modo
-        // paralelo EPP para que los paquetes 0xA6 lleguen realmente al bus del M2 Nano.
-        // Sin esto, el CH341 hace ACK a los bulk transfers pero no activa el bus paralelo.
-        await new Promise((resolve) => {
-            this.device.controlTransfer(
-                0x40,            // bmRequestType: vendor, host→device
-                0xA1,            // bRequest: CH341 write/init (activa modo EPP)
-                0x0000,          // wValue
-                0x0000,          // wIndex
-                Buffer.alloc(0), // sin payload
-                (err) => {
-                    if (err) this.log(`CH341 init aviso: ${err.message} (continuando...)`);
-                    else     this.log('CH341 inicializado en modo paralelo EPP.');
-                    resolve();   // siempre continuar aunque falle
-                }
-            );
-        });
-
-        // El controlTransfer puede dejar al M2 Nano en estado 0xCF (CRC error).
-        // Enviar escape '@' para limpiar ese estado y volver a 0xCE (idle).
-        await sleep(50);
-        await this.sendEGV('@');
-        this.log('Board reset enviado (escape @).');
-        await sleep(200);
+        // NO enviar controlTransfer(0xA1) — MeerK40t no lo hace y funciona con M3 Nano.
+        // Solo setConfiguration(1) + claim es suficiente.
+        // El controlTransfer anterior podía poner al CH341 en un modo incorrecto.
     }
 
     /** Libera el dispositivo USB. */
