@@ -207,12 +207,13 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move: I=init, dirs (1 char=1 paso), N=ejecutar, SE=fin sección, F=salir
-        // Sin S{vel}P el movimiento es rápido (sin láser). N dispara la ejecución del movimiento.
+        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección
+        // NO incluir N (activa el láser) ni F (cierra EGV — no necesario entre jogs).
+        // Formato K40 Whisperer: I{dirs}SE
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'NSEF';
+        cmd += 'SE';
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
 
