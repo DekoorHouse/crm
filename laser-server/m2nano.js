@@ -17,7 +17,7 @@ const DEVICES = [
 
 const EP_OUT       = 0x02;   // Bulk OUT → máquina
 const EP_IN        = 0x82;   // Bulk IN  ← máquina
-const PKT_SIZE     = 32;     // Tamaño de paquete USB (32 bytes = wMaxPacketSize del endpoint CH341)
+const PKT_SIZE     = 34;     // Tamaño de paquete USB (34 bytes protocolo Lhystudios, igual que K40 Whisperer)
 const CMD_PKT_SIZE = 32;     // Tamaño de paquete de comando (sin CRC)
 const DATA_SIZE    = 30;     // Bytes de datos por paquete (payload)
 const PKT_FRAME    = 0xA6;   // Byte de comando de escritura paralela CH341A
@@ -93,9 +93,18 @@ class M2Nano {
 
         this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType} maxPkt=${this.epOut.descriptor.wMaxPacketSize}`);
 
-        // NO enviar controlTransfer(0xA1) — MeerK40t no lo hace y funciona con M3 Nano.
-        // Solo setConfiguration(1) + claim es suficiente.
-        // El controlTransfer anterior podía poner al CH341 en un modo incorrecto.
+        // Inicializar CH341 en modo EPP (K40 Whisperer hace esto con pyusb).
+        // Sin este controlTransfer el CH341 no enruta los bulk writes 0xA6 al puerto
+        // paralelo EPP — los datos EGV nunca llegan a la placa aunque los USB ACK pasen.
+        // Esto cambia el status de 0xCE (estado interno CH341) a 0xCF (estado real M3 Nano).
+        try {
+            await new Promise((resolve, reject) => {
+                this.device.controlTransfer(0x40, 0xA1, 0, 0, Buffer.alloc(0), err => err ? reject(err) : resolve());
+            });
+            this.log('CH341 init EPP (0xA1) OK.');
+        } catch (e) {
+            this.log(`CH341 init aviso: ${e.message} (continuando...)`);
+        }
     }
 
     /** Libera el dispositivo USB. */
@@ -111,26 +120,24 @@ class M2Nano {
     // ───────── Comunicación de bajo nivel ─────────
 
     /**
-     * Envía un paquete de datos EGV de 32 bytes (protocolo Lhystudios).
-     * Formato: [0xA6][payload (30 bytes)][CRC-8]
-     *   - Byte 0:     0xA6 (comando de escritura paralela CH341A)
-     *   - Bytes 1-30: payload EGV (30 bytes, padded con 0x46 'F')
-     *   - Byte 31:    CRC-8 Dallas/Maxim sobre bytes 1-30
-     *
-     * CRÍTICO: wMaxPacketSize del endpoint CH341 es 32 bytes. El paquete DEBE
-     * caber exactamente en 32 bytes. Si enviamos 34 bytes, el USB los dividiría
-     * en dos transferencias (32 + 2), dejando el byte CRC en un paquete separado.
-     * El controlador M3 Nano recibiría el paquete sin CRC y lo rechazaría
-     * silenciosamente → la máquina no se mueve.
+     * Envía un paquete de datos EGV de 34 bytes (protocolo Lhystudios, igual que K40 Whisperer).
+     * Formato: [0xA6][0x00][payload (30 bytes)][0x00][CRC-8]
+     *   - Byte 0:     0xA6 (comando de escritura EPP al CH341A)
+     *   - Byte 1:     0x00 (byte de inicio de trama)
+     *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x46 'F')
+     *   - Byte 32:    0x00 (byte de fin de datos)
+     *   - Byte 33:    CRC-8 Dallas/Maxim sobre bytes 2-31
      */
     sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 32 bytes
+            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
             pkt[0] = PKT_FRAME;   // 0xA6
-            pkt.fill(0x46, 1, 31);  // Padding con 'F' en zona de payload (bytes 1-30)
+            pkt[1] = 0x00;        // Inicio de trama
+            pkt.fill(0x46, 2, 32);  // Padding con 'F' en zona de payload
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 1-30
-            pkt[31] = crc8(pkt.subarray(1, 31));  // CRC sobre los 30 bytes de payload
+            src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
+            pkt[32] = 0x00;       // Fin de datos
+            pkt[33] = crc8(pkt.subarray(2, 32));  // CRC sobre los 30 bytes de payload
 
             if (logFirst) {
                 const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
@@ -197,14 +204,9 @@ class M2Nano {
                 }
 
                 // Listo cuando el board devuelve un estado idle conocido.
-                // M2 Nano: 0xCE=OK, 0xEC=finish.
-                // M3 Nano (Lihuiyu 2022+): 0xCF puede ser:
-                //   a) idle/home normal en algunas versiones de firmware, O
-                //   b) TAPA ABIERTA / interlock de seguridad activo.
+                // M2 Nano: 0xCE=OK/idle, 0xEC=finish.
+                // M3 Nano (Lihuiyu 2022+): 0xCF=idle normal (confirmado sin sensor de tapa).
                 // 0xA5/0xEE = busy → seguir esperando.
-                if (s === 0xCF) {
-                    this.log('⚠ Status 0xCF — si la máquina no se mueve, CIERRA LA TAPA del K40 o puentea el sensor de tapa (conector DOOR/LID en la placa).');
-                }
                 if (s === 0xCE || s === 0xCF || s === 0xEC) return;
             } catch (_) {}
             await sleep(80);
