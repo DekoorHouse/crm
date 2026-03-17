@@ -2108,7 +2108,7 @@ function setupImportNamesModal() {
     });
 }
 
-function generateNamesFromTemplate(names) {
+async function generateNamesFromTemplate(names) {
     // Find the first rect in the design as template
     const templateRect = state.objects.find(o => o.type === 'rect');
     if (!templateRect) {
@@ -2117,9 +2117,12 @@ function generateNamesFromTemplate(names) {
     }
     saveUndoState();
 
-    const padding = 0; // no padding - text fills the rect completely
+    const padding = 0;
     const fontName = 'Rows of Sunflowers';
     const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
+
+    // Ensure the font is loaded for precise measurement
+    if (!loadedOTFonts[fontName]) await loadOTFont(fontName);
 
     // Collect all current objects as template (serialize them)
     const templateObjects = state.objects.map(serializeObj);
@@ -2167,27 +2170,37 @@ function generateNamesFromTemplate(names) {
         const rectW = templateRect.width;
         const rectH = templateRect.height;
 
-        // Create text, measure, and scale to fit inside the rect
+        // Create text, measure with opentype.js for tight bounding box
         const name = names[i];
         const ns = 'http://www.w3.org/2000/svg';
+        const otFont = loadedOTFonts[fontName];
 
-        // Measure at final size directly using a temp text element
-        // Place at a known position (1000, 1000) to avoid viewport clipping
+        let relW, relH, relX, relY;
         const refSize = 100;
-        const tmpText = document.createElementNS(ns, 'text');
-        tmpText.setAttribute('font-family', fontDef.css);
-        tmpText.setAttribute('font-size', refSize);
-        tmpText.setAttribute('x', 1000); tmpText.setAttribute('y', 1000);
-        tmpText.textContent = name;
-        objectsLayer.appendChild(tmpText);
-        const refBBox = tmpText.getBBox();
-        objectsLayer.removeChild(tmpText);
 
-        // refBBox is positioned at (1000,1000) - get relative dims
-        const relW = refBBox.width;
-        const relH = refBBox.height;
-        const relX = refBBox.x - 1000; // offset from anchor x
-        const relY = refBBox.y - 1000; // offset from anchor y (negative = above baseline)
+        if (otFont) {
+            // Use opentype.js for tight glyph bounding box (no ascender/descender padding)
+            const path = otFont.getPath(name, 0, 0, refSize);
+            const bb = path.getBoundingBox();
+            relW = bb.x2 - bb.x1;
+            relH = bb.y2 - bb.y1;
+            relX = bb.x1; // offset from anchor x to bbox left
+            relY = bb.y1; // offset from anchor y (baseline) to bbox top
+        } else {
+            // Fallback: SVG measurement
+            const tmpText = document.createElementNS(ns, 'text');
+            tmpText.setAttribute('font-family', fontDef.css);
+            tmpText.setAttribute('font-size', refSize);
+            tmpText.setAttribute('x', 0); tmpText.setAttribute('y', 0);
+            tmpText.textContent = name;
+            objectsLayer.appendChild(tmpText);
+            const refBBox = tmpText.getBBox();
+            objectsLayer.removeChild(tmpText);
+            relW = refBBox.width;
+            relH = refBBox.height;
+            relX = refBBox.x;
+            relY = refBBox.y;
+        }
 
         if (relW < 0.1 || relH < 0.1) continue;
 
@@ -2197,15 +2210,13 @@ function generateNamesFromTemplate(names) {
         const scale = Math.min(availW / relW, availH / relH);
         const finalFontSize = refSize * scale;
 
-        // At final size, the bbox dimensions and offsets scale linearly
+        // At final size, the bbox and offsets scale linearly
         const fW = relW * scale;
         const fH = relH * scale;
-        const fOffX = relX * scale; // offset from text x to bbox left
-        const fOffY = relY * scale; // offset from text y to bbox top
+        const fOffX = relX * scale;
+        const fOffY = relY * scale;
 
-        // Center the text bbox in the rect
-        // bbox left = textX + fOffX, bbox top = textY + fOffY
-        // We want bbox center = rect center
+        // Center the tight glyph bbox in the rect
         const textX = rectX + (rectW - fW) / 2 - fOffX;
         const textY = rectY + (rectH - fH) / 2 - fOffY;
 
