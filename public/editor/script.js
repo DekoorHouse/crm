@@ -2117,7 +2117,7 @@ function generateNamesFromTemplate(names) {
     }
     saveUndoState();
 
-    const padding = 2; // px minimal padding inside rect
+    const padding = 0; // no padding - text fills the rect completely
     const fontName = 'Rows of Sunflowers';
     const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
 
@@ -2171,43 +2171,43 @@ function generateNamesFromTemplate(names) {
         const name = names[i];
         const ns = 'http://www.w3.org/2000/svg';
 
-        // Measure at a reference size
+        // Measure at final size directly using a temp text element
+        // Place at a known position (1000, 1000) to avoid viewport clipping
         const refSize = 100;
         const tmpText = document.createElementNS(ns, 'text');
         tmpText.setAttribute('font-family', fontDef.css);
         tmpText.setAttribute('font-size', refSize);
+        tmpText.setAttribute('x', 1000); tmpText.setAttribute('y', 1000);
         tmpText.textContent = name;
         objectsLayer.appendChild(tmpText);
         const refBBox = tmpText.getBBox();
         objectsLayer.removeChild(tmpText);
 
-        if (refBBox.width < 0.1 || refBBox.height < 0.1) continue;
+        // refBBox is positioned at (1000,1000) - get relative dims
+        const relW = refBBox.width;
+        const relH = refBBox.height;
+        const relX = refBBox.x - 1000; // offset from anchor x
+        const relY = refBBox.y - 1000; // offset from anchor y (negative = above baseline)
 
-        // Calculate font size to fill the rect
+        if (relW < 0.1 || relH < 0.1) continue;
+
+        // Scale to fill the rect
         const availW = rectW - padding * 2;
         const availH = rectH - padding * 2;
-        const scale = Math.min(availW / refBBox.width, availH / refBBox.height);
+        const scale = Math.min(availW / relW, availH / relH);
         const finalFontSize = refSize * scale;
 
-        // Measure again at actual final size for precise positioning
-        const tmpText2 = document.createElementNS(ns, 'text');
-        tmpText2.setAttribute('font-family', fontDef.css);
-        tmpText2.setAttribute('font-size', finalFontSize);
-        tmpText2.textContent = name;
-        objectsLayer.appendChild(tmpText2);
-        const finalBBox = tmpText2.getBBox();
-        objectsLayer.removeChild(tmpText2);
+        // At final size, the bbox dimensions and offsets scale linearly
+        const fW = relW * scale;
+        const fH = relH * scale;
+        const fOffX = relX * scale; // offset from text x to bbox left
+        const fOffY = relY * scale; // offset from text y to bbox top
 
-        // Center: place so the bbox center aligns with the rect center
-        // SVG text (x,y) is the anchor point; bbox tells us where the glyphs actually land
-        // We need: finalBBox centered in rect → solve for text x,y
-        const targetCX = rectX + rectW / 2;
-        const targetCY = rectY + rectH / 2;
-        // finalBBox is relative to text at (0, 0), so:
-        // at text (tx, ty), actual bbox center = (tx + finalBBox.x + finalBBox.width/2, ty + finalBBox.y + finalBBox.height/2)
-        // We want that = (targetCX, targetCY)
-        const textX = targetCX - finalBBox.x - finalBBox.width / 2;
-        const textY = targetCY - finalBBox.y - finalBBox.height / 2;
+        // Center the text bbox in the rect
+        // bbox left = textX + fOffX, bbox top = textY + fOffY
+        // We want bbox center = rect center
+        const textX = rectX + (rectW - fW) / 2 - fOffX;
+        const textY = rectY + (rectH - fH) / 2 - fOffY;
 
         const textObj = {
             id: state.nextId++,
