@@ -299,10 +299,13 @@ function getGroupedData() {
     }).reverse();
 }
 
+let groupedDataCache = [];
+
 function renderAdminLogs() {
     const data = getGroupedData();
+    groupedDataCache = data;
     adminLogsBody.innerHTML = '';
-    data.forEach(row => {
+    data.forEach((row, idx) => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${row.name}<br><small>ID: ${row.id}</small></td>
@@ -310,10 +313,110 @@ function renderAdminLogs() {
             <td style="font-size: 0.8rem;">${row.timeline}</td>
             <td style="font-weight:bold; color:var(--primary)">${row.totalStr}</td>
             <td style="font-weight:bold; color:var(--success)">$${row.payment.toFixed(2)}</td>
+            <td><button class="btn-small" onclick="openEditModal(${idx})" style="font-size:0.75rem;">Editar</button></td>
         `;
         adminLogsBody.appendChild(tr);
     });
 }
+
+// =====================
+// EDICIÓN DE REGISTROS
+// =====================
+let editingEntries = [];
+let editingMeta = null; // { name, id, date }
+
+function openEditModal(idx) {
+    const group = groupedDataCache[idx];
+    editingMeta = { name: group.name, id: group.id, date: group.date };
+    // Ordenar por timestamp asc para mostrar cronológicamente
+    editingEntries = [...group.events]
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .map(e => ({ ...e, isNew: false, isDeleted: false }));
+    document.getElementById('edit-log-title').textContent = `${group.name} — ${group.date}`;
+    renderEditEntries();
+    document.getElementById('edit-log-modal').style.display = 'flex';
+}
+
+function renderEditEntries() {
+    const container = document.getElementById('edit-log-entries');
+    container.innerHTML = '';
+    const visible = editingEntries.filter(e => !e.isDeleted);
+    if (visible.length === 0) {
+        container.innerHTML = `<p style="color:var(--text-muted); text-align:center; padding:20px;">Sin registros. Agrega uno abajo.</p>`;
+        return;
+    }
+    visible.forEach((entry, visIdx) => {
+        const realIdx = editingEntries.indexOf(entry);
+        const color = entry.type === 'IN' ? 'var(--success)' : 'var(--warning)';
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; align-items:center; gap:10px; padding:12px; background:rgba(255,255,255,0.04); border-radius:10px; margin-bottom:8px;';
+        div.innerHTML = `
+            <span style="color:${color}; font-weight:700; width:55px; font-size:0.85rem;">${entry.type}</span>
+            <input type="time" value="${entry.time}" data-idx="${realIdx}"
+                style="flex:1; padding:9px; font-size:1rem; margin:0; background:rgba(255,255,255,0.08);
+                       border:1px solid var(--glass-border); border-radius:8px; color:white;">
+            <button data-idx="${realIdx}" class="del-entry-btn btn-small btn-danger" style="padding:6px 10px;">✕</button>
+        `;
+        container.appendChild(div);
+    });
+
+    container.querySelectorAll('input[type="time"]').forEach(input => {
+        input.addEventListener('change', e => {
+            editingEntries[parseInt(e.target.dataset.idx)].time = e.target.value;
+        });
+    });
+    container.querySelectorAll('.del-entry-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+            editingEntries[parseInt(e.target.dataset.idx)].isDeleted = true;
+            renderEditEntries();
+        });
+    });
+}
+
+function addLogEntry(type) {
+    const now = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: false });
+    editingEntries.push({ type, time: now, isNew: true, isDeleted: false, _docId: null });
+    renderEditEntries();
+}
+
+async function saveEditChanges() {
+    const saveBtn = document.getElementById('save-edit-log');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Guardando...';
+
+    const batch = db.batch();
+    const [day, month, year] = editingMeta.date.split('/').map(Number);
+
+    for (const entry of editingEntries) {
+        const [h, m] = entry.time.split(':').map(Number);
+        const timestamp = new Date(year, month - 1, day, h, m, 0).getTime();
+
+        if (entry.isDeleted && !entry.isNew && entry._docId) {
+            batch.delete(db.collection('checador_logs').doc(entry._docId));
+        } else if (!entry.isDeleted && entry.isNew) {
+            batch.set(db.collection('checador_logs').doc(), {
+                id: editingMeta.id, name: editingMeta.name,
+                type: entry.type, time: entry.time,
+                date: editingMeta.date, timestamp
+            });
+        } else if (!entry.isDeleted && !entry.isNew && entry._docId) {
+            batch.update(db.collection('checador_logs').doc(entry._docId), { time: entry.time, timestamp });
+        }
+    }
+
+    await batch.commit();
+    document.getElementById('edit-log-modal').style.display = 'none';
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Guardar Cambios';
+    showNotification('Registros actualizados');
+}
+
+document.getElementById('close-edit-log').addEventListener('click', () => {
+    document.getElementById('edit-log-modal').style.display = 'none';
+});
+document.getElementById('add-log-in').addEventListener('click', () => addLogEntry('IN'));
+document.getElementById('add-log-out').addEventListener('click', () => addLogEntry('OUT'));
+document.getElementById('save-edit-log').addEventListener('click', saveEditChanges);
 
 function renderAdminEmployees() {
     adminEmployeesBody.innerHTML = '';

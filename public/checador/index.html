@@ -119,6 +119,7 @@
                                 <th>Entradas / Salidas</th>
                                 <th>Total Horas</th>
                                 <th>Pago ($70/hr)</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody id="admin-logs-body">
@@ -197,6 +198,22 @@
             <h2 style="color: #ef4444; margin-bottom: 15px;">Acceso Restringido</h2>
             <p style="color: #94a3b8; margin-bottom: 20px;">Para marcar asistencia, debes estar conectado a la red Wi-Fi de la oficina.</p>
             <button onclick="checkNetwork()" style="padding: 10px 20px; border-radius: 8px; border: none; background: #4f46e5; color: white; cursor: pointer;">Reintentar</button>
+        </div>
+    </div>
+
+    <!-- Modal de Edición de Registro -->
+    <div id="edit-log-modal" class="admin-overlay">
+        <div class="admin-modal" style="max-width:480px; height:auto; max-height:85vh;">
+            <div class="admin-header">
+                <h2 id="edit-log-title">Editar Registros</h2>
+                <button id="close-edit-log" class="close-btn">&times;</button>
+            </div>
+            <div id="edit-log-entries" style="overflow-y:auto; flex:1; padding-right:4px;"></div>
+            <div style="display:flex; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--glass-border);">
+                <button id="add-log-in" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:10px;">+ ENTRADA</button>
+                <button id="add-log-out" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none; border-radius:10px;">+ SALIDA</button>
+            </div>
+            <button id="save-edit-log" class="btn-in" style="width:100%; margin-top:10px; padding:14px; font-size:1rem;">Guardar Cambios</button>
         </div>
     </div>
 
