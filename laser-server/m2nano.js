@@ -168,14 +168,14 @@ class M2Nano {
 
                 if (!logged) {
                     const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-                    this.log(`Board status: [${hex}]`);
+                    this.log(`Board status: [${hex}] → status byte: 0x${resp[1].toString(16).padStart(2, '0')}`);
                     logged = true;
                 }
 
-                // Ready: el board NO está ocupado si resp[0] != 0xA5 (busy).
-                // Valores conocidos: 0xC6=completado, 0x00=idle, 0xFF=idle (varía por firmware).
-                // Cualquier respuesta que no sea 0xA5 (busy) indica que podemos continuar.
-                if (resp[0] !== 0xA5) return;
+                // El byte de estado real del M2 Nano está en resp[1] (no resp[0]).
+                // resp[0] = 0xFF es un header del CH341, no es el estado de la placa.
+                // Valores de resp[1]: 0xCE=OK/idle, 0xA5=busy, 0xEC=finish, 0xD5=CRC error.
+                if (resp[1] !== 0xA5) return;
             } catch (_) {}
             await sleep(80);
         }
@@ -193,7 +193,7 @@ class M2Nano {
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             const pktIdx = Math.floor(i / DATA_SIZE);
-            await this.sendPacket(chunk, true);
+            await this.sendPacket(chunk, pktIdx === 0);
             this.log(`  PKT[${pktIdx}/${totalPkts - 1}]: ${chunk.length} bytes enviados`);
             await sleep(5);
         }
@@ -222,28 +222,29 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección, F=finish
+        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección.
         // NO incluir N (activa el láser).
-        // F es obligatorio: la placa buferea y no ejecuta hasta leer 'F'.
+        // F se envía en paquete separado: garantiza que sea el 1er byte de un paquete fresco,
+        // evitando que quede enterrado en el padding del último chunk de datos.
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'SEF';
+        cmd += 'SE';
 
-        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
+        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length + 1} (+F separado)`);
 
         try { await this.waitReady(2000, 400); } catch (e) {
             this.log('waitReady timeout antes de jog (continuando...)');
         }
         await this.sendEGV(cmd);
+        await this.sendEGV('F');  // Finish en paquete propio → la placa ejecuta el movimiento
 
-        // Leer status POST-jog para ver si el board cambió de estado
+        // Esperar a que la placa termine de ejecutar el jog
         try {
-            await this.sendCommand(CMD_STATUS);
-            const post = await this.readStatus(400);
-            const hex = Array.from(post).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-            this.log(`Status POST-jog: [${hex}]`);
-        } catch (_) {}
+            await this.waitReady(15000, 500);
+        } catch (e) {
+            this.log('waitReady timeout POST-jog (el movimiento puede haber fallado)');
+        }
 
         this._posX += dx;
         this._posY += dy;
