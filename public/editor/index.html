@@ -39,6 +39,11 @@
                             Exportar SVG
                         </div>
                         <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="import-names">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h14v14H3z"/><path d="M7 8h6M7 11h4"/></svg>
+                            Importar nombres
+                        </div>
+                        <div class="menu-separator"></div>
                         <div class="menu-option" data-action="clear-all">
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
                             Limpiar todo
@@ -309,6 +314,28 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
                 <button class="btn btn-primary" data-action="apply">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Names Modal -->
+    <div id="import-names-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Importar nombres</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Escribe un nombre por l&iacute;nea:</label>
+                    <textarea id="names-input" rows="10" style="width:100%;font-family:inherit;font-size:14px;resize:vertical;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;background:var(--surface);color:var(--text);" placeholder="Juan P&eacute;rez&#10;Mar&iacute;a Garc&iacute;a&#10;Carlos L&oacute;pez"></textarea>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0;">Se usar&aacute; el rect&aacute;ngulo del dise&ntilde;o como plantilla. Cada nombre se escalar&aacute; para llenar el rect&aacute;ngulo.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="import">Generar</button>
             </div>
         </div>
     </div>

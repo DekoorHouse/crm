@@ -1936,6 +1936,7 @@ function handleMenuAction(action) {
         case 'fit-page':    resetView(); break;
         case 'group':       groupSelected(); break;
         case 'ungroup':     ungroupSelected(); break;
+        case 'import-names': showImportNamesModal(); break;
     }
 }
 
@@ -2081,6 +2082,170 @@ function setupPageSizeModal() {
         hidePageSizeModal();
     });
     modal.querySelector('.modal-overlay').addEventListener('click', hidePageSizeModal);
+}
+
+// =============================================
+// IMPORT NAMES
+// =============================================
+function showImportNamesModal() {
+    document.getElementById('names-input').value = '';
+    document.getElementById('import-names-modal').classList.remove('hidden');
+}
+function hideImportNamesModal() {
+    document.getElementById('import-names-modal').classList.add('hidden');
+}
+function setupImportNamesModal() {
+    const modal = document.getElementById('import-names-modal');
+    modal.querySelector('[data-action="cancel"]').addEventListener('click', hideImportNamesModal);
+    modal.querySelector('.modal-overlay').addEventListener('click', hideImportNamesModal);
+    modal.querySelector('.modal-close').addEventListener('click', hideImportNamesModal);
+    modal.querySelector('[data-action="import"]').addEventListener('click', () => {
+        const raw = document.getElementById('names-input').value;
+        const names = raw.split('\n').map(n => n.trim()).filter(n => n.length > 0);
+        if (names.length === 0) return;
+        hideImportNamesModal();
+        generateNamesFromTemplate(names);
+    });
+}
+
+function generateNamesFromTemplate(names) {
+    // Find the first rect in the design as template
+    const templateRect = state.objects.find(o => o.type === 'rect');
+    if (!templateRect) {
+        alert('Necesitas tener un rectángulo en el diseño como plantilla.');
+        return;
+    }
+    saveUndoState();
+
+    const padding = 6; // px padding inside rect
+    const fontName = 'Rows of Sunflowers';
+    const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
+
+    // Collect all current objects as template (serialize them)
+    const templateObjects = state.objects.map(serializeObj);
+
+    // Clear everything
+    objectsLayer.innerHTML = '';
+    state.objects = [];
+    state.selectedIds = [];
+    selectionLayer.innerHTML = '';
+
+    // For each name, duplicate the entire template and add the fitted text
+    const pageW = state.pageWidth;
+    const pageH = state.pageHeight;
+    const cols = Math.max(1, Math.floor(Math.sqrt(names.length)));
+    const rows = Math.ceil(names.length / cols);
+
+    // Resize page to fit all copies in a grid
+    const cellW = pageW;
+    const cellH = pageH;
+    state.pageWidth = cellW * cols;
+    state.pageHeight = cellH * rows;
+    updatePage();
+
+    for (let i = 0; i < names.length; i++) {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const offsetX = col * cellW;
+        const offsetY = row * cellH;
+
+        // Duplicate all template objects with offset
+        for (const tpl of templateObjects) {
+            const clone = JSON.parse(JSON.stringify(tpl));
+            clone.id = state.nextId++;
+            offsetObject(clone, offsetX, offsetY);
+            const elem = buildSVGElement(clone);
+            clone.element = elem;
+            elem.dataset.objectId = clone.id;
+            objectsLayer.appendChild(elem);
+            state.objects.push(clone);
+        }
+
+        // Find the duplicated rect (the one at the offset position)
+        const rectX = templateRect.x + offsetX;
+        const rectY = templateRect.y + offsetY;
+        const rectW = templateRect.width;
+        const rectH = templateRect.height;
+
+        // Create text, measure, and scale to fit inside the rect
+        const name = names[i];
+        const maxFontSize = 200;
+        const textObj = {
+            id: state.nextId++,
+            type: 'text',
+            x: 0, y: 0, // will be positioned after measuring
+            text: name,
+            fontFamily: fontName,
+            fontSize: maxFontSize,
+            fill: '#000000',
+            stroke: 'none',
+            strokeWidth: 0,
+            rotation: 0,
+        };
+
+        // Create temp SVG text to measure
+        const ns = 'http://www.w3.org/2000/svg';
+        const tmpText = document.createElementNS(ns, 'text');
+        tmpText.setAttribute('font-family', fontDef.css);
+        tmpText.setAttribute('font-size', maxFontSize);
+        tmpText.textContent = name;
+        objectsLayer.appendChild(tmpText);
+        const bbox = tmpText.getBBox();
+        objectsLayer.removeChild(tmpText);
+
+        if (bbox.width < 0.1 || bbox.height < 0.1) continue;
+
+        // Scale to fit inside rect with padding
+        const availW = rectW - padding * 2;
+        const availH = rectH - padding * 2;
+        const scale = Math.min(availW / bbox.width, availH / bbox.height);
+        const finalFontSize = maxFontSize * scale;
+
+        // Recalculate bbox at final size
+        const finalW = bbox.width * scale;
+        const finalH = bbox.height * scale;
+
+        // Center text in rect
+        // SVG text x,y is the baseline-left position
+        // bbox.y is negative (ascent above baseline)
+        const textX = rectX + (rectW - finalW) / 2 - bbox.x * scale;
+        const textY = rectY + (rectH - finalH) / 2 - bbox.y * scale;
+
+        textObj.fontSize = finalFontSize;
+        textObj.x = textX;
+        textObj.y = textY;
+
+        const elem = buildSVGElement(textObj);
+        textObj.element = elem;
+        elem.dataset.objectId = textObj.id;
+        objectsLayer.appendChild(elem);
+        state.objects.push(textObj);
+    }
+
+    resetView();
+    updatePropsPanel();
+}
+
+function offsetObject(obj, dx, dy) {
+    switch (obj.type) {
+        case 'rect': case 'image': case 'text': case 'curvepath':
+            obj.x += dx; obj.y += dy; break;
+        case 'ellipse':
+            obj.cx += dx; obj.cy += dy; break;
+        case 'line':
+            obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
+        case 'bspline':
+            obj.points = obj.points.map(p => ({ x: p.x + dx, y: p.y + dy })); break;
+        case 'group':
+            for (const c of obj.children) offsetObject(c, dx, dy); break;
+        case 'powerclip':
+            offsetObject(obj.container, dx, dy);
+            for (const c of obj.contents) offsetObject(c, dx, dy); break;
+    }
+    if (obj._origBounds) {
+        obj._origBounds.x += dx;
+        obj._origBounds.y += dy;
+    }
 }
 
 // =============================================
@@ -2388,6 +2553,7 @@ function setupEventListeners() {
     setupPropsPanel();
     setupContextMenu();
     setupPowerClipMenu();
+    setupImportNamesModal();
 }
 
 function setTool(tool) {
