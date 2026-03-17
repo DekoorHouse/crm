@@ -277,7 +277,7 @@ function createObject(type, props) {
         rotation: 0,
         ...props,
     };
-    if (type === 'group' || type === 'image' || type === 'powerclip') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
+    if (type === 'group' || type === 'image' || type === 'powerclip' || type === 'curvepath') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
     const elem = buildSVGElement(obj);
     obj.element = elem;
     elem.dataset.objectId = obj.id;
@@ -389,7 +389,7 @@ function buildSVGElement(obj) {
             break;
         }
     }
-    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -471,6 +471,26 @@ function refreshElement(obj) {
             elem.textContent = obj.text || '';
             break;
         }
+        case 'curvepath': {
+            // Scale path to fit current bounds using transform
+            if (!obj._origBounds) {
+                // Parse original bounds from the path on first refresh
+                const tmp = elem.getBBox();
+                obj._origBounds = { x: tmp.x, y: tmp.y, w: tmp.width || 1, h: tmp.height || 1 };
+            }
+            const orig = obj._origBounds;
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            let t = `translate(${obj.x - orig.x * sx}, ${obj.y - orig.y * sy}) scale(${sx}, ${sy})`;
+            if (obj.rotation) {
+                const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
+                t = `rotate(${obj.rotation} ${cx} ${cy}) ` + t;
+            }
+            elem.setAttribute('transform', t);
+            elem.setAttribute('fill', obj.fill);
+            elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+            elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            return; // skip generic applyRotation since we handle it above
+        }
         case 'group':
             for (const child of obj.children) refreshElement(child);
             break;
@@ -479,7 +499,7 @@ function refreshElement(obj) {
             rebuildPowerClipElement(obj);
             return; // rebuildPowerClipElement handles everything
     }
-    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -525,7 +545,7 @@ function hitTest(obj, pt) {
             return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
-        case 'rect': case 'image':
+        case 'rect': case 'image': case 'curvepath':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         case 'ellipse': {
@@ -659,7 +679,7 @@ function drawSelection() {
 
 function getObjBounds(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
+        case 'rect': case 'image': case 'curvepath': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
@@ -719,7 +739,7 @@ function getSnapPoints(obj) {
     const rot = obj.rotation || 0;
     // Center (rotation doesn't move the center)
     pts.push({ x: cx, y: cy, type: 'center' });
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
         // Corners
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
         for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
@@ -750,7 +770,7 @@ function nearestEdgePoint(obj, pt) {
     // Un-rotate the mouse point to work in local space, then rotate result back
     const localPt = rotatePoint(pt.x, pt.y, ccx, ccy, -rot);
 
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
         const edges = [
             [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
             [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
@@ -1227,7 +1247,7 @@ function handleResizeMove(pt, e) {
 
 function snapshotPos(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': case 'text': return {x:obj.x,y:obj.y};
+        case 'rect': case 'image': case 'text': case 'curvepath': return {x:obj.x,y:obj.y};
         case 'ellipse': return {cx:obj.cx,cy:obj.cy};
         case 'line':    return {x1:obj.x1,y1:obj.y1,x2:obj.x2,y2:obj.y2};
         case 'bspline': return {points:obj.points.map(p=>({...p}))};
@@ -1247,7 +1267,7 @@ function snapshotPos(obj) {
 
 function applyMove(obj, snap, dx, dy) {
     switch (obj.type) {
-        case 'rect': case 'image': case 'text': obj.x = snap.x+dx; obj.y = snap.y+dy; break;
+        case 'rect': case 'image': case 'text': case 'curvepath': obj.x = snap.x+dx; obj.y = snap.y+dy; break;
         case 'ellipse': obj.cx = snap.cx+dx; obj.cy = snap.cy+dy; break;
         case 'line':    obj.x1=snap.x1+dx;obj.y1=snap.y1+dy;obj.x2=snap.x2+dx;obj.y2=snap.y2+dy; break;
         case 'bspline': obj.points = snap.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -1757,6 +1777,15 @@ function showContextMenu(e, obj) {
         addOpt.classList.add('disabled');
     }
 
+    // Convert to curves — only for text objects
+    const curvesOpt = contextMenu.querySelector('[data-ctx="convert-to-curves"]');
+    if (obj.type === 'text') {
+        curvesOpt.classList.remove('disabled');
+        curvesOpt.style.display = '';
+    } else {
+        curvesOpt.style.display = 'none';
+    }
+
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -1802,6 +1831,9 @@ function setupContextMenu() {
                     }
                     break;
                 }
+                case 'convert-to-curves':
+                    convertTextToCurves(contextTarget.id);
+                    break;
                 case 'delete':
                     for (const id of [...state.selectedIds]) deleteObject(id);
                     updatePropsPanel();
@@ -2092,7 +2124,7 @@ function applyPropPosition(obj, newXu, newYu) {
     const b = getObjBounds(obj);
     const dx = newX - b.x, dy = newY - b.y;
     switch (obj.type) {
-        case 'rect': case 'image': case 'text': obj.x+=dx;obj.y+=dy; break;
+        case 'rect': case 'image': case 'text': case 'curvepath': obj.x+=dx;obj.y+=dy; break;
         case 'ellipse': obj.cx+=dx;obj.cy+=dy; break;
         case 'line':    obj.x1+=dx;obj.y1+=dy;obj.x2+=dx;obj.y2+=dy; break;
         case 'bspline': obj.points=obj.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -2109,7 +2141,7 @@ function applyPropSize(obj, newWpx, newHpx) {
     if (b.w < 0.01 || b.h < 0.01) return;
     const sx = newWpx / b.w, sy = newHpx / b.h;
     switch (obj.type) {
-        case 'rect': case 'image': obj.width=newWpx; obj.height=newHpx; break;
+        case 'rect': case 'image': case 'curvepath': obj.width=newWpx; obj.height=newHpx; break;
         case 'text': {
             // Scale font size proportionally to height change
             obj.fontSize = Math.max(6, obj.fontSize * sy);
@@ -2375,6 +2407,49 @@ function textToPath(obj) {
         return path.toPathData(2);
     }
     return null;
+}
+
+async function convertTextToCurves(id) {
+    const obj = findObject(id);
+    if (!obj || obj.type !== 'text') return;
+    // Ensure font is loaded
+    if (!loadedOTFonts[obj.fontFamily]) await loadOTFont(obj.fontFamily);
+    const pathData = textToPath(obj);
+    if (!pathData) { alert('No se pudo cargar la fuente para convertir a curvas.'); return; }
+    saveUndoState();
+    const b = getObjBounds(obj);
+    const idx = state.objects.findIndex(o => o.id === id);
+    // Remove old text
+    obj.element.remove();
+    // Create bspline-like path object (using a generic 'path' wouldn't fit our model,
+    // so we create it as a rect-like object with a custom SVG path element)
+    const newObj = {
+        id: state.nextId++,
+        type: 'curvepath',
+        d: pathData,
+        x: b.x, y: b.y, width: b.w, height: b.h,
+        fill: obj.fill,
+        stroke: obj.stroke,
+        strokeWidth: obj.strokeWidth,
+        rotation: obj.rotation || 0,
+    };
+    const ns = 'http://www.w3.org/2000/svg';
+    const elem = document.createElementNS(ns, 'path');
+    elem.setAttribute('d', pathData);
+    elem.setAttribute('fill', newObj.fill);
+    elem.setAttribute('stroke', newObj.stroke === 'none' ? 'none' : newObj.stroke);
+    elem.setAttribute('stroke-width', newObj.stroke === 'none' ? 0 : newObj.strokeWidth);
+    if (newObj.rotation) {
+        const cx = b.x + b.w/2, cy = b.y + b.h/2;
+        elem.setAttribute('transform', `rotate(${newObj.rotation} ${cx} ${cy})`);
+    }
+    elem.style.cursor = 'pointer';
+    elem.dataset.objectId = newObj.id;
+    newObj.element = elem;
+    objectsLayer.appendChild(elem);
+    if (idx !== -1) state.objects.splice(idx, 1, newObj);
+    else state.objects.push(newObj);
+    selectObject(newObj.id);
 }
 
 // Canvas-based fallback: render text to canvas, trace, return as image data URL in SVG
