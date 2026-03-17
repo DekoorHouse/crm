@@ -192,7 +192,7 @@ class M2Nano {
     /** Lee un byte de status rápidamente. Retorna -1 si falla. */
     async _readStatusByte() {
         try {
-            await this.sendCommand(CMD_STATUS);
+            await this.sendPacket(Buffer.from([CMD_STATUS]));
             const resp = await this.readStatus(300);
             return resp[1];
         } catch (_) {
@@ -296,19 +296,27 @@ class M2Nano {
         ]);
     }
 
+    /**
+     * Envía "say_hello" (status query) como lo hace K40-Whisperer:
+     * el byte 0xA0 se envía DENTRO de un paquete 34B con framing 0xA6,
+     * para que llegue a la placa M2 Nano por EPP (no se quede en el CH341).
+     */
+    async sayHello() {
+        await this.sendPacket(Buffer.from([CMD_STATUS]));  // 0xA0 envuelto en paquete EGV
+        return this.readStatus(500);
+    }
+
     /** Espera a que la máquina esté lista. */
     async waitReady(timeout = 6000, readTimeout = 500) {
         const deadline = Date.now() + timeout;
         let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
-                // Enviar solicitud de estado (0xA0 como comando directo, sin framing 0xA6)
-                await this.sendCommand(CMD_STATUS);
+                // K40-Whisperer envía 0xA0 dentro de un paquete 34B (via EPP al board),
+                // NO como comando raw del CH341. Así la placa recibe el "hello".
+                await this.sendPacket(Buffer.from([CMD_STATUS]));
                 const resp = await this.readStatus(readTimeout);
 
-                // El byte de estado real del M2 Nano está en resp[1] (no resp[0]).
-                // resp[0] = 0xFF es un header del CH341, no es el estado de la placa.
-                // Valores de resp[1]: 0xCE=OK/idle, 0xA5/0xEE=busy, 0xEC=finish, 0xCF=error.
                 const s = resp[1];
                 if (s !== lastStatus) {
                     const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
@@ -316,10 +324,6 @@ class M2Nano {
                     lastStatus = s;
                 }
 
-                // Listo cuando el board devuelve un estado idle conocido.
-                // M2 Nano: 0xCE=OK/idle, 0xEC=finish.
-                // M3 Nano (Lihuiyu 2022+): 0xCF=idle normal (confirmado sin sensor de tapa).
-                // 0xA5/0xEE = busy → seguir esperando.
                 if (s === 0xCE || s === 0xCF || s === 0xEC) return;
             } catch (_) {}
             await sleep(80);
