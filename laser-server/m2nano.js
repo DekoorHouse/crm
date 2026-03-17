@@ -58,6 +58,20 @@ class M2Nano {
         this.device = found.dev;
         this.device.open();
 
+        // SET_CONFIGURATION — activa los endpoints USB.
+        // pyusb (K40 Whisperer, MeerK40t) llama set_configuration() obligatoriamente.
+        // node-usb NO lo hace automáticamente. Sin esto el CH341 puede ignorar
+        // bulk transfers aunque los ACK a nivel USB.
+        try {
+            await new Promise((resolve, reject) => {
+                this.device.setConfiguration(1, err => err ? reject(err) : resolve());
+            });
+            this.log('USB setConfiguration(1) OK.');
+        } catch (e) {
+            // En Windows con WinUSB puede fallar si ya está configurado — eso es OK.
+            this.log(`setConfiguration aviso: ${e.message} (continuando...)`);
+        }
+
         this.iface = this.device.interface(0);
 
         // En Linux/Mac puede necesitar liberar el driver del kernel
