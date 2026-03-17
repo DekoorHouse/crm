@@ -894,6 +894,28 @@ body.dark .btn-primary:hover {
 }
 
 /* ============================================
+   Text Input Overlay
+   ============================================ */
+.text-input-overlay {
+    position: fixed;
+    z-index: 600;
+    background: transparent;
+    border: 2px dashed var(--accent);
+    border-radius: 2px;
+    padding: 2px 4px;
+    color: var(--text);
+    outline: none;
+    resize: none;
+    overflow: hidden;
+    min-width: 40px;
+    min-height: 1.2em;
+    line-height: 1.2;
+    white-space: pre;
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.text-input-overlay.hidden { display: none; }
+
+/* ============================================
    PowerClip Floating Menu
    ============================================ */
 .powerclip-menu {

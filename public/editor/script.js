@@ -43,7 +43,21 @@ const TOOL_NAMES = {
     ellipse: 'Elipse',
     line:    'Línea',
     bspline: 'B-Spline',
+    text:    'Texto',
 };
+
+const FONTS = [
+    { name: 'Inter', css: 'Inter, system-ui, sans-serif', url: null },
+    { name: 'Arial', css: 'Arial, Helvetica, sans-serif', url: null },
+    { name: 'Georgia', css: 'Georgia, serif', url: null },
+    { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: null },
+    { name: 'Courier New', css: '"Courier New", Courier, monospace', url: null },
+    { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: null },
+    { name: 'Rows of Sunflowers', css: '"Rows of Sunflowers", cursive', url: 'fonts/RowsOfSunflowers.ttf' },
+];
+
+// Loaded opentype font objects for text-to-curves export
+const loadedOTFonts = {};
 
 const SNAP_DIST = 12; // screen pixels
 
@@ -82,6 +96,11 @@ const state = {
 
     unit: 'px',
     lockAspect: true,
+
+    fontFamily: 'Inter',
+    fontSize: 32,
+    isTyping: false,
+    typingObj: null,
 };
 
 // Undo/Redo
@@ -283,6 +302,18 @@ function buildSVGElement(obj) {
             elem = document.createElementNS(ns, 'path');
             elem.setAttribute('d', bsplineToPath(obj.points));
             break;
+        case 'text': {
+            elem = document.createElementNS(ns, 'text');
+            elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
+            const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
+            elem.setAttribute('font-family', fontDef.css);
+            elem.setAttribute('font-size', obj.fontSize);
+            elem.setAttribute('fill', obj.fill);
+            elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+            elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            elem.textContent = obj.text || '';
+            break;
+        }
         case 'image':
             elem = document.createElementNS(ns, 'image');
             elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
@@ -351,7 +382,7 @@ function buildSVGElement(obj) {
             break;
         }
     }
-    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -422,6 +453,17 @@ function refreshElement(obj) {
             elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
             elem.setAttribute('width', obj.width); elem.setAttribute('height', obj.height);
             break;
+        case 'text': {
+            elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
+            const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
+            elem.setAttribute('font-family', fontDef.css);
+            elem.setAttribute('font-size', obj.fontSize);
+            elem.setAttribute('fill', obj.fill);
+            elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+            elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            elem.textContent = obj.text || '';
+            break;
+        }
         case 'group':
             for (const child of obj.children) refreshElement(child);
             break;
@@ -430,7 +472,7 @@ function refreshElement(obj) {
             rebuildPowerClipElement(obj);
             return; // rebuildPowerClipElement handles everything
     }
-    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip') {
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -471,6 +513,11 @@ function hitTest(obj, pt) {
         return hitTest(obj.container, pt);
     }
     switch (obj.type) {
+        case 'text': {
+            const tb = getObjBounds(obj);
+            return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
+                   pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
+        }
         case 'rect': case 'image':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
@@ -611,6 +658,19 @@ function getObjBounds(obj) {
             if(!isFinite(x1)) return {x:0,y:0,w:0,h:0};
             return {x:x1,y:y1,w:x2-x1,h:y2-y1};
         }
+        case 'text': {
+            // Use cached bounds or measure from SVG element
+            if (obj.element && obj.element.getBBox) {
+                try {
+                    const bb = obj.element.getBBox();
+                    return { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 };
+                } catch(e) {}
+            }
+            // Fallback: estimate
+            const estW = (obj.text || '').length * obj.fontSize * 0.6;
+            const estH = obj.fontSize * 1.2;
+            return { x: obj.x, y: obj.y - estH, w: estW || 1, h: estH };
+        }
         case 'powerclip':
             return getObjBounds(obj.container);
     }
@@ -635,7 +695,7 @@ function getSnapPoints(obj) {
     const rot = obj.rotation || 0;
     // Center (rotation doesn't move the center)
     pts.push({ x: cx, y: cy, type: 'center' });
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text') {
         // Corners
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
         for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
@@ -666,7 +726,7 @@ function nearestEdgePoint(obj, pt) {
     // Un-rotate the mouse point to work in local space, then rotate result back
     const localPt = rotatePoint(pt.x, pt.y, ccx, ccy, -rot);
 
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text') {
         const edges = [
             [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
             [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
@@ -916,6 +976,7 @@ function handleMouseDown(e) {
         case 'select':  handleSelectDown(pt, e); break;
         case 'rect': case 'ellipse': case 'line': handleShapeDown(pt); break;
         case 'bspline': handleBSplineClick(pt); break;
+        case 'text': handleTextClick(pt, e); break;
     }
 }
 
@@ -1005,7 +1066,7 @@ function handleDragMove(pt) {
 
 function snapshotPos(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': return {x:obj.x,y:obj.y};
+        case 'rect': case 'image': case 'text': return {x:obj.x,y:obj.y};
         case 'ellipse': return {cx:obj.cx,cy:obj.cy};
         case 'line':    return {x1:obj.x1,y1:obj.y1,x2:obj.x2,y2:obj.y2};
         case 'bspline': return {points:obj.points.map(p=>({...p}))};
@@ -1025,7 +1086,7 @@ function snapshotPos(obj) {
 
 function applyMove(obj, snap, dx, dy) {
     switch (obj.type) {
-        case 'rect': case 'image': obj.x = snap.x+dx; obj.y = snap.y+dy; break;
+        case 'rect': case 'image': case 'text': obj.x = snap.x+dx; obj.y = snap.y+dy; break;
         case 'ellipse': obj.cx = snap.cx+dx; obj.cy = snap.cy+dy; break;
         case 'line':    obj.x1=snap.x1+dx;obj.y1=snap.y1+dy;obj.x2=snap.x2+dx;obj.y2=snap.y2+dy; break;
         case 'bspline': obj.points = snap.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -1163,6 +1224,127 @@ function updateBSplinePreview(mousePt) {
 }
 
 function clearPreview() { previewLayer.innerHTML = ''; state.previewElement = null; }
+
+// --- Text ---
+function editTextObject(obj, e) {
+    if (state.isTyping) return;
+    const overlay = document.getElementById('text-input-overlay');
+    const svgRect = svg.getBoundingClientRect();
+    const scale = svgRect.width / state.viewBox.w;
+    const b = getObjBounds(obj);
+    const screenX = svgRect.left + (b.x - state.viewBox.x) * scale;
+    const screenY = svgRect.top + (b.y - state.viewBox.y) * scale;
+    const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
+    const screenFontSize = obj.fontSize * scale;
+
+    overlay.style.left = screenX + 'px';
+    overlay.style.top = screenY + 'px';
+    overlay.style.fontFamily = fontDef.css;
+    overlay.style.fontSize = screenFontSize + 'px';
+    overlay.style.lineHeight = '1.2';
+    overlay.style.color = obj.fill === 'none' ? '#000' : obj.fill;
+    overlay.value = obj.text;
+    overlay.classList.remove('hidden');
+    overlay.focus();
+    overlay.select();
+
+    // Hide the SVG text while editing
+    obj.element.style.opacity = '0';
+    state.isTyping = true;
+
+    const finishEdit = () => {
+        const txt = overlay.value.trim();
+        overlay.classList.add('hidden');
+        state.isTyping = false;
+        obj.element.style.opacity = '1';
+        overlay.removeEventListener('blur', onBlur);
+        overlay.removeEventListener('keydown', onKey);
+        if (txt && txt !== obj.text) {
+            saveUndoState();
+            obj.text = txt;
+            refreshElement(obj);
+            drawSelection();
+        } else if (!txt) {
+            deleteObject(obj.id);
+        }
+    };
+
+    const onBlur = () => { setTimeout(finishEdit, 100); };
+    const onKey = (ev) => {
+        if (ev.key === 'Escape') { overlay.value = obj.text; overlay.blur(); }
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); overlay.blur(); }
+        overlay.style.height = 'auto';
+        overlay.style.height = overlay.scrollHeight + 'px';
+    };
+    overlay.addEventListener('blur', onBlur, { once: true });
+    overlay.addEventListener('keydown', onKey);
+    overlay.addEventListener('input', () => {
+        overlay.style.height = 'auto';
+        overlay.style.height = overlay.scrollHeight + 'px';
+    });
+}
+
+function handleTextClick(pt, e) {
+    if (state.isTyping) return;
+    // Position overlay at click point
+    const overlay = document.getElementById('text-input-overlay');
+    const svgRect = svg.getBoundingClientRect();
+    const scale = svgRect.width / state.viewBox.w;
+    const screenX = svgRect.left + (pt.x - state.viewBox.x) * scale;
+    const screenY = svgRect.top + (pt.y - state.viewBox.y) * scale;
+    const fontDef = FONTS.find(f => f.name === state.fontFamily) || FONTS[0];
+    const screenFontSize = state.fontSize * scale;
+
+    overlay.style.left = screenX + 'px';
+    overlay.style.top = (screenY - screenFontSize) + 'px';
+    overlay.style.fontFamily = fontDef.css;
+    overlay.style.fontSize = screenFontSize + 'px';
+    overlay.style.lineHeight = '1.2';
+    overlay.style.color = state.fillColor === 'none' ? '#000' : state.fillColor;
+    overlay.value = '';
+    overlay.classList.remove('hidden');
+    overlay.focus();
+
+    state.isTyping = true;
+    state._textPt = { x: pt.x, y: pt.y };
+
+    const finishText = () => {
+        const txt = overlay.value.trim();
+        overlay.classList.add('hidden');
+        state.isTyping = false;
+        overlay.removeEventListener('blur', onBlur);
+        overlay.removeEventListener('keydown', onKey);
+        if (txt) {
+            const obj = createObject('text', {
+                x: state._textPt.x,
+                y: state._textPt.y,
+                text: txt,
+                fontFamily: state.fontFamily,
+                fontSize: state.fontSize,
+                fill: state.fillColor === 'none' ? '#000000' : state.fillColor,
+                stroke: state.strokeColor,
+                strokeWidth: state.strokeWidth,
+            });
+            selectObject(obj.id);
+            setTool('select');
+        }
+    };
+
+    const onBlur = () => { setTimeout(finishText, 100); };
+    const onKey = (ev) => {
+        if (ev.key === 'Escape') { overlay.value = ''; overlay.blur(); }
+        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); overlay.blur(); }
+        // Auto-resize
+        overlay.style.height = 'auto';
+        overlay.style.height = overlay.scrollHeight + 'px';
+    };
+    overlay.addEventListener('blur', onBlur, { once: true });
+    overlay.addEventListener('keydown', onKey);
+    overlay.addEventListener('input', () => {
+        overlay.style.height = 'auto';
+        overlay.style.height = overlay.scrollHeight + 'px';
+    });
+}
 
 // =============================================
 // GROUP / UNGROUP
@@ -1544,6 +1726,29 @@ function exportSVG() {
     root.setAttribute('width', state.pageWidth); root.setAttribute('height', state.pageHeight);
     root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
     function exportObj(obj, parent) {
+        if (obj.type === 'text') {
+            // Convert text to curves (path)
+            const pathData = textToPath(obj);
+            if (pathData) {
+                const p = document.createElementNS(ns, 'path');
+                p.setAttribute('d', pathData);
+                p.setAttribute('fill', obj.fill);
+                p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+                if (obj.rotation) {
+                    const b = getObjBounds(obj);
+                    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+                    p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+                }
+                parent.appendChild(p);
+            } else {
+                // Fallback: export as text element (system fonts)
+                const clone = obj.element.cloneNode(true);
+                clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
+                parent.appendChild(clone);
+            }
+            return;
+        }
         if (obj.type === 'image') {
             const img = document.createElementNS(ns, 'image');
             img.setAttribute('x', obj.x); img.setAttribute('y', obj.y);
@@ -1692,7 +1897,7 @@ function applyPropPosition(obj, newXu, newYu) {
     const b = getObjBounds(obj);
     const dx = newX - b.x, dy = newY - b.y;
     switch (obj.type) {
-        case 'rect': case 'image': obj.x+=dx;obj.y+=dy; break;
+        case 'rect': case 'image': case 'text': obj.x+=dx;obj.y+=dy; break;
         case 'ellipse': obj.cx+=dx;obj.cy+=dy; break;
         case 'line':    obj.x1+=dx;obj.y1+=dy;obj.x2+=dx;obj.y2+=dy; break;
         case 'bspline': obj.points=obj.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -1710,6 +1915,11 @@ function applyPropSize(obj, newWpx, newHpx) {
     const sx = newWpx / b.w, sy = newHpx / b.h;
     switch (obj.type) {
         case 'rect': case 'image': obj.width=newWpx; obj.height=newHpx; break;
+        case 'text': {
+            // Scale font size proportionally to height change
+            obj.fontSize = Math.max(6, obj.fontSize * sy);
+            break;
+        }
         case 'ellipse': obj.rx=newWpx/2; obj.ry=newHpx/2; break;
         case 'line': {
             const ox=Math.min(obj.x1,obj.x2), oy=Math.min(obj.y1,obj.y2);
@@ -1812,7 +2022,15 @@ function setupEventListeners() {
             closeContextMenu();
         }
     });
-    svg.addEventListener('dblclick', () => { if (state.tool === 'bspline') handleBSplineDblClick(); });
+    svg.addEventListener('dblclick', (e) => {
+        if (state.tool === 'bspline') { handleBSplineDblClick(); return; }
+        // Double-click on text to edit
+        const pt = screenToSVG(e.clientX, e.clientY);
+        const obj = objectAtPoint(pt);
+        if (obj && obj.type === 'text') {
+            editTextObject(obj, e);
+        }
+    });
 
     document.querySelectorAll('.tool-btn').forEach(btn => {
         btn.addEventListener('click', () => setTool(btn.dataset.tool));
@@ -1825,8 +2043,24 @@ function setupEventListeners() {
         }
     });
 
+    document.getElementById('font-select').addEventListener('change', (e) => {
+        state.fontFamily = e.target.value;
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (obj && obj.type === 'text') { saveUndoState(); obj.fontFamily = state.fontFamily; refreshElement(obj); drawSelection(); }
+        }
+    });
+
+    document.getElementById('font-size').addEventListener('change', (e) => {
+        state.fontSize = parseFloat(e.target.value) || 32;
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (obj && obj.type === 'text') { saveUndoState(); obj.fontSize = state.fontSize; refreshElement(obj); drawSelection(); }
+        }
+    });
+
     document.addEventListener('keydown', (e) => {
-        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
         // Undo/Redo
         if (e.key.toLowerCase() === 'z' && e.ctrlKey && !e.shiftKey) { e.preventDefault(); undo(); return; }
         if (e.key.toLowerCase() === 'y' && e.ctrlKey) { e.preventDefault(); redo(); return; }
@@ -1840,6 +2074,7 @@ function setupEventListeners() {
             case 'e': setTool('ellipse'); break;
             case 'l': setTool('line'); break;
             case 'b': setTool('bspline'); break;
+            case 't': setTool('text'); break;
             case 'delete': case 'backspace':
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
@@ -1921,6 +2156,45 @@ function updateStatusBar() {
 }
 
 // =============================================
+// FONT LOADING (opentype.js) for text-to-curves
+// =============================================
+async function loadOTFont(fontName) {
+    if (loadedOTFonts[fontName]) return loadedOTFonts[fontName];
+    const fontDef = FONTS.find(f => f.name === fontName);
+    if (!fontDef) return null;
+    if (fontDef.url) {
+        // Custom font with URL
+        try {
+            const font = await opentype.load(fontDef.url);
+            loadedOTFonts[fontName] = font;
+            return font;
+        } catch(e) { console.warn('Could not load font:', fontName, e); return null; }
+    }
+    // For system fonts, try common paths or return null (will use fallback)
+    return null;
+}
+
+function textToPath(obj) {
+    const font = loadedOTFonts[obj.fontFamily];
+    if (font) {
+        const path = font.getPath(obj.text, obj.x, obj.y, obj.fontSize);
+        return path.toPathData(2);
+    }
+    // Fallback: try to get path from the SVG text element's bounding box
+    // This won't produce real curves, so we return null to indicate fallback
+    return null;
+}
+
+// Pre-load all custom fonts
+async function preloadFonts() {
+    for (const f of FONTS) {
+        if (f.url) {
+            try { await loadOTFont(f.name); } catch(e) {}
+        }
+    }
+}
+
+// =============================================
 // THEME
 // =============================================
 function initTheme() {
@@ -1949,4 +2223,4 @@ function updateThemeShadow() {
 // =============================================
 // START
 // =============================================
-document.addEventListener('DOMContentLoaded', () => { initTheme(); init(); });
+document.addEventListener('DOMContentLoaded', () => { initTheme(); init(); preloadFonts(); });

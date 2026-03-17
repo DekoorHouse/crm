@@ -8,6 +8,10 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/opentype.js@1.3.4/dist/opentype.min.js"></script>
+    <style>
+        @font-face { font-family: 'Rows of Sunflowers'; src: url('fonts/RowsOfSunflowers.ttf') format('truetype'); }
+    </style>
 </head>
 <body>
     <div id="app">
@@ -93,6 +97,23 @@
                 </div>
                 <div class="header-divider"></div>
                 <div class="prop-group">
+                    <label>Fuente</label>
+                    <select id="font-select" class="header-select">
+                        <option value="Inter">Inter</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Georgia">Georgia</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                        <option value="Courier New">Courier New</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Rows of Sunflowers">Rows of Sunflowers</option>
+                    </select>
+                </div>
+                <div class="prop-group">
+                    <label>Tam</label>
+                    <input type="number" id="font-size" value="32" min="6" max="500" step="1" style="width:48px">
+                </div>
+                <div class="header-divider"></div>
+                <div class="prop-group">
                     <label>Unidad</label>
                     <select id="unit-select" class="header-select">
                         <option value="px">px</option>
@@ -122,6 +143,9 @@
                 </button>
                 <button class="tool-btn" data-tool="bspline" title="B-Spline (B)">
                     <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18C8 2 16 22 20 6"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="text" title="Texto (T)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none"><text x="5" y="18" font-size="16" font-weight="700" font-family="serif">T</text></svg>
                 </button>
             </div>
 
@@ -201,6 +225,9 @@
             <span id="status-coords">X: 0  Y: 0</span>
         </div>
     </div>
+
+    <!-- Text Input Overlay -->
+    <textarea id="text-input-overlay" class="text-input-overlay hidden" rows="1" spellcheck="false"></textarea>
 
     <!-- PowerClip Floating Menu -->
     <div id="powerclip-menu" class="powerclip-menu hidden">
