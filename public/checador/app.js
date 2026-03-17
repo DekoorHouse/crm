@@ -1,4 +1,4 @@
-// Firebase Authentication
+// Firebase Authentication + Firestore
 const firebaseConfig = {
     apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
     authDomain: "pedidos-con-gemini.firebaseapp.com",
@@ -9,13 +9,45 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const firebaseAuth = firebase.auth();
+const db = firebase.firestore();
+
+// Caché local (se actualiza en tiempo real desde Firestore)
+let logsCache = [];
+let employeesCache = [];
+let unsubscribeLogs = null;
+let unsubscribeEmployees = null;
 
 firebaseAuth.onAuthStateChanged(user => {
     const loginView = document.getElementById('login-view');
     if (user) {
         loginView.style.display = 'none';
+
+        // Escuchar logs en tiempo real (ordenados por timestamp desc)
+        unsubscribeLogs = db.collection('checador_logs')
+            .orderBy('timestamp', 'desc')
+            .onSnapshot(snap => {
+                logsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                renderHistory();
+                if (adminPanel && adminPanel.style.display === 'flex') {
+                    renderAdminLogs();
+                    renderResumen();
+                }
+            });
+
+        // Escuchar empleados en tiempo real
+        unsubscribeEmployees = db.collection('checador_employees')
+            .onSnapshot(snap => {
+                employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                if (adminPanel && adminPanel.style.display === 'flex') {
+                    renderAdminEmployees();
+                }
+            });
     } else {
         loginView.style.display = 'flex';
+        if (unsubscribeLogs) { unsubscribeLogs(); unsubscribeLogs = null; }
+        if (unsubscribeEmployees) { unsubscribeEmployees(); unsubscribeEmployees = null; }
+        logsCache = [];
+        employeesCache = [];
     }
 });
 
@@ -46,9 +78,7 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 
 // Configuración
 const AUTHORIZED_PREFIXES = ["2806:267:2484", "177.226.102"]; // IPv6 e IPv4 de la oficina
-const OFFICE_WIFI_NAME = "Red Dekoor House";
 const ADMIN_PIN = "1234";
-const REFRESH_RATE = 1000;
 
 // Elementos del DOM
 const timeEl = document.getElementById('time');
@@ -59,7 +89,6 @@ const btnIn = document.getElementById('btn-in');
 const btnOut = document.getElementById('btn-out');
 const employeeIdInput = document.getElementById('employee-id');
 const historyList = document.getElementById('history-list');
-const clearMainBtn = document.querySelector('.history-title button') || document.getElementById('clear-recent');
 const notification = document.getElementById('notification');
 const networkBlockedOverlay = document.getElementById('network-blocked');
 
@@ -82,15 +111,13 @@ const exportCsvBtn = document.getElementById('export-csv');
 const clearLogsBtn = document.getElementById('clear-all-logs');
 
 let isAuthorized = false;
-let recentHidden = false; // Estado para ocultar registros recientes temporalmente
+let recentHidden = false;
 
 // 1. Reloj
 function updateClock() {
     const now = new Date();
-    const timeOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
-    const dateOptions = { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' };
-    timeEl.textContent = now.toLocaleTimeString('es-MX', timeOptions);
-    dateEl.textContent = now.toLocaleDateString('es-MX', dateOptions).toUpperCase();
+    timeEl.textContent = now.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    dateEl.textContent = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
 }
 
 // 2. Red
@@ -99,11 +126,7 @@ async function checkNetwork() {
         const response = await fetch('https://api64.ipify.org?format=json');
         const data = await response.json();
         const userIp = data.ip;
-
         console.log("IP detectada:", userIp);
-
-        // Validación flexible: Comprobamos si la IP del usuario empieza con el prefijo de la oficina
-        // Esto soluciona el problema de IPs dinámicas dentro de la misma red WiFi
         if (AUTHORIZED_PREFIXES.some(prefix => userIp.startsWith(prefix))) {
             isAuthorized = true;
             networkStatusEl.className = "status-badge status-online";
@@ -124,33 +147,24 @@ async function checkNetwork() {
 
 // 3. Asistencia
 function registerAttendance(type) {
+    recentHidden = false;
     const inputVal = employeeIdInput.value.trim();
     if (!inputVal) { showNotification("Ingresa tu ID o Nombre", "danger"); return; }
 
-    const employees = getEmployees();
-    // Buscamos si el input coincide con un ID o con un Nombre (ignora mayúsculas)
-    const employee = employees.find(e =>
-        e.id === inputVal ||
-        e.name.toLowerCase() === inputVal.toLowerCase()
+    const employee = employeesCache.find(e =>
+        e.id === inputVal || e.name.toLowerCase() === inputVal.toLowerCase()
     );
-
-    // Si encontramos al empleado, usamos sus datos oficiales, si no, lo que se escribió
     const finalId = employee ? employee.id : inputVal;
     const displayName = employee ? employee.name : inputVal;
 
-    // Validación de registros duplicados (NUEVO)
-    const history = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
-    // Buscamos el último registro de ESTE empleado específico
-    const lastRegistration = history.find(log => log.id === finalId);
-
+    // Validación de duplicados usando la caché
+    const lastRegistration = logsCache.find(log => log.id === finalId);
     if (lastRegistration) {
         if (lastRegistration.type === type) {
-            const typeMsg = type === 'IN' ? 'ENTRADA' : 'SALIDA';
-            showNotification(`Error: Ya tienes una ${typeMsg} registrada.`, "danger");
+            showNotification(`Error: Ya tienes una ${type === 'IN' ? 'ENTRADA' : 'SALIDA'} registrada.`, "danger");
             return;
         }
     } else if (type === 'OUT') {
-        // Si no tiene registros previos, no puede marcar salida primero
         showNotification("Error: Debes marcar ENTRADA primero.", "danger");
         return;
     }
@@ -164,44 +178,34 @@ function registerAttendance(type) {
         timestamp: new Date().getTime()
     };
 
-    saveToHistory(entry);
+    db.collection('checador_logs').add(entry);
     showNotification(`${type === 'IN' ? 'Entrada' : 'Salida'} registrada: ${displayName}`);
     employeeIdInput.value = '';
-    renderHistory();
+    // renderHistory se llama automáticamente por el listener de Firestore
 }
 
-function getEmployees() { return JSON.parse(localStorage.getItem('attendance_employees') || '[]'); }
+// 4. Empleados
+function getEmployees() { return employeesCache; }
 
-function saveEmployee(name, id) {
-    const employees = getEmployees();
-    if (employees.some(e => e.id === id)) { showNotification("ID duplicado", "danger"); return false; }
-    employees.push({ name, id });
-    localStorage.setItem('attendance_employees', JSON.stringify(employees));
+async function saveEmployee(name, id) {
+    if (employeesCache.some(e => e.id === id)) { showNotification("ID duplicado", "danger"); return false; }
+    await db.collection('checador_employees').add({ name, id });
     return true;
 }
 
-function deleteEmployee(id) {
-    let employees = getEmployees();
-    employees = employees.filter(e => e.id !== id);
-    localStorage.setItem('attendance_employees', JSON.stringify(employees));
-    renderAdminEmployees();
+async function deleteEmployee(id) {
+    const emp = employeesCache.find(e => e.id === id);
+    if (emp && emp._docId) {
+        await db.collection('checador_employees').doc(emp._docId).delete();
+    }
+    // renderAdminEmployees se llama por el listener
 }
 
-function saveToHistory(entry) {
-    const history = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
-    history.unshift(entry);
-    localStorage.setItem('attendance_logs', JSON.stringify(history));
-}
-
+// 5. Renderizado
 function renderHistory() {
-    const history = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
     historyList.innerHTML = '';
-
-    // Si el usuario pidió limpiar la vista, no renderizamos nada en la principal
     if (recentHidden) return;
-
-    // Mostrar solo los últimos 5 en la pantalla principal
-    history.slice(0, 5).forEach(item => {
+    logsCache.slice(0, 5).forEach(item => {
         const li = document.createElement('li');
         li.className = `history-item ${item.type.toLowerCase()}`;
         li.innerHTML = `
@@ -215,55 +219,30 @@ function renderHistory() {
     });
 }
 
-// 4. Lógica de Agrupación y Cálculo (NUEVO)
 function getGroupedData() {
-    const logs = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
-    const sortedLogs = [...logs].reverse();
-
+    const sortedLogs = [...logsCache].reverse();
     const groups = {};
-
     sortedLogs.forEach(log => {
-        // Agrupamos por Nombre y Fecha para ser más flexibles si el ID varió
         const key = `${log.name.toLowerCase()}-${log.date}`;
-        if (!groups[key]) {
-            groups[key] = {
-                id: log.id,
-                name: log.name,
-                date: log.date,
-                events: []
-            };
-        }
+        if (!groups[key]) groups[key] = { id: log.id, name: log.name, date: log.date, events: [] };
         groups[key].events.push(log);
     });
-
     return Object.values(groups).map(group => {
-        let totalMinutes = 0;
-        let lastInTime = null;
-        let timelineText = [];
-
+        let totalMinutes = 0, lastInTime = null, timelineText = [];
         group.events.forEach(event => {
             timelineText.push(`<span style="color:${event.type === 'IN' ? 'var(--success)' : 'var(--warning)'}">${event.type}: ${event.time}</span>`);
-
-            if (event.type === 'IN') {
-                lastInTime = event.timestamp;
-            } else if (event.type === 'OUT' && lastInTime) {
-                const diffMs = event.timestamp - lastInTime;
-                totalMinutes += Math.floor(diffMs / (1000 * 60));
+            if (event.type === 'IN') { lastInTime = event.timestamp; }
+            else if (event.type === 'OUT' && lastInTime) {
+                totalMinutes += Math.floor((event.timestamp - lastInTime) / (1000 * 60));
                 lastInTime = null;
             }
         });
-
         const hrs = Math.floor(totalMinutes / 60);
-        const mins = totalMinutes % 60;
-        group.totalStr = `${hrs}h ${mins}m`;
-
-        // Cálculo de Pago (NUEVO)
-        const hourlyRate = 70;
-        group.payment = (totalMinutes / 60) * hourlyRate;
-
+        group.totalStr = `${hrs}h ${totalMinutes % 60}m`;
+        group.payment = (totalMinutes / 60) * 70;
         group.timeline = timelineText.join(" | ");
         return group;
-    }).reverse(); // Revertir para mostrar lo más reciente arriba
+    }).reverse();
 }
 
 function renderAdminLogs() {
@@ -283,9 +262,8 @@ function renderAdminLogs() {
 }
 
 function renderAdminEmployees() {
-    const employees = getEmployees();
     adminEmployeesBody.innerHTML = '';
-    employees.forEach(emp => {
+    employeesCache.forEach(emp => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${emp.id}</td>
@@ -314,24 +292,30 @@ function exportToCSV() {
 // Event Listeners
 btnIn.addEventListener('click', () => registerAttendance('IN'));
 btnOut.addEventListener('click', () => registerAttendance('OUT'));
+
 openAdminBtn.addEventListener('click', () => {
     adminLogin.style.display = 'flex';
-    setTimeout(() => adminPinInput.focus(), 100); // Auto-focus en el PIN
+    setTimeout(() => adminPinInput.focus(), 100);
 });
 cancelLoginBtn.addEventListener('click', () => {
     adminLogin.style.display = 'none';
     adminPinInput.value = '';
-    employeeIdInput.focus(); // Regresar focus al ID principal
+    employeeIdInput.focus();
 });
 loginBtn.addEventListener('click', () => {
     if (adminPinInput.value === ADMIN_PIN) {
-        adminLogin.style.display = 'none'; adminPanel.style.display = 'flex';
-        adminPinInput.value = ''; renderAdminLogs(); renderAdminEmployees(); renderResumen();
-    } else { showNotification("PIN Incorrecto", "danger"); adminPinInput.focus(); }
+        adminLogin.style.display = 'none';
+        adminPanel.style.display = 'flex';
+        adminPinInput.value = '';
+        renderAdminLogs(); renderAdminEmployees(); renderResumen();
+    } else {
+        showNotification("PIN Incorrecto", "danger");
+        adminPinInput.focus();
+    }
 });
 closeAdminBtn.addEventListener('click', () => {
     adminPanel.style.display = 'none';
-    employeeIdInput.focus(); // Regresar focus al ID principal
+    employeeIdInput.focus();
 });
 
 tabBtns.forEach(btn => {
@@ -340,26 +324,23 @@ tabBtns.forEach(btn => {
         tabContents.forEach(c => c.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById(btn.dataset.tab).classList.add('active');
-
-        if (btn.dataset.tab === 'tab-employees') {
-            setTimeout(() => newEmpNameInput.focus(), 100);
-        }
-        if (btn.dataset.tab === 'tab-resumen') {
-            renderResumen();
-        }
+        if (btn.dataset.tab === 'tab-employees') setTimeout(() => newEmpNameInput.focus(), 100);
+        if (btn.dataset.tab === 'tab-resumen') renderResumen();
     });
 });
 
-addEmployeeBtn.addEventListener('click', () => {
+addEmployeeBtn.addEventListener('click', async () => {
     const name = newEmpNameInput.value.trim();
     const id = newEmpIdInput.value.trim();
-    if (name && id && saveEmployee(name, id)) {
-        newEmpNameInput.value = ''; newEmpIdInput.value = '';
-        renderAdminEmployees(); showNotification("Añadido");
+    if (name && id) {
+        const ok = await saveEmployee(name, id);
+        if (ok) {
+            newEmpNameInput.value = ''; newEmpIdInput.value = '';
+            showNotification("Añadido");
+        }
     }
 });
 
-// Evento para el botón LIMPIAR de la pantalla principal (solo oculta la vista)
 document.addEventListener('click', (e) => {
     if (e.target && (e.target.textContent === 'LIMPIAR' || e.target.id === 'clear-recent')) {
         recentHidden = true;
@@ -368,16 +349,16 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// Al checar alguien nuevo, volvemos a mostrar la lista
-const originalRegister = registerAttendance;
-registerAttendance = function(type) {
-    recentHidden = false;
-    originalRegister(type);
-};
-
 exportCsvBtn.addEventListener('click', exportToCSV);
-clearLogsBtn.addEventListener('click', () => {
-    if (confirm("¿Borrar todo?")) { localStorage.removeItem('attendance_logs'); renderAdminLogs(); renderHistory(); }
+
+clearLogsBtn.addEventListener('click', async () => {
+    if (confirm("¿Borrar todo?")) {
+        const snap = await db.collection('checador_logs').get();
+        const batch = db.batch();
+        snap.docs.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        // renderAdminLogs y renderHistory se llaman por el listener
+    }
 });
 
 function showNotification(m, t = "success") {
@@ -390,9 +371,7 @@ function showNotification(m, t = "success") {
 setInterval(updateClock, 1000);
 updateClock();
 checkNetwork();
-renderHistory();
 
-// Auto-focus inicial
 setTimeout(() => employeeIdInput.focus(), 500);
 
 // =====================
@@ -439,15 +418,12 @@ function getPeriodLabel(period) {
 }
 
 function getResumenData(period) {
-    const logs = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
     const { start, end } = getPeriodRange(period);
-
-    const filtered = logs.filter(log => {
+    const filtered = logsCache.filter(log => {
         const d = parseLogDate(log.date);
         return d && d >= start && d <= end;
     });
 
-    // Agrupar por empleado+fecha para calcular horas por día
     const dayGroups = {};
     filtered.forEach(log => {
         const key = `${log.name.toLowerCase()}-${log.date}`;
@@ -455,12 +431,10 @@ function getResumenData(period) {
         dayGroups[key].events.push(log);
     });
 
-    // Sumar minutos por empleado
     const byEmployee = {};
     Object.values(dayGroups).forEach(group => {
         const k = group.name.toLowerCase();
         if (!byEmployee[k]) byEmployee[k] = { name: group.name, id: group.id, minutes: 0, days: 0 };
-
         let mins = 0, lastIn = null;
         group.events.forEach(e => {
             if (e.type === 'IN') { lastIn = e.timestamp; }
@@ -504,20 +478,18 @@ function renderResumen() {
         tbody.appendChild(tr);
     });
 
-    // Fila de totales
-    const totalHrs = Math.floor(totalMins / 60), totalMin2 = totalMins % 60;
+    const totalHrs = Math.floor(totalMins / 60);
     const tfr = document.createElement('tr');
     tfr.style.borderTop = '2px solid var(--glass-border)';
     tfr.innerHTML = `
         <td style="font-weight:bold; color:var(--text-muted);">TOTAL</td>
         <td></td>
-        <td style="font-weight:bold; color:var(--primary)">${totalHrs}h ${totalMin2}m</td>
+        <td style="font-weight:bold; color:var(--primary)">${totalHrs}h ${totalMins % 60}m</td>
         <td style="font-weight:bold; color:var(--success)">$${totalPay.toFixed(2)}</td>
     `;
     tbody.appendChild(tfr);
 }
 
-// Listeners de período
 document.querySelectorAll('.period-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
