@@ -2425,7 +2425,7 @@ function stripGPOSTable(buf) {
             view.getUint8(offset), view.getUint8(offset+1),
             view.getUint8(offset+2), view.getUint8(offset+3)
         );
-        if (tag === 'GPOS' || tag === 'GSUB') {
+        if (tag === 'GPOS' || tag === 'GSUB' || tag === 'GDEF' || tag === 'BASE' || tag === 'JSTF') {
             // Zero out the table offset and length so opentype.js skips it
             view.setUint32(offset + 8, 0); // offset
             view.setUint32(offset + 12, 0); // length
