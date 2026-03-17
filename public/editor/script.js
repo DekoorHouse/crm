@@ -1116,7 +1116,7 @@ function setupEventListeners() {
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
         // Group/Ungroup shortcuts
-        if (e.key.toLowerCase() === 'g' && e.ctrlKey && e.shiftKey) { e.preventDefault(); ungroupSelected(); return; }
+        if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
         switch (e.key.toLowerCase()) {
             case 'v': setTool('select'); break;
