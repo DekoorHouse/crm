@@ -109,28 +109,33 @@ class M2Nano {
         });
     }
 
-    /** Lee la respuesta de estado de 32 bytes. */
-    readStatus() {
-        return new Promise((resolve, reject) => {
-            this.epIn.transfer(PKT_SIZE, (err, data) => {
-                if (err) reject(err);
-                else resolve(data);
-            });
-        });
+    /** Lee la respuesta de estado con timeout para no bloquear Node.js. */
+    readStatus(timeout = 500) {
+        return Promise.race([
+            new Promise((resolve, reject) => {
+                this.epIn.transfer(PKT_SIZE, (err, data) => {
+                    if (err) reject(err);
+                    else resolve(data);
+                });
+            }),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('USB read timeout')), timeout)
+            ),
+        ]);
     }
 
     /** Espera a que la máquina esté lista (byte 0 = 0xA5). */
-    async waitReady(timeout = 6000) {
+    async waitReady(timeout = 6000, readTimeout = 500) {
         const deadline = Date.now() + timeout;
         while (Date.now() < deadline) {
             try {
                 await this.sendPacket(Buffer.alloc(1));
-                const resp = await this.readStatus();
+                const resp = await this.readStatus(readTimeout);
                 if (resp[0] === STATUS_READY) return;
             } catch (_) {}
             await sleep(80);
         }
-        throw new Error('Timeout: la máquina no respondió (verificar conexión/estado).');
+        throw new Error('Timeout: la máquina no respondió.');
     }
 
     /**
@@ -167,21 +172,16 @@ class M2Nano {
         const sx = Math.round(Math.abs(dx) * STEPS_PER_MM);
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
 
+        // Repetir el byte de dirección N veces (1 byte = 1 paso).
+        // Esto evita conflictos con bytes de comandos EGV (I, H, F, N, etc.)
         let cmd = 'N';
-
-        if (sx > 0) {
-            cmd += dx > 0 ? 'R' : 'L';
-            cmd += encodeDistance(sx);
-        }
-        if (sy > 0) {
-            cmd += dy > 0 ? 'B' : 'T';
-            cmd += encodeDistance(sy);
-        }
+        if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
+        if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
         cmd += 'F';
 
-        await this.waitReady();
+        // Solo esperar listo antes; no esperar después para no bloquear
+        try { await this.waitReady(2000, 400); } catch (_) {}
         await this.sendEGV(cmd);
-        await this.waitReady(8000);
 
         this._posX += dx;
         this._posY += dy;
@@ -215,20 +215,7 @@ class M2Nano {
 
 // ───────── Helpers ─────────
 
-/**
- * Codifica una distancia en pasos al formato EGV.
- * El M2 Nano acepta valores 1–255 como bytes directos;
- * para valores mayores se divide en segmentos de 255.
- */
-function encodeDistance(steps) {
-    const chunks = [];
-    while (steps > 0) {
-        const n = Math.min(steps, 255);
-        chunks.push(String.fromCharCode(n));
-        steps -= n;
-    }
-    return chunks.join('');
-}
+// encodeDistance ya no se usa (reemplazado por repeat() en jog)
 
 /**
  * Convierte potencia (0–100%) a un código de velocidad EGV aproximado.
