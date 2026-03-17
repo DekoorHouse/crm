@@ -76,7 +76,7 @@ const state = {
 // DOM REFERENCES
 // =============================================
 let svg, objectsLayer, selectionLayer, previewLayer;
-let pageRect, pageShadow, pageGrid;
+let pageRect, pageGrid;
 
 // =============================================
 // INITIALIZATION
@@ -87,7 +87,6 @@ function init() {
     selectionLayer = document.getElementById('selection-layer');
     previewLayer   = document.getElementById('preview-layer');
     pageRect     = document.getElementById('page');
-    pageShadow   = document.getElementById('page-shadow');
     pageGrid     = document.getElementById('page-grid');
 
     updatePage();
@@ -109,13 +108,8 @@ function updatePage() {
         pageRect.setAttribute(k, v);
         pageGrid.setAttribute(k, v);
     }
-    pageShadow.setAttribute('x', 5);
-    pageShadow.setAttribute('y', 5);
-    pageShadow.setAttribute('width', state.pageWidth);
-    pageShadow.setAttribute('height', state.pageHeight);
-
     document.getElementById('status-page').textContent =
-        `Página: ${state.pageWidth} × ${state.pageHeight} px`;
+        `${state.pageWidth} × ${state.pageHeight} px`;
 }
 
 function resetView() {
@@ -164,7 +158,7 @@ function updateViewBox() {
     const wsW = document.getElementById('workspace').getBoundingClientRect().width;
     if (wsW > 0) {
         const zoom = Math.round((wsW / state.viewBox.w) * 100);
-        document.getElementById('status-zoom').textContent = `Zoom: ${zoom}%`;
+        document.getElementById('status-zoom').textContent = `${zoom}%`;
     }
 }
 
@@ -344,7 +338,7 @@ function selectObject(id) {
     r.setAttribute('width', bounds.w);
     r.setAttribute('height', bounds.h);
     r.setAttribute('fill', 'none');
-    r.setAttribute('stroke', '#0090ff');
+    r.setAttribute('stroke', '#7c5cf0');
     r.setAttribute('stroke-width', sw);
     r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
     r.setAttribute('pointer-events', 'none');
@@ -364,7 +358,7 @@ function selectObject(id) {
         h.setAttribute('width', hs);
         h.setAttribute('height', hs);
         h.setAttribute('fill', '#fff');
-        h.setAttribute('stroke', '#0090ff');
+        h.setAttribute('stroke', '#7c5cf0');
         h.setAttribute('stroke-width', sw);
         h.setAttribute('pointer-events', 'none');
         selectionLayer.appendChild(h);
@@ -378,7 +372,7 @@ function selectObject(id) {
             const pl = document.createElementNS(ns, 'polyline');
             pl.setAttribute('points', obj.points.map(p => `${p.x},${p.y}`).join(' '));
             pl.setAttribute('fill', 'none');
-            pl.setAttribute('stroke', '#0090ff');
+            pl.setAttribute('stroke', '#7c5cf0');
             pl.setAttribute('stroke-width', sw * 0.6);
             pl.setAttribute('stroke-dasharray', `${sw*3} ${sw*1.5}`);
             pl.setAttribute('pointer-events', 'none');
@@ -391,7 +385,7 @@ function selectObject(id) {
             c.setAttribute('cy', p.y);
             c.setAttribute('r', cs/2);
             c.setAttribute('fill', '#fff');
-            c.setAttribute('stroke', '#0090ff');
+            c.setAttribute('stroke', '#7c5cf0');
             c.setAttribute('stroke-width', sw);
             c.setAttribute('pointer-events', 'none');
             selectionLayer.appendChild(c);
@@ -734,7 +728,7 @@ function updateBSplinePreview(mousePt) {
         const pl = document.createElementNS(ns, 'polyline');
         pl.setAttribute('points', all.map(p => `${p.x},${p.y}`).join(' '));
         pl.setAttribute('fill', 'none');
-        pl.setAttribute('stroke', '#888');
+        pl.setAttribute('stroke', '#b8aed0');
         pl.setAttribute('stroke-width', sw);
         pl.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
         pl.setAttribute('pointer-events', 'none');
@@ -748,8 +742,8 @@ function updateBSplinePreview(mousePt) {
         cp.setAttribute('y', all[i].y - cs/2);
         cp.setAttribute('width', cs);
         cp.setAttribute('height', cs);
-        cp.setAttribute('fill', i < state.bsplinePoints.length ? '#0090ff' : '#fff');
-        cp.setAttribute('stroke', '#0090ff');
+        cp.setAttribute('fill', i < state.bsplinePoints.length ? '#7c5cf0' : '#fff');
+        cp.setAttribute('stroke', '#7c5cf0');
         cp.setAttribute('stroke-width', sw);
         cp.setAttribute('pointer-events', 'none');
         previewLayer.appendChild(cp);
@@ -798,7 +792,7 @@ function buildColorPalette() {
             // Left click → fill
             state.fillColor = color;
             document.querySelector('#fill-swatch .swatch-inner').style.background =
-                color === 'none' ? 'linear-gradient(45deg,#fff 40%,#d00 40%,#d00 60%,#fff 60%)' : color;
+                color === 'none' ? 'linear-gradient(135deg,#f5f3ff 40%,#d4b4c8 40%,#d4b4c8 60%,#f5f3ff 60%)' : color;
 
             const obj = findObject(state.selectedId);
             if (obj && obj.type !== 'line' && obj.type !== 'bspline') {
@@ -809,7 +803,7 @@ function buildColorPalette() {
             // Right click → stroke
             state.strokeColor = color;
             document.querySelector('#stroke-swatch .swatch-inner').style.background =
-                color === 'none' ? 'linear-gradient(45deg,#fff 40%,#d00 40%,#d00 60%,#fff 60%)' : color;
+                color === 'none' ? 'linear-gradient(135deg,#f5f3ff 40%,#d4b4c8 40%,#d4b4c8 60%,#f5f3ff 60%)' : color;
 
             const obj = findObject(state.selectedId);
             if (obj) {
@@ -1059,14 +1053,14 @@ function setTool(tool) {
     state.tool = tool;
     document.querySelectorAll('.tool-btn').forEach(btn =>
         btn.classList.toggle('active', btn.dataset.tool === tool));
-    document.getElementById('status-tool').textContent = `Herramienta: ${TOOL_NAMES[tool]}`;
+    document.getElementById('status-tool').textContent = TOOL_NAMES[tool];
     svg.style.cursor = tool === 'select' ? 'default' : 'crosshair';
 }
 
 function updateStatusBar() {
-    document.getElementById('status-tool').textContent = `Herramienta: ${TOOL_NAMES[state.tool]}`;
+    document.getElementById('status-tool').textContent = TOOL_NAMES[state.tool];
     document.getElementById('status-page').textContent =
-        `Página: ${state.pageWidth} × ${state.pageHeight} px`;
+        `${state.pageWidth} × ${state.pageHeight} px`;
 }
 
 // =============================================
