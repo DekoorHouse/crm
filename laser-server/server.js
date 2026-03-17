@@ -56,10 +56,11 @@ function connectMachine() {
 
     try {
         laser.connect();
+        send({ type: 'machine_ready', ok: true });
         send({ type: 'status', text: '¡Máquina K40 conectada por USB!', level: 'success' });
         log('M2 Nano listo.');
     } catch (err) {
-        send({ type: 'status', text: `USB: ${err.message}`, level: 'error' });
+        send({ type: 'machine_ready', ok: false, error: err.message });
         log(err.message, 'error');
         laser = null;
     }

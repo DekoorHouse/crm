@@ -325,15 +325,9 @@ function tryConnect() {
 
         ws.onopen = () => {
             clearTimeout(timer);
-            state.connected = true;
-            setStatus('connected', 'K40 Conectado');
-            connectBtn.textContent = 'Desconectar';
-            connectBtn.className   = 'btn-connect active';
-            connectBtn.disabled    = false;
-            laserTestBtn.disabled  = false;
-            setJogEnabled(true);
-            updateControls();
-            log('¡Máquina K40 conectada!', 'success');
+            // Esperar confirmación USB del servidor antes de marcar como conectado
+            setStatus('', 'Conectando USB...');
+            connectBtn.disabled = false;
         };
 
         ws.onclose = () => { if (state.connected) disconnect(); };
@@ -383,6 +377,20 @@ function handleMessage(msg) {
         moveLaserDot(msg.x, msg.y);
     } else if (msg.type === 'progress') {
         setProgress(msg.pct);
+    } else if (msg.type === 'machine_ready') {
+        if (msg.ok) {
+            state.connected = true;
+            setStatus('connected', 'K40 Conectado');
+            connectBtn.textContent = 'Desconectar';
+            connectBtn.className   = 'btn-connect active';
+            laserTestBtn.disabled  = false;
+            setJogEnabled(true);
+            updateControls();
+        } else {
+            // USB falló → entrar en simulación
+            log(`USB Error: ${msg.error}`, 'error');
+            enterSimMode();
+        }
     } else if (msg.type === 'status') {
         log(msg.text, msg.level || 'cmd');
     } else if (msg.type === 'done') {
