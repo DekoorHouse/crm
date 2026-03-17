@@ -222,14 +222,16 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección.
-        // NO incluir N (activa el láser).
-        // F se envía en paquete separado: garantiza que sea el 1er byte de un paquete fresco,
-        // evitando que quede enterrado en el padding del último chunk de datos.
+        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), NSE=fin sección.
+        // N después de los pasos de dirección NO activa el láser — en este contexto
+        // N es el terminador de sección (K40 Whisperer usa I[dirs]NSEF para rapid moves).
+        // Sin N, el board parsea 'S' como inicio de código de velocidad y rechaza 'E'
+        // como parámetro inválido, descartando todo el comando silenciosamente.
+        // F se envía en paquete separado para que sea el 1er byte de un paquete limpio.
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'SE';
+        cmd += 'NSE';
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length + 1} (+F separado)`);
 
