@@ -97,6 +97,13 @@ class M2Nano {
                 }
             );
         });
+
+        // El controlTransfer puede dejar al M2 Nano en estado 0xCF (CRC error).
+        // Enviar escape '@' para limpiar ese estado y volver a 0xCE (idle).
+        await sleep(50);
+        await this.sendEGV('@');
+        this.log('Board reset enviado (escape @).');
+        await sleep(200);
     }
 
     /** Libera el dispositivo USB. */
@@ -178,26 +185,30 @@ class M2Nano {
     /** Espera a que la máquina esté lista. */
     async waitReady(timeout = 6000, readTimeout = 500) {
         const deadline = Date.now() + timeout;
-        let logged = false;
+        let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
                 // Enviar solicitud de estado (0xA0 como comando directo, sin framing 0xA6)
                 await this.sendCommand(CMD_STATUS);
                 const resp = await this.readStatus(readTimeout);
 
-                if (!logged) {
-                    const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-                    this.log(`Board status: [${hex}] → status byte: 0x${resp[1].toString(16).padStart(2, '0')}`);
-                    logged = true;
-                }
-
                 // El byte de estado real del M2 Nano está en resp[1] (no resp[0]).
                 // resp[0] = 0xFF es un header del CH341, no es el estado de la placa.
-                // Valores de resp[1]: 0xCE=OK/idle, 0xA5=busy, 0xEC=finish, 0xD5=CRC error.
-                if (resp[1] !== 0xA5) return;
+                // Valores de resp[1]: 0xCE=OK/idle, 0xA5/0xEE=busy, 0xEC=finish, 0xCF=error.
+                const s = resp[1];
+                if (s !== lastStatus) {
+                    const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+                    this.log(`Board status: [${hex}] → 0x${s.toString(16).padStart(2, '0')}`);
+                    lastStatus = s;
+                }
+
+                // Listo cuando el board devuelve 0xCE (OK/idle) o 0xEC (finish).
+                // 0xCF = CRC error, 0xA5/0xEE = busy → seguir esperando.
+                if (s === 0xCE || s === 0xEC) return;
             } catch (_) {}
             await sleep(80);
         }
+        this.log(`waitReady timeout (último status: 0x${lastStatus.toString(16).padStart(2,'0')})`);
         throw new Error('Timeout: la máquina no respondió.');
     }
 
@@ -254,8 +265,8 @@ class M2Nano {
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length + 1} (+F separado)`);
 
-        try { await this.waitReady(2000, 400); } catch (e) {
-            this.log('waitReady timeout antes de jog (continuando...)');
+        try { await this.waitReady(5000, 400); } catch (e) {
+            this.log('waitReady timeout antes de jog (continuando de todas formas)');
         }
         await this.sendEGV(cmd);
         await this.sendEGV('F');  // Finish en paquete propio → la placa ejecuta el movimiento
