@@ -971,6 +971,7 @@ function handleMouseDown(e) {
         return;
     }
     if (e.button !== 0) return;
+    if (state.isTyping) return; // don't interfere with text input
     const pt = screenToSVG(e.clientX, e.clientY);
     switch (state.tool) {
         case 'select':  handleSelectDown(pt, e); break;
@@ -1228,121 +1229,129 @@ function clearPreview() { previewLayer.innerHTML = ''; state.previewElement = nu
 // --- Text ---
 function editTextObject(obj, e) {
     if (state.isTyping) return;
-    const overlay = document.getElementById('text-input-overlay');
-    const svgRect = svg.getBoundingClientRect();
-    const scale = svgRect.width / state.viewBox.w;
-    const b = getObjBounds(obj);
-    const screenX = svgRect.left + (b.x - state.viewBox.x) * scale;
-    const screenY = svgRect.top + (b.y - state.viewBox.y) * scale;
-    const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
-    const screenFontSize = obj.fontSize * scale;
-
-    overlay.style.left = screenX + 'px';
-    overlay.style.top = screenY + 'px';
-    overlay.style.fontFamily = fontDef.css;
-    overlay.style.fontSize = screenFontSize + 'px';
-    overlay.style.lineHeight = '1.2';
-    overlay.style.color = obj.fill === 'none' ? '#000' : obj.fill;
-    overlay.value = obj.text;
-    overlay.classList.remove('hidden');
-    overlay.focus();
-    overlay.select();
-
-    // Hide the SVG text while editing
-    obj.element.style.opacity = '0';
     state.isTyping = true;
+    obj.element.style.opacity = '0';
 
-    const finishEdit = () => {
-        const txt = overlay.value.trim();
-        overlay.classList.add('hidden');
-        state.isTyping = false;
-        obj.element.style.opacity = '1';
-        overlay.removeEventListener('blur', onBlur);
-        overlay.removeEventListener('keydown', onKey);
-        if (txt && txt !== obj.text) {
-            saveUndoState();
-            obj.text = txt;
-            refreshElement(obj);
-            drawSelection();
-        } else if (!txt) {
-            deleteObject(obj.id);
-        }
-    };
+    requestAnimationFrame(() => {
+        const overlay = document.getElementById('text-input-overlay');
+        const svgRect = svg.getBoundingClientRect();
+        const scale = svgRect.width / state.viewBox.w;
+        const b = getObjBounds(obj);
+        const screenX = svgRect.left + (b.x - state.viewBox.x) * scale;
+        const screenY = svgRect.top + (b.y - state.viewBox.y) * scale;
+        const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
+        const screenFontSize = obj.fontSize * scale;
 
-    const onBlur = () => { setTimeout(finishEdit, 100); };
-    const onKey = (ev) => {
-        if (ev.key === 'Escape') { overlay.value = obj.text; overlay.blur(); }
-        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); overlay.blur(); }
-        overlay.style.height = 'auto';
-        overlay.style.height = overlay.scrollHeight + 'px';
-    };
-    overlay.addEventListener('blur', onBlur, { once: true });
-    overlay.addEventListener('keydown', onKey);
-    overlay.addEventListener('input', () => {
-        overlay.style.height = 'auto';
-        overlay.style.height = overlay.scrollHeight + 'px';
+        overlay.style.left = screenX + 'px';
+        overlay.style.top = screenY + 'px';
+        overlay.style.fontFamily = fontDef.css;
+        overlay.style.fontSize = screenFontSize + 'px';
+        overlay.style.lineHeight = '1.2';
+        overlay.style.color = obj.fill === 'none' ? '#000' : obj.fill;
+        overlay.value = obj.text;
+        overlay.classList.remove('hidden');
+        overlay.focus();
+        overlay.select();
+
+        let finished = false;
+        const finishEdit = () => {
+            if (finished) return;
+            finished = true;
+            const txt = overlay.value.trim();
+            overlay.classList.add('hidden');
+            state.isTyping = false;
+            obj.element.style.opacity = '1';
+            if (txt && txt !== obj.text) {
+                saveUndoState();
+                obj.text = txt;
+                refreshElement(obj);
+                drawSelection();
+            } else if (!txt) {
+                deleteObject(obj.id);
+            }
+        };
+
+        const onKey = (ev) => {
+            if (ev.key === 'Escape') { overlay.value = obj.text; finishEdit(); }
+            if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); finishEdit(); }
+            overlay.style.height = 'auto';
+            overlay.style.height = overlay.scrollHeight + 'px';
+        };
+
+        overlay.addEventListener('keydown', onKey);
+        overlay.addEventListener('input', () => {
+            overlay.style.height = 'auto';
+            overlay.style.height = overlay.scrollHeight + 'px';
+        });
+        overlay.addEventListener('blur', () => {
+            setTimeout(finishEdit, 150);
+        }, { once: true });
     });
 }
 
 function handleTextClick(pt, e) {
     if (state.isTyping) return;
-    // Position overlay at click point
-    const overlay = document.getElementById('text-input-overlay');
-    const svgRect = svg.getBoundingClientRect();
-    const scale = svgRect.width / state.viewBox.w;
-    const screenX = svgRect.left + (pt.x - state.viewBox.x) * scale;
-    const screenY = svgRect.top + (pt.y - state.viewBox.y) * scale;
-    const fontDef = FONTS.find(f => f.name === state.fontFamily) || FONTS[0];
-    const screenFontSize = state.fontSize * scale;
-
-    overlay.style.left = screenX + 'px';
-    overlay.style.top = (screenY - screenFontSize) + 'px';
-    overlay.style.fontFamily = fontDef.css;
-    overlay.style.fontSize = screenFontSize + 'px';
-    overlay.style.lineHeight = '1.2';
-    overlay.style.color = state.fillColor === 'none' ? '#000' : state.fillColor;
-    overlay.value = '';
-    overlay.classList.remove('hidden');
-    overlay.focus();
-
     state.isTyping = true;
     state._textPt = { x: pt.x, y: pt.y };
 
-    const finishText = () => {
-        const txt = overlay.value.trim();
-        overlay.classList.add('hidden');
-        state.isTyping = false;
-        overlay.removeEventListener('blur', onBlur);
-        overlay.removeEventListener('keydown', onKey);
-        if (txt) {
-            const obj = createObject('text', {
-                x: state._textPt.x,
-                y: state._textPt.y,
-                text: txt,
-                fontFamily: state.fontFamily,
-                fontSize: state.fontSize,
-                fill: state.fillColor === 'none' ? '#000000' : state.fillColor,
-                stroke: state.strokeColor,
-                strokeWidth: state.strokeWidth,
-            });
-            selectObject(obj.id);
-            setTool('select');
-        }
-    };
+    // Delay showing the overlay so the mousedown doesn't steal focus
+    requestAnimationFrame(() => {
+        const overlay = document.getElementById('text-input-overlay');
+        const svgRect = svg.getBoundingClientRect();
+        const scale = svgRect.width / state.viewBox.w;
+        const screenX = svgRect.left + (pt.x - state.viewBox.x) * scale;
+        const screenY = svgRect.top + (pt.y - state.viewBox.y) * scale;
+        const fontDef = FONTS.find(f => f.name === state.fontFamily) || FONTS[0];
+        const screenFontSize = state.fontSize * scale;
 
-    const onBlur = () => { setTimeout(finishText, 100); };
-    const onKey = (ev) => {
-        if (ev.key === 'Escape') { overlay.value = ''; overlay.blur(); }
-        if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); overlay.blur(); }
-        // Auto-resize
-        overlay.style.height = 'auto';
-        overlay.style.height = overlay.scrollHeight + 'px';
-    };
-    overlay.addEventListener('blur', onBlur, { once: true });
-    overlay.addEventListener('keydown', onKey);
-    overlay.addEventListener('input', () => {
-        overlay.style.height = 'auto';
-        overlay.style.height = overlay.scrollHeight + 'px';
+        overlay.style.left = screenX + 'px';
+        overlay.style.top = (screenY - screenFontSize) + 'px';
+        overlay.style.fontFamily = fontDef.css;
+        overlay.style.fontSize = screenFontSize + 'px';
+        overlay.style.lineHeight = '1.2';
+        overlay.style.color = state.fillColor === 'none' ? '#000' : state.fillColor;
+        overlay.value = '';
+        overlay.classList.remove('hidden');
+        overlay.focus();
+
+        let finished = false;
+        const finishText = () => {
+            if (finished) return;
+            finished = true;
+            const txt = overlay.value.trim();
+            overlay.classList.add('hidden');
+            state.isTyping = false;
+            if (txt) {
+                const obj = createObject('text', {
+                    x: state._textPt.x,
+                    y: state._textPt.y,
+                    text: txt,
+                    fontFamily: state.fontFamily,
+                    fontSize: state.fontSize,
+                    fill: state.fillColor === 'none' ? '#000000' : state.fillColor,
+                    stroke: state.strokeColor,
+                    strokeWidth: state.strokeWidth,
+                });
+                selectObject(obj.id);
+                setTool('select');
+            }
+        };
+
+        const onKey = (ev) => {
+            if (ev.key === 'Escape') { overlay.value = ''; finishText(); }
+            if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); finishText(); }
+            overlay.style.height = 'auto';
+            overlay.style.height = overlay.scrollHeight + 'px';
+        };
+
+        overlay.addEventListener('keydown', onKey);
+        overlay.addEventListener('input', () => {
+            overlay.style.height = 'auto';
+            overlay.style.height = overlay.scrollHeight + 'px';
+        });
+        overlay.addEventListener('blur', () => {
+            setTimeout(finishText, 150);
+        }, { once: true });
     });
 }
 
