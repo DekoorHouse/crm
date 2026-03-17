@@ -247,6 +247,8 @@ class M2Nano {
 
     /**
      * Movimiento relativo en mm.
+     * Protocolo EGV (K40-Whisperer make_move_data): I + dir + dist + S1P
+     * Direcciones: B=derecha, T=izquierda, L=arriba, R=abajo
      * @param {number} dx  mm en X (positivo = derecha)
      * @param {number} dy  mm en Y (positivo = abajo)
      */
@@ -255,23 +257,19 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección.
-        // NO incluir N — en la M3 Nano, N activa el láser y dispara el interlock de
-        // seguridad (tapa/lid sensor), bloqueando el movimiento si la tapa está abierta.
-        // MeerK40t (que soporta M3 explícitamente) usa I[dirs]SE + F para rapid moves.
-        // F se envía en paquete separado para que sea el 1er byte de un paquete limpio.
+        // EGV rapid move (sin láser): I + dirección + distancia compacta + S1P
+        // K40-Whisperer: Y se procesa antes que X en make_dir_dist()
         let cmd = 'I';
-        if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
-        if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'SE';
+        if (sy > 0) cmd += (dy < 0 ? 'L' : 'R') + encodeDistance(sy);
+        if (sx > 0) cmd += (dx > 0 ? 'B' : 'T') + encodeDistance(sx);
+        cmd += 'S1P';
 
-        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length + 1} (+F separado)`);
+        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
 
         try { await this.waitReady(5000, 400); } catch (e) {
             this.log('waitReady timeout antes de jog (continuando de todas formas)');
         }
         await this.sendEGV(cmd);
-        await this.sendEGV('F');  // Finish en paquete propio → la placa ejecuta el movimiento
 
         // Esperar a que la placa termine de ejecutar el jog
         try {
@@ -323,6 +321,29 @@ function powerToSpeedCode(power) {
     if (power >= 40) return 'S3P';
     if (power >= 20) return 'S4P';
     return 'S5P';
+}
+
+/**
+ * Codifica distancia en pasos al formato compacto EGV (K40-Whisperer egv.py make_distance).
+ *   1–25   → chr(96+n)         = 'a'..'y'
+ *   26–51  → '|' + chr(96+n-25)
+ *   52–255 → '%03d' (3 dígitos ASCII)
+ *   255    → 'z' (se repite para múltiplos)
+ */
+function encodeDistance(steps) {
+    let result = '';
+    const fullRanges = Math.floor(steps / 255);
+    result += 'z'.repeat(fullRanges);
+    const remainder = steps % 255;
+    if (remainder === 0) return result;
+    if (remainder < 26) {
+        result += String.fromCharCode(96 + remainder);
+    } else if (remainder < 52) {
+        result += '|' + String.fromCharCode(96 + remainder - 25);
+    } else {
+        result += remainder.toString().padStart(3, '0');
+    }
+    return result;
 }
 
 /**
