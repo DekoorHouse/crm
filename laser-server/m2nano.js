@@ -17,7 +17,7 @@ const DEVICES = [
 
 const EP_OUT       = 0x02;   // Bulk OUT → máquina
 const EP_IN        = 0x82;   // Bulk IN  ← máquina
-const PKT_SIZE     = 34;     // Tamaño de paquete USB (34 bytes protocolo Lhystudios)
+const PKT_SIZE     = 32;     // Tamaño de paquete USB (32 bytes = wMaxPacketSize del endpoint CH341)
 const CMD_PKT_SIZE = 32;     // Tamaño de paquete de comando (sin CRC)
 const DATA_SIZE    = 30;     // Bytes de datos por paquete (payload)
 const PKT_FRAME    = 0xA6;   // Byte de comando de escritura paralela CH341A
@@ -111,24 +111,26 @@ class M2Nano {
     // ───────── Comunicación de bajo nivel ─────────
 
     /**
-     * Envía un paquete de datos EGV de 34 bytes (protocolo Lhystudios).
-     * Formato: [0xA6][0x00][payload (30 bytes)][0x00][CRC-8]
+     * Envía un paquete de datos EGV de 32 bytes (protocolo Lhystudios).
+     * Formato: [0xA6][payload (30 bytes)][CRC-8]
      *   - Byte 0:     0xA6 (comando de escritura paralela CH341A)
-     *   - Byte 1:     0x00 (byte de inicio de trama M2 Nano)
-     *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x46 'F')
-     *   - Byte 32:    0x00 (byte de fin de datos)
-     *   - Byte 33:    CRC-8 Dallas/Maxim sobre bytes 2-31
+     *   - Bytes 1-30: payload EGV (30 bytes, padded con 0x46 'F')
+     *   - Byte 31:    CRC-8 Dallas/Maxim sobre bytes 1-30
+     *
+     * CRÍTICO: wMaxPacketSize del endpoint CH341 es 32 bytes. El paquete DEBE
+     * caber exactamente en 32 bytes. Si enviamos 34 bytes, el USB los dividiría
+     * en dos transferencias (32 + 2), dejando el byte CRC en un paquete separado.
+     * El controlador M3 Nano recibiría el paquete sin CRC y lo rechazaría
+     * silenciosamente → la máquina no se mueve.
      */
     sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
+            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 32 bytes
             pkt[0] = PKT_FRAME;   // 0xA6
-            pkt[1] = 0x00;        // Inicio de trama M2 Nano
-            pkt.fill(0x46, 2, 32);  // Padding con 'F' en zona de payload
+            pkt.fill(0x46, 1, 31);  // Padding con 'F' en zona de payload (bytes 1-30)
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
-            pkt[32] = 0x00;       // Fin de datos
-            pkt[33] = crc8(pkt.subarray(2, 32));  // CRC sobre los 30 bytes de payload
+            src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 1-30
+            pkt[31] = crc8(pkt.subarray(1, 31));  // CRC sobre los 30 bytes de payload
 
             if (logFirst) {
                 const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
