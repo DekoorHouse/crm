@@ -1,5 +1,5 @@
 /* ============================================
-   DeKoor Editor — Elegant SaaS Theme
+   Dekoor Editor — Elegant SaaS Theme
    Palette: soft violet + warm grays
    ============================================ */
 
@@ -617,4 +617,112 @@ body {
 
 .btn-primary:active {
     transform: translateY(0);
+}
+
+/* ===== THEME TOGGLE ===== */
+.theme-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    background: var(--surface-hover);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all 0.2s;
+}
+
+.theme-btn:hover {
+    background: var(--surface-active);
+    color: var(--text);
+    border-color: var(--border-hover);
+}
+
+.theme-btn .icon-moon { display: none; }
+.theme-btn .icon-sun  { display: block; }
+
+body.dark .theme-btn .icon-moon { display: block; }
+body.dark .theme-btn .icon-sun  { display: none; }
+
+/* ============================================
+   DARK THEME
+   ============================================ */
+body.dark {
+    --accent:       #9580ff;
+    --accent-hover: #a896ff;
+    --accent-soft:  rgba(149, 128, 255, 0.12);
+    --accent-glow:  rgba(149, 128, 255, 0.18);
+
+    --bg:             #131118;
+    --surface:        #1e1c28;
+    --surface-hover:  #282634;
+    --surface-active: #302e3e;
+
+    --text:           #e8e4f2;
+    --text-secondary: #a8a0be;
+    --text-muted:     #6e6588;
+
+    --border:        #2a2838;
+    --border-hover:  #3c3a4c;
+
+    --shadow-xs:  0 1px 2px rgba(0, 0, 0, 0.3);
+    --shadow-sm:  0 1px 4px rgba(0, 0, 0, 0.3), 0 1px 2px rgba(0, 0, 0, 0.2);
+    --shadow-md:  0 4px 16px rgba(0, 0, 0, 0.35), 0 1px 4px rgba(0, 0, 0, 0.2);
+    --shadow-lg:  0 8px 32px rgba(0, 0, 0, 0.4), 0 2px 8px rgba(0, 0, 0, 0.2);
+    --shadow-xl:  0 16px 48px rgba(0, 0, 0, 0.5), 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+/* Header glass — dark */
+body.dark #header {
+    background: rgba(30, 28, 40, 0.85);
+    border-bottom-color: var(--border);
+}
+
+/* Toolbar glass — dark */
+body.dark #toolbar {
+    background: rgba(30, 28, 40, 0.90);
+    border-color: rgba(50, 48, 64, 0.6);
+}
+
+/* Workspace — dark */
+body.dark #workspace {
+    background:
+        radial-gradient(circle at 20% 50%, rgba(149, 128, 255, 0.05) 0%, transparent 50%),
+        radial-gradient(circle at 80% 30%, rgba(124, 92, 240, 0.04) 0%, transparent 50%),
+        linear-gradient(160deg, #181620 0%, #1a1824 40%, #1e1c26 100%);
+}
+
+/* Palette — dark */
+body.dark #color-palette {
+    background: rgba(30, 28, 40, 0.8);
+    border-top-color: var(--border);
+}
+
+body.dark .palette-color {
+    border-color: rgba(255, 255, 255, 0.06);
+}
+
+/* Modal overlay — dark */
+body.dark .modal-overlay {
+    background: rgba(10, 8, 16, 0.55);
+}
+
+/* Select dropdown arrow — dark */
+body.dark .form-group select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23a8a0be' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+}
+
+/* Active tool glow — dark */
+body.dark .tool-btn.active {
+    box-shadow: 0 2px 12px rgba(149, 128, 255, 0.35);
+}
+
+body.dark .btn-primary {
+    box-shadow: 0 2px 8px rgba(149, 128, 255, 0.3);
+}
+
+body.dark .btn-primary:hover {
+    box-shadow: 0 4px 12px rgba(149, 128, 255, 0.4);
 }

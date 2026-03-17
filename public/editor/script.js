@@ -1064,6 +1064,43 @@ function updateStatusBar() {
 }
 
 // =============================================
+// THEME
+// =============================================
+function initTheme() {
+    const saved = localStorage.getItem('dekoor-editor-theme');
+    if (saved === 'dark') document.body.classList.add('dark');
+    updateGridColor();
+
+    document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+}
+
+function toggleTheme() {
+    document.body.classList.toggle('dark');
+    const isDark = document.body.classList.contains('dark');
+    localStorage.setItem('dekoor-editor-theme', isDark ? 'dark' : 'light');
+    updateGridColor();
+}
+
+function updateGridColor() {
+    const isDark = document.body.classList.contains('dark');
+    const gridPath = document.querySelector('#grid-pattern path');
+    gridPath.setAttribute('stroke', isDark ? '#3a3548' : '#cdc6d8');
+
+    // Update page shadow for dark mode
+    const shadow1 = document.querySelector('#page-shadow-filter feDropShadow:first-child');
+    const shadow2 = document.querySelector('#page-shadow-filter feDropShadow:last-child');
+    if (shadow1 && shadow2) {
+        shadow1.setAttribute('flood-color', isDark ? '#000000' : '#3d2e5c');
+        shadow1.setAttribute('flood-opacity', isDark ? '0.25' : '0.10');
+        shadow2.setAttribute('flood-color', isDark ? '#000000' : '#3d2e5c');
+        shadow2.setAttribute('flood-opacity', isDark ? '0.15' : '0.06');
+    }
+}
+
+// =============================================
 // START
 // =============================================
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+    initTheme();
+    init();
+});
