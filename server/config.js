@@ -27,6 +27,7 @@ const app = express();
 
 // --- SOLUCIÓN DE CORS ---
 const allowedOrigins = [
+    'https://app.dekoormx.com',      // Dominio personalizado de producción
     'https://dekoormx.onrender.com', // El frontend de producción del CRM
     'https://crm-rzon.onrender.com', // El propio backend para auto-llamadas
     'http://localhost:3000',        // Para pruebas locales del backend
