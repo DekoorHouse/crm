@@ -162,13 +162,38 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
 
+    const showPendingModal = () => {
+        const modal = document.getElementById('status-modal');
+        const title = document.getElementById('modal-status-title');
+        const desc = document.getElementById('modal-description');
+        const reassurance = document.getElementById('modal-reassurance');
+        const icon = document.getElementById('modal-icon');
+        const iconInner = document.getElementById('icon-inner');
+        const estimatedBox = document.getElementById('estimated-box');
+
+        estimatedBox.style.display = 'none';
+        icon.style.background = 'transparent';
+        iconInner.innerHTML = '<i data-lucide="clock" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
+        title.innerText = 'Guía en espera de escaneo';
+        desc.innerText = 'Tu guía fue creada y estamos esperando a que la paquetería escanee tu paquete para que pueda aparecer información.';
+        reassurance.innerText = 'Esto puede tardar entre 24 y 48 hrs. Te pedimos un poco de paciencia, ¡pronto tendrás novedades de tu pedido!';
+
+        lucide.createIcons();
+        modal.classList.add('active');
+    };
+
     const renderResults = (waybill, data) => {
         displayWaybill.innerText = waybill;
         timeline.innerHTML = '';
 
         const events = data.details || [];
         const currentStatus = document.getElementById('current-status');
-        
+
+        if (events.length === 0) {
+            setTimeout(() => showPendingModal(), 300);
+            return;
+        }
+
         if (events.length > 0) {
             const latest = events[0];
             let statusText = translateText(latest.status || 'EN TRÁNSITO');
