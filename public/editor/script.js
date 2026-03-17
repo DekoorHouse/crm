@@ -2393,13 +2393,45 @@ async function loadOTFont(fontName) {
         const resp = await fetch(fontDef.url);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const buf = await resp.arrayBuffer();
-        const font = opentype.parse(buf, { lowMemory: true });
-        loadedOTFonts[fontName] = font;
-        return font;
+        // Try normal parse first
+        try {
+            const font = opentype.parse(buf);
+            loadedOTFonts[fontName] = font;
+            return font;
+        } catch(e1) {
+            // If GPOS/GSUB ClassDef error, strip those tables and retry
+            if (e1.message && e1.message.includes('ClassDef')) {
+                const stripped = stripGPOSTable(buf);
+                const font = opentype.parse(stripped);
+                loadedOTFonts[fontName] = font;
+                return font;
+            }
+            throw e1;
+        }
     } catch(e) {
         console.warn('Could not load font:', fontName, e);
         return null;
     }
+}
+
+// Zero out GPOS and GSUB table offsets in a TTF/OTF buffer to skip problematic tables
+function stripGPOSTable(buf) {
+    const copy = buf.slice(0); // clone
+    const view = new DataView(copy);
+    const numTables = view.getUint16(4);
+    for (let i = 0; i < numTables; i++) {
+        const offset = 12 + i * 16;
+        const tag = String.fromCharCode(
+            view.getUint8(offset), view.getUint8(offset+1),
+            view.getUint8(offset+2), view.getUint8(offset+3)
+        );
+        if (tag === 'GPOS' || tag === 'GSUB') {
+            // Zero out the table offset and length so opentype.js skips it
+            view.setUint32(offset + 8, 0); // offset
+            view.setUint32(offset + 12, 0); // length
+        }
+    }
+    return copy;
 }
 
 function textToPath(obj) {
