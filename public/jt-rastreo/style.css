@@ -66,6 +66,11 @@ header {
     color: var(--primary-color);
 }
 
+.logo-img {
+    height: 60px;
+    width: auto;
+}
+
 .hero {
     text-align: center;
     margin-bottom: 4rem;
