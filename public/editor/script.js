@@ -2401,7 +2401,7 @@ async function loadOTFont(fontName) {
         } catch(e1) {
             // If GPOS/GSUB ClassDef error, strip those tables and retry
             if (e1.message && e1.message.includes('ClassDef')) {
-                const stripped = stripGPOSTable(buf);
+                const stripped = stripProblematicTables(buf);
                 const font = opentype.parse(stripped);
                 loadedOTFonts[fontName] = font;
                 return font;
@@ -2415,20 +2415,23 @@ async function loadOTFont(fontName) {
 }
 
 // Zero out GPOS and GSUB table offsets in a TTF/OTF buffer to skip problematic tables
-function stripGPOSTable(buf) {
-    const copy = buf.slice(0); // clone
+function stripProblematicTables(buf) {
+    const copy = buf.slice(0);
     const view = new DataView(copy);
     const numTables = view.getUint16(4);
+    const strip = ['GPOS', 'GSUB', 'GDEF', 'BASE', 'JSTF'];
     for (let i = 0; i < numTables; i++) {
-        const offset = 12 + i * 16;
+        const off = 12 + i * 16;
         const tag = String.fromCharCode(
-            view.getUint8(offset), view.getUint8(offset+1),
-            view.getUint8(offset+2), view.getUint8(offset+3)
+            view.getUint8(off), view.getUint8(off+1),
+            view.getUint8(off+2), view.getUint8(off+3)
         );
-        if (tag === 'GPOS' || tag === 'GSUB' || tag === 'GDEF' || tag === 'BASE' || tag === 'JSTF') {
-            // Zero out the table offset and length so opentype.js skips it
-            view.setUint32(offset + 8, 0); // offset
-            view.setUint32(offset + 12, 0); // length
+        if (strip.includes(tag)) {
+            // Rename the tag to something opentype.js will ignore (e.g. "XXXX")
+            view.setUint8(off, 0x58);     // X
+            view.setUint8(off + 1, 0x58); // X
+            view.setUint8(off + 2, 0x58); // X
+            view.setUint8(off + 3, 0x58); // X
         }
     }
     return copy;
