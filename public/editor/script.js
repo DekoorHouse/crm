@@ -508,12 +508,12 @@ function closestPointOnSeg(p, a, b) {
 
 function drawSnapIndicators(mousePt) {
     snapLayer.innerHTML = '';
-    if (state.tool !== 'select' || state.selectedIds.length === 0) return;
+    if (state.selectedIds.length === 0) return;
     const ns = 'http://www.w3.org/2000/svg';
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     const threshold = SNAP_DIST * screenScale;
     const edgeThreshold = threshold * 1.5; // wider detection for edge proximity
-    const r = 3 * screenScale;
+    const r = 4.5 * screenScale;
 
     for (const id of state.selectedIds) {
         const obj = findObject(id);
@@ -541,7 +541,7 @@ function drawSnapIndicators(mousePt) {
 
 function drawSnapMarker(ns, sp, r, sw) {
     const color = '#7c5cf0';
-    const fontSize = sw * 10;
+    const fontSize = sw * 15;
     const labelOffset = r * 2.2;
     function addLabel(x, y, text) {
         const txt = document.createElementNS(ns, 'text');
@@ -1250,6 +1250,7 @@ function setupEventListeners() {
                 updatePropsPanel(); break;
             case 'escape':
                 if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
+                else if (state.tool !== 'select') setTool('select');
                 else selectObject(null);
                 break;
             case ' ':
