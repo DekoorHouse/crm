@@ -3326,4 +3326,42 @@ router.post('/snapshots/daily', async (req, res) => {
     }
 });
 
+// --- DATOS PARA ENVÍO ---
+router.post('/datos-envio', async (req, res) => {
+    try {
+        const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia } = req.body;
+
+        if (!numeroPedido || !nombreCompleto || !telefono || !direccion || !colonia || !estado || !ciudad || !codigoPostal) {
+            return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
+        }
+
+        if (!/^\d{10}$/.test(telefono)) {
+            return res.status(400).json({ success: false, message: 'El teléfono debe tener 10 dígitos.' });
+        }
+
+        if (!/^\d{5}$/.test(codigoPostal)) {
+            return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
+        }
+
+        await db.collection('datos_envio').add({
+            numeroPedido,
+            nombreCompleto,
+            telefono,
+            direccion,
+            numInterior: numInterior || '',
+            colonia,
+            estado,
+            ciudad,
+            codigoPostal,
+            referencia: referencia || '',
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        res.status(201).json({ success: true, message: 'Datos de envío guardados correctamente.' });
+    } catch (error) {
+        console.error('Error guardando datos de envío:', error);
+        res.status(500).json({ success: false, message: 'Error interno del servidor.', error: error.message });
+    }
+});
+
 module.exports = router;
