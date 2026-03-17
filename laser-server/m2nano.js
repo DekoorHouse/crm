@@ -104,6 +104,92 @@ class M2Nano {
         } catch (e) {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
+
+        // ── Diagnóstico: probar múltiples formatos de paquete ──
+        await this._diagTestFormats();
+    }
+
+    /**
+     * Prueba diagnóstica: envía "unlock rail" (IS2P) en 3 formatos distintos
+     * y reporta cuál hace que la placa cambie de estado.
+     */
+    async _diagTestFormats() {
+        this.log('─── DIAGNÓSTICO: probando formatos de paquete ───');
+
+        // Leer status inicial
+        const s0 = await this._readStatusByte();
+        this.log(`DIAG status inicial: 0x${s0.toString(16)}`);
+
+        // Datos de prueba: IS2P (unlock rail, como K40-Whisperer)
+        const payload = Buffer.from('IS2P', 'ascii');
+
+        // ── Formato A: MeerK40t (actual) → [0x00][payload+pad][CRC] = 32 bytes ──
+        {
+            const pkt = Buffer.alloc(32, 0x46);
+            pkt[0] = 0x00;
+            payload.copy(pkt, 1);
+            pkt[31] = crc8(pkt.subarray(1, 31));
+            await this._rawTransfer(pkt, 'FMT-A (MeerK40t 32B)');
+            await sleep(50);
+            const s = await this._readStatusByte();
+            this.log(`DIAG FMT-A status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
+        }
+
+        await sleep(100);
+
+        // ── Formato B: K40-Whisperer → [0xA6][0x00][payload+pad][0xA6][CRC] = 34 bytes ──
+        {
+            const pkt = Buffer.alloc(34, 0x46);
+            pkt[0] = 0xA6;
+            pkt[1] = 0x00;
+            payload.copy(pkt, 2);
+            pkt[32] = 0xA6;
+            pkt[33] = crc8(pkt.subarray(2, 32));
+            await this._rawTransfer(pkt, 'FMT-B (K40W 34B)');
+            await sleep(50);
+            const s = await this._readStatusByte();
+            this.log(`DIAG FMT-B status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
+        }
+
+        await sleep(100);
+
+        // ── Formato C: Híbrido → [0xA6][0x00][payload+pad(28B)][CRC] = 32 bytes ──
+        {
+            const pkt = Buffer.alloc(32, 0x46);
+            pkt[0] = 0xA6;
+            pkt[1] = 0x00;
+            payload.copy(pkt, 2);
+            pkt[31] = crc8(pkt.subarray(2, 31));
+            await this._rawTransfer(pkt, 'FMT-C (A6+28B=32)');
+            await sleep(50);
+            const s = await this._readStatusByte();
+            this.log(`DIAG FMT-C status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
+        }
+
+        await sleep(100);
+
+        // ── Formato D: Solo payload raw → [payload+pad] = 30 bytes (sin header ni CRC) ──
+        {
+            const pkt = Buffer.alloc(30, 0x46);
+            payload.copy(pkt, 0);
+            await this._rawTransfer(pkt, 'FMT-D (raw 30B)');
+            await sleep(50);
+            const s = await this._readStatusByte();
+            this.log(`DIAG FMT-D status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
+        }
+
+        this.log('─── FIN DIAGNÓSTICO ───');
+    }
+
+    /** Lee un byte de status rápidamente. Retorna -1 si falla. */
+    async _readStatusByte() {
+        try {
+            await this.sendCommand(CMD_STATUS);
+            const resp = await this.readStatus(300);
+            return resp[1];
+        } catch (_) {
+            return -1;
+        }
     }
 
     /** Libera el dispositivo USB. */
@@ -129,6 +215,27 @@ class M2Nano {
      * K40-Whisperer usa 34 bytes con 0xA6 que funciona en Linux pero en Windows
      * los últimos 2 bytes quedan varados en el buffer del CH341.
      */
+    /**
+     * Envía un buffer raw por USB y retorna el resultado.
+     * @param {Buffer} pkt  buffer completo a enviar
+     * @param {string} label  etiqueta para logs
+     */
+    _rawTransfer(pkt, label = 'PKT') {
+        return new Promise((resolve, reject) => {
+            const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`${label} TX [${pkt.length}B]: ${hex}`);
+            this.epOut.transfer(pkt, err => {
+                if (err) {
+                    this.log(`${label} ERROR: ${err.message}`);
+                    reject(err);
+                } else {
+                    this.log(`${label} TX OK (${pkt.length} bytes)`);
+                    resolve();
+                }
+            });
+        });
+    }
+
     sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
             const pkt = Buffer.alloc(PKT_SIZE, 0);  // 32 bytes
@@ -144,8 +251,12 @@ class M2Nano {
             }
 
             this.epOut.transfer(pkt, err => {
-                if (err) reject(err);
-                else resolve();
+                if (err) {
+                    this.log(`PKT WRITE ERROR: ${err.message}`);
+                    reject(err);
+                } else {
+                    resolve();
+                }
             });
         });
     }
@@ -221,7 +332,7 @@ class M2Nano {
     async sendEGV(cmd) {
         const bytes = Buffer.from(cmd, 'ascii');
         const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
-        this.log(`sendEGV: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
+        this.log(`sendEGV: ${bytes.length} bytes → ${totalPkts} paquete(s) cmd="${cmd}"`);
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             const pktIdx = Math.floor(i / DATA_SIZE);
@@ -229,6 +340,9 @@ class M2Nano {
             this.log(`  PKT[${pktIdx}/${totalPkts - 1}]: ${chunk.length} bytes enviados`);
             await sleep(5);
         }
+        // Leer status inmediatamente después de enviar para ver si la placa reaccionó
+        const postStatus = await this._readStatusByte();
+        this.log(`sendEGV done → status: 0x${postStatus.toString(16).padStart(2,'0')}`);
     }
 
     // ───────── Comandos de alto nivel ─────────
