@@ -171,15 +171,19 @@ class M2Nano {
     async jog(dx, dy) {
         const sx = Math.round(Math.abs(dx) * STEPS_PER_MM);
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
+        if (sx === 0 && sy === 0) return;
 
-        // EGV format: I=init, direcciones (1 char = 1 paso), N=ejecutar, S1P=velocidad rápida, F=fin
+        // EGV: I=init, dirs (1 char=1 paso), S1P=vel rápida, N=ejecutar, SE=fin sección, F=salir
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'NS1PF';
+        cmd += 'S1PNSEF';
 
-        // Solo esperar listo antes; no esperar después para no bloquear
-        try { await this.waitReady(2000, 400); } catch (_) {}
+        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
+
+        try { await this.waitReady(2000, 400); } catch (e) {
+            this.log('waitReady timeout antes de jog (continuando...)');
+        }
         await this.sendEGV(cmd);
 
         this._posX += dx;
