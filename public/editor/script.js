@@ -358,6 +358,13 @@ function drawSelection() {
         const bounds = getObjBounds(obj);
         const sw = state.viewBox.w * 0.0015;
         const hs = state.viewBox.w * 0.007;
+        // Wrap everything in a group with rotation
+        const g = document.createElementNS(ns, 'g');
+        g.setAttribute('pointer-events', 'none');
+        if (obj.rotation) {
+            const rcx = bounds.x + bounds.w/2, rcy = bounds.y + bounds.h/2;
+            g.setAttribute('transform', `rotate(${obj.rotation} ${rcx} ${rcy})`);
+        }
         // Dashed box
         const r = document.createElementNS(ns, 'rect');
         r.setAttribute('x', bounds.x); r.setAttribute('y', bounds.y);
@@ -366,11 +373,7 @@ function drawSelection() {
         r.setAttribute('stroke-width', sw);
         r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
         r.setAttribute('pointer-events', 'none');
-        if (obj.rotation) {
-            const cx = bounds.x + bounds.w/2, cy = bounds.y + bounds.h/2;
-            r.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
-        }
-        selectionLayer.appendChild(r);
+        g.appendChild(r);
         // Corner handles
         const corners = [
             [bounds.x, bounds.y], [bounds.x + bounds.w, bounds.y],
@@ -382,10 +385,10 @@ function drawSelection() {
             h.setAttribute('width', hs); h.setAttribute('height', hs);
             h.setAttribute('fill', '#fff'); h.setAttribute('stroke', '#7c5cf0');
             h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
-            if (obj.rotation) h.setAttribute('transform', `rotate(${obj.rotation} ${bounds.x + bounds.w/2} ${bounds.y + bounds.h/2})`);
-            selectionLayer.appendChild(h);
+            g.appendChild(h);
         }
-        // B-spline control points
+        selectionLayer.appendChild(g);
+        // B-spline control points (outside rotation group — they use actual point coords)
         if (obj.type === 'bspline' && obj.points.length > 0) {
             const cs = hs * 0.7;
             if (obj.points.length > 1) {
@@ -439,34 +442,52 @@ function getObjBounds(obj) {
 // =============================================
 // SNAP POINTS (hover indicators)
 // =============================================
+// Rotate a point around a center by angle in degrees
+function rotatePoint(px, py, cx, cy, angleDeg) {
+    if (!angleDeg) return {x: px, y: py};
+    const rad = angleDeg * Math.PI / 180;
+    const cos = Math.cos(rad), sin = Math.sin(rad);
+    const dx = px - cx, dy = py - cy;
+    return { x: cx + dx*cos - dy*sin, y: cy + dx*sin + dy*cos };
+}
+
 function getSnapPoints(obj) {
     const pts = [];
     const b = getObjBounds(obj);
-    // Center
-    pts.push({ x: b.x + b.w/2, y: b.y + b.h/2, type: 'center' });
+    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+    const rot = obj.rotation || 0;
+    // Center (rotation doesn't move the center)
+    pts.push({ x: cx, y: cy, type: 'center' });
     if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
         // Corners
-        pts.push({x:b.x,y:b.y,type:'corner'},{x:b.x+b.w,y:b.y,type:'corner'},
-                 {x:b.x,y:b.y+b.h,type:'corner'},{x:b.x+b.w,y:b.y+b.h,type:'corner'});
+        const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
+        for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
         // Edge midpoints
-        pts.push({x:b.x+b.w/2,y:b.y,type:'edge'},{x:b.x+b.w/2,y:b.y+b.h,type:'edge'},
-                 {x:b.x,y:b.y+b.h/2,type:'edge'},{x:b.x+b.w,y:b.y+b.h/2,type:'edge'});
+        const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
+        for (const e of rawEdges) { const rp = rotatePoint(e.x,e.y,cx,cy,rot); pts.push({...rp,type:'edge'}); }
     } else if (obj.type === 'ellipse') {
-        // Quadrant points (cardinal)
-        pts.push({x:obj.cx,y:obj.cy-obj.ry,type:'quadrant'},{x:obj.cx,y:obj.cy+obj.ry,type:'quadrant'},
-                 {x:obj.cx-obj.rx,y:obj.cy,type:'quadrant'},{x:obj.cx+obj.rx,y:obj.cy,type:'quadrant'});
+        // Quadrant points (cardinal) rotated
+        const rawQ = [{x:obj.cx,y:obj.cy-obj.ry},{x:obj.cx,y:obj.cy+obj.ry},{x:obj.cx-obj.rx,y:obj.cy},{x:obj.cx+obj.rx,y:obj.cy}];
+        for (const q of rawQ) { const rp = rotatePoint(q.x,q.y,cx,cy,rot); pts.push({...rp,type:'quadrant'}); }
     } else if (obj.type === 'line') {
-        pts.push({x:obj.x1,y:obj.y1,type:'endpoint'},{x:obj.x2,y:obj.y2,type:'endpoint'});
-        pts.push({x:(obj.x1+obj.x2)/2,y:(obj.y1+obj.y2)/2,type:'edge'});
+        const rp1 = rotatePoint(obj.x1,obj.y1,cx,cy,rot);
+        const rp2 = rotatePoint(obj.x2,obj.y2,cx,cy,rot);
+        pts.push({...rp1,type:'endpoint'},{...rp2,type:'endpoint'});
+        const mid = rotatePoint((obj.x1+obj.x2)/2,(obj.y1+obj.y2)/2,cx,cy,rot);
+        pts.push({...mid,type:'edge'});
     }
     return pts;
 }
 
-// Find the nearest point on an object's perimeter to a given point
+// Find the nearest point on an object's perimeter to a given point (rotation-aware)
 function nearestEdgePoint(obj, pt) {
+    const b = getObjBounds(obj);
+    const ccx = b.x + b.w/2, ccy = b.y + b.h/2;
+    const rot = obj.rotation || 0;
+    // Un-rotate the mouse point to work in local space, then rotate result back
+    const localPt = rotatePoint(pt.x, pt.y, ccx, ccy, -rot);
+
     if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
-        const b = getObjBounds(obj);
-        // Check all 4 edges, find closest point on each
         const edges = [
             [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
             [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
@@ -475,36 +496,40 @@ function nearestEdgePoint(obj, pt) {
         ];
         let best = null, bestD = Infinity;
         for (const [a, b2] of edges) {
-            const p = closestPointOnSeg(pt, a, b2);
-            const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+            const p = closestPointOnSeg(localPt, a, b2);
+            const d = Math.hypot(localPt.x - p.x, localPt.y - p.y);
             if (d < bestD) { bestD = d; best = p; }
         }
-        return { point: best, dist: bestD };
+        const rp = rotatePoint(best.x, best.y, ccx, ccy, rot);
+        return { point: rp, dist: bestD };
     } else if (obj.type === 'ellipse') {
-        // Sample points around the ellipse to find nearest
         let best = null, bestD = Infinity;
         const steps = 64;
         for (let i = 0; i < steps; i++) {
             const angle = (i / steps) * Math.PI * 2;
             const px = obj.cx + obj.rx * Math.cos(angle);
             const py = obj.cy + obj.ry * Math.sin(angle);
-            const d = Math.hypot(pt.x - px, pt.y - py);
+            const d = Math.hypot(localPt.x - px, localPt.y - py);
             if (d < bestD) { bestD = d; best = {x: px, y: py}; }
         }
-        return { point: best, dist: bestD };
+        const rp = rotatePoint(best.x, best.y, ccx, ccy, rot);
+        return { point: rp, dist: bestD };
     } else if (obj.type === 'line') {
-        const p = closestPointOnSeg(pt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2});
-        return { point: p, dist: Math.hypot(pt.x - p.x, pt.y - p.y) };
+        const p = closestPointOnSeg(localPt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2});
+        const rp = rotatePoint(p.x, p.y, ccx, ccy, rot);
+        return { point: rp, dist: Math.hypot(localPt.x - p.x, localPt.y - p.y) };
     } else if (obj.type === 'bspline') {
         if (obj.points.length < 2) return null;
         const samples = sampleBSpline(obj.points, 80);
         let best = null, bestD = Infinity;
         for (let i = 0; i < samples.length - 1; i++) {
-            const p = closestPointOnSeg(pt, samples[i], samples[i+1]);
-            const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+            const p = closestPointOnSeg(localPt, samples[i], samples[i+1]);
+            const d = Math.hypot(localPt.x - p.x, localPt.y - p.y);
             if (d < bestD) { bestD = d; best = p; }
         }
-        return best ? { point: best, dist: bestD } : null;
+        if (!best) return null;
+        const rp = rotatePoint(best.x, best.y, ccx, ccy, rot);
+        return { point: rp, dist: bestD };
     }
     return null;
 }
