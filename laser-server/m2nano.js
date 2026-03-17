@@ -19,8 +19,9 @@ const EP_OUT       = 0x02;   // Bulk OUT → máquina
 const EP_IN        = 0x82;   // Bulk IN  ← máquina
 const PKT_SIZE     = 32;     // Tamaño de paquete USB
 const DATA_SIZE    = 30;     // Bytes de datos por paquete (sin framing)
-const STATUS_READY = 0xA5;   // Byte 0 de respuesta = listo
-const STATUS_BUSY  = 0x00;
+const PKT_FRAME    = 0xA6;   // Byte de framing M2 Nano (header y footer)
+const CMD_STATUS   = 0xA0;   // Comando de solicitud de estado
+const RESP_SIZE    = 6;      // Tamaño de respuesta de estado
 
 // Resolución del M2 Nano: 1000 DPI → 39.37 pasos/mm
 const STEPS_PER_MM = 39.37;
@@ -92,15 +93,15 @@ class M2Nano {
 
     /**
      * Envía un paquete de 32 bytes a la controladora.
-     * Formato: [0x00][30 bytes de datos][0x0A]
+     * Formato M2 Nano: [0xA6][30 bytes de datos][0xA6]
      */
     sendPacket(data) {
         return new Promise((resolve, reject) => {
             const pkt = Buffer.alloc(PKT_SIZE, 0);
-            pkt[0] = 0x00;
+            pkt[0] = PKT_FRAME;
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
             src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));
-            pkt[31] = 0x0A;
+            pkt[PKT_SIZE - 1] = PKT_FRAME;
 
             this.epOut.transfer(pkt, err => {
                 if (err) reject(err);
@@ -109,11 +110,11 @@ class M2Nano {
         });
     }
 
-    /** Lee la respuesta de estado con timeout para no bloquear Node.js. */
+    /** Lee la respuesta de estado (6 bytes) con timeout. */
     readStatus(timeout = 500) {
         return Promise.race([
             new Promise((resolve, reject) => {
-                this.epIn.transfer(PKT_SIZE, (err, data) => {
+                this.epIn.transfer(RESP_SIZE, (err, data) => {
                     if (err) reject(err);
                     else resolve(data);
                 });
@@ -124,14 +125,25 @@ class M2Nano {
         ]);
     }
 
-    /** Espera a que la máquina esté lista (byte 0 = 0xA5). */
+    /** Espera a que la máquina esté lista. */
     async waitReady(timeout = 6000, readTimeout = 500) {
         const deadline = Date.now() + timeout;
+        let logged = false;
         while (Date.now() < deadline) {
             try {
-                await this.sendPacket(Buffer.alloc(1));
+                // Enviar solicitud de estado (0xA0 como primer byte de datos)
+                await this.sendPacket(Buffer.from([CMD_STATUS]));
                 const resp = await this.readStatus(readTimeout);
-                if (resp[0] === STATUS_READY) return;
+
+                if (!logged) {
+                    const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+                    this.log(`Board status: [${hex}]`);
+                    logged = true;
+                }
+
+                // Ready: byte 0 indica estado completado/idle
+                // 0xC6 = completado, 0x00 = idle, 0xA5 = listo (varía por firmware)
+                if (resp[0] === 0xC6 || resp[0] === 0x00 || resp[0] === 0xA5) return;
             } catch (_) {}
             await sleep(80);
         }
@@ -156,7 +168,7 @@ class M2Nano {
     async home() {
         this.log('Enviando comando Home...');
         await this.waitReady();
-        await this.sendEGV('IHF');
+        await this.sendEGV('IPP');
         await this.waitReady(15000);
         this._posX = 0;
         this._posY = 0;
@@ -173,7 +185,7 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV: I=init, dirs (1 char=1 paso), S1P=vel rápida, N=ejecutar, SE=fin sección, F=salir
+        // EGV: I=init, dirs (1 char=1 paso), S1P=vel rápida, N=ejecutar, SE=fin, F=salir
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
@@ -217,8 +229,6 @@ class M2Nano {
 }
 
 // ───────── Helpers ─────────
-
-// encodeDistance ya no se usa (reemplazado por repeat() en jog)
 
 /**
  * Convierte potencia (0–100%) a un código de velocidad EGV aproximado.
