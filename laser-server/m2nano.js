@@ -202,9 +202,11 @@ class M2Nano {
                     lastStatus = s;
                 }
 
-                // Listo cuando el board devuelve 0xCE (OK/idle) o 0xEC (finish).
-                // 0xCF = CRC error, 0xA5/0xEE = busy → seguir esperando.
-                if (s === 0xCE || s === 0xEC) return;
+                // Listo cuando el board devuelve un estado idle conocido.
+                // M2 Nano: 0xCE=OK, 0xEC=finish.
+                // M3 Nano (Lihuiyu 2022+): 0xCF=idle/home (normal en M3).
+                // 0xA5/0xEE = busy → seguir esperando.
+                if (s === 0xCE || s === 0xCF || s === 0xEC) return;
             } catch (_) {}
             await sleep(80);
         }
