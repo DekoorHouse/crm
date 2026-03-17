@@ -76,7 +76,7 @@ class M2Nano {
             throw new Error('Endpoints USB no encontrados en el dispositivo.');
         }
 
-        this.log('Puerto USB abierto y reclamado.');
+        this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType}`);
     }
 
     /** Libera el dispositivo USB. */
@@ -93,19 +93,22 @@ class M2Nano {
 
     /**
      * Envía un paquete de datos EGV de 32 bytes a la controladora.
-     * Formato M2 Nano: [0xA6][count][data bytes][0x00 padding]
+     * Formato: [0xA6][data bytes (30)][0x00]
      *   - Byte 0: 0xA6 (header de paquete de datos)
-     *   - Byte 1: cantidad de bytes válidos de datos (1-30)
-     *   - Bytes 2-31: datos EGV + padding ceros
+     *   - Bytes 1-30: datos EGV (30 bytes)
+     *   - Byte 31: 0x00 padding
      */
-    sendPacket(data) {
+    sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
             const pkt = Buffer.alloc(PKT_SIZE, 0);
             pkt[0] = PKT_FRAME;   // 0xA6 header
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            const len = Math.min(src.length, DATA_SIZE);
-            pkt[1] = len;         // Byte count — le dice al FPGA cuántos bytes leer
-            src.copy(pkt, 2, 0, len);  // Datos empiezan en byte 2
+            src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));
+
+            if (logFirst) {
+                const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
+                this.log(`PKT[0]: ${hex}`);
+            }
 
             this.epOut.transfer(pkt, err => {
                 if (err) reject(err);
@@ -178,8 +181,10 @@ class M2Nano {
      */
     async sendEGV(cmd) {
         const bytes = Buffer.from(cmd, 'ascii');
+        let first = true;
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
-            await this.sendPacket(bytes.slice(i, i + DATA_SIZE));
+            await this.sendPacket(bytes.slice(i, i + DATA_SIZE), first);
+            first = false;
             await sleep(5);
         }
     }
@@ -221,6 +226,14 @@ class M2Nano {
             this.log('waitReady timeout antes de jog (continuando...)');
         }
         await this.sendEGV(cmd);
+
+        // Leer status POST-jog para ver si el board cambió de estado
+        try {
+            await this.sendCommand(CMD_STATUS);
+            const post = await this.readStatus(400);
+            const hex = Array.from(post).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`Status POST-jog: [${hex}]`);
+        } catch (_) {}
 
         this._posX += dx;
         this._posY += dy;
