@@ -30,6 +30,13 @@ const PAGE_PRESETS = {
     '800x600':           { w: 800, h: 600 },
 };
 
+const UNITS = {
+    px: { factor: 1, dec: 1 },
+    mm: { factor: 25.4 / 96, dec: 2 },
+    cm: { factor: 2.54 / 96, dec: 2 },
+    in: { factor: 1 / 96, dec: 3 },
+};
+
 const TOOL_NAMES = {
     select:  'Seleccionar',
     rect:    'Rectángulo',
@@ -70,6 +77,9 @@ const state = {
 
     previewElement: null,
     spaceHeld: false,
+
+    unit: 'px',
+    lockAspect: true,
 };
 
 // =============================================
@@ -109,7 +119,7 @@ function updatePage() {
         pageGrid.setAttribute(k, v);
     }
     document.getElementById('status-page').textContent =
-        `${state.pageWidth} × ${state.pageHeight} px`;
+        `${toUnit(state.pageWidth)} × ${toUnit(state.pageHeight)} ${state.unit}`;
 }
 
 function resetView() {
@@ -321,7 +331,7 @@ function distToSeg(p, a, b) {
 function selectObject(id) {
     state.selectedId = id;
     clearSelection();
-    if (id === null) return;
+    if (id === null) { updatePropsPanel(); return; }
 
     const obj = findObject(id);
     if (!obj) return;
@@ -363,6 +373,8 @@ function selectObject(id) {
         h.setAttribute('pointer-events', 'none');
         selectionLayer.appendChild(h);
     }
+
+    updatePropsPanel();
 
     // B-spline control points + polygon
     if (obj.type === 'bspline' && obj.points.length > 0) {
@@ -1037,6 +1049,7 @@ function setupEventListeners() {
 
     setupMenus();
     setupPageSizeModal();
+    setupPropsPanel();
 }
 
 function setTool(tool) {
@@ -1060,7 +1073,143 @@ function setTool(tool) {
 function updateStatusBar() {
     document.getElementById('status-tool').textContent = TOOL_NAMES[state.tool];
     document.getElementById('status-page').textContent =
-        `${state.pageWidth} × ${state.pageHeight} px`;
+        `${toUnit(state.pageWidth)} × ${toUnit(state.pageHeight)} ${state.unit}`;
+}
+
+// =============================================
+// UNITS & PROPERTIES PANEL
+// =============================================
+function toUnit(px) {
+    return +(px * UNITS[state.unit].factor).toFixed(UNITS[state.unit].dec);
+}
+
+function fromUnit(val) {
+    return val / UNITS[state.unit].factor;
+}
+
+function updatePropsPanel() {
+    const panel = document.getElementById('props-panel');
+    if (!state.selectedId) { panel.classList.add('hidden'); return; }
+    const obj = findObject(state.selectedId);
+    if (!obj) { panel.classList.add('hidden'); return; }
+
+    panel.classList.remove('hidden');
+    const b = getObjBounds(obj);
+    document.getElementById('prop-x').value = toUnit(b.x);
+    document.getElementById('prop-y').value = toUnit(b.y);
+    document.getElementById('prop-w').value = toUnit(b.w);
+    document.getElementById('prop-h').value = toUnit(b.h);
+    document.getElementById('props-unit-label').textContent = state.unit;
+}
+
+function applyPropPosition(obj, newXu, newYu) {
+    const newX = fromUnit(newXu);
+    const newY = fromUnit(newYu);
+    const b = getObjBounds(obj);
+    const dx = newX - b.x, dy = newY - b.y;
+    switch (obj.type) {
+        case 'rect':    obj.x += dx; obj.y += dy; break;
+        case 'ellipse': obj.cx += dx; obj.cy += dy; break;
+        case 'line':    obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
+        case 'bspline': obj.points = obj.points.map(p => ({ x: p.x+dx, y: p.y+dy })); break;
+    }
+}
+
+function applyPropSize(obj, newWpx, newHpx) {
+    const b = getObjBounds(obj);
+    if (b.w < 0.01 || b.h < 0.01) return;
+    const sx = newWpx / b.w, sy = newHpx / b.h;
+    switch (obj.type) {
+        case 'rect':
+            obj.width = newWpx;
+            obj.height = newHpx;
+            break;
+        case 'ellipse':
+            obj.rx = newWpx / 2;
+            obj.ry = newHpx / 2;
+            break;
+        case 'line': {
+            const ox = Math.min(obj.x1, obj.x2), oy = Math.min(obj.y1, obj.y2);
+            obj.x1 = ox + (obj.x1 - ox) * sx;
+            obj.y1 = oy + (obj.y1 - oy) * sy;
+            obj.x2 = ox + (obj.x2 - ox) * sx;
+            obj.y2 = oy + (obj.y2 - oy) * sy;
+            break;
+        }
+        case 'bspline': {
+            const ox = b.x, oy = b.y;
+            obj.points = obj.points.map(p => ({
+                x: ox + (p.x - ox) * sx,
+                y: oy + (p.y - oy) * sy,
+            }));
+            break;
+        }
+    }
+}
+
+function setupPropsPanel() {
+    const propX = document.getElementById('prop-x');
+    const propY = document.getElementById('prop-y');
+    const propW = document.getElementById('prop-w');
+    const propH = document.getElementById('prop-h');
+    const lockBtn = document.getElementById('lock-aspect');
+
+    lockBtn.addEventListener('click', () => {
+        state.lockAspect = !state.lockAspect;
+        lockBtn.classList.toggle('active', state.lockAspect);
+    });
+
+    propX.addEventListener('change', () => {
+        const obj = findObject(state.selectedId);
+        if (!obj) return;
+        applyPropPosition(obj, parseFloat(propX.value), parseFloat(propY.value));
+        refreshElement(obj);
+        selectObject(obj.id);
+    });
+
+    propY.addEventListener('change', () => {
+        const obj = findObject(state.selectedId);
+        if (!obj) return;
+        applyPropPosition(obj, parseFloat(propX.value), parseFloat(propY.value));
+        refreshElement(obj);
+        selectObject(obj.id);
+    });
+
+    propW.addEventListener('change', () => {
+        const obj = findObject(state.selectedId);
+        if (!obj) return;
+        const b = getObjBounds(obj);
+        let newW = fromUnit(parseFloat(propW.value));
+        let newH = b.h;
+        if (newW < 0.1) newW = 0.1;
+        if (state.lockAspect && b.w > 0.01) {
+            newH = newW * (b.h / b.w);
+        }
+        applyPropSize(obj, newW, newH);
+        refreshElement(obj);
+        selectObject(obj.id);
+    });
+
+    propH.addEventListener('change', () => {
+        const obj = findObject(state.selectedId);
+        if (!obj) return;
+        const b = getObjBounds(obj);
+        let newH = fromUnit(parseFloat(propH.value));
+        let newW = b.w;
+        if (newH < 0.1) newH = 0.1;
+        if (state.lockAspect && b.h > 0.01) {
+            newW = newH * (b.w / b.h);
+        }
+        applyPropSize(obj, newW, newH);
+        refreshElement(obj);
+        selectObject(obj.id);
+    });
+
+    document.getElementById('unit-select').addEventListener('change', (e) => {
+        state.unit = e.target.value;
+        updatePropsPanel();
+        updatePage();
+    });
 }
 
 // =============================================
