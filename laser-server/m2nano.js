@@ -172,12 +172,11 @@ class M2Nano {
         const sx = Math.round(Math.abs(dx) * STEPS_PER_MM);
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
 
-        // Repetir el byte de dirección N veces (1 byte = 1 paso).
-        // Esto evita conflictos con bytes de comandos EGV (I, H, F, N, etc.)
-        let cmd = 'N';
+        // EGV format: I=init, direcciones (1 char = 1 paso), N=ejecutar, S1P=velocidad rápida, F=fin
+        let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'F';
+        cmd += 'NS1PF';
 
         // Solo esperar listo antes; no esperar después para no bloquear
         try { await this.waitReady(2000, 400); } catch (_) {}
