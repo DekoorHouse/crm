@@ -321,6 +321,26 @@ function buildSVGElement(obj) {
             elem.textContent = obj.text || '';
             break;
         }
+        case 'curvepath': {
+            elem = document.createElementNS(ns, 'path');
+            elem.setAttribute('d', obj.d);
+            elem.setAttribute('fill', obj.fill);
+            elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+            elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            // Apply transform for position/scale
+            if (obj._origBounds) {
+                const orig = obj._origBounds;
+                const sx = obj.width / orig.w, sy = obj.height / orig.h;
+                const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+                let t = `translate(${tx}, ${ty}) scale(${sx}, ${sy})`;
+                if (obj.rotation) {
+                    const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
+                    t = `rotate(${obj.rotation} ${cx} ${cy}) ` + t;
+                }
+                elem.setAttribute('transform', t);
+            }
+            break;
+        }
         case 'image':
             elem = document.createElementNS(ns, 'image');
             elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
@@ -472,15 +492,14 @@ function refreshElement(obj) {
             break;
         }
         case 'curvepath': {
-            // Scale path to fit current bounds using transform
-            if (!obj._origBounds) {
-                // Parse original bounds from the path on first refresh
-                const tmp = elem.getBBox();
-                obj._origBounds = { x: tmp.x, y: tmp.y, w: tmp.width || 1, h: tmp.height || 1 };
-            }
             const orig = obj._origBounds;
-            const sx = obj.width / orig.w, sy = obj.height / orig.h;
-            let t = `translate(${obj.x - orig.x * sx}, ${obj.y - orig.y * sy}) scale(${sx}, ${sy})`;
+            if (!orig) break; // safety
+            const sx = obj.width / orig.w;
+            const sy = obj.height / orig.h;
+            // translate so the scaled path lands at obj.x, obj.y
+            const tx = obj.x - orig.x * sx;
+            const ty = obj.y - orig.y * sy;
+            let t = `translate(${tx}, ${ty}) scale(${sx}, ${sy})`;
             if (obj.rotation) {
                 const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
                 t = `rotate(${obj.rotation} ${cx} ${cy}) ` + t;
@@ -489,7 +508,7 @@ function refreshElement(obj) {
             elem.setAttribute('fill', obj.fill);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
-            return; // skip generic applyRotation since we handle it above
+            return;
         }
         case 'group':
             for (const child of obj.children) refreshElement(child);
@@ -2460,26 +2479,31 @@ async function convertTextToCurves(id) {
     obj.element.remove();
     // Create bspline-like path object (using a generic 'path' wouldn't fit our model,
     // so we create it as a rect-like object with a custom SVG path element)
+    // Create a temp SVG path to measure the actual path bounds
+    const ns = 'http://www.w3.org/2000/svg';
+    const tempPath = document.createElementNS(ns, 'path');
+    tempPath.setAttribute('d', pathData);
+    objectsLayer.appendChild(tempPath);
+    const pathBBox = tempPath.getBBox();
+    objectsLayer.removeChild(tempPath);
+    const origBounds = { x: pathBBox.x, y: pathBBox.y, w: pathBBox.width || 1, h: pathBBox.height || 1 };
+
     const newObj = {
         id: state.nextId++,
         type: 'curvepath',
         d: pathData,
-        x: b.x, y: b.y, width: b.w, height: b.h,
+        x: origBounds.x, y: origBounds.y, width: origBounds.w, height: origBounds.h,
+        _origBounds: { ...origBounds },
         fill: obj.fill,
         stroke: obj.stroke,
         strokeWidth: obj.strokeWidth,
         rotation: obj.rotation || 0,
     };
-    const ns = 'http://www.w3.org/2000/svg';
     const elem = document.createElementNS(ns, 'path');
     elem.setAttribute('d', pathData);
     elem.setAttribute('fill', newObj.fill);
     elem.setAttribute('stroke', newObj.stroke === 'none' ? 'none' : newObj.stroke);
     elem.setAttribute('stroke-width', newObj.stroke === 'none' ? 0 : newObj.strokeWidth);
-    if (newObj.rotation) {
-        const cx = b.x + b.w/2, cy = b.y + b.h/2;
-        elem.setAttribute('transform', `rotate(${newObj.rotation} ${cx} ${cy})`);
-    }
     elem.style.cursor = 'pointer';
     elem.dataset.objectId = newObj.id;
     newObj.element = elem;
