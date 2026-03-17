@@ -67,8 +67,8 @@ document.addEventListener('DOMContentLoaded', () => {
             '如有异常问题或需投诉请拨打网点电话': '',
             'Si requieres mayor información, contáctanos al: 5571001047': '',
             '5571001047': '',
-            '【': ' [',
-            '】': '] '
+            '【': ' ',
+            '】': ' '
         };
 
         
