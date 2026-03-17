@@ -47,12 +47,12 @@ const TOOL_NAMES = {
 };
 
 const FONTS = [
-    { name: 'Inter', css: 'Inter, system-ui, sans-serif', url: null },
-    { name: 'Arial', css: 'Arial, Helvetica, sans-serif', url: null },
-    { name: 'Georgia', css: 'Georgia, serif', url: null },
-    { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: null },
-    { name: 'Courier New', css: '"Courier New", Courier, monospace', url: null },
-    { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: null },
+    { name: 'Inter', css: 'Inter, system-ui, sans-serif', url: 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.ttf' },
+    { name: 'Arial', css: 'Arial, Helvetica, sans-serif', url: 'https://fonts.gstatic.com/s/arimo/v29/P5sfzZCDf9_T_3cV7NCUECyoxNk37cxcABrBdgs.ttf' },
+    { name: 'Georgia', css: 'Georgia, serif', url: 'https://fonts.gstatic.com/s/tinos/v24/buE4poGnedXvwgX8dGVh8TI-.ttf' },
+    { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: 'https://fonts.gstatic.com/s/tinos/v24/buE4poGnedXvwgX8dGVh8TI-.ttf' },
+    { name: 'Courier New', css: '"Courier New", Courier, monospace', url: 'https://fonts.gstatic.com/s/courierprime/v9/u-450q2lgwslOqpF_6gQ8kELWwZjW-_-tvg.ttf' },
+    { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: 'https://fonts.gstatic.com/s/cabin/v27/u-4X0qWljRw-PfU81xCKCg.ttf' },
     { name: 'Rows of Sunflowers', css: '"Rows of Sunflowers", cursive', url: 'fonts/RowsOfSunflowers.ttf' },
 ];
 
@@ -1832,7 +1832,12 @@ function handleMenuAction(action) {
 // =============================================
 // SVG EXPORT
 // =============================================
-function exportSVG() {
+async function exportSVG() {
+    // Ensure all fonts used by text objects are loaded for text-to-curves
+    const usedFonts = new Set(state.objects.filter(o => o.type === 'text').map(o => o.fontFamily));
+    for (const fn of usedFonts) {
+        if (!loadedOTFonts[fn]) await loadOTFont(fn);
+    }
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
     const root = document.createElementNS(ns, 'svg');
@@ -1842,26 +1847,24 @@ function exportSVG() {
     root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
     function exportObj(obj, parent) {
         if (obj.type === 'text') {
-            // Convert text to curves (path)
+            // Always convert text to curves (path)
             const pathData = textToPath(obj);
+            const p = document.createElementNS(ns, 'path');
             if (pathData) {
-                const p = document.createElementNS(ns, 'path');
                 p.setAttribute('d', pathData);
-                p.setAttribute('fill', obj.fill);
-                p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
-                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
-                if (obj.rotation) {
-                    const b = getObjBounds(obj);
-                    const cx = b.x + b.w/2, cy = b.y + b.h/2;
-                    p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
-                }
-                parent.appendChild(p);
             } else {
-                // Fallback: export as text element (system fonts)
-                const clone = obj.element.cloneNode(true);
-                clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
-                parent.appendChild(clone);
+                // Last resort: empty path with a comment
+                p.setAttribute('d', '');
             }
+            p.setAttribute('fill', obj.fill);
+            p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+            p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            if (obj.rotation) {
+                const b = getObjBounds(obj);
+                const cx = b.x + b.w/2, cy = b.y + b.h/2;
+                p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+            }
+            parent.appendChild(p);
             return;
         }
         if (obj.type === 'image') {
@@ -2276,17 +2279,12 @@ function updateStatusBar() {
 async function loadOTFont(fontName) {
     if (loadedOTFonts[fontName]) return loadedOTFonts[fontName];
     const fontDef = FONTS.find(f => f.name === fontName);
-    if (!fontDef) return null;
-    if (fontDef.url) {
-        // Custom font with URL
-        try {
-            const font = await opentype.load(fontDef.url);
-            loadedOTFonts[fontName] = font;
-            return font;
-        } catch(e) { console.warn('Could not load font:', fontName, e); return null; }
-    }
-    // For system fonts, try common paths or return null (will use fallback)
-    return null;
+    if (!fontDef || !fontDef.url) return null;
+    try {
+        const font = await opentype.load(fontDef.url);
+        loadedOTFonts[fontName] = font;
+        return font;
+    } catch(e) { console.warn('Could not load font:', fontName, e); return null; }
 }
 
 function textToPath(obj) {
@@ -2300,12 +2298,10 @@ function textToPath(obj) {
     return null;
 }
 
-// Pre-load all custom fonts
+// Pre-load all fonts for text-to-curves export
 async function preloadFonts() {
     for (const f of FONTS) {
-        if (f.url) {
-            try { await loadOTFont(f.name); } catch(e) {}
-        }
+        try { await loadOTFont(f.name); } catch(e) {}
     }
 }
 
