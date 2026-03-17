@@ -409,12 +409,17 @@ function buildSVGElement(obj) {
             break;
         }
     }
+    if (!elem) {
+        // Unknown type fallback — create a transparent rect placeholder
+        elem = document.createElementNS(ns, 'rect');
+        elem.setAttribute('width', 0); elem.setAttribute('height', 0);
+    }
     if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
     }
-    applyRotation(obj, elem);
+    if (obj.type !== 'curvepath') applyRotation(obj, elem);
     elem.style.cursor = 'pointer';
     return elem;
 }
@@ -523,7 +528,7 @@ function refreshElement(obj) {
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
     }
-    applyRotation(obj, elem);
+    if (obj.type !== 'curvepath') applyRotation(obj, elem);
 }
 
 function deleteObject(id) {
