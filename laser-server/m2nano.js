@@ -192,7 +192,8 @@ class M2Nano {
     /** Lee un byte de status rápidamente. Retorna -1 si falla. */
     async _readStatusByte() {
         try {
-            await this.sendPacket(Buffer.from([CMD_STATUS]));
+            await this.sendPacket(Buffer.from([CMD_STATUS]));  // hello EPP
+            await this.sendCommand(CMD_STATUS);                 // read CH341
             const resp = await this.readStatus(300);
             return resp[1];
         } catch (_) {
@@ -297,12 +298,13 @@ class M2Nano {
     }
 
     /**
-     * Envía "say_hello" (status query) como lo hace K40-Whisperer:
-     * el byte 0xA0 se envía DENTRO de un paquete 34B con framing 0xA6,
-     * para que llegue a la placa M2 Nano por EPP (no se quede en el CH341).
+     * "say_hello" como K40-Whisperer: envía 0xA0 por EPP (paquete 34B)
+     * para que la placa reciba el hello, luego lee status via CH341.
+     * K40-Whisperer: _device_write([160]) → _read_data()
      */
     async sayHello() {
-        await this.sendPacket(Buffer.from([CMD_STATUS]));  // 0xA0 envuelto en paquete EGV
+        await this.sendPacket(Buffer.from([CMD_STATUS]));  // 0xA0 envuelto en paquete EPP
+        await this.sendCommand(CMD_STATUS);                 // Leer status via CH341
         return this.readStatus(500);
     }
 
@@ -312,9 +314,10 @@ class M2Nano {
         let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
-                // K40-Whisperer envía 0xA0 dentro de un paquete 34B (via EPP al board),
-                // NO como comando raw del CH341. Así la placa recibe el "hello".
+                // 1) Enviar 0xA0 por EPP → la placa recibe el "hello"
                 await this.sendPacket(Buffer.from([CMD_STATUS]));
+                // 2) Leer status del CH341 (sus pines reflejan el status de la placa)
+                await this.sendCommand(CMD_STATUS);
                 const resp = await this.readStatus(readTimeout);
 
                 const s = resp[1];
