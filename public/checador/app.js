@@ -16,6 +16,45 @@ let logsCache = [];
 let employeesCache = [];
 let unsubscribeLogs = null;
 let unsubscribeEmployees = null;
+let officeLocation = null; // { lat, lng, radius }
+
+// Cargar configuración de ubicación de la oficina
+db.collection('checador_config').doc('office').onSnapshot(doc => {
+    if (doc.exists) {
+        officeLocation = doc.data();
+        const statusEl = document.getElementById('location-config-status');
+        if (statusEl) {
+            statusEl.textContent = `Radio: ${officeLocation.radius}m ✓`;
+            statusEl.style.color = 'var(--success)';
+        }
+    }
+});
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = x => x * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function checkUserLocation() {
+    return new Promise(resolve => {
+        navigator.geolocation.getCurrentPosition(
+            pos => {
+                const distance = Math.round(haversineDistance(
+                    pos.coords.latitude, pos.coords.longitude,
+                    officeLocation.lat, officeLocation.lng
+                ));
+                resolve({ ok: distance <= officeLocation.radius, distance });
+            },
+            () => resolve({ ok: false, error: 'Permiso de ubicación denegado' }),
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+        );
+    });
+}
 
 firebaseAuth.onAuthStateChanged(user => {
     const loginView = document.getElementById('login-view');
@@ -146,10 +185,25 @@ async function checkNetwork() {
 }
 
 // 3. Asistencia
-function registerAttendance(type) {
+async function registerAttendance(type) {
     recentHidden = false;
     const inputVal = employeeIdInput.value.trim();
     if (!inputVal) { showNotification("Ingresa tu ID o Nombre", "danger"); return; }
+
+    // Verificar ubicación si está configurada
+    if (officeLocation) {
+        btnIn.disabled = true;
+        btnOut.disabled = true;
+        showNotification("Verificando ubicación...");
+        const loc = await checkUserLocation();
+        btnIn.disabled = false;
+        btnOut.disabled = false;
+        if (!loc.ok) {
+            const msg = loc.error || `Muy lejos de la oficina (${loc.distance}m). Acércate más.`;
+            showNotification(msg, "danger");
+            return;
+        }
+    }
 
     const employee = employeesCache.find(e =>
         e.id === inputVal || e.name.toLowerCase() === inputVal.toLowerCase()
@@ -347,6 +401,22 @@ document.addEventListener('click', (e) => {
         renderHistory();
         showNotification("Vista principal limpia");
     }
+});
+
+document.getElementById('set-office-location').addEventListener('click', () => {
+    const radius = parseInt(document.getElementById('location-radius').value) || 80;
+    navigator.geolocation.getCurrentPosition(
+        async pos => {
+            await db.collection('checador_config').doc('office').set({
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                radius
+            });
+            showNotification(`Ubicación guardada. Radio: ${radius}m`);
+        },
+        () => showNotification('No se pudo obtener la ubicación', 'danger'),
+        { enableHighAccuracy: true, timeout: 10000 }
+    );
 });
 
 exportCsvBtn.addEventListener('click', exportToCSV);

@@ -96,6 +96,20 @@
                     <button id="export-csv" class="btn-small">Descargar Excel (CSV)</button>
                     <button id="clear-all-logs" class="btn-small btn-danger">Borrar Todo</button>
                 </div>
+
+                <!-- Configuración de Ubicación -->
+                <div style="margin-bottom:15px; padding:14px; background:rgba(255,255,255,0.03); border-radius:12px; border:1px solid var(--glass-border);">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                        <span style="font-size:0.85rem; font-weight:600;">📍 Ubicación de Oficina</span>
+                        <span id="location-config-status" style="font-size:0.75rem; color:var(--text-muted);">No configurada</span>
+                    </div>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <label style="font-size:0.8rem; color:var(--text-muted);">Radio (m):</label>
+                        <input type="number" id="location-radius" value="80" min="10" max="500" style="width:70px; padding:6px 8px; font-size:0.85rem; margin-bottom:0;">
+                        <button id="set-office-location" class="btn-small">Guardar Ubicación Actual</button>
+                    </div>
+                </div>
+
                 <div class="table-container">
                     <table id="admin-table">
                         <thead>
