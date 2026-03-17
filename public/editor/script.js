@@ -441,7 +441,7 @@ function getSnapPoints(obj) {
         pts.push({x:b.x+b.w/2,y:b.y,type:'edge'},{x:b.x+b.w/2,y:b.y+b.h,type:'edge'},
                  {x:b.x,y:b.y+b.h/2,type:'edge'},{x:b.x+b.w,y:b.y+b.h/2,type:'edge'});
     } else if (obj.type === 'ellipse') {
-        // Quadrant points
+        // Quadrant points (cardinal)
         pts.push({x:obj.cx,y:obj.cy-obj.ry,type:'quadrant'},{x:obj.cx,y:obj.cy+obj.ry,type:'quadrant'},
                  {x:obj.cx-obj.rx,y:obj.cy,type:'quadrant'},{x:obj.cx+obj.rx,y:obj.cy,type:'quadrant'});
     } else if (obj.type === 'line') {
@@ -451,59 +451,142 @@ function getSnapPoints(obj) {
     return pts;
 }
 
+// Find the nearest point on an object's perimeter to a given point
+function nearestEdgePoint(obj, pt) {
+    if (obj.type === 'rect' || obj.type === 'group') {
+        const b = getObjBounds(obj);
+        // Check all 4 edges, find closest point on each
+        const edges = [
+            [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
+            [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
+            [{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}],
+            [{x:b.x,y:b.y+b.h},{x:b.x,y:b.y}],
+        ];
+        let best = null, bestD = Infinity;
+        for (const [a, b2] of edges) {
+            const p = closestPointOnSeg(pt, a, b2);
+            const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+            if (d < bestD) { bestD = d; best = p; }
+        }
+        return { point: best, dist: bestD };
+    } else if (obj.type === 'ellipse') {
+        // Sample points around the ellipse to find nearest
+        let best = null, bestD = Infinity;
+        const steps = 64;
+        for (let i = 0; i < steps; i++) {
+            const angle = (i / steps) * Math.PI * 2;
+            const px = obj.cx + obj.rx * Math.cos(angle);
+            const py = obj.cy + obj.ry * Math.sin(angle);
+            const d = Math.hypot(pt.x - px, pt.y - py);
+            if (d < bestD) { bestD = d; best = {x: px, y: py}; }
+        }
+        return { point: best, dist: bestD };
+    } else if (obj.type === 'line') {
+        const p = closestPointOnSeg(pt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2});
+        return { point: p, dist: Math.hypot(pt.x - p.x, pt.y - p.y) };
+    } else if (obj.type === 'bspline') {
+        if (obj.points.length < 2) return null;
+        const samples = sampleBSpline(obj.points, 80);
+        let best = null, bestD = Infinity;
+        for (let i = 0; i < samples.length - 1; i++) {
+            const p = closestPointOnSeg(pt, samples[i], samples[i+1]);
+            const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+            if (d < bestD) { bestD = d; best = p; }
+        }
+        return best ? { point: best, dist: bestD } : null;
+    }
+    return null;
+}
+
+function closestPointOnSeg(p, a, b) {
+    const dx = b.x - a.x, dy = b.y - a.y, len2 = dx*dx + dy*dy;
+    if (len2 === 0) return {x: a.x, y: a.y};
+    let t = ((p.x - a.x)*dx + (p.y - a.y)*dy) / len2;
+    t = Math.max(0, Math.min(1, t));
+    return {x: a.x + t*dx, y: a.y + t*dy};
+}
+
 function drawSnapIndicators(mousePt) {
     snapLayer.innerHTML = '';
     if (state.tool !== 'select' || state.selectedIds.length === 0) return;
     const ns = 'http://www.w3.org/2000/svg';
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     const threshold = SNAP_DIST * screenScale;
+    const edgeThreshold = threshold * 1.5; // wider detection for edge proximity
     const r = 3 * screenScale;
+
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj) continue;
+
+        // 1) Fixed snap points (center, corners, quadrants, edges, endpoints)
         const snaps = getSnapPoints(obj);
+        let fixedShown = false;
         for (const sp of snaps) {
             const d = Math.hypot(mousePt.x - sp.x, mousePt.y - sp.y);
             if (d > threshold) continue;
-            if (sp.type === 'center') {
-                // Crosshair
-                const sz = r * 2;
-                const l1 = document.createElementNS(ns, 'line');
-                l1.setAttribute('x1', sp.x - sz); l1.setAttribute('y1', sp.y);
-                l1.setAttribute('x2', sp.x + sz); l1.setAttribute('y2', sp.y);
-                l1.setAttribute('stroke', '#7c5cf0'); l1.setAttribute('stroke-width', screenScale);
-                l1.setAttribute('pointer-events', 'none');
-                snapLayer.appendChild(l1);
-                const l2 = document.createElementNS(ns, 'line');
-                l2.setAttribute('x1', sp.x); l2.setAttribute('y1', sp.y - sz);
-                l2.setAttribute('x2', sp.x); l2.setAttribute('y2', sp.y + sz);
-                l2.setAttribute('stroke', '#7c5cf0'); l2.setAttribute('stroke-width', screenScale);
-                l2.setAttribute('pointer-events', 'none');
-                snapLayer.appendChild(l2);
-            } else if (sp.type === 'corner' || sp.type === 'endpoint') {
-                const sq = document.createElementNS(ns, 'rect');
-                sq.setAttribute('x', sp.x - r); sq.setAttribute('y', sp.y - r);
-                sq.setAttribute('width', r*2); sq.setAttribute('height', r*2);
-                sq.setAttribute('fill', 'none'); sq.setAttribute('stroke', '#7c5cf0');
-                sq.setAttribute('stroke-width', screenScale);
-                sq.setAttribute('pointer-events', 'none');
-                snapLayer.appendChild(sq);
-            } else if (sp.type === 'edge') {
-                const tr = document.createElementNS(ns, 'polygon');
-                tr.setAttribute('points', `${sp.x},${sp.y-r*1.3} ${sp.x-r},${sp.y+r*0.7} ${sp.x+r},${sp.y+r*0.7}`);
-                tr.setAttribute('fill', 'none'); tr.setAttribute('stroke', '#7c5cf0');
-                tr.setAttribute('stroke-width', screenScale);
-                tr.setAttribute('pointer-events', 'none');
-                snapLayer.appendChild(tr);
-            } else if (sp.type === 'quadrant') {
-                const c = document.createElementNS(ns, 'circle');
-                c.setAttribute('cx', sp.x); c.setAttribute('cy', sp.y); c.setAttribute('r', r);
-                c.setAttribute('fill', 'none'); c.setAttribute('stroke', '#7c5cf0');
-                c.setAttribute('stroke-width', screenScale);
-                c.setAttribute('pointer-events', 'none');
-                snapLayer.appendChild(c);
+            fixedShown = true;
+            drawSnapMarker(ns, sp, r, screenScale);
+        }
+
+        // 2) Dynamic nearest-edge point (shows when near the perimeter but not near a fixed snap)
+        if (!fixedShown) {
+            const ne = nearestEdgePoint(obj, mousePt);
+            if (ne && ne.dist <= edgeThreshold) {
+                drawSnapMarker(ns, { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' }, r, screenScale);
             }
         }
+    }
+}
+
+function drawSnapMarker(ns, sp, r, sw) {
+    const color = '#7c5cf0';
+    if (sp.type === 'center') {
+        const sz = r * 2;
+        const l1 = document.createElementNS(ns, 'line');
+        l1.setAttribute('x1', sp.x - sz); l1.setAttribute('y1', sp.y);
+        l1.setAttribute('x2', sp.x + sz); l1.setAttribute('y2', sp.y);
+        l1.setAttribute('stroke', color); l1.setAttribute('stroke-width', sw);
+        l1.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(l1);
+        const l2 = document.createElementNS(ns, 'line');
+        l2.setAttribute('x1', sp.x); l2.setAttribute('y1', sp.y - sz);
+        l2.setAttribute('x2', sp.x); l2.setAttribute('y2', sp.y + sz);
+        l2.setAttribute('stroke', color); l2.setAttribute('stroke-width', sw);
+        l2.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(l2);
+    } else if (sp.type === 'corner' || sp.type === 'endpoint') {
+        const sq = document.createElementNS(ns, 'rect');
+        sq.setAttribute('x', sp.x - r); sq.setAttribute('y', sp.y - r);
+        sq.setAttribute('width', r*2); sq.setAttribute('height', r*2);
+        sq.setAttribute('fill', 'none'); sq.setAttribute('stroke', color);
+        sq.setAttribute('stroke-width', sw);
+        sq.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(sq);
+    } else if (sp.type === 'edge') {
+        const tr = document.createElementNS(ns, 'polygon');
+        tr.setAttribute('points', `${sp.x},${sp.y-r*1.3} ${sp.x-r},${sp.y+r*0.7} ${sp.x+r},${sp.y+r*0.7}`);
+        tr.setAttribute('fill', 'none'); tr.setAttribute('stroke', color);
+        tr.setAttribute('stroke-width', sw);
+        tr.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(tr);
+    } else if (sp.type === 'quadrant') {
+        const c = document.createElementNS(ns, 'circle');
+        c.setAttribute('cx', sp.x); c.setAttribute('cy', sp.y); c.setAttribute('r', r);
+        c.setAttribute('fill', 'none'); c.setAttribute('stroke', color);
+        c.setAttribute('stroke-width', sw);
+        c.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(c);
+    } else if (sp.type === 'edge-dynamic') {
+        // Diamond marker for nearest edge point
+        const s = r * 1.2;
+        const diamond = document.createElementNS(ns, 'polygon');
+        diamond.setAttribute('points',
+            `${sp.x},${sp.y-s} ${sp.x+s},${sp.y} ${sp.x},${sp.y+s} ${sp.x-s},${sp.y}`);
+        diamond.setAttribute('fill', color); diamond.setAttribute('fill-opacity', '0.3');
+        diamond.setAttribute('stroke', color); diamond.setAttribute('stroke-width', sw);
+        diamond.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(diamond);
     }
 }
 
