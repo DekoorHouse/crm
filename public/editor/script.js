@@ -2133,17 +2133,21 @@ async function generateNamesFromTemplate(names) {
     state.selectedIds = [];
     selectionLayer.innerHTML = '';
 
-    // For each name, duplicate the entire template and add the fitted text
-    const pageW = state.pageWidth;
-    const pageH = state.pageHeight;
+    // Use the rect bounds as cell size with a small gap
+    const gap = 4;
+    const cellW = templateRect.width + gap;
+    const cellH = templateRect.height + gap;
+    // Layout: start from rect's position, fill in a grid
+    const startX = templateRect.x;
+    const startY = templateRect.y;
     const cols = Math.max(1, Math.floor(Math.sqrt(names.length)));
     const rows = Math.ceil(names.length / cols);
 
-    // Resize page to fit all copies in a grid
-    const cellW = pageW;
-    const cellH = pageH;
-    state.pageWidth = cellW * cols;
-    state.pageHeight = cellH * rows;
+    // Resize page to fit all copies
+    const neededW = startX + cols * cellW + gap;
+    const neededH = startY + rows * cellH + gap;
+    state.pageWidth = Math.max(state.pageWidth, neededW);
+    state.pageHeight = Math.max(state.pageHeight, neededH);
     updatePage();
 
     for (let i = 0; i < names.length; i++) {
