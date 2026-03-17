@@ -46,13 +46,14 @@ const TOOL_NAMES = {
     text:    'Texto',
 };
 
+const FONT_BASE = 'https://raw.githubusercontent.com/google/fonts/main/';
 const FONTS = [
-    { name: 'Inter', css: 'Inter, system-ui, sans-serif', url: 'https://fonts.gstatic.com/s/inter/v18/UcCO3FwrK3iLTeHuS_nVMrMxCp50SjIw2boKoduKmMEVuLyfAZ9hjQ.ttf' },
-    { name: 'Arial', css: 'Arial, Helvetica, sans-serif', url: 'https://fonts.gstatic.com/s/arimo/v29/P5sfzZCDf9_T_3cV7NCUECyoxNk37cxcABrBdgs.ttf' },
-    { name: 'Georgia', css: 'Georgia, serif', url: 'https://fonts.gstatic.com/s/tinos/v24/buE4poGnedXvwgX8dGVh8TI-.ttf' },
-    { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: 'https://fonts.gstatic.com/s/tinos/v24/buE4poGnedXvwgX8dGVh8TI-.ttf' },
-    { name: 'Courier New', css: '"Courier New", Courier, monospace', url: 'https://fonts.gstatic.com/s/courierprime/v9/u-450q2lgwslOqpF_6gQ8kELWwZjW-_-tvg.ttf' },
-    { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: 'https://fonts.gstatic.com/s/cabin/v27/u-4X0qWljRw-PfU81xCKCg.ttf' },
+    { name: 'Inter', css: 'Inter, system-ui, sans-serif', url: FONT_BASE + 'ofl/inter/Inter%5Bopsz%2Cwght%5D.ttf' },
+    { name: 'Arial', css: 'Arial, Helvetica, sans-serif', url: FONT_BASE + 'apache/arimo/Arimo%5Bwght%5D.ttf' },
+    { name: 'Georgia', css: 'Georgia, serif', url: FONT_BASE + 'apache/tinos/Tinos-Regular.ttf' },
+    { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: FONT_BASE + 'apache/tinos/Tinos-Regular.ttf' },
+    { name: 'Courier New', css: '"Courier New", Courier, monospace', url: FONT_BASE + 'ofl/courierprime/CourierPrime-Regular.ttf' },
+    { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: FONT_BASE + 'ofl/cabin/Cabin%5Bwdth%2Cwght%5D.ttf' },
     { name: 'Rows of Sunflowers', css: '"Rows of Sunflowers", cursive', url: 'fonts/RowsOfSunflowers.ttf' },
 ];
 
@@ -1900,24 +1901,25 @@ async function exportSVG() {
     root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
     function exportObj(obj, parent) {
         if (obj.type === 'text') {
-            // Always convert text to curves (path)
+            // Convert text to curves (path) using opentype.js
             const pathData = textToPath(obj);
-            const p = document.createElementNS(ns, 'path');
             if (pathData) {
+                const p = document.createElementNS(ns, 'path');
                 p.setAttribute('d', pathData);
+                p.setAttribute('fill', obj.fill);
+                p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+                if (obj.rotation) {
+                    const b = getObjBounds(obj);
+                    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+                    p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+                }
+                parent.appendChild(p);
             } else {
-                // Last resort: empty path with a comment
-                p.setAttribute('d', '');
+                // Fallback: render text to canvas bitmap and embed as image
+                const fallback = textToFallbackSVG(obj, ns);
+                parent.appendChild(fallback);
             }
-            p.setAttribute('fill', obj.fill);
-            p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
-            p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
-            if (obj.rotation) {
-                const b = getObjBounds(obj);
-                const cx = b.x + b.w/2, cy = b.y + b.h/2;
-                p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
-            }
-            parent.appendChild(p);
             return;
         }
         if (obj.type === 'image') {
@@ -2356,7 +2358,11 @@ async function loadOTFont(fontName) {
     const fontDef = FONTS.find(f => f.name === fontName);
     if (!fontDef || !fontDef.url) return null;
     try {
-        const font = await opentype.load(fontDef.url);
+        // Use fetch + arrayBuffer for better CORS handling
+        const resp = await fetch(fontDef.url);
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        const buf = await resp.arrayBuffer();
+        const font = opentype.parse(buf);
         loadedOTFonts[fontName] = font;
         return font;
     } catch(e) { console.warn('Could not load font:', fontName, e); return null; }
@@ -2368,9 +2374,44 @@ function textToPath(obj) {
         const path = font.getPath(obj.text, obj.x, obj.y, obj.fontSize);
         return path.toPathData(2);
     }
-    // Fallback: try to get path from the SVG text element's bounding box
-    // This won't produce real curves, so we return null to indicate fallback
     return null;
+}
+
+// Canvas-based fallback: render text to canvas, trace, return as image data URL in SVG
+function textToFallbackSVG(obj, ns) {
+    // Create a canvas to measure and render the text
+    const canvas = document.createElement('canvas');
+    const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
+    const fontSize = obj.fontSize;
+    const ctx = canvas.getContext('2d');
+    ctx.font = `${fontSize}px ${fontDef.css}`;
+    const metrics = ctx.measureText(obj.text);
+    const w = Math.ceil(metrics.width) + 4;
+    const h = Math.ceil(fontSize * 1.4) + 4;
+    canvas.width = w; canvas.height = h;
+    ctx.font = `${fontSize}px ${fontDef.css}`;
+    ctx.fillStyle = obj.fill || '#000';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(obj.text, 2, fontSize + 2);
+    if (obj.stroke && obj.stroke !== 'none') {
+        ctx.strokeStyle = obj.stroke;
+        ctx.lineWidth = obj.strokeWidth || 1;
+        ctx.strokeText(obj.text, 2, fontSize + 2);
+    }
+    // Convert to data URL and create an SVG image element
+    const dataUrl = canvas.toDataURL('image/png');
+    const img = document.createElementNS(ns, 'image');
+    const bx = obj.x - 2;
+    const by = obj.y - fontSize - 2;
+    img.setAttribute('x', bx); img.setAttribute('y', by);
+    img.setAttribute('width', w); img.setAttribute('height', h);
+    img.setAttribute('href', dataUrl);
+    img.setAttributeNS('http://www.w3.org/1999/xlink', 'xlink:href', dataUrl);
+    if (obj.rotation) {
+        const rcx = bx + w/2, rcy = by + h/2;
+        img.setAttribute('transform', `rotate(${obj.rotation} ${rcx} ${rcy})`);
+    }
+    return img;
 }
 
 // Pre-load all fonts for text-to-curves export
