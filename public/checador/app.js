@@ -544,8 +544,14 @@ btnIn.addEventListener('click', () => registerAttendance('IN'));
 btnOut.addEventListener('click', () => registerAttendance('OUT'));
 
 openAdminBtn.addEventListener('click', () => {
+    adminPinInput.value = '';
     adminLogin.style.display = 'flex';
     setTimeout(() => adminPinInput.focus(), 100);
+});
+
+adminPinInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') loginBtn.click();
+    if (e.key === 'Escape') cancelLoginBtn.click();
 });
 cancelLoginBtn.addEventListener('click', () => {
     adminLogin.style.display = 'none';
