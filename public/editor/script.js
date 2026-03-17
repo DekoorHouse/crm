@@ -84,6 +84,87 @@ const state = {
     lockAspect: true,
 };
 
+// Undo/Redo
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 50;
+
+function serializeObj(obj) {
+    const copy = {};
+    for (const k of Object.keys(obj)) {
+        if (k === 'element') continue;
+        if (k === 'children' && Array.isArray(obj.children)) {
+            copy.children = obj.children.map(serializeObj);
+        } else if (k === 'contents' && Array.isArray(obj.contents)) {
+            copy.contents = obj.contents.map(serializeObj);
+        } else if (k === 'container' && obj.container) {
+            copy.container = serializeObj(obj.container);
+        } else if (k === 'points' && Array.isArray(obj.points)) {
+            copy.points = obj.points.map(p => ({...p}));
+        } else {
+            copy[k] = obj[k];
+        }
+    }
+    return copy;
+}
+
+function saveUndoState() {
+    const snapshot = {
+        objects: state.objects.map(serializeObj),
+        nextId: state.nextId,
+        selectedIds: [...state.selectedIds],
+    };
+    undoStack.push(JSON.stringify(snapshot));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0; // clear redo on new action
+}
+
+function restoreSnapshot(json) {
+    const snapshot = JSON.parse(json);
+    // Clear current
+    objectsLayer.innerHTML = '';
+    selectionLayer.innerHTML = '';
+    state.objects = [];
+    state.selectedIds = [];
+    // Rebuild
+    for (const data of snapshot.objects) {
+        const obj = data;
+        const elem = buildSVGElement(obj);
+        obj.element = elem;
+        elem.dataset.objectId = obj.id;
+        objectsLayer.appendChild(elem);
+        state.objects.push(obj);
+    }
+    state.nextId = snapshot.nextId;
+    state.selectedIds = snapshot.selectedIds;
+    drawSelection();
+    updatePropsPanel();
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    // Save current state to redo
+    const current = {
+        objects: state.objects.map(serializeObj),
+        nextId: state.nextId,
+        selectedIds: [...state.selectedIds],
+    };
+    redoStack.push(JSON.stringify(current));
+    restoreSnapshot(undoStack.pop());
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    // Save current state to undo
+    const current = {
+        objects: state.objects.map(serializeObj),
+        nextId: state.nextId,
+        selectedIds: [...state.selectedIds],
+    };
+    undoStack.push(JSON.stringify(current));
+    restoreSnapshot(redoStack.pop());
+}
+
 // Helpers for selected IDs
 function primaryId() { return state.selectedIds[0] || null; }
 function isSelected(id) { return state.selectedIds.includes(id); }
@@ -160,6 +241,7 @@ function screenToSVG(clientX, clientY) {
 // OBJECT MANAGEMENT
 // =============================================
 function createObject(type, props) {
+    saveUndoState();
     const obj = {
         id: state.nextId++,
         type,
@@ -220,19 +302,42 @@ function buildSVGElement(obj) {
         case 'powerclip': {
             elem = document.createElementNS(ns, 'g');
             const clipId = 'clip-' + obj.id;
+            const patId = 'pc-pat-' + obj.id;
             const defs = document.createElementNS(ns, 'defs');
             const clipPath = document.createElementNS(ns, 'clipPath');
             clipPath.setAttribute('id', clipId);
-            // Build clip shape from container
-            const clipShape = buildClipShape(obj.container, ns);
-            clipPath.appendChild(clipShape);
+            clipPath.appendChild(buildClipShape(obj.container, ns));
             defs.appendChild(clipPath);
+            // Crosshatch pattern for empty powerclips
+            const pat = document.createElementNS(ns, 'pattern');
+            pat.setAttribute('id', patId);
+            pat.setAttribute('width', '12'); pat.setAttribute('height', '12');
+            pat.setAttribute('patternUnits', 'userSpaceOnUse');
+            const pl1 = document.createElementNS(ns, 'line');
+            pl1.setAttribute('x1','0'); pl1.setAttribute('y1','0');
+            pl1.setAttribute('x2','12'); pl1.setAttribute('y2','12');
+            pl1.setAttribute('stroke', '#c8c0d8'); pl1.setAttribute('stroke-width', '0.7');
+            pat.appendChild(pl1);
+            const pl2 = document.createElementNS(ns, 'line');
+            pl2.setAttribute('x1','12'); pl2.setAttribute('y1','0');
+            pl2.setAttribute('x2','0'); pl2.setAttribute('y2','12');
+            pl2.setAttribute('stroke', '#c8c0d8'); pl2.setAttribute('stroke-width', '0.7');
+            pat.appendChild(pl2);
+            defs.appendChild(pat);
             elem.appendChild(defs);
             // Draw the container shape (visible border)
             const containerElem = buildSVGElement(obj.container);
             obj.container.element = containerElem;
             containerElem.dataset.objectId = obj.id;
             elem.appendChild(containerElem);
+            // If empty, show crosshatch fill clipped to container
+            if (obj.contents.length === 0) {
+                const hatch = buildClipShape(obj.container, ns);
+                hatch.setAttribute('fill', `url(#${patId})`);
+                hatch.setAttribute('stroke', 'none');
+                hatch.setAttribute('pointer-events', 'none');
+                elem.appendChild(hatch);
+            }
             // Clipped content group
             const contentGroup = document.createElementNS(ns, 'g');
             contentGroup.setAttribute('clip-path', `url(#${clipId})`);
@@ -334,6 +439,7 @@ function refreshElement(obj) {
 }
 
 function deleteObject(id) {
+    saveUndoState();
     const idx = state.objects.findIndex(o => o.id === id);
     if (idx === -1) return;
     state.objects[idx].element.remove();
@@ -400,6 +506,7 @@ function distToSeg(p, a, b) {
 function selectObject(id, addToSelection) {
     if (id === null && !addToSelection) {
         state.selectedIds = [];
+        pcEditingId = null;
     } else if (id !== null) {
         if (addToSelection) {
             if (isSelected(id)) state.selectedIds = state.selectedIds.filter(i => i !== id);
@@ -407,9 +514,14 @@ function selectObject(id, addToSelection) {
         } else {
             state.selectedIds = [id];
         }
+        const obj = findObject(id);
+        if (!obj || obj.type !== 'powerclip' || obj.id !== pcEditingId) {
+            pcEditingId = null;
+        }
     }
     drawSelection();
     updatePropsPanel();
+    updatePowerClipMenu();
 }
 
 function drawSelection() {
@@ -831,14 +943,25 @@ function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
     if (state.isDragging) {
         state.isDragging = false;
-        // Auto-insert into PowerClip: if dragging a single non-powerclip obj and dropped on a powerclip
+        // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
         if (state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
             const dragged = findObject(draggedId);
             if (dragged && dragged.type !== 'powerclip') {
-                const b = getObjBounds(dragged);
-                const center = { x: b.x + b.w/2, y: b.y + b.h/2 };
-                const pcTarget = findPowerClipAtPoint(center, draggedId);
+                const db = getObjBounds(dragged);
+                // Check corners and center for overlap with any powerclip
+                const testPts = [
+                    {x: db.x, y: db.y}, {x: db.x+db.w, y: db.y},
+                    {x: db.x, y: db.y+db.h}, {x: db.x+db.w, y: db.y+db.h},
+                    {x: db.x+db.w/2, y: db.y+db.h/2},
+                    {x: db.x+db.w/2, y: db.y}, {x: db.x+db.w/2, y: db.y+db.h},
+                    {x: db.x, y: db.y+db.h/2}, {x: db.x+db.w, y: db.y+db.h/2},
+                ];
+                let pcTarget = null;
+                for (const tp of testPts) {
+                    pcTarget = findPowerClipAtPoint(tp, draggedId);
+                    if (pcTarget) break;
+                }
                 if (pcTarget) {
                     addToPowerClip(draggedId, pcTarget.id);
                     return;
@@ -857,6 +980,7 @@ function handleSelectDown(pt, e) {
         selectObject(obj.id, e.shiftKey);
         state.isDragging = true;
         state.dragStart = {x:pt.x,y:pt.y};
+        saveUndoState();
         // Snapshot positions of all selected objects
         state.dragObjProps = {};
         for (const id of state.selectedIds) {
@@ -1045,6 +1169,7 @@ function clearPreview() { previewLayer.innerHTML = ''; state.previewElement = nu
 // =============================================
 function groupSelected() {
     if (state.selectedIds.length < 2) return;
+    saveUndoState();
     const children = [];
     const ids = [...state.selectedIds];
     // Collect objects in order
@@ -1065,6 +1190,7 @@ function groupSelected() {
 function ungroupSelected() {
     const id = primaryId();
     if (!id) return;
+    saveUndoState();
     const obj = findObject(id);
     if (!obj || obj.type !== 'group') return;
     const children = obj.children;
@@ -1097,6 +1223,7 @@ function ungroupSelected() {
 function makePowerClip(objId) {
     const obj = findObject(objId);
     if (!obj || obj.type === 'powerclip' || obj.type === 'line' || obj.type === 'bspline' || obj.type === 'image') return;
+    saveUndoState();
     const idx = state.objects.findIndex(o => o.id === objId);
     if (idx === -1) return;
     // Remove from DOM
@@ -1121,6 +1248,7 @@ function addToPowerClip(contentId, powerclipId) {
     const pc = findObject(powerclipId);
     const content = findObject(contentId);
     if (!pc || !content || pc.type !== 'powerclip') return;
+    saveUndoState();
     // Remove content from objects array and DOM
     content.element.remove();
     const idx = state.objects.findIndex(o => o.id === contentId);
@@ -1150,6 +1278,100 @@ function findPowerClipAtPoint(pt, excludeId) {
         }
     }
     return null;
+}
+
+// =============================================
+// POWERCLIP FLOATING MENU
+// =============================================
+let pcEditingId = null; // ID of powerclip being edited
+
+function updatePowerClipMenu() {
+    const menu = document.getElementById('powerclip-menu');
+    const pid = primaryId();
+    if (!pid || state.selectedIds.length !== 1) { menu.classList.add('hidden'); return; }
+    const obj = findObject(pid);
+    if (!obj || obj.type !== 'powerclip') { menu.classList.add('hidden'); return; }
+
+    // Position above the object
+    const b = getObjBounds(obj);
+    const rot = obj.rotation || 0;
+    const cx = b.x + b.w/2, cy = b.y;
+    const rp = rotatePoint(cx, cy, b.x + b.w/2, b.y + b.h/2, rot);
+    const svgRect = svg.getBoundingClientRect();
+    const scale = svgRect.width / state.viewBox.w;
+    const screenX = svgRect.left + (rp.x - state.viewBox.x) * scale;
+    const screenY = svgRect.top + (rp.y - state.viewBox.y) * scale - 40;
+
+    menu.style.left = screenX + 'px';
+    menu.style.top = Math.max(0, screenY) + 'px';
+    menu.style.transform = 'translateX(-50%)';
+    menu.classList.remove('hidden');
+
+    // Toggle editing state
+    const editBtn = menu.querySelector('[data-pc="edit"]');
+    const extractBtn = menu.querySelector('[data-pc="extract"]');
+    if (pcEditingId === pid) {
+        menu.classList.add('editing');
+        editBtn.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 13l4 4L17 5"/></svg> Listo';
+    } else {
+        menu.classList.remove('editing');
+        editBtn.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4l5 5-9 9H2v-5z"/></svg> Editar';
+    }
+    extractBtn.style.display = obj.contents.length > 0 ? '' : 'none';
+}
+
+function extractFromPowerClip(pcId) {
+    const pc = findObject(pcId);
+    if (!pc || pc.type !== 'powerclip' || pc.contents.length === 0) return;
+    saveUndoState();
+    const extracted = [...pc.contents];
+    pc.contents = [];
+    rebuildPowerClipElement(pc);
+    const newIds = [];
+    for (const c of extracted) {
+        const elem = buildSVGElement(c);
+        c.element = elem;
+        elem.dataset.objectId = c.id;
+        objectsLayer.appendChild(elem);
+        state.objects.push(c);
+        newIds.push(c.id);
+        if (c.id >= state.nextId) state.nextId = c.id + 1;
+    }
+    state.selectedIds = newIds;
+    pcEditingId = null;
+    drawSelection();
+    updatePropsPanel();
+}
+
+function togglePowerClipEdit(pcId) {
+    if (pcEditingId === pcId) {
+        // Finish editing
+        pcEditingId = null;
+        selectObject(pcId);
+    } else {
+        // Start editing - select the contents instead
+        const pc = findObject(pcId);
+        if (!pc || pc.type !== 'powerclip') return;
+        pcEditingId = pcId;
+        if (pc.contents.length > 0) {
+            // Make contents selectable temporarily - we'll select the first content
+            // For edit mode we need to allow modifying content positions
+            selectObject(pcId); // keep the PC selected to show menu
+        }
+        updatePowerClipMenu();
+    }
+}
+
+function setupPowerClipMenu() {
+    const menu = document.getElementById('powerclip-menu');
+    menu.querySelector('[data-pc="edit"]').addEventListener('click', () => {
+        const pid = primaryId();
+        if (pid) togglePowerClipEdit(pid);
+    });
+    menu.querySelector('[data-pc="extract"]').addEventListener('click', () => {
+        const pid = primaryId();
+        if (pid) extractFromPowerClip(pid);
+    });
 }
 
 // =============================================
@@ -1440,7 +1662,7 @@ function handleWheel(e) {
     state.viewBox.y = pt.y - (pt.y - state.viewBox.y) * factor;
     state.viewBox.w = newW; state.viewBox.h = newH;
     updateViewBox();
-    if (state.selectedIds.length) drawSelection();
+    if (state.selectedIds.length) { drawSelection(); updatePowerClipMenu(); }
 }
 
 // =============================================
@@ -1532,6 +1754,7 @@ function setupPropsPanel() {
 
     const applyPos = () => {
         const obj = findObject(primaryId()); if (!obj) return;
+        saveUndoState();
         applyPropPosition(obj, parseFloat(propX.value), parseFloat(propY.value));
         refreshElement(obj); selectObject(obj.id);
     };
@@ -1540,6 +1763,7 @@ function setupPropsPanel() {
 
     propW.addEventListener('change', () => {
         const obj = findObject(primaryId()); if (!obj) return;
+        saveUndoState();
         const b = getObjBounds(obj);
         let newW = fromUnit(parseFloat(propW.value)), newH = b.h;
         if (newW < 0.1) newW = 0.1;
@@ -1549,6 +1773,7 @@ function setupPropsPanel() {
 
     propH.addEventListener('change', () => {
         const obj = findObject(primaryId()); if (!obj) return;
+        saveUndoState();
         const b = getObjBounds(obj);
         let newH = fromUnit(parseFloat(propH.value)), newW = b.w;
         if (newH < 0.1) newH = 0.1;
@@ -1557,6 +1782,7 @@ function setupPropsPanel() {
     });
 
     propRot.addEventListener('change', () => {
+        saveUndoState();
         const obj = findObject(primaryId()); if (!obj) return;
         obj.rotation = parseFloat(propRot.value) || 0;
         refreshElement(obj); drawSelection();
@@ -1601,6 +1827,10 @@ function setupEventListeners() {
 
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+        // Undo/Redo
+        if (e.key.toLowerCase() === 'z' && e.ctrlKey && !e.shiftKey) { e.preventDefault(); undo(); return; }
+        if (e.key.toLowerCase() === 'y' && e.ctrlKey) { e.preventDefault(); redo(); return; }
+        if (e.key.toLowerCase() === 'z' && e.ctrlKey && e.shiftKey) { e.preventDefault(); redo(); return; }
         // Group/Ungroup shortcuts
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
@@ -1671,6 +1901,7 @@ function setupEventListeners() {
     setupPageSizeModal();
     setupPropsPanel();
     setupContextMenu();
+    setupPowerClipMenu();
 }
 
 function setTool(tool) {

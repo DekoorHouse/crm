@@ -894,6 +894,60 @@ body.dark .btn-primary:hover {
 }
 
 /* ============================================
+   PowerClip Floating Menu
+   ============================================ */
+.powerclip-menu {
+    position: fixed;
+    z-index: 500;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    box-shadow: var(--shadow-md);
+    border-radius: var(--radius-lg);
+    padding: 4px;
+    display: flex;
+    gap: 2px;
+    animation: dropdown-in 0.15s ease-out;
+}
+
+.powerclip-menu.hidden {
+    display: none;
+}
+
+.pc-btn {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    color: var(--text-secondary);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.12s;
+    white-space: nowrap;
+}
+
+.pc-btn:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.pc-btn svg {
+    flex-shrink: 0;
+}
+
+.pc-btn:hover svg {
+    stroke: var(--accent);
+}
+
+.powerclip-menu.editing {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px var(--accent-glow), var(--shadow-md);
+}
+
+/* ============================================
    Context Menu
    ============================================ */
 .context-menu {
