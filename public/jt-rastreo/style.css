@@ -305,15 +305,22 @@ button:hover {
 
 .close-btn {
     position: absolute;
-    top: 1.5rem;
-    right: 1.5rem;
-    background: none;
+    top: 1rem;
+    right: 1rem;
+    background: rgba(255, 255, 255, 0.1);
     border: none;
     color: var(--text-gray);
-    font-size: 2rem;
+    font-size: 1.2rem;
     cursor: pointer;
     padding: 0;
-    height: auto;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    line-height: 1;
 }
 
 .close-btn:hover {
