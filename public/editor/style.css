@@ -200,6 +200,12 @@ body {
     margin: 4px 8px;
 }
 
+.menu-shortcut {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-left: auto;
+}
+
 /* Property groups in header */
 .prop-group {
     display: flex;
