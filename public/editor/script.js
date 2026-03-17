@@ -169,7 +169,7 @@ function createObject(type, props) {
         rotation: 0,
         ...props,
     };
-    if (type === 'group') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
+    if (type === 'group' || type === 'image') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
     const elem = buildSVGElement(obj);
     obj.element = elem;
     elem.dataset.objectId = obj.id;
@@ -201,6 +201,13 @@ function buildSVGElement(obj) {
             elem = document.createElementNS(ns, 'path');
             elem.setAttribute('d', bsplineToPath(obj.points));
             break;
+        case 'image':
+            elem = document.createElementNS(ns, 'image');
+            elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
+            elem.setAttribute('width', obj.width); elem.setAttribute('height', obj.height);
+            elem.setAttributeNS('http://www.w3.org/1999/xlink', 'href', obj.href);
+            elem.setAttribute('preserveAspectRatio', 'none');
+            break;
         case 'group':
             elem = document.createElementNS(ns, 'g');
             for (const child of obj.children) {
@@ -211,7 +218,7 @@ function buildSVGElement(obj) {
             }
             break;
     }
-    if (obj.type !== 'group') {
+    if (obj.type !== 'group' && obj.type !== 'image') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -250,11 +257,15 @@ function refreshElement(obj) {
         case 'bspline':
             elem.setAttribute('d', bsplineToPath(obj.points));
             break;
+        case 'image':
+            elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
+            elem.setAttribute('width', obj.width); elem.setAttribute('height', obj.height);
+            break;
         case 'group':
             for (const child of obj.children) refreshElement(child);
             break;
     }
-    if (obj.type !== 'group') {
+    if (obj.type !== 'group' && obj.type !== 'image') {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
@@ -291,7 +302,7 @@ function hitTest(obj, pt) {
         return false;
     }
     switch (obj.type) {
-        case 'rect':
+        case 'rect': case 'image':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         case 'ellipse': {
@@ -399,7 +410,7 @@ function drawSelection() {
 
 function getObjBounds(obj) {
     switch (obj.type) {
-        case 'rect': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
+        case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
@@ -433,7 +444,7 @@ function getSnapPoints(obj) {
     const b = getObjBounds(obj);
     // Center
     pts.push({ x: b.x + b.w/2, y: b.y + b.h/2, type: 'center' });
-    if (obj.type === 'rect' || obj.type === 'group') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
         // Corners
         pts.push({x:b.x,y:b.y,type:'corner'},{x:b.x+b.w,y:b.y,type:'corner'},
                  {x:b.x,y:b.y+b.h,type:'corner'},{x:b.x+b.w,y:b.y+b.h,type:'corner'});
@@ -453,7 +464,7 @@ function getSnapPoints(obj) {
 
 // Find the nearest point on an object's perimeter to a given point
 function nearestEdgePoint(obj, pt) {
-    if (obj.type === 'rect' || obj.type === 'group') {
+    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image') {
         const b = getObjBounds(obj);
         // Check all 4 edges, find closest point on each
         const edges = [
@@ -759,7 +770,7 @@ function handleDragMove(pt) {
 
 function snapshotPos(obj) {
     switch (obj.type) {
-        case 'rect':    return {x:obj.x,y:obj.y};
+        case 'rect': case 'image': return {x:obj.x,y:obj.y};
         case 'ellipse': return {cx:obj.cx,cy:obj.cy};
         case 'line':    return {x1:obj.x1,y1:obj.y1,x2:obj.x2,y2:obj.y2};
         case 'bspline': return {points:obj.points.map(p=>({...p}))};
@@ -773,7 +784,7 @@ function snapshotPos(obj) {
 
 function applyMove(obj, snap, dx, dy) {
     switch (obj.type) {
-        case 'rect':    obj.x = snap.x+dx; obj.y = snap.y+dy; break;
+        case 'rect': case 'image': obj.x = snap.x+dx; obj.y = snap.y+dy; break;
         case 'ellipse': obj.cx = snap.cx+dx; obj.cy = snap.cy+dy; break;
         case 'line':    obj.x1=snap.x1+dx;obj.y1=snap.y1+dy;obj.x2=snap.x2+dx;obj.y2=snap.y2+dy; break;
         case 'bspline': obj.points = snap.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -1030,8 +1041,10 @@ function handleMenuAction(action) {
 // =============================================
 function exportSVG() {
     const ns = 'http://www.w3.org/2000/svg';
+    const xlink = 'http://www.w3.org/1999/xlink';
     const root = document.createElementNS(ns, 'svg');
     root.setAttribute('xmlns', ns);
+    root.setAttribute('xmlns:xlink', xlink);
     root.setAttribute('width', state.pageWidth); root.setAttribute('height', state.pageHeight);
     root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
     const bg = document.createElementNS(ns, 'rect');
@@ -1040,6 +1053,11 @@ function exportSVG() {
     for (const obj of state.objects) {
         const clone = obj.element.cloneNode(true);
         clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
+        // Ensure image href uses inline data URL (already embedded from paste)
+        if (obj.type === 'image') {
+            clone.setAttribute('href', obj.href);
+            clone.setAttributeNS(xlink, 'xlink:href', obj.href);
+        }
         root.appendChild(clone);
     }
     const str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
@@ -1065,22 +1083,43 @@ function clearAll() {
 // PAGE SIZE MODAL
 // =============================================
 function showPageSizeModal() {
-    document.getElementById('page-width-input').value = state.pageWidth;
-    document.getElementById('page-height-input').value = state.pageHeight;
+    const unitSel = document.getElementById('page-unit-select');
+    unitSel.value = state.unit;
+    updatePageModalUnit();
     document.getElementById('page-preset').value = 'custom';
     document.getElementById('page-size-modal').classList.remove('hidden');
 }
 function hidePageSizeModal() { document.getElementById('page-size-modal').classList.add('hidden'); }
+function updatePageModalUnit() {
+    const u = document.getElementById('page-unit-select').value;
+    const factor = UNITS[u].factor, dec = UNITS[u].dec;
+    document.getElementById('page-width-label').textContent = `Ancho (${u})`;
+    document.getElementById('page-height-label').textContent = `Alto (${u})`;
+    document.getElementById('page-width-input').value = +(state.pageWidth * factor).toFixed(dec);
+    document.getElementById('page-height-input').value = +(state.pageHeight * factor).toFixed(dec);
+}
 function setupPageSizeModal() {
+    document.getElementById('page-unit-select').addEventListener('change', () => updatePageModalUnit());
     document.getElementById('page-preset').addEventListener('change', (e) => {
         const p = PAGE_PRESETS[e.target.value];
-        if (p) { document.getElementById('page-width-input').value = p.w; document.getElementById('page-height-input').value = p.h; }
+        if (p) {
+            // Temporarily store in px, then display in current modal unit
+            state._tempPageW = p.w; state._tempPageH = p.h;
+            const u = document.getElementById('page-unit-select').value;
+            const factor = UNITS[u].factor, dec = UNITS[u].dec;
+            document.getElementById('page-width-input').value = +(p.w * factor).toFixed(dec);
+            document.getElementById('page-height-input').value = +(p.h * factor).toFixed(dec);
+        }
     });
     const modal = document.getElementById('page-size-modal');
     modal.querySelector('[data-action="cancel"]').addEventListener('click', hidePageSizeModal);
     modal.querySelector('[data-action="apply"]').addEventListener('click', () => {
-        const w = parseInt(document.getElementById('page-width-input').value);
-        const h = parseInt(document.getElementById('page-height-input').value);
+        const u = document.getElementById('page-unit-select').value;
+        const factor = UNITS[u].factor;
+        const wVal = parseFloat(document.getElementById('page-width-input').value);
+        const hVal = parseFloat(document.getElementById('page-height-input').value);
+        const w = Math.round(wVal / factor);
+        const h = Math.round(hVal / factor);
         if (w > 0 && h > 0) { state.pageWidth = w; state.pageHeight = h; updatePage(); resetView(); }
         hidePageSizeModal();
     });
@@ -1130,7 +1169,7 @@ function applyPropPosition(obj, newXu, newYu) {
     const b = getObjBounds(obj);
     const dx = newX - b.x, dy = newY - b.y;
     switch (obj.type) {
-        case 'rect':    obj.x+=dx;obj.y+=dy; break;
+        case 'rect': case 'image': obj.x+=dx;obj.y+=dy; break;
         case 'ellipse': obj.cx+=dx;obj.cy+=dy; break;
         case 'line':    obj.x1+=dx;obj.y1+=dy;obj.x2+=dx;obj.y2+=dy; break;
         case 'bspline': obj.points=obj.points.map(p=>({x:p.x+dx,y:p.y+dy})); break;
@@ -1143,7 +1182,7 @@ function applyPropSize(obj, newWpx, newHpx) {
     if (b.w < 0.01 || b.h < 0.01) return;
     const sx = newWpx / b.w, sy = newHpx / b.h;
     switch (obj.type) {
-        case 'rect': obj.width=newWpx; obj.height=newHpx; break;
+        case 'rect': case 'image': obj.width=newWpx; obj.height=newHpx; break;
         case 'ellipse': obj.rx=newWpx/2; obj.ry=newHpx/2; break;
         case 'line': {
             const ox=Math.min(obj.x1,obj.x2), oy=Math.min(obj.y1,obj.y2);
@@ -1260,6 +1299,45 @@ function setupEventListeners() {
 
     document.addEventListener('keyup', (e) => {
         if (e.key === ' ') { state.spaceHeld = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; }
+    });
+
+    // Paste images from clipboard
+    document.addEventListener('paste', (e) => {
+        const items = e.clipboardData && e.clipboardData.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const dataUrl = ev.target.result;
+                    const img = new Image();
+                    img.onload = () => {
+                        // Place image centered on the visible area
+                        const vb = state.viewBox;
+                        const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
+                        let w = img.naturalWidth, h = img.naturalHeight;
+                        // Scale down if larger than half the page
+                        const maxW = state.pageWidth * 0.8, maxH = state.pageHeight * 0.8;
+                        if (w > maxW || h > maxH) {
+                            const scale = Math.min(maxW / w, maxH / h);
+                            w *= scale; h *= scale;
+                        }
+                        const obj = createObject('image', {
+                            x: cx - w/2, y: cy - h/2,
+                            width: w, height: h,
+                            href: dataUrl,
+                        });
+                        selectObject(obj.id);
+                        setTool('select');
+                    };
+                    img.src = dataUrl;
+                };
+                reader.readAsDataURL(file);
+                break;
+            }
+        }
     });
 
     window.addEventListener('resize', () => resetView());

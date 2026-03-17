@@ -226,14 +226,23 @@
                         <option value="800x600">800 &times; 600</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Unidad</label>
+                    <select id="page-unit-select">
+                        <option value="px">px</option>
+                        <option value="mm">mm</option>
+                        <option value="cm">cm</option>
+                        <option value="in">in</option>
+                    </select>
+                </div>
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Ancho (px)</label>
-                        <input type="number" id="page-width-input" value="800" min="50" max="10000">
+                        <label id="page-width-label">Ancho (px)</label>
+                        <input type="number" id="page-width-input" value="800" min="1" step="any">
                     </div>
                     <div class="form-group">
-                        <label>Alto (px)</label>
-                        <input type="number" id="page-height-input" value="600" min="50" max="10000">
+                        <label id="page-height-label">Alto (px)</label>
+                        <input type="number" id="page-height-input" value="600" min="1" step="any">
                     </div>
                 </div>
             </div>
