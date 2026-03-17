@@ -290,7 +290,8 @@ function getGroupedData() {
     });
     return Object.values(groups).map(group => {
         let totalMinutes = 0, lastInTime = null, timelineText = [];
-        group.events.forEach(event => {
+        const sortedEvents = [...group.events].sort((a, b) => a.timestamp - b.timestamp);
+        sortedEvents.forEach(event => {
             timelineText.push(`<span style="color:${event.type === 'IN' ? 'var(--success)' : 'var(--warning)'}">${event.type}: ${event.time}</span>`);
             if (event.type === 'IN') { lastInTime = event.timestamp; }
             else if (event.type === 'OUT' && lastInTime) {
@@ -298,6 +299,8 @@ function getGroupedData() {
                 lastInTime = null;
             }
         });
+        // Si sigue activo, contar hasta ahora
+        if (lastInTime) totalMinutes += Math.floor((Date.now() - lastInTime) / (1000 * 60));
         const hrs = Math.floor(totalMinutes / 60);
         group.totalStr = `${hrs}h ${totalMinutes % 60}m`;
         group.payment = (totalMinutes / 60) * 70;
@@ -724,12 +727,16 @@ function getResumenData(period) {
     Object.values(dayGroups).forEach(group => {
         const k = group.name.toLowerCase();
         if (!byEmployee[k]) byEmployee[k] = { name: group.name, id: group.id, minutes: 0, days: 0 };
-        let mins = 0, lastIn = null;
-        group.events.forEach(e => {
-            if (e.type === 'IN') { lastIn = e.timestamp; }
+        let mins = 0, lastIn = null, hasIn = false;
+        // Ordenar eventos cronológicamente antes de calcular
+        const sorted = [...group.events].sort((a, b) => a.timestamp - b.timestamp);
+        sorted.forEach(e => {
+            if (e.type === 'IN') { lastIn = e.timestamp; hasIn = true; }
             else if (e.type === 'OUT' && lastIn) { mins += Math.floor((e.timestamp - lastIn) / 60000); lastIn = null; }
         });
-        if (mins > 0) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
+        // Si sigue activo (hay IN pero no OUT), contar hasta ahora
+        if (lastIn) mins += Math.floor((Date.now() - lastIn) / 60000);
+        if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
     });
 
     return Object.values(byEmployee)
