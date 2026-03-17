@@ -38,8 +38,8 @@ class M2Nano {
         this._posY     = 0;
     }
 
-    /** Busca y abre el dispositivo USB. */
-    connect() {
+    /** Busca y abre el dispositivo USB. Retorna Promise (async por el init CH341). */
+    async connect() {
         let found = null;
         for (const d of DEVICES) {
             const dev = usb.findByIds(d.vid, d.pid);
@@ -78,6 +78,25 @@ class M2Nano {
         }
 
         this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType}`);
+
+        // Inicializar CH341 en modo paralelo EPP.
+        // El chip CH341 arranca en modo UART; este control transfer lo pone en modo
+        // paralelo EPP para que los paquetes 0xA6 lleguen realmente al bus del M2 Nano.
+        // Sin esto, el CH341 hace ACK a los bulk transfers pero no activa el bus paralelo.
+        await new Promise((resolve) => {
+            this.device.controlTransfer(
+                0x40,            // bmRequestType: vendor, host→device
+                0xA1,            // bRequest: CH341 write/init (activa modo EPP)
+                0x0000,          // wValue
+                0x0000,          // wIndex
+                Buffer.alloc(0), // sin payload
+                (err) => {
+                    if (err) this.log(`CH341 init aviso: ${err.message} (continuando...)`);
+                    else     this.log('CH341 inicializado en modo paralelo EPP.');
+                    resolve();   // siempre continuar aunque falle
+                }
+            );
+        });
     }
 
     /** Libera el dispositivo USB. */

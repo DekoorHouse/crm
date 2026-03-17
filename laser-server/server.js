@@ -22,13 +22,13 @@ let client = null;  // Solo un cliente a la vez (la página web)
 console.log(`\n🔴 Servidor Laser K40 iniciado en ws://localhost:${PORT}`);
 console.log('   Abre http://app.dekoormx.com/laser y presiona "Conectar"\n');
 
-wss.on('connection', (ws) => {
+wss.on('connection', async (ws) => {
     client = ws;
     log('Cliente web conectado.');
     send({ type: 'status', text: 'Servidor local conectado. Iniciando USB...', level: 'success' });
 
     // Intentar conectar con la máquina
-    connectMachine();
+    await connectMachine();
 
     ws.on('message', async (raw) => {
         let msg;
@@ -49,13 +49,13 @@ wss.on('connection', (ws) => {
 
 // ───────── Conexión USB ─────────
 
-function connectMachine() {
+async function connectMachine() {
     if (laser) disconnectMachine();
 
     laser = new M2Nano(onLaserLog);
 
     try {
-        laser.connect();
+        await laser.connect();
         send({ type: 'machine_ready', ok: true });
         send({ type: 'status', text: '¡Máquina K40 conectada por USB!', level: 'success' });
         log('M2 Nano listo.');
