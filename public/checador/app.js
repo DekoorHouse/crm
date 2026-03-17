@@ -346,7 +346,7 @@ function renderAdminLogs() {
     // Fechas únicas (desc) y empleados únicos (por nombre)
     const dateSet = new Set(logsCache.map(l => l.date));
     const parseD = s => { const [d,m,y] = s.split('/').map(Number); return new Date(y, m-1, d); };
-    const dates = [...dateSet].sort((a, b) => parseD(b) - parseD(a));
+    const dates = [...dateSet].sort((a, b) => parseD(a) - parseD(b));
 
     const empMap = {};
     logsCache.forEach(l => { const k = l.name.toLowerCase(); if (!empMap[k]) empMap[k] = { name: l.name, id: l.id }; });
