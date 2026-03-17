@@ -310,23 +310,106 @@ function getGroupedData() {
 }
 
 let groupedDataCache = [];
+let groupedDataMap = {}; // key: "name-date" → índice en groupedDataCache
+
+function getMinsFromGroup(group) {
+    let mins = 0, lastIn = null;
+    const sorted = [...group.events].sort((a, b) => a.timestamp - b.timestamp);
+    sorted.forEach(e => {
+        if (e.type === 'IN') { lastIn = e.timestamp; }
+        else if (e.type === 'OUT' && lastIn) { mins += Math.floor((e.timestamp - lastIn) / 60000); lastIn = null; }
+    });
+    if (lastIn) mins += Math.floor((Date.now() - lastIn) / 60000);
+    return mins;
+}
+
+function hasActiveIn(group) {
+    let lastIn = null;
+    [...group.events].sort((a, b) => a.timestamp - b.timestamp).forEach(e => {
+        if (e.type === 'IN') lastIn = e.timestamp;
+        else if (e.type === 'OUT') lastIn = null;
+    });
+    return lastIn !== null;
+}
 
 function renderAdminLogs() {
     const data = getGroupedData();
     groupedDataCache = data;
+    groupedDataMap = {};
+    data.forEach((group, idx) => {
+        groupedDataMap[`${group.name.toLowerCase()}-${group.date}`] = idx;
+    });
+
+    const table = document.getElementById('admin-table');
+    const thead = table.querySelector('thead');
+
+    // Fechas únicas (desc) y empleados únicos (por nombre)
+    const dateSet = new Set(logsCache.map(l => l.date));
+    const parseD = s => { const [d,m,y] = s.split('/').map(Number); return new Date(y, m-1, d); };
+    const dates = [...dateSet].sort((a, b) => parseD(b) - parseD(a));
+
+    const empMap = {};
+    logsCache.forEach(l => { const k = l.name.toLowerCase(); if (!empMap[k]) empMap[k] = { name: l.name, id: l.id }; });
+    const employees = Object.values(empMap).sort((a, b) => a.name.localeCompare(b.name));
+
+    if (!dates.length || !employees.length) {
+        thead.innerHTML = '<tr><th>Sin registros</th></tr>';
+        adminLogsBody.innerHTML = '<tr><td style="color:var(--text-muted); text-align:center; padding:20px;">Sin datos</td></tr>';
+        return;
+    }
+
+    // Encabezado dinámico
+    thead.innerHTML = `<tr>
+        <th style="min-width:75px;">Fecha</th>
+        ${employees.map(e => `<th style="text-align:center; min-width:85px;">${e.name}<br><small style="font-weight:400; color:var(--text-muted);">ID: ${e.id}</small></th>`).join('')}
+        <th style="text-align:center; min-width:70px;">Total</th>
+    </tr>`;
+
     adminLogsBody.innerHTML = '';
-    data.forEach((row, idx) => {
+    const empTotals = {};
+    employees.forEach(e => empTotals[e.name.toLowerCase()] = 0);
+
+    dates.forEach(date => {
+        const dateObj = parseD(date);
+        const [d, m] = date.split('/');
+        const dayName = dateObj.toLocaleDateString('es-MX', { weekday: 'short' });
+        const label = `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${d}/${m}`;
+
+        let dayMins = 0;
+        const cells = employees.map(emp => {
+            const key = `${emp.name.toLowerCase()}-${date}`;
+            const idx = groupedDataMap[key];
+            if (idx === undefined) return `<td style="text-align:center; color:rgba(255,255,255,0.15);">—</td>`;
+            const group = data[idx];
+            const mins = getMinsFromGroup(group);
+            dayMins += mins;
+            empTotals[emp.name.toLowerCase()] += mins;
+            const active = hasActiveIn(group);
+            const label2 = mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : (active ? '▶ activo' : '0h 0m');
+            const color = mins > 0 ? 'var(--success)' : (active ? 'var(--warning)' : 'var(--text-muted)');
+            return `<td style="text-align:center; cursor:pointer;" onclick="openEditModal(${idx})" title="Click para editar">
+                <span style="color:${color}; font-weight:600; font-size:0.9rem;">${label2}</span>
+            </td>`;
+        });
+
+        const dayStr = dayMins > 0 ? `${Math.floor(dayMins/60)}h ${dayMins%60}m` : '—';
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td>${row.name}<br><small>ID: ${row.id}</small></td>
-            <td>${row.date}</td>
-            <td style="font-size: 0.8rem;">${row.timeline}</td>
-            <td style="font-weight:bold; color:var(--primary)">${row.totalStr}</td>
-            <td style="font-weight:bold; color:var(--success)">$${row.payment.toFixed(2)}</td>
-            <td><button class="btn-small" onclick="openEditModal(${idx})" style="font-size:0.75rem;">Editar</button></td>
-        `;
+        tr.innerHTML = `<td style="font-weight:600; white-space:nowrap; font-size:0.85rem;">${label}</td>${cells.join('')}<td style="text-align:center; font-weight:bold; color:var(--primary); font-size:0.85rem;">${dayStr}</td>`;
         adminLogsBody.appendChild(tr);
     });
+
+    // Fila de totales
+    const totalCells = employees.map(e => {
+        const mins = empTotals[e.name.toLowerCase()];
+        return `<td style="text-align:center; border-top:2px solid var(--glass-border);">
+            <span style="font-weight:bold; color:var(--success);">${mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : '—'}</span>
+            ${mins > 0 ? `<br><small style="color:var(--text-muted);">$${((mins/60)*70).toFixed(0)}</small>` : ''}
+        </td>`;
+    }).join('');
+    const totalAll = Object.values(empTotals).reduce((a,b) => a+b, 0);
+    const totalRow = document.createElement('tr');
+    totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; color:var(--primary); border-top:2px solid var(--glass-border);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</td>`;
+    adminLogsBody.appendChild(totalRow);
 }
 
 // =====================
