@@ -7,6 +7,29 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <!-- Vista de Login -->
+    <div id="login-view" style="position: fixed; inset: 0; z-index: 9999; background: var(--bg-dark); display: flex; align-items: center; justify-content: center; padding: 20px;">
+        <div class="card" style="max-width: 400px; width: 100%;">
+            <div class="logo">
+                <img src="logo.png" alt="Dekoor House Logo">
+            </div>
+            <h2 style="margin-bottom: 25px; color: var(--primary); font-size: 1.4rem;">Checador Pro</h2>
+            <form id="login-form">
+                <div class="input-group">
+                    <label for="login-email">Correo Electrónico</label>
+                    <input type="email" id="login-email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div class="input-group">
+                    <label for="login-password">Contraseña</label>
+                    <input type="password" id="login-password" required placeholder="••••••••">
+                </div>
+                <div id="login-error" style="color: var(--danger); font-size: 0.85rem; margin-bottom: 15px; min-height: 1.2em; text-align: left;"></div>
+                <button type="submit" id="login-submit-btn" class="btn btn-in" style="width: 100%; padding: 15px; font-size: 1rem;">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
     <div class="container">
         <div class="card">
             <div class="logo">
@@ -47,8 +70,9 @@
                 </ul>
             </div>
 
-            <div class="admin-access">
+            <div class="admin-access" style="display: flex; justify-content: center; gap: 20px;">
                 <button id="open-admin" class="link-btn">Panel Administrativo</button>
+                <button id="logout-btn" class="link-btn" style="color: var(--danger);">Cerrar Sesión</button>
             </div>
         </div>
     </div>
@@ -137,6 +161,10 @@
             <button onclick="checkNetwork()" style="padding: 10px 20px; border-radius: 8px; border: none; background: #4f46e5; color: white; cursor: pointer;">Reintentar</button>
         </div>
     </div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
 
     <script src="app.js"></script>
 </body>

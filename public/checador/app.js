@@ -1,3 +1,49 @@
+// Firebase Authentication
+const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+};
+firebase.initializeApp(firebaseConfig);
+const firebaseAuth = firebase.auth();
+
+firebaseAuth.onAuthStateChanged(user => {
+    const loginView = document.getElementById('login-view');
+    if (user) {
+        loginView.style.display = 'none';
+    } else {
+        loginView.style.display = 'flex';
+    }
+});
+
+document.getElementById('login-form').addEventListener('submit', e => {
+    e.preventDefault();
+    const email = document.getElementById('login-email').value;
+    const password = document.getElementById('login-password').value;
+    const submitBtn = document.getElementById('login-submit-btn');
+    const errorEl = document.getElementById('login-error');
+
+    errorEl.textContent = '';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Ingresando...';
+
+    firebaseAuth.signInWithEmailAndPassword(email, password)
+        .catch(() => {
+            errorEl.textContent = 'Correo o contraseña incorrectos.';
+        })
+        .finally(() => {
+            submitBtn.disabled = false;
+            submitBtn.textContent = 'Ingresar';
+        });
+});
+
+document.getElementById('logout-btn').addEventListener('click', () => {
+    firebaseAuth.signOut();
+});
+
 // Configuración
 const AUTHORIZED_PREFIX = "2806:267:2484"; // Prefijo más amplio (3 bloques)
 const OFFICE_WIFI_NAME = "Red Dekoor House";
