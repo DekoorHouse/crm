@@ -121,11 +121,11 @@ class M2Nano {
 
     /**
      * Envía un paquete de datos EGV de 34 bytes (protocolo Lhystudios, igual que K40 Whisperer).
-     * Formato: [0xA6][0x00][payload (30 bytes)][0x00][CRC-8]
+     * Formato: [0xA6][0x00][payload (30 bytes)][0xA6][CRC-8]
      *   - Byte 0:     0xA6 (comando de escritura EPP al CH341A)
      *   - Byte 1:     0x00 (byte de inicio de trama)
      *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x46 'F')
-     *   - Byte 32:    0x00 (byte de fin de datos)
+     *   - Byte 32:    0xA6 (cierre de trama — mismo PKT_FRAME que byte 0)
      *   - Byte 33:    CRC-8 Dallas/Maxim sobre bytes 2-31
      */
     sendPacket(data, logFirst = false) {
@@ -136,7 +136,7 @@ class M2Nano {
             pkt.fill(0x46, 2, 32);  // Padding con 'F' en zona de payload
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
             src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
-            pkt[32] = 0x00;       // Fin de datos
+            pkt[32] = PKT_FRAME;  // 0xA6 — cierre de trama (igual que K40 Whisperer)
             pkt[33] = crc8(pkt.subarray(2, 32));  // CRC sobre los 30 bytes de payload
 
             if (logFirst) {
