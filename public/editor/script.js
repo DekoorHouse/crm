@@ -101,6 +101,12 @@ const state = {
     fontSize: 32,
     isTyping: false,
     typingObj: null,
+
+    isResizing: false,
+    resizeHandle: null, // 'nw','ne','sw','se'
+    resizeStart: null,
+    resizeObjBounds: null,
+    resizeObjId: null,
 };
 
 // Undo/Redo
@@ -991,18 +997,29 @@ function handleMouseMove(e) {
         state.viewBox.y = state.panViewBoxStart.y - dy*scale;
         updateViewBox(); return;
     }
+    if (state.isResizing) { handleResizeMove(pt, e); return; }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
     if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
     // Snap indicators
     drawSnapIndicators(pt);
     if (state.tool === 'select' && !state.spaceHeld) {
-        svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+        const handle = getHandleAtPoint(pt);
+        if (handle) {
+            svg.style.cursor = HANDLE_CURSORS[handle.handle];
+        } else {
+            svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+        }
     }
 }
 
 function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
+    if (state.isResizing) {
+        state.isResizing = false;
+        state.resizeHandle = null;
+        drawSelection(); updatePropsPanel(); return;
+    }
     if (state.isDragging) {
         state.isDragging = false;
         // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
@@ -1035,8 +1052,45 @@ function handleMouseUp() {
     if (state.isDrawing) handleDrawEnd();
 }
 
+// --- Resize handle detection ---
+function getHandleAtPoint(pt) {
+    if (state.selectedIds.length !== 1) return null;
+    const obj = findObject(state.selectedIds[0]);
+    if (!obj) return null;
+    const b = getObjBounds(obj);
+    const rot = obj.rotation || 0;
+    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const threshold = 8 * screenScale;
+    const corners = [
+        { name: 'nw', x: b.x, y: b.y },
+        { name: 'ne', x: b.x + b.w, y: b.y },
+        { name: 'sw', x: b.x, y: b.y + b.h },
+        { name: 'se', x: b.x + b.w, y: b.y + b.h },
+    ];
+    for (const c of corners) {
+        const rp = rotatePoint(c.x, c.y, cx, cy, rot);
+        if (Math.hypot(pt.x - rp.x, pt.y - rp.y) <= threshold) return { handle: c.name, obj };
+    }
+    return null;
+}
+
+const HANDLE_CURSORS = { nw: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', se: 'nwse-resize' };
+
 // --- Select ---
 function handleSelectDown(pt, e) {
+    // Check if clicking on a resize handle first
+    const handle = getHandleAtPoint(pt);
+    if (handle) {
+        saveUndoState();
+        state.isResizing = true;
+        state.resizeHandle = handle.handle;
+        state.resizeObjId = handle.obj.id;
+        state.resizeStart = { x: pt.x, y: pt.y };
+        state.resizeObjBounds = { ...getObjBounds(handle.obj) };
+        state.resizeObjSnapshot = serializeObj(handle.obj);
+        return;
+    }
     const obj = objectAtPoint(pt);
     if (obj) {
         selectObject(obj.id, e.shiftKey);
@@ -1063,6 +1117,58 @@ function handleDragMove(pt) {
         refreshElement(obj);
     }
     drawSelection();
+}
+
+function handleResizeMove(pt, e) {
+    const obj = findObject(state.resizeObjId);
+    if (!obj) return;
+    const ob = state.resizeObjBounds; // original bounds
+    const h = state.resizeHandle;
+    const fromCenter = e.shiftKey;
+
+    let newX = ob.x, newY = ob.y, newW = ob.w, newH = ob.h;
+    const dx = pt.x - state.resizeStart.x;
+    const dy = pt.y - state.resizeStart.y;
+
+    if (fromCenter) {
+        // Resize from center: both sides expand equally
+        let dw = 0, dh = 0;
+        if (h === 'se') { dw = dx; dh = dy; }
+        else if (h === 'nw') { dw = -dx; dh = -dy; }
+        else if (h === 'ne') { dw = dx; dh = -dy; }
+        else if (h === 'sw') { dw = -dx; dh = dy; }
+        newW = Math.max(2, ob.w + dw * 2);
+        newH = Math.max(2, ob.h + dh * 2);
+        const cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
+        newX = cx - newW / 2;
+        newY = cy - newH / 2;
+    } else {
+        // Normal resize: drag the corner
+        if (h === 'se') {
+            newW = Math.max(2, ob.w + dx);
+            newH = Math.max(2, ob.h + dy);
+        } else if (h === 'nw') {
+            newW = Math.max(2, ob.w - dx);
+            newH = Math.max(2, ob.h - dy);
+            newX = ob.x + ob.w - newW;
+            newY = ob.y + ob.h - newH;
+        } else if (h === 'ne') {
+            newW = Math.max(2, ob.w + dx);
+            newH = Math.max(2, ob.h - dy);
+            newY = ob.y + ob.h - newH;
+        } else if (h === 'sw') {
+            newW = Math.max(2, ob.w - dx);
+            newH = Math.max(2, ob.h + dy);
+            newX = ob.x + ob.w - newW;
+        }
+    }
+
+    // Apply new position and size
+    applyPropPosition(obj, toUnit(newX), toUnit(newY));
+    applyPropSize(obj, newW, newH);
+    refreshElement(obj);
+    drawSelection();
+    updatePropsPanel();
 }
 
 function snapshotPos(obj) {
@@ -1329,8 +1435,8 @@ function handleTextClick(pt, e) {
                     fontFamily: state.fontFamily,
                     fontSize: state.fontSize,
                     fill: state.fillColor === 'none' ? '#000000' : state.fillColor,
-                    stroke: state.strokeColor,
-                    strokeWidth: state.strokeWidth,
+                    stroke: 'none',
+                    strokeWidth: 0,
                 });
                 selectObject(obj.id);
                 setTool('select');
