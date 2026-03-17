@@ -54,7 +54,7 @@ const FONTS = [
     { name: 'Times New Roman', css: '"Times New Roman", Times, serif', url: FONT_BASE + 'apache/tinos/Tinos-Regular.ttf' },
     { name: 'Courier New', css: '"Courier New", Courier, monospace', url: FONT_BASE + 'ofl/courierprime/CourierPrime-Regular.ttf' },
     { name: 'Verdana', css: 'Verdana, Geneva, sans-serif', url: FONT_BASE + 'ofl/cabin/Cabin%5Bwdth%2Cwght%5D.ttf' },
-    { name: 'Rows of Sunflowers', css: '"Rows of Sunflowers", cursive', url: 'fonts/RowsOfSunflowers.ttf' },
+    { name: 'Rows of Sunflowers', css: '"Rows of Sunflowers", cursive', url: '/editor/fonts/RowsOfSunflowers.ttf' },
 ];
 
 // Loaded opentype font objects for text-to-curves export
@@ -2389,15 +2389,30 @@ async function loadOTFont(fontName) {
     if (loadedOTFonts[fontName]) return loadedOTFonts[fontName];
     const fontDef = FONTS.find(f => f.name === fontName);
     if (!fontDef || !fontDef.url) return null;
+    // Try fetch + parse first
     try {
-        // Use fetch + arrayBuffer for better CORS handling
         const resp = await fetch(fontDef.url);
         if (!resp.ok) throw new Error('HTTP ' + resp.status);
         const buf = await resp.arrayBuffer();
         const font = opentype.parse(buf);
         loadedOTFonts[fontName] = font;
         return font;
-    } catch(e) { console.warn('Could not load font:', fontName, e); return null; }
+    } catch(e) {
+        console.warn('fetch+parse failed for', fontName, e);
+    }
+    // Fallback: try opentype.load (uses XMLHttpRequest)
+    try {
+        const font = await new Promise((resolve, reject) => {
+            opentype.load(fontDef.url, (err, font) => {
+                if (err) reject(err); else resolve(font);
+            });
+        });
+        loadedOTFonts[fontName] = font;
+        return font;
+    } catch(e) {
+        console.warn('opentype.load also failed for', fontName, e);
+        return null;
+    }
 }
 
 function textToPath(obj) {
