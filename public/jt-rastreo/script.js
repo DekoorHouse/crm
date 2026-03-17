@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
         estimatedBox.style.display = 'none';
         icon.style.background = 'transparent';
         iconInner.innerHTML = '<i data-lucide="clock" style="width: 60px; height: 60px; color: #FF8E41;"></i>';
-        title.innerText = 'Guía en espera de escaneo';
+        title.innerText = 'Tu guía fue creada';
         desc.innerText = 'Tu guía fue creada y estamos esperando a que la paquetería escanee tu paquete para que pueda aparecer información.';
         reassurance.innerText = 'Esto puede tardar entre 24 y 48 hrs. Te pedimos un poco de paciencia, ¡pronto tendrás novedades de tu pedido!';
 
