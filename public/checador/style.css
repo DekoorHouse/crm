@@ -412,6 +412,12 @@ td {
     border-color: var(--danger);
 }
 
+.period-btn.active {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
 .add-employee-form {
     display: grid;
     grid-template-columns: 1fr 1fr auto;

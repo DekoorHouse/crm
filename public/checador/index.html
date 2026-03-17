@@ -88,6 +88,7 @@
             <div class="admin-tabs">
                 <button class="tab-btn active" data-tab="tab-records">Asistencia</button>
                 <button class="tab-btn" data-tab="tab-employees">Empleados</button>
+                <button class="tab-btn" data-tab="tab-resumen">Resumen</button>
             </div>
 
             <div id="tab-records" class="tab-content active">
@@ -133,6 +134,29 @@
                         </tbody>
                     </table>
                 </div>
+            <div id="tab-resumen" class="tab-content">
+                <div class="admin-actions" style="align-items: center; justify-content: space-between;">
+                    <div style="display: flex; gap: 6px;">
+                        <button class="btn-small period-btn active" data-period="semanal">Semanal</button>
+                        <button class="btn-small period-btn" data-period="mensual">Mensual</button>
+                        <button class="btn-small period-btn" data-period="anual">Anual</button>
+                    </div>
+                    <span id="resumen-period-label" style="font-size: 0.78rem; color: var(--text-muted);"></span>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Empleado</th>
+                                <th>Días</th>
+                                <th>Total Horas</th>
+                                <th>Pago ($70/hr)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resumen-body"></tbody>
+                    </table>
+                </div>
+            </div>
             </div>
         </div>
     </div>

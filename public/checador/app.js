@@ -326,7 +326,7 @@ cancelLoginBtn.addEventListener('click', () => {
 loginBtn.addEventListener('click', () => {
     if (adminPinInput.value === ADMIN_PIN) {
         adminLogin.style.display = 'none'; adminPanel.style.display = 'flex';
-        adminPinInput.value = ''; renderAdminLogs(); renderAdminEmployees();
+        adminPinInput.value = ''; renderAdminLogs(); renderAdminEmployees(); renderResumen();
     } else { showNotification("PIN Incorrecto", "danger"); adminPinInput.focus(); }
 });
 closeAdminBtn.addEventListener('click', () => {
@@ -341,9 +341,11 @@ tabBtns.forEach(btn => {
         btn.classList.add('active');
         document.getElementById(btn.dataset.tab).classList.add('active');
 
-        // Auto-focus en el nombre si seleccionan pestaña empleados
         if (btn.dataset.tab === 'tab-employees') {
             setTimeout(() => newEmpNameInput.focus(), 100);
+        }
+        if (btn.dataset.tab === 'tab-resumen') {
+            renderResumen();
         }
     });
 });
@@ -392,3 +394,135 @@ renderHistory();
 
 // Auto-focus inicial
 setTimeout(() => employeeIdInput.focus(), 500);
+
+// =====================
+// PESTAÑA: RESUMEN
+// =====================
+let currentPeriod = 'semanal';
+
+function parseLogDate(dateStr) {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+    return null;
+}
+
+function getPeriodRange(period) {
+    const now = new Date();
+    let start, end;
+    if (period === 'semanal') {
+        const day = now.getDay();
+        const diffToMonday = (day === 0) ? -6 : 1 - day;
+        start = new Date(now);
+        start.setDate(now.getDate() + diffToMonday);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(start);
+        end.setDate(start.getDate() + 6);
+        end.setHours(23, 59, 59, 999);
+    } else if (period === 'mensual') {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    } else {
+        start = new Date(now.getFullYear(), 0, 1);
+        end = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999);
+    }
+    return { start, end };
+}
+
+function getPeriodLabel(period) {
+    const { start, end } = getPeriodRange(period);
+    const fmt = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+    if (period === 'semanal') return `${fmt(start)} – ${fmt(end)}`;
+    if (period === 'mensual') return start.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+    return String(start.getFullYear());
+}
+
+function getResumenData(period) {
+    const logs = JSON.parse(localStorage.getItem('attendance_logs') || '[]');
+    const { start, end } = getPeriodRange(period);
+
+    const filtered = logs.filter(log => {
+        const d = parseLogDate(log.date);
+        return d && d >= start && d <= end;
+    });
+
+    // Agrupar por empleado+fecha para calcular horas por día
+    const dayGroups = {};
+    filtered.forEach(log => {
+        const key = `${log.name.toLowerCase()}-${log.date}`;
+        if (!dayGroups[key]) dayGroups[key] = { name: log.name, id: log.id, events: [] };
+        dayGroups[key].events.push(log);
+    });
+
+    // Sumar minutos por empleado
+    const byEmployee = {};
+    Object.values(dayGroups).forEach(group => {
+        const k = group.name.toLowerCase();
+        if (!byEmployee[k]) byEmployee[k] = { name: group.name, id: group.id, minutes: 0, days: 0 };
+
+        let mins = 0, lastIn = null;
+        group.events.forEach(e => {
+            if (e.type === 'IN') { lastIn = e.timestamp; }
+            else if (e.type === 'OUT' && lastIn) { mins += Math.floor((e.timestamp - lastIn) / 60000); lastIn = null; }
+        });
+        if (mins > 0) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
+    });
+
+    return Object.values(byEmployee)
+        .map(emp => ({
+            ...emp,
+            totalStr: `${Math.floor(emp.minutes / 60)}h ${emp.minutes % 60}m`,
+            payment: (emp.minutes / 60) * 70
+        }))
+        .sort((a, b) => b.minutes - a.minutes);
+}
+
+function renderResumen() {
+    const data = getResumenData(currentPeriod);
+    const tbody = document.getElementById('resumen-body');
+    const label = document.getElementById('resumen-period-label');
+    label.textContent = getPeriodLabel(currentPeriod);
+    tbody.innerHTML = '';
+
+    if (data.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Sin registros para este período</td></tr>`;
+        return;
+    }
+
+    let totalMins = 0, totalPay = 0;
+    data.forEach(emp => {
+        totalMins += emp.minutes;
+        totalPay += emp.payment;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${emp.name}<br><small style="color:var(--text-muted)">ID: ${emp.id}</small></td>
+            <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
+            <td style="font-weight:bold; color:var(--primary)">${emp.totalStr}</td>
+            <td style="font-weight:bold; color:var(--success)">$${emp.payment.toFixed(2)}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+
+    // Fila de totales
+    const totalHrs = Math.floor(totalMins / 60), totalMin2 = totalMins % 60;
+    const tfr = document.createElement('tr');
+    tfr.style.borderTop = '2px solid var(--glass-border)';
+    tfr.innerHTML = `
+        <td style="font-weight:bold; color:var(--text-muted);">TOTAL</td>
+        <td></td>
+        <td style="font-weight:bold; color:var(--primary)">${totalHrs}h ${totalMin2}m</td>
+        <td style="font-weight:bold; color:var(--success)">$${totalPay.toFixed(2)}</td>
+    `;
+    tbody.appendChild(tfr);
+}
+
+// Listeners de período
+document.querySelectorAll('.period-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentPeriod = btn.dataset.period;
+        renderResumen();
+    });
+});
