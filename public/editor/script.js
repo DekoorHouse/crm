@@ -94,7 +94,7 @@ const state = {
     previewElement: null,
     spaceHeld: false,
 
-    unit: 'px',
+    unit: 'mm',
     lockAspect: true,
 
     fontFamily: 'Inter',
@@ -602,7 +602,7 @@ function drawSelection() {
         r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
         r.setAttribute('pointer-events', 'none');
         g.appendChild(r);
-        // Corner handles
+        // Corner handles (squares)
         const corners = [
             [bounds.x, bounds.y], [bounds.x + bounds.w, bounds.y],
             [bounds.x, bounds.y + bounds.h], [bounds.x + bounds.w, bounds.y + bounds.h],
@@ -614,6 +614,23 @@ function drawSelection() {
             h.setAttribute('fill', '#fff'); h.setAttribute('stroke', '#7c5cf0');
             h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
             g.appendChild(h);
+        }
+        // Midpoint handles (diamonds)
+        const mids = [
+            [bounds.x + bounds.w/2, bounds.y],           // n
+            [bounds.x + bounds.w/2, bounds.y + bounds.h], // s
+            [bounds.x, bounds.y + bounds.h/2],             // w
+            [bounds.x + bounds.w, bounds.y + bounds.h/2],  // e
+        ];
+        const ms = hs * 0.8;
+        for (const [mx, my] of mids) {
+            const d = document.createElementNS(ns, 'rect');
+            d.setAttribute('x', mx - ms/2); d.setAttribute('y', my - ms/2);
+            d.setAttribute('width', ms); d.setAttribute('height', ms);
+            d.setAttribute('fill', '#fff'); d.setAttribute('stroke', '#7c5cf0');
+            d.setAttribute('stroke-width', sw); d.setAttribute('pointer-events', 'none');
+            d.setAttribute('transform', `rotate(45 ${mx} ${my})`);
+            g.appendChild(d);
         }
         selectionLayer.appendChild(g);
         // B-spline control points (outside rotation group — they use actual point coords)
@@ -1062,6 +1079,7 @@ function getHandleAtPoint(pt) {
     const cx = b.x + b.w/2, cy = b.y + b.h/2;
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     const threshold = 8 * screenScale;
+    // Corner handles
     const corners = [
         { name: 'nw', x: b.x, y: b.y },
         { name: 'ne', x: b.x + b.w, y: b.y },
@@ -1072,10 +1090,24 @@ function getHandleAtPoint(pt) {
         const rp = rotatePoint(c.x, c.y, cx, cy, rot);
         if (Math.hypot(pt.x - rp.x, pt.y - rp.y) <= threshold) return { handle: c.name, obj };
     }
+    // Midpoint handles
+    const mids = [
+        { name: 'n', x: b.x + b.w/2, y: b.y },
+        { name: 's', x: b.x + b.w/2, y: b.y + b.h },
+        { name: 'w', x: b.x, y: b.y + b.h/2 },
+        { name: 'e', x: b.x + b.w, y: b.y + b.h/2 },
+    ];
+    for (const m of mids) {
+        const rp = rotatePoint(m.x, m.y, cx, cy, rot);
+        if (Math.hypot(pt.x - rp.x, pt.y - rp.y) <= threshold) return { handle: m.name, obj };
+    }
     return null;
 }
 
-const HANDLE_CURSORS = { nw: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', se: 'nwse-resize' };
+const HANDLE_CURSORS = {
+    nw: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', se: 'nwse-resize',
+    n: 'ns-resize', s: 'ns-resize', w: 'ew-resize', e: 'ew-resize',
+};
 
 // --- Select ---
 function handleSelectDown(pt, e) {
@@ -1125,41 +1157,62 @@ function handleResizeMove(pt, e) {
     const ob = state.resizeObjBounds; // original bounds
     const h = state.resizeHandle;
     const fromCenter = e.shiftKey;
+    const isCorner = ['nw','ne','sw','se'].includes(h);
+    const isMid = ['n','s','w','e'].includes(h);
 
     let newX = ob.x, newY = ob.y, newW = ob.w, newH = ob.h;
     const dx = pt.x - state.resizeStart.x;
     const dy = pt.y - state.resizeStart.y;
 
-    if (fromCenter) {
-        // Resize from center: both sides expand equally
-        let dw = 0, dh = 0;
-        if (h === 'se') { dw = dx; dh = dy; }
-        else if (h === 'nw') { dw = -dx; dh = -dy; }
-        else if (h === 'ne') { dw = dx; dh = -dy; }
-        else if (h === 'sw') { dw = -dx; dh = dy; }
-        newW = Math.max(2, ob.w + dw * 2);
-        newH = Math.max(2, ob.h + dh * 2);
-        const cx = ob.x + ob.w / 2, cy = ob.y + ob.h / 2;
-        newX = cx - newW / 2;
-        newY = cy - newH / 2;
-    } else {
-        // Normal resize: drag the corner
-        if (h === 'se') {
+    if (isCorner) {
+        // Corner handles: always proportional
+        const aspect = ob.w / ob.h;
+        let rawW, rawH;
+        if (h === 'se') { rawW = ob.w + dx; rawH = ob.h + dy; }
+        else if (h === 'nw') { rawW = ob.w - dx; rawH = ob.h - dy; }
+        else if (h === 'ne') { rawW = ob.w + dx; rawH = ob.h - dy; }
+        else { rawW = ob.w - dx; rawH = ob.h + dy; }
+        // Use the larger change to determine scale
+        const scaleW = rawW / ob.w, scaleH = rawH / ob.h;
+        const scale = Math.max(0.01, Math.abs(scaleW) > Math.abs(scaleH) ? scaleW : scaleH);
+        newW = Math.max(2, ob.w * scale);
+        newH = Math.max(2, newW / aspect);
+
+        if (fromCenter) {
+            const cx = ob.x + ob.w/2, cy = ob.y + ob.h/2;
+            newX = cx - newW/2;
+            newY = cy - newH/2;
+        } else {
+            if (h === 'nw') { newX = ob.x + ob.w - newW; newY = ob.y + ob.h - newH; }
+            else if (h === 'ne') { newY = ob.y + ob.h - newH; }
+            else if (h === 'sw') { newX = ob.x + ob.w - newW; }
+            // se: newX/newY stay at ob.x/ob.y
+        }
+    } else if (isMid) {
+        // Midpoint handles: single-axis stretch
+        if (h === 'e') {
             newW = Math.max(2, ob.w + dx);
-            newH = Math.max(2, ob.h + dy);
-        } else if (h === 'nw') {
+        } else if (h === 'w') {
             newW = Math.max(2, ob.w - dx);
-            newH = Math.max(2, ob.h - dy);
             newX = ob.x + ob.w - newW;
-            newY = ob.y + ob.h - newH;
-        } else if (h === 'ne') {
-            newW = Math.max(2, ob.w + dx);
+        } else if (h === 's') {
+            newH = Math.max(2, ob.h + dy);
+        } else if (h === 'n') {
             newH = Math.max(2, ob.h - dy);
             newY = ob.y + ob.h - newH;
-        } else if (h === 'sw') {
-            newW = Math.max(2, ob.w - dx);
-            newH = Math.max(2, ob.h + dy);
-            newX = ob.x + ob.w - newW;
+        }
+
+        if (fromCenter) {
+            const cx = ob.x + ob.w/2, cy = ob.y + ob.h/2;
+            if (h === 'e' || h === 'w') {
+                const dw = newW - ob.w;
+                newW = Math.max(2, ob.w + Math.abs(dw) * 2 * Math.sign(dw));
+                newX = cx - newW/2;
+            } else {
+                const dh = newH - ob.h;
+                newH = Math.max(2, ob.h + Math.abs(dh) * 2 * Math.sign(dh));
+                newY = cy - newH/2;
+            }
         }
     }
 
@@ -1994,6 +2047,28 @@ function handleWheel(e) {
 function toUnit(px) { return +(px * UNITS[state.unit].factor).toFixed(UNITS[state.unit].dec); }
 function fromUnit(val) { return val / UNITS[state.unit].factor; }
 
+// Get the axis-aligned bounding box after rotation
+function getRotatedBounds(obj) {
+    const b = getObjBounds(obj);
+    const rot = obj.rotation || 0;
+    if (!rot) return b;
+    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+    const corners = [
+        rotatePoint(b.x, b.y, cx, cy, rot),
+        rotatePoint(b.x + b.w, b.y, cx, cy, rot),
+        rotatePoint(b.x, b.y + b.h, cx, cy, rot),
+        rotatePoint(b.x + b.w, b.y + b.h, cx, cy, rot),
+    ];
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of corners) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
 function updatePropsPanel() {
     const panel = document.getElementById('props-panel');
     const pid = primaryId();
@@ -2001,11 +2076,11 @@ function updatePropsPanel() {
     const obj = findObject(pid);
     if (!obj) { panel.classList.add('hidden'); return; }
     panel.classList.remove('hidden');
-    const b = getObjBounds(obj);
-    document.getElementById('prop-x').value = toUnit(b.x);
-    document.getElementById('prop-y').value = toUnit(b.y);
-    document.getElementById('prop-w').value = toUnit(b.w);
-    document.getElementById('prop-h').value = toUnit(b.h);
+    const rb = getRotatedBounds(obj);
+    document.getElementById('prop-x').value = toUnit(rb.x);
+    document.getElementById('prop-y').value = toUnit(rb.y);
+    document.getElementById('prop-w').value = toUnit(rb.w);
+    document.getElementById('prop-h').value = toUnit(rb.h);
     document.getElementById('prop-rotation').value = Math.round(obj.rotation || 0);
     document.getElementById('props-unit-label').textContent = state.unit;
 }
