@@ -2117,7 +2117,7 @@ function generateNamesFromTemplate(names) {
     }
     saveUndoState();
 
-    const padding = 6; // px padding inside rect
+    const padding = 2; // px minimal padding inside rect
     const fontName = 'Rows of Sunflowers';
     const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
 
@@ -2169,51 +2169,58 @@ function generateNamesFromTemplate(names) {
 
         // Create text, measure, and scale to fit inside the rect
         const name = names[i];
-        const maxFontSize = 200;
+        const ns = 'http://www.w3.org/2000/svg';
+
+        // Measure at a reference size
+        const refSize = 100;
+        const tmpText = document.createElementNS(ns, 'text');
+        tmpText.setAttribute('font-family', fontDef.css);
+        tmpText.setAttribute('font-size', refSize);
+        tmpText.textContent = name;
+        objectsLayer.appendChild(tmpText);
+        const refBBox = tmpText.getBBox();
+        objectsLayer.removeChild(tmpText);
+
+        if (refBBox.width < 0.1 || refBBox.height < 0.1) continue;
+
+        // Calculate font size to fill the rect
+        const availW = rectW - padding * 2;
+        const availH = rectH - padding * 2;
+        const scale = Math.min(availW / refBBox.width, availH / refBBox.height);
+        const finalFontSize = refSize * scale;
+
+        // Measure again at actual final size for precise positioning
+        const tmpText2 = document.createElementNS(ns, 'text');
+        tmpText2.setAttribute('font-family', fontDef.css);
+        tmpText2.setAttribute('font-size', finalFontSize);
+        tmpText2.textContent = name;
+        objectsLayer.appendChild(tmpText2);
+        const finalBBox = tmpText2.getBBox();
+        objectsLayer.removeChild(tmpText2);
+
+        // Center: place so the bbox center aligns with the rect center
+        // SVG text (x,y) is the anchor point; bbox tells us where the glyphs actually land
+        // We need: finalBBox centered in rect → solve for text x,y
+        const targetCX = rectX + rectW / 2;
+        const targetCY = rectY + rectH / 2;
+        // finalBBox is relative to text at (0, 0), so:
+        // at text (tx, ty), actual bbox center = (tx + finalBBox.x + finalBBox.width/2, ty + finalBBox.y + finalBBox.height/2)
+        // We want that = (targetCX, targetCY)
+        const textX = targetCX - finalBBox.x - finalBBox.width / 2;
+        const textY = targetCY - finalBBox.y - finalBBox.height / 2;
+
         const textObj = {
             id: state.nextId++,
             type: 'text',
-            x: 0, y: 0, // will be positioned after measuring
+            x: textX, y: textY,
             text: name,
             fontFamily: fontName,
-            fontSize: maxFontSize,
+            fontSize: finalFontSize,
             fill: '#000000',
             stroke: 'none',
             strokeWidth: 0,
             rotation: 0,
         };
-
-        // Create temp SVG text to measure
-        const ns = 'http://www.w3.org/2000/svg';
-        const tmpText = document.createElementNS(ns, 'text');
-        tmpText.setAttribute('font-family', fontDef.css);
-        tmpText.setAttribute('font-size', maxFontSize);
-        tmpText.textContent = name;
-        objectsLayer.appendChild(tmpText);
-        const bbox = tmpText.getBBox();
-        objectsLayer.removeChild(tmpText);
-
-        if (bbox.width < 0.1 || bbox.height < 0.1) continue;
-
-        // Scale to fit inside rect with padding
-        const availW = rectW - padding * 2;
-        const availH = rectH - padding * 2;
-        const scale = Math.min(availW / bbox.width, availH / bbox.height);
-        const finalFontSize = maxFontSize * scale;
-
-        // Recalculate bbox at final size
-        const finalW = bbox.width * scale;
-        const finalH = bbox.height * scale;
-
-        // Center text in rect
-        // SVG text x,y is the baseline-left position
-        // bbox.y is negative (ascent above baseline)
-        const textX = rectX + (rectW - finalW) / 2 - bbox.x * scale;
-        const textY = rectY + (rectH - finalH) / 2 - bbox.y * scale;
-
-        textObj.fontSize = finalFontSize;
-        textObj.x = textX;
-        textObj.y = textY;
 
         const elem = buildSVGElement(textObj);
         textObj.element = elem;
