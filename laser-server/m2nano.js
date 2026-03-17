@@ -17,10 +17,9 @@ const DEVICES = [
 
 const EP_OUT       = 0x02;   // Bulk OUT → máquina
 const EP_IN        = 0x82;   // Bulk IN  ← máquina
-const PKT_SIZE     = 34;     // Tamaño de paquete USB (34 bytes protocolo Lhystudios, igual que K40 Whisperer)
+const PKT_SIZE     = 32;     // Tamaño de paquete USB (32 bytes, formato MeerK40t — cabe en maxPkt del CH341)
 const CMD_PKT_SIZE = 32;     // Tamaño de paquete de comando (sin CRC)
 const DATA_SIZE    = 30;     // Bytes de datos por paquete (payload)
-const PKT_FRAME    = 0xA6;   // Byte de comando de escritura paralela CH341A
 const CMD_STATUS   = 0xA0;   // Comando de solicitud de estado
 const RESP_SIZE    = 6;      // Tamaño de respuesta de estado
 
@@ -120,24 +119,24 @@ class M2Nano {
     // ───────── Comunicación de bajo nivel ─────────
 
     /**
-     * Envía un paquete de datos EGV de 34 bytes (protocolo Lhystudios, igual que K40 Whisperer).
-     * Formato: [0xA6][0x00][payload (30 bytes)][0xA6][CRC-8]
-     *   - Byte 0:     0xA6 (comando de escritura EPP al CH341A)
-     *   - Byte 1:     0x00 (byte de inicio de trama)
-     *   - Bytes 2-31: payload EGV (30 bytes, padded con 0x46 'F')
-     *   - Byte 32:    0xA6 (cierre de trama — mismo PKT_FRAME que byte 0)
-     *   - Byte 33:    CRC-8 Dallas/Maxim sobre bytes 2-31
+     * Envía un paquete de datos EGV de 32 bytes (formato MeerK40t).
+     * Formato: [0x00][payload (30 bytes)][CRC-8]
+     *   - Byte 0:     0x00 (start marker)
+     *   - Bytes 1-30: payload EGV (30 bytes, padded con 0x46 'F')
+     *   - Byte 31:    CRC-8 Dallas/Maxim sobre bytes 1-30
+     *
+     * MeerK40t usa 32 bytes (sin framing 0xA6) porque el CH341 tiene maxPkt=32.
+     * K40-Whisperer usa 34 bytes con 0xA6 que funciona en Linux pero en Windows
+     * los últimos 2 bytes quedan varados en el buffer del CH341.
      */
     sendPacket(data, logFirst = false) {
         return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
-            pkt[0] = PKT_FRAME;   // 0xA6
-            pkt[1] = 0x00;        // Inicio de trama
-            pkt.fill(0x46, 2, 32);  // Padding con 'F' en zona de payload
+            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 32 bytes
+            pkt[0] = 0x00;                            // Start marker
+            pkt.fill(0x46, 1, 31);                    // Padding 'F' en payload
             const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
-            pkt[32] = PKT_FRAME;  // 0xA6 — cierre de trama (igual que K40 Whisperer)
-            pkt[33] = crc8(pkt.subarray(2, 32));  // CRC sobre los 30 bytes de payload
+            src.copy(pkt, 1, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 1-30
+            pkt[31] = crc8(pkt.subarray(1, 31));     // CRC sobre 30 bytes de payload
 
             if (logFirst) {
                 const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
