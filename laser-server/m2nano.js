@@ -198,8 +198,13 @@ class M2Nano {
 
                 // Listo cuando el board devuelve un estado idle conocido.
                 // M2 Nano: 0xCE=OK, 0xEC=finish.
-                // M3 Nano (Lihuiyu 2022+): 0xCF=idle/home (normal en M3).
+                // M3 Nano (Lihuiyu 2022+): 0xCF puede ser:
+                //   a) idle/home normal en algunas versiones de firmware, O
+                //   b) TAPA ABIERTA / interlock de seguridad activo.
                 // 0xA5/0xEE = busy → seguir esperando.
+                if (s === 0xCF) {
+                    this.log('⚠ Status 0xCF — si la máquina no se mueve, CIERRA LA TAPA del K40 o puentea el sensor de tapa (conector DOOR/LID en la placa).');
+                }
                 if (s === 0xCE || s === 0xCF || s === 0xEC) return;
             } catch (_) {}
             await sleep(80);
