@@ -45,7 +45,7 @@ document.getElementById('logout-btn').addEventListener('click', () => {
 });
 
 // Configuración
-const AUTHORIZED_PREFIX = "2806:267:2484"; // Prefijo más amplio (3 bloques)
+const AUTHORIZED_PREFIXES = ["2806:267:2484", "177.226.102"]; // IPv6 e IPv4 de la oficina
 const OFFICE_WIFI_NAME = "Red Dekoor House";
 const ADMIN_PIN = "1234";
 const REFRESH_RATE = 1000;
@@ -104,7 +104,7 @@ async function checkNetwork() {
 
         // Validación flexible: Comprobamos si la IP del usuario empieza con el prefijo de la oficina
         // Esto soluciona el problema de IPs dinámicas dentro de la misma red WiFi
-        if (userIp.startsWith(AUTHORIZED_PREFIX)) {
+        if (AUTHORIZED_PREFIXES.some(prefix => userIp.startsWith(prefix))) {
             isAuthorized = true;
             networkStatusEl.className = "status-badge status-online";
             networkTextEl.textContent = "CONECTADO A RED OFICINA";
