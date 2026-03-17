@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checador Pro | Registro de Asistencia</title>
+    <link rel="stylesheet" href="style.css?v=1.0.2">
+</head>
+<body>
+    <div class="container">
+        <div class="card">
+            <div class="logo">
+                <img src="logo.png" alt="Dekoor House Logo">
+            </div>
+            
+            <div id="network-status" class="status-badge status-offline">
+                <span class="dot">•</span>
+                <span id="network-text">Verificando red...</span>
+            </div>
+
+            <div class="clock-container">
+                <div id="time">00:00:00</div>
+                <div id="date">Cargando fecha...</div>
+            </div>
+
+            <div class="input-group">
+                <label for="employee-id">ID de Empleado</label>
+                <input type="text" id="employee-id" placeholder="Ingresa tu ID o Nombre" autocomplete="off">
+            </div>
+
+            <div class="button-grid">
+                <button id="btn-in" class="btn btn-in">
+                    <span>ENTRADA</span>
+                </button>
+                <button id="btn-out" class="btn btn-out">
+                    <span>SALIDA</span>
+                </button>
+            </div>
+
+            <div class="history">
+                <div class="history-title">
+                    <span>RECIENTES</span>
+                    <span id="clear-history" style="cursor: pointer; font-size: 0.7rem;">LIMPIAR</span>
+                </div>
+                <ul id="history-list" class="history-list">
+                    <!-- Registros aparecerán aquí -->
+                </ul>
+            </div>
+
+            <div class="admin-access">
+                <button id="open-admin" class="link-btn">Panel Administrativo</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Administrativo Overlay -->
+    <div id="admin-panel" class="admin-overlay">
+        <div class="admin-modal">
+            <div class="admin-header">
+                <h2>Panel Administrativo</h2>
+                <button id="close-admin" class="close-btn">&times;</button>
+            </div>
+            
+            <div class="admin-tabs">
+                <button class="tab-btn active" data-tab="tab-records">Asistencia</button>
+                <button class="tab-btn" data-tab="tab-employees">Empleados</button>
+            </div>
+
+            <div id="tab-records" class="tab-content active">
+                <div class="admin-actions">
+                    <button id="export-csv" class="btn-small">Descargar Excel (CSV)</button>
+                    <button id="clear-all-logs" class="btn-small btn-danger">Borrar Todo</button>
+                </div>
+                <div class="table-container">
+                    <table id="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Empleado</th>
+                                <th>Fecha</th>
+                                <th>Entradas / Salidas</th>
+                                <th>Total Horas</th>
+                                <th>Pago ($70/hr)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-logs-body">
+                            <!-- Logs here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div id="tab-employees" class="tab-content">
+                <div class="add-employee-form">
+                    <input type="text" id="new-emp-name" placeholder="Nombre completo">
+                    <input type="text" id="new-emp-id" placeholder="ID (ej: 101)">
+                    <button id="add-employee-btn" class="btn-in" style="padding: 10px;">Añadir</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Nombre</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-employees-body">
+                            <!-- Employees here -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Login Admin Overlay -->
+    <div id="admin-login" class="network-overlay">
+        <div class="network-modal">
+            <h3>Acceso Restringido</h3>
+            <p style="font-size: 0.8rem; margin-bottom: 15px; color: var(--text-muted);">Ingresa el PIN de administrador</p>
+            <input type="password" id="admin-pin" placeholder="PIN" style="text-align: center; margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px; justify-content: center;">
+                <button id="login-btn" class="btn-in" style="padding: 10px 20px;">Entrar</button>
+                <button id="cancel-login" class="btn-out" style="padding: 10px 20px; background: #475569;">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification">
+        Registro exitoso
+    </div>
+
+    <!-- Simulación de Red: Este modal aparecería si no está en la red correcta -->
+    <div id="network-blocked" class="network-overlay">
+        <div class="network-modal">
+            <h2 style="color: #ef4444; margin-bottom: 15px;">Acceso Restringido</h2>
+            <p style="color: #94a3b8; margin-bottom: 20px;">Para marcar asistencia, debes estar conectado a la red Wi-Fi de la oficina.</p>
+            <button onclick="checkNetwork()" style="padding: 10px 20px; border-radius: 8px; border: none; background: #4f46e5; color: white; cursor: pointer;">Reintentar</button>
+        </div>
+    </div>
+
+    <script src="app.js?v=2.0.1"></script>
+</body>
+</html>
