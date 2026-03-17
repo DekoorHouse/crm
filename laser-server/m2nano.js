@@ -159,9 +159,10 @@ class M2Nano {
                     logged = true;
                 }
 
-                // Ready: byte 0 indica estado completado/idle
-                // 0xC6 = completado, 0x00 = idle, 0xA5 = listo (varía por firmware)
-                if (resp[0] === 0xC6 || resp[0] === 0x00 || resp[0] === 0xA5) return;
+                // Ready: el board NO está ocupado si resp[0] != 0xA5 (busy).
+                // Valores conocidos: 0xC6=completado, 0x00=idle, 0xFF=idle (varía por firmware).
+                // Cualquier respuesta que no sea 0xA5 (busy) indica que podemos continuar.
+                if (resp[0] !== 0xA5) return;
             } catch (_) {}
             await sleep(80);
         }
@@ -203,11 +204,12 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV: I=init, dirs (1 char=1 paso), S1P=vel rápida, N=ejecutar, SE=fin, F=salir
+        // EGV rapid move (sin láser): I=init, dirs (1 char=1 paso), SE=fin sección, F=salir
+        // NO incluir S1PN — eso activa el láser (modo corte). Para jog solo movimiento rápido.
         let cmd = 'I';
         if (sx > 0) cmd += (dx > 0 ? 'R' : 'L').repeat(sx);
         if (sy > 0) cmd += (dy > 0 ? 'B' : 'T').repeat(sy);
-        cmd += 'S1PNSEF';
+        cmd += 'SEF';
 
         this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
 
