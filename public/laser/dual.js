@@ -318,7 +318,7 @@ function createPanel(id) {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
         plog('Generando vista previa...', 'info');
         const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors });
+        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, skipDithering: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') });
 
         // Convertir bitmap 1-bit a canvas para mostrar
         const pvCanvas = document.createElement('canvas');
@@ -359,7 +359,7 @@ function createPanel(id) {
         } else {
             // Para SVGs, usar el bbox de los objetos (no el canvas completo)
             const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors });
+            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, skipDithering: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') });
             const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
@@ -538,13 +538,17 @@ function extractRasterBitmap(image, lineSpacing = 1, bbox = null, options = {}) 
     if (options.invert) {
         for (let i = 0; i < pxW * pxH; i++) gray[i] = 255 - gray[i];
     }
-    // Floyd-Steinberg dithering
-    for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
-        const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;
-        if (x+1 < pxW) gray[idx+1] += err*7/16;
-        if (y+1 < pxH && x > 0) gray[(y+1)*pxW+x-1] += err*3/16;
-        if (y+1 < pxH) gray[(y+1)*pxW+x] += err*5/16;
-        if (y+1 < pxH && x+1 < pxW) gray[(y+1)*pxW+x+1] += err*1/16;
+    // BMP: umbral directo (ya viene en B/N). Otros: Floyd-Steinberg dithering.
+    if (options.skipDithering) {
+        for (let i = 0; i < pxW * pxH; i++) gray[i] = gray[i] < 128 ? 0 : 255;
+    } else {
+        for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
+            const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;
+            if (x+1 < pxW) gray[idx+1] += err*7/16;
+            if (y+1 < pxH && x > 0) gray[(y+1)*pxW+x-1] += err*3/16;
+            if (y+1 < pxH) gray[(y+1)*pxW+x] += err*5/16;
+            if (y+1 < pxH && x+1 < pxW) gray[(y+1)*pxW+x+1] += err*1/16;
+        }
     }
     const rowBytes = Math.ceil(pxW / 8);
     const bitmap = new Uint8Array(rowBytes * pxH);
