@@ -231,55 +231,47 @@ function drawCanvas() {
         let mmW, mmH;
 
         if (state.imageType === 'svg') {
-            // Leer dimensiones reales del SVG en mm
-            if (state.svgText) {
-                const parser = new DOMParser();
-                const doc = parser.parseFromString(state.svgText, 'image/svg+xml');
-                const svg = doc.querySelector('svg');
-                const rawW = svg?.getAttribute('width')  || '';
-                const rawH = svg?.getAttribute('height') || '';
-                const vb = svg && svg.getAttribute('viewBox');
-
-                // Intentar obtener dimensiones en mm
-                // Si el SVG tiene width/height con unidad "mm", usarlas directamente
-                // Si son px o sin unidad, convertir: 96px = 25.4mm (CSS standard)
-                let svgMmW, svgMmH;
-                if (rawW.includes('mm')) {
-                    svgMmW = parseFloat(rawW);
-                    svgMmH = parseFloat(rawH);
-                } else if (rawW.includes('in')) {
-                    svgMmW = parseFloat(rawW) * 25.4;
-                    svgMmH = parseFloat(rawH) * 25.4;
-                } else if (rawW.includes('cm')) {
-                    svgMmW = parseFloat(rawW) * 10;
-                    svgMmH = parseFloat(rawH) * 10;
-                } else if (parseFloat(rawW) > 0) {
-                    // px o sin unidad → convertir de px a mm (96 DPI)
-                    svgMmW = parseFloat(rawW) / 96 * 25.4;
-                    svgMmH = parseFloat(rawH) / 96 * 25.4;
-                } else if (vb) {
-                    // Solo viewBox, sin width/height → asumir unidades como px
-                    const p = vb.split(/[\s,]+/).map(Number);
-                    svgMmW = p[2] / 96 * 25.4;
-                    svgMmH = p[3] / 96 * 25.4;
+            // Calcular bbox real del CONTENIDO del SVG (no de la página)
+            if (state.svgText && !state._svgBBox) {
+                const container = document.createElement('div');
+                container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+                container.innerHTML = state.svgText;
+                document.body.appendChild(container);
+                const liveSvg = container.querySelector('svg');
+                const scale = svgToMmScale(liveSvg);
+                const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon,text,image,use,g');
+                let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+                for (const el of shapes) {
+                    try {
+                        const bb = el.getBBox();
+                        if (bb.width === 0 && bb.height === 0) continue;
+                        minX = Math.min(minX, bb.x);
+                        minY = Math.min(minY, bb.y);
+                        maxX = Math.max(maxX, bb.x + bb.width);
+                        maxY = Math.max(maxY, bb.y + bb.height);
+                    } catch (_) {}
+                }
+                document.body.removeChild(container);
+                if (minX < Infinity) {
+                    state._svgBBox = {
+                        mmX: minX * scale, mmY: minY * scale,
+                        mmW: (maxX - minX) * scale, mmH: (maxY - minY) * scale,
+                    };
                 } else {
-                    svgMmW = WORK_W; svgMmH = WORK_H;
+                    state._svgBBox = { mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
                 }
-
-                // Limitar al área de trabajo
-                if (svgMmW > WORK_W || svgMmH > WORK_H) {
-                    const fitScale = Math.min(WORK_W / svgMmW, WORK_H / svgMmH);
-                    svgMmW *= fitScale;
-                    svgMmH *= fitScale;
-                }
-                mmW = svgMmW;
-                mmH = svgMmH;
-            } else {
-                mmW = WORK_W; mmH = WORK_H;
             }
+            const bb = state._svgBBox || { mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
+            mmW = bb.mmW;
+            mmH = bb.mmH;
+            // Posición del contenido dentro de la cama
+            const contentDx = (bb.mmX / WORK_W) * W;
+            const contentDy = (bb.mmY / WORK_H) * H;
             dw = (mmW / WORK_W) * W;
             dh = (mmH / WORK_H) * H;
-            dx = 0; dy = 0;
+            // Dibujar el SVG completo mapeado a la cama, pero el bbox es solo del contenido
+            dx = contentDx;
+            dy = contentDy;
         } else {
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
@@ -292,14 +284,20 @@ function drawCanvas() {
             dy = (H - dh) / 2;
         }
 
-        // Guardar bounding box para selección y frame
+        // Guardar bounding box del contenido para selección y frame
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
+
+        // Para SVG: dibujar la imagen completa mapeada a la cama, bbox es solo del contenido
+        const drawX = state.imageType === 'svg' ? 0 : dx;
+        const drawY = state.imageType === 'svg' ? 0 : dy;
+        const drawW = state.imageType === 'svg' ? W : dw;
+        const drawH = state.imageType === 'svg' ? H : dh;
 
         ctx.save();
         if (state.mode === 'cut') {
             ctx.globalAlpha = 0.55;
             ctx.filter = 'grayscale(100%)';
-            ctx.drawImage(img, dx, dy, dw, dh);
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
             ctx.restore();
             ctx.strokeStyle = '#ff4444';
             ctx.lineWidth = 1;
@@ -309,7 +307,7 @@ function drawCanvas() {
         } else {
             ctx.globalAlpha = 0.75;
             ctx.filter = 'grayscale(80%) contrast(1.2)';
-            ctx.drawImage(img, dx, dy, dw, dh);
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
             ctx.restore();
         }
 
@@ -436,7 +434,8 @@ function loadFile(file) {
 
     if (ext === 'svg') {
         reader.onload = e => {
-            state.svgText = e.target.result; // guardar SVG raw para extracción de paths
+            state.svgText = e.target.result;
+            state._svgBBox = null; // recalcular bbox del contenido
             const blob = new Blob([e.target.result], { type: 'image/svg+xml' });
             const url  = URL.createObjectURL(blob);
             const img  = new Image();
@@ -485,6 +484,8 @@ function removeFile() {
     state.loadedFile  = null;
     state.loadedImage = null;
     state.imageType   = null;
+    state.svgText     = null;
+    state._svgBBox    = null;
     state.designSelected = false;
     state.designBox = null;
     fileInfo.style.display = 'none';
