@@ -136,6 +136,7 @@
                 <div class="add-employee-form">
                     <input type="text" id="new-emp-name" placeholder="Nombre completo">
                     <input type="text" id="new-emp-id" placeholder="ID (ej: 101)">
+                    <input type="tel" id="new-emp-phone" placeholder="WhatsApp (ej: +526141234567)" style="flex: 1.5;">
                     <button id="add-employee-btn" class="btn-in" style="padding: 10px;">Añadir</button>
                 </div>
                 <div class="table-container">
@@ -144,6 +145,7 @@
                             <tr>
                                 <th>ID</th>
                                 <th>Nombre</th>
+                                <th>WhatsApp</th>
                                 <th>Acción</th>
                             </tr>
                         </thead>
@@ -155,14 +157,17 @@
             </div>
 
             <div id="tab-resumen" class="tab-content">
-                <div class="admin-actions" style="align-items: center; justify-content: space-between;">
+                <div class="admin-actions" style="align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
                     <div style="display: flex; gap: 6px;">
                         <button class="btn-small period-btn active" data-period="semanal">Semanal</button>
                         <button class="btn-small period-btn" data-period="mensual">Mensual</button>
                         <button class="btn-small period-btn" data-period="anual">Anual</button>
                     </div>
-                    <span id="resumen-period-label" style="font-size: 0.78rem; color: var(--text-muted);"></span>
+                    <button id="send-whatsapp-btn" class="btn-small" style="background: linear-gradient(135deg, #25D366, #128C7E); color: white; border: none; display: flex; align-items: center; gap: 5px;">
+                        📲 Enviar por WhatsApp
+                    </button>
                 </div>
+                <span id="resumen-period-label" style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 8px;"></span>
                 <div class="table-container">
                     <table>
                         <thead>
@@ -225,6 +230,7 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
 
     <script src="app.js"></script>
 </body>

@@ -10,6 +10,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
+const functions = firebase.functions();
 
 // Caché local (se actualiza en tiempo real desde Firestore)
 let logsCache = [];
@@ -248,9 +249,9 @@ async function registerAttendance(type) {
 // 4. Empleados
 function getEmployees() { return employeesCache; }
 
-async function saveEmployee(name, id) {
+async function saveEmployee(name, id, phone = '') {
     if (employeesCache.some(e => e.id === id)) { showNotification("ID duplicado", "danger"); return false; }
-    await db.collection('checador_employees').add({ name, id });
+    await db.collection('checador_employees').add({ name, id, phone });
     return true;
 }
 
@@ -601,9 +602,13 @@ function renderAdminEmployees() {
     adminEmployeesBody.innerHTML = '';
     employeesCache.forEach(emp => {
         const tr = document.createElement('tr');
+        const phoneDisplay = emp.phone
+            ? `<span style="color:var(--success); font-size:0.82rem;">${emp.phone}</span>`
+            : `<span style="color:var(--text-muted); font-size:0.8rem;">Sin número</span>`;
         tr.innerHTML = `
             <td>${emp.id}</td>
             <td>${emp.name}</td>
+            <td>${phoneDisplay}</td>
             <td><button class="btn-small btn-danger" onclick="deleteEmployee('${emp.id}')">Eliminar</button></td>
         `;
         adminEmployeesBody.appendChild(tr);
@@ -674,10 +679,12 @@ tabBtns.forEach(btn => {
 addEmployeeBtn.addEventListener('click', async () => {
     const name = newEmpNameInput.value.trim();
     const id = newEmpIdInput.value.trim();
+    const phone = document.getElementById('new-emp-phone').value.trim();
     if (name && id) {
-        const ok = await saveEmployee(name, id);
+        const ok = await saveEmployee(name, id, phone);
         if (ok) {
             newEmpNameInput.value = ''; newEmpIdInput.value = '';
+            document.getElementById('new-emp-phone').value = '';
             showNotification("Añadido");
         }
     }
@@ -876,4 +883,41 @@ document.querySelectorAll('.period-btn').forEach(btn => {
         currentPeriod = btn.dataset.period;
         renderResumen();
     });
+});
+
+// =====================
+// ENVÍO POR WHATSAPP
+// =====================
+document.getElementById('send-whatsapp-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('send-whatsapp-btn');
+    const data = getResumenData(currentPeriod);
+
+    if (data.length === 0) {
+        showNotification('Sin datos para enviar', 'danger');
+        return;
+    }
+
+    const withPhone = employeesCache.filter(e => e.phone);
+    if (withPhone.length === 0) {
+        showNotification('Ningún empleado tiene número de WhatsApp registrado', 'danger');
+        return;
+    }
+
+    if (!confirm(`¿Enviar reporte ${currentPeriod} a ${withPhone.length} empleado(s) por WhatsApp?`)) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    try {
+        const sendReport = functions.httpsCallable('sendReportManual');
+        const result = await sendReport({ period: currentPeriod });
+        const { sent, skipped, errors } = result.data;
+        showNotification(`✓ Enviado a ${sent} empleado(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
+    } catch (err) {
+        console.error('Error enviando reportes:', err);
+        showNotification('Error al enviar: ' + (err.message || 'Intenta de nuevo'), 'danger');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '📲 Enviar por WhatsApp';
+    }
 });
