@@ -2385,6 +2385,140 @@ function ungroupSelected() {
 }
 
 // =============================================
+// JOIN NODES
+// =============================================
+function joinNodes() {
+    if (state.selectedIds.length < 2) return;
+    const THRESHOLD = 3; // px tolerance for coincident endpoints
+
+    // 1) Extract segments: each is { pts: [{x,y},...], objId }
+    //    pts[0] = start, pts[last] = end
+    const segments = [];
+    for (const id of state.selectedIds) {
+        const obj = findObject(id);
+        if (!obj) continue;
+        if (obj.type === 'line') {
+            segments.push({ pts: [{x:obj.x1,y:obj.y1},{x:obj.x2,y:obj.y2}], objId: id, type: 'line' });
+        } else if (obj.type === 'bspline' && obj.points.length >= 2) {
+            // Sample the spline to get a smooth polyline
+            const samples = sampleBSpline(obj.points, 60);
+            segments.push({ pts: samples, objId: id, type: 'bspline' });
+        } else if (obj.type === 'curvepath') {
+            // Parse the path and extract points
+            const cmds = parseSVGPath(obj.d);
+            const orig = obj._origBounds;
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+            const pts = [];
+            for (const c of cmds) {
+                for (const p of c.pts) {
+                    pts.push({ x: p.x * sx + tx, y: p.y * sy + ty });
+                }
+            }
+            if (pts.length >= 2) segments.push({ pts, objId: id, type: 'curvepath' });
+        }
+    }
+    if (segments.length < 2) return;
+
+    // 2) Chain segments by matching endpoints
+    const used = new Set();
+    const chain = [];
+
+    function endPt(seg, which) { return which === 'start' ? seg.pts[0] : seg.pts[seg.pts.length-1]; }
+    function near(a, b) { return Math.hypot(a.x - b.x, a.y - b.y) <= THRESHOLD; }
+
+    // Start with the first segment
+    let current = segments[0];
+    used.add(0);
+    chain.push(...current.pts);
+
+    let changed = true;
+    while (changed) {
+        changed = false;
+        const chainEnd = chain[chain.length - 1];
+        const chainStart = chain[0];
+        for (let i = 0; i < segments.length; i++) {
+            if (used.has(i)) continue;
+            const seg = segments[i];
+            const sStart = endPt(seg, 'start');
+            const sEnd = endPt(seg, 'end');
+            if (near(chainEnd, sStart)) {
+                // Append segment (skip first point, it's coincident)
+                chain.push(...seg.pts.slice(1));
+                used.add(i); changed = true; break;
+            } else if (near(chainEnd, sEnd)) {
+                // Append segment reversed
+                const rev = [...seg.pts].reverse();
+                chain.push(...rev.slice(1));
+                used.add(i); changed = true; break;
+            } else if (near(chainStart, sEnd)) {
+                // Prepend segment (skip last point)
+                chain.unshift(...seg.pts.slice(0, -1));
+                used.add(i); changed = true; break;
+            } else if (near(chainStart, sStart)) {
+                // Prepend segment reversed
+                const rev = [...seg.pts].reverse();
+                chain.unshift(...rev.slice(0, -1));
+                used.add(i); changed = true; break;
+            }
+        }
+    }
+
+    if (used.size < 2) return; // couldn't chain anything
+
+    // 3) Check if closed (first and last point are coincident)
+    const isClosed = near(chain[0], chain[chain.length - 1]);
+
+    // 4) Build SVG path d string
+    let d = `M ${chain[0].x} ${chain[0].y}`;
+    for (let i = 1; i < chain.length; i++) {
+        d += ` L ${chain[i].x} ${chain[i].y}`;
+    }
+    if (isClosed) d += ' Z';
+
+    // 5) Compute bounding box
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const p of chain) {
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+    }
+    const bw = maxX - minX || 1, bh = maxY - minY || 1;
+
+    // 6) Create new curvepath object
+    saveUndoState();
+    const newObj = {
+        id: state.nextId++,
+        type: 'curvepath',
+        d: d,
+        x: minX,
+        y: minY,
+        width: bw,
+        height: bh,
+        _origBounds: { x: minX, y: minY, w: bw, h: bh },
+        fill: isClosed ? state.fillColor : 'none',
+        stroke: state.strokeColor,
+        strokeWidth: state.strokeWidth,
+        rotation: 0,
+    };
+    const elem = buildSVGElement(newObj);
+    newObj.element = elem;
+    elem.dataset.objectId = newObj.id;
+    objectsLayer.appendChild(elem);
+    state.objects.push(newObj);
+
+    // 7) Delete original objects that were used
+    for (const i of used) {
+        deleteObject(segments[i].objId);
+    }
+
+    state.selectedIds = [newObj.id];
+    drawSelection();
+    updatePropsPanel();
+}
+
+// =============================================
 // DUPLICATE
 // =============================================
 function duplicateSelected() {
@@ -2892,6 +3026,7 @@ function handleMenuAction(action) {
         case 'fit-page':    resetView(); break;
         case 'group':       groupSelected(); break;
         case 'ungroup':     ungroupSelected(); break;
+        case 'join-nodes':  joinNodes(); break;
         case 'import-names': showImportNamesModal(); break;
     }
 }
@@ -3473,6 +3608,7 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
         if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
+        if (e.key.toLowerCase() === 'j' && e.ctrlKey) { e.preventDefault(); joinNodes(); return; }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
