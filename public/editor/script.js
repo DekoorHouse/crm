@@ -636,89 +636,147 @@ function selectObject(id, addToSelection) {
 
 function drawSelection() {
     selectionLayer.innerHTML = '';
-    // If in node edit mode, draw nodes instead of selection box
-    if (state.nodeEditId) {
-        drawNodeEdit();
-        return;
-    }
+    if (state.nodeEditId) { drawNodeEdit(); return; }
+    if (state.selectedIds.length === 0) return;
     const ns = 'http://www.w3.org/2000/svg';
+    const sw = state.viewBox.w * 0.0015;
+    const hs = state.viewBox.w * 0.007;
+    const off = hs * 0.8;
+    const ms = hs * 0.8;
+
+    // Compute combined bounding box for all selected objects
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj) continue;
-        const bounds = getObjBounds(obj);
-        const sw = state.viewBox.w * 0.0015;
-        const hs = state.viewBox.w * 0.007;
-        // Wrap everything in a group with rotation
-        const g = document.createElementNS(ns, 'g');
-        g.setAttribute('pointer-events', 'none');
-        if (obj.rotation) {
-            const rcx = bounds.x + bounds.w/2, rcy = bounds.y + bounds.h/2;
-            g.setAttribute('transform', `rotate(${obj.rotation} ${rcx} ${rcy})`);
-        }
-        // Dashed box
-        const r = document.createElementNS(ns, 'rect');
-        r.setAttribute('x', bounds.x); r.setAttribute('y', bounds.y);
-        r.setAttribute('width', bounds.w); r.setAttribute('height', bounds.h);
-        r.setAttribute('fill', 'none'); r.setAttribute('stroke', '#7c5cf0');
-        r.setAttribute('stroke-width', sw);
-        r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
-        r.setAttribute('pointer-events', 'none');
-        g.appendChild(r);
-        // Corner handles (squares) — offset outward from bounds
-        const off = hs * 0.8; // offset distance outward
-        const corners = [
-            [bounds.x - off, bounds.y - off],
-            [bounds.x + bounds.w + off, bounds.y - off],
-            [bounds.x - off, bounds.y + bounds.h + off],
-            [bounds.x + bounds.w + off, bounds.y + bounds.h + off],
+        const b = getObjBounds(obj);
+        // For rotated objects, use the rotated corners for the combined bbox
+        const rot = obj.rotation || 0;
+        const cx = b.x + b.w/2, cy = b.y + b.h/2;
+        const pts = [
+            rotatePoint(b.x, b.y, cx, cy, rot),
+            rotatePoint(b.x+b.w, b.y, cx, cy, rot),
+            rotatePoint(b.x, b.y+b.h, cx, cy, rot),
+            rotatePoint(b.x+b.w, b.y+b.h, cx, cy, rot),
         ];
-        for (const [cx, cy] of corners) {
-            const h = document.createElementNS(ns, 'rect');
-            h.setAttribute('x', cx - hs/2); h.setAttribute('y', cy - hs/2);
-            h.setAttribute('width', hs); h.setAttribute('height', hs);
-            h.setAttribute('fill', '#fff'); h.setAttribute('stroke', '#7c5cf0');
-            h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
-            g.appendChild(h);
-        }
-        // Midpoint handles (diamonds) — offset outward
-        const mids = [
-            [bounds.x + bounds.w/2, bounds.y - off],           // n
-            [bounds.x + bounds.w/2, bounds.y + bounds.h + off], // s
-            [bounds.x - off, bounds.y + bounds.h/2],             // w
-            [bounds.x + bounds.w + off, bounds.y + bounds.h/2],  // e
-        ];
-        const ms = hs * 0.8;
-        for (const [mx, my] of mids) {
-            const d = document.createElementNS(ns, 'rect');
-            d.setAttribute('x', mx - ms/2); d.setAttribute('y', my - ms/2);
-            d.setAttribute('width', ms); d.setAttribute('height', ms);
-            d.setAttribute('fill', '#fff'); d.setAttribute('stroke', '#7c5cf0');
-            d.setAttribute('stroke-width', sw); d.setAttribute('pointer-events', 'none');
-            d.setAttribute('transform', `rotate(45 ${mx} ${my})`);
-            g.appendChild(d);
-        }
-        selectionLayer.appendChild(g);
-        // B-spline control points (outside rotation group — they use actual point coords)
-        if (obj.type === 'bspline' && obj.points.length > 0) {
-            const cs = hs * 0.7;
-            if (obj.points.length > 1) {
-                const pl = document.createElementNS(ns, 'polyline');
-                pl.setAttribute('points', obj.points.map(p => `${p.x},${p.y}`).join(' '));
-                pl.setAttribute('fill', 'none'); pl.setAttribute('stroke', '#7c5cf0');
-                pl.setAttribute('stroke-width', sw * 0.6);
-                pl.setAttribute('stroke-dasharray', `${sw*3} ${sw*1.5}`);
-                pl.setAttribute('pointer-events', 'none');
-                selectionLayer.appendChild(pl);
-            }
-            for (const p of obj.points) {
-                const c = document.createElementNS(ns, 'circle');
-                c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', cs/2);
-                c.setAttribute('fill', '#fff'); c.setAttribute('stroke', '#7c5cf0');
-                c.setAttribute('stroke-width', sw); c.setAttribute('pointer-events', 'none');
-                selectionLayer.appendChild(c);
-            }
+        for (const p of pts) {
+            if (p.x < minX) minX = p.x;
+            if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x;
+            if (p.y > maxY) maxY = p.y;
         }
     }
+    const bounds = { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+
+    // For a single object with rotation, draw the rotated bounding box
+    if (state.selectedIds.length === 1) {
+        const obj = findObject(state.selectedIds[0]);
+        if (obj) {
+            const ob = getObjBounds(obj);
+            const g = document.createElementNS(ns, 'g');
+            g.setAttribute('pointer-events', 'none');
+            if (obj.rotation) {
+                const rcx = ob.x + ob.w/2, rcy = ob.y + ob.h/2;
+                g.setAttribute('transform', `rotate(${obj.rotation} ${rcx} ${rcy})`);
+            }
+            // Dashed box
+            const r = document.createElementNS(ns, 'rect');
+            r.setAttribute('x', ob.x); r.setAttribute('y', ob.y);
+            r.setAttribute('width', ob.w); r.setAttribute('height', ob.h);
+            r.setAttribute('fill', 'none'); r.setAttribute('stroke', '#7c5cf0');
+            r.setAttribute('stroke-width', sw);
+            r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
+            r.setAttribute('pointer-events', 'none');
+            g.appendChild(r);
+            // Corner handles
+            const corners = [
+                [ob.x - off, ob.y - off], [ob.x + ob.w + off, ob.y - off],
+                [ob.x - off, ob.y + ob.h + off], [ob.x + ob.w + off, ob.y + ob.h + off],
+            ];
+            for (const [cx, cy] of corners) {
+                const h = document.createElementNS(ns, 'rect');
+                h.setAttribute('x', cx - hs/2); h.setAttribute('y', cy - hs/2);
+                h.setAttribute('width', hs); h.setAttribute('height', hs);
+                h.setAttribute('fill', '#fff'); h.setAttribute('stroke', '#7c5cf0');
+                h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
+                g.appendChild(h);
+            }
+            // Midpoint handles
+            const mids = [
+                [ob.x + ob.w/2, ob.y - off], [ob.x + ob.w/2, ob.y + ob.h + off],
+                [ob.x - off, ob.y + ob.h/2], [ob.x + ob.w + off, ob.y + ob.h/2],
+            ];
+            for (const [mx, my] of mids) {
+                const d = document.createElementNS(ns, 'rect');
+                d.setAttribute('x', mx - ms/2); d.setAttribute('y', my - ms/2);
+                d.setAttribute('width', ms); d.setAttribute('height', ms);
+                d.setAttribute('fill', '#fff'); d.setAttribute('stroke', '#7c5cf0');
+                d.setAttribute('stroke-width', sw); d.setAttribute('pointer-events', 'none');
+                d.setAttribute('transform', `rotate(45 ${mx} ${my})`);
+                g.appendChild(d);
+            }
+            selectionLayer.appendChild(g);
+            // B-spline control points
+            if (obj.type === 'bspline' && obj.points.length > 0) {
+                const cs = hs * 0.7;
+                if (obj.points.length > 1) {
+                    const pl = document.createElementNS(ns, 'polyline');
+                    pl.setAttribute('points', obj.points.map(p => `${p.x},${p.y}`).join(' '));
+                    pl.setAttribute('fill', 'none'); pl.setAttribute('stroke', '#7c5cf0');
+                    pl.setAttribute('stroke-width', sw * 0.6);
+                    pl.setAttribute('stroke-dasharray', `${sw*3} ${sw*1.5}`);
+                    pl.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(pl);
+                }
+                for (const p of obj.points) {
+                    const c = document.createElementNS(ns, 'circle');
+                    c.setAttribute('cx', p.x); c.setAttribute('cy', p.y); c.setAttribute('r', cs/2);
+                    c.setAttribute('fill', '#fff'); c.setAttribute('stroke', '#7c5cf0');
+                    c.setAttribute('stroke-width', sw); c.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(c);
+                }
+            }
+            return;
+        }
+    }
+
+    // Multiple objects: one combined dashed box + handles
+    const g = document.createElementNS(ns, 'g');
+    g.setAttribute('pointer-events', 'none');
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', bounds.x); r.setAttribute('y', bounds.y);
+    r.setAttribute('width', bounds.w); r.setAttribute('height', bounds.h);
+    r.setAttribute('fill', 'none'); r.setAttribute('stroke', '#7c5cf0');
+    r.setAttribute('stroke-width', sw);
+    r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
+    r.setAttribute('pointer-events', 'none');
+    g.appendChild(r);
+    const corners = [
+        [bounds.x - off, bounds.y - off], [bounds.x + bounds.w + off, bounds.y - off],
+        [bounds.x - off, bounds.y + bounds.h + off], [bounds.x + bounds.w + off, bounds.y + bounds.h + off],
+    ];
+    for (const [cx, cy] of corners) {
+        const h = document.createElementNS(ns, 'rect');
+        h.setAttribute('x', cx - hs/2); h.setAttribute('y', cy - hs/2);
+        h.setAttribute('width', hs); h.setAttribute('height', hs);
+        h.setAttribute('fill', '#fff'); h.setAttribute('stroke', '#7c5cf0');
+        h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
+        g.appendChild(h);
+    }
+    const mids = [
+        [bounds.x + bounds.w/2, bounds.y - off], [bounds.x + bounds.w/2, bounds.y + bounds.h + off],
+        [bounds.x - off, bounds.y + bounds.h/2], [bounds.x + bounds.w + off, bounds.y + bounds.h/2],
+    ];
+    for (const [mx, my] of mids) {
+        const d = document.createElementNS(ns, 'rect');
+        d.setAttribute('x', mx - ms/2); d.setAttribute('y', my - ms/2);
+        d.setAttribute('width', ms); d.setAttribute('height', ms);
+        d.setAttribute('fill', '#fff'); d.setAttribute('stroke', '#7c5cf0');
+        d.setAttribute('stroke-width', sw); d.setAttribute('pointer-events', 'none');
+        d.setAttribute('transform', `rotate(45 ${mx} ${my})`);
+        g.appendChild(d);
+    }
+    selectionLayer.appendChild(g);
 }
 
 function getObjBounds(obj) {
