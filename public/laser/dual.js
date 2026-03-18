@@ -307,8 +307,8 @@ function createPanel(id) {
             if (!segments.length) { plog('Sin trazos SVG', 'error'); return; }
             sendCmd({ cmd: 'start', machine: id, mode: 'cut', speed: state.speed, passes: state.passes, segments });
         } else {
-            const rd = extractRasterBitmap(state.loadedImage);
-            const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37).toFixed(1);
+            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing);
+            const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
                 raster: { width: rd.width, height: rd.height, step: state.lineSpacing, offsetX: 0, offsetY: 0 } });
@@ -431,7 +431,7 @@ function extractSVGSegments(svgText) {
     return segments;
 }
 
-function extractRasterBitmap(image) {
+function extractRasterBitmap(image, lineSpacing = 1) {
     const imgW = image.naturalWidth || image.width;
     const imgH = image.naturalHeight || image.height;
     const pxToMm = 25.4 / 96;
@@ -439,8 +439,9 @@ function extractRasterBitmap(image) {
     const fit = Math.min(WORK_W / rW, WORK_H / rH, 1);
     const mmW = rW * fit, mmH = rH * fit;
     const DPI = 39.37;
-    const pxW = Math.round(mmW * DPI), pxH = Math.round(mmH * DPI);
-    console.log(`[RASTER] img=${imgW}×${imgH}px, physical=${rW.toFixed(1)}×${rH.toFixed(1)}mm, fit=${fit.toFixed(3)}, output=${pxW}×${pxH}px (${mmW.toFixed(1)}×${mmH.toFixed(1)}mm)`);
+    const pxW = Math.round(mmW * DPI);
+    // Vertical: reducir por lineSpacing (cada fila se separa lineSpacing pasos en el EGV)
+    const pxH = Math.round(mmH * DPI / lineSpacing);
     const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
     const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0,0,pxW,pxH); cx.drawImage(image,0,0,pxW,pxH);
     const id = cx.getImageData(0,0,pxW,pxH); const px = id.data;

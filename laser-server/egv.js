@@ -201,64 +201,62 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
  */
 function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offsetX = 0, offsetY = 0) {
     const speed = encodeSpeed(speedMmS, rasterStep);
-    let cmd = 'I' + speed + 'NRBS1E';
+    const parts = ['I', speed, 'NRBS1E'];
 
     // Mover al inicio del raster (sin láser)
     const startX = Math.round(offsetX * STEPS_PER_MM);
     const startY = Math.round(offsetY * STEPS_PER_MM);
     if (startX !== 0 || startY !== 0) {
-        cmd += encodeMoveXY(startX, startY, false);
+        parts.push(encodeMoveXY(startX, startY, false));
     }
 
-    let curX = startX;
+    const rowBytes = Math.ceil(width / 8);
     let leftToRight = true;
 
     for (let row = 0; row < height; row++) {
         // Mover Y entre líneas (excepto la primera)
         if (row > 0) {
-            cmd += 'U' + 'R' + encodeDistance(rasterStep); // bajar rasterStep steps
+            parts.push('UR', encodeDistance(rasterStep));
         }
 
-        // Leer pixels de esta fila
-        const rowOffset = row * Math.ceil(width / 8);
-        const runs = [];
+        // Leer pixels de esta fila directamente (sin crear arrays intermedios)
+        const rowOffset = row * rowBytes;
+        const dir = leftToRight ? 'B' : 'T';
         let runOn = false;
         let runLen = 0;
 
-        const pixelOrder = leftToRight
-            ? Array.from({ length: width }, (_, i) => i)
-            : Array.from({ length: width }, (_, i) => width - 1 - i);
-
-        for (const px of pixelOrder) {
-            const byteIdx = rowOffset + Math.floor(px / 8);
-            const bitIdx = 7 - (px % 8);
-            const isOn = bitmap[byteIdx] !== undefined && (bitmap[byteIdx] >> bitIdx) & 1;
+        for (let i = 0; i < width; i++) {
+            const px = leftToRight ? i : (width - 1 - i);
+            const byteIdx = rowOffset + (px >> 3);
+            const bitIdx = 7 - (px & 7);
+            const isOn = !!(bitmap[byteIdx] & (1 << bitIdx));
 
             if (runLen === 0) {
-                runOn = !!isOn;
+                runOn = isOn;
                 runLen = 1;
-            } else if (!!isOn === runOn) {
+            } else if (isOn === runOn) {
                 runLen++;
             } else {
-                runs.push({ on: runOn, len: runLen });
-                runOn = !!isOn;
+                parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
+                runOn = isOn;
                 runLen = 1;
             }
         }
-        if (runLen > 0) runs.push({ on: runOn, len: runLen });
-
-        // Generar movimientos para esta fila
-        const dir = leftToRight ? 'B' : 'T';
-        for (const run of runs) {
-            const prefix = run.on ? 'D' : 'U';
-            cmd += prefix + dir + encodeDistance(run.len);
+        if (runLen > 0) {
+            parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
         }
 
         leftToRight = !leftToRight;
+
+        // Log progreso cada 500 filas
+        if (row % 500 === 0 && row > 0) {
+            process.stdout.write(`  EGV raster: ${row}/${height} filas...\r`);
+        }
     }
 
-    cmd += 'FNSE';
-    return cmd;
+    parts.push('FNSE');
+    console.log(`  EGV raster: ${height} filas completas.`);
+    return parts.join('');
 }
 
 module.exports = {
