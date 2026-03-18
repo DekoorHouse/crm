@@ -2606,21 +2606,128 @@ function extractFromPowerClip(pcId) {
 
 function togglePowerClipEdit(pcId) {
     if (pcEditingId === pcId) {
-        // Finish editing
-        pcEditingId = null;
-        selectObject(pcId);
+        // Finish editing — re-clip contents and restore normal view
+        exitPowerClipEdit();
     } else {
-        // Start editing - select the contents instead
-        const pc = findObject(pcId);
-        if (!pc || pc.type !== 'powerclip') return;
-        pcEditingId = pcId;
-        if (pc.contents.length > 0) {
-            // Make contents selectable temporarily - we'll select the first content
-            // For edit mode we need to allow modifying content positions
-            selectObject(pcId); // keep the PC selected to show menu
-        }
-        updatePowerClipMenu();
+        // Start editing
+        enterPowerClipEdit(pcId);
     }
+}
+
+function enterPowerClipEdit(pcId) {
+    const pc = findObject(pcId);
+    if (!pc || pc.type !== 'powerclip') return;
+    pcEditingId = pcId;
+
+    // 1) Remove clip-path from the content group so contents are fully visible
+    const contentGroup = pc.element.querySelector('g[clip-path]');
+    if (contentGroup) {
+        contentGroup._savedClipPath = contentGroup.getAttribute('clip-path');
+        contentGroup.removeAttribute('clip-path');
+    }
+
+    // 2) Dim all other objects by adding an overlay
+    const ns = 'http://www.w3.org/2000/svg';
+    const overlay = document.createElementNS(ns, 'rect');
+    overlay.setAttribute('x', state.viewBox.x - 10000);
+    overlay.setAttribute('y', state.viewBox.y - 10000);
+    overlay.setAttribute('width', 40000);
+    overlay.setAttribute('height', 40000);
+    overlay.setAttribute('fill', 'rgba(255,255,255,0.6)');
+    overlay.setAttribute('pointer-events', 'none');
+    overlay.id = 'pc-edit-overlay';
+    // Insert overlay before the powerclip element so it dims everything behind
+    objectsLayer.insertBefore(overlay, pc.element);
+
+    // 3) Draw a dashed outline of the container to show the clip boundary
+    const containerOutline = document.createElementNS(ns, 'g');
+    containerOutline.id = 'pc-edit-outline';
+    containerOutline.setAttribute('pointer-events', 'none');
+    const c = pc.container;
+    let outlineEl;
+    if (c.type === 'ellipse') {
+        outlineEl = document.createElementNS(ns, 'ellipse');
+        outlineEl.setAttribute('cx', c.cx); outlineEl.setAttribute('cy', c.cy);
+        outlineEl.setAttribute('rx', c.rx); outlineEl.setAttribute('ry', c.ry);
+    } else {
+        outlineEl = document.createElementNS(ns, 'rect');
+        outlineEl.setAttribute('x', c.x); outlineEl.setAttribute('y', c.y);
+        outlineEl.setAttribute('width', c.width); outlineEl.setAttribute('height', c.height);
+    }
+    outlineEl.setAttribute('fill', 'none');
+    outlineEl.setAttribute('stroke', '#7c5cf0');
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    outlineEl.setAttribute('stroke-width', 1.5 * screenScale);
+    outlineEl.setAttribute('stroke-dasharray', `${5*screenScale} ${3*screenScale}`);
+    if (c.rotation) {
+        const rcx = c.type === 'ellipse' ? c.cx : c.x + c.width/2;
+        const rcy = c.type === 'ellipse' ? c.cy : c.y + c.height/2;
+        outlineEl.setAttribute('transform', `rotate(${c.rotation} ${rcx} ${rcy})`);
+    }
+    containerOutline.appendChild(outlineEl);
+    // Add after the powerclip element
+    if (pc.element.nextSibling) {
+        objectsLayer.insertBefore(containerOutline, pc.element.nextSibling);
+    } else {
+        objectsLayer.appendChild(containerOutline);
+    }
+
+    // 4) Make content objects individually selectable by temporarily adding them to state.objects
+    pc._editContentIds = [];
+    for (const content of pc.contents) {
+        // Create standalone SVG elements for each content object
+        const elem = buildSVGElement(content);
+        content.element = elem;
+        elem.dataset.objectId = content.id;
+        objectsLayer.appendChild(elem);
+        state.objects.push(content);
+        pc._editContentIds.push(content.id);
+        if (content.id >= state.nextId) state.nextId = content.id + 1;
+    }
+
+    // 5) Hide the powerclip's own clipped content group
+    if (contentGroup) contentGroup.style.display = 'none';
+
+    // Select the first content if available
+    if (pc.contents.length > 0) {
+        state.selectedIds = [pc.contents[0].id];
+    } else {
+        state.selectedIds = [pcId];
+    }
+    drawSelection();
+    updatePropsPanel();
+    updatePowerClipMenu();
+}
+
+function exitPowerClipEdit() {
+    if (!pcEditingId) return;
+    const pc = findObject(pcEditingId);
+
+    // 1) Remove standalone content elements from objects array and DOM
+    if (pc && pc._editContentIds) {
+        for (const cid of pc._editContentIds) {
+            const obj = state.objects.find(o => o.id === cid);
+            if (obj && obj.element) obj.element.remove();
+            const idx = state.objects.findIndex(o => o.id === cid);
+            if (idx !== -1) state.objects.splice(idx, 1);
+        }
+        delete pc._editContentIds;
+    }
+
+    // 2) Remove overlay and outline
+    const overlay = document.getElementById('pc-edit-overlay');
+    if (overlay) overlay.remove();
+    const outline = document.getElementById('pc-edit-outline');
+    if (outline) outline.remove();
+
+    // 3) Rebuild the powerclip element to re-apply clip and show updated contents
+    if (pc) rebuildPowerClipElement(pc);
+
+    pcEditingId = null;
+    if (pc) selectObject(pc.id);
+    drawSelection();
+    updatePropsPanel();
+    updatePowerClipMenu();
 }
 
 function setupPowerClipMenu() {
@@ -3402,7 +3509,8 @@ function setupEventListeners() {
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
-                if (state.nodeEditId) { exitNodeEdit(); }
+                if (pcEditingId) { exitPowerClipEdit(); }
+                else if (state.nodeEditId) { exitNodeEdit(); }
                 else if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
                 else if (state.tool !== 'select') setTool('select');
                 else selectObject(null);
