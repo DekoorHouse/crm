@@ -1133,6 +1133,29 @@ body.dark .btn-primary:hover {
     flex-shrink: 0;
 }
 
+/* Zoom controls */
+.bmp-zoom-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    justify-content: center;
+}
+
+.bmp-zoom-btn {
+    padding: 4px 8px !important;
+    min-width: 0 !important;
+    font-size: 12px !important;
+}
+
+.bmp-zoom-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    min-width: 55px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
 /* Preview area */
 .bmp-preview-area {
     display: flex;
@@ -1162,19 +1185,28 @@ body.dark .btn-primary:hover {
     background: var(--surface-hover);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
+    overflow: auto;
+    min-height: 160px;
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    overflow: hidden;
-    min-height: 160px;
-    position: relative;
+}
+
+.bmp-preview-container.zoomed {
+    align-items: flex-start;
+    justify-content: flex-start;
 }
 
 .bmp-preview-container canvas {
+    image-rendering: pixelated;
+    display: block;
+}
+
+.bmp-preview-container:not(.zoomed) canvas {
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    image-rendering: pixelated;
 }
 
 /* Controls */

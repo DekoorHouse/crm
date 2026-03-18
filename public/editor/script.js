@@ -4017,6 +4017,7 @@ const bmpState = {
     originalImageData: null,
     processedImageData: null,
     debounceTimer: null,
+    zoom: 0, // 0 = fit, >0 = percentage (e.g. 100 = 100%)
 };
 
 function showBmpConverterModal() {
@@ -4038,6 +4039,8 @@ function showBmpConverterModal() {
     bmpState.sourceImage = null;
     bmpState.originalImageData = null;
     bmpState.processedImageData = null;
+    bmpState.zoom = 0;
+    bmpApplyZoom();
     // Clear preview canvases
     const origCanvas = document.getElementById('bmp-preview-original');
     const procCanvas = document.getElementById('bmp-preview-processed');
@@ -4118,6 +4121,7 @@ function bmpDrawOriginalPreview() {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0);
     bmpState.originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    bmpApplyZoom();
 }
 
 function bmpProcessAndPreview() {
@@ -4138,6 +4142,7 @@ function bmpProcessAndPreview() {
     canvas.height = processed.height;
     const ctx = canvas.getContext('2d');
     ctx.putImageData(processed, 0, 0);
+    bmpApplyZoom();
 }
 
 function bmpScheduleUpdate() {
@@ -4145,6 +4150,64 @@ function bmpScheduleUpdate() {
     bmpState.debounceTimer = requestAnimationFrame(() => {
         bmpProcessAndPreview();
     });
+}
+
+// --- Zoom controls ---
+function bmpApplyZoom() {
+    const origContainer = document.getElementById('bmp-orig-container');
+    const procContainer = document.getElementById('bmp-proc-container');
+    const origCanvas = document.getElementById('bmp-preview-original');
+    const procCanvas = document.getElementById('bmp-preview-processed');
+    const valEl = document.getElementById('bmp-zoom-val');
+
+    if (bmpState.zoom === 0) {
+        // Fit mode
+        valEl.textContent = 'Ajustar';
+        origContainer.classList.remove('zoomed');
+        procContainer.classList.remove('zoomed');
+        origCanvas.style.width = '';
+        origCanvas.style.height = '';
+        procCanvas.style.width = '';
+        procCanvas.style.height = '';
+    } else {
+        valEl.textContent = bmpState.zoom + '%';
+        origContainer.classList.add('zoomed');
+        procContainer.classList.add('zoomed');
+        const scale = bmpState.zoom / 100;
+        if (origCanvas.width > 0) {
+            origCanvas.style.width = (origCanvas.width * scale) + 'px';
+            origCanvas.style.height = (origCanvas.height * scale) + 'px';
+        }
+        if (procCanvas.width > 0) {
+            procCanvas.style.width = (procCanvas.width * scale) + 'px';
+            procCanvas.style.height = (procCanvas.height * scale) + 'px';
+        }
+    }
+}
+
+function bmpZoomIn() {
+    if (bmpState.zoom === 0) {
+        bmpState.zoom = 50;
+    } else {
+        if (bmpState.zoom < 100) bmpState.zoom += 25;
+        else if (bmpState.zoom < 400) bmpState.zoom += 50;
+        else bmpState.zoom = Math.min(bmpState.zoom + 100, 1600);
+    }
+    bmpApplyZoom();
+}
+
+function bmpZoomOut() {
+    if (bmpState.zoom === 0) return;
+    if (bmpState.zoom <= 50) { bmpState.zoom = 0; }
+    else if (bmpState.zoom <= 100) bmpState.zoom -= 25;
+    else if (bmpState.zoom <= 400) bmpState.zoom -= 50;
+    else bmpState.zoom -= 100;
+    bmpApplyZoom();
+}
+
+function bmpZoomFit() {
+    bmpState.zoom = 0;
+    bmpApplyZoom();
 }
 
 // --- Image processing pipeline ---
@@ -4520,6 +4583,19 @@ function setupBmpConverterModal() {
     document.getElementById('bmp-download-btn').addEventListener('click', () => {
         bmpDownload();
     });
+
+    // Zoom buttons
+    document.getElementById('bmp-zoom-in').addEventListener('click', bmpZoomIn);
+    document.getElementById('bmp-zoom-out').addEventListener('click', bmpZoomOut);
+    document.getElementById('bmp-zoom-fit').addEventListener('click', bmpZoomFit);
+
+    // Mouse wheel zoom on preview containers
+    for (const cid of ['bmp-orig-container', 'bmp-proc-container']) {
+        document.getElementById(cid).addEventListener('wheel', (e) => {
+            e.preventDefault();
+            if (e.deltaY < 0) bmpZoomIn(); else bmpZoomOut();
+        }, { passive: false });
+    }
 }
 
 // =============================================
