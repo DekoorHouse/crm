@@ -232,6 +232,13 @@
                         <label>Pasadas <span data-ref="passesLabel">1×</span></label>
                         <input type="range" class="param-slider" data-ref="passesSlider" min="1" max="10" value="1">
                     </div>
+                    <div class="setting-group">
+                        <label>Algoritmo</label>
+                        <div style="display:flex;gap:2px">
+                            <button data-ref="algoDither" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer">Dither</button>
+                            <button data-ref="algoHalftone" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer">Halftone</button>
+                        </div>
+                    </div>
                     <div class="setting-group" style="display:flex;align-items:center;gap:6px;margin-top:6px">
                         <input type="checkbox" data-ref="invertCheck" id="invertCheck___ID__" style="accent-color:#58a6ff;cursor:pointer">
                         <label for="invertCheck___ID__" style="font-size:10px;cursor:pointer;margin:0">Invertir colores (acrílico)</label>

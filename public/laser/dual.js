@@ -39,6 +39,7 @@ function createPanel(id) {
         designSelected: false,
         jobRunning: false,
         invertColors: false,
+        ditherAlgo: 'dither', // 'dither' | 'halftone'
         previewBitmapData: null,
     };
 
@@ -365,6 +366,16 @@ function createPanel(id) {
     ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
     ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
     ref('invertCheck').addEventListener('change', e => { state.invertColors = e.target.checked; state.previewBitmapData = null; drawCanvas(); });
+    function setAlgo(algo) {
+        state.ditherAlgo = algo; state.previewBitmapData = null;
+        const activeStyle = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer';
+        const inactiveStyle = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer';
+        ref('algoDither').style.cssText = algo === 'dither' ? activeStyle : inactiveStyle;
+        ref('algoHalftone').style.cssText = algo === 'halftone' ? activeStyle : inactiveStyle;
+        drawCanvas();
+    }
+    ref('algoDither').addEventListener('click', () => setAlgo('dither'));
+    ref('algoHalftone').addEventListener('click', () => setAlgo('halftone'));
     ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; });
 
     // Jog
@@ -399,7 +410,7 @@ function createPanel(id) {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
         plog('Generando vista previa...', 'info');
         const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, skipDithering: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') });
+        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, algo: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') ? 'threshold' : state.ditherAlgo });
 
         // Convertir bitmap 1-bit a canvas para mostrar
         const pvCanvas = document.createElement('canvas');
@@ -440,7 +451,7 @@ function createPanel(id) {
         } else {
             // Para SVGs, usar el bbox de los objetos (no el canvas completo)
             const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, skipDithering: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') });
+            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, algo: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') ? 'threshold' : state.ditherAlgo });
             const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
@@ -629,10 +640,42 @@ function extractRasterBitmap(image, lineSpacing = 1, bbox = null, options = {}) 
     if (options.invert) {
         for (let i = 0; i < pxW * pxH; i++) gray[i] = 255 - gray[i];
     }
-    // BMP: umbral directo (ya viene en B/N). Otros: Floyd-Steinberg dithering.
-    if (options.skipDithering) {
+    const algo = options.algo || 'dither';
+    if (algo === 'threshold') {
+        // BMP: umbral directo (ya viene en B/N)
         for (let i = 0; i < pxW * pxH; i++) gray[i] = gray[i] < 128 ? 0 : 255;
+    } else if (algo === 'halftone') {
+        // Halftone: patrón de puntos circulares de tamaño variable
+        // Tamaño de celda en pixels (ajustar según resolución)
+        const cellSize = Math.max(4, Math.round(pxW / 350));
+        for (let cy = 0; cy < pxH; cy += cellSize) {
+            for (let cx = 0; cx < pxW; cx += cellSize) {
+                // Promedio de gris en la celda
+                let sum = 0, count = 0;
+                for (let dy = 0; dy < cellSize && cy + dy < pxH; dy++) {
+                    for (let dx = 0; dx < cellSize && cx + dx < pxW; dx++) {
+                        sum += gray[(cy + dy) * pxW + (cx + dx)];
+                        count++;
+                    }
+                }
+                const avg = sum / count;
+                // Radio del punto: más oscuro → punto más grande
+                const maxR = cellSize / 2;
+                const r = maxR * Math.sqrt(1 - avg / 255); // sqrt para distribución perceptual
+                const centerX = cx + cellSize / 2;
+                const centerY = cy + cellSize / 2;
+                // Pintar celda: blanco, luego punto negro
+                for (let dy = 0; dy < cellSize && cy + dy < pxH; dy++) {
+                    for (let dx = 0; dx < cellSize && cx + dx < pxW; dx++) {
+                        const px2 = cx + dx, py2 = cy + dy;
+                        const dist = Math.sqrt((px2 - centerX) ** 2 + (py2 - centerY) ** 2);
+                        gray[py2 * pxW + px2] = dist <= r ? 0 : 255;
+                    }
+                }
+            }
+        }
     } else {
+        // Floyd-Steinberg dithering (default)
         for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
             const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;
             if (x+1 < pxW) gray[idx+1] += err*7/16;
