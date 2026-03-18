@@ -617,7 +617,8 @@ function distToSeg(p, a, b) {
 function selectObject(id, addToSelection) {
     if (id === null && !addToSelection) {
         state.selectedIds = [];
-        pcEditingId = null;
+        // Don't call exitPowerClipEdit here to avoid recursion — it calls selectObject internally
+        // pcEditingId will be cleared by Escape or the "Listo" button
     } else if (id !== null) {
         if (addToSelection) {
             if (isSelected(id)) state.selectedIds = state.selectedIds.filter(i => i !== id);
@@ -626,8 +627,13 @@ function selectObject(id, addToSelection) {
             state.selectedIds = [id];
         }
         const obj = findObject(id);
-        if (!obj || obj.type !== 'powerclip' || obj.id !== pcEditingId) {
-            pcEditingId = null;
+        // Don't clear pcEditingId when selecting content objects of the PC being edited
+        if (pcEditingId) {
+            const pc = findObject(pcEditingId);
+            const isEditContent = pc && pc._editContentIds && pc._editContentIds.includes(id);
+            if (!isEditContent && (!obj || obj.type !== 'powerclip' || obj.id !== pcEditingId)) {
+                exitPowerClipEdit();
+            }
         }
     }
     drawSelection();
