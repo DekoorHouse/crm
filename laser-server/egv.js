@@ -253,8 +253,11 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     }
 
     parts.push('FNSE');
-    console.log(`  EGV raster: ${height} filas completas.`);
-    return parts.join('');
+    const result = parts.join('');
+    console.log(`  EGV raster: ${height} filas completas. Total: ${result.length} chars`);
+    console.log(`  EGV header+primeros 300 chars: ${result.substring(0, 300)}`);
+    console.log(`  EGV últimos 100 chars: ${result.substring(result.length - 100)}`);
+    return result;
 }
 
 module.exports = {
