@@ -1689,25 +1689,14 @@ function handleMouseUp() {
         clearPCHighlight();
         clearSnapGuideLines();
         snapLayer.innerHTML = '';
-        // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
-        if (state.selectedIds.length === 1) {
+        // Auto-insert into PowerClip: only if cursor is inside a powerclip, and not in PC edit mode
+        if (!pcEditingId && state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
             const dragged = findObject(draggedId);
             if (dragged && dragged.type !== 'powerclip') {
-                const db = getObjBounds(dragged);
-                // Check corners and center for overlap with any powerclip
-                const testPts = [
-                    {x: db.x, y: db.y}, {x: db.x+db.w, y: db.y},
-                    {x: db.x, y: db.y+db.h}, {x: db.x+db.w, y: db.y+db.h},
-                    {x: db.x+db.w/2, y: db.y+db.h/2},
-                    {x: db.x+db.w/2, y: db.y}, {x: db.x+db.w/2, y: db.y+db.h},
-                    {x: db.x, y: db.y+db.h/2}, {x: db.x+db.w, y: db.y+db.h/2},
-                ];
-                let pcTarget = null;
-                for (const tp of testPts) {
-                    pcTarget = findPowerClipAtPoint(tp, draggedId);
-                    if (pcTarget) break;
-                }
+                // Use the cursor position (last known mouse point) not object bounds
+                const cursorPt = screenToSVG(event.clientX, event.clientY);
+                const pcTarget = findPowerClipAtPoint(cursorPt, draggedId);
                 if (pcTarget) {
                     addToPowerClip(draggedId, pcTarget.id);
                     return;
@@ -1944,24 +1933,12 @@ function handleDragMove(pt) {
     }
     drawSelection();
 
-    // Highlight powerclip drop target
-    if (state.selectedIds.length === 1) {
+    // Highlight powerclip drop target (cursor must be inside the powerclip, skip in edit mode)
+    if (!pcEditingId && state.selectedIds.length === 1) {
         const draggedId = state.selectedIds[0];
         const dragged = findObject(draggedId);
         if (dragged && dragged.type !== 'powerclip') {
-            const db = getObjBounds(dragged);
-            const testPts = [
-                {x: db.x, y: db.y}, {x: db.x+db.w, y: db.y},
-                {x: db.x, y: db.y+db.h}, {x: db.x+db.w, y: db.y+db.h},
-                {x: db.x+db.w/2, y: db.y+db.h/2},
-                {x: db.x+db.w/2, y: db.y}, {x: db.x+db.w/2, y: db.y+db.h},
-                {x: db.x, y: db.y+db.h/2}, {x: db.x+db.w, y: db.y+db.h/2},
-            ];
-            let pcTarget = null;
-            for (const tp of testPts) {
-                pcTarget = findPowerClipAtPoint(tp, draggedId);
-                if (pcTarget) break;
-            }
+            const pcTarget = findPowerClipAtPoint(pt, draggedId);
             if (pcTarget) { showPCHighlight(pcTarget); } else { clearPCHighlight(); }
         } else { clearPCHighlight(); }
     } else { clearPCHighlight(); }
