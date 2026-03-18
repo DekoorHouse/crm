@@ -99,6 +99,23 @@ function setupCanvas() {
     drawCanvas();
 }
 
+// Click en canvas para seleccionar/deseleccionar el diseño
+canvas.addEventListener('click', (e) => {
+    if (!state.designBox) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvasW / rect.width;
+    const scaleY = canvasH / rect.height;
+    const cx = (e.clientX - rect.left) * scaleX;
+    const cy = (e.clientY - rect.top) * scaleY;
+    const b = state.designBox;
+    if (cx >= b.dx && cx <= b.dx + b.dw && cy >= b.dy && cy <= b.dy + b.dh) {
+        state.designSelected = true;
+    } else {
+        state.designSelected = false;
+    }
+    drawCanvas();
+});
+
 function drawCanvas() {
     const W = canvasW, H = canvasH;
     ctx.clearRect(0, 0, W, H);
@@ -151,16 +168,46 @@ function drawCanvas() {
     if (state.loadedImage) {
         const img = state.loadedImage;
         let dw, dh, dx, dy;
+        let mmW, mmH;
 
         if (state.imageType === 'svg') {
-            dw = W; dh = H; dx = 0; dy = 0;
+            // Leer dimensiones reales del SVG
+            if (state.svgText) {
+                const parser = new DOMParser();
+                const doc = parser.parseFromString(state.svgText, 'image/svg+xml');
+                const svg = doc.querySelector('svg');
+                const vb = svg && svg.getAttribute('viewBox');
+                let svgW, svgH;
+                if (vb) {
+                    const p = vb.split(/[\s,]+/).map(Number);
+                    svgW = p[2]; svgH = p[3];
+                } else {
+                    svgW = parseFloat(svg?.getAttribute('width'))  || WORK_W;
+                    svgH = parseFloat(svg?.getAttribute('height')) || WORK_H;
+                }
+                const fitScale = Math.min(WORK_W / svgW, WORK_H / svgH);
+                mmW = svgW * fitScale;
+                mmH = svgH * fitScale;
+            } else {
+                mmW = WORK_W; mmH = WORK_H;
+            }
+            dw = (mmW / WORK_W) * W;
+            dh = (mmH / WORK_H) * H;
+            dx = 0; dy = 0;
         } else {
-            const scale = Math.min(W / img.width, H / img.height) * 0.88;
-            dw = img.width  * scale;
-            dh = img.height * scale;
+            const imgW = img.naturalWidth || img.width;
+            const imgH = img.naturalHeight || img.height;
+            const fitScale = Math.min(WORK_W / imgW, WORK_H / imgH, 1);
+            mmW = imgW * fitScale;
+            mmH = imgH * fitScale;
+            dw = (mmW / WORK_W) * W;
+            dh = (mmH / WORK_H) * H;
             dx = (W - dw) / 2;
             dy = (H - dh) / 2;
         }
+
+        // Guardar bounding box para selección y frame
+        state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
         ctx.save();
         if (state.mode === 'cut') {
@@ -168,7 +215,6 @@ function drawCanvas() {
             ctx.filter = 'grayscale(100%)';
             ctx.drawImage(img, dx, dy, dw, dh);
             ctx.restore();
-            // Cut outline
             ctx.strokeStyle = '#ff4444';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 3]);
@@ -180,6 +226,41 @@ function drawCanvas() {
             ctx.drawImage(img, dx, dy, dw, dh);
             ctx.restore();
         }
+
+        // Selección: borde azul + dimensiones
+        if (state.designSelected) {
+            // Borde de selección
+            ctx.strokeStyle = '#58a6ff';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([6, 3]);
+            ctx.strokeRect(dx - 1, dy - 1, dw + 2, dh + 2);
+            ctx.setLineDash([]);
+
+            // Handles (esquinas)
+            const hs = 4;
+            ctx.fillStyle = '#58a6ff';
+            for (const [hx, hy] of [[dx,dy],[dx+dw,dy],[dx,dy+dh],[dx+dw,dy+dh]]) {
+                ctx.fillRect(hx - hs, hy - hs, hs * 2, hs * 2);
+            }
+
+            // Dimensión horizontal (arriba)
+            const labelW = `${mmW.toFixed(1)} mm`;
+            const labelH = `${mmH.toFixed(1)} mm`;
+            ctx.font = 'bold 10px JetBrains Mono, monospace';
+            ctx.fillStyle = '#58a6ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(labelW, dx + dw / 2, dy - 8);
+
+            // Dimensión vertical (izquierda)
+            ctx.save();
+            ctx.translate(dx - 8, dy + dh / 2);
+            ctx.rotate(-Math.PI / 2);
+            ctx.fillText(labelH, 0, 0);
+            ctx.restore();
+            ctx.textAlign = 'start';
+        }
+    } else {
+        state.designBox = null;
     }
 
     // Origin marker
@@ -224,6 +305,7 @@ function loadFile(file) {
                 URL.revokeObjectURL(url);
                 drawCanvas();
                 updateControls();
+                state.designSelected = true;
                 log(`SVG cargado: ${file.name}`, 'success');
             };
             img.onerror = () => log('Error al cargar SVG.', 'error');
@@ -240,6 +322,7 @@ function loadFile(file) {
                 setFileLoaded(file.name);
                 drawCanvas();
                 updateControls();
+                state.designSelected = true;
                 log(`Imagen cargada: ${file.name} (${img.width}×${img.height}px)`, 'success');
             };
             img.onerror = () => log('Error al cargar imagen.', 'error');
@@ -259,6 +342,8 @@ function removeFile() {
     state.loadedFile  = null;
     state.loadedImage = null;
     state.imageType   = null;
+    state.designSelected = false;
+    state.designBox = null;
     fileInfo.style.display = 'none';
     dropZone.style.display = 'block';
     fileInput.value = '';
