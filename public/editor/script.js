@@ -3072,7 +3072,7 @@ function setupContextMenu() {
                     showBgRemovalModal(contextTarget);
                     break;
                 case 'convert-to-bitmap':
-                    showConvertBitmapModal(contextTarget);
+                    showBmpConverterModal(contextTarget);
                     break;
                 case 'bring-to-front':
                     bringToFront();
@@ -4178,9 +4178,10 @@ const bmpState = {
     processedImageData: null,
     debounceTimer: null,
     zoom: 0, // 0 = fit, >0 = percentage (e.g. 100 = 100%)
+    editorTarget: null, // image object from editor to replace after processing
 };
 
-function showBmpConverterModal() {
+function showBmpConverterModal(imageObj) {
     const modal = document.getElementById('bmp-converter-modal');
     modal.classList.remove('hidden');
     // Reset controls
@@ -4200,6 +4201,7 @@ function showBmpConverterModal() {
     bmpState.originalImageData = null;
     bmpState.processedImageData = null;
     bmpState.zoom = 0;
+    bmpState.editorTarget = null;
     bmpApplyZoom();
     // Reset view to Procesado
     document.getElementById('bmp-orig-container').style.display = 'none';
@@ -4213,12 +4215,32 @@ function showBmpConverterModal() {
     procCanvas.width = 0; procCanvas.height = 0;
     // Update threshold visibility
     bmpUpdateThresholdVisibility();
-    // Check if a selected canvas object is an image
-    bmpUpdateUseSelectedBtn();
+
+    const applyEditorBtn = document.getElementById('bmp-apply-editor-btn');
+
+    // If called from context menu with an image object, auto-load it
+    if (imageObj && imageObj.type === 'image' && imageObj.href) {
+        bmpState.editorTarget = imageObj;
+        applyEditorBtn.style.display = '';
+        applyEditorBtn.disabled = true;
+        // Hide source row (no need to upload/select)
+        document.querySelector('.bmp-source-row').style.display = 'none';
+        // Auto-load the image
+        bmpLoadImageFromObject(imageObj);
+    } else {
+        applyEditorBtn.style.display = 'none';
+        document.querySelector('.bmp-source-row').style.display = '';
+        // Check if a selected canvas object is an image
+        bmpUpdateUseSelectedBtn();
+    }
 }
 
 function hideBmpConverterModal() {
     document.getElementById('bmp-converter-modal').classList.add('hidden');
+    bmpState.editorTarget = null;
+    // Restore source row visibility for next time
+    const srcRow = document.querySelector('.bmp-source-row');
+    if (srcRow) srcRow.style.display = '';
 }
 
 function bmpUpdateUseSelectedBtn() {
@@ -4275,6 +4297,51 @@ function bmpLoadImageFromSelected() {
         img2.src = sel.href;
     };
     img.src = sel.href;
+}
+
+function bmpLoadImageFromObject(obj) {
+    if (!obj || obj.type !== 'image' || !obj.href) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    const onLoaded = function(loadedImg) {
+        bmpState.sourceImage = loadedImg;
+        bmpDrawOriginalPreview();
+        bmpProcessAndPreview();
+        document.getElementById('bmp-download-btn').disabled = false;
+        if (bmpState.editorTarget) {
+            document.getElementById('bmp-apply-editor-btn').disabled = false;
+        }
+    };
+    img.onload = function() { onLoaded(img); };
+    img.onerror = function() {
+        const img2 = new Image();
+        img2.onload = function() { onLoaded(img2); };
+        img2.src = obj.href;
+    };
+    img.src = obj.href;
+}
+
+function bmpApplyToEditor() {
+    if (!bmpState.editorTarget || !bmpState.processedImageData) return;
+    const obj = bmpState.editorTarget;
+    const procData = bmpState.processedImageData;
+
+    // Render processed image data to a canvas and get PNG data URL
+    const canvas = document.createElement('canvas');
+    canvas.width = procData.width;
+    canvas.height = procData.height;
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(procData, 0, 0);
+    const dataUrl = canvas.toDataURL('image/png');
+
+    // Replace the original image in the editor
+    saveUndoState();
+    obj.href = dataUrl;
+    obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+    obj.element.setAttribute('href', dataUrl);
+    refreshElement(obj);
+
+    hideBmpConverterModal();
 }
 
 function bmpDrawOriginalPreview() {
@@ -5100,6 +5167,11 @@ function setupBmpConverterModal() {
     // Download button
     document.getElementById('bmp-download-btn').addEventListener('click', () => {
         bmpDownload();
+    });
+
+    // Apply to editor button (replaces original image with processed bitmap)
+    document.getElementById('bmp-apply-editor-btn').addEventListener('click', () => {
+        bmpApplyToEditor();
     });
 
     // Zoom buttons
