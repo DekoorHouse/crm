@@ -873,17 +873,14 @@ function closestPointOnSeg(p, a, b) {
 
 function drawSnapIndicators(mousePt) {
     snapLayer.innerHTML = '';
-    if (state.selectedIds.length === 0) return;
     const ns = 'http://www.w3.org/2000/svg';
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     const threshold = SNAP_DIST * screenScale;
-    const edgeThreshold = threshold * 1.5; // wider detection for edge proximity
+    const edgeThreshold = threshold * 1.5;
     const r = 4.5 * screenScale;
 
-    for (const id of state.selectedIds) {
-        const obj = findObject(id);
-        if (!obj) continue;
-
+    // Show snap indicators for ALL objects (not just selected ones)
+    for (const obj of state.objects) {
         // 1) Fixed snap points (center, corners, quadrants, edges, endpoints)
         const snaps = getSnapPoints(obj);
         let fixedShown = false;
@@ -901,6 +898,19 @@ function drawSnapIndicators(mousePt) {
                 drawSnapMarker(ns, { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' }, r, screenScale);
             }
         }
+    }
+
+    // Also show page snap points
+    const pagePts = [
+        {x:0,y:0,type:'corner'},{x:state.pageWidth,y:0,type:'corner'},
+        {x:0,y:state.pageHeight,type:'corner'},{x:state.pageWidth,y:state.pageHeight,type:'corner'},
+        {x:state.pageWidth/2,y:state.pageHeight/2,type:'center'},
+        {x:state.pageWidth/2,y:0,type:'edge'},{x:state.pageWidth/2,y:state.pageHeight,type:'edge'},
+        {x:0,y:state.pageHeight/2,type:'edge'},{x:state.pageWidth,y:state.pageHeight/2,type:'edge'}
+    ];
+    for (const sp of pagePts) {
+        const d = Math.hypot(mousePt.x - sp.x, mousePt.y - sp.y);
+        if (d <= threshold) drawSnapMarker(ns, sp, r, screenScale);
     }
 }
 
