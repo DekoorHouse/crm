@@ -214,12 +214,10 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     let leftToRight = true;
 
     for (let row = 0; row < height; row++) {
-        // Mover Y entre líneas (excepto la primera)
-        if (row > 0) {
-            parts.push('UR', encodeDistance(rasterStep));
-        }
+        // NO enviar movimiento Y explícito — el M2 Nano en modo raster
+        // avanza Y automáticamente (G parameter) al cambiar dirección B↔T.
 
-        // Leer pixels de esta fila directamente (sin crear arrays intermedios)
+        // Leer pixels de esta fila directamente
         const rowOffset = row * rowBytes;
         const dir = leftToRight ? 'B' : 'T';
         let runOn = false;
