@@ -284,35 +284,37 @@ class M2Nano {
         await this.waitReady(10000);
 
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
-            // Verificar stop
-            if (shouldStop && shouldStop()) {
-                await this.estop();
-                return 'stopped';
-            }
-            // Verificar pausa
-            while (shouldPause && shouldPause()) {
-                if (shouldStop && shouldStop()) { await this.estop(); return 'stopped'; }
-                await sleep(200);
+            const pktIdx = Math.floor(i / DATA_SIZE);
+
+            // Verificar stop cada 20 paquetes (no en cada uno, para no frenar)
+            if (pktIdx % 20 === 0) {
+                if (shouldStop && shouldStop()) {
+                    await this.estop();
+                    return 'stopped';
+                }
+                while (shouldPause && shouldPause()) {
+                    if (shouldStop && shouldStop()) { await this.estop(); return 'stopped'; }
+                    await sleep(200);
+                }
             }
 
             const chunk = bytes.slice(i, i + DATA_SIZE);
             await this.sendPacket(chunk);
-            await sleep(5);
 
-            // Progreso cada 10 paquetes
-            const pktIdx = Math.floor(i / DATA_SIZE);
-            if (onProgress && pktIdx % 10 === 0) {
+            // Progreso cada 100 paquetes
+            if (onProgress && pktIdx % 100 === 0) {
                 onProgress(pktIdx / totalPkts);
             }
 
-            // waitReady cada 50 paquetes para no saturar el buffer
-            if (pktIdx % 50 === 0 && pktIdx > 0) {
-                try { await this.waitReady(5000); } catch (_) {}
+            // Flow control: esperar que la máquina procese cada 15 paquetes
+            // (el buffer del M2 Nano es ~200-500 bytes ≈ 6-15 paquetes)
+            if (pktIdx % 15 === 0 && pktIdx > 0) {
+                try { await this.waitReady(8000); } catch (_) {}
             }
         }
 
         // Esperar a que termine la ejecución
-        try { await this.waitReady(60000); } catch (_) {}
+        try { await this.waitReady(120000); } catch (_) {}
         if (onProgress) onProgress(1);
         return 'complete';
     }
