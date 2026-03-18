@@ -2,8 +2,8 @@
 // Communicates with a local WebSocket server at ws://localhost:7654
 // Falls back to simulation mode when no server is found.
 
-const WORK_W = 300; // K40 bed width  (mm)
-const WORK_H = 200; // K40 bed height (mm)
+const WORK_W = 400; // bed width  (mm)
+const WORK_H = 400; // bed height (mm)
 
 const PRESETS = {
     plywood3:  { power: 60, speed: 120, passes: 1, mode: 'cut' },
@@ -27,6 +27,7 @@ const state = {
     mode:    'engrave',
     power:   50,
     speed:   3,
+    lineSpacing: 4,  // slider value 1-10 → 0.025-0.25mm (paso raster en steps)
     passes:  1,
     pulse:   50,
     jogStep: 1,
@@ -49,8 +50,9 @@ const fileInput     = $('fileInput');
 const fileInfo      = $('fileInfo');
 const fileNameEl    = $('fileName');
 const removeFileBtn = $('removeFileBtn');
-const speedSlider   = $('speedSlider');
-const passesSlider  = $('passesSlider');
+const speedSlider       = $('speedSlider');
+const lineSpacingSlider = $('lineSpacingSlider');
+const passesSlider      = $('passesSlider');
 const pulseSlider   = $('pulseSlider');
 const materialSel   = $('materialSelect');
 const posXEl        = $('posX');
@@ -345,22 +347,28 @@ function drawCanvas() {
         // Guardar bounding box del contenido para selección y frame
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
-        // Dibujar diseño con líneas azul neón
-        // 1) Dibujar original tenue como referencia
-        ctx.save();
-        ctx.globalAlpha = 0.15;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
-        ctx.restore();
-        // 2) Redibujar con filtro azul neón + glow
-        ctx.save();
-        ctx.globalAlpha = 1;
-        ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
-        ctx.shadowColor = '#00d4ff';
-        ctx.shadowBlur = 10;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
-        ctx.shadowBlur = 4;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
-        ctx.restore();
+        if (state.imageType === 'svg') {
+            // SVG: líneas en azul neón con glow
+            ctx.save();
+            ctx.globalAlpha = 0.15;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.restore();
+            ctx.save();
+            ctx.globalAlpha = 1;
+            ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
+            ctx.shadowColor = '#00d4ff';
+            ctx.shadowBlur = 10;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.shadowBlur = 4;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.restore();
+        } else {
+            // Imágenes raster (PNG/BMP/JPG): color normal
+            ctx.save();
+            ctx.globalAlpha = 0.9;
+            ctx.drawImage(img, drawX, drawY, drawW, drawH);
+            ctx.restore();
+        }
 
         // Selección: marching ants + handles + dimensiones por fuera
         if (state.designSelected) {
@@ -560,7 +568,8 @@ function bindSlider(slider, labelId, key, fmt) {
     });
 }
 
-bindSlider(speedSlider,  'speedLabel',  'speed',  v => `${v} mm/s`);
+bindSlider(speedSlider,       'speedLabel',       'speed',       v => `${v} mm/s`);
+bindSlider(lineSpacingSlider, 'lineSpacingLabel', 'lineSpacing', v => `${(v * 0.025).toFixed(3)} mm`);
 bindSlider(passesSlider, 'passesLabel', 'passes', v => `${v}×`);
 bindSlider(pulseSlider,  'pulseLabel',  'pulse',  v => `${v}ms`);
 
@@ -915,11 +924,12 @@ function startJob() {
         sendWs({ cmd: 'start', mode: 'cut', speed: state.speed, passes: state.passes, segments });
     } else {
         // Raster engraving (BMP/PNG/SVG → bitmap)
+        const rasterStep = state.lineSpacing; // 1-10 device units (0.025-0.25mm)
         const rasterData = extractRasterBitmap(state.loadedImage);
-        log(`Raster: ${rasterData.width}×${rasterData.height}px, ${rasterData.bitmap.byteLength} bytes`, 'info');
+        log(`Raster: ${rasterData.width}×${rasterData.height}px, interlineado=${(rasterStep*0.025).toFixed(3)}mm`, 'info');
         sendWs({
             cmd: 'start', mode: 'engrave', speed: state.speed, passes: state.passes,
-            raster: { width: rasterData.width, height: rasterData.height, step: rasterData.step,
+            raster: { width: rasterData.width, height: rasterData.height, step: rasterStep,
                       offsetX: rasterData.offsetX, offsetY: rasterData.offsetY }
         });
         // Enviar bitmap como binary

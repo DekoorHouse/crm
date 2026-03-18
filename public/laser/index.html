@@ -74,6 +74,11 @@
                 <div class="range-limits"><span>1</span><span>30 mm/s</span></div>
             </div>
             <div class="setting-group">
+                <label>Interlineado <span class="param-value" id="lineSpacingLabel">0.1 mm</span></label>
+                <input type="range" class="param-slider" id="lineSpacingSlider" min="1" max="10" value="4" step="1">
+                <div class="range-limits"><span>0.025 mm</span><span>0.25 mm</span></div>
+            </div>
+            <div class="setting-group">
                 <label>Pasadas <span class="param-value" id="passesLabel">1×</span></label>
                 <input type="range" class="param-slider" id="passesSlider" min="1" max="10" value="1">
                 <div class="range-limits"><span>1</span><span>10×</span></div>
@@ -150,7 +155,7 @@
             </div>
             <span class="zoom-display mono" id="zoomDisplay">100%</span>
             <div class="canvas-info">
-                Área de trabajo: 300 × 200 mm (K40)
+                Área de trabajo: 400 × 400 mm
             </div>
         </div>
 
