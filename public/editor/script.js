@@ -2735,6 +2735,7 @@ function enterPowerClipEdit(pcId) {
     const pc = findObject(pcId);
     if (!pc || pc.type !== 'powerclip') return;
     pcEditingId = pcId;
+    document.getElementById('pc-edit-banner').classList.remove('hidden');
 
     // 1) Remove clip-path from the content group so contents are fully visible
     const contentGroup = pc.element.querySelector('g[clip-path]');
@@ -2818,6 +2819,7 @@ function enterPowerClipEdit(pcId) {
 
 function exitPowerClipEdit() {
     if (!pcEditingId) return;
+    document.getElementById('pc-edit-banner').classList.add('hidden');
     const pc = findObject(pcEditingId);
 
     // 1) Remove standalone content elements from objects array and DOM
@@ -2856,6 +2858,9 @@ function setupPowerClipMenu() {
     menu.querySelector('[data-pc="extract"]').addEventListener('click', () => {
         const pid = primaryId();
         if (pid) extractFromPowerClip(pid);
+    });
+    document.getElementById('pc-edit-finish').addEventListener('click', () => {
+        exitPowerClipEdit();
     });
 }
 

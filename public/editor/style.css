@@ -971,6 +971,51 @@ body.dark .btn-primary:hover {
 }
 
 /* ============================================
+   PowerClip Edit Banner
+   ============================================ */
+#pc-edit-banner {
+    position: absolute;
+    top: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: var(--accent);
+    color: #fff;
+    padding: 8px 18px;
+    border-radius: var(--radius-lg);
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: var(--shadow-lg);
+    animation: banner-in 0.2s ease-out;
+}
+
+#pc-edit-banner.hidden { display: none; }
+
+#pc-edit-banner button {
+    background: rgba(255,255,255,0.2);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.3);
+    padding: 4px 14px;
+    border-radius: var(--radius-md);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+#pc-edit-banner button:hover {
+    background: rgba(255,255,255,0.35);
+}
+
+@keyframes banner-in {
+    from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+    to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ============================================
    Context Menu
    ============================================ */
 .context-menu {
