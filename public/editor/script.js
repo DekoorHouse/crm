@@ -555,6 +555,8 @@ function deleteObject(id) {
         state.selectedIds = state.selectedIds.filter(i => i !== id);
         drawSelection();
     }
+    // Hide powerclip menu if the deleted object was selected
+    updatePowerClipMenu();
 }
 
 function findObject(id) { return state.objects.find(o => o.id === id); }
@@ -1705,11 +1707,9 @@ function handleMouseUp() {
                 const underObj = objectUnderCursor(cursorPt, draggedId);
                 if (underObj && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
                     // Convert underObj to powerclip, then add dragged as content
-                    makePowerClip(underObj.id);
-                    // Find the newly created powerclip (it replaced underObj at same position)
-                    const newPc = findObject(underObj.id);
-                    if (newPc && newPc.type === 'powerclip') {
-                        addToPowerClip(draggedId, newPc.id);
+                    const newPcId = makePowerClip(underObj.id);
+                    if (newPcId) {
+                        addToPowerClip(draggedId, newPcId);
                     }
                     state.wHeld = false;
                     return;
@@ -2690,6 +2690,7 @@ function makePowerClip(objId) {
     objectsLayer.appendChild(elem);
     state.objects.splice(idx, 1, pc);
     selectObject(pc.id);
+    return pc.id; // return new powerclip ID
 }
 
 function addToPowerClip(contentId, powerclipId) {
