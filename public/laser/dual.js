@@ -307,11 +307,13 @@ function createPanel(id) {
             if (!segments.length) { plog('Sin trazos SVG', 'error'); return; }
             sendCmd({ cmd: 'start', machine: id, mode: 'cut', speed: state.speed, passes: state.passes, segments });
         } else {
-            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing);
+            // Para SVGs, usar el bbox de los objetos (no el canvas completo)
+            const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox);
             const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
-            plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
+            plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
-                raster: { width: rd.width, height: rd.height, step: state.lineSpacing, offsetX: 0, offsetY: 0 } });
+                raster: { width: rd.width, height: rd.height, step: state.lineSpacing, offsetX: rd.offsetX, offsetY: rd.offsetY } });
             ws.send(rd.bitmap.buffer);
         }
     }
@@ -431,33 +433,71 @@ function extractSVGSegments(svgText) {
     return segments;
 }
 
-function extractRasterBitmap(image, lineSpacing = 1) {
+function extractRasterBitmap(image, lineSpacing = 1, bbox = null) {
     const imgW = image.naturalWidth || image.width;
     const imgH = image.naturalHeight || image.height;
     const pxToMm = 25.4 / 96;
-    const rW = imgW * pxToMm, rH = imgH * pxToMm;
-    const fit = Math.min(WORK_W / rW, WORK_H / rH, 1);
-    const mmW = rW * fit, mmH = rH * fit;
-    const DPI = 39.37;
-    const pxW = Math.round(mmW * DPI);
-    // Vertical: reducir por lineSpacing (cada fila se separa lineSpacing pasos en el EGV)
-    const pxH = Math.round(mmH * DPI / lineSpacing);
-    const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
-    const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0,0,pxW,pxH); cx.drawImage(image,0,0,pxW,pxH);
-    const id = cx.getImageData(0,0,pxW,pxH); const px = id.data;
-    const gray = new Uint8Array(pxW*pxH);
-    for (let i=0;i<pxW*pxH;i++) gray[i] = Math.round(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2]);
-    for (let y=0;y<pxH;y++) for (let x=0;x<pxW;x++) {
-        const idx=y*pxW+x; const old=gray[idx]; const nw=old<128?0:255; gray[idx]=nw; const err=old-nw;
-        if(x+1<pxW) gray[idx+1]+=err*7/16;
-        if(y+1<pxH&&x>0) gray[(y+1)*pxW+x-1]+=err*3/16;
-        if(y+1<pxH) gray[(y+1)*pxW+x]+=err*5/16;
-        if(y+1<pxH&&x+1<pxW) gray[(y+1)*pxW+x+1]+=err*1/16;
+
+    // Tamaño completo de la imagen/SVG en mm
+    const fullMmW = imgW * pxToMm, fullMmH = imgH * pxToMm;
+    const fit = Math.min(WORK_W / fullMmW, WORK_H / fullMmH, 1);
+
+    // Si hay bbox (SVG), recortar solo al área de los objetos
+    let cropMmX = 0, cropMmY = 0, cropMmW, cropMmH;
+    if (bbox) {
+        cropMmX = bbox.mmX;
+        cropMmY = bbox.mmY;
+        cropMmW = bbox.mmW;
+        cropMmH = bbox.mmH;
+    } else {
+        cropMmW = fullMmW * fit;
+        cropMmH = fullMmH * fit;
     }
-    const rowBytes = Math.ceil(pxW/8);
-    const bitmap = new Uint8Array(rowBytes*pxH);
-    for (let y=0;y<pxH;y++) for (let x=0;x<pxW;x++) if(gray[y*pxW+x]===0) bitmap[y*rowBytes+Math.floor(x/8)]|=(1<<(7-(x%8)));
-    return { bitmap, width: pxW, height: pxH, step: 1, offsetX: 0, offsetY: 0 };
+
+    const DPI = 39.37;
+    const pxW = Math.round(cropMmW * DPI);
+    const pxH = Math.round(cropMmH * DPI / lineSpacing);
+
+    // Renderizar imagen completa a canvas temporal, luego recortar
+    const fullPxW = Math.round(fullMmW * fit * DPI);
+    const fullPxH = Math.round(fullMmH * fit * DPI / lineSpacing);
+
+    // Canvas solo del área de recorte
+    const srcX = Math.round(cropMmX / (fullMmW * fit) * fullPxW);
+    const srcY = Math.round(cropMmY / (fullMmH * fit) * fullPxH);
+
+    // Renderizar imagen completa a canvas temporal
+    const fullC = document.createElement('canvas');
+    fullC.width = fullPxW; fullC.height = fullPxH;
+    const fullCx = fullC.getContext('2d');
+    fullCx.fillStyle = '#fff';
+    fullCx.fillRect(0, 0, fullPxW, fullPxH);
+    fullCx.drawImage(image, 0, 0, fullPxW, fullPxH);
+
+    // Extraer solo la región del bbox
+    const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
+    const cx = c.getContext('2d');
+    cx.fillStyle = '#fff';
+    cx.fillRect(0, 0, pxW, pxH);
+    cx.drawImage(fullC, srcX, srcY, pxW, pxH, 0, 0, pxW, pxH);
+
+    const id = cx.getImageData(0, 0, pxW, pxH); const px = id.data;
+    const gray = new Uint8Array(pxW * pxH);
+    for (let i = 0; i < pxW * pxH; i++) gray[i] = Math.round(0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]);
+    // Floyd-Steinberg dithering
+    for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
+        const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;
+        if (x+1 < pxW) gray[idx+1] += err*7/16;
+        if (y+1 < pxH && x > 0) gray[(y+1)*pxW+x-1] += err*3/16;
+        if (y+1 < pxH) gray[(y+1)*pxW+x] += err*5/16;
+        if (y+1 < pxH && x+1 < pxW) gray[(y+1)*pxW+x+1] += err*1/16;
+    }
+    const rowBytes = Math.ceil(pxW / 8);
+    const bitmap = new Uint8Array(rowBytes * pxH);
+    for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
+        if (gray[y*pxW+x] === 0) bitmap[y*rowBytes + Math.floor(x/8)] |= (1 << (7 - (x%8)));
+    }
+    return { bitmap, width: pxW, height: pxH, offsetX: cropMmX, offsetY: cropMmY };
 }
 
 // ───────── Init ─────────
