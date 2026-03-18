@@ -211,9 +211,9 @@ class M2Nano {
         let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
-                // 1) Enviar 0xA0 por EPP → la placa recibe el "hello"
-                await this.sendPacket(Buffer.from([CMD_STATUS]));
-                // 2) Leer status del CH341 (sus pines reflejan el status de la placa)
+                // Leer status via CH341 (raw 0xA0 — NO enviar paquete EPP aquí,
+                // porque cada paquete EPP se encola como comando en la placa).
+                // El hello EPP solo se envía en connect().
                 await this.sendCommand(CMD_STATUS);
                 const resp = await this.readStatus(readTimeout);
 
@@ -228,7 +228,7 @@ class M2Nano {
             } catch (_) {}
             await sleep(80);
         }
-        this.log(`waitReady timeout (último status: 0x${lastStatus.toString(16).padStart(2,'0')})`);
+        this.log(`waitReady timeout (último status: 0x${lastStatus.toString(16).padStart(2,'00')})`);
         throw new Error('Timeout: la máquina no respondió.');
     }
 
