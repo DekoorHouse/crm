@@ -4175,33 +4175,42 @@ function bmpApplyZoom() {
         procContainer.classList.add('zoomed');
         const scale = bmpState.zoom / 100;
         if (origCanvas.width > 0) {
-            origCanvas.style.width = (origCanvas.width * scale) + 'px';
-            origCanvas.style.height = (origCanvas.height * scale) + 'px';
+            origCanvas.style.width = Math.round(origCanvas.width * scale) + 'px';
+            origCanvas.style.height = Math.round(origCanvas.height * scale) + 'px';
         }
         if (procCanvas.width > 0) {
-            procCanvas.style.width = (procCanvas.width * scale) + 'px';
-            procCanvas.style.height = (procCanvas.height * scale) + 'px';
+            procCanvas.style.width = Math.round(procCanvas.width * scale) + 'px';
+            procCanvas.style.height = Math.round(procCanvas.height * scale) + 'px';
         }
     }
 }
+
+// Clean zoom levels that avoid aliasing artifacts on 1-bit images
+const BMP_ZOOM_LEVELS = [25, 50, 100, 200, 400, 800];
 
 function bmpZoomIn() {
     if (bmpState.zoom === 0) {
         bmpState.zoom = 50;
     } else {
-        if (bmpState.zoom < 100) bmpState.zoom += 25;
-        else if (bmpState.zoom < 400) bmpState.zoom += 50;
-        else bmpState.zoom = Math.min(bmpState.zoom + 100, 1600);
+        const idx = BMP_ZOOM_LEVELS.indexOf(bmpState.zoom);
+        if (idx >= 0 && idx < BMP_ZOOM_LEVELS.length - 1) {
+            bmpState.zoom = BMP_ZOOM_LEVELS[idx + 1];
+        } else if (idx === -1) {
+            // Find next level up
+            bmpState.zoom = BMP_ZOOM_LEVELS.find(z => z > bmpState.zoom) || BMP_ZOOM_LEVELS[BMP_ZOOM_LEVELS.length - 1];
+        }
     }
     bmpApplyZoom();
 }
 
 function bmpZoomOut() {
     if (bmpState.zoom === 0) return;
-    if (bmpState.zoom <= 50) { bmpState.zoom = 0; }
-    else if (bmpState.zoom <= 100) bmpState.zoom -= 25;
-    else if (bmpState.zoom <= 400) bmpState.zoom -= 50;
-    else bmpState.zoom -= 100;
+    const idx = BMP_ZOOM_LEVELS.indexOf(bmpState.zoom);
+    if (idx <= 0) {
+        bmpState.zoom = 0; // go to fit
+    } else {
+        bmpState.zoom = BMP_ZOOM_LEVELS[idx - 1];
+    }
     bmpApplyZoom();
 }
 
