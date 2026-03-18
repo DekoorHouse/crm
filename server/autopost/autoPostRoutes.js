@@ -52,11 +52,49 @@ router.get('/facebook/verify', async (req, res) => {
     }
 });
 
-// Debug: ver tokens almacenados
+// Debug: ver tokens almacenados y probar refresh manual
 router.get('/debug/tokens', async (req, res) => {
     try {
         const info = await getStoredTokenInfo();
-        res.json(info);
+
+        // Intentar refresh manual del token
+        const { db } = require('../config');
+        const doc = await db.doc('crm_settings/autopost_google').get();
+        const data = doc.data();
+
+        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: new URLSearchParams({
+                client_id: process.env.GOOGLE_PHOTOS_CLIENT_ID,
+                client_secret: process.env.GOOGLE_PHOTOS_CLIENT_SECRET,
+                refresh_token: data.refreshToken,
+                grant_type: 'refresh_token'
+            })
+        });
+        const tokenData = await tokenResponse.json();
+
+        // Probar el token contra la API de Photos
+        let photosTest = 'no intentado';
+        if (tokenData.access_token) {
+            const photosResponse = await fetch('https://photoslibrary.googleapis.com/v1/albums?pageSize=1', {
+                headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
+            });
+            photosTest = photosResponse.ok
+                ? 'OK - ' + (await photosResponse.text()).substring(0, 200)
+                : 'ERROR ' + photosResponse.status + ' - ' + await photosResponse.text();
+        }
+
+        res.json({
+            stored: info,
+            refreshResult: {
+                scope: tokenData.scope,
+                hasAccessToken: !!tokenData.access_token,
+                error: tokenData.error,
+                errorDescription: tokenData.error_description
+            },
+            photosApiTest: photosTest
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
