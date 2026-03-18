@@ -105,26 +105,6 @@ class M2Nano {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
 
-        // Leer datos pendientes del IN endpoint (como K40-Whisperer _read_data)
-        try {
-            await this.readStatus(200);
-            this.log('Flush IN endpoint OK.');
-        } catch (_) {
-            this.log('Flush IN endpoint: sin datos pendientes.');
-        }
-
-        // Say hello: enviar 0xA0 por EPP + leer status (como K40-Whisperer _say_hello)
-        try {
-            await this.sendPacket(Buffer.from([CMD_STATUS]));
-            await this.sendCommand(CMD_STATUS);
-            const resp = await this.readStatus(500);
-            const s = resp[1];
-            const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-            this.log(`Say hello: [${hex}] → 0x${s.toString(16).padStart(2, '0')}`);
-        } catch (e) {
-            this.log(`Say hello aviso: ${e.message}`);
-        }
-
         // Unlock rail (IS2P) como K40-Whisperer
         try {
             await this.sendEGV('IS2P');
