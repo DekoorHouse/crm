@@ -595,24 +595,34 @@ function extractRasterBitmap(image, lineSpacing = 1, bbox = null, options = {}) 
     const srcX = Math.round(cropMmX / (fullMmW * fit) * fullPxW);
     const srcY = Math.round(cropMmY / (fullMmH * fit) * fullPxH);
 
-    // Renderizar imagen completa a canvas temporal
+    // Renderizar imagen completa a canvas TRANSPARENTE (sin fondo blanco)
     const fullC = document.createElement('canvas');
     fullC.width = fullPxW; fullC.height = fullPxH;
     const fullCx = fullC.getContext('2d');
-    fullCx.fillStyle = '#fff';
-    fullCx.fillRect(0, 0, fullPxW, fullPxH);
+    // NO llenar con blanco — dejar transparente para detectar áreas vacías
     fullCx.drawImage(image, 0, 0, fullPxW, fullPxH);
 
     // Extraer solo la región del bbox
     const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
     const cx = c.getContext('2d');
-    cx.fillStyle = '#fff';
-    cx.fillRect(0, 0, pxW, pxH);
+    // NO llenar con blanco — mantener transparente
     cx.drawImage(fullC, srcX, srcY, pxW, pxH, 0, 0, pxW, pxH);
 
     const id = cx.getImageData(0, 0, pxW, pxH); const px = id.data;
     const gray = new Uint8Array(pxW * pxH);
-    for (let i = 0; i < pxW * pxH; i++) gray[i] = Math.round(0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]);
+    for (let i = 0; i < pxW * pxH; i++) {
+        const a = px[i * 4 + 3]; // alpha
+        if (a < 10) {
+            // Pixel transparente → blanco (no grabar)
+            gray[i] = 255;
+        } else {
+            // Compositar contra blanco usando alpha
+            const r = px[i*4], g = px[i*4+1], b = px[i*4+2];
+            const af = a / 255;
+            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+            gray[i] = Math.round(af * lum + (1 - af) * 255);
+        }
+    }
     // Invertir colores (para acrílico: graba las zonas claras)
     if (options.invert) {
         for (let i = 0; i < pxW * pxH; i++) gray[i] = 255 - gray[i];
