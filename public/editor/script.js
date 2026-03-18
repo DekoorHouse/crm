@@ -1605,6 +1605,7 @@ function handleMouseUp() {
         state.isDragging = false;
         clearPCHighlight();
         clearSnapGuideLines();
+        snapLayer.innerHTML = '';
         // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
         if (state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
@@ -1817,6 +1818,47 @@ function handleDragMove(pt) {
         }
     }
     drawSnapGuideLines(snapAdj);
+    // Clear stale snap indicators from before the drag, then show fresh ones at snap targets
+    snapLayer.innerHTML = '';
+    if (snapAdj.dx !== 0 || snapAdj.dy !== 0) {
+        // Show snap indicator at the point we're snapping TO on the target object
+        // Find the actual target snap points that matched
+        const selPts = [];
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (obj) selPts.push(...getSnapPoints(obj));
+        }
+        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const threshold = SNAP_DIST * screenScale * 1.5;
+        const targetPts = [];
+        for (const obj of state.objects) {
+            if (state.selectedIds.includes(obj.id)) continue;
+            targetPts.push(...getSnapPoints(obj));
+        }
+        // Page snap points
+        targetPts.push(
+            {x:0,y:0,type:'corner'},{x:state.pageWidth,y:0,type:'corner'},
+            {x:0,y:state.pageHeight,type:'corner'},{x:state.pageWidth,y:state.pageHeight,type:'corner'},
+            {x:state.pageWidth/2,y:state.pageHeight/2,type:'center'},
+            {x:state.pageWidth/2,y:0,type:'edge'},{x:state.pageWidth/2,y:state.pageHeight,type:'edge'},
+            {x:0,y:state.pageHeight/2,type:'edge'},{x:state.pageWidth,y:state.pageHeight/2,type:'edge'}
+        );
+        const ns = 'http://www.w3.org/2000/svg';
+        const r = 4.5 * screenScale;
+        const sw = screenScale;
+        const shown = new Set();
+        for (const sp of selPts) {
+            for (const tp of targetPts) {
+                if (Math.abs(sp.x - tp.x) < threshold && Math.abs(sp.y - tp.y) < threshold) {
+                    const key = `${tp.x.toFixed(1)},${tp.y.toFixed(1)}`;
+                    if (!shown.has(key)) {
+                        shown.add(key);
+                        drawSnapMarker(ns, {x: tp.x, y: tp.y, type: tp.type || 'edge'}, r, sw);
+                    }
+                }
+            }
+        }
+    }
     drawSelection();
 
     // Highlight powerclip drop target
