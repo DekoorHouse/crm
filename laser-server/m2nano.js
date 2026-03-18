@@ -282,12 +282,13 @@ class M2Nano {
         this.log(`sendEGVJob: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
 
         await this.waitReady(10000);
+        this.log('Board listo. Enviando raster...');
 
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const pktIdx = Math.floor(i / DATA_SIZE);
 
-            // Verificar stop cada 20 paquetes (no en cada uno, para no frenar)
-            if (pktIdx % 20 === 0) {
+            // Verificar stop/pausa cada 50 paquetes
+            if (pktIdx % 50 === 0) {
                 if (shouldStop && shouldStop()) {
                     await this.estop();
                     return 'stopped';
@@ -301,20 +302,23 @@ class M2Nano {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             await this.sendPacket(chunk);
 
-            // Progreso cada 100 paquetes
-            if (onProgress && pktIdx % 100 === 0) {
+            // Progreso cada 200 paquetes
+            if (onProgress && pktIdx % 200 === 0) {
                 onProgress(pktIdx / totalPkts);
             }
 
-            // Flow control: esperar que la máquina procese cada 15 paquetes
-            // (el buffer del M2 Nano es ~200-500 bytes ≈ 6-15 paquetes)
-            if (pktIdx % 15 === 0 && pktIdx > 0) {
-                try { await this.waitReady(8000); } catch (_) {}
+            // Yield al event loop cada 100 paquetes para mantener WS responsivo
+            // NO usar waitReady aquí — durante raster el board reporta 0xEE (busy)
+            // y waitReady haría timeout en cada llamada, bloqueando horas.
+            // El USB bulk transfer provee flow control nativo.
+            if (pktIdx % 100 === 0 && pktIdx > 0) {
+                await sleep(1);
             }
         }
 
-        // Esperar a que termine la ejecución
-        try { await this.waitReady(120000); } catch (_) {}
+        this.log('Todos los paquetes enviados. Esperando finalización...');
+        // Esperar a que la máquina termine de ejecutar el raster
+        try { await this.waitReady(300000); } catch (_) {}
         if (onProgress) onProgress(1);
         return 'complete';
     }
