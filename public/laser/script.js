@@ -99,7 +99,7 @@ function setupCanvas() {
     drawCanvas();
 }
 
-// Selección por arrastre (izq→der, debe cubrir completamente el objeto)
+// Selección por arrastre (cualquier dirección, debe cubrir completamente el objeto)
 let dragStart = null;
 let dragCurrent = null;
 
@@ -111,7 +111,8 @@ function canvasCoord(e) {
     };
 }
 
-canvas.addEventListener('mousedown', (e) => {
+// Usar wrapper para poder iniciar/arrastrar fuera de la cama
+canvasWrapper.addEventListener('mousedown', (e) => {
     if (e.button !== 0) return;
     dragStart = canvasCoord(e);
     dragCurrent = dragStart;
@@ -119,7 +120,7 @@ canvas.addEventListener('mousedown', (e) => {
     drawCanvas();
 });
 
-canvas.addEventListener('mousemove', (e) => {
+window.addEventListener('mousemove', (e) => {
     if (!dragStart) return;
     dragCurrent = canvasCoord(e);
     drawCanvas();
@@ -139,7 +140,7 @@ canvas.addEventListener('mousemove', (e) => {
     }
 });
 
-canvas.addEventListener('mouseup', (e) => {
+window.addEventListener('mouseup', (e) => {
     if (!dragStart) return;
     const start = dragStart;
     const end = canvasCoord(e);
@@ -150,10 +151,9 @@ canvas.addEventListener('mouseup', (e) => {
     const sy = Math.min(start.y, end.y);
     const sw = Math.abs(end.x - start.x);
     const sh = Math.abs(end.y - start.y);
-    const leftToRight = end.x > start.x;
 
-    // Seleccionar solo si se arrastró de izquierda a derecha y cubre completamente el diseño
-    if (state.designBox && sw > 5 && sh > 5 && leftToRight) {
+    // Seleccionar si el recuadro cubre completamente el diseño (cualquier dirección)
+    if (state.designBox && sw > 5 && sh > 5) {
         const b = state.designBox;
         if (sx <= b.dx && sy <= b.dy && sx + sw >= b.dx + b.dw && sy + sh >= b.dy + b.dh) {
             state.designSelected = true;
