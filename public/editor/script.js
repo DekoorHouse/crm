@@ -1219,7 +1219,7 @@ function showPCHighlight(pc) {
         pcHighlightEl.setAttribute('height', c.height);
         if (c.rotation) pcHighlightEl.setAttribute('transform', `rotate(${c.rotation} ${c.x+c.width/2} ${c.y+c.height/2})`);
     }
-    selectionLayer.appendChild(pcHighlightEl);
+    previewLayer.appendChild(pcHighlightEl);
 }
 
 function handleDragMove(pt) {
