@@ -143,12 +143,42 @@ class M2Nano {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
 
-        // Unlock rail (IS2P) como K40-Whisperer
+        // K40-Whisperer: _read_data() — leer datos pendientes del IN endpoint
+        try {
+            this.epIn.transfer(168, (err, data) => {}); // no-op, solo limpiar buffer
+            await sleep(200);
+        } catch (_) {}
+        this.log('Flush IN OK.');
+
+        // K40-Whisperer: _say_hello() — enviar [160] como paquete EPP + leer respuesta
+        try {
+            await this.sendPacket(Buffer.from([0xA0]));
+            const resp = await this.readStatus(500);
+            const s = resp[1];
+            this.log(`Say hello → 0x${s.toString(16).padStart(2, '0')}`);
+        } catch (e) {
+            this.log(`Say hello: ${e.message} (continuando...)`);
+        }
+
+        // K40-Whisperer: unlock_rail() → IS2P + _say_hello()
         try {
             await this.sendEGV('IS2P');
+            await this.sendPacket(Buffer.from([0xA0]));
+            try { await this.readStatus(500); } catch (_) {}
             this.log('Unlock rail (IS2P) OK.');
         } catch (e) {
             this.log(`Unlock rail aviso: ${e.message}`);
+        }
+
+        // K40-Whisperer: home_position() al inicializar
+        try {
+            await this.sendEGV('IPP');
+            await this.sendPacket(Buffer.from([0xA0]));
+            try { await this.readStatus(500); } catch (_) {}
+            this._posX = 0; this._posY = 0;
+            this.log('Home init OK.');
+        } catch (e) {
+            this.log(`Home init aviso: ${e.message}`);
         }
     }
 
