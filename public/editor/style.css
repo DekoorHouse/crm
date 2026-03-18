@@ -379,7 +379,7 @@ body.dark .header-select {
     border: 1px solid rgba(230, 224, 240, 0.7);
     border-radius: var(--radius-lg);
     padding: 14px;
-    width: 184px;
+    width: 210px;
     box-shadow: var(--shadow-md);
     animation: props-in 0.2s ease-out;
 }
@@ -428,6 +428,7 @@ body.dark .header-select {
 
 .props-field input {
     width: 100%;
+    box-sizing: border-box;
     background: var(--surface-hover);
     border: 1px solid var(--border);
     color: var(--text);
