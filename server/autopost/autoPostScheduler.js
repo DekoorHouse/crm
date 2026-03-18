@@ -2,7 +2,7 @@ const cron = require('node-cron');
 const { db } = require('../config');
 const { fetchAvailablePhotos, pickUnpostedPhoto, downloadPhoto, deletePhoto } = require('./photoService');
 const { generateCaption } = require('./captionService');
-const { publishPhotoToPage } = require('./facebookPostService');
+const { publishPhotoToPage, publishPhotoToInstagram } = require('./facebookPostService');
 
 let scheduledTask = null;
 
@@ -57,11 +57,22 @@ async function executeAutoPost() {
         console.log('[AUTOPOST] Publicando en Facebook...');
         const fbPostId = await publishPhotoToPage(imageBuffer, caption);
         logEntry.fbPostId = fbPostId;
+        console.log(`[AUTOPOST] Facebook OK! Post ID: ${fbPostId}`);
+
+        // 6. Publicar en Instagram
+        try {
+            console.log('[AUTOPOST] Publicando en Instagram...');
+            const igMediaId = await publishPhotoToInstagram(imageBuffer, caption, mimeType);
+            logEntry.igMediaId = igMediaId;
+            console.log(`[AUTOPOST] Instagram OK! Media ID: ${igMediaId}`);
+        } catch (igError) {
+            console.error(`[AUTOPOST] Error en Instagram (FB si se publico): ${igError.message}`);
+            logEntry.igError = igError.message;
+        }
+
         logEntry.status = 'success';
         logEntry.completedAt = new Date();
-
         await saveLog(logEntry);
-        console.log(`[AUTOPOST] Publicacion exitosa! FB Post ID: ${fbPostId}`);
 
         // Eliminar foto de Storage despues de publicar
         try {

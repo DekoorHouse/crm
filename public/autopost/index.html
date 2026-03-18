@@ -210,7 +210,7 @@
       try {
         const fb = await api('/facebook/verify');
         document.getElementById('facebookStatus').innerHTML = fb.valid
-          ? `<span class="badge badge-success"><i class="fas fa-check"></i> ${fb.pageName}</span>`
+          ? `<span class="badge badge-success"><i class="fas fa-check"></i> ${fb.pageName}${fb.instagram ? ' + IG' : ''}</span>`
           : '<span class="badge badge-danger">No conectado</span>';
       } catch (e) {
         document.getElementById('facebookStatus').innerHTML = '<span class="badge badge-danger">Error</span>';
