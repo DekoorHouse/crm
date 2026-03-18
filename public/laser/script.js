@@ -299,37 +299,91 @@ function drawCanvas() {
             ctx.restore();
         }
 
-        // Selección: borde azul + dimensiones
+        // Selección: marching ants + handles + dimensiones con fondo
         if (state.designSelected) {
-            // Borde de selección
+            const pad = 3;
+            const sx = dx - pad, sy = dy - pad, sw = dw + pad * 2, sh = dh + pad * 2;
+
+            // Marching ants (borde animado)
+            const offset = (Date.now() / 60) % 16;
+            ctx.strokeStyle = 'rgba(0,0,0,0.5)';
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([]);
+            ctx.strokeRect(sx, sy, sw, sh);
             ctx.strokeStyle = '#58a6ff';
             ctx.lineWidth = 1.5;
-            ctx.setLineDash([6, 3]);
-            ctx.strokeRect(dx - 1, dy - 1, dw + 2, dh + 2);
+            ctx.setLineDash([6, 4]);
+            ctx.lineDashOffset = -offset;
+            ctx.strokeRect(sx, sy, sw, sh);
             ctx.setLineDash([]);
+            ctx.lineDashOffset = 0;
 
-            // Handles (esquinas)
-            const hs = 4;
-            ctx.fillStyle = '#58a6ff';
-            for (const [hx, hy] of [[dx,dy],[dx+dw,dy],[dx,dy+dh],[dx+dw,dy+dh]]) {
+            // Handles (esquinas + medios)
+            const hs = 5;
+            ctx.fillStyle = '#fff';
+            ctx.strokeStyle = '#58a6ff';
+            ctx.lineWidth = 1.5;
+            const handles = [
+                [dx, dy], [dx + dw, dy], [dx, dy + dh], [dx + dw, dy + dh],
+                [dx + dw / 2, dy], [dx + dw / 2, dy + dh],
+                [dx, dy + dh / 2], [dx + dw, dy + dh / 2],
+            ];
+            for (const [hx, hy] of handles) {
                 ctx.fillRect(hx - hs, hy - hs, hs * 2, hs * 2);
+                ctx.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
             }
 
-            // Dimensión horizontal (arriba)
+            // Labels de dimensiones con fondo
             const labelW = `${mmW.toFixed(1)} mm`;
             const labelH = `${mmH.toFixed(1)} mm`;
-            ctx.font = 'bold 10px JetBrains Mono, monospace';
+            ctx.font = 'bold 11px JetBrains Mono, monospace';
+
+            // Ancho (arriba, centrado)
+            const twW = ctx.measureText(labelW).width;
+            const lxW = dx + dw / 2 - twW / 2 - 4;
+            const lyW = dy - pad - 18;
+            ctx.fillStyle = 'rgba(22,27,34,0.9)';
+            ctx.fillRect(lxW, lyW, twW + 8, 16);
+            ctx.strokeStyle = '#58a6ff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(lxW, lyW, twW + 8, 16);
             ctx.fillStyle = '#58a6ff';
             ctx.textAlign = 'center';
-            ctx.fillText(labelW, dx + dw / 2, dy - 8);
+            ctx.fillText(labelW, dx + dw / 2, lyW + 12);
 
-            // Dimensión vertical (izquierda)
+            // Alto (izquierda, centrado vertical)
+            const twH = ctx.measureText(labelH).width;
             ctx.save();
-            ctx.translate(dx - 8, dy + dh / 2);
+            ctx.translate(dx - pad - 18, dy + dh / 2);
             ctx.rotate(-Math.PI / 2);
-            ctx.fillText(labelH, 0, 0);
+            const lxH = -twH / 2 - 4;
+            ctx.fillStyle = 'rgba(22,27,34,0.9)';
+            ctx.fillRect(lxH, -8, twH + 8, 16);
+            ctx.strokeStyle = '#58a6ff';
+            ctx.lineWidth = 1;
+            ctx.strokeRect(lxH, -8, twH + 8, 16);
+            ctx.fillStyle = '#58a6ff';
+            ctx.textAlign = 'center';
+            ctx.fillText(labelH, 0, 4);
             ctx.restore();
             ctx.textAlign = 'start';
+
+            // Solicitar re-draw para animar marching ants
+            if (!state._selAnimFrame) {
+                state._selAnimFrame = requestAnimationFrame(function tick() {
+                    if (state.designSelected) {
+                        drawCanvas();
+                        state._selAnimFrame = requestAnimationFrame(tick);
+                    } else {
+                        state._selAnimFrame = null;
+                    }
+                });
+            }
+        } else {
+            if (state._selAnimFrame) {
+                cancelAnimationFrame(state._selAnimFrame);
+                state._selAnimFrame = null;
+            }
         }
     } else {
         state.designBox = null;
