@@ -43,6 +43,7 @@ function createPanel(id) {
     };
 
     let canvasW = 100, canvasH = 100;
+    let viewZoom = 1, viewPanX = 0, viewPanY = 0;
 
     function setupCanvas() {
         const wrapper = ref('canvasWrapper');
@@ -61,9 +62,20 @@ function createPanel(id) {
 
     function drawCanvas() {
         const W = canvasW, H = canvasH;
-        ctx.clearRect(0, 0, W, H);
+        // Limpiar todo el canvas (sin transform)
+        ctx.save();
+        ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.restore();
+
+        // Fondo
         ctx.fillStyle = '#111827';
-        ctx.fillRect(0, 0, W, H);
+        ctx.fillRect(-viewPanX / viewZoom, -viewPanY / viewZoom, W / viewZoom, H / viewZoom);
+
+        // Aplicar zoom y pan
+        ctx.save();
+        ctx.translate(viewPanX, viewPanY);
+        ctx.scale(viewZoom, viewZoom);
 
         // Grid
         const gx = W / (WORK_W / 10), gy = H / (WORK_H / 10);
@@ -167,6 +179,20 @@ function createPanel(id) {
                 }
             } else if (state._animFrame) { cancelAnimationFrame(state._animFrame); state._animFrame = null; }
         }
+
+        // Cerrar transform de zoom/pan
+        ctx.restore();
+
+        // Indicador de zoom (fuera del transform)
+        if (viewZoom !== 1) {
+            ctx.fillStyle = 'rgba(0,0,0,0.5)';
+            ctx.fillRect(W - 60, 2, 58, 16);
+            ctx.fillStyle = '#58a6ff';
+            ctx.font = '10px JetBrains Mono, monospace';
+            ctx.textAlign = 'right';
+            ctx.fillText(`${Math.round(viewZoom * 100)}%`, W - 6, 13);
+            ctx.textAlign = 'start';
+        }
     }
 
     // ───────── File handling ─────────
@@ -235,12 +261,17 @@ function createPanel(id) {
         if (!dragStart) return;
         const cur = canvasCoord(e);
         drawCanvas();
+        // Dibujar rectángulo de selección en espacio del workspace (dentro del transform)
         const sx = Math.min(dragStart.x, cur.x), sy = Math.min(dragStart.y, cur.y);
         const sw = Math.abs(cur.x - dragStart.x), sh = Math.abs(cur.y - dragStart.y);
         if (sw > 2 || sh > 2) {
-            ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+            ctx.save();
+            ctx.translate(viewPanX, viewPanY);
+            ctx.scale(viewZoom, viewZoom);
+            ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1 / viewZoom; ctx.setLineDash([4 / viewZoom, 3 / viewZoom]);
             ctx.strokeRect(sx, sy, sw, sh); ctx.setLineDash([]);
             ctx.fillStyle = 'rgba(88,166,255,0.08)'; ctx.fillRect(sx, sy, sw, sh);
+            ctx.restore();
         }
     });
     window.addEventListener('mouseup', e => {
@@ -262,9 +293,57 @@ function createPanel(id) {
 
     function canvasCoord(e) {
         const r = canvas.getBoundingClientRect();
+        const rawX = (e.clientX - r.left) * (canvasW / r.width);
+        const rawY = (e.clientY - r.top) * (canvasH / r.height);
+        // Convertir coordenadas de pantalla a coordenadas del workspace (con zoom/pan)
+        return { x: (rawX - viewPanX) / viewZoom, y: (rawY - viewPanY) / viewZoom };
+    }
+    function screenCoord(e) {
+        const r = canvas.getBoundingClientRect();
         return { x: (e.clientX - r.left) * (canvasW / r.width), y: (e.clientY - r.top) * (canvasH / r.height) };
     }
     wrapper.addEventListener('contextmenu', e => e.preventDefault());
+
+    // Zoom con scroll — zoom hacia el cursor
+    wrapper.addEventListener('wheel', e => {
+        e.preventDefault();
+        const sc = screenCoord(e);
+        const zoomFactor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+        const newZoom = Math.min(Math.max(viewZoom * zoomFactor, 0.5), 20);
+        // Zoom hacia el punto del cursor
+        viewPanX = sc.x - (sc.x - viewPanX) * (newZoom / viewZoom);
+        viewPanY = sc.y - (sc.y - viewPanY) * (newZoom / viewZoom);
+        viewZoom = newZoom;
+        drawCanvas();
+    }, { passive: false });
+
+    // Pan con click derecho sostenido
+    let panStart = null, panStartPan = null;
+    wrapper.addEventListener('mousedown', e => {
+        if (e.button === 2) {
+            e.preventDefault();
+            panStart = screenCoord(e);
+            panStartPan = { x: viewPanX, y: viewPanY };
+        }
+    });
+    window.addEventListener('mousemove', e => {
+        if (!panStart) return;
+        const cur = screenCoord(e);
+        viewPanX = panStartPan.x + (cur.x - panStart.x);
+        viewPanY = panStartPan.y + (cur.y - panStart.y);
+        drawCanvas();
+    });
+    window.addEventListener('mouseup', e => {
+        if (e.button === 2) panStart = null;
+    });
+
+    // Doble click para resetear zoom
+    wrapper.addEventListener('dblclick', e => {
+        if (e.button === 0) {
+            viewZoom = 1; viewPanX = 0; viewPanY = 0;
+            drawCanvas();
+        }
+    });
 
     // ───────── Controls ─────────
     // Mode
