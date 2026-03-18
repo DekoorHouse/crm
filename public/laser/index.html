@@ -232,17 +232,6 @@
                         <label>Pasadas <span data-ref="passesLabel">1×</span></label>
                         <input type="range" class="param-slider" data-ref="passesSlider" min="1" max="10" value="1">
                     </div>
-                    <div class="setting-group">
-                        <label>Algoritmo</label>
-                        <div style="display:flex;gap:2px">
-                            <button data-ref="algoDither" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer">Dither</button>
-                            <button data-ref="algoHalftone" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer">Halftone</button>
-                        </div>
-                    </div>
-                    <div class="setting-group" style="display:flex;align-items:center;gap:6px;margin-top:6px">
-                        <input type="checkbox" data-ref="invertCheck" id="invertCheck___ID__" style="accent-color:#58a6ff;cursor:pointer">
-                        <label for="invertCheck___ID__" style="font-size:10px;cursor:pointer;margin:0">Invertir colores (acrílico)</label>
-                    </div>
                 </div>
                 <!-- Jog -->
                 <div class="panel-section">
@@ -288,6 +277,53 @@
         </div>
     </div>
 </template>
+
+<!-- BMP Preview Modal -->
+<div id="bmpPreviewModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);">
+    <div style="position:absolute;inset:20px;background:#161b22;border:1px solid rgba(88,166,255,0.2);border-radius:8px;display:grid;grid-template-columns:1fr 210px;overflow:hidden;">
+        <div id="bmpModalPreviewArea" style="overflow:auto;display:flex;align-items:center;justify-content:center;background:#0d1117;position:relative;">
+            <canvas id="bmpModalCanvas" style="image-rendering:pixelated;max-width:100%;max-height:100%;"></canvas>
+            <div id="bmpModalLoading" style="position:absolute;color:#8b949e;font-size:12px;">Procesando...</div>
+        </div>
+        <div style="padding:12px;overflow-y:auto;border-left:1px solid rgba(88,166,255,0.1);font-size:11px;">
+            <h3 style="font-size:13px;margin:0 0 12px;color:#58a6ff;">Configuración BMP</h3>
+            <div style="margin-bottom:8px;">
+                <label style="font-size:10px;color:#8b949e;">Algoritmo</label>
+                <select id="bmpModalAlgo" style="width:100%;padding:4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.3);border-radius:3px;color:#c9d1d9;margin-top:2px;">
+                    <option value="atkinson" selected>Atkinson</option>
+                    <option value="floyd-steinberg">Floyd-Steinberg</option>
+                    <option value="stucki">Stucki</option>
+                    <option value="jarvis">Jarvis</option>
+                    <option value="halftone">Halftone</option>
+                    <option value="bayer4">Bayer 4×4</option>
+                    <option value="bayer8">Bayer 8×8</option>
+                    <option value="threshold">Umbral</option>
+                </select>
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="font-size:10px;color:#8b949e;">DPI <span id="bmpModalDpiVal" style="color:#c9d1d9;">1000</span></label>
+                <input type="range" id="bmpModalDpi" min="150" max="1500" value="1000" step="50" class="param-slider" style="width:100%;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="font-size:10px;color:#8b949e;">Brillo <span id="bmpModalBrightVal" style="color:#c9d1d9;">0</span></label>
+                <input type="range" id="bmpModalBright" min="-100" max="100" value="0" class="param-slider" style="width:100%;">
+            </div>
+            <div style="margin-bottom:8px;">
+                <label style="font-size:10px;color:#8b949e;">Contraste <span id="bmpModalContrastVal" style="color:#c9d1d9;">0</span></label>
+                <input type="range" id="bmpModalContrast" min="-100" max="100" value="0" class="param-slider" style="width:100%;">
+            </div>
+            <div style="display:flex;align-items:center;gap:6px;margin:8px 0;">
+                <input type="checkbox" id="bmpModalInvert" style="accent-color:#58a6ff;cursor:pointer;">
+                <label for="bmpModalInvert" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Invertir colores (acrílico)</label>
+            </div>
+            <div id="bmpModalInfo" style="font-size:9px;color:#8b949e;margin:8px 0;padding:6px;background:rgba(0,0,0,0.3);border-radius:3px;"></div>
+            <div style="display:flex;gap:6px;margin-top:12px;">
+                <button id="bmpModalCancel" style="flex:1;padding:6px;font-size:11px;border-radius:4px;border:1px solid rgba(88,166,255,0.3);background:none;color:#c9d1d9;cursor:pointer;">Cancelar</button>
+                <button id="bmpModalFinish" style="flex:1;padding:6px;font-size:11px;border-radius:4px;border:1px solid #58a6ff;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer;font-weight:600;">Finalizar</button>
+            </div>
+        </div>
+    </div>
+</div>
 
 <script src="/laser/dual.js"></script>
 </body>

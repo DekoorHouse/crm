@@ -38,9 +38,8 @@ function createPanel(id) {
         designBox: null,
         designSelected: false,
         jobRunning: false,
-        invertColors: false,
-        ditherAlgo: 'dither', // 'dither' | 'halftone'
         previewBitmapData: null,
+        rasterResult: null,
     };
 
     let canvasW = 100, canvasH = 100;
@@ -210,7 +209,7 @@ function createPanel(id) {
 
     ref('removeFileBtn').addEventListener('click', () => {
         state.loadedFile = null; state.loadedImage = null; state.imageType = null;
-        state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null;
+        state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null; state.rasterResult = null;
         ref('fileInfo').style.display = 'none'; dropZone.style.display = '';
         drawCanvas();
     });
@@ -227,7 +226,7 @@ function createPanel(id) {
                 const img = new Image();
                 img.onload = () => {
                     state.loadedImage = img; state.imageType = 'svg'; state.loadedFile = file;
-                    state.designSelected = false; state.previewBitmapData = null;
+                    state.designSelected = false; state.previewBitmapData = null; state.rasterResult = null;
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     URL.revokeObjectURL(url); drawCanvas();
                     plog(`SVG: ${file.name}`, 'success');
@@ -240,7 +239,7 @@ function createPanel(id) {
                 const img = new Image();
                 img.onload = () => {
                     state.loadedImage = img; state.imageType = 'raster'; state.loadedFile = file;
-                    state.designSelected = false; state.previewBitmapData = null;
+                    state.designSelected = false; state.previewBitmapData = null; state.rasterResult = null;
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     drawCanvas();
                     plog(`Img: ${file.name}`, 'success');
@@ -365,18 +364,7 @@ function createPanel(id) {
     ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedLabel').textContent = `${state.speed} mm/s`; });
     ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
     ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
-    ref('invertCheck').addEventListener('change', e => { state.invertColors = e.target.checked; state.previewBitmapData = null; drawCanvas(); });
-    function setAlgo(algo) {
-        state.ditherAlgo = algo; state.previewBitmapData = null;
-        const activeStyle = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer';
-        const inactiveStyle = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer';
-        ref('algoDither').style.cssText = algo === 'dither' ? activeStyle : inactiveStyle;
-        ref('algoHalftone').style.cssText = algo === 'halftone' ? activeStyle : inactiveStyle;
-        drawCanvas();
-    }
-    ref('algoDither').addEventListener('click', () => setAlgo('dither'));
-    ref('algoHalftone').addEventListener('click', () => setAlgo('halftone'));
-    ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; });
+    ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; state.rasterResult = null; drawCanvas(); });
 
     // Jog
     el.querySelectorAll('[data-jog]').forEach(btn => {
@@ -408,35 +396,8 @@ function createPanel(id) {
 
     function generatePreview() {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
-        plog('Generando vista previa...', 'info');
-        const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, algo: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') ? 'threshold' : state.ditherAlgo });
-
-        // Convertir bitmap 1-bit a canvas para mostrar
-        const pvCanvas = document.createElement('canvas');
-        pvCanvas.width = rd.width; pvCanvas.height = rd.height;
-        const pvCx = pvCanvas.getContext('2d');
-        const imgData = pvCx.createImageData(rd.width, rd.height);
-        const d = imgData.data;
-        const rowBytes = Math.ceil(rd.width / 8);
-        for (let y = 0; y < rd.height; y++) {
-            for (let x = 0; x < rd.width; x++) {
-                const bit = (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
-                const idx = (y * rd.width + x) * 4;
-                const v = bit ? 0 : 255; // bit=1 → negro (láser ON)
-                d[idx] = v; d[idx+1] = v; d[idx+2] = v; d[idx+3] = 255;
-            }
-        }
-        pvCx.putImageData(imgData, 0, 0);
-
-        state.previewBitmapData = {
-            canvas: pvCanvas,
-            width: rd.width, height: rd.height,
-            offsetX: rd.offsetX, offsetY: rd.offsetY,
-        };
-        const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
-        plog(`Preview: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm ${state.invertColors ? '(invertido)' : ''}`, 'success');
-        drawCanvas();
+        plog('Abriendo configuración BMP...', 'info');
+        openBmpModal(state, plog, drawCanvas);
     }
 
     function startJob() {
@@ -449,9 +410,15 @@ function createPanel(id) {
             if (!segments.length) { plog('Sin trazos SVG', 'error'); return; }
             sendCmd({ cmd: 'start', machine: id, mode: 'cut', speed: state.speed, passes: state.passes, segments });
         } else {
-            // Para SVGs, usar el bbox de los objetos (no el canvas completo)
-            const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors, algo: state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp') ? 'threshold' : state.ditherAlgo });
+            // Usar resultado del modal si existe, sino generar con defaults
+            let rd = state.rasterResult;
+            if (!rd) {
+                const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+                const dpmm = 1000 / 25.4;
+                const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+                const processed = processGray(raw.gray, raw.width, raw.height, { brightness:0, contrast:0, algorithm:'atkinson', invert:false });
+                rd = { bitmap: grayToBitmap(processed, raw.width, raw.height), width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY };
+            }
             const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
@@ -575,126 +542,298 @@ function extractSVGSegments(svgText) {
     return segments;
 }
 
-function extractRasterBitmap(image, lineSpacing = 1, bbox = null, options = {}) {
+// ───────── SVG Transparency ─────────
+function createTransparentSvgImage(svgText, callback) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) { callback(null); return; }
+    const vb = svg.getAttribute('viewBox');
+    let svgW, svgH;
+    if (vb) { const p = vb.split(/[\s,]+/).map(Number); svgW = p[2]; svgH = p[3]; }
+    else { svgW = parseFloat(svg.getAttribute('width'))||300; svgH = parseFloat(svg.getAttribute('height'))||200; }
+    // Eliminar rects de fondo (primer rect que cubre todo el SVG con fill blanco)
+    for (const r of svg.querySelectorAll('rect')) {
+        const x = parseFloat(r.getAttribute('x')||0), y = parseFloat(r.getAttribute('y')||0);
+        const w = parseFloat(r.getAttribute('width')||0), h = parseFloat(r.getAttribute('height')||0);
+        const fill = (r.getAttribute('fill')||'').toLowerCase().replace(/\s/g,'');
+        if (x<=0 && y<=0 && Math.abs(w-svgW)<1 && Math.abs(h-svgH)<1 &&
+            (fill===''||fill==='white'||fill==='#ffffff'||fill==='#fff'||fill==='rgb(255,255,255)')) {
+            r.remove(); break;
+        }
+    }
+    svg.setAttribute('style','background:transparent');
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'});
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); callback(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); callback(null); };
+    img.src = url;
+}
+
+// ───────── Raster Pipeline ─────────
+function renderImageToGray(image, lineSpacing, bbox, dpmm) {
     const imgW = image.naturalWidth || image.width;
     const imgH = image.naturalHeight || image.height;
     const pxToMm = 25.4 / 96;
-
-    // Tamaño completo de la imagen/SVG en mm
     const fullMmW = imgW * pxToMm, fullMmH = imgH * pxToMm;
     const fit = Math.min(WORK_W / fullMmW, WORK_H / fullMmH, 1);
-
-    // Si hay bbox (SVG), recortar solo al área de los objetos
     let cropMmX = 0, cropMmY = 0, cropMmW, cropMmH;
-    if (bbox) {
-        cropMmX = bbox.mmX;
-        cropMmY = bbox.mmY;
-        cropMmW = bbox.mmW;
-        cropMmH = bbox.mmH;
-    } else {
-        cropMmW = fullMmW * fit;
-        cropMmH = fullMmH * fit;
-    }
-
-    const DPI = 39.37;
-    const pxW = Math.round(cropMmW * DPI);
-    const pxH = Math.round(cropMmH * DPI / lineSpacing);
-
-    // Renderizar imagen completa a canvas temporal, luego recortar
-    const fullPxW = Math.round(fullMmW * fit * DPI);
-    const fullPxH = Math.round(fullMmH * fit * DPI / lineSpacing);
-
-    // Canvas solo del área de recorte
+    if (bbox) { cropMmX = bbox.mmX; cropMmY = bbox.mmY; cropMmW = bbox.mmW; cropMmH = bbox.mmH; }
+    else { cropMmW = fullMmW * fit; cropMmH = fullMmH * fit; }
+    const pxW = Math.round(cropMmW * dpmm);
+    const pxH = Math.round(cropMmH * dpmm / lineSpacing);
+    const fullPxW = Math.round(fullMmW * fit * dpmm);
+    const fullPxH = Math.round(fullMmH * fit * dpmm / lineSpacing);
     const srcX = Math.round(cropMmX / (fullMmW * fit) * fullPxW);
     const srcY = Math.round(cropMmY / (fullMmH * fit) * fullPxH);
-
-    // Renderizar imagen completa a canvas TRANSPARENTE (sin fondo blanco)
     const fullC = document.createElement('canvas');
     fullC.width = fullPxW; fullC.height = fullPxH;
-    const fullCx = fullC.getContext('2d');
-    // NO llenar con blanco — dejar transparente para detectar áreas vacías
-    fullCx.drawImage(image, 0, 0, fullPxW, fullPxH);
-
-    // Extraer solo la región del bbox
+    fullC.getContext('2d').drawImage(image, 0, 0, fullPxW, fullPxH);
     const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
     const cx = c.getContext('2d');
-    // NO llenar con blanco — mantener transparente
     cx.drawImage(fullC, srcX, srcY, pxW, pxH, 0, 0, pxW, pxH);
-
     const id = cx.getImageData(0, 0, pxW, pxH); const px = id.data;
-    const gray = new Uint8Array(pxW * pxH);
+    const gray = new Float32Array(pxW * pxH);
     for (let i = 0; i < pxW * pxH; i++) {
-        const a = px[i * 4 + 3]; // alpha
-        if (a < 10) {
-            // Pixel transparente → blanco (no grabar)
-            gray[i] = 255;
-        } else {
-            // Compositar contra blanco usando alpha
-            const r = px[i*4], g = px[i*4+1], b = px[i*4+2];
-            const af = a / 255;
-            const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-            gray[i] = Math.round(af * lum + (1 - af) * 255);
+        const a = px[i*4+3];
+        if (a < 10) { gray[i] = 255; }
+        else { const af = a/255; gray[i] = af*(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2])+(1-af)*255; }
+    }
+    return { gray, width: pxW, height: pxH, offsetX: cropMmX, offsetY: cropMmY };
+}
+
+function processGray(srcGray, w, h, options) {
+    const gray = new Float32Array(srcGray);
+    if (options.brightness) for (let i = 0; i < gray.length; i++) gray[i] += options.brightness;
+    if (options.contrast) {
+        const f = (259*(options.contrast+255))/(255*(259-options.contrast));
+        for (let i = 0; i < gray.length; i++) gray[i] = (gray[i]-128)*f+128;
+    }
+    for (let i = 0; i < gray.length; i++) gray[i] = Math.max(0, Math.min(255, gray[i]));
+    if (options.invert) for (let i = 0; i < gray.length; i++) gray[i] = 255 - gray[i];
+    const out = new Uint8Array(w * h);
+    const algo = options.algorithm || 'atkinson';
+    if (algo==='threshold') { const t=options.threshold||128; for(let i=0;i<w*h;i++)out[i]=gray[i]>t?255:0; }
+    else if (algo==='atkinson') ditherAtkinson(gray, out, w, h);
+    else if (algo==='floyd-steinberg') ditherFloydSteinberg(gray, out, w, h);
+    else if (algo==='stucki') ditherStucki(gray, out, w, h);
+    else if (algo==='jarvis') ditherJarvis(gray, out, w, h);
+    else if (algo==='halftone') ditherHalftone(gray, out, w, h);
+    else if (algo==='bayer4') ditherBayer(gray, out, w, h, 4);
+    else if (algo==='bayer8') ditherBayer(gray, out, w, h, 8);
+    else ditherAtkinson(gray, out, w, h);
+    return out;
+}
+
+function grayToBitmap(gray, w, h) {
+    const rowBytes = Math.ceil(w / 8);
+    const bitmap = new Uint8Array(rowBytes * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        if (gray[y*w+x] === 0) bitmap[y*rowBytes + Math.floor(x/8)] |= (1 << (7 - (x%8)));
+    }
+    return bitmap;
+}
+
+function grayToCanvas(gray, w, h) {
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
+    const cx = c.getContext('2d'); const id = cx.createImageData(w, h);
+    for (let i = 0; i < w*h; i++) { const v=gray[i]; id.data[i*4]=v; id.data[i*4+1]=v; id.data[i*4+2]=v; id.data[i*4+3]=255; }
+    cx.putImageData(id, 0, 0); return c;
+}
+
+// ───────── Dithering Algorithms ─────────
+function ditherAtkinson(gray, out, w, h) {
+    for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+        const i=y*w+x, old=gray[i], nw=old>128?255:0; out[i]=nw; const d=(old-nw)/8;
+        if(x+1<w)gray[i+1]+=d; if(x+2<w)gray[i+2]+=d;
+        if(x-1>=0&&y+1<h)gray[i-1+w]+=d; if(y+1<h)gray[i+w]+=d;
+        if(x+1<w&&y+1<h)gray[i+1+w]+=d; if(y+2<h)gray[i+2*w]+=d;
+    }
+}
+function ditherFloydSteinberg(gray, out, w, h) {
+    for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+        const i=y*w+x, old=gray[i], nw=old>128?255:0; out[i]=nw; const err=old-nw;
+        if(x+1<w)gray[i+1]+=err*7/16; if(x-1>=0&&y+1<h)gray[i-1+w]+=err*3/16;
+        if(y+1<h)gray[i+w]+=err*5/16; if(x+1<w&&y+1<h)gray[i+1+w]+=err*1/16;
+    }
+}
+function ditherStucki(gray, out, w, h) {
+    for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+        const i=y*w+x, old=gray[i], nw=old>128?255:0; out[i]=nw; const err=old-nw;
+        if(x+1<w)gray[i+1]+=err*8/42; if(x+2<w)gray[i+2]+=err*4/42;
+        if(y+1<h){if(x-2>=0)gray[i-2+w]+=err*2/42;if(x-1>=0)gray[i-1+w]+=err*4/42;gray[i+w]+=err*8/42;if(x+1<w)gray[i+1+w]+=err*4/42;if(x+2<w)gray[i+2+w]+=err*2/42;}
+        if(y+2<h){const w2=2*w;if(x-2>=0)gray[i-2+w2]+=err*1/42;if(x-1>=0)gray[i-1+w2]+=err*2/42;gray[i+w2]+=err*4/42;if(x+1<w)gray[i+1+w2]+=err*2/42;if(x+2<w)gray[i+2+w2]+=err*1/42;}
+    }
+}
+function ditherJarvis(gray, out, w, h) {
+    for (let y=0;y<h;y++) for (let x=0;x<w;x++) {
+        const i=y*w+x, old=gray[i], nw=old>128?255:0; out[i]=nw; const err=old-nw;
+        if(x+1<w)gray[i+1]+=err*7/48; if(x+2<w)gray[i+2]+=err*5/48;
+        if(y+1<h){if(x-2>=0)gray[i-2+w]+=err*3/48;if(x-1>=0)gray[i-1+w]+=err*5/48;gray[i+w]+=err*7/48;if(x+1<w)gray[i+1+w]+=err*5/48;if(x+2<w)gray[i+2+w]+=err*3/48;}
+        if(y+2<h){const w2=2*w;if(x-2>=0)gray[i-2+w2]+=err*1/48;if(x-1>=0)gray[i-1+w2]+=err*3/48;gray[i+w2]+=err*5/48;if(x+1<w)gray[i+1+w2]+=err*3/48;if(x+2<w)gray[i+2+w2]+=err*1/48;}
+    }
+}
+function ditherHalftone(gray, out, w, h) {
+    const cs = Math.max(4, Math.round(w/350));
+    for (let cy=0;cy<h;cy+=cs) for (let cx=0;cx<w;cx+=cs) {
+        let sum=0,cnt=0;
+        for(let dy=0;dy<cs&&cy+dy<h;dy++) for(let dx=0;dx<cs&&cx+dx<w;dx++){sum+=gray[(cy+dy)*w+(cx+dx)];cnt++;}
+        const r=cs/2*Math.sqrt(1-sum/cnt/255), mx=cx+cs/2, my=cy+cs/2;
+        for(let dy=0;dy<cs&&cy+dy<h;dy++) for(let dx=0;dx<cs&&cx+dx<w;dx++){
+            out[(cy+dy)*w+(cx+dx)]=Math.sqrt((cx+dx-mx)**2+(cy+dy-my)**2)<=r?0:255;
         }
     }
-    // Invertir colores (para acrílico: graba las zonas claras)
-    if (options.invert) {
-        for (let i = 0; i < pxW * pxH; i++) gray[i] = 255 - gray[i];
-    }
-    const algo = options.algo || 'dither';
-    if (algo === 'threshold') {
-        // BMP: umbral directo (ya viene en B/N)
-        for (let i = 0; i < pxW * pxH; i++) gray[i] = gray[i] < 128 ? 0 : 255;
-    } else if (algo === 'halftone') {
-        // Halftone: patrón de puntos circulares de tamaño variable
-        // Tamaño de celda en pixels (ajustar según resolución)
-        const cellSize = Math.max(4, Math.round(pxW / 350));
-        for (let cy = 0; cy < pxH; cy += cellSize) {
-            for (let cx = 0; cx < pxW; cx += cellSize) {
-                // Promedio de gris en la celda
-                let sum = 0, count = 0;
-                for (let dy = 0; dy < cellSize && cy + dy < pxH; dy++) {
-                    for (let dx = 0; dx < cellSize && cx + dx < pxW; dx++) {
-                        sum += gray[(cy + dy) * pxW + (cx + dx)];
-                        count++;
-                    }
-                }
-                const avg = sum / count;
-                // Radio del punto: más oscuro → punto más grande
-                const maxR = cellSize / 2;
-                const r = maxR * Math.sqrt(1 - avg / 255); // sqrt para distribución perceptual
-                const centerX = cx + cellSize / 2;
-                const centerY = cy + cellSize / 2;
-                // Pintar celda: blanco, luego punto negro
-                for (let dy = 0; dy < cellSize && cy + dy < pxH; dy++) {
-                    for (let dx = 0; dx < cellSize && cx + dx < pxW; dx++) {
-                        const px2 = cx + dx, py2 = cy + dy;
-                        const dist = Math.sqrt((px2 - centerX) ** 2 + (py2 - centerY) ** 2);
-                        gray[py2 * pxW + px2] = dist <= r ? 0 : 255;
-                    }
-                }
-            }
-        }
+}
+function ditherBayer(gray, out, w, h, size) {
+    const m4=[[0,8,2,10],[12,4,14,6],[3,11,1,9],[15,7,13,5]];
+    const m8=[[0,32,8,40,2,34,10,42],[48,16,56,24,50,18,58,26],[12,44,4,36,14,46,6,38],[60,28,52,20,62,30,54,22],[3,35,11,43,1,33,9,41],[51,19,59,27,49,17,57,25],[15,47,7,39,13,45,5,37],[63,31,55,23,61,29,53,21]];
+    const m=size===8?m8:m4, n=m.length, d=n*n;
+    for(let y=0;y<h;y++) for(let x=0;x<w;x++) out[y*w+x]=gray[y*w+x]>((m[y%n][x%n]+0.5)/d)*255?255:0;
+}
+
+// ───────── BMP Modal ─────────
+const bmpModal = {
+    panelState: null, panelPlog: null, panelDrawCanvas: null,
+    sourceImage: null, grayData: null,
+    width: 0, height: 0, offsetX: 0, offsetY: 0, lineSpacing: 1,
+    debounceTimer: null,
+};
+
+function openBmpModal(state, plog, drawCanvas) {
+    const modal = document.getElementById('bmpPreviewModal');
+    modal.style.display = '';
+    bmpModal.panelState = state;
+    bmpModal.panelPlog = plog;
+    bmpModal.panelDrawCanvas = drawCanvas;
+    bmpModal.lineSpacing = state.lineSpacing;
+    // Reset controls
+    const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
+    document.getElementById('bmpModalAlgo').value = isBmp ? 'threshold' : 'atkinson';
+    document.getElementById('bmpModalDpi').value = 1000;
+    document.getElementById('bmpModalDpiVal').textContent = '1000';
+    document.getElementById('bmpModalBright').value = 0;
+    document.getElementById('bmpModalBrightVal').textContent = '0';
+    document.getElementById('bmpModalContrast').value = 0;
+    document.getElementById('bmpModalContrastVal').textContent = '0';
+    document.getElementById('bmpModalInvert').checked = false;
+    document.getElementById('bmpModalLoading').style.display = '';
+    document.getElementById('bmpModalLoading').textContent = 'Renderizando...';
+    // Para SVGs, crear imagen transparente (sin fondo blanco)
+    if (state.imageType === 'svg' && state.svgText) {
+        createTransparentSvgImage(state.svgText, (timg) => {
+            bmpModalRender(timg || state.loadedImage, state);
+        });
     } else {
-        // Floyd-Steinberg dithering (default)
-        for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
-            const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;
-            if (x+1 < pxW) gray[idx+1] += err*7/16;
-            if (y+1 < pxH && x > 0) gray[(y+1)*pxW+x-1] += err*3/16;
-            if (y+1 < pxH) gray[(y+1)*pxW+x] += err*5/16;
-            if (y+1 < pxH && x+1 < pxW) gray[(y+1)*pxW+x+1] += err*1/16;
-        }
+        bmpModalRender(state.loadedImage, state);
     }
-    const rowBytes = Math.ceil(pxW / 8);
-    const bitmap = new Uint8Array(rowBytes * pxH);
-    for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
-        if (gray[y*pxW+x] === 0) bitmap[y*rowBytes + Math.floor(x/8)] |= (1 << (7 - (x%8)));
-    }
-    return { bitmap, width: pxW, height: pxH, offsetX: cropMmX, offsetY: cropMmY };
+}
+
+function bmpModalRender(image, state) {
+    const dpmm = parseInt(document.getElementById('bmpModalDpi').value) / 25.4;
+    const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+    const result = renderImageToGray(image, bmpModal.lineSpacing, bbox, dpmm);
+    bmpModal.sourceImage = image;
+    bmpModal.grayData = result.gray;
+    bmpModal.width = result.width;
+    bmpModal.height = result.height;
+    bmpModal.offsetX = result.offsetX;
+    bmpModal.offsetY = result.offsetY;
+    document.getElementById('bmpModalLoading').style.display = 'none';
+    bmpModalUpdatePreview();
+}
+
+function bmpModalUpdatePreview() {
+    if (!bmpModal.grayData) return;
+    const options = {
+        brightness: parseInt(document.getElementById('bmpModalBright').value),
+        contrast: parseInt(document.getElementById('bmpModalContrast').value),
+        algorithm: document.getElementById('bmpModalAlgo').value,
+        invert: document.getElementById('bmpModalInvert').checked,
+        threshold: 128,
+    };
+    const processed = processGray(bmpModal.grayData, bmpModal.width, bmpModal.height, options);
+    const c = grayToCanvas(processed, bmpModal.width, bmpModal.height);
+    const canvas = document.getElementById('bmpModalCanvas');
+    canvas.width = c.width; canvas.height = c.height;
+    canvas.getContext('2d').drawImage(c, 0, 0);
+    const dpi = parseInt(document.getElementById('bmpModalDpi').value);
+    const dpmm = dpi / 25.4;
+    const mmW = (bmpModal.width / dpmm).toFixed(1);
+    const mmH = (bmpModal.height / dpmm * bmpModal.lineSpacing).toFixed(1);
+    document.getElementById('bmpModalInfo').textContent = `${bmpModal.width}×${bmpModal.height}px | ${mmW}×${mmH}mm | ${dpi} DPI`;
+}
+
+function bmpModalScheduleUpdate() {
+    if (bmpModal.debounceTimer) cancelAnimationFrame(bmpModal.debounceTimer);
+    bmpModal.debounceTimer = requestAnimationFrame(bmpModalUpdatePreview);
+}
+
+function bmpModalOnDpiChange() {
+    if (!bmpModal.sourceImage || !bmpModal.panelState) return;
+    document.getElementById('bmpModalDpiVal').textContent = document.getElementById('bmpModalDpi').value;
+    document.getElementById('bmpModalLoading').style.display = '';
+    document.getElementById('bmpModalLoading').textContent = 'Re-renderizando...';
+    setTimeout(() => bmpModalRender(bmpModal.sourceImage, bmpModal.panelState), 30);
+}
+
+function bmpModalFinalize() {
+    const options = {
+        brightness: parseInt(document.getElementById('bmpModalBright').value),
+        contrast: parseInt(document.getElementById('bmpModalContrast').value),
+        algorithm: document.getElementById('bmpModalAlgo').value,
+        invert: document.getElementById('bmpModalInvert').checked,
+        threshold: 128,
+    };
+    const processed = processGray(bmpModal.grayData, bmpModal.width, bmpModal.height, options);
+    const bitmap = grayToBitmap(processed, bmpModal.width, bmpModal.height);
+    const pvCanvas = grayToCanvas(processed, bmpModal.width, bmpModal.height);
+    const state = bmpModal.panelState;
+    state.previewBitmapData = {
+        canvas: pvCanvas, width: bmpModal.width, height: bmpModal.height,
+        offsetX: bmpModal.offsetX, offsetY: bmpModal.offsetY,
+    };
+    state.rasterResult = {
+        bitmap, width: bmpModal.width, height: bmpModal.height,
+        offsetX: bmpModal.offsetX, offsetY: bmpModal.offsetY,
+    };
+    closeBmpModal();
+    if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
+    const dpmm = parseInt(document.getElementById('bmpModalDpi').value) / 25.4;
+    const mmW = (bmpModal.width / dpmm).toFixed(1), mmH = (bmpModal.height / dpmm * bmpModal.lineSpacing).toFixed(1);
+    if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${bmpModal.width}×${bmpModal.height}px → ${mmW}×${mmH}mm`, 'success');
+}
+
+function closeBmpModal() {
+    document.getElementById('bmpPreviewModal').style.display = 'none';
+    bmpModal.grayData = null; bmpModal.sourceImage = null;
 }
 
 // ───────── Init ─────────
 panels[0] = createPanel(0);
 panels[1] = createPanel(1);
+
+// Modal event listeners
+document.getElementById('bmpModalCancel').addEventListener('click', closeBmpModal);
+document.getElementById('bmpModalFinish').addEventListener('click', bmpModalFinalize);
+document.getElementById('bmpModalAlgo').addEventListener('change', bmpModalScheduleUpdate);
+document.getElementById('bmpModalBright').addEventListener('input', e => {
+    document.getElementById('bmpModalBrightVal').textContent = e.target.value;
+    bmpModalScheduleUpdate();
+});
+document.getElementById('bmpModalContrast').addEventListener('input', e => {
+    document.getElementById('bmpModalContrastVal').textContent = e.target.value;
+    bmpModalScheduleUpdate();
+});
+document.getElementById('bmpModalDpi').addEventListener('input', e => {
+    document.getElementById('bmpModalDpiVal').textContent = e.target.value;
+});
+document.getElementById('bmpModalDpi').addEventListener('change', bmpModalOnDpiChange);
+document.getElementById('bmpModalInvert').addEventListener('change', bmpModalScheduleUpdate);
+// Cerrar modal con Escape
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.getElementById('bmpPreviewModal').style.display !== 'none') closeBmpModal();
+});
 
 function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
