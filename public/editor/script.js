@@ -108,6 +108,13 @@ const state = {
     resizeStart: null,
     resizeObjBounds: null,
     resizeObjId: null,
+
+    // Node editing mode
+    nodeEditId: null,       // ID of the object being node-edited
+    nodeEditDragging: false,
+    nodeEditIdx: -1,        // index of the node being dragged
+    nodeEditStart: null,    // {x,y} start point of drag
+    nodeEditOrigPts: null,  // original points snapshot
 };
 
 // Undo/Redo
@@ -499,6 +506,7 @@ function refreshElement(obj) {
         case 'curvepath': {
             const orig = obj._origBounds;
             if (!orig) break; // safety
+            elem.setAttribute('d', obj.d); // update path data (may change during node editing)
             const sx = obj.width / orig.w;
             const sy = obj.height / orig.h;
             // translate so the scaled path lands at obj.x, obj.y
@@ -624,6 +632,11 @@ function selectObject(id, addToSelection) {
 
 function drawSelection() {
     selectionLayer.innerHTML = '';
+    // If in node edit mode, draw nodes instead of selection box
+    if (state.nodeEditId) {
+        drawNodeEdit();
+        return;
+    }
     const ns = 'http://www.w3.org/2000/svg';
     for (const id of state.selectedIds) {
         const obj = findObject(id);
@@ -1027,6 +1040,442 @@ function sampleBSpline(ctrlPts, numSamples) {
 }
 
 // =============================================
+// SVG PATH D-STRING PARSER (for curvepath node editing)
+// =============================================
+function parseSVGPath(d) {
+    // Returns array of { cmd: 'M'|'L'|'C'|'Q'|'Z', pts: [{x,y},...] }
+    const cmds = [];
+    const re = /([MLCQZmlcqz])\s*([-\d.,eE+\s]*)/g;
+    let m;
+    while ((m = re.exec(d)) !== null) {
+        const cmd = m[1].toUpperCase();
+        const raw = m[2].trim();
+        const nums = raw.length > 0 ? raw.split(/[\s,]+/).map(Number) : [];
+        const pts = [];
+        for (let i = 0; i < nums.length; i += 2) {
+            if (i + 1 < nums.length) pts.push({ x: nums[i], y: nums[i + 1] });
+        }
+        cmds.push({ cmd, pts });
+    }
+    return cmds;
+}
+
+function buildSVGPathD(cmds) {
+    let d = '';
+    for (const seg of cmds) {
+        if (seg.cmd === 'Z') { d += 'Z '; continue; }
+        d += seg.cmd + ' ';
+        for (const p of seg.pts) d += p.x.toFixed(2) + ' ' + p.y.toFixed(2) + ' ';
+    }
+    return d.trim();
+}
+
+// Extract all editable point references from parsed path commands
+// Returns array of { segIdx, ptIdx, x, y } (references into cmds[segIdx].pts[ptIdx])
+function extractPathPoints(cmds) {
+    const pts = [];
+    for (let si = 0; si < cmds.length; si++) {
+        const seg = cmds[si];
+        for (let pi = 0; pi < seg.pts.length; pi++) {
+            pts.push({ segIdx: si, ptIdx: pi, x: seg.pts[pi].x, y: seg.pts[pi].y });
+        }
+    }
+    return pts;
+}
+
+// =============================================
+// NODE EDITING MODE
+// =============================================
+function getEditableNodes(obj) {
+    const nodes = [];
+    switch (obj.type) {
+        case 'rect':
+            nodes.push({ x: obj.x, y: obj.y, idx: 0, nodeType: 'corner' });                          // TL
+            nodes.push({ x: obj.x + obj.width, y: obj.y, idx: 1, nodeType: 'corner' });               // TR
+            nodes.push({ x: obj.x, y: obj.y + obj.height, idx: 2, nodeType: 'corner' });              // BL
+            nodes.push({ x: obj.x + obj.width, y: obj.y + obj.height, idx: 3, nodeType: 'corner' }); // BR
+            break;
+        case 'ellipse':
+            nodes.push({ x: obj.cx, y: obj.cy - obj.ry, idx: 0, nodeType: 'quadrant' }); // top
+            nodes.push({ x: obj.cx + obj.rx, y: obj.cy, idx: 1, nodeType: 'quadrant' }); // right
+            nodes.push({ x: obj.cx, y: obj.cy + obj.ry, idx: 2, nodeType: 'quadrant' }); // bottom
+            nodes.push({ x: obj.cx - obj.rx, y: obj.cy, idx: 3, nodeType: 'quadrant' }); // left
+            break;
+        case 'line':
+            nodes.push({ x: obj.x1, y: obj.y1, idx: 0, nodeType: 'endpoint' });
+            nodes.push({ x: obj.x2, y: obj.y2, idx: 1, nodeType: 'endpoint' });
+            break;
+        case 'bspline':
+            for (let i = 0; i < obj.points.length; i++) {
+                nodes.push({ x: obj.points[i].x, y: obj.points[i].y, idx: i, nodeType: 'control' });
+            }
+            break;
+        case 'curvepath': {
+            if (!obj.d) break;
+            const cmds = parseSVGPath(obj.d);
+            const pathPts = extractPathPoints(cmds);
+            const orig = obj._origBounds;
+            if (!orig || orig.w === 0 || orig.h === 0) break;
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+            for (let i = 0; i < pathPts.length; i++) {
+                const pp = pathPts[i];
+                // Transform from path-local to world coords
+                const wx = pp.x * sx + tx;
+                const wy = pp.y * sy + ty;
+                nodes.push({ x: wx, y: wy, idx: i, nodeType: 'pathpoint', segIdx: pp.segIdx, ptIdx: pp.ptIdx });
+            }
+            break;
+        }
+    }
+    return nodes;
+}
+
+function enterNodeEdit(objId) {
+    state.nodeEditId = objId;
+    state.selectedIds = [objId];
+    drawSelection();
+    updatePropsPanel();
+}
+
+function exitNodeEdit() {
+    state.nodeEditId = null;
+    state.nodeEditDragging = false;
+    state.nodeEditIdx = -1;
+    state.nodeEditStart = null;
+    state.nodeEditOrigPts = null;
+    drawSelection();
+}
+
+function drawNodeEdit() {
+    const obj = findObject(state.nodeEditId);
+    if (!obj) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const sw = state.viewBox.w * 0.0015;
+    const hs = state.viewBox.w * 0.007;
+    const nodeR = hs * 0.6;
+    const nodes = getEditableNodes(obj);
+
+    // For bspline: draw control polygon
+    if (obj.type === 'bspline' && nodes.length > 1) {
+        const pl = document.createElementNS(ns, 'polyline');
+        pl.setAttribute('points', nodes.map(n => `${n.x},${n.y}`).join(' '));
+        pl.setAttribute('fill', 'none');
+        pl.setAttribute('stroke', '#7c5cf0');
+        pl.setAttribute('stroke-width', sw * 0.6);
+        pl.setAttribute('stroke-dasharray', `${sw * 3} ${sw * 1.5}`);
+        pl.setAttribute('pointer-events', 'none');
+        selectionLayer.appendChild(pl);
+    }
+
+    // For curvepath: draw control lines for cubic bezier segments
+    if (obj.type === 'curvepath' && obj.d) {
+        const cmds = parseSVGPath(obj.d);
+        const orig = obj._origBounds;
+        if (orig && orig.w !== 0 && orig.h !== 0) {
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+            let lastX = 0, lastY = 0;
+            for (const seg of cmds) {
+                if (seg.cmd === 'M' && seg.pts.length > 0) {
+                    lastX = seg.pts[0].x * sx + tx;
+                    lastY = seg.pts[0].y * sy + ty;
+                } else if (seg.cmd === 'C' && seg.pts.length === 3) {
+                    // Draw lines from previous endpoint to cp1, and cp2 to endpoint
+                    const cp1x = seg.pts[0].x * sx + tx, cp1y = seg.pts[0].y * sy + ty;
+                    const cp2x = seg.pts[1].x * sx + tx, cp2y = seg.pts[1].y * sy + ty;
+                    const epx = seg.pts[2].x * sx + tx, epy = seg.pts[2].y * sy + ty;
+                    const l1 = document.createElementNS(ns, 'line');
+                    l1.setAttribute('x1', lastX); l1.setAttribute('y1', lastY);
+                    l1.setAttribute('x2', cp1x); l1.setAttribute('y2', cp1y);
+                    l1.setAttribute('stroke', '#b8aed0'); l1.setAttribute('stroke-width', sw * 0.5);
+                    l1.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(l1);
+                    const l2 = document.createElementNS(ns, 'line');
+                    l2.setAttribute('x1', cp2x); l2.setAttribute('y1', cp2y);
+                    l2.setAttribute('x2', epx); l2.setAttribute('y2', epy);
+                    l2.setAttribute('stroke', '#b8aed0'); l2.setAttribute('stroke-width', sw * 0.5);
+                    l2.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(l2);
+                    lastX = epx; lastY = epy;
+                } else if (seg.cmd === 'Q' && seg.pts.length === 2) {
+                    const cpx = seg.pts[0].x * sx + tx, cpy = seg.pts[0].y * sy + ty;
+                    const epx = seg.pts[1].x * sx + tx, epy = seg.pts[1].y * sy + ty;
+                    const l1 = document.createElementNS(ns, 'line');
+                    l1.setAttribute('x1', lastX); l1.setAttribute('y1', lastY);
+                    l1.setAttribute('x2', cpx); l1.setAttribute('y2', cpy);
+                    l1.setAttribute('stroke', '#b8aed0'); l1.setAttribute('stroke-width', sw * 0.5);
+                    l1.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(l1);
+                    const l2 = document.createElementNS(ns, 'line');
+                    l2.setAttribute('x1', cpx); l2.setAttribute('y1', cpy);
+                    l2.setAttribute('x2', epx); l2.setAttribute('y2', epy);
+                    l2.setAttribute('stroke', '#b8aed0'); l2.setAttribute('stroke-width', sw * 0.5);
+                    l2.setAttribute('pointer-events', 'none');
+                    selectionLayer.appendChild(l2);
+                    lastX = epx; lastY = epy;
+                } else if (seg.cmd === 'L' && seg.pts.length > 0) {
+                    lastX = seg.pts[seg.pts.length - 1].x * sx + tx;
+                    lastY = seg.pts[seg.pts.length - 1].y * sy + ty;
+                }
+            }
+        }
+    }
+
+    // Draw nodes
+    for (const n of nodes) {
+        const c = document.createElementNS(ns, 'circle');
+        c.setAttribute('cx', n.x);
+        c.setAttribute('cy', n.y);
+        c.setAttribute('r', nodeR);
+        c.setAttribute('fill', '#fff');
+        c.setAttribute('stroke', '#7c5cf0');
+        c.setAttribute('stroke-width', sw);
+        c.setAttribute('pointer-events', 'none');
+        selectionLayer.appendChild(c);
+    }
+}
+
+function nodeAtPoint(pt) {
+    const obj = findObject(state.nodeEditId);
+    if (!obj) return null;
+    const nodes = getEditableNodes(obj);
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const threshold = 8 * screenScale;
+    for (const n of nodes) {
+        if (Math.hypot(pt.x - n.x, pt.y - n.y) <= threshold) {
+            return { idx: n.idx, obj, node: n };
+        }
+    }
+    return null;
+}
+
+function applyNodeDrag(obj, idx, wx, wy) {
+    switch (obj.type) {
+        case 'rect': {
+            // idx: 0=TL, 1=TR, 2=BL, 3=BR
+            // Opposite corner stays fixed
+            const orig = state.nodeEditOrigPts;
+            let ox, oy; // opposite corner
+            if (idx === 0) { ox = orig.x + orig.width; oy = orig.y + orig.height; }
+            else if (idx === 1) { ox = orig.x; oy = orig.y + orig.height; }
+            else if (idx === 2) { ox = orig.x + orig.width; oy = orig.y; }
+            else { ox = orig.x; oy = orig.y; }
+            const newX = Math.min(wx, ox), newY = Math.min(wy, oy);
+            const newW = Math.abs(wx - ox), newH = Math.abs(wy - oy);
+            obj.x = newX; obj.y = newY;
+            obj.width = Math.max(1, newW); obj.height = Math.max(1, newH);
+            break;
+        }
+        case 'ellipse': {
+            // idx: 0=top, 1=right, 2=bottom, 3=left
+            const orig = state.nodeEditOrigPts;
+            if (idx === 0) { // top
+                const bottom = orig.cy + orig.ry;
+                obj.ry = Math.max(1, Math.abs(bottom - wy) / 2);
+                obj.cy = wy + obj.ry;
+            } else if (idx === 2) { // bottom
+                const top = orig.cy - orig.ry;
+                obj.ry = Math.max(1, Math.abs(wy - top) / 2);
+                obj.cy = top + obj.ry;
+            } else if (idx === 3) { // left
+                const right = orig.cx + orig.rx;
+                obj.rx = Math.max(1, Math.abs(right - wx) / 2);
+                obj.cx = wx + obj.rx;
+            } else if (idx === 1) { // right
+                const left = orig.cx - orig.rx;
+                obj.rx = Math.max(1, Math.abs(wx - left) / 2);
+                obj.cx = left + obj.rx;
+            }
+            break;
+        }
+        case 'line':
+            if (idx === 0) { obj.x1 = wx; obj.y1 = wy; }
+            else { obj.x2 = wx; obj.y2 = wy; }
+            break;
+        case 'bspline':
+            if (idx >= 0 && idx < obj.points.length) {
+                obj.points[idx] = { x: wx, y: wy };
+            }
+            break;
+        case 'curvepath': {
+            if (!obj.d || !obj._origBounds) break;
+            const orig = obj._origBounds;
+            if (orig.w === 0 || orig.h === 0) break;
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+            // Inverse transform: world -> path-local
+            const localX = (sx !== 0) ? (wx - tx) / sx : 0;
+            const localY = (sy !== 0) ? (wy - ty) / sy : 0;
+            // Parse, update, rebuild
+            const cmds = parseSVGPath(obj.d);
+            const pathPts = extractPathPoints(cmds);
+            if (idx >= 0 && idx < pathPts.length) {
+                const pp = pathPts[idx];
+                cmds[pp.segIdx].pts[pp.ptIdx].x = localX;
+                cmds[pp.segIdx].pts[pp.ptIdx].y = localY;
+                obj.d = buildSVGPathD(cmds);
+                // Update the element's d attribute
+                obj.element.setAttribute('d', obj.d);
+                // Recalculate _origBounds from new d
+                const ns = 'http://www.w3.org/2000/svg';
+                const tempPath = document.createElementNS(ns, 'path');
+                tempPath.setAttribute('d', obj.d);
+                objectsLayer.appendChild(tempPath);
+                const pathBBox = tempPath.getBBox();
+                objectsLayer.removeChild(tempPath);
+                obj._origBounds = { x: pathBBox.x, y: pathBBox.y, w: pathBBox.width || 1, h: pathBBox.height || 1 };
+                // Keep width/height matching origBounds so sx=1, sy=1
+                obj.x = obj._origBounds.x;
+                obj.y = obj._origBounds.y;
+                obj.width = obj._origBounds.w;
+                obj.height = obj._origBounds.h;
+            }
+            break;
+        }
+    }
+    refreshElement(obj);
+    drawSelection();
+    updatePropsPanel();
+}
+
+// =============================================
+// SNAP TO REFERENCE POINTS
+// =============================================
+function calcSnapAdjustment(selectedIds) {
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const threshold = SNAP_DIST * screenScale;
+
+    // Collect snap points of selected objects
+    const selPts = [];
+    for (const id of selectedIds) {
+        const obj = findObject(id);
+        if (obj) selPts.push(...getSnapPoints(obj));
+    }
+
+    // Collect snap points of all OTHER objects + page points
+    const targetPts = [];
+    // Page edges and center
+    targetPts.push(
+        { x: 0, y: 0 }, { x: state.pageWidth, y: 0 },
+        { x: 0, y: state.pageHeight }, { x: state.pageWidth, y: state.pageHeight },
+        { x: state.pageWidth / 2, y: state.pageHeight / 2 },
+        { x: state.pageWidth / 2, y: 0 }, { x: state.pageWidth / 2, y: state.pageHeight },
+        { x: 0, y: state.pageHeight / 2 }, { x: state.pageWidth, y: state.pageHeight / 2 }
+    );
+
+    for (const obj of state.objects) {
+        if (selectedIds.includes(obj.id)) continue;
+        targetPts.push(...getSnapPoints(obj));
+    }
+
+    // Find closest snap in X and Y independently
+    let bestDx = null, bestDy = null;
+    let bestDistX = threshold, bestDistY = threshold;
+    let snapLineX = null, snapLineY = null;
+
+    for (const sp of selPts) {
+        for (const tp of targetPts) {
+            const distX = Math.abs(sp.x - tp.x);
+            const distY = Math.abs(sp.y - tp.y);
+            if (distX < bestDistX) {
+                bestDistX = distX;
+                bestDx = tp.x - sp.x;
+                snapLineX = { x: tp.x, y1: Math.min(sp.y, tp.y) - 20 * screenScale, y2: Math.max(sp.y, tp.y) + 20 * screenScale };
+            }
+            if (distY < bestDistY) {
+                bestDistY = distY;
+                bestDy = tp.y - sp.y;
+                snapLineY = { y: tp.y, x1: Math.min(sp.x, tp.x) - 20 * screenScale, x2: Math.max(sp.x, tp.x) + 20 * screenScale };
+            }
+        }
+    }
+
+    return { dx: bestDx || 0, dy: bestDy || 0, snapLineX, snapLineY };
+}
+
+function drawSnapGuideLines(snapResult) {
+    // Remove previous snap guides
+    const existing = snapLayer.querySelectorAll('.snap-guide');
+    existing.forEach(el => el.remove());
+    const ns = 'http://www.w3.org/2000/svg';
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const sw = 1 * screenScale;
+
+    if (snapResult.snapLineX) {
+        const sl = snapResult.snapLineX;
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', sl.x); line.setAttribute('y1', sl.y1);
+        line.setAttribute('x2', sl.x); line.setAttribute('y2', sl.y2);
+        line.setAttribute('stroke', '#00d4aa');
+        line.setAttribute('stroke-width', sw);
+        line.setAttribute('stroke-dasharray', `${sw * 4} ${sw * 2}`);
+        line.setAttribute('pointer-events', 'none');
+        line.classList.add('snap-guide');
+        snapLayer.appendChild(line);
+    }
+    if (snapResult.snapLineY) {
+        const sl = snapResult.snapLineY;
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', sl.x1); line.setAttribute('y1', sl.y);
+        line.setAttribute('x2', sl.x2); line.setAttribute('y2', sl.y);
+        line.setAttribute('stroke', '#00d4aa');
+        line.setAttribute('stroke-width', sw);
+        line.setAttribute('stroke-dasharray', `${sw * 4} ${sw * 2}`);
+        line.setAttribute('pointer-events', 'none');
+        line.classList.add('snap-guide');
+        snapLayer.appendChild(line);
+    }
+}
+
+function clearSnapGuideLines() {
+    const existing = snapLayer.querySelectorAll('.snap-guide');
+    existing.forEach(el => el.remove());
+}
+
+// Calc snap for a single point (used in node editing)
+function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const threshold = SNAP_DIST * screenScale;
+
+    const targetPts = [];
+    // Page edges and center
+    targetPts.push(
+        { x: 0, y: 0 }, { x: state.pageWidth, y: 0 },
+        { x: 0, y: state.pageHeight }, { x: state.pageWidth, y: state.pageHeight },
+        { x: state.pageWidth / 2, y: state.pageHeight / 2 },
+        { x: state.pageWidth / 2, y: 0 }, { x: state.pageWidth / 2, y: state.pageHeight },
+        { x: 0, y: state.pageHeight / 2 }, { x: state.pageWidth, y: state.pageHeight / 2 }
+    );
+
+    for (const obj of state.objects) {
+        if (obj.id === excludeObjId) continue;
+        targetPts.push(...getSnapPoints(obj));
+    }
+
+    let bestDx = null, bestDy = null;
+    let bestDistX = threshold, bestDistY = threshold;
+    let snapLineX = null, snapLineY = null;
+
+    for (const tp of targetPts) {
+        const distX = Math.abs(px - tp.x);
+        const distY = Math.abs(py - tp.y);
+        if (distX < bestDistX) {
+            bestDistX = distX;
+            bestDx = tp.x - px;
+            snapLineX = { x: tp.x, y1: Math.min(py, tp.y) - 20 * screenScale, y2: Math.max(py, tp.y) + 20 * screenScale };
+        }
+        if (distY < bestDistY) {
+            bestDistY = distY;
+            bestDy = tp.y - py;
+            snapLineY = { y: tp.y, x1: Math.min(px, tp.x) - 20 * screenScale, x2: Math.max(px, tp.x) + 20 * screenScale };
+        }
+    }
+
+    return { dx: bestDx || 0, dy: bestDy || 0, snapLineX, snapLineY };
+}
+
+// =============================================
 // TOOL HANDLERS
 // =============================================
 function handleMouseDown(e) {
@@ -1059,6 +1508,18 @@ function handleMouseMove(e) {
         state.viewBox.y = state.panViewBoxStart.y - dy*scale;
         updateViewBox(); return;
     }
+    if (state.nodeEditDragging) {
+        const obj = findObject(state.nodeEditId);
+        if (obj) {
+            // Apply snap for the node position
+            const snapAdj = calcSnapAdjustmentForPoint(pt.x, pt.y, state.nodeEditId);
+            const snappedX = pt.x + snapAdj.dx;
+            const snappedY = pt.y + snapAdj.dy;
+            applyNodeDrag(obj, state.nodeEditIdx, snappedX, snappedY);
+            drawSnapGuideLines(snapAdj);
+        }
+        return;
+    }
     if (state.isResizing) { handleResizeMove(pt, e); return; }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
@@ -1077,6 +1538,16 @@ function handleMouseMove(e) {
 
 function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
+    if (state.nodeEditDragging) {
+        state.nodeEditDragging = false;
+        state.nodeEditIdx = -1;
+        state.nodeEditStart = null;
+        state.nodeEditOrigPts = null;
+        clearSnapGuideLines();
+        drawSelection();
+        updatePropsPanel();
+        return;
+    }
     if (state.isResizing) {
         state.isResizing = false;
         state.resizeHandle = null;
@@ -1085,6 +1556,7 @@ function handleMouseUp() {
     if (state.isDragging) {
         state.isDragging = false;
         clearPCHighlight();
+        clearSnapGuideLines();
         // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
         if (state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
@@ -1157,6 +1629,40 @@ const HANDLE_CURSORS = {
 
 // --- Select ---
 function handleSelectDown(pt, e) {
+    // If in node edit mode, handle node interactions first
+    if (state.nodeEditId) {
+        const hit = nodeAtPoint(pt);
+        if (hit) {
+            // Start dragging this node
+            saveUndoState();
+            state.nodeEditDragging = true;
+            state.nodeEditIdx = hit.idx;
+            state.nodeEditStart = { x: pt.x, y: pt.y };
+            // Snapshot the original object properties for the drag
+            const obj = hit.obj;
+            if (obj.type === 'rect') {
+                state.nodeEditOrigPts = { x: obj.x, y: obj.y, width: obj.width, height: obj.height };
+            } else if (obj.type === 'ellipse') {
+                state.nodeEditOrigPts = { cx: obj.cx, cy: obj.cy, rx: obj.rx, ry: obj.ry };
+            } else if (obj.type === 'line') {
+                state.nodeEditOrigPts = { x1: obj.x1, y1: obj.y1, x2: obj.x2, y2: obj.y2 };
+            } else if (obj.type === 'bspline') {
+                state.nodeEditOrigPts = { points: obj.points.map(p => ({ ...p })) };
+            } else if (obj.type === 'curvepath') {
+                state.nodeEditOrigPts = { d: obj.d, _origBounds: { ...obj._origBounds }, x: obj.x, y: obj.y, width: obj.width, height: obj.height };
+            }
+            return;
+        }
+        // Check if clicking on the object itself -> stay in node edit
+        const nodeObj = findObject(state.nodeEditId);
+        if (nodeObj && hitTest(nodeObj, pt)) {
+            return; // stay in node edit mode, do nothing
+        }
+        // Clicking elsewhere -> exit node edit
+        exitNodeEdit();
+        // Fall through to normal selection logic
+    }
+
     // Check if clicking on a resize handle first
     const handle = getHandleAtPoint(pt);
     if (handle) {
@@ -1224,12 +1730,25 @@ function showPCHighlight(pc) {
 
 function handleDragMove(pt) {
     const dx = pt.x - state.dragStart.x, dy = pt.y - state.dragStart.y;
+    // Apply initial moves
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj || !state.dragObjProps[id]) continue;
         applyMove(obj, state.dragObjProps[id], dx, dy);
         refreshElement(obj);
     }
+    // Calculate snap adjustment
+    const snapAdj = calcSnapAdjustment(state.selectedIds);
+    if (snapAdj.dx !== 0 || snapAdj.dy !== 0) {
+        // Re-apply moves with snap offset
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (!obj || !state.dragObjProps[id]) continue;
+            applyMove(obj, state.dragObjProps[id], dx + snapAdj.dx, dy + snapAdj.dy);
+            refreshElement(obj);
+        }
+    }
+    drawSnapGuideLines(snapAdj);
     drawSelection();
 
     // Highlight powerclip drop target
@@ -2559,11 +3078,15 @@ function setupEventListeners() {
     });
     svg.addEventListener('dblclick', (e) => {
         if (state.tool === 'bspline') { handleBSplineDblClick(); return; }
-        // Double-click on text to edit
         const pt = screenToSVG(e.clientX, e.clientY);
         const obj = objectAtPoint(pt);
         if (obj && obj.type === 'text') {
+            // Double-click on text to edit text content
             editTextObject(obj, e);
+        } else if (obj && ['rect', 'ellipse', 'line', 'bspline', 'curvepath'].includes(obj.type)) {
+            // Double-click on shape to enter node edit mode
+            if (state.nodeEditId === obj.id) return; // already in node edit for this object
+            enterNodeEdit(obj.id);
         }
     });
 
@@ -2615,7 +3138,8 @@ function setupEventListeners() {
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
-                if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
+                if (state.nodeEditId) { exitNodeEdit(); }
+                else if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
                 else if (state.tool !== 'select') setTool('select');
                 else selectObject(null);
                 break;
@@ -2677,6 +3201,7 @@ function setupEventListeners() {
 }
 
 function setTool(tool) {
+    if (state.nodeEditId) exitNodeEdit();
     if (state.tool === 'bspline' && tool !== 'bspline') {
         if (state.bsplinePoints.length >= 2) { const obj = createObject('bspline',{points:[...state.bsplinePoints]}); selectObject(obj.id); }
         state.bsplinePoints=[]; clearPreview();
