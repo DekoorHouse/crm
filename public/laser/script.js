@@ -99,19 +99,65 @@ function setupCanvas() {
     drawCanvas();
 }
 
-// Click en canvas para seleccionar/deseleccionar el diseño
-canvas.addEventListener('click', (e) => {
-    if (!state.designBox) return;
+// Selección por arrastre (izq→der, debe cubrir completamente el objeto)
+let dragStart = null;
+let dragCurrent = null;
+
+function canvasCoord(e) {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvasW / rect.width;
-    const scaleY = canvasH / rect.height;
-    const cx = (e.clientX - rect.left) * scaleX;
-    const cy = (e.clientY - rect.top) * scaleY;
-    const b = state.designBox;
-    if (cx >= b.dx && cx <= b.dx + b.dw && cy >= b.dy && cy <= b.dy + b.dh) {
-        state.designSelected = true;
-    } else {
-        state.designSelected = false;
+    return {
+        x: (e.clientX - rect.left) * (canvasW / rect.width),
+        y: (e.clientY - rect.top)  * (canvasH / rect.height),
+    };
+}
+
+canvas.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    dragStart = canvasCoord(e);
+    dragCurrent = dragStart;
+    state.designSelected = false;
+    drawCanvas();
+});
+
+canvas.addEventListener('mousemove', (e) => {
+    if (!dragStart) return;
+    dragCurrent = canvasCoord(e);
+    drawCanvas();
+    // Dibujar rectángulo de selección
+    const sx = Math.min(dragStart.x, dragCurrent.x);
+    const sy = Math.min(dragStart.y, dragCurrent.y);
+    const sw = Math.abs(dragCurrent.x - dragStart.x);
+    const sh = Math.abs(dragCurrent.y - dragStart.y);
+    if (sw > 2 || sh > 2) {
+        ctx.strokeStyle = '#58a6ff';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        ctx.strokeRect(sx, sy, sw, sh);
+        ctx.setLineDash([]);
+        ctx.fillStyle = 'rgba(88,166,255,0.08)';
+        ctx.fillRect(sx, sy, sw, sh);
+    }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+    if (!dragStart) return;
+    const start = dragStart;
+    const end = canvasCoord(e);
+    dragStart = null;
+    dragCurrent = null;
+
+    const sx = Math.min(start.x, end.x);
+    const sy = Math.min(start.y, end.y);
+    const sw = Math.abs(end.x - start.x);
+    const sh = Math.abs(end.y - start.y);
+    const leftToRight = end.x > start.x;
+
+    // Seleccionar solo si se arrastró de izquierda a derecha y cubre completamente el diseño
+    if (state.designBox && sw > 5 && sh > 5 && leftToRight) {
+        const b = state.designBox;
+        if (sx <= b.dx && sy <= b.dy && sx + sw >= b.dx + b.dw && sy + sh >= b.dy + b.dh) {
+            state.designSelected = true;
+        }
     }
     drawCanvas();
 });
@@ -305,7 +351,7 @@ function loadFile(file) {
                 URL.revokeObjectURL(url);
                 drawCanvas();
                 updateControls();
-                state.designSelected = true;
+                state.designSelected = false;
                 log(`SVG cargado: ${file.name}`, 'success');
             };
             img.onerror = () => log('Error al cargar SVG.', 'error');
@@ -322,7 +368,7 @@ function loadFile(file) {
                 setFileLoaded(file.name);
                 drawCanvas();
                 updateControls();
-                state.designSelected = true;
+                state.designSelected = false;
                 log(`Imagen cargada: ${file.name} (${img.width}×${img.height}px)`, 'success');
             };
             img.onerror = () => log('Error al cargar imagen.', 'error');
