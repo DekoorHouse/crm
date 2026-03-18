@@ -26,7 +26,7 @@ const state = {
     posX: 0, posY: 0,
     mode:    'engrave',
     power:   50,
-    speed:   200,
+    speed:   3,
     passes:  1,
     pulse:   50,
     jogStep: 1,
@@ -49,7 +49,6 @@ const fileInput     = $('fileInput');
 const fileInfo      = $('fileInfo');
 const fileNameEl    = $('fileName');
 const removeFileBtn = $('removeFileBtn');
-const powerSlider   = $('powerSlider');
 const speedSlider   = $('speedSlider');
 const passesSlider  = $('passesSlider');
 const pulseSlider   = $('pulseSlider');
@@ -277,8 +276,7 @@ function bindSlider(slider, labelId, key, fmt) {
     });
 }
 
-bindSlider(powerSlider,  'powerLabel',  'power',  v => `${v}%`);
-bindSlider(speedSlider,  'speedLabel',  'speed',  v => `${v} mm/min`);
+bindSlider(speedSlider,  'speedLabel',  'speed',  v => `${v} mm/s`);
 bindSlider(passesSlider, 'passesLabel', 'passes', v => `${v}×`);
 bindSlider(pulseSlider,  'pulseLabel',  'pulse',  v => `${v}ms`);
 
@@ -295,14 +293,15 @@ materialSel.addEventListener('change', () => {
     const p = PRESETS[materialSel.value];
     if (!p) return;
 
-    powerSlider.value  = p.power;   state.power  = p.power;   $('powerLabel').textContent  = `${p.power}%`;
-    speedSlider.value  = p.speed;   state.speed  = p.speed;   $('speedLabel').textContent  = `${p.speed} mm/min`;
+    state.power = p.power;
+    const speedMms = Math.round(p.speed / 60);
+    speedSlider.value  = speedMms;  state.speed  = speedMms;  $('speedLabel').textContent  = `${speedMms} mm/s`;
     passesSlider.value = p.passes;  state.passes = p.passes;  $('passesLabel').textContent = `${p.passes}×`;
 
     document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === p.mode));
     state.mode = p.mode;
 
-    log(`Preset: ${materialSel.options[materialSel.selectedIndex].text} — ${p.power}% / ${p.speed}mm/min`, 'info');
+    log(`Preset: ${materialSel.options[materialSel.selectedIndex].text} — ${speedMms}mm/s`, 'info');
     drawCanvas();
 });
 
