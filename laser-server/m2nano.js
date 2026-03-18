@@ -77,16 +77,17 @@ class M2Nano {
                 if (dev) { found = { dev, name: d.name }; break; }
             }
         } else {
-            // Segundo dispositivo: buscar en la lista excluyendo los ya abiertos
+            // Segundo dispositivo: buscar en la lista todos los CH341
             const allDevs = usb.getDeviceList();
-            let idx = 0;
+            const matching = [];
             for (const dev of allDevs) {
                 const desc = dev.deviceDescriptor;
                 const match = DEVICES.find(d => desc.idVendor === d.vid && desc.idProduct === d.pid);
-                if (match) {
-                    if (idx === deviceIndex) { found = { dev, name: match.name }; break; }
-                    idx++;
-                }
+                if (match) matching.push({ dev, name: match.name });
+            }
+            this.log(`Dispositivos CH341 encontrados: ${matching.length}`);
+            if (deviceIndex < matching.length) {
+                found = matching[deviceIndex];
             }
         }
 
