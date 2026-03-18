@@ -1212,6 +1212,9 @@ function getEditableNodes(obj) {
             }
             break;
         }
+        case 'powerclip':
+            // Delegate to the container shape
+            return getEditableNodes(obj.container);
     }
     return nodes;
 }
@@ -1418,6 +1421,13 @@ function applyNodeDrag(obj, idx, wx, wy) {
             }
             break;
         }
+        case 'powerclip':
+            // Delegate to container
+            applyNodeDrag(obj.container, idx, wx, wy);
+            rebuildPowerClipElement(obj);
+            drawSelection();
+            updatePropsPanel();
+            return; // skip the refreshElement below since we rebuilt
     }
     refreshElement(obj);
     drawSelection();
@@ -1800,6 +1810,13 @@ function handleSelectDown(pt, e) {
                 state.nodeEditOrigPts = { points: obj.points.map(p => ({ ...p })) };
             } else if (obj.type === 'curvepath') {
                 state.nodeEditOrigPts = { d: obj.d, _origBounds: { ...obj._origBounds }, x: obj.x, y: obj.y, width: obj.width, height: obj.height };
+            } else if (obj.type === 'powerclip') {
+                const c = obj.container;
+                if (c.type === 'rect') {
+                    state.nodeEditOrigPts = { x: c.x, y: c.y, width: c.width, height: c.height };
+                } else if (c.type === 'ellipse') {
+                    state.nodeEditOrigPts = { cx: c.cx, cy: c.cy, rx: c.rx, ry: c.ry };
+                }
             }
             return;
         }
