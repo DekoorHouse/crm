@@ -1084,6 +1084,7 @@ function handleMouseUp() {
     }
     if (state.isDragging) {
         state.isDragging = false;
+        clearPCHighlight();
         // Auto-insert into PowerClip: if dragging a single non-powerclip obj and any part overlaps a powerclip
         if (state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
@@ -1185,6 +1186,42 @@ function handleSelectDown(pt, e) {
     }
 }
 
+let pcHighlightEl = null;
+let pcHighlightId = null;
+
+function clearPCHighlight() {
+    if (pcHighlightEl) { pcHighlightEl.remove(); pcHighlightEl = null; }
+    pcHighlightId = null;
+}
+
+function showPCHighlight(pc) {
+    if (pcHighlightId === pc.id && pcHighlightEl) return; // already showing
+    clearPCHighlight();
+    pcHighlightId = pc.id;
+    const ns = 'http://www.w3.org/2000/svg';
+    const c = pc.container;
+    pcHighlightEl = document.createElementNS(ns, c.type === 'ellipse' ? 'ellipse' : 'rect');
+    pcHighlightEl.setAttribute('pointer-events', 'none');
+    pcHighlightEl.setAttribute('fill', 'rgba(168, 130, 255, 0.30)');
+    pcHighlightEl.setAttribute('stroke', '#9366f0');
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    pcHighlightEl.setAttribute('stroke-width', 2 * screenScale);
+    pcHighlightEl.setAttribute('stroke-dasharray', `${6*screenScale} ${3*screenScale}`);
+    if (c.type === 'ellipse') {
+        pcHighlightEl.setAttribute('cx', c.cx);
+        pcHighlightEl.setAttribute('cy', c.cy);
+        pcHighlightEl.setAttribute('rx', c.rx);
+        pcHighlightEl.setAttribute('ry', c.ry);
+    } else {
+        pcHighlightEl.setAttribute('x', c.x);
+        pcHighlightEl.setAttribute('y', c.y);
+        pcHighlightEl.setAttribute('width', c.width);
+        pcHighlightEl.setAttribute('height', c.height);
+        if (c.rotation) pcHighlightEl.setAttribute('transform', `rotate(${c.rotation} ${c.x+c.width/2} ${c.y+c.height/2})`);
+    }
+    selectionLayer.appendChild(pcHighlightEl);
+}
+
 function handleDragMove(pt) {
     const dx = pt.x - state.dragStart.x, dy = pt.y - state.dragStart.y;
     for (const id of state.selectedIds) {
@@ -1194,6 +1231,28 @@ function handleDragMove(pt) {
         refreshElement(obj);
     }
     drawSelection();
+
+    // Highlight powerclip drop target
+    if (state.selectedIds.length === 1) {
+        const draggedId = state.selectedIds[0];
+        const dragged = findObject(draggedId);
+        if (dragged && dragged.type !== 'powerclip') {
+            const db = getObjBounds(dragged);
+            const testPts = [
+                {x: db.x, y: db.y}, {x: db.x+db.w, y: db.y},
+                {x: db.x, y: db.y+db.h}, {x: db.x+db.w, y: db.y+db.h},
+                {x: db.x+db.w/2, y: db.y+db.h/2},
+                {x: db.x+db.w/2, y: db.y}, {x: db.x+db.w/2, y: db.y+db.h},
+                {x: db.x, y: db.y+db.h/2}, {x: db.x+db.w, y: db.y+db.h/2},
+            ];
+            let pcTarget = null;
+            for (const tp of testPts) {
+                pcTarget = findPowerClipAtPoint(tp, draggedId);
+                if (pcTarget) break;
+            }
+            if (pcTarget) { showPCHighlight(pcTarget); } else { clearPCHighlight(); }
+        } else { clearPCHighlight(); }
+    } else { clearPCHighlight(); }
 }
 
 function handleResizeMove(pt, e) {
