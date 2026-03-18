@@ -2860,28 +2860,17 @@ function enterPowerClipEdit(pcId) {
         outlineEl.setAttribute('x', c.x); outlineEl.setAttribute('y', c.y);
         outlineEl.setAttribute('width', c.width); outlineEl.setAttribute('height', c.height);
     }
-    outlineEl.setAttribute('fill', 'rgba(124, 92, 240, 0.06)');
-    outlineEl.setAttribute('stroke', '#7c5cf0');
+    outlineEl.setAttribute('fill', 'none');
+    outlineEl.setAttribute('stroke', 'rgba(124, 92, 240, 0.55)');
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     outlineEl.setAttribute('stroke-width', 2.5 * screenScale);
-    // Add a glow duplicate behind the outline
-    const glowEl = outlineEl.cloneNode(true);
-    glowEl.setAttribute('stroke', 'rgba(124, 92, 240, 0.35)');
-    glowEl.setAttribute('stroke-width', 8 * screenScale);
-    glowEl.setAttribute('fill', 'none');
-    containerOutline.appendChild(glowEl);
     if (c.rotation) {
         const rcx = c.type === 'ellipse' ? c.cx : c.x + c.width/2;
         const rcy = c.type === 'ellipse' ? c.cy : c.y + c.height/2;
         outlineEl.setAttribute('transform', `rotate(${c.rotation} ${rcx} ${rcy})`);
     }
     containerOutline.appendChild(outlineEl);
-    // Add after the powerclip element
-    if (pc.element.nextSibling) {
-        objectsLayer.insertBefore(containerOutline, pc.element.nextSibling);
-    } else {
-        objectsLayer.appendChild(containerOutline);
-    }
+    // Outline will be appended AFTER content objects (see below)
 
     // 4) Make content objects individually selectable by temporarily adding them to state.objects
     pc._editContentIds = [];
@@ -2898,6 +2887,9 @@ function enterPowerClipEdit(pcId) {
 
     // 5) Hide the powerclip's own clipped content group
     if (contentGroup) contentGroup.style.display = 'none';
+
+    // 6) Add outline ON TOP of content so it always passes over
+    objectsLayer.appendChild(containerOutline);
 
     // Don't auto-select content — let user click to select
     state.selectedIds = [];
