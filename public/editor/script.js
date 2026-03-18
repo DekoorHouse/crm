@@ -1956,7 +1956,15 @@ function applyMove(obj, snap, dx, dy) {
 }
 
 // --- Shapes (rect, ellipse, line) with Ctrl/Shift ---
+function snapPoint(pt) {
+    const adj = calcSnapAdjustmentForPoint(pt.x, pt.y, null);
+    return { x: pt.x + adj.dx, y: pt.y + adj.dy, _snap: adj };
+}
+
 function handleShapeDown(pt) {
+    // Snap the start point to reference points
+    const snapped = snapPoint(pt);
+    pt = { x: snapped.x, y: snapped.y };
     state.isDrawing = true;
     state.drawStart = {x:pt.x,y:pt.y};
     clearPreview();
@@ -1988,20 +1996,29 @@ function handleDrawMove(pt, e) {
     if (!el) return;
     const sx = state.drawStart.x, sy = state.drawStart.y;
 
+    // Snap the current point to reference points of other objects
+    const adj = calcSnapAdjustmentForPoint(pt.x, pt.y, null);
+    let ex = pt.x + adj.dx, ey = pt.y + adj.dy;
+    drawSnapGuideLines(adj);
+    // Also show snap indicator at snapped point
+    if (adj.dx !== 0 || adj.dy !== 0) {
+        drawSnapIndicators({x: ex, y: ey});
+    }
+
     if (state.tool === 'rect') {
-        let w = pt.x - sx, h = pt.y - sy;
+        let w = ex - sx, h = ey - sy;
         if (e && e.ctrlKey) { const s = Math.max(Math.abs(w), Math.abs(h)); w = Math.sign(w)*s; h = Math.sign(h)*s; }
         const x = w < 0 ? sx + w : sx, y = h < 0 ? sy + h : sy;
         el.setAttribute('x', x); el.setAttribute('y', y);
         el.setAttribute('width', Math.abs(w)); el.setAttribute('height', Math.abs(h));
     } else if (state.tool === 'ellipse') {
-        let dx = pt.x - sx, dy = pt.y - sy;
+        let dx = ex - sx, dy = ey - sy;
         if (e && e.ctrlKey) { const s = Math.max(Math.abs(dx), Math.abs(dy)); dx = Math.sign(dx)*s; dy = Math.sign(dy)*s; }
         el.setAttribute('cx', sx + dx/2); el.setAttribute('cy', sy + dy/2);
         el.setAttribute('rx', Math.abs(dx)/2); el.setAttribute('ry', Math.abs(dy)/2);
     } else if (state.tool === 'line') {
-        let ex = pt.x, ey = pt.y;
         if (e && e.shiftKey) {
+            // Angle snap takes priority over object snap
             const angle = Math.atan2(ey - sy, ex - sx);
             const snapAngle = Math.round(angle / (Math.PI/4)) * (Math.PI/4);
             const dist = Math.hypot(ex - sx, ey - sy);
@@ -2014,6 +2031,7 @@ function handleDrawMove(pt, e) {
 
 function handleDrawEnd() {
     state.isDrawing = false;
+    clearSnapGuideLines();
     const el = state.previewElement;
     if (!el) return;
     const sx = state.drawStart.x, sy = state.drawStart.y;
@@ -2033,7 +2051,11 @@ function handleDrawEnd() {
 }
 
 // --- B-Spline ---
-function handleBSplineClick(pt) { state.bsplinePoints.push({x:pt.x,y:pt.y}); updateBSplinePreview(pt); }
+function handleBSplineClick(pt) {
+    const snapped = snapPoint(pt);
+    state.bsplinePoints.push({x:snapped.x, y:snapped.y});
+    updateBSplinePreview(snapped);
+}
 
 function handleBSplineDblClick() {
     if (state.bsplinePoints.length >= 2) state.bsplinePoints.pop();
@@ -2047,8 +2069,13 @@ function handleBSplineDblClick() {
 
 function updateBSplinePreview(mousePt) {
     clearPreview();
+    // Snap the preview point
+    const adj = calcSnapAdjustmentForPoint(mousePt.x, mousePt.y, null);
+    const snappedPt = { x: mousePt.x + adj.dx, y: mousePt.y + adj.dy };
+    drawSnapGuideLines(adj);
+    if (adj.dx !== 0 || adj.dy !== 0) drawSnapIndicators(snappedPt);
     const ns = 'http://www.w3.org/2000/svg';
-    const all = [...state.bsplinePoints, {x:mousePt.x,y:mousePt.y}];
+    const all = [...state.bsplinePoints, {x:snappedPt.x,y:snappedPt.y}];
     const sw = state.viewBox.w * 0.001, cs = state.viewBox.w * 0.005;
     if (all.length > 1) {
         const pl = document.createElementNS(ns, 'polyline');
