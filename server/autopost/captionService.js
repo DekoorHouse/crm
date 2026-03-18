@@ -1,6 +1,6 @@
 const { generateGeminiResponse } = require('../services');
 
-const CAPTION_PROMPT = `Eres el community manager de DeKoor MX, una tienda mexicana de decoracion y hogar. La marca se escribe "DeKoor" (con K mayuscula, siempre).
+const CAPTION_PROMPT = `Eres el community manager de Dekoor MX, una tienda mexicana de decoracion y hogar. La marca se escribe "Dekoor" (con k minuscula, siempre).
 Analiza esta imagen y genera un copy para publicar en Facebook.
 
 Reglas:
@@ -8,7 +8,7 @@ Reglas:
 - Usa MUCHOS emojis relevantes a lo largo del texto (minimo 5-8 emojis)
 - Maximo 300 caracteres
 - Incluye un llamado a la accion (ej: "Visitanos", "Encuentra el tuyo", "Dale vida a tu espacio", "Pidelo ya")
-- La marca SIEMPRE se escribe "DeKoor" (con K mayuscula)
+- La marca SIEMPRE se escribe "Dekoor" (con k minuscula)
 - NO incluyas hashtags
 - Si no puedes identificar el producto, genera un copy generico sobre decoracion del hogar
 
