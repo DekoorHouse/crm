@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { getAuthUrl, handleAuthCallback, listAlbums } = require('./googlePhotosService');
+const { getAuthUrl, handleAuthCallback, getStoredTokenInfo, listAlbums } = require('./googlePhotosService');
 const { verifyPageToken } = require('./facebookPostService');
 const { executeAutoPost, previewNextPost, getLog, getSchedulerStatus } = require('./autoPostScheduler');
 
@@ -47,6 +47,16 @@ router.get('/facebook/verify', async (req, res) => {
     try {
         const result = await verifyPageToken();
         res.json(result);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Debug: ver tokens almacenados
+router.get('/debug/tokens', async (req, res) => {
+    try {
+        const info = await getStoredTokenInfo();
+        res.json(info);
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

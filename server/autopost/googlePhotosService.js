@@ -51,23 +51,26 @@ async function getAuthenticatedClient() {
         throw new Error('No hay refresh token. Autoriza Google Photos primero en /api/autopost/google/auth');
     }
 
+    // Solo usar refresh_token para forzar un token fresco con los scopes correctos
     client.setCredentials({
-        refresh_token: data.refreshToken,
-        access_token: data.accessToken,
-        expiry_date: data.expiryDate
+        refresh_token: data.refreshToken
     });
 
-    // Refrescar token si expiró
-    const tokenInfo = await client.getAccessToken();
-    if (tokenInfo.token !== data.accessToken) {
-        await db.doc(SETTINGS_DOC).set({
-            accessToken: tokenInfo.token,
-            expiryDate: client.credentials.expiry_date,
-            updatedAt: new Date()
-        }, { merge: true });
-    }
+    // Forzar refresh del access token
+    const { credentials } = await client.refreshAccessToken();
+    console.log('[GOOGLE PHOTOS] Token refrescado. scope:', credentials.scope);
 
     return client;
+}
+
+async function getStoredTokenInfo() {
+    const doc = await db.doc(SETTINGS_DOC).get();
+    const data = doc.data();
+    return {
+        hasRefreshToken: !!data?.refreshToken,
+        scope: data?.scope || 'no scope stored',
+        updatedAt: data?.updatedAt
+    };
 }
 
 async function fetchRecentPhotos(maxResults = 20) {
@@ -202,6 +205,7 @@ async function listAlbums() {
 module.exports = {
     getAuthUrl,
     handleAuthCallback,
+    getStoredTokenInfo,
     fetchRecentPhotos,
     pickUnpostedPhoto,
     downloadPhoto,
