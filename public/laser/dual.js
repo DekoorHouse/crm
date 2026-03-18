@@ -62,20 +62,22 @@ function createPanel(id) {
 
     function drawCanvas() {
         const W = canvasW, H = canvasH;
-        // Limpiar todo el canvas (sin transform)
+        const dpr = window.devicePixelRatio || 1;
+        // Limpiar todo el canvas y pintar fondo global (fuera del transform)
         ctx.save();
-        ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.fillStyle = '#0d1117';
+        ctx.fillRect(0, 0, W, H);
         ctx.restore();
 
-        // Fondo
-        ctx.fillStyle = '#111827';
-        ctx.fillRect(-viewPanX / viewZoom, -viewPanY / viewZoom, W / viewZoom, H / viewZoom);
-
-        // Aplicar zoom y pan
+        // Aplicar zoom y pan — todo lo que sigue está en coordenadas del workspace
         ctx.save();
         ctx.translate(viewPanX, viewPanY);
         ctx.scale(viewZoom, viewZoom);
+
+        // Fondo del área de trabajo
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(0, 0, W, H);
 
         // Grid
         const gx = W / (WORK_W / 10), gy = H / (WORK_H / 10);
