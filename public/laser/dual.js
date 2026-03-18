@@ -757,8 +757,15 @@ function bmpModalUpdatePreview() {
     const canvas = document.getElementById('bmpModalCanvas');
     canvas.width = c.width; canvas.height = c.height;
     canvas.getContext('2d').drawImage(c, 0, 0);
-    // Corregir aspect ratio: lineSpacing comprime la altura, estirar visualmente
-    canvas.style.aspectRatio = `${bmpModal.width} / ${bmpModal.height * bmpModal.lineSpacing}`;
+    // Ajustar tamaño visual para que quepa en el contenedor con aspect ratio correcto
+    const container = document.getElementById('bmpModalPreviewArea');
+    const cW = container.clientWidth - 20, cH = container.clientHeight - 20;
+    const realAspect = bmpModal.width / (bmpModal.height * bmpModal.lineSpacing);
+    let dW, dH;
+    if (cW / cH > realAspect) { dH = cH; dW = dH * realAspect; }
+    else { dW = cW; dH = dW / realAspect; }
+    canvas.style.width = Math.round(dW) + 'px';
+    canvas.style.height = Math.round(dH) + 'px';
     const dpi = parseInt(document.getElementById('bmpModalDpi').value);
     const dpmm = dpi / 25.4;
     const mmW = (bmpModal.width / dpmm).toFixed(1);
