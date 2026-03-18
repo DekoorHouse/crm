@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>AutoPost - Google Photos → Facebook</title>
+  <title>AutoPost - Firebase Storage → Facebook</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
@@ -31,273 +31,78 @@
       --radius-md: 12px;
       --radius-lg: 16px;
     }
-
     * { margin: 0; padding: 0; box-sizing: border-box; }
-
-    body {
-      font-family: 'Plus Jakarta Sans', sans-serif;
-      background: var(--bg-main);
-      color: var(--text-primary);
-      min-height: 100vh;
-      padding: 24px;
-    }
-
-    .container {
-      max-width: 900px;
-      margin: 0 auto;
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      gap: 16px;
-      margin-bottom: 32px;
-    }
-
-    header h1 {
-      font-size: 1.75rem;
-      font-weight: 800;
-      letter-spacing: -0.03em;
-      background: linear-gradient(135deg, var(--primary), var(--accent));
-      -webkit-background-clip: text;
-      background-clip: text;
-      -webkit-text-fill-color: transparent;
-    }
-
+    body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-main); color: var(--text-primary); min-height: 100vh; padding: 24px; }
+    .container { max-width: 900px; margin: 0 auto; }
+    header { margin-bottom: 32px; }
+    header h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
     header p { color: var(--text-secondary); font-size: 0.9rem; }
-
-    .card {
-      background: var(--bg-card);
-      border: 1px solid var(--border-color);
-      border-radius: var(--radius-lg);
-      padding: 24px;
-      margin-bottom: 20px;
-      box-shadow: var(--shadow-md);
-    }
-
-    .card-title {
-      font-size: 1.1rem;
-      font-weight: 700;
-      margin-bottom: 16px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
+    .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow-md); }
+    .card-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .card-title i { color: var(--primary); }
-
-    .status-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 12px;
-    }
-
-    .status-item {
-      background: var(--bg-main);
-      border-radius: var(--radius-md);
-      padding: 16px;
-      text-align: center;
-    }
-
-    .status-item .label {
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      margin-bottom: 6px;
-    }
-
-    .status-item .value {
-      font-size: 1.1rem;
-      font-weight: 700;
-    }
-
-    .badge {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 12px;
-      border-radius: 20px;
-      font-size: 0.8rem;
-      font-weight: 600;
-    }
-
+    .status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; }
+    .status-item { background: var(--bg-main); border-radius: var(--radius-md); padding: 16px; text-align: center; }
+    .status-item .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 6px; }
+    .status-item .value { font-size: 1.1rem; font-weight: 700; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: 20px; font-size: 0.8rem; font-weight: 600; }
     .badge-success { background: var(--success-light); color: var(--success); }
     .badge-danger { background: var(--danger-light); color: var(--danger); }
     .badge-warning { background: var(--warning-light); color: var(--warning); }
-
-    .btn {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 10px 20px;
-      border-radius: var(--radius-md);
-      font-size: 0.9rem;
-      font-weight: 600;
-      border: none;
-      cursor: pointer;
-      transition: all 0.2s;
-      font-family: inherit;
-    }
-
+    .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: var(--radius-md); font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; font-family: inherit; }
     .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
     .btn:active { transform: translateY(0); }
     .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-
     .btn-primary { background: var(--primary); color: white; }
     .btn-primary:hover { background: var(--primary-dark); }
-
-    .btn-success { background: var(--success); color: white; }
     .btn-accent { background: var(--accent); color: white; }
-
-    .btn-outline {
-      background: transparent;
-      border: 2px solid var(--border-color);
-      color: var(--text-primary);
-    }
-
+    .btn-outline { background: transparent; border: 2px solid var(--border-color); color: var(--text-primary); }
     .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
-
+    .btn-sm { padding: 6px 14px; font-size: 0.8rem; }
     .actions { display: flex; gap: 12px; flex-wrap: wrap; }
-
-    .preview-area {
-      display: none;
-      margin-top: 20px;
-      padding: 20px;
-      background: var(--bg-main);
-      border-radius: var(--radius-md);
-      text-align: center;
-    }
-
-    .preview-area img {
-      max-width: 100%;
-      max-height: 400px;
-      border-radius: var(--radius-md);
-      margin-bottom: 16px;
-      box-shadow: var(--shadow-lg);
-    }
-
-    .preview-caption {
-      font-size: 1.1rem;
-      font-weight: 500;
-      padding: 16px;
-      background: var(--bg-card);
-      border-radius: var(--radius-md);
-      border-left: 4px solid var(--primary);
-    }
-
-    .log-table {
-      width: 100%;
-      border-collapse: separate;
-      border-spacing: 0;
-    }
-
-    .log-table th {
-      text-align: left;
-      padding: 12px 16px;
-      font-size: 0.75rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--text-muted);
-      border-bottom: 2px solid var(--border-color);
-    }
-
-    .log-table td {
-      padding: 12px 16px;
-      border-bottom: 1px solid var(--border-color);
-      font-size: 0.85rem;
-    }
-
+    .preview-area { display: none; margin-top: 20px; padding: 20px; background: var(--bg-main); border-radius: var(--radius-md); text-align: center; }
+    .preview-area img { max-width: 100%; max-height: 400px; border-radius: var(--radius-md); margin-bottom: 16px; box-shadow: var(--shadow-lg); }
+    .preview-caption { font-size: 1.1rem; font-weight: 500; padding: 16px; background: var(--bg-card); border-radius: var(--radius-md); border-left: 4px solid var(--primary); }
+    .log-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .log-table th { text-align: left; padding: 12px 16px; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); border-bottom: 2px solid var(--border-color); }
+    .log-table td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); font-size: 0.85rem; }
     .log-table tr:last-child td { border-bottom: none; }
-
-    .log-table .caption-cell {
-      max-width: 300px;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .spinner {
-      display: inline-block;
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-radius: 50%;
-      border-top-color: white;
-      animation: spin 0.6s linear infinite;
-    }
-
+    .log-table .caption-cell { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.3); border-radius: 50%; border-top-color: white; animation: spin 0.6s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-
-    .toast {
-      position: fixed;
-      bottom: 24px;
-      right: 24px;
-      padding: 14px 24px;
-      border-radius: var(--radius-md);
-      color: white;
-      font-weight: 600;
-      font-size: 0.9rem;
-      box-shadow: var(--shadow-lg);
-      z-index: 1000;
-      animation: slideIn 0.3s ease;
-    }
-
+    .toast { position: fixed; bottom: 24px; right: 24px; padding: 14px 24px; border-radius: var(--radius-md); color: white; font-weight: 600; font-size: 0.9rem; box-shadow: var(--shadow-lg); z-index: 1000; animation: slideIn 0.3s ease; }
     .toast-success { background: var(--success); }
     .toast-error { background: var(--danger); }
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
+    .upload-zone { border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; margin-bottom: 16px; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary); background: rgba(99, 102, 241, 0.05); }
+    .upload-zone i { font-size: 2rem; color: var(--primary); margin-bottom: 8px; }
+    .upload-zone p { color: var(--text-secondary); font-size: 0.9rem; }
 
-    .setup-step {
-      display: flex;
-      align-items: flex-start;
-      gap: 16px;
-      padding: 16px 0;
-      border-bottom: 1px solid var(--border-color);
-    }
-
-    .setup-step:last-child { border-bottom: none; }
-
-    .step-number {
-      width: 32px;
-      height: 32px;
-      border-radius: 50%;
-      background: var(--primary);
-      color: white;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-weight: 700;
-      font-size: 0.85rem;
-      flex-shrink: 0;
-    }
-
-    .step-number.done { background: var(--success); }
-
-    .step-content h3 { font-size: 0.95rem; font-weight: 700; margin-bottom: 4px; }
-    .step-content p { font-size: 0.85rem; color: var(--text-secondary); }
+    .photo-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+    .photo-item { position: relative; aspect-ratio: 1; border-radius: var(--radius-md); overflow: hidden; background: var(--bg-main); }
+    .photo-item img { width: 100%; height: 100%; object-fit: cover; }
+    .photo-item .photo-name { position: absolute; bottom: 0; left: 0; right: 0; padding: 4px 8px; background: rgba(0,0,0,0.6); color: white; font-size: 0.7rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .photo-item .photo-delete { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: var(--danger); color: white; border: none; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
+    .photo-item:hover .photo-delete { opacity: 1; }
 
     @media (max-width: 600px) {
       body { padding: 16px; }
       header h1 { font-size: 1.3rem; }
       .actions { flex-direction: column; }
       .btn { justify-content: center; }
+      .photo-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
     }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
-      <div>
-        <h1><i class="fas fa-robot"></i> AutoPost</h1>
-        <p>Google Photos → IA Caption → Facebook</p>
-      </div>
+      <h1><i class="fas fa-robot"></i> AutoPost</h1>
+      <p>Sube fotos → IA genera el copy → Publica en Facebook</p>
     </header>
 
-    <!-- Estado del Sistema -->
+    <!-- Estado -->
     <div class="card">
       <div class="card-title"><i class="fas fa-signal"></i> Estado del Sistema</div>
       <div class="status-grid">
@@ -310,8 +115,8 @@
           <div class="value" id="cronSchedule">-</div>
         </div>
         <div class="status-item">
-          <div class="label">Google Photos</div>
-          <div class="value" id="googleStatus">-</div>
+          <div class="label">Fotos disponibles</div>
+          <div class="value" id="photosCount">-</div>
         </div>
         <div class="status-item">
           <div class="label">Facebook</div>
@@ -320,46 +125,19 @@
       </div>
     </div>
 
-    <!-- Configuracion Inicial -->
-    <div class="card" id="setupCard">
-      <div class="card-title"><i class="fas fa-cog"></i> Configuracion</div>
+    <!-- Subir Fotos -->
+    <div class="card">
+      <div class="card-title"><i class="fas fa-cloud-upload-alt"></i> Fotos para Publicar</div>
 
-      <div class="setup-step">
-        <div class="step-number" id="step1num">1</div>
-        <div class="step-content">
-          <h3>Autorizar Google Photos</h3>
-          <p>Conecta tu cuenta de Google Photos para obtener imagenes automaticamente.</p>
-          <br>
-          <button class="btn btn-primary" id="btnGoogleAuth" onclick="authorizeGoogle()">
-            <i class="fab fa-google"></i> Conectar Google Photos
-          </button>
-        </div>
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <i class="fas fa-images"></i>
+        <p>Arrastra fotos aqui o haz click para seleccionar</p>
+        <p style="font-size:0.75rem;color:var(--text-muted);margin-top:4px">JPG, PNG, WebP - Max 10MB</p>
       </div>
+      <input type="file" id="fileInput" multiple accept="image/*" style="display:none" onchange="uploadFiles(this.files)">
 
-      <div class="setup-step">
-        <div class="step-number" id="step2num">2</div>
-        <div class="step-content">
-          <h3>Verificar Facebook Page Token</h3>
-          <p>Asegurate de tener configuradas las variables FB_PAGE_ID y FB_PAGE_ACCESS_TOKEN en el servidor.</p>
-          <br>
-          <button class="btn btn-outline" id="btnFbVerify" onclick="verifyFacebook()">
-            <i class="fab fa-facebook"></i> Verificar Token
-          </button>
-          <span id="fbVerifyResult" style="margin-left: 12px;"></span>
-        </div>
-      </div>
-
-      <div class="setup-step">
-        <div class="step-number" id="step3num">3</div>
-        <div class="step-content">
-          <h3>Seleccionar Album (Opcional)</h3>
-          <p>Elige un album especifico o deja vacio para usar fotos recientes.</p>
-          <br>
-          <button class="btn btn-outline" onclick="loadAlbums()">
-            <i class="fas fa-images"></i> Ver Albums
-          </button>
-          <div id="albumsList" style="margin-top: 12px;"></div>
-        </div>
+      <div class="photo-grid" id="photoGrid">
+        <p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:16px;">Cargando fotos...</p>
       </div>
     </div>
 
@@ -374,7 +152,6 @@
           <i class="fas fa-paper-plane"></i> Publicar Ahora
         </button>
       </div>
-
       <div class="preview-area" id="previewArea">
         <img id="previewImage" src="" alt="Preview">
         <div class="preview-caption" id="previewCaption"></div>
@@ -386,14 +163,7 @@
       <div class="card-title"><i class="fas fa-history"></i> Historial de Publicaciones</div>
       <div style="overflow-x: auto;">
         <table class="log-table">
-          <thead>
-            <tr>
-              <th>Fecha</th>
-              <th>Foto</th>
-              <th>Caption</th>
-              <th>Estado</th>
-            </tr>
-          </thead>
+          <thead><tr><th>Fecha</th><th>Foto</th><th>Caption</th><th>Estado</th></tr></thead>
           <tbody id="logBody">
             <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px;">Cargando...</td></tr>
           </tbody>
@@ -412,26 +182,20 @@
       return data;
     }
 
-    function toast(message, type = 'success') {
+    function toast(msg, type = 'success') {
       const el = document.createElement('div');
       el.className = `toast toast-${type}`;
-      el.textContent = message;
+      el.textContent = msg;
       document.body.appendChild(el);
       setTimeout(() => el.remove(), 4000);
     }
 
     function setLoading(btn, loading) {
-      if (loading) {
-        btn.disabled = true;
-        btn._originalHTML = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner"></span> Procesando...';
-      } else {
-        btn.disabled = false;
-        btn.innerHTML = btn._originalHTML;
-      }
+      if (loading) { btn.disabled = true; btn._html = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span> Procesando...'; }
+      else { btn.disabled = false; btn.innerHTML = btn._html; }
     }
 
-    // --- Cargar estado ---
+    // --- Estado ---
     async function loadStatus() {
       try {
         const status = await api('/status');
@@ -448,84 +212,69 @@
         document.getElementById('facebookStatus').innerHTML = fb.valid
           ? `<span class="badge badge-success"><i class="fas fa-check"></i> ${fb.pageName}</span>`
           : '<span class="badge badge-danger">No conectado</span>';
-        if (fb.valid) {
-          document.getElementById('step2num').classList.add('done');
-          document.getElementById('step2num').textContent = '✓';
-        }
       } catch (e) {
         document.getElementById('facebookStatus').innerHTML = '<span class="badge badge-danger">Error</span>';
       }
+    }
 
-      // Verificar Google Photos (intentar listar albums)
+    // --- Fotos ---
+    async function loadPhotos() {
       try {
-        const albums = await api('/google/albums');
-        if (albums.albums) {
-          document.getElementById('googleStatus').innerHTML = '<span class="badge badge-success"><i class="fas fa-check"></i> Conectado</span>';
-          document.getElementById('step1num').classList.add('done');
-          document.getElementById('step1num').textContent = '✓';
+        const data = await api('/photos');
+        document.getElementById('photosCount').textContent = data.count;
+        const grid = document.getElementById('photoGrid');
+
+        if (!data.photos?.length) {
+          grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:16px;">No hay fotos. Sube algunas para empezar.</p>';
+          return;
         }
+
+        grid.innerHTML = data.photos.map(p => `
+          <div class="photo-item">
+            <img src="https://storage.googleapis.com/${encodeURI('pedidos-con-gemini.firebasestorage.app/' + p.id)}" alt="${p.filename}" loading="lazy">
+            <div class="photo-name">${p.filename}</div>
+            <button class="photo-delete" onclick="deletePhoto('${p.filename}')" title="Eliminar"><i class="fas fa-times"></i></button>
+          </div>
+        `).join('');
       } catch (e) {
-        document.getElementById('googleStatus').innerHTML = '<span class="badge badge-warning">No autorizado</span>';
+        document.getElementById('photoGrid').innerHTML = `<p style="color:var(--danger);grid-column:1/-1;text-align:center;">${e.message}</p>`;
       }
     }
 
-    // --- Google Auth ---
-    async function authorizeGoogle() {
-      const btn = document.getElementById('btnGoogleAuth');
-      setLoading(btn, true);
+    async function uploadFiles(files) {
+      if (!files.length) return;
+      const form = new FormData();
+      for (const f of files) form.append('photos', f);
+
       try {
-        const data = await api('/google/auth');
-        if (data.authUrl) {
-          window.open(data.authUrl, '_blank', 'width=600,height=700');
-          toast('Completa la autorizacion en la ventana que se abrio.');
-        }
+        toast('Subiendo fotos...');
+        const res = await fetch(`${API}/api/autopost/photos/upload`, { method: 'POST', body: form });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error);
+        toast(`${data.count} foto(s) subida(s)!`);
+        loadPhotos();
+      } catch (e) {
+        toast('Error subiendo: ' + e.message, 'error');
+      }
+      document.getElementById('fileInput').value = '';
+    }
+
+    async function deletePhoto(filename) {
+      if (!confirm(`Eliminar ${filename}?`)) return;
+      try {
+        await api(`/photos/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+        toast('Foto eliminada');
+        loadPhotos();
       } catch (e) {
         toast('Error: ' + e.message, 'error');
       }
-      setLoading(btn, false);
     }
 
-    // --- Facebook Verify ---
-    async function verifyFacebook() {
-      const btn = document.getElementById('btnFbVerify');
-      setLoading(btn, true);
-      try {
-        const data = await api('/facebook/verify');
-        const el = document.getElementById('fbVerifyResult');
-        if (data.valid) {
-          el.innerHTML = `<span class="badge badge-success">✓ ${data.pageName}</span>`;
-          document.getElementById('step2num').classList.add('done');
-          document.getElementById('step2num').textContent = '✓';
-        } else {
-          el.innerHTML = `<span class="badge badge-danger">✗ ${data.error}</span>`;
-        }
-      } catch (e) {
-        toast('Error verificando Facebook', 'error');
-      }
-      setLoading(btn, false);
-    }
-
-    // --- Albums ---
-    async function loadAlbums() {
-      const container = document.getElementById('albumsList');
-      container.innerHTML = '<span class="badge badge-warning">Cargando albums...</span>';
-      try {
-        const data = await api('/google/albums');
-        if (!data.albums?.length) {
-          container.innerHTML = '<span style="color:var(--text-muted)">No se encontraron albums.</span>';
-          return;
-        }
-        container.innerHTML = data.albums.map(a =>
-          `<div style="display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-color)">
-            <strong>${a.title}</strong>
-            <span style="color:var(--text-muted);font-size:0.8rem">(${a.mediaItemsCount || 0} fotos)</span>
-            <code style="margin-left:auto;font-size:0.7rem;color:var(--text-muted)">${a.id}</code>
-          </div>`
-        ).join('');
-      } catch (e) {
-        container.innerHTML = '<span class="badge badge-danger">Error cargando albums. Autoriza Google Photos primero.</span>';
-      }
-    }
+    // Drag & drop
+    const zone = document.getElementById('uploadZone');
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+    zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+    zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); uploadFiles(e.dataTransfer.files); });
 
     // --- Preview ---
     async function previewPost() {
@@ -533,40 +282,28 @@
       setLoading(btn, true);
       try {
         const data = await api('/preview', { method: 'POST' });
-        const area = document.getElementById('previewArea');
-
-        if (data.message) {
-          toast(data.message, 'error');
-          setLoading(btn, false);
-          return;
-        }
-
+        if (data.message) { toast(data.message, 'error'); setLoading(btn, false); return; }
         document.getElementById('previewImage').src = data.imagePreview;
         document.getElementById('previewCaption').textContent = data.caption;
-        area.style.display = 'block';
+        document.getElementById('previewArea').style.display = 'block';
         toast('Preview generado!');
       } catch (e) {
-        toast('Error generando preview', 'error');
+        toast('Error: ' + e.message, 'error');
       }
       setLoading(btn, false);
     }
 
-    // --- Trigger Post ---
+    // --- Publicar ---
     async function triggerPost() {
-      if (!confirm('¿Publicar ahora en Facebook?')) return;
-
+      if (!confirm('Publicar ahora en Facebook?')) return;
       const btn = document.getElementById('btnPublish');
       setLoading(btn, true);
       try {
         const data = await api('/trigger', { method: 'POST' });
-        if (data.status === 'success') {
-          toast('Publicado exitosamente en Facebook!');
-          loadLog();
-        } else {
-          toast(`Error: ${data.error || 'Fallo la publicacion'}`, 'error');
-        }
+        if (data.status === 'success') { toast('Publicado en Facebook!'); loadLog(); loadPhotos(); }
+        else toast(`Error: ${data.error || 'Fallo'}`, 'error');
       } catch (e) {
-        toast('Error publicando', 'error');
+        toast('Error: ' + e.message, 'error');
       }
       setLoading(btn, false);
     }
@@ -576,38 +313,29 @@
       try {
         const data = await api('/log?limit=15');
         const tbody = document.getElementById('logBody');
-
         if (!data.log?.length) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px;">Sin publicaciones aun</td></tr>';
           return;
         }
-
         tbody.innerHTML = data.log.map(entry => {
-          const date = entry.startedAt?._seconds
-            ? new Date(entry.startedAt._seconds * 1000).toLocaleString('es-MX')
-            : '-';
-
-          const statusBadge = {
-            success: '<span class="badge badge-success"><i class="fas fa-check"></i> OK</span>',
-            failed: '<span class="badge badge-danger"><i class="fas fa-times"></i> Error</span>',
-            skipped: '<span class="badge badge-warning"><i class="fas fa-forward"></i> Omitido</span>',
-            in_progress: '<span class="badge badge-warning"><i class="fas fa-spinner fa-spin"></i> En proceso</span>'
-          }[entry.status] || entry.status;
-
+          const date = entry.startedAt?._seconds ? new Date(entry.startedAt._seconds * 1000).toLocaleString('es-MX') : '-';
+          const badge = { success: 'badge-success', failed: 'badge-danger', skipped: 'badge-warning', in_progress: 'badge-warning' }[entry.status] || '';
+          const icon = { success: 'check', failed: 'times', skipped: 'forward', in_progress: 'spinner fa-spin' }[entry.status] || 'question';
           return `<tr>
             <td>${date}</td>
             <td>${entry.photoFilename || '-'}</td>
             <td class="caption-cell" title="${entry.caption || ''}">${entry.caption || entry.error || '-'}</td>
-            <td>${statusBadge}</td>
+            <td><span class="badge ${badge}"><i class="fas fa-${icon}"></i> ${entry.status}</span></td>
           </tr>`;
         }).join('');
       } catch (e) {
-        document.getElementById('logBody').innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--danger);">Error cargando historial</td></tr>';
+        document.getElementById('logBody').innerHTML = '<tr><td colspan="4" style="color:var(--danger);text-align:center">Error cargando historial</td></tr>';
       }
     }
 
     // --- Init ---
     loadStatus();
+    loadPhotos();
     loadLog();
   </script>
 </body>

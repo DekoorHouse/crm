@@ -1,40 +1,54 @@
 const express = require('express');
 const router = express.Router();
-const { getAuthUrl, handleAuthCallback, getStoredTokenInfo, listAlbums } = require('./googlePhotosService');
+const multer = require('multer');
+const { fetchAvailablePhotos, uploadPhoto, deletePhoto } = require('./photoService');
 const { verifyPageToken } = require('./facebookPostService');
 const { executeAutoPost, previewNextPost, getLog, getSchedulerStatus } = require('./autoPostScheduler');
 
-// --- Google Photos OAuth2 ---
+// Multer para subir archivos en memoria
+const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Solo se permiten imagenes.'));
+    }
+});
 
-// Paso 1: Obtener URL de autorizacion
-router.get('/google/auth', (req, res) => {
+// --- Fotos (Firebase Storage) ---
+
+// Listar fotos disponibles
+router.get('/photos', async (req, res) => {
     try {
-        const url = getAuthUrl();
-        res.json({ authUrl: url });
+        const photos = await fetchAvailablePhotos();
+        res.json({ photos, count: photos.length });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// Paso 2: Callback de OAuth2
-router.get('/google/callback', async (req, res) => {
+// Subir foto(s)
+router.post('/photos/upload', upload.array('photos', 20), async (req, res) => {
     try {
-        const { code } = req.query;
-        if (!code) return res.status(400).json({ error: 'Falta el parametro code.' });
+        if (!req.files?.length) return res.status(400).json({ error: 'No se enviaron fotos.' });
 
-        await handleAuthCallback(code);
-        res.send('<html><body><h2>Google Photos autorizado correctamente!</h2><p>Puedes cerrar esta ventana.</p><script>setTimeout(()=>window.close(),3000)</script></body></html>');
+        const uploaded = [];
+        for (const file of req.files) {
+            const path = await uploadPhoto(file.buffer, file.originalname, file.mimetype);
+            uploaded.push({ filename: file.originalname, path });
+        }
+
+        res.json({ uploaded, count: uploaded.length });
     } catch (error) {
-        console.error('[AUTOPOST] Error en OAuth callback:', error.message);
         res.status(500).json({ error: error.message });
     }
 });
 
-// Listar albumes de Google Photos
-router.get('/google/albums', async (req, res) => {
+// Eliminar foto
+router.delete('/photos/:filename', async (req, res) => {
     try {
-        const albums = await listAlbums();
-        res.json({ albums });
+        await deletePhoto(`autopost/${req.params.filename}`);
+        res.json({ deleted: req.params.filename });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -42,7 +56,6 @@ router.get('/google/albums', async (req, res) => {
 
 // --- Facebook ---
 
-// Verificar token de Facebook
 router.get('/facebook/verify', async (req, res) => {
     try {
         const result = await verifyPageToken();
@@ -52,62 +65,12 @@ router.get('/facebook/verify', async (req, res) => {
     }
 });
 
-// Debug: ver tokens almacenados y probar refresh manual
-router.get('/debug/tokens', async (req, res) => {
-    try {
-        const info = await getStoredTokenInfo();
-
-        // Intentar refresh manual del token
-        const { db } = require('../config');
-        const doc = await db.doc('crm_settings/autopost_google').get();
-        const data = doc.data();
-
-        const tokenResponse = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-                client_id: process.env.GOOGLE_PHOTOS_CLIENT_ID,
-                client_secret: process.env.GOOGLE_PHOTOS_CLIENT_SECRET,
-                refresh_token: data.refreshToken,
-                grant_type: 'refresh_token'
-            })
-        });
-        const tokenData = await tokenResponse.json();
-
-        // Probar el token contra la API de Photos
-        let photosTest = 'no intentado';
-        if (tokenData.access_token) {
-            const photosResponse = await fetch('https://photoslibrary.googleapis.com/v1/albums?pageSize=1', {
-                headers: { 'Authorization': `Bearer ${tokenData.access_token}` }
-            });
-            photosTest = photosResponse.ok
-                ? 'OK - ' + (await photosResponse.text()).substring(0, 200)
-                : 'ERROR ' + photosResponse.status + ' - ' + await photosResponse.text();
-        }
-
-        res.json({
-            stored: info,
-            refreshResult: {
-                scope: tokenData.scope,
-                hasAccessToken: !!tokenData.access_token,
-                error: tokenData.error,
-                errorDescription: tokenData.error_description
-            },
-            photosApiTest: photosTest
-        });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // --- Auto Post ---
 
-// Estado del scheduler
 router.get('/status', (req, res) => {
     res.json(getSchedulerStatus());
 });
 
-// Historial de publicaciones
 router.get('/log', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 20;
@@ -118,7 +81,6 @@ router.get('/log', async (req, res) => {
     }
 });
 
-// Preview: ver que se publicaria sin publicar
 router.post('/preview', async (req, res) => {
     try {
         const preview = await previewNextPost();
@@ -128,7 +90,6 @@ router.post('/preview', async (req, res) => {
     }
 });
 
-// Publicar ahora manualmente
 router.post('/trigger', async (req, res) => {
     try {
         const result = await executeAutoPost();

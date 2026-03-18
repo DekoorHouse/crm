@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config');
-const { fetchRecentPhotos, pickUnpostedPhoto, downloadPhoto } = require('./googlePhotosService');
+const { fetchAvailablePhotos, pickUnpostedPhoto, downloadPhoto } = require('./photoService');
 const { generateCaption } = require('./captionService');
 const { publishPhotoToPage } = require('./facebookPostService');
 
@@ -15,16 +15,16 @@ async function executeAutoPost() {
     };
 
     try {
-        // 1. Obtener fotos recientes
-        console.log('[AUTOPOST] Buscando fotos en Google Photos...');
-        const photos = await fetchRecentPhotos(20);
+        // 1. Obtener fotos disponibles en Firebase Storage
+        console.log('[AUTOPOST] Buscando fotos en Firebase Storage (autopost/)...');
+        const photos = await fetchAvailablePhotos();
         console.log(`[AUTOPOST] Se encontraron ${photos.length} fotos.`);
 
         if (!photos.length) {
             logEntry.status = 'skipped';
-            logEntry.error = 'No se encontraron fotos recientes.';
+            logEntry.error = 'No hay fotos en la carpeta autopost/.';
             await saveLog(logEntry);
-            console.log('[AUTOPOST] No hay fotos recientes. Proceso omitido.');
+            console.log('[AUTOPOST] No hay fotos. Proceso omitido.');
             return logEntry;
         }
 
@@ -32,7 +32,7 @@ async function executeAutoPost() {
         const photo = await pickUnpostedPhoto(photos);
         if (!photo) {
             logEntry.status = 'skipped';
-            logEntry.error = 'Todas las fotos recientes ya fueron publicadas.';
+            logEntry.error = 'Todas las fotos ya fueron publicadas.';
             await saveLog(logEntry);
             console.log('[AUTOPOST] Todas las fotos ya fueron publicadas. Proceso omitido.');
             return logEntry;
@@ -44,7 +44,7 @@ async function executeAutoPost() {
 
         // 3. Descargar la imagen
         console.log('[AUTOPOST] Descargando imagen...');
-        const imageBuffer = await downloadPhoto(photo.baseUrl);
+        const imageBuffer = await downloadPhoto(photo.id);
         const mimeType = photo.mimeType || 'image/jpeg';
 
         // 4. Generar caption con Gemini
@@ -75,17 +75,16 @@ async function executeAutoPost() {
 }
 
 async function previewNextPost() {
-    const photos = await fetchRecentPhotos(20);
+    const photos = await fetchAvailablePhotos();
     const photo = await pickUnpostedPhoto(photos);
 
     if (!photo) {
-        return { message: 'No hay fotos disponibles para publicar.' };
+        return { message: 'No hay fotos disponibles para publicar. Sube fotos a la carpeta autopost/ en Firebase Storage.' };
     }
 
-    const imageBuffer = await downloadPhoto(photo.baseUrl);
+    const imageBuffer = await downloadPhoto(photo.id);
     const caption = await generateCaption(imageBuffer, photo.mimeType || 'image/jpeg');
 
-    // Convertir a base64 para preview en el frontend
     const base64Image = imageBuffer.toString('base64');
 
     return {
@@ -115,7 +114,7 @@ async function getLog(limit = 20) {
 
 function startScheduler() {
     const enabled = process.env.AUTOPOST_ENABLED === 'true';
-    const cronExpression = process.env.AUTOPOST_CRON || '0 9 * * *'; // Default: 9 AM diario
+    const cronExpression = process.env.AUTOPOST_CRON || '0 9 * * *';
 
     if (!enabled) {
         console.log('[AUTOPOST] Scheduler desactivado (AUTOPOST_ENABLED != true).');
@@ -150,8 +149,7 @@ function getSchedulerStatus() {
         enabled: process.env.AUTOPOST_ENABLED === 'true',
         running: scheduledTask !== null,
         cron: process.env.AUTOPOST_CRON || '0 9 * * *',
-        timezone: 'America/Mexico_City',
-        albumId: process.env.AUTOPOST_ALBUM_ID || null
+        timezone: 'America/Mexico_City'
     };
 }
 
