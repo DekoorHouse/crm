@@ -85,6 +85,7 @@ const state = {
 
     viewBox: { x: 0, y: 0, w: 1000, h: 800 },
     isPanning: false,
+    rightClickPanning: false,
     panStart: null,
     panViewBoxStart: null,
 
@@ -1560,6 +1561,20 @@ function handleMouseDown(e) {
         state.panStart = {x:e.clientX,y:e.clientY};
         state.panViewBoxStart = {...state.viewBox};
         svg.style.cursor = 'grabbing';
+        return;
+    }
+    // Right-click on empty space -> pan
+    if (e.button === 2) {
+        const pt = screenToSVG(e.clientX, e.clientY);
+        const obj = objectAtPoint(pt);
+        if (!obj) {
+            e.preventDefault();
+            state.isPanning = true;
+            state.rightClickPanning = true;
+            state.panStart = {x:e.clientX,y:e.clientY};
+            state.panViewBoxStart = {...state.viewBox};
+            svg.style.cursor = 'grabbing';
+        }
         return;
     }
     if (e.button !== 0) return;
@@ -3308,6 +3323,11 @@ function setupEventListeners() {
     svg.addEventListener('wheel', handleWheel, {passive:false});
     svg.addEventListener('contextmenu', (e) => {
         e.preventDefault();
+        // If we were right-click panning, don't show context menu
+        if (state.rightClickPanning) {
+            state.rightClickPanning = false;
+            return;
+        }
         const pt = screenToSVG(e.clientX, e.clientY);
         const obj = objectAtPoint(pt);
         if (obj) {
