@@ -3134,6 +3134,7 @@ function handleMenuAction(action) {
         case 'ungroup':     ungroupSelected(); break;
         case 'join-nodes':  joinNodes(); break;
         case 'import-names': showImportNamesModal(); break;
+        case 'bmp-converter': showBmpConverterModal(); break;
     }
 }
 
@@ -3805,6 +3806,7 @@ function setupEventListeners() {
     setupContextMenu();
     setupPowerClipMenu();
     setupImportNamesModal();
+    setupBmpConverterModal();
 }
 
 function setTool(tool) {
@@ -4004,6 +4006,520 @@ function updateThemeShadow() {
         s1.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s1.setAttribute('flood-opacity', isDark ? '0.25' : '0.10');
         s2.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s2.setAttribute('flood-opacity', isDark ? '0.15' : '0.06');
     }
+}
+
+// =============================================
+// BMP LASER CONVERTER
+// =============================================
+const bmpState = {
+    sourceImage: null, // HTMLImageElement
+    sourceCanvas: null,
+    originalImageData: null,
+    processedImageData: null,
+    debounceTimer: null,
+};
+
+function showBmpConverterModal() {
+    const modal = document.getElementById('bmp-converter-modal');
+    modal.classList.remove('hidden');
+    // Reset controls
+    document.getElementById('bmp-brightness').value = 0;
+    document.getElementById('bmp-brightness-val').textContent = '0';
+    document.getElementById('bmp-contrast').value = 0;
+    document.getElementById('bmp-contrast-val').textContent = '0';
+    document.getElementById('bmp-gamma').value = 1.0;
+    document.getElementById('bmp-gamma-val').textContent = '1.0';
+    document.getElementById('bmp-threshold').value = 128;
+    document.getElementById('bmp-threshold-val').textContent = '128';
+    document.getElementById('bmp-algorithm').value = 'floyd-steinberg';
+    document.getElementById('bmp-invert').checked = false;
+    document.getElementById('bmp-dpi').value = 300;
+    document.getElementById('bmp-download-btn').disabled = true;
+    bmpState.sourceImage = null;
+    bmpState.originalImageData = null;
+    bmpState.processedImageData = null;
+    // Clear preview canvases
+    const origCanvas = document.getElementById('bmp-preview-original');
+    const procCanvas = document.getElementById('bmp-preview-processed');
+    origCanvas.width = 0; origCanvas.height = 0;
+    procCanvas.width = 0; procCanvas.height = 0;
+    // Update threshold visibility
+    bmpUpdateThresholdVisibility();
+    // Check if a selected canvas object is an image
+    bmpUpdateUseSelectedBtn();
+}
+
+function hideBmpConverterModal() {
+    document.getElementById('bmp-converter-modal').classList.add('hidden');
+}
+
+function bmpUpdateUseSelectedBtn() {
+    const btn = document.getElementById('bmp-use-selected');
+    const sel = state.selectedIds.length === 1 ? findObject(state.selectedIds[0]) : null;
+    btn.disabled = !(sel && sel.type === 'image' && sel.href);
+}
+
+function bmpUpdateThresholdVisibility() {
+    const algo = document.getElementById('bmp-algorithm').value;
+    const group = document.getElementById('bmp-threshold-group');
+    if (algo === 'threshold') {
+        group.classList.remove('hidden-slider');
+    } else {
+        group.classList.add('hidden-slider');
+    }
+}
+
+function bmpLoadImageFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const img = new Image();
+        img.onload = function() {
+            bmpState.sourceImage = img;
+            bmpDrawOriginalPreview();
+            bmpProcessAndPreview();
+            document.getElementById('bmp-download-btn').disabled = false;
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function bmpLoadImageFromSelected() {
+    const sel = state.selectedIds.length === 1 ? findObject(state.selectedIds[0]) : null;
+    if (!sel || sel.type !== 'image' || !sel.href) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        bmpState.sourceImage = img;
+        bmpDrawOriginalPreview();
+        bmpProcessAndPreview();
+        document.getElementById('bmp-download-btn').disabled = false;
+    };
+    img.onerror = function() {
+        // Try without crossOrigin for data URLs
+        const img2 = new Image();
+        img2.onload = function() {
+            bmpState.sourceImage = img2;
+            bmpDrawOriginalPreview();
+            bmpProcessAndPreview();
+            document.getElementById('bmp-download-btn').disabled = false;
+        };
+        img2.src = sel.href;
+    };
+    img.src = sel.href;
+}
+
+function bmpDrawOriginalPreview() {
+    const img = bmpState.sourceImage;
+    if (!img) return;
+    const canvas = document.getElementById('bmp-preview-original');
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    bmpState.originalImageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+}
+
+function bmpProcessAndPreview() {
+    if (!bmpState.originalImageData) return;
+    const options = {
+        brightness: parseInt(document.getElementById('bmp-brightness').value, 10),
+        contrast: parseInt(document.getElementById('bmp-contrast').value, 10),
+        gamma: parseFloat(document.getElementById('bmp-gamma').value),
+        threshold: parseInt(document.getElementById('bmp-threshold').value, 10),
+        algorithm: document.getElementById('bmp-algorithm').value,
+        invert: document.getElementById('bmp-invert').checked,
+    };
+    const srcData = bmpState.originalImageData;
+    const processed = processImageForLaser(srcData, options);
+    bmpState.processedImageData = processed;
+    const canvas = document.getElementById('bmp-preview-processed');
+    canvas.width = processed.width;
+    canvas.height = processed.height;
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(processed, 0, 0);
+}
+
+function bmpScheduleUpdate() {
+    if (bmpState.debounceTimer) cancelAnimationFrame(bmpState.debounceTimer);
+    bmpState.debounceTimer = requestAnimationFrame(() => {
+        bmpProcessAndPreview();
+    });
+}
+
+// --- Image processing pipeline ---
+
+function processImageForLaser(imageData, options) {
+    const w = imageData.width, h = imageData.height;
+    const src = imageData.data;
+
+    // 1. Convert to grayscale float buffer
+    const gray = new Float32Array(w * h);
+    for (let i = 0; i < w * h; i++) {
+        const r = src[i * 4], g = src[i * 4 + 1], b = src[i * 4 + 2];
+        gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    // 2. Apply brightness
+    if (options.brightness !== 0) {
+        for (let i = 0; i < gray.length; i++) {
+            gray[i] = gray[i] + options.brightness;
+        }
+    }
+
+    // 3. Apply contrast
+    if (options.contrast !== 0) {
+        const c = options.contrast;
+        const factor = (259 * (c + 255)) / (255 * (259 - c));
+        for (let i = 0; i < gray.length; i++) {
+            gray[i] = ((gray[i] - 128) * factor) + 128;
+        }
+    }
+
+    // 4. Apply gamma
+    if (options.gamma !== 1.0) {
+        const invGamma = 1.0 / options.gamma;
+        for (let i = 0; i < gray.length; i++) {
+            const clamped = Math.max(0, Math.min(255, gray[i]));
+            gray[i] = 255 * Math.pow(clamped / 255, invGamma);
+        }
+    }
+
+    // Clamp values
+    for (let i = 0; i < gray.length; i++) {
+        gray[i] = Math.max(0, Math.min(255, gray[i]));
+    }
+
+    // 5. Apply dithering algorithm
+    const output = new Uint8ClampedArray(w * h);
+    switch (options.algorithm) {
+        case 'threshold':
+            bmpDitherThreshold(gray, output, w, h, options.threshold);
+            break;
+        case 'floyd-steinberg':
+            bmpDitherFloydSteinberg(gray, output, w, h);
+            break;
+        case 'atkinson':
+            bmpDitherAtkinson(gray, output, w, h);
+            break;
+        case 'stucki':
+            bmpDitherStucki(gray, output, w, h);
+            break;
+        case 'jarvis':
+            bmpDitherJarvis(gray, output, w, h);
+            break;
+        case 'bayer4':
+            bmpDitherBayer4(gray, output, w, h);
+            break;
+        case 'bayer8':
+            bmpDitherBayer8(gray, output, w, h);
+            break;
+        default:
+            bmpDitherFloydSteinberg(gray, output, w, h);
+    }
+
+    // 6. Apply invert if checked
+    if (options.invert) {
+        for (let i = 0; i < output.length; i++) {
+            output[i] = output[i] === 255 ? 0 : 255;
+        }
+    }
+
+    // Convert to RGBA ImageData for preview
+    const result = new ImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+        const v = output[i];
+        result.data[i * 4] = v;
+        result.data[i * 4 + 1] = v;
+        result.data[i * 4 + 2] = v;
+        result.data[i * 4 + 3] = 255;
+    }
+    return result;
+}
+
+// --- Dithering algorithms ---
+
+function bmpDitherThreshold(gray, output, w, h, threshold) {
+    for (let i = 0; i < w * h; i++) {
+        output[i] = gray[i] > threshold ? 255 : 0;
+    }
+}
+
+function bmpDitherFloydSteinberg(gray, output, w, h) {
+    const buf = new Float32Array(gray);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const old = buf[idx];
+            const val = old > 128 ? 255 : 0;
+            output[idx] = val;
+            const err = old - val;
+            if (x + 1 < w)               buf[idx + 1]     += err * 7 / 16;
+            if (x - 1 >= 0 && y + 1 < h) buf[idx - 1 + w] += err * 3 / 16;
+            if (y + 1 < h)               buf[idx + w]      += err * 5 / 16;
+            if (x + 1 < w && y + 1 < h)  buf[idx + 1 + w]  += err * 1 / 16;
+        }
+    }
+}
+
+function bmpDitherAtkinson(gray, output, w, h) {
+    const buf = new Float32Array(gray);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const old = buf[idx];
+            const val = old > 128 ? 255 : 0;
+            output[idx] = val;
+            const err = old - val;
+            const d = err / 8;
+            if (x + 1 < w)               buf[idx + 1]       += d;
+            if (x + 2 < w)               buf[idx + 2]       += d;
+            if (x - 1 >= 0 && y + 1 < h) buf[idx - 1 + w]   += d;
+            if (y + 1 < h)               buf[idx + w]        += d;
+            if (x + 1 < w && y + 1 < h)  buf[idx + 1 + w]    += d;
+            if (y + 2 < h)               buf[idx + 2 * w]     += d;
+        }
+    }
+}
+
+function bmpDitherStucki(gray, output, w, h) {
+    const buf = new Float32Array(gray);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const old = buf[idx];
+            const val = old > 128 ? 255 : 0;
+            output[idx] = val;
+            const err = old - val;
+            // Row 0:          *  8/42  4/42
+            if (x + 1 < w)                              buf[idx + 1]         += err * 8 / 42;
+            if (x + 2 < w)                              buf[idx + 2]         += err * 4 / 42;
+            // Row 1: 2/42  4/42  8/42  4/42  2/42
+            if (y + 1 < h) {
+                if (x - 2 >= 0) buf[idx - 2 + w] += err * 2 / 42;
+                if (x - 1 >= 0) buf[idx - 1 + w] += err * 4 / 42;
+                                buf[idx + w]      += err * 8 / 42;
+                if (x + 1 < w)  buf[idx + 1 + w]  += err * 4 / 42;
+                if (x + 2 < w)  buf[idx + 2 + w]  += err * 2 / 42;
+            }
+            // Row 2: 1/42  2/42  4/42  2/42  1/42
+            if (y + 2 < h) {
+                const w2 = 2 * w;
+                if (x - 2 >= 0) buf[idx - 2 + w2] += err * 1 / 42;
+                if (x - 1 >= 0) buf[idx - 1 + w2] += err * 2 / 42;
+                                buf[idx + w2]      += err * 4 / 42;
+                if (x + 1 < w)  buf[idx + 1 + w2]  += err * 2 / 42;
+                if (x + 2 < w)  buf[idx + 2 + w2]  += err * 1 / 42;
+            }
+        }
+    }
+}
+
+function bmpDitherJarvis(gray, output, w, h) {
+    const buf = new Float32Array(gray);
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const old = buf[idx];
+            const val = old > 128 ? 255 : 0;
+            output[idx] = val;
+            const err = old - val;
+            // Row 0:          *  7/48  5/48
+            if (x + 1 < w)                              buf[idx + 1]         += err * 7 / 48;
+            if (x + 2 < w)                              buf[idx + 2]         += err * 5 / 48;
+            // Row 1: 3/48  5/48  7/48  5/48  3/48
+            if (y + 1 < h) {
+                if (x - 2 >= 0) buf[idx - 2 + w] += err * 3 / 48;
+                if (x - 1 >= 0) buf[idx - 1 + w] += err * 5 / 48;
+                                buf[idx + w]      += err * 7 / 48;
+                if (x + 1 < w)  buf[idx + 1 + w]  += err * 5 / 48;
+                if (x + 2 < w)  buf[idx + 2 + w]  += err * 3 / 48;
+            }
+            // Row 2: 1/48  3/48  5/48  3/48  1/48
+            if (y + 2 < h) {
+                const w2 = 2 * w;
+                if (x - 2 >= 0) buf[idx - 2 + w2] += err * 1 / 48;
+                if (x - 1 >= 0) buf[idx - 1 + w2] += err * 3 / 48;
+                                buf[idx + w2]      += err * 5 / 48;
+                if (x + 1 < w)  buf[idx + 1 + w2]  += err * 3 / 48;
+                if (x + 2 < w)  buf[idx + 2 + w2]  += err * 1 / 48;
+            }
+        }
+    }
+}
+
+function bmpDitherBayer4(gray, output, w, h) {
+    const matrix = [
+        [ 0,  8,  2, 10],
+        [12,  4, 14,  6],
+        [ 3, 11,  1,  9],
+        [15,  7, 13,  5]
+    ];
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const threshold = ((matrix[y % 4][x % 4] + 0.5) / 16) * 255;
+            output[idx] = gray[idx] > threshold ? 255 : 0;
+        }
+    }
+}
+
+function bmpDitherBayer8(gray, output, w, h) {
+    const matrix = [
+        [ 0, 32,  8, 40,  2, 34, 10, 42],
+        [48, 16, 56, 24, 50, 18, 58, 26],
+        [12, 44,  4, 36, 14, 46,  6, 38],
+        [60, 28, 52, 20, 62, 30, 54, 22],
+        [ 3, 35, 11, 43,  1, 33,  9, 41],
+        [51, 19, 59, 27, 49, 17, 57, 25],
+        [15, 47,  7, 39, 13, 45,  5, 37],
+        [63, 31, 55, 23, 61, 29, 53, 21]
+    ];
+    for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+            const idx = y * w + x;
+            const threshold = ((matrix[y % 8][x % 8] + 0.5) / 64) * 255;
+            output[idx] = gray[idx] > threshold ? 255 : 0;
+        }
+    }
+}
+
+// --- BMP 1-bit Export ---
+
+function generateBMP1bit(imageData, width, height, dpi) {
+    const rowSize = Math.ceil(width / 32) * 4; // pad each row to 4-byte boundary
+    const pixelDataSize = rowSize * height;
+    const fileSize = 14 + 40 + 8 + pixelDataSize;
+
+    const buffer = new ArrayBuffer(fileSize);
+    const view = new DataView(buffer);
+
+    // BMP File Header (14 bytes)
+    view.setUint8(0, 0x42); view.setUint8(1, 0x4D); // 'BM'
+    view.setUint32(2, fileSize, true);    // file size
+    view.setUint16(6, 0, true);           // reserved
+    view.setUint16(8, 0, true);           // reserved
+    view.setUint32(10, 14 + 40 + 8, true); // pixel data offset
+
+    // BITMAPINFOHEADER (40 bytes)
+    view.setUint32(14, 40, true);         // header size
+    view.setInt32(18, width, true);       // width
+    view.setInt32(22, height, true);      // height (positive = bottom-up)
+    view.setUint16(26, 1, true);          // planes
+    view.setUint16(28, 1, true);          // 1 bit per pixel
+    view.setUint32(30, 0, true);          // no compression
+    view.setUint32(34, pixelDataSize, true); // image size
+    const ppm = Math.round(dpi * 39.3701);
+    view.setInt32(38, ppm, true);         // horizontal resolution (px/m)
+    view.setInt32(42, ppm, true);         // vertical resolution (px/m)
+    view.setUint32(46, 2, true);          // colors used
+    view.setUint32(50, 2, true);          // important colors
+
+    // Color table (2 entries: black, white) - BGRA format
+    // Entry 0: Black (0, 0, 0, 0)
+    view.setUint8(54, 0); view.setUint8(55, 0); view.setUint8(56, 0); view.setUint8(57, 0);
+    // Entry 1: White (255, 255, 255, 0)
+    view.setUint8(58, 255); view.setUint8(59, 255); view.setUint8(60, 255); view.setUint8(61, 0);
+
+    // Pixel data (bottom-to-top, 1 bit per pixel)
+    const dataOffset = 62;
+    for (let y = height - 1; y >= 0; y--) {
+        const rowStart = dataOffset + (height - 1 - y) * rowSize;
+        for (let x = 0; x < width; x++) {
+            const srcIdx = (y * width + x) * 4;
+            const isWhite = imageData.data[srcIdx] > 128;
+            if (isWhite) {
+                const byteIdx = rowStart + Math.floor(x / 8);
+                const bitIdx = 7 - (x % 8);
+                view.setUint8(byteIdx, view.getUint8(byteIdx) | (1 << bitIdx));
+            }
+        }
+    }
+
+    return buffer;
+}
+
+function bmpDownload() {
+    if (!bmpState.processedImageData) return;
+    const imgData = bmpState.processedImageData;
+    const dpi = parseInt(document.getElementById('bmp-dpi').value, 10) || 300;
+    const buffer = generateBMP1bit(imgData, imgData.width, imgData.height, dpi);
+    const blob = new Blob([buffer], { type: 'image/bmp' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'laser_engraving.bmp';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+// --- Modal setup ---
+
+function setupBmpConverterModal() {
+    const modal = document.getElementById('bmp-converter-modal');
+    if (!modal) return;
+
+    // Close buttons
+    modal.querySelectorAll('[data-action="cancel"]').forEach(btn => {
+        btn.addEventListener('click', hideBmpConverterModal);
+    });
+    modal.querySelector('.modal-overlay').addEventListener('click', hideBmpConverterModal);
+    modal.querySelector('.modal-close').addEventListener('click', hideBmpConverterModal);
+
+    // Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            hideBmpConverterModal();
+        }
+    });
+
+    // File upload
+    document.getElementById('bmp-file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) bmpLoadImageFromFile(file);
+        e.target.value = ''; // reset so same file can be re-selected
+    });
+
+    // Use selected image
+    document.getElementById('bmp-use-selected').addEventListener('click', () => {
+        bmpLoadImageFromSelected();
+    });
+
+    // Algorithm change
+    document.getElementById('bmp-algorithm').addEventListener('change', () => {
+        bmpUpdateThresholdVisibility();
+        bmpScheduleUpdate();
+    });
+
+    // Sliders with value display
+    const sliderConfigs = [
+        { id: 'bmp-brightness', valId: 'bmp-brightness-val', format: v => v },
+        { id: 'bmp-contrast', valId: 'bmp-contrast-val', format: v => v },
+        { id: 'bmp-gamma', valId: 'bmp-gamma-val', format: v => parseFloat(v).toFixed(1) },
+        { id: 'bmp-threshold', valId: 'bmp-threshold-val', format: v => v },
+    ];
+    for (const cfg of sliderConfigs) {
+        const slider = document.getElementById(cfg.id);
+        const valDisplay = document.getElementById(cfg.valId);
+        slider.addEventListener('input', () => {
+            valDisplay.textContent = cfg.format(slider.value);
+            bmpScheduleUpdate();
+        });
+    }
+
+    // Invert checkbox
+    document.getElementById('bmp-invert').addEventListener('change', () => {
+        bmpScheduleUpdate();
+    });
+
+    // DPI change (no preview update needed, only affects export)
+
+    // Download button
+    document.getElementById('bmp-download-btn').addEventListener('click', () => {
+        bmpDownload();
+    });
 }
 
 // =============================================

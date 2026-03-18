@@ -43,6 +43,10 @@
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h14v14H3z"/><path d="M7 8h6M7 11h4"/></svg>
                             Importar nombres
                         </div>
+                        <div class="menu-option" data-action="bmp-converter">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h16v12H2z"/><circle cx="7" cy="9" r="2"/><path d="M2 14l4-4 3 3 4-5 5 6"/></svg>
+                            Convertir a BMP l&aacute;ser...
+                        </div>
                         <div class="menu-separator"></div>
                         <div class="menu-option" data-action="clear-all">
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
@@ -355,6 +359,113 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
                 <button class="btn btn-primary" data-action="import">Generar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BMP Laser Converter Modal -->
+    <div id="bmp-converter-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content bmp-modal-content">
+            <div class="modal-header">
+                <h3>Convertir a BMP l&aacute;ser</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body bmp-modal-body">
+                <!-- Image source -->
+                <div class="bmp-source-row">
+                    <label class="btn btn-ghost bmp-upload-btn" id="bmp-upload-label">
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 7l4-4 4 4"/></svg>
+                        Subir imagen
+                        <input type="file" id="bmp-file-input" accept="image/*" style="display:none">
+                    </label>
+                    <button class="btn btn-ghost bmp-use-selected-btn" id="bmp-use-selected" disabled>
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 10l2 2 4-4"/></svg>
+                        Usar imagen seleccionada
+                    </button>
+                </div>
+
+                <!-- Preview area -->
+                <div class="bmp-preview-area">
+                    <div class="bmp-preview-panel">
+                        <div class="bmp-preview-label">Original</div>
+                        <div class="bmp-preview-container">
+                            <canvas id="bmp-preview-original"></canvas>
+                        </div>
+                    </div>
+                    <div class="bmp-preview-panel">
+                        <div class="bmp-preview-label">Procesado</div>
+                        <div class="bmp-preview-container">
+                            <canvas id="bmp-preview-processed"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="bmp-controls">
+                    <div class="bmp-controls-row">
+                        <div class="form-group bmp-control-half">
+                            <label>Algoritmo</label>
+                            <select id="bmp-algorithm">
+                                <option value="threshold">Umbral</option>
+                                <option value="floyd-steinberg" selected>Floyd-Steinberg</option>
+                                <option value="atkinson">Atkinson</option>
+                                <option value="stucki">Stucki</option>
+                                <option value="jarvis">Jarvis-Judice-Ninke</option>
+                                <option value="bayer4">Bayer 4&times;4</option>
+                                <option value="bayer8">Bayer 8&times;8</option>
+                            </select>
+                        </div>
+                        <div class="form-group bmp-control-quarter">
+                            <label>DPI</label>
+                            <input type="number" id="bmp-dpi" value="300" min="72" max="2400" step="1">
+                        </div>
+                        <div class="form-group bmp-control-quarter bmp-invert-group">
+                            <label>Invertir</label>
+                            <label class="bmp-checkbox-wrap">
+                                <input type="checkbox" id="bmp-invert">
+                                <span class="bmp-checkbox-visual"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="bmp-sliders">
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Brillo</label>
+                                <span class="bmp-slider-value" id="bmp-brightness-val">0</span>
+                            </div>
+                            <input type="range" id="bmp-brightness" min="-100" max="100" value="0">
+                        </div>
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Contraste</label>
+                                <span class="bmp-slider-value" id="bmp-contrast-val">0</span>
+                            </div>
+                            <input type="range" id="bmp-contrast" min="-100" max="100" value="0">
+                        </div>
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Gamma</label>
+                                <span class="bmp-slider-value" id="bmp-gamma-val">1.0</span>
+                            </div>
+                            <input type="range" id="bmp-gamma" min="0.1" max="3.0" value="1.0" step="0.1">
+                        </div>
+                        <div class="bmp-slider-group" id="bmp-threshold-group">
+                            <div class="bmp-slider-header">
+                                <label>Umbral</label>
+                                <span class="bmp-slider-value" id="bmp-threshold-val">128</span>
+                            </div>
+                            <input type="range" id="bmp-threshold" min="0" max="255" value="128">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cerrar</button>
+                <button class="btn btn-primary" id="bmp-download-btn" disabled>
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 9l4 4 4-4"/></svg>
+                    Descargar BMP
+                </button>
             </div>
         </div>
     </div>
