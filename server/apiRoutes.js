@@ -3364,4 +3364,37 @@ router.post('/datos-envio', async (req, res) => {
     }
 });
 
+// --- Background Removal (server-side AI) ---
+let removeBackgroundFn = null;
+
+router.post('/remove-background', async (req, res) => {
+    try {
+        const { image } = req.body; // base64 data URL
+        if (!image) return res.status(400).json({ error: 'No image provided' });
+
+        // Lazy-load the library (model stays in memory after first call)
+        if (!removeBackgroundFn) {
+            const bgModule = await import('@imgly/background-removal-node');
+            removeBackgroundFn = bgModule.removeBackground || bgModule.default;
+        }
+
+        // Convert data URL to Blob for the library
+        const base64Data = image.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        const blob = new Blob([buffer], { type: 'image/png' });
+
+        const resultBlob = await removeBackgroundFn(blob);
+
+        // Convert result blob to base64 data URL
+        const arrayBuffer = await resultBlob.arrayBuffer();
+        const resultBuffer = Buffer.from(arrayBuffer);
+        const resultBase64 = `data:image/png;base64,${resultBuffer.toString('base64')}`;
+
+        res.json({ image: resultBase64 });
+    } catch (err) {
+        console.error('Background removal error:', err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 module.exports = router;

@@ -4850,52 +4850,52 @@ async function bgRemoveBackground(imageSource) {
     const progressSection = document.getElementById('bg-progress-section');
 
     progressSection.style.display = '';
-    progressEl.style.width = '5%';
+    progressEl.style.width = '10%';
     progressEl.classList.add('pulsing');
-    statusEl.textContent = 'Cargando librer\u00eda de IA...';
+    statusEl.textContent = 'Enviando imagen al servidor...';
 
     // Disable buttons during processing
     document.getElementById('bg-apply-btn').disabled = true;
     document.getElementById('bg-download-btn').disabled = true;
 
     try {
-        // Wait for the library to be available
-        if (!window.imglyRemoveBackground) {
-            statusEl.textContent = 'Cargando librer\u00eda...';
-            await new Promise((resolve, reject) => {
-                const check = setInterval(() => {
-                    if (window.imglyRemoveBackground) {
-                        clearInterval(check);
-                        resolve();
-                    }
-                }, 200);
-                setTimeout(() => {
-                    clearInterval(check);
-                    reject(new Error('No se pudo cargar la librer\u00eda de IA. Verifica tu conexi\u00f3n.'));
-                }, 30000);
+        // Convert image source to base64 data URL if needed
+        let base64Image = imageSource;
+        if (!imageSource.startsWith('data:')) {
+            const resp = await fetch(imageSource);
+            const imgBlob = await resp.blob();
+            base64Image = await new Promise(resolve => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result);
+                reader.readAsDataURL(imgBlob);
             });
         }
 
-        progressEl.style.width = '15%';
-        statusEl.textContent = 'Descargando modelo de IA (primera vez puede tardar)...';
+        progressEl.style.width = '30%';
+        statusEl.textContent = 'Procesando imagen con IA (puede tardar la primera vez)...';
 
-        const config = {
-            progress: (key, current, total) => {
-                if (total > 0) {
-                    const pct = Math.round((current / total) * 55) + 15;
-                    progressEl.style.width = Math.min(pct, 75) + '%';
-                }
-                if (key.includes('fetch')) {
-                    statusEl.textContent = 'Descargando modelo de IA...';
-                }
-                if (key === 'compute:inference' || key.includes('inference')) {
-                    statusEl.textContent = 'Procesando imagen...';
-                    progressEl.style.width = '80%';
-                }
-            },
-        };
+        const response = await fetch('/api/remove-background', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ image: base64Image }),
+        });
 
-        const blob = await window.imglyRemoveBackground(imageSource, config);
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.error || 'Error del servidor');
+        }
+
+        progressEl.style.width = '90%';
+        statusEl.textContent = 'Recibiendo resultado...';
+
+        const data = await response.json();
+
+        // Convert base64 result to blob
+        const base64 = data.image.split(',')[1];
+        const byteChars = atob(base64);
+        const byteArray = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) byteArray[i] = byteChars.charCodeAt(i);
+        const blob = new Blob([byteArray], { type: 'image/png' });
 
         progressEl.style.width = '100%';
         progressEl.classList.remove('pulsing');
