@@ -711,11 +711,11 @@ function openBmpModal(state, plog, drawCanvas) {
     const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
     document.getElementById('bmpModalAlgo').value = isBmp ? 'threshold' : 'atkinson';
     document.getElementById('bmpModalDpi').value = 1000;
-    document.getElementById('bmpModalDpiVal').textContent = '1000';
+    document.getElementById('bmpModalDpiNum').value = 1000;
     document.getElementById('bmpModalBright').value = 0;
-    document.getElementById('bmpModalBrightVal').textContent = '0';
+    document.getElementById('bmpModalBrightNum').value = 0;
     document.getElementById('bmpModalContrast').value = 0;
-    document.getElementById('bmpModalContrastVal').textContent = '0';
+    document.getElementById('bmpModalContrastNum').value = 0;
     document.getElementById('bmpModalInvert').checked = false;
     document.getElementById('bmpModalLoading').style.display = '';
     document.getElementById('bmpModalLoading').textContent = 'Renderizando...';
@@ -757,6 +757,8 @@ function bmpModalUpdatePreview() {
     const canvas = document.getElementById('bmpModalCanvas');
     canvas.width = c.width; canvas.height = c.height;
     canvas.getContext('2d').drawImage(c, 0, 0);
+    // Corregir aspect ratio: lineSpacing comprime la altura, estirar visualmente
+    canvas.style.aspectRatio = `${bmpModal.width} / ${bmpModal.height * bmpModal.lineSpacing}`;
     const dpi = parseInt(document.getElementById('bmpModalDpi').value);
     const dpmm = dpi / 25.4;
     const mmW = (bmpModal.width / dpmm).toFixed(1);
@@ -771,7 +773,8 @@ function bmpModalScheduleUpdate() {
 
 function bmpModalOnDpiChange() {
     if (!bmpModal.sourceImage || !bmpModal.panelState) return;
-    document.getElementById('bmpModalDpiVal').textContent = document.getElementById('bmpModalDpi').value;
+    // Sync slider ↔ number
+    document.getElementById('bmpModalDpiNum').value = document.getElementById('bmpModalDpi').value;
     document.getElementById('bmpModalLoading').style.display = '';
     document.getElementById('bmpModalLoading').textContent = 'Re-renderizando...';
     setTimeout(() => bmpModalRender(bmpModal.sourceImage, bmpModal.panelState), 30);
@@ -817,18 +820,21 @@ panels[1] = createPanel(1);
 document.getElementById('bmpModalCancel').addEventListener('click', closeBmpModal);
 document.getElementById('bmpModalFinish').addEventListener('click', bmpModalFinalize);
 document.getElementById('bmpModalAlgo').addEventListener('change', bmpModalScheduleUpdate);
-document.getElementById('bmpModalBright').addEventListener('input', e => {
-    document.getElementById('bmpModalBrightVal').textContent = e.target.value;
-    bmpModalScheduleUpdate();
-});
-document.getElementById('bmpModalContrast').addEventListener('input', e => {
-    document.getElementById('bmpModalContrastVal').textContent = e.target.value;
-    bmpModalScheduleUpdate();
-});
-document.getElementById('bmpModalDpi').addEventListener('input', e => {
-    document.getElementById('bmpModalDpiVal').textContent = e.target.value;
-});
+// Sync slider ↔ number input bidireccional
+function syncSliderNum(sliderId, numId, onChange) {
+    const slider = document.getElementById(sliderId);
+    const num = document.getElementById(numId);
+    slider.addEventListener('input', () => { num.value = slider.value; if (onChange) onChange(); });
+    num.addEventListener('input', () => {
+        const v = Math.max(+slider.min, Math.min(+slider.max, +num.value || 0));
+        slider.value = v; if (onChange) onChange();
+    });
+}
+syncSliderNum('bmpModalBright', 'bmpModalBrightNum', bmpModalScheduleUpdate);
+syncSliderNum('bmpModalContrast', 'bmpModalContrastNum', bmpModalScheduleUpdate);
+syncSliderNum('bmpModalDpi', 'bmpModalDpiNum');
 document.getElementById('bmpModalDpi').addEventListener('change', bmpModalOnDpiChange);
+document.getElementById('bmpModalDpiNum').addEventListener('change', bmpModalOnDpiChange);
 document.getElementById('bmpModalInvert').addEventListener('change', bmpModalScheduleUpdate);
 // Cerrar modal con Escape
 document.addEventListener('keydown', e => {
