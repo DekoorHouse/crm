@@ -3643,11 +3643,23 @@ function setupEventListeners() {
         const pt = screenToSVG(e.clientX, e.clientY);
         const obj = objectAtPoint(pt);
         if (obj && obj.type === 'text') {
-            // Double-click on text to edit text content
             editTextObject(obj, e);
+        } else if (obj && obj.type === 'powerclip') {
+            // Check if near the border of the container or on the fill
+            const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+            const borderThreshold = 8 * screenScale;
+            const ne = nearestEdgePoint(obj.container, pt);
+            if (ne && ne.dist <= borderThreshold) {
+                // Near border -> node edit on the container shape
+                // We need to enter node edit on the container directly
+                // Temporarily treat it as editing the powerclip's container
+                enterNodeEdit(obj.id);
+            } else {
+                // On fill -> enter powerclip edit mode
+                enterPowerClipEdit(obj.id);
+            }
         } else if (obj && ['rect', 'ellipse', 'line', 'bspline', 'curvepath'].includes(obj.type)) {
-            // Double-click on shape to enter node edit mode
-            if (state.nodeEditId === obj.id) return; // already in node edit for this object
+            if (state.nodeEditId === obj.id) return;
             enterNodeEdit(obj.id);
         }
     });
