@@ -99,7 +99,35 @@ function setupCanvas() {
     drawCanvas();
 }
 
-// Selección por arrastre (cualquier dirección, debe cubrir completamente el objeto)
+// Pan con click derecho
+let panStart = null;
+state.panX = 0;
+state.panY = 0;
+
+canvasWrapper.addEventListener('contextmenu', e => e.preventDefault());
+
+canvasWrapper.addEventListener('mousedown', (e) => {
+    if (e.button === 2) {
+        panStart = { x: e.clientX - state.panX, y: e.clientY - state.panY };
+        e.preventDefault();
+    }
+});
+
+window.addEventListener('mousemove', (e) => {
+    if (panStart) {
+        state.panX = e.clientX - panStart.x;
+        state.panY = e.clientY - panStart.y;
+        canvas.style.transform = `translate(${state.panX}px, ${state.panY}px)`;
+    }
+});
+
+window.addEventListener('mouseup', (e) => {
+    if (e.button === 2 && panStart) {
+        panStart = null;
+    }
+});
+
+// Selección por arrastre o click (botón izquierdo)
 let dragStart = null;
 let dragCurrent = null;
 
@@ -317,22 +345,13 @@ function drawCanvas() {
         // Guardar bounding box del contenido para selección y frame
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
-        // Dibujar diseño a color real con efecto neón en contornos
+        // Dibujar diseño con líneas azul neón
         ctx.save();
         ctx.globalAlpha = 0.9;
-        ctx.drawImage(img, drawX, drawY, drawW, drawH);
-        ctx.restore();
-
-        // Efecto neón en el contorno del bbox
-        ctx.save();
+        // Efecto neón: shadow glow en las líneas del propio SVG/imagen
         ctx.shadowColor = '#00d4ff';
-        ctx.shadowBlur = 12;
-        ctx.strokeStyle = 'rgba(0,212,255,0.6)';
-        ctx.lineWidth = 1.5;
-        ctx.strokeRect(dx, dy, dw, dh);
-        ctx.shadowBlur = 6;
-        ctx.strokeStyle = 'rgba(0,212,255,0.3)';
-        ctx.strokeRect(dx, dy, dw, dh);
+        ctx.shadowBlur = 8;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
         ctx.restore();
 
         // Selección: marching ants + handles + dimensiones por fuera
