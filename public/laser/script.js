@@ -26,7 +26,7 @@ const state = {
     posX: 0, posY: 0,
     mode:    'engrave',
     power:   50,
-    speed:   3,
+    speed:   10,
     lineSpacing: 4,  // slider value 1-10 → 0.025-0.25mm (paso raster en steps)
     passes:  1,
     pulse:   50,
@@ -334,9 +334,13 @@ function drawCanvas() {
         } else {
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
-            const fitScale = Math.min(WORK_W / imgW, WORK_H / imgH, 1);
-            mmW = imgW * fitScale;
-            mmH = imgH * fitScale;
+            // Convertir px a mm (96 DPI = 3.78 px/mm), luego limitar a la cama
+            const pxToMm = 25.4 / 96;
+            const realMmW = imgW * pxToMm;
+            const realMmH = imgH * pxToMm;
+            const fitScale = Math.min(WORK_W / realMmW, WORK_H / realMmH, 1);
+            mmW = realMmW * fitScale;
+            mmH = realMmH * fitScale;
             dw = (mmW / WORK_W) * W;
             dh = (mmH / WORK_H) * H;
             dx = (W - dw) / 2;
