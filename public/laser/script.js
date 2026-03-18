@@ -217,23 +217,49 @@ function drawCanvas() {
         let mmW, mmH;
 
         if (state.imageType === 'svg') {
-            // Leer dimensiones reales del SVG
+            // Leer dimensiones reales del SVG en mm
             if (state.svgText) {
                 const parser = new DOMParser();
                 const doc = parser.parseFromString(state.svgText, 'image/svg+xml');
                 const svg = doc.querySelector('svg');
+                const rawW = svg?.getAttribute('width')  || '';
+                const rawH = svg?.getAttribute('height') || '';
                 const vb = svg && svg.getAttribute('viewBox');
-                let svgW, svgH;
-                if (vb) {
+
+                // Intentar obtener dimensiones en mm
+                // Si el SVG tiene width/height con unidad "mm", usarlas directamente
+                // Si son px o sin unidad, convertir: 96px = 25.4mm (CSS standard)
+                let svgMmW, svgMmH;
+                if (rawW.includes('mm')) {
+                    svgMmW = parseFloat(rawW);
+                    svgMmH = parseFloat(rawH);
+                } else if (rawW.includes('in')) {
+                    svgMmW = parseFloat(rawW) * 25.4;
+                    svgMmH = parseFloat(rawH) * 25.4;
+                } else if (rawW.includes('cm')) {
+                    svgMmW = parseFloat(rawW) * 10;
+                    svgMmH = parseFloat(rawH) * 10;
+                } else if (parseFloat(rawW) > 0) {
+                    // px o sin unidad → convertir de px a mm (96 DPI)
+                    svgMmW = parseFloat(rawW) / 96 * 25.4;
+                    svgMmH = parseFloat(rawH) / 96 * 25.4;
+                } else if (vb) {
+                    // Solo viewBox, sin width/height → asumir unidades como px
                     const p = vb.split(/[\s,]+/).map(Number);
-                    svgW = p[2]; svgH = p[3];
+                    svgMmW = p[2] / 96 * 25.4;
+                    svgMmH = p[3] / 96 * 25.4;
                 } else {
-                    svgW = parseFloat(svg?.getAttribute('width'))  || WORK_W;
-                    svgH = parseFloat(svg?.getAttribute('height')) || WORK_H;
+                    svgMmW = WORK_W; svgMmH = WORK_H;
                 }
-                const fitScale = Math.min(WORK_W / svgW, WORK_H / svgH);
-                mmW = svgW * fitScale;
-                mmH = svgH * fitScale;
+
+                // Limitar al área de trabajo
+                if (svgMmW > WORK_W || svgMmH > WORK_H) {
+                    const fitScale = Math.min(WORK_W / svgMmW, WORK_H / svgMmH);
+                    svgMmW *= fitScale;
+                    svgMmH *= fitScale;
+                }
+                mmW = svgMmW;
+                mmH = svgMmH;
             } else {
                 mmW = WORK_W; mmH = WORK_H;
             }
@@ -605,25 +631,37 @@ laserTestBtn.addEventListener('click', () => {
 });
 
 // ===== SVG PATH EXTRACTION =====
+function svgToMmScale(svg) {
+    // Calcula el factor para convertir coordenadas SVG a mm reales
+    const rawW = svg.getAttribute('width')  || '';
+    const rawH = svg.getAttribute('height') || '';
+    const vb = svg.getAttribute('viewBox');
+    let vbW, vbH;
+    if (vb) {
+        const p = vb.split(/[\s,]+/).map(Number);
+        vbW = p[2]; vbH = p[3];
+    } else {
+        vbW = parseFloat(rawW) || WORK_W;
+        vbH = parseFloat(rawH) || WORK_H;
+    }
+
+    let mmW;
+    if (rawW.includes('mm'))      mmW = parseFloat(rawW);
+    else if (rawW.includes('in')) mmW = parseFloat(rawW) * 25.4;
+    else if (rawW.includes('cm')) mmW = parseFloat(rawW) * 10;
+    else if (parseFloat(rawW) > 0) mmW = parseFloat(rawW) / 96 * 25.4;
+    else                          mmW = vbW / 96 * 25.4;
+
+    return mmW / vbW; // factor: SVG coord × scale = mm
+}
+
 function extractSVGSegments(svgText) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgText, 'image/svg+xml');
     const svg = doc.querySelector('svg');
     if (!svg) return [];
 
-    // Determinar escala: SVG coords → mm en el área de trabajo
-    const vb = svg.getAttribute('viewBox');
-    let svgW, svgH;
-    if (vb) {
-        const parts = vb.split(/[\s,]+/).map(Number);
-        svgW = parts[2]; svgH = parts[3];
-    } else {
-        svgW = parseFloat(svg.getAttribute('width'))  || WORK_W;
-        svgH = parseFloat(svg.getAttribute('height')) || WORK_H;
-    }
-
-    // Escalar para que quepa en el área de trabajo manteniendo proporción
-    const scale = Math.min(WORK_W / svgW, WORK_H / svgH);
+    const scale = svgToMmScale(svg);
 
     // Insertar en DOM oculto para usar getPointAtLength
     const container = document.createElement('div');
