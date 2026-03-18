@@ -109,6 +109,10 @@ const state = {
     resizeObjBounds: null,
     resizeObjId: null,
 
+    isMarquee: false,
+    marqueeStart: null,
+    marqueeEl: null,
+
     // Node editing mode
     nodeEditId: null,       // ID of the object being node-edited
     nodeEditDragging: false,
@@ -1520,6 +1524,16 @@ function handleMouseMove(e) {
         }
         return;
     }
+    if (state.isMarquee) {
+        const sx = state.marqueeStart.x, sy = state.marqueeStart.y;
+        const mx = Math.min(sx, pt.x), my = Math.min(sy, pt.y);
+        const mw = Math.abs(pt.x - sx), mh = Math.abs(pt.y - sy);
+        state.marqueeEl.setAttribute('x', mx);
+        state.marqueeEl.setAttribute('y', my);
+        state.marqueeEl.setAttribute('width', mw);
+        state.marqueeEl.setAttribute('height', mh);
+        return;
+    }
     if (state.isResizing) { handleResizeMove(pt, e); return; }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
@@ -1538,6 +1552,31 @@ function handleMouseMove(e) {
 
 function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
+    if (state.isMarquee) {
+        state.isMarquee = false;
+        // Get marquee bounds
+        const sx = state.marqueeStart.x, sy = state.marqueeStart.y;
+        const pt = screenToSVG(event.clientX, event.clientY);
+        const mx = Math.min(sx, pt.x), my = Math.min(sy, pt.y);
+        const mw = Math.abs(pt.x - sx), mh = Math.abs(pt.y - sy);
+        // Remove marquee visual
+        if (state.marqueeEl) { state.marqueeEl.remove(); state.marqueeEl = null; }
+        // Only select if marquee has a meaningful size
+        if (mw > 2 && mh > 2) {
+            const newSel = [];
+            for (const obj of state.objects) {
+                const b = getObjBounds(obj);
+                // Object must be COMPLETELY inside the marquee
+                if (b.x >= mx && b.y >= my && b.x + b.w <= mx + mw && b.y + b.h <= my + mh) {
+                    newSel.push(obj.id);
+                }
+            }
+            state.selectedIds = newSel;
+            drawSelection();
+            updatePropsPanel();
+        }
+        return;
+    }
     if (state.nodeEditDragging) {
         state.nodeEditDragging = false;
         state.nodeEditIdx = -1;
@@ -1688,7 +1727,24 @@ function handleSelectDown(pt, e) {
             if (o) state.dragObjProps[id] = snapshotPos(o);
         }
     } else {
-        selectObject(null);
+        // Click on empty space -> start marquee selection
+        if (!e.shiftKey) selectObject(null);
+        state.isMarquee = true;
+        state.marqueeStart = { x: pt.x, y: pt.y };
+        // Create marquee rect in selection layer
+        const ns = 'http://www.w3.org/2000/svg';
+        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        state.marqueeEl = document.createElementNS(ns, 'rect');
+        state.marqueeEl.setAttribute('fill', 'rgba(124, 92, 240, 0.08)');
+        state.marqueeEl.setAttribute('stroke', '#7c5cf0');
+        state.marqueeEl.setAttribute('stroke-width', screenScale);
+        state.marqueeEl.setAttribute('stroke-dasharray', `${4*screenScale} ${2*screenScale}`);
+        state.marqueeEl.setAttribute('pointer-events', 'none');
+        state.marqueeEl.setAttribute('x', pt.x);
+        state.marqueeEl.setAttribute('y', pt.y);
+        state.marqueeEl.setAttribute('width', 0);
+        state.marqueeEl.setAttribute('height', 0);
+        selectionLayer.appendChild(state.marqueeEl);
     }
 }
 
@@ -2226,6 +2282,36 @@ function assignNewIds(obj) {
 }
 
 // =============================================
+// Z-ORDER (Bring to Front / Send to Back)
+// =============================================
+function bringToFront() {
+    if (state.selectedIds.length === 0) return;
+    saveUndoState();
+    for (const id of state.selectedIds) {
+        const idx = state.objects.findIndex(o => o.id === id);
+        if (idx === -1) continue;
+        const [obj] = state.objects.splice(idx, 1);
+        state.objects.push(obj);
+        if (obj.element) objectsLayer.appendChild(obj.element);
+    }
+    drawSelection();
+}
+
+function sendToBack() {
+    if (state.selectedIds.length === 0) return;
+    saveUndoState();
+    const ids = [...state.selectedIds].reverse();
+    for (const id of ids) {
+        const idx = state.objects.findIndex(o => o.id === id);
+        if (idx === -1) continue;
+        const [obj] = state.objects.splice(idx, 1);
+        state.objects.unshift(obj);
+        if (obj.element) objectsLayer.insertBefore(obj.element, objectsLayer.firstChild);
+    }
+    drawSelection();
+}
+
+// =============================================
 // POWERCLIP
 // =============================================
 // A PowerClip is a special object: { type:'powerclip', container: <shape obj>, contents: [<obj>...] }
@@ -2473,6 +2559,12 @@ function setupContextMenu() {
                 }
                 case 'convert-to-curves':
                     convertTextToCurves(contextTarget.id);
+                    break;
+                case 'bring-to-front':
+                    bringToFront();
+                    break;
+                case 'send-to-back':
+                    sendToBack();
                     break;
                 case 'delete':
                     for (const id of [...state.selectedIds]) deleteObject(id);
@@ -3127,6 +3219,8 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
         if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
+        if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
+        if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
             case 'v': setTool('select'); break;
             case 'r': setTool('rect'); break;
