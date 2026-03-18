@@ -664,10 +664,13 @@ function drawSelection() {
         r.setAttribute('stroke-dasharray', `${sw*4} ${sw*2}`);
         r.setAttribute('pointer-events', 'none');
         g.appendChild(r);
-        // Corner handles (squares)
+        // Corner handles (squares) — offset outward from bounds
+        const off = hs * 0.8; // offset distance outward
         const corners = [
-            [bounds.x, bounds.y], [bounds.x + bounds.w, bounds.y],
-            [bounds.x, bounds.y + bounds.h], [bounds.x + bounds.w, bounds.y + bounds.h],
+            [bounds.x - off, bounds.y - off],
+            [bounds.x + bounds.w + off, bounds.y - off],
+            [bounds.x - off, bounds.y + bounds.h + off],
+            [bounds.x + bounds.w + off, bounds.y + bounds.h + off],
         ];
         for (const [cx, cy] of corners) {
             const h = document.createElementNS(ns, 'rect');
@@ -677,12 +680,12 @@ function drawSelection() {
             h.setAttribute('stroke-width', sw); h.setAttribute('pointer-events', 'none');
             g.appendChild(h);
         }
-        // Midpoint handles (diamonds)
+        // Midpoint handles (diamonds) — offset outward
         const mids = [
-            [bounds.x + bounds.w/2, bounds.y],           // n
-            [bounds.x + bounds.w/2, bounds.y + bounds.h], // s
-            [bounds.x, bounds.y + bounds.h/2],             // w
-            [bounds.x + bounds.w, bounds.y + bounds.h/2],  // e
+            [bounds.x + bounds.w/2, bounds.y - off],           // n
+            [bounds.x + bounds.w/2, bounds.y + bounds.h + off], // s
+            [bounds.x - off, bounds.y + bounds.h/2],             // w
+            [bounds.x + bounds.w + off, bounds.y + bounds.h/2],  // e
         ];
         const ms = hs * 0.8;
         for (const [mx, my] of mids) {
@@ -1541,11 +1544,17 @@ function handleMouseMove(e) {
     // Snap indicators
     drawSnapIndicators(pt);
     if (state.tool === 'select' && !state.spaceHeld) {
-        const handle = getHandleAtPoint(pt);
-        if (handle) {
-            svg.style.cursor = HANDLE_CURSORS[handle.handle];
+        if (state.nodeEditId) {
+            // In node edit mode, show crosshair near nodes, otherwise default
+            const hit = nodeAtPoint(pt);
+            svg.style.cursor = hit ? 'crosshair' : 'default';
         } else {
-            svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+            const handle = getHandleAtPoint(pt);
+            if (handle) {
+                svg.style.cursor = HANDLE_CURSORS[handle.handle];
+            } else {
+                svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+            }
         }
     }
 }
@@ -1628,6 +1637,7 @@ function handleMouseUp() {
 
 // --- Resize handle detection ---
 function getHandleAtPoint(pt) {
+    if (state.nodeEditId) return null; // no resize handles in node edit mode
     if (state.selectedIds.length !== 1) return null;
     const obj = findObject(state.selectedIds[0]);
     if (!obj) return null;
@@ -1636,23 +1646,25 @@ function getHandleAtPoint(pt) {
     const cx = b.x + b.w/2, cy = b.y + b.h/2;
     const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
     const threshold = 8 * screenScale;
-    // Corner handles
+    const hs = state.viewBox.w * 0.007;
+    const off = hs * 0.8; // same offset as drawSelection
+    // Corner handles (offset outward)
     const corners = [
-        { name: 'nw', x: b.x, y: b.y },
-        { name: 'ne', x: b.x + b.w, y: b.y },
-        { name: 'sw', x: b.x, y: b.y + b.h },
-        { name: 'se', x: b.x + b.w, y: b.y + b.h },
+        { name: 'nw', x: b.x - off, y: b.y - off },
+        { name: 'ne', x: b.x + b.w + off, y: b.y - off },
+        { name: 'sw', x: b.x - off, y: b.y + b.h + off },
+        { name: 'se', x: b.x + b.w + off, y: b.y + b.h + off },
     ];
     for (const c of corners) {
         const rp = rotatePoint(c.x, c.y, cx, cy, rot);
         if (Math.hypot(pt.x - rp.x, pt.y - rp.y) <= threshold) return { handle: c.name, obj };
     }
-    // Midpoint handles
+    // Midpoint handles (offset outward)
     const mids = [
-        { name: 'n', x: b.x + b.w/2, y: b.y },
-        { name: 's', x: b.x + b.w/2, y: b.y + b.h },
-        { name: 'w', x: b.x, y: b.y + b.h/2 },
-        { name: 'e', x: b.x + b.w, y: b.y + b.h/2 },
+        { name: 'n', x: b.x + b.w/2, y: b.y - off },
+        { name: 's', x: b.x + b.w/2, y: b.y + b.h + off },
+        { name: 'w', x: b.x - off, y: b.y + b.h/2 },
+        { name: 'e', x: b.x + b.w + off, y: b.y + b.h/2 },
     ];
     for (const m of mids) {
         const rp = rotatePoint(m.x, m.y, cx, cy, rot);
