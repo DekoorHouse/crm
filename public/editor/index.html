@@ -488,6 +488,10 @@
             </div>
             <div class="modal-actions">
                 <button class="btn btn-ghost" data-action="cancel">Cerrar</button>
+                <button class="btn btn-primary" id="bmp-apply-editor-btn" disabled style="display:none">
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4 4 8-8"/></svg>
+                    Aplicar al editor
+                </button>
                 <button class="btn btn-primary" id="bmp-download-btn" disabled>
                     <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 9l4 4 4-4"/></svg>
                     Descargar BMP
@@ -558,35 +562,6 @@
                     <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 9l4 4 4-4"/></svg>
                     Descargar PNG
                 </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Convert to Bitmap Modal -->
-    <div id="convert-bitmap-modal" class="modal hidden">
-        <div class="modal-overlay"></div>
-        <div class="modal-content" style="min-width:320px;max-width:360px">
-            <div class="modal-header">
-                <h3>Convertir a mapa de bits</h3>
-                <button class="modal-close" data-action="cancel">&times;</button>
-            </div>
-            <div class="modal-body">
-                <div class="form-group">
-                    <label>Resoluci&oacute;n (DPI)</label>
-                    <div class="convert-bmp-dpi-row">
-                        <input type="number" id="convert-bmp-dpi" value="300" min="72" max="2400" step="1">
-                        <button class="btn btn-primary convert-bmp-apply" id="convert-bmp-apply" title="Aplicar DPI">
-                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4 4 8-8"/></svg>
-                        </button>
-                    </div>
-                </div>
-                <div class="convert-bmp-dpi-presets">
-                    <button class="btn btn-ghost convert-bmp-preset" data-dpi="72">72</button>
-                    <button class="btn btn-ghost convert-bmp-preset" data-dpi="150">150</button>
-                    <button class="btn btn-ghost convert-bmp-preset active" data-dpi="300">300</button>
-                    <button class="btn btn-ghost convert-bmp-preset" data-dpi="600">600</button>
-                </div>
-                <div class="convert-bmp-info" id="convert-bmp-info"></div>
             </div>
         </div>
     </div>
