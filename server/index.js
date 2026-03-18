@@ -2,6 +2,7 @@ const { app } = require('./config');
 const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
+const laserDitherRouter = require('./laser/ditherRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const path = require('path');
 const express = require('express');
@@ -21,6 +22,7 @@ app.get('/env-config.js', (req, res) => {
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
 app.use('/api/autopost', autoPostRouter);
+app.use('/api/laser', laserDitherRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));

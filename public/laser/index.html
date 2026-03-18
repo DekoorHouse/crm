@@ -294,6 +294,9 @@
                     <option value="floyd-steinberg">Floyd-Steinberg</option>
                     <option value="stucki">Stucki</option>
                     <option value="jarvis">Jarvis</option>
+                    <option value="sierra">Sierra</option>
+                    <option value="sierra-lite">Sierra Lite</option>
+                    <option value="burkes">Burkes</option>
                     <option value="halftone">Halftone</option>
                     <option value="bayer4">Bayer 4×4</option>
                     <option value="bayer8">Bayer 8×8</option>
@@ -312,9 +315,23 @@
                 <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">Contraste <input type="number" id="bmpModalContrastNum" value="0" min="-100" max="100" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
                 <input type="range" id="bmpModalContrast" min="-100" max="100" value="0" class="param-slider" style="width:100%;">
             </div>
-            <div style="display:flex;align-items:center;gap:6px;margin:8px 0;">
-                <input type="checkbox" id="bmpModalInvert" style="accent-color:#58a6ff;cursor:pointer;">
-                <label for="bmpModalInvert" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Invertir colores (acrílico)</label>
+            <div style="margin-bottom:8px;">
+                <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">Gamma <input type="number" id="bmpModalGammaNum" value="1.0" min="0.5" max="3.0" step="0.1" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
+                <input type="range" id="bmpModalGamma" min="0.5" max="3.0" value="1.0" step="0.1" class="param-slider" style="width:100%;">
+            </div>
+            <div style="display:flex;flex-direction:column;gap:4px;margin:8px 0;">
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="bmpModalClahe" style="accent-color:#58a6ff;cursor:pointer;">
+                    <label for="bmpModalClahe" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">CLAHE (ecualización adaptativa)</label>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="bmpModalUnsharp" style="accent-color:#58a6ff;cursor:pointer;">
+                    <label for="bmpModalUnsharp" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Unsharp Mask (nitidez)</label>
+                </div>
+                <div style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="bmpModalInvert" style="accent-color:#58a6ff;cursor:pointer;">
+                    <label for="bmpModalInvert" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Invertir colores (acrílico)</label>
+                </div>
             </div>
             <div id="bmpModalInfo" style="font-size:9px;color:#8b949e;margin:8px 0;padding:6px;background:rgba(0,0,0,0.3);border-radius:3px;"></div>
             <div style="display:flex;gap:6px;margin-top:12px;">

@@ -692,21 +692,49 @@ function ditherBayer(gray, out, w, h, size) {
     for(let y=0;y<h;y++) for(let x=0;x<w;x++) out[y*w+x]=gray[y*w+x]>((m[y%n][x%n]+0.5)/d)*255?255:0;
 }
 
-// ───────── BMP Modal ─────────
+// ───────── BMP Modal (Backend-powered) ─────────
 const bmpModal = {
     panelState: null, panelPlog: null, panelDrawCanvas: null,
-    sourceImage: null, grayData: null,
+    sessionId: null,
     width: 0, height: 0, offsetX: 0, offsetY: 0, lineSpacing: 1,
-    debounceTimer: null,
+    debounceTimer: null, abortCtrl: null,
+    previewImg: null, // <img> for showing base64 PNG previews
 };
 
-function openBmpModal(state, plog, drawCanvas) {
+function bmpModalGetOptions() {
+    return {
+        algorithm: document.getElementById('bmpModalAlgo').value,
+        brightness: parseInt(document.getElementById('bmpModalBright').value) || 0,
+        contrast: parseInt(document.getElementById('bmpModalContrast').value) || 0,
+        gamma: parseFloat(document.getElementById('bmpModalGamma').value) || 1.0,
+        invert: document.getElementById('bmpModalInvert').checked,
+        clahe: document.getElementById('bmpModalClahe').checked,
+        unsharp: document.getElementById('bmpModalUnsharp').checked,
+        threshold: 128,
+    };
+}
+
+function bmpModalFitCanvas() {
+    const canvas = document.getElementById('bmpModalCanvas');
+    if (!bmpModal.width || !bmpModal.height) return;
+    const container = document.getElementById('bmpModalPreviewArea');
+    const cW = container.clientWidth - 20, cH = container.clientHeight - 20;
+    const realAspect = bmpModal.width / (bmpModal.height * bmpModal.lineSpacing);
+    let dW, dH;
+    if (cW / cH > realAspect) { dH = cH; dW = dH * realAspect; }
+    else { dW = cW; dH = dW / realAspect; }
+    canvas.style.width = Math.round(dW) + 'px';
+    canvas.style.height = Math.round(dH) + 'px';
+}
+
+async function openBmpModal(state, plog, drawCanvas) {
     const modal = document.getElementById('bmpPreviewModal');
     modal.style.display = '';
     bmpModal.panelState = state;
     bmpModal.panelPlog = plog;
     bmpModal.panelDrawCanvas = drawCanvas;
     bmpModal.lineSpacing = state.lineSpacing;
+    bmpModal.sessionId = null;
     // Reset controls
     const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
     document.getElementById('bmpModalAlgo').value = isBmp ? 'threshold' : 'atkinson';
@@ -716,107 +744,177 @@ function openBmpModal(state, plog, drawCanvas) {
     document.getElementById('bmpModalBrightNum').value = 0;
     document.getElementById('bmpModalContrast').value = 0;
     document.getElementById('bmpModalContrastNum').value = 0;
+    document.getElementById('bmpModalGamma').value = 1.0;
+    document.getElementById('bmpModalGammaNum').value = 1.0;
     document.getElementById('bmpModalInvert').checked = false;
+    document.getElementById('bmpModalClahe').checked = false;
+    document.getElementById('bmpModalUnsharp').checked = false;
     document.getElementById('bmpModalLoading').style.display = '';
-    document.getElementById('bmpModalLoading').textContent = 'Renderizando...';
-    // Para SVGs, crear imagen transparente (sin fondo blanco)
-    if (state.imageType === 'svg' && state.svgText) {
-        createTransparentSvgImage(state.svgText, (timg) => {
-            bmpModalRender(timg || state.loadedImage, state);
-        });
-    } else {
-        bmpModalRender(state.loadedImage, state);
+    document.getElementById('bmpModalLoading').textContent = 'Subiendo imagen al servidor...';
+
+    // Upload image to backend
+    const formData = new FormData();
+    formData.append('image', state.loadedFile);
+    formData.append('dpi', '1000');
+    formData.append('lineSpacing', String(state.lineSpacing));
+    formData.append('algorithm', isBmp ? 'threshold' : 'atkinson');
+    if (state.imageType === 'svg' && state._svgBBox) {
+        const bb = state._svgBBox;
+        formData.append('bboxMmX', String(bb.mmX));
+        formData.append('bboxMmY', String(bb.mmY));
+        formData.append('bboxMmW', String(bb.mmW));
+        formData.append('bboxMmH', String(bb.mmH));
+    }
+
+    try {
+        const res = await fetch('/api/laser/dither/upload', { method: 'POST', body: formData });
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const data = await res.json();
+        bmpModal.sessionId = data.sessionId;
+        bmpModal.width = data.width;
+        bmpModal.height = data.height;
+        bmpModal.offsetX = data.offsetX;
+        bmpModal.offsetY = data.offsetY;
+        bmpModal.lineSpacing = data.lineSpacing;
+        document.getElementById('bmpModalLoading').style.display = 'none';
+        bmpModalShowPreview(data.preview, data.info);
+    } catch (err) {
+        document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
+        plog('Error upload: ' + err.message, 'error');
     }
 }
 
-function bmpModalRender(image, state) {
-    const dpmm = parseInt(document.getElementById('bmpModalDpi').value) / 25.4;
-    const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-    const result = renderImageToGray(image, bmpModal.lineSpacing, bbox, dpmm);
-    bmpModal.sourceImage = image;
-    bmpModal.grayData = result.gray;
-    bmpModal.width = result.width;
-    bmpModal.height = result.height;
-    bmpModal.offsetX = result.offsetX;
-    bmpModal.offsetY = result.offsetY;
-    document.getElementById('bmpModalLoading').style.display = 'none';
-    bmpModalUpdatePreview();
+function bmpModalShowPreview(base64Png, info) {
+    const canvas = document.getElementById('bmpModalCanvas');
+    const img = new Image();
+    img.onload = () => {
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        canvas.getContext('2d').drawImage(img, 0, 0);
+        bmpModalFitCanvas();
+    };
+    img.src = 'data:image/png;base64,' + base64Png;
+    if (info) document.getElementById('bmpModalInfo').textContent = info;
 }
 
-function bmpModalUpdatePreview() {
-    if (!bmpModal.grayData) return;
-    const options = {
-        brightness: parseInt(document.getElementById('bmpModalBright').value),
-        contrast: parseInt(document.getElementById('bmpModalContrast').value),
-        algorithm: document.getElementById('bmpModalAlgo').value,
-        invert: document.getElementById('bmpModalInvert').checked,
-        threshold: 128,
-    };
-    const processed = processGray(bmpModal.grayData, bmpModal.width, bmpModal.height, options);
-    const c = grayToCanvas(processed, bmpModal.width, bmpModal.height);
-    const canvas = document.getElementById('bmpModalCanvas');
-    canvas.width = c.width; canvas.height = c.height;
-    canvas.getContext('2d').drawImage(c, 0, 0);
-    // Ajustar tamaño visual para que quepa en el contenedor con aspect ratio correcto
-    const container = document.getElementById('bmpModalPreviewArea');
-    const cW = container.clientWidth - 20, cH = container.clientHeight - 20;
-    const realAspect = bmpModal.width / (bmpModal.height * bmpModal.lineSpacing);
-    let dW, dH;
-    if (cW / cH > realAspect) { dH = cH; dW = dH * realAspect; }
-    else { dW = cW; dH = dW / realAspect; }
-    canvas.style.width = Math.round(dW) + 'px';
-    canvas.style.height = Math.round(dH) + 'px';
-    const dpi = parseInt(document.getElementById('bmpModalDpi').value);
-    const dpmm = dpi / 25.4;
-    const mmW = (bmpModal.width / dpmm).toFixed(1);
-    const mmH = (bmpModal.height / dpmm * bmpModal.lineSpacing).toFixed(1);
-    document.getElementById('bmpModalInfo').textContent = `${bmpModal.width}×${bmpModal.height}px | ${mmW}×${mmH}mm | ${dpi} DPI`;
+async function bmpModalProcess() {
+    if (!bmpModal.sessionId) return;
+    if (bmpModal.abortCtrl) bmpModal.abortCtrl.abort();
+    bmpModal.abortCtrl = new AbortController();
+    document.getElementById('bmpModalLoading').style.display = '';
+    document.getElementById('bmpModalLoading').textContent = 'Procesando...';
+    const opts = { sessionId: bmpModal.sessionId, ...bmpModalGetOptions() };
+    try {
+        const res = await fetch('/api/laser/dither/process', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(opts), signal: bmpModal.abortCtrl.signal,
+        });
+        if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+        const data = await res.json();
+        bmpModal.width = data.width;
+        bmpModal.height = data.height;
+        document.getElementById('bmpModalLoading').style.display = 'none';
+        bmpModalShowPreview(data.preview, data.info);
+    } catch (err) {
+        if (err.name === 'AbortError') return; // Cancelled, new request coming
+        document.getElementById('bmpModalLoading').style.display = 'none';
+    }
 }
 
 function bmpModalScheduleUpdate() {
-    if (bmpModal.debounceTimer) cancelAnimationFrame(bmpModal.debounceTimer);
-    bmpModal.debounceTimer = requestAnimationFrame(bmpModalUpdatePreview);
+    if (bmpModal.debounceTimer) clearTimeout(bmpModal.debounceTimer);
+    bmpModal.debounceTimer = setTimeout(bmpModalProcess, 300);
 }
 
 function bmpModalOnDpiChange() {
-    if (!bmpModal.sourceImage || !bmpModal.panelState) return;
-    // Sync slider ↔ number
+    // DPI change requires re-upload (new resolution)
+    if (!bmpModal.panelState) return;
     document.getElementById('bmpModalDpiNum').value = document.getElementById('bmpModalDpi').value;
     document.getElementById('bmpModalLoading').style.display = '';
     document.getElementById('bmpModalLoading').textContent = 'Re-renderizando...';
-    setTimeout(() => bmpModalRender(bmpModal.sourceImage, bmpModal.panelState), 30);
+    // Re-upload with new DPI
+    const state = bmpModal.panelState;
+    const formData = new FormData();
+    formData.append('image', state.loadedFile);
+    formData.append('dpi', document.getElementById('bmpModalDpi').value);
+    formData.append('lineSpacing', String(bmpModal.lineSpacing));
+    formData.append('algorithm', document.getElementById('bmpModalAlgo').value);
+    if (state.imageType === 'svg' && state._svgBBox) {
+        const bb = state._svgBBox;
+        formData.append('bboxMmX', String(bb.mmX));
+        formData.append('bboxMmY', String(bb.mmY));
+        formData.append('bboxMmW', String(bb.mmW));
+        formData.append('bboxMmH', String(bb.mmH));
+    }
+    fetch('/api/laser/dither/upload', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            if (bmpModal.sessionId) fetch('/api/laser/dither/session/' + bmpModal.sessionId, { method: 'DELETE' });
+            bmpModal.sessionId = data.sessionId;
+            bmpModal.width = data.width;
+            bmpModal.height = data.height;
+            bmpModal.offsetX = data.offsetX;
+            bmpModal.offsetY = data.offsetY;
+            document.getElementById('bmpModalLoading').style.display = 'none';
+            bmpModalShowPreview(data.preview, data.info);
+            // Re-process with current options
+            bmpModalProcess();
+        })
+        .catch(err => {
+            document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
+        });
 }
 
-function bmpModalFinalize() {
-    const options = {
-        brightness: parseInt(document.getElementById('bmpModalBright').value),
-        contrast: parseInt(document.getElementById('bmpModalContrast').value),
-        algorithm: document.getElementById('bmpModalAlgo').value,
-        invert: document.getElementById('bmpModalInvert').checked,
-        threshold: 128,
-    };
-    const processed = processGray(bmpModal.grayData, bmpModal.width, bmpModal.height, options);
-    const bitmap = grayToBitmap(processed, bmpModal.width, bmpModal.height);
-    const pvCanvas = grayToCanvas(processed, bmpModal.width, bmpModal.height);
-    const state = bmpModal.panelState;
-    state.previewBitmapData = {
-        canvas: pvCanvas, width: bmpModal.width, height: bmpModal.height,
-        offsetX: bmpModal.offsetX, offsetY: bmpModal.offsetY,
-    };
-    state.rasterResult = {
-        bitmap, width: bmpModal.width, height: bmpModal.height,
-        offsetX: bmpModal.offsetX, offsetY: bmpModal.offsetY,
-    };
-    closeBmpModal();
-    if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
-    const dpmm = parseInt(document.getElementById('bmpModalDpi').value) / 25.4;
-    const mmW = (bmpModal.width / dpmm).toFixed(1), mmH = (bmpModal.height / dpmm * bmpModal.lineSpacing).toFixed(1);
-    if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${bmpModal.width}×${bmpModal.height}px → ${mmW}×${mmH}mm`, 'success');
+async function bmpModalFinalize() {
+    if (!bmpModal.sessionId) return;
+    document.getElementById('bmpModalLoading').style.display = '';
+    document.getElementById('bmpModalLoading').textContent = 'Generando bitmap final...';
+    const opts = { sessionId: bmpModal.sessionId, ...bmpModalGetOptions() };
+    try {
+        const res = await fetch('/api/laser/dither/finalize', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(opts),
+        });
+        if (!res.ok) throw new Error('Finalize failed');
+        const w = parseInt(res.headers.get('X-Bitmap-Width'));
+        const h = parseInt(res.headers.get('X-Bitmap-Height'));
+        const offX = parseFloat(res.headers.get('X-Offset-X'));
+        const offY = parseFloat(res.headers.get('X-Offset-Y'));
+        const bitmap = new Uint8Array(await res.arrayBuffer());
+
+        // Create preview canvas from the bitmap
+        const pvCanvas = document.createElement('canvas');
+        pvCanvas.width = w; pvCanvas.height = h;
+        const pvCx = pvCanvas.getContext('2d');
+        const imgData = pvCx.createImageData(w, h);
+        const d = imgData.data;
+        const rowBytes = Math.ceil(w / 8);
+        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+            const bit = (bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+            const idx = (y * w + x) * 4;
+            const v = bit ? 0 : 255;
+            d[idx] = v; d[idx + 1] = v; d[idx + 2] = v; d[idx + 3] = 255;
+        }
+        pvCx.putImageData(imgData, 0, 0);
+
+        const state = bmpModal.panelState;
+        state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY };
+        state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
+
+        closeBmpModal();
+        if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
+        if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${w}×${h}px`, 'success');
+    } catch (err) {
+        document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
+    }
 }
 
 function closeBmpModal() {
     document.getElementById('bmpPreviewModal').style.display = 'none';
-    bmpModal.grayData = null; bmpModal.sourceImage = null;
+    if (bmpModal.sessionId) {
+        fetch('/api/laser/dither/session/' + bmpModal.sessionId, { method: 'DELETE' }).catch(() => {});
+    }
+    bmpModal.sessionId = null;
 }
 
 // ───────── Init ─────────
@@ -839,10 +937,13 @@ function syncSliderNum(sliderId, numId, onChange) {
 }
 syncSliderNum('bmpModalBright', 'bmpModalBrightNum', bmpModalScheduleUpdate);
 syncSliderNum('bmpModalContrast', 'bmpModalContrastNum', bmpModalScheduleUpdate);
+syncSliderNum('bmpModalGamma', 'bmpModalGammaNum', bmpModalScheduleUpdate);
 syncSliderNum('bmpModalDpi', 'bmpModalDpiNum');
 document.getElementById('bmpModalDpi').addEventListener('change', bmpModalOnDpiChange);
 document.getElementById('bmpModalDpiNum').addEventListener('change', bmpModalOnDpiChange);
 document.getElementById('bmpModalInvert').addEventListener('change', bmpModalScheduleUpdate);
+document.getElementById('bmpModalClahe').addEventListener('change', bmpModalScheduleUpdate);
+document.getElementById('bmpModalUnsharp').addEventListener('change', bmpModalScheduleUpdate);
 // Cerrar modal con Escape
 document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.getElementById('bmpPreviewModal').style.display !== 'none') closeBmpModal();
