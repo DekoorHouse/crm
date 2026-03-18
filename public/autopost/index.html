@@ -407,7 +407,9 @@
 
     async function api(path, options = {}) {
       const res = await fetch(`${API}/api/autopost${path}`, options);
-      return res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+      return data;
     }
 
     function toast(message, type = 'success') {

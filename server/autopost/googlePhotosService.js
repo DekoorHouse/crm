@@ -25,13 +25,16 @@ async function handleAuthCallback(code) {
     const client = getOAuth2Client();
     const { tokens } = await client.getToken(code);
 
-    // Guardar refresh token en Firestore para persistencia
+    console.log('[GOOGLE PHOTOS] Tokens recibidos. refresh_token:', !!tokens.refresh_token, 'scope:', tokens.scope);
+
+    // Sobreescribir completamente los tokens (sin merge) para evitar tokens viejos
     await db.doc(SETTINGS_DOC).set({
         refreshToken: tokens.refresh_token,
         accessToken: tokens.access_token,
         expiryDate: tokens.expiry_date,
+        scope: tokens.scope,
         updatedAt: new Date()
-    }, { merge: true });
+    });
 
     console.log('[GOOGLE PHOTOS] Tokens guardados exitosamente en Firestore.');
     return tokens;
