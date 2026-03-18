@@ -93,101 +93,48 @@ class M2Nano {
 
         this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType} maxPkt=${this.epOut.descriptor.wMaxPacketSize}`);
 
-        // Inicializar CH341 en modo EPP (K40 Whisperer hace esto con pyusb).
-        // Sin este controlTransfer el CH341 no enruta los bulk writes 0xA6 al puerto
-        // paralelo EPP — los datos EGV nunca llegan a la placa aunque los USB ACK pasen.
-        // Esto cambia el status de 0xCE (estado interno CH341) a 0xCF (estado real M3 Nano).
+        // K40-Whisperer: ctrl_transfer(0x40, 177, 0x0102, 0, 0, 2000)
+        // Request 0xB1 (177), wValue 0x0102 — inicializa el CH341 para EPP.
+        // ANTES teníamos 0xA1 con wValue=0 que era INCORRECTO.
         try {
             await new Promise((resolve, reject) => {
-                this.device.controlTransfer(0x40, 0xA1, 0, 0, Buffer.alloc(0), err => err ? reject(err) : resolve());
+                this.device.controlTransfer(0x40, 0xB1, 0x0102, 0, Buffer.alloc(0), err => err ? reject(err) : resolve());
             });
-            this.log('CH341 init EPP (0xA1) OK.');
+            this.log('CH341 init (0xB1, 0x0102) OK.');
         } catch (e) {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
 
-        // ── Diagnóstico: probar múltiples formatos de paquete ──
-        await this._diagTestFormats();
+        // Leer datos pendientes del IN endpoint (como K40-Whisperer _read_data)
+        try {
+            await this.readStatus(200);
+            this.log('Flush IN endpoint OK.');
+        } catch (_) {
+            this.log('Flush IN endpoint: sin datos pendientes.');
+        }
+
+        // Say hello: enviar 0xA0 por EPP + leer status (como K40-Whisperer _say_hello)
+        try {
+            await this.sendPacket(Buffer.from([CMD_STATUS]));
+            await this.sendCommand(CMD_STATUS);
+            const resp = await this.readStatus(500);
+            const s = resp[1];
+            const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`Say hello: [${hex}] → 0x${s.toString(16).padStart(2, '0')}`);
+        } catch (e) {
+            this.log(`Say hello aviso: ${e.message}`);
+        }
+
+        // Unlock rail (IS2P) como K40-Whisperer
+        try {
+            await this.sendEGV('IS2P');
+            this.log('Unlock rail (IS2P) OK.');
+        } catch (e) {
+            this.log(`Unlock rail aviso: ${e.message}`);
+        }
     }
 
-    /**
-     * Prueba diagnóstica: envía "unlock rail" (IS2P) en 3 formatos distintos
-     * y reporta cuál hace que la placa cambie de estado.
-     */
-    async _diagTestFormats() {
-        this.log('─── DIAGNÓSTICO: probando formatos de paquete ───');
-
-        // Leer status inicial
-        const s0 = await this._readStatusByte();
-        this.log(`DIAG status inicial: 0x${s0.toString(16)}`);
-
-        // Datos de prueba: IS2P (unlock rail, como K40-Whisperer)
-        const payload = Buffer.from('IS2P', 'ascii');
-
-        // ── Formato A: MeerK40t (actual) → [0x00][payload+pad][CRC] = 32 bytes ──
-        {
-            const pkt = Buffer.alloc(32, 0x46);
-            pkt[0] = 0x00;
-            payload.copy(pkt, 1);
-            pkt[31] = crc8(pkt.subarray(1, 31));
-            await this._rawTransfer(pkt, 'FMT-A (MeerK40t 32B)');
-            await sleep(50);
-            const s = await this._readStatusByte();
-            this.log(`DIAG FMT-A status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
-        }
-
-        await sleep(100);
-
-        // ── Formato B: K40-Whisperer → [0xA6][0x00][payload+pad][0xA6][CRC] = 34 bytes ──
-        {
-            const pkt = Buffer.alloc(34, 0x46);
-            pkt[0] = 0xA6;
-            pkt[1] = 0x00;
-            payload.copy(pkt, 2);
-            pkt[32] = 0xA6;
-            pkt[33] = crc8(pkt.subarray(2, 32));
-            await this._rawTransfer(pkt, 'FMT-B (K40W 34B)');
-            await sleep(50);
-            const s = await this._readStatusByte();
-            this.log(`DIAG FMT-B status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
-        }
-
-        await sleep(100);
-
-        // ── Formato C: Híbrido → [0xA6][0x00][payload+pad(28B)][CRC] = 32 bytes ──
-        {
-            const pkt = Buffer.alloc(32, 0x46);
-            pkt[0] = 0xA6;
-            pkt[1] = 0x00;
-            payload.copy(pkt, 2);
-            pkt[31] = crc8(pkt.subarray(2, 31));
-            await this._rawTransfer(pkt, 'FMT-C (A6+28B=32)');
-            await sleep(50);
-            const s = await this._readStatusByte();
-            this.log(`DIAG FMT-C status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
-        }
-
-        await sleep(100);
-
-        // ── Formato D: Solo payload raw → [payload+pad] = 30 bytes (sin header ni CRC) ──
-        {
-            const pkt = Buffer.alloc(30, 0x46);
-            payload.copy(pkt, 0);
-            await this._rawTransfer(pkt, 'FMT-D (raw 30B)');
-            await sleep(50);
-            const s = await this._readStatusByte();
-            this.log(`DIAG FMT-D status después: 0x${s.toString(16)} ${s !== s0 ? '← CAMBIÓ!' : '(sin cambio)'}`);
-        }
-
-        this.log('─── FIN DIAGNÓSTICO ───');
-
-        // Enviar unlock_rail (IS2P) como hace K40-Whisperer al inicializar
-        this.log('Enviando unlock_rail (IS2P)...');
-        await this.sendEGV('IS2P');
-        await sleep(50);
-        const sUnlock = await this._readStatusByte();
-        this.log(`unlock_rail status: 0x${sUnlock.toString(16).padStart(2,'0')}`);
-    }
+    // (diagnóstico de formatos eliminado — ya no es necesario)
 
     /** Lee un byte de status rápidamente. Retorna -1 si falla. */
     async _readStatusByte() {
