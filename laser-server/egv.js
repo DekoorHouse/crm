@@ -131,13 +131,17 @@ function encodeLineSteps(dx, dy, laserOn) {
  * Genera EGV para corte vectorial.
  * @param {Array} segments  [{points:[{x,y},...], closed:bool}, ...]  coordenadas en mm
  * @param {number} speedMmS  velocidad en mm/s
+ * @param {number} offsetX  offset X en mm (posición actual del cabezal)
+ * @param {number} offsetY  offset Y en mm (posición actual del cabezal)
  * @returns {string} comando EGV completo
  */
-function generateVectorEGV(segments, speedMmS) {
+function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
     const speed = encodeSpeed(speedMmS, 0);
     let cmd = 'I' + speed + 'NRBS1E';
 
-    let curX = 0, curY = 0; // posición actual en steps
+    // curX/curY = 0 porque el EGV es relativo a la posición actual del cabezal.
+    // Las coordenadas del diseño (en mm) se suman al offset para posicionar correctamente.
+    let curX = 0, curY = 0; // posición en steps, relativo al punto de inicio
 
     for (const seg of segments) {
         if (seg.points.length < 2) continue;

@@ -164,9 +164,13 @@ async function runJob(msg) {
 
     let egvString;
 
+    // Usar posición actual del cabezal como origen del trabajo
+    const startX = laser.posX;
+    const startY = laser.posY;
+
     if (mode === 'cut' && msg.segments) {
-        send({ type: 'status', text: `Generando EGV vectorial: ${msg.segments.length} segmentos...`, level: 'info' });
-        egvString = egv.generateVectorEGV(msg.segments, speed);
+        send({ type: 'status', text: `Generando EGV vectorial: ${msg.segments.length} segmentos (desde X=${startX} Y=${startY})...`, level: 'info' });
+        egvString = egv.generateVectorEGV(msg.segments, speed, startX, startY);
     } else if (mode === 'engrave' && msg.raster) {
         // Esperar datos binarios del raster si no han llegado
         const maxWait = 5000;
@@ -178,8 +182,8 @@ async function runJob(msg) {
             throw new Error('No se recibieron datos raster del frontend.');
         }
         const { width, height, step, offsetX, offsetY } = msg.raster;
-        send({ type: 'status', text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
-        egvString = egv.generateRasterEGV(pendingRasterData, width, height, speed, step || 1, offsetX || 0, offsetY || 0);
+        send({ type: 'status', text: `Generando EGV raster: ${width}×${height}px (desde X=${startX} Y=${startY})...`, level: 'info' });
+        egvString = egv.generateRasterEGV(pendingRasterData, width, height, speed, step || 1, startX + (offsetX || 0), startY + (offsetY || 0));
         pendingRasterData = null;
     } else {
         throw new Error('Datos de trabajo incompletos. Se requiere segments (corte) o raster (grabado).');
@@ -194,8 +198,12 @@ async function runJob(msg) {
             send({ type: 'status', text: `Pasada ${pass + 1}/${passes}...`, level: 'info' });
         }
 
-        // Home antes de cada pasada
-        await laser.home();
+        // Volver a la posición de inicio (no al origen) para multi-pasada
+        if (pass > 0) {
+            const dx = startX - laser.posX;
+            const dy = startY - laser.posY;
+            if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+        }
 
         const result = await laser.sendEGVJob(egvString, {
             onProgress: (pct) => {
@@ -212,8 +220,12 @@ async function runJob(msg) {
         }
     }
 
-    // Home al finalizar
-    try { await laser.home(); } catch (_) {}
+    // Volver a posición de inicio del job
+    try {
+        const dx = startX - laser.posX;
+        const dy = startY - laser.posY;
+        if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+    } catch (_) {}
 
     jobState.running = false;
     send({ type: 'done' });
