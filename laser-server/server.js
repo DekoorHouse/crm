@@ -133,8 +133,20 @@ async function handleCommand(msg) {
 
             case 'stop':
                 jobState.stopped = true;
-                if (laser) await laser.estop();
-                send({ type: 'status', text: 'Trabajo detenido.', level: 'warning' });
+                if (laser) {
+                    await laser.estop();
+                    // Volver al punto de inicio del trabajo
+                    if (jobState.startX != null) {
+                        await sleep(500); // esperar a que el estop se procese
+                        try {
+                            const dx = jobState.startX - laser.posX;
+                            const dy = jobState.startY - laser.posY;
+                            if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+                            send({ type: 'position', x: laser.posX, y: laser.posY });
+                        } catch (_) {}
+                    }
+                }
+                send({ type: 'status', text: 'Trabajo detenido. Cabezal regresado al inicio.', level: 'warning' });
                 break;
 
             case 'pause':
@@ -160,13 +172,12 @@ async function handleCommand(msg) {
 
 async function runJob(msg) {
     const { mode, speed, passes } = msg;
-    jobState = { running: true, paused: false, stopped: false };
+    jobState = { running: true, paused: false, stopped: false, startX: laser.posX, startY: laser.posY };
 
     let egvString;
 
-    // Usar posición actual del cabezal como origen del trabajo
-    const startX = laser.posX;
-    const startY = laser.posY;
+    const startX = jobState.startX;
+    const startY = jobState.startY;
 
     if (mode === 'cut' && msg.segments) {
         send({ type: 'status', text: `Generando EGV vectorial: ${msg.segments.length} segmentos (desde X=${startX} Y=${startY})...`, level: 'info' });
