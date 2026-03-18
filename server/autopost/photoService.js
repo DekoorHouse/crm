@@ -12,13 +12,24 @@ async function fetchAvailablePhotos() {
             && file.name !== `${STORAGE_FOLDER}/`;
     });
 
-    return photos.map(file => ({
-        id: file.name,
-        filename: file.name.split('/').pop(),
-        mimeType: file.metadata.contentType || 'image/jpeg',
-        size: file.metadata.size,
-        createdAt: file.metadata.timeCreated
-    }));
+    // Generar URLs firmadas para thumbnails
+    const result = [];
+    for (const file of photos) {
+        const [url] = await file.getSignedUrl({
+            action: 'read',
+            expires: Date.now() + 24 * 60 * 60 * 1000 // 24 horas
+        });
+        result.push({
+            id: file.name,
+            filename: file.name.split('/').pop(),
+            mimeType: file.metadata.contentType || 'image/jpeg',
+            size: file.metadata.size,
+            createdAt: file.metadata.timeCreated,
+            thumbnailUrl: url
+        });
+    }
+
+    return result;
 }
 
 async function pickUnpostedPhoto(photos) {

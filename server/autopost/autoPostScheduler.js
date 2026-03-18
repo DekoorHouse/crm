@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config');
-const { fetchAvailablePhotos, pickUnpostedPhoto, downloadPhoto } = require('./photoService');
+const { fetchAvailablePhotos, pickUnpostedPhoto, downloadPhoto, deletePhoto } = require('./photoService');
 const { generateCaption } = require('./captionService');
 const { publishPhotoToPage } = require('./facebookPostService');
 
@@ -62,6 +62,15 @@ async function executeAutoPost() {
 
         await saveLog(logEntry);
         console.log(`[AUTOPOST] Publicacion exitosa! FB Post ID: ${fbPostId}`);
+
+        // Eliminar foto de Storage despues de publicar
+        try {
+            await deletePhoto(photo.id);
+            console.log(`[AUTOPOST] Foto eliminada de Storage: ${photo.filename}`);
+        } catch (delErr) {
+            console.error(`[AUTOPOST] Error eliminando foto: ${delErr.message}`);
+        }
+
         return logEntry;
 
     } catch (error) {
@@ -114,7 +123,8 @@ async function getLog(limit = 20) {
 
 function startScheduler() {
     const enabled = process.env.AUTOPOST_ENABLED === 'true';
-    const cronExpression = process.env.AUTOPOST_CRON || '0 9 * * *';
+    // Default: cada 3 horas de 9am a 9pm (9,12,15,18,21)
+    const cronExpression = process.env.AUTOPOST_CRON || '0 9,12,15,18,21 * * *';
 
     if (!enabled) {
         console.log('[AUTOPOST] Scheduler desactivado (AUTOPOST_ENABLED != true).');
@@ -148,7 +158,7 @@ function getSchedulerStatus() {
     return {
         enabled: process.env.AUTOPOST_ENABLED === 'true',
         running: scheduledTask !== null,
-        cron: process.env.AUTOPOST_CRON || '0 9 * * *',
+        cron: process.env.AUTOPOST_CRON || '0 9,12,15,18,21 * * *',
         timezone: 'America/Mexico_City'
     };
 }

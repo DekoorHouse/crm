@@ -231,7 +231,7 @@
 
         grid.innerHTML = data.photos.map(p => `
           <div class="photo-item">
-            <img src="https://storage.googleapis.com/${encodeURI('pedidos-con-gemini.firebasestorage.app/' + p.id)}" alt="${p.filename}" loading="lazy">
+            <img src="${p.thumbnailUrl}" alt="${p.filename}" loading="lazy">
             <div class="photo-name">${p.filename}</div>
             <button class="photo-delete" onclick="deletePhoto('${p.filename}')" title="Eliminar"><i class="fas fa-times"></i></button>
           </div>
