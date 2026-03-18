@@ -562,6 +562,17 @@ function deleteObject(id) {
 function findObject(id) { return state.objects.find(o => o.id === id); }
 
 function objectAtPoint(pt) {
+    // In powerclip edit mode, only content objects are selectable
+    if (pcEditingId) {
+        const pc = findObject(pcEditingId);
+        if (pc && pc._editContentIds) {
+            for (let i = state.objects.length - 1; i >= 0; i--) {
+                const obj = state.objects[i];
+                if (pc._editContentIds.includes(obj.id) && hitTest(obj, pt)) return obj;
+            }
+        }
+        return null;
+    }
     for (let i = state.objects.length - 1; i >= 0; i--) {
         if (hitTest(state.objects[i], pt)) return state.objects[i];
     }
@@ -1675,7 +1686,10 @@ function handleMouseUp() {
         // Only select if marquee has a meaningful size
         if (mw > 2 && mh > 2) {
             const newSel = [];
+            // In PC edit mode, only content objects are selectable
+            const editContentIds = pcEditingId ? (findObject(pcEditingId)?._editContentIds || []) : null;
             for (const obj of state.objects) {
+                if (editContentIds && !editContentIds.includes(obj.id)) continue;
                 const b = getObjBounds(obj);
                 // Object must be COMPLETELY inside the marquee
                 if (b.x >= mx && b.y >= my && b.x + b.w <= mx + mw && b.y + b.h <= my + mh) {
