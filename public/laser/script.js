@@ -352,20 +352,33 @@ function drawCanvas() {
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
         if (state.imageType === 'svg') {
-            // SVG: líneas en azul neón con glow
-            ctx.save();
-            ctx.globalAlpha = 0.15;
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.restore();
-            ctx.save();
-            ctx.globalAlpha = 1;
-            ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
-            ctx.shadowColor = '#00d4ff';
-            ctx.shadowBlur = 10;
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.shadowBlur = 4;
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.restore();
+            // Detectar si el SVG tiene imágenes embebidas (Power Clip de Corel, etc.)
+            const hasEmbeddedImages = state.svgText && /<image[\s>]/i.test(state.svgText);
+
+            if (hasEmbeddedImages) {
+                // SVG con imágenes: color normal + glow sutil
+                ctx.save();
+                ctx.shadowColor = '#00d4ff';
+                ctx.shadowBlur = 6;
+                ctx.globalAlpha = 0.9;
+                ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                ctx.restore();
+            } else {
+                // SVG solo vectores: líneas en azul neón con glow
+                ctx.save();
+                ctx.globalAlpha = 0.15;
+                ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                ctx.restore();
+                ctx.save();
+                ctx.globalAlpha = 1;
+                ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
+                ctx.shadowColor = '#00d4ff';
+                ctx.shadowBlur = 10;
+                ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                ctx.shadowBlur = 4;
+                ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                ctx.restore();
+            }
         } else {
             // Imágenes raster (PNG/BMP/JPG): color normal
             ctx.save();
