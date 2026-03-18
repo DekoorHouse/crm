@@ -1610,6 +1610,44 @@ function ungroupSelected() {
 }
 
 // =============================================
+// DUPLICATE
+// =============================================
+function duplicateSelected() {
+    if (state.selectedIds.length === 0) return;
+    saveUndoState();
+    const offset = 10; // px offset for the duplicate
+    const newIds = [];
+    for (const id of state.selectedIds) {
+        const obj = findObject(id);
+        if (!obj) continue;
+        const clone = JSON.parse(JSON.stringify(obj, (k, v) => k === 'element' ? undefined : v));
+        clone.id = state.nextId++;
+        // Assign new ids to children recursively
+        assignNewIds(clone);
+        offsetObject(clone, offset, offset);
+        const elem = buildSVGElement(clone);
+        clone.element = elem;
+        elem.dataset.objectId = clone.id;
+        objectsLayer.appendChild(elem);
+        state.objects.push(clone);
+        newIds.push(clone.id);
+    }
+    state.selectedIds = newIds;
+    drawSelection();
+    updatePropsPanel();
+}
+
+function assignNewIds(obj) {
+    if (obj.type === 'group' && obj.children) {
+        for (const c of obj.children) { c.id = state.nextId++; assignNewIds(c); }
+    }
+    if (obj.type === 'powerclip') {
+        if (obj.container) { obj.container.id = state.nextId++; assignNewIds(obj.container); }
+        if (obj.contents) { for (const c of obj.contents) { c.id = state.nextId++; assignNewIds(c); } }
+    }
+}
+
+// =============================================
 // POWERCLIP
 // =============================================
 // A PowerClip is a special object: { type:'powerclip', container: <shape obj>, contents: [<obj>...] }
@@ -2506,6 +2544,7 @@ function setupEventListeners() {
         // Group/Ungroup shortcuts
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
+        if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
         switch (e.key.toLowerCase()) {
             case 'v': setTool('select'); break;
             case 'r': setTool('rect'); break;
