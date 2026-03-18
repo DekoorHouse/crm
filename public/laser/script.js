@@ -230,8 +230,11 @@ function drawCanvas() {
         let dw, dh, dx, dy;
         let mmW, mmH;
 
+        // Variables para dibujar la imagen
+        let drawX, drawY, drawW, drawH;
+
         if (state.imageType === 'svg') {
-            // Calcular bbox real del CONTENIDO del SVG (no de la página)
+            // Calcular tamaño de página SVG en mm + bbox del contenido
             if (state.svgText && !state._svgBBox) {
                 const container = document.createElement('div');
                 container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
@@ -239,6 +242,19 @@ function drawCanvas() {
                 document.body.appendChild(container);
                 const liveSvg = container.querySelector('svg');
                 const scale = svgToMmScale(liveSvg);
+
+                // Tamaño de la página SVG en mm
+                const vb = liveSvg.getAttribute('viewBox');
+                let pageW, pageH;
+                if (vb) {
+                    const p = vb.split(/[\s,]+/).map(Number);
+                    pageW = p[2] * scale; pageH = p[3] * scale;
+                } else {
+                    pageW = (parseFloat(liveSvg.getAttribute('width'))  || 300) * scale;
+                    pageH = (parseFloat(liveSvg.getAttribute('height')) || 200) * scale;
+                }
+
+                // Bbox real del contenido
                 const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon,text,image,use,g');
                 let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
                 for (const el of shapes) {
@@ -252,26 +268,31 @@ function drawCanvas() {
                     } catch (_) {}
                 }
                 document.body.removeChild(container);
+
                 if (minX < Infinity) {
                     state._svgBBox = {
+                        pageMmW: pageW, pageMmH: pageH,
                         mmX: minX * scale, mmY: minY * scale,
                         mmW: (maxX - minX) * scale, mmH: (maxY - minY) * scale,
                     };
                 } else {
-                    state._svgBBox = { mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
+                    state._svgBBox = { pageMmW: pageW, pageMmH: pageH, mmX: 0, mmY: 0, mmW: pageW, mmH: pageH };
                 }
             }
-            const bb = state._svgBBox || { mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
+            const bb = state._svgBBox || { pageMmW: WORK_W, pageMmH: WORK_H, mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
             mmW = bb.mmW;
             mmH = bb.mmH;
-            // Posición del contenido dentro de la cama
-            const contentDx = (bb.mmX / WORK_W) * W;
-            const contentDy = (bb.mmY / WORK_H) * H;
+
+            // La imagen SVG se dibuja a escala 1:1 en mm (sin estirar)
+            drawW = (bb.pageMmW / WORK_W) * W;
+            drawH = (bb.pageMmH / WORK_H) * H;
+            drawX = 0; drawY = 0;
+
+            // Bbox del contenido dentro de esa imagen
+            dx = (bb.mmX / WORK_W) * W;
+            dy = (bb.mmY / WORK_H) * H;
             dw = (mmW / WORK_W) * W;
             dh = (mmH / WORK_H) * H;
-            // Dibujar el SVG completo mapeado a la cama, pero el bbox es solo del contenido
-            dx = contentDx;
-            dy = contentDy;
         } else {
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
@@ -282,16 +303,11 @@ function drawCanvas() {
             dh = (mmH / WORK_H) * H;
             dx = (W - dw) / 2;
             dy = (H - dh) / 2;
+            drawX = dx; drawY = dy; drawW = dw; drawH = dh;
         }
 
         // Guardar bounding box del contenido para selección y frame
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
-
-        // Para SVG: dibujar la imagen completa mapeada a la cama, bbox es solo del contenido
-        const drawX = state.imageType === 'svg' ? 0 : dx;
-        const drawY = state.imageType === 'svg' ? 0 : dy;
-        const drawW = state.imageType === 'svg' ? W : dw;
-        const drawH = state.imageType === 'svg' ? H : dh;
 
         ctx.save();
         if (state.mode === 'cut') {
