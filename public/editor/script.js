@@ -3155,6 +3155,7 @@ function handleWheel(e) {
     state.viewBox.y = pt.y - (pt.y - state.viewBox.y) * factor;
     state.viewBox.w = newW; state.viewBox.h = newH;
     updateViewBox();
+    snapLayer.innerHTML = '';
     if (state.selectedIds.length) { drawSelection(); updatePowerClipMenu(); }
 }
 
