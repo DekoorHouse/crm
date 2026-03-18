@@ -17,7 +17,7 @@ const DEVICES = [
 
 const EP_OUT       = 0x02;   // Bulk OUT → máquina
 const EP_IN        = 0x82;   // Bulk IN  ← máquina
-const PKT_SIZE     = 34;     // Tamaño de paquete USB (34 bytes, formato K40-Whisperer — confirmado por diagnóstico)
+const PKT_SIZE     = 34;     // Tamaño de paquete USB (34 bytes, formato K40-Whisperer)
 const CMD_PKT_SIZE = 32;     // Tamaño de paquete de comando (sin CRC)
 const DATA_SIZE    = 30;     // Bytes de datos por paquete (payload)
 const PKT_FRAME    = 0xA6;   // Byte de framing (header y footer del paquete EGV)
@@ -134,20 +134,6 @@ class M2Nano {
         }
     }
 
-    // (diagnóstico de formatos eliminado — ya no es necesario)
-
-    /** Lee un byte de status rápidamente. Retorna -1 si falla. */
-    async _readStatusByte() {
-        try {
-            await this.sendPacket(Buffer.from([CMD_STATUS]));  // hello EPP
-            await this.sendCommand(CMD_STATUS);                 // read CH341
-            const resp = await this.readStatus(300);
-            return resp[1];
-        } catch (_) {
-            return -1;
-        }
-    }
-
     /** Libera el dispositivo USB. */
     disconnect() {
         try { if (this.iface) this.iface.release(true, () => {}); } catch (_) {}
@@ -161,28 +147,7 @@ class M2Nano {
     // ───────── Comunicación de bajo nivel ─────────
 
     /**
-     * Envía un buffer raw por USB y retorna el resultado.
-     * @param {Buffer} pkt  buffer completo a enviar
-     * @param {string} label  etiqueta para logs
-     */
-    _rawTransfer(pkt, label = 'PKT') {
-        return new Promise((resolve, reject) => {
-            const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
-            this.log(`${label} TX [${pkt.length}B]: ${hex}`);
-            this.epOut.transfer(pkt, err => {
-                if (err) {
-                    this.log(`${label} ERROR: ${err.message}`);
-                    reject(err);
-                } else {
-                    this.log(`${label} TX OK (${pkt.length} bytes)`);
-                    resolve();
-                }
-            });
-        });
-    }
-
-    /**
-     * Envía un paquete de datos EGV de 34 bytes (formato K40-Whisperer, confirmado por diagnóstico FMT-B).
+     * Envía un paquete de datos EGV de 34 bytes (formato K40-Whisperer).
      * Formato: [0xA6][0x00][payload (30 bytes)][0xA6][CRC-8]
      */
     sendPacket(data, logFirst = false) {
@@ -202,12 +167,8 @@ class M2Nano {
             }
 
             this.epOut.transfer(pkt, err => {
-                if (err) {
-                    this.log(`PKT WRITE ERROR: ${err.message}`);
-                    reject(err);
-                } else {
-                    resolve();
-                }
+                if (err) reject(err);
+                else resolve();
             });
         });
     }
@@ -244,17 +205,6 @@ class M2Nano {
         ]);
     }
 
-    /**
-     * "say_hello" como K40-Whisperer: envía 0xA0 por EPP (paquete 34B)
-     * para que la placa reciba el hello, luego lee status via CH341.
-     * K40-Whisperer: _device_write([160]) → _read_data()
-     */
-    async sayHello() {
-        await this.sendPacket(Buffer.from([CMD_STATUS]));  // 0xA0 envuelto en paquete EPP
-        await this.sendCommand(CMD_STATUS);                 // Leer status via CH341
-        return this.readStatus(500);
-    }
-
     /** Espera a que la máquina esté lista. */
     async waitReady(timeout = 6000, readTimeout = 500) {
         const deadline = Date.now() + timeout;
@@ -289,7 +239,7 @@ class M2Nano {
     async sendEGV(cmd) {
         const bytes = Buffer.from(cmd, 'ascii');
         const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
-        this.log(`sendEGV: ${bytes.length} bytes → ${totalPkts} paquete(s) cmd="${cmd}"`);
+        this.log(`sendEGV: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             const pktIdx = Math.floor(i / DATA_SIZE);
@@ -297,9 +247,6 @@ class M2Nano {
             this.log(`  PKT[${pktIdx}/${totalPkts - 1}]: ${chunk.length} bytes enviados`);
             await sleep(5);
         }
-        // Leer status inmediatamente después de enviar para ver si la placa reaccionó
-        const postStatus = await this._readStatusByte();
-        this.log(`sendEGV done → status: 0x${postStatus.toString(16).padStart(2,'0')}`);
     }
 
     // ───────── Comandos de alto nivel ─────────
