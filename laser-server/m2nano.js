@@ -64,24 +64,35 @@ class M2Nano {
     /**
      * Busca y abre un dispositivo USB.
      * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
+     * @param {Set} [usedDevices]  set de devices ya abiertos (para evitar duplicados)
      */
-    async connect(deviceIndex = 0) {
-        const devices = M2Nano.listDevices();
+    async connect(deviceIndex = 0, usedDevices = new Set()) {
+        // Usar findByIds iterando VID/PIDs conocidos, saltando los ya usados
+        let found = null;
+        let skipped = 0;
+        for (const d of DEVICES) {
+            // getDeviceList + filter para encontrar todos con este VID/PID
+            const allDevs = usb.getDeviceList().filter(dev => {
+                const desc = dev.deviceDescriptor;
+                return desc.idVendor === d.vid && desc.idProduct === d.pid && !usedDevices.has(dev);
+            });
+            for (const dev of allDevs) {
+                if (skipped < deviceIndex) { skipped++; continue; }
+                found = { dev, name: d.name };
+                break;
+            }
+            if (found) break;
+        }
 
-        if (devices.length === 0) {
+        if (!found) {
             throw new Error(
-                'M2 Nano no encontrado.\n' +
-                '→ Verifica la conexión USB.\n' +
-                '→ En Windows instala el driver WinUSB con Zadig (https://zadig.akeo.ie/).'
+                deviceIndex === 0
+                    ? 'M2 Nano no encontrado.\n→ Verifica la conexión USB.\n→ En Windows instala el driver WinUSB con Zadig.'
+                    : `Dispositivo #${deviceIndex} no encontrado.`
             );
         }
 
-        if (deviceIndex >= devices.length) {
-            throw new Error(`Dispositivo #${deviceIndex} no encontrado. Solo hay ${devices.length} dispositivo(s) conectado(s).`);
-        }
-
-        const found = devices[deviceIndex];
-        this.log(`Dispositivo #${deviceIndex} encontrado: ${found.name} (bus=${found.busNumber} addr=${found.deviceAddress})`);
+        this.log(`Dispositivo #${deviceIndex} encontrado: ${found.name}`);
         this.device = found.dev;
         this.device.open();
 

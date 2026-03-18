@@ -76,8 +76,14 @@ async function connectMachine(id) {
 
     m.laser = new M2Nano((msg) => log(`[M${id}] ${msg}`));
 
+    // Recopilar dispositivos ya abiertos por otras máquinas
+    const usedDevices = new Set();
+    for (const [otherId, other] of Object.entries(machines)) {
+        if (+otherId !== id && other.laser && other.laser.device) usedDevices.add(other.laser.device);
+    }
+
     try {
-        await m.laser.connect(id);
+        await m.laser.connect(id, usedDevices);
         send({ type: 'machine_ready', machine: id, ok: true });
         log(`[M${id}] ¡Máquina conectada por USB!`, 'success');
     } catch (err) {
