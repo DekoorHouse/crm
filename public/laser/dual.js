@@ -1,0 +1,478 @@
+/**
+ * Laser Dual Controller
+ * Instancia 2 paneles independientes, uno por máquina.
+ */
+const WORK_W = 400, WORK_H = 400;
+let ws = null;
+const panels = {};
+
+// ───────── Crear paneles ─────────
+function createPanel(id) {
+    const tpl = document.getElementById('machinePanelTemplate').innerHTML
+        .replace(/__ID__/g, id)
+        .replace(/__NUM__/g, id + 1);
+    const div = document.createElement('div');
+    div.innerHTML = tpl;
+    const el = div.firstElementChild;
+    document.getElementById('dualWorkspace').appendChild(el);
+
+    // Refs
+    const ref = (name) => el.querySelector(`[data-ref="${name}"]`);
+    const canvas = ref('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const state = {
+        id,
+        connected: false,
+        posX: 0, posY: 0,
+        mode: 'engrave',
+        speed: 10,
+        lineSpacing: 4,
+        passes: 1,
+        jogStep: 1,
+        loadedFile: null,
+        loadedImage: null,
+        imageType: null,
+        svgText: null,
+        _svgBBox: null,
+        designBox: null,
+        designSelected: false,
+        jobRunning: false,
+    };
+
+    let canvasW = 100, canvasH = 100;
+
+    function setupCanvas() {
+        const wrapper = ref('canvasWrapper');
+        const maxW = wrapper.clientWidth * 0.95;
+        const maxH = wrapper.clientHeight * 0.95;
+        const aspect = WORK_W / WORK_H;
+        let w = maxW, h = w / aspect;
+        if (h > maxH) { h = maxH; w = h * aspect; }
+        canvasW = w; canvasH = h;
+        const dpr = window.devicePixelRatio || 1;
+        canvas.width = w * dpr; canvas.height = h * dpr;
+        canvas.style.width = w + 'px'; canvas.style.height = h + 'px';
+        ctx.scale(dpr, dpr);
+        drawCanvas();
+    }
+
+    function drawCanvas() {
+        const W = canvasW, H = canvasH;
+        ctx.clearRect(0, 0, W, H);
+        ctx.fillStyle = '#111827';
+        ctx.fillRect(0, 0, W, H);
+
+        // Grid
+        const gx = W / (WORK_W / 10), gy = H / (WORK_H / 10);
+        ctx.strokeStyle = 'rgba(88,166,255,0.07)'; ctx.lineWidth = 0.5;
+        for (let x = 0; x <= W; x += gx) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,H); ctx.stroke(); }
+        for (let y = 0; y <= H; y += gy) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke(); }
+        ctx.strokeStyle = 'rgba(88,166,255,0.35)'; ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, W-1, H-1);
+
+        // Origin
+        ctx.fillStyle = '#3fb950';
+        ctx.beginPath(); ctx.arc(4, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // Loaded design
+        if (state.loadedImage) {
+            const img = state.loadedImage;
+            let dw, dh, dx, dy, drawX, drawY, drawW, drawH, mmW, mmH;
+
+            if (state.imageType === 'svg') {
+                if (state.svgText && !state._svgBBox) computeSvgBBox(state);
+                const bb = state._svgBBox || { pageMmW: WORK_W, pageMmH: WORK_H, mmX: 0, mmY: 0, mmW: WORK_W, mmH: WORK_H };
+                mmW = bb.mmW; mmH = bb.mmH;
+                drawW = (bb.pageMmW / WORK_W) * W; drawH = (bb.pageMmH / WORK_H) * H;
+                drawX = 0; drawY = 0;
+                dx = (bb.mmX / WORK_W) * W; dy = (bb.mmY / WORK_H) * H;
+                dw = (mmW / WORK_W) * W; dh = (mmH / WORK_H) * H;
+            } else {
+                const imgW = img.naturalWidth || img.width;
+                const imgH = img.naturalHeight || img.height;
+                const pxToMm = 25.4 / 96;
+                const rW = imgW * pxToMm, rH = imgH * pxToMm;
+                const fit = Math.min(WORK_W / rW, WORK_H / rH, 1);
+                mmW = rW * fit; mmH = rH * fit;
+                dw = (mmW / WORK_W) * W; dh = (mmH / WORK_H) * H;
+                dx = (W - dw) / 2; dy = (H - dh) / 2;
+                drawX = dx; drawY = dy; drawW = dw; drawH = dh;
+            }
+
+            state.designBox = { dx, dy, dw, dh, mmW, mmH };
+
+            // Draw image
+            if (state.imageType === 'svg') {
+                const hasImg = state.svgText && /<image[\s>]/i.test(state.svgText);
+                if (hasImg) {
+                    ctx.save(); ctx.shadowColor = '#00d4ff'; ctx.shadowBlur = 6;
+                    ctx.globalAlpha = 0.9; ctx.drawImage(img, drawX, drawY, drawW, drawH); ctx.restore();
+                } else {
+                    ctx.save(); ctx.globalAlpha = 0.15; ctx.drawImage(img, drawX, drawY, drawW, drawH); ctx.restore();
+                    ctx.save(); ctx.globalAlpha = 1;
+                    ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
+                    ctx.shadowColor = '#00d4ff'; ctx.shadowBlur = 10;
+                    ctx.drawImage(img, drawX, drawY, drawW, drawH);
+                    ctx.shadowBlur = 4; ctx.drawImage(img, drawX, drawY, drawW, drawH); ctx.restore();
+                }
+            } else {
+                ctx.save(); ctx.globalAlpha = 0.9;
+                ctx.drawImage(img, drawX, drawY, drawW, drawH); ctx.restore();
+            }
+
+            // Selection
+            if (state.designSelected) {
+                const pad = 3;
+                const offset = (Date.now() / 60) % 16;
+                ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 2; ctx.setLineDash([]);
+                ctx.strokeRect(dx-pad, dy-pad, dw+pad*2, dh+pad*2);
+                ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 2; ctx.setLineDash([6,4]); ctx.lineDashOffset = -offset;
+                ctx.strokeRect(dx-pad, dy-pad, dw+pad*2, dh+pad*2);
+                ctx.setLineDash([]); ctx.lineDashOffset = 0;
+
+                // Handles
+                const hs = 4; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1;
+                for (const [hx,hy] of [[dx,dy],[dx+dw,dy],[dx,dy+dh],[dx+dw,dy+dh],[dx+dw/2,dy],[dx+dw/2,dy+dh],[dx,dy+dh/2],[dx+dw,dy+dh/2]]) {
+                    ctx.fillRect(hx-hs,hy-hs,hs*2,hs*2); ctx.strokeRect(hx-hs,hy-hs,hs*2,hs*2);
+                }
+
+                // Dimension labels
+                ctx.font = 'bold 10px JetBrains Mono, monospace';
+                ctx.fillStyle = '#58a6ff'; ctx.textAlign = 'center';
+                ctx.fillText(`${mmW.toFixed(1)} mm`, dx + dw/2, dy - pad - 4);
+                ctx.save(); ctx.translate(dx - pad - 10, dy + dh/2); ctx.rotate(-Math.PI/2);
+                ctx.fillText(`${mmH.toFixed(1)} mm`, 0, 0); ctx.restore();
+                ctx.textAlign = 'start';
+
+                if (!state._animFrame) {
+                    state._animFrame = requestAnimationFrame(function tick() {
+                        if (state.designSelected) { drawCanvas(); state._animFrame = requestAnimationFrame(tick); }
+                        else state._animFrame = null;
+                    });
+                }
+            } else if (state._animFrame) { cancelAnimationFrame(state._animFrame); state._animFrame = null; }
+        }
+    }
+
+    // ───────── File handling ─────────
+    const dropZone = ref('dropZone');
+    const fileInput = ref('fileInput');
+
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.style.borderColor = '#58a6ff'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.borderColor = ''; });
+    dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = ''; if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
+    fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
+
+    ref('removeFileBtn').addEventListener('click', () => {
+        state.loadedFile = null; state.loadedImage = null; state.imageType = null;
+        state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null;
+        ref('fileInfo').style.display = 'none'; dropZone.style.display = '';
+        drawCanvas();
+    });
+
+    function loadFile(file) {
+        const ext = file.name.split('.').pop().toLowerCase();
+        if (!['svg','png','jpg','jpeg','bmp'].includes(ext)) { plog('Formato no soportado', 'error'); return; }
+        const reader = new FileReader();
+        if (ext === 'svg') {
+            reader.onload = e => {
+                state.svgText = e.target.result; state._svgBBox = null;
+                const blob = new Blob([e.target.result], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                img.onload = () => {
+                    state.loadedImage = img; state.imageType = 'svg'; state.loadedFile = file;
+                    state.designSelected = false;
+                    ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
+                    URL.revokeObjectURL(url); drawCanvas();
+                    plog(`SVG: ${file.name}`, 'success');
+                };
+                img.src = url;
+            };
+            reader.readAsText(file);
+        } else {
+            reader.onload = e => {
+                const img = new Image();
+                img.onload = () => {
+                    state.loadedImage = img; state.imageType = 'raster'; state.loadedFile = file;
+                    state.designSelected = false;
+                    ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
+                    drawCanvas();
+                    plog(`Img: ${file.name}`, 'success');
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+    }
+
+    // ───────── Canvas interaction ─────────
+    let dragStart = null;
+    const wrapper = ref('canvasWrapper');
+
+    wrapper.addEventListener('mousedown', e => {
+        if (e.button === 2) return; // skip right click
+        dragStart = canvasCoord(e);
+        state.designSelected = false; drawCanvas();
+    });
+    window.addEventListener('mousemove', e => {
+        if (!dragStart) return;
+        const cur = canvasCoord(e);
+        drawCanvas();
+        const sx = Math.min(dragStart.x, cur.x), sy = Math.min(dragStart.y, cur.y);
+        const sw = Math.abs(cur.x - dragStart.x), sh = Math.abs(cur.y - dragStart.y);
+        if (sw > 2 || sh > 2) {
+            ctx.strokeStyle = '#58a6ff'; ctx.lineWidth = 1; ctx.setLineDash([4,3]);
+            ctx.strokeRect(sx, sy, sw, sh); ctx.setLineDash([]);
+            ctx.fillStyle = 'rgba(88,166,255,0.08)'; ctx.fillRect(sx, sy, sw, sh);
+        }
+    });
+    window.addEventListener('mouseup', e => {
+        if (!dragStart) return;
+        const start = dragStart, end = canvasCoord(e);
+        dragStart = null;
+        const sx = Math.min(start.x, end.x), sy = Math.min(start.y, end.y);
+        const sw = Math.abs(end.x - start.x), sh = Math.abs(end.y - start.y);
+        if (state.designBox) {
+            const b = state.designBox;
+            if (sw <= 5 && sh <= 5) {
+                if (start.x >= b.dx && start.x <= b.dx+b.dw && start.y >= b.dy && start.y <= b.dy+b.dh) state.designSelected = true;
+            } else if (sx <= b.dx && sy <= b.dy && sx+sw >= b.dx+b.dw && sy+sh >= b.dy+b.dh) {
+                state.designSelected = true;
+            }
+        }
+        drawCanvas();
+    });
+
+    function canvasCoord(e) {
+        const r = canvas.getBoundingClientRect();
+        return { x: (e.clientX - r.left) * (canvasW / r.width), y: (e.clientY - r.top) * (canvasH / r.height) };
+    }
+    wrapper.addEventListener('contextmenu', e => e.preventDefault());
+
+    // ───────── Controls ─────────
+    // Mode
+    ref('modeEngrave').addEventListener('click', () => {
+        state.mode = 'engrave';
+        ref('modeEngrave').style.cssText = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer';
+        ref('modeCut').style.cssText = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer';
+    });
+    ref('modeCut').addEventListener('click', () => {
+        state.mode = 'cut';
+        ref('modeCut').style.cssText = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer';
+        ref('modeEngrave').style.cssText = 'flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer';
+    });
+
+    // Sliders
+    ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedLabel').textContent = `${state.speed} mm/s`; });
+    ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
+    ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
+
+    // Jog
+    el.querySelectorAll('[data-jog]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (!ws) return;
+            const v = btn.dataset.jog;
+            if (v === 'home') { sendCmd({ cmd: 'home', machine: id }); return; }
+            const [dx, dy] = v.split(',').map(Number);
+            sendCmd({ cmd: 'jog', machine: id, dx: dx * state.jogStep, dy: dy * state.jogStep });
+        });
+    });
+    el.querySelectorAll('[data-step]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.jogStep = +btn.dataset.step;
+            el.querySelectorAll('[data-step]').forEach(b => b.classList.toggle('active', b === btn));
+        });
+    });
+
+    // Job controls
+    ref('frameBtn').addEventListener('click', () => sendCmd({ cmd: 'frame', machine: id }));
+    ref('startBtn').addEventListener('click', () => startJob());
+    ref('pauseBtn').addEventListener('click', () => {
+        state.jobRunning ? sendCmd({ cmd: state.jobPaused ? 'resume' : 'pause', machine: id }) : null;
+        state.jobPaused = !state.jobPaused;
+    });
+    ref('stopBtn').addEventListener('click', () => { sendCmd({ cmd: 'stop', machine: id }); state.jobRunning = false; });
+    ref('estopBtn').addEventListener('click', () => { sendCmd({ cmd: 'estop', machine: id }); state.jobRunning = false; });
+
+    function startJob() {
+        if (!state.loadedFile || !ws) return;
+        state.jobRunning = true;
+        plog(`Iniciando ${state.mode}...`, 'success');
+
+        if (state.mode === 'cut' && state.imageType === 'svg' && state.svgText) {
+            const segments = extractSVGSegments(state.svgText);
+            if (!segments.length) { plog('Sin trazos SVG', 'error'); return; }
+            sendCmd({ cmd: 'start', machine: id, mode: 'cut', speed: state.speed, passes: state.passes, segments });
+        } else {
+            const rd = extractRasterBitmap(state.loadedImage);
+            sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
+                raster: { width: rd.width, height: rd.height, step: state.lineSpacing, offsetX: 0, offsetY: 0 } });
+            ws.send(rd.bitmap.buffer);
+        }
+    }
+
+    // ───────── Console ─────────
+    function plog(msg, level = 'cmd') {
+        const c = ref('console');
+        const d = document.createElement('div');
+        d.className = `log ${level}`;
+        d.textContent = msg;
+        c.appendChild(d);
+        c.scrollTop = c.scrollHeight;
+        if (c.children.length > 100) c.removeChild(c.firstChild);
+    }
+
+    // ───────── Handle messages from server ─────────
+    function handleMessage(msg) {
+        if (msg.type === 'machine_ready') {
+            state.connected = msg.ok;
+            ref('statusDot').classList.toggle('connected', msg.ok);
+            plog(msg.ok ? 'Conectado' : (msg.error || 'Error'), msg.ok ? 'success' : 'error');
+        } else if (msg.type === 'position') {
+            state.posX = msg.x; state.posY = msg.y;
+            ref('posDisplay').textContent = `X: ${msg.x.toFixed(1)}  Y: ${msg.y.toFixed(1)}`;
+        } else if (msg.type === 'progress') {
+            ref('progressFill').style.width = msg.pct + '%';
+        } else if (msg.type === 'done') {
+            state.jobRunning = false;
+            ref('progressFill').style.width = '0%';
+            plog('Completado', 'success');
+        } else if (msg.type === 'status') {
+            plog(msg.text, msg.level);
+        }
+    }
+
+    return { state, setupCanvas, drawCanvas, handleMessage, plog, el };
+}
+
+// ───────── SVG helpers (shared) ─────────
+function svgToMmScale(svg) {
+    const rawW = svg.getAttribute('width') || '';
+    const vb = svg.getAttribute('viewBox');
+    let vbW;
+    if (vb) { vbW = vb.split(/[\s,]+/).map(Number)[2]; }
+    else { vbW = parseFloat(rawW) || 400; }
+    let mmW;
+    if (rawW.includes('mm')) mmW = parseFloat(rawW);
+    else if (rawW.includes('in')) mmW = parseFloat(rawW) * 25.4;
+    else if (rawW.includes('cm')) mmW = parseFloat(rawW) * 10;
+    else if (parseFloat(rawW) > 0) mmW = parseFloat(rawW) / 96 * 25.4;
+    else mmW = vbW / 96 * 25.4;
+    return mmW / vbW;
+}
+
+function computeSvgBBox(state) {
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+    container.innerHTML = state.svgText;
+    document.body.appendChild(container);
+    const liveSvg = container.querySelector('svg');
+    const scale = svgToMmScale(liveSvg);
+    const vb = liveSvg.getAttribute('viewBox');
+    let pageW, pageH;
+    if (vb) { const p = vb.split(/[\s,]+/).map(Number); pageW = p[2]*scale; pageH = p[3]*scale; }
+    else { pageW = (parseFloat(liveSvg.getAttribute('width'))||300)*scale; pageH = (parseFloat(liveSvg.getAttribute('height'))||200)*scale; }
+    const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon,text,image,use,g');
+    let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+    for (const el of shapes) { try { const b=el.getBBox(); if(b.width===0&&b.height===0)continue; minX=Math.min(minX,b.x); minY=Math.min(minY,b.y); maxX=Math.max(maxX,b.x+b.width); maxY=Math.max(maxY,b.y+b.height); } catch(_){} }
+    document.body.removeChild(container);
+    if (minX < Infinity) state._svgBBox = { pageMmW:pageW, pageMmH:pageH, mmX:minX*scale, mmY:minY*scale, mmW:(maxX-minX)*scale, mmH:(maxY-minY)*scale };
+    else state._svgBBox = { pageMmW:pageW, pageMmH:pageH, mmX:0, mmY:0, mmW:pageW, mmH:pageH };
+}
+
+function extractSVGSegments(svgText) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) return [];
+    const scale = svgToMmScale(svg);
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+    container.innerHTML = svgText;
+    document.body.appendChild(container);
+    const liveSvg = container.querySelector('svg');
+    const segments = [];
+    const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon');
+    for (const el of shapes) {
+        const points = [];
+        if (el.getTotalLength) {
+            const len = el.getTotalLength();
+            const step = Math.max(0.5, len / 500);
+            for (let d = 0; d <= len; d += step) { const p = el.getPointAtLength(d); points.push({ x: p.x*scale, y: p.y*scale }); }
+            const pEnd = el.getPointAtLength(len); points.push({ x: pEnd.x*scale, y: pEnd.y*scale });
+        }
+        if (points.length >= 2) {
+            const closed = ['polygon','rect','circle','ellipse'].includes(el.tagName) || /[zZ]\s*$/.test(el.getAttribute('d')||'');
+            segments.push({ points, closed });
+        }
+    }
+    document.body.removeChild(container);
+    return segments;
+}
+
+function extractRasterBitmap(image) {
+    const imgW = image.naturalWidth || image.width;
+    const imgH = image.naturalHeight || image.height;
+    const pxToMm = 25.4 / 96;
+    const rW = imgW * pxToMm, rH = imgH * pxToMm;
+    const fit = Math.min(WORK_W / rW, WORK_H / rH, 1);
+    const mmW = rW * fit, mmH = rH * fit;
+    const DPI = 39.37;
+    const pxW = Math.round(mmW * DPI), pxH = Math.round(mmH * DPI);
+    const c = document.createElement('canvas'); c.width = pxW; c.height = pxH;
+    const cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0,0,pxW,pxH); cx.drawImage(image,0,0,pxW,pxH);
+    const id = cx.getImageData(0,0,pxW,pxH); const px = id.data;
+    const gray = new Uint8Array(pxW*pxH);
+    for (let i=0;i<pxW*pxH;i++) gray[i] = Math.round(0.299*px[i*4]+0.587*px[i*4+1]+0.114*px[i*4+2]);
+    for (let y=0;y<pxH;y++) for (let x=0;x<pxW;x++) {
+        const idx=y*pxW+x; const old=gray[idx]; const nw=old<128?0:255; gray[idx]=nw; const err=old-nw;
+        if(x+1<pxW) gray[idx+1]+=err*7/16;
+        if(y+1<pxH&&x>0) gray[(y+1)*pxW+x-1]+=err*3/16;
+        if(y+1<pxH) gray[(y+1)*pxW+x]+=err*5/16;
+        if(y+1<pxH&&x+1<pxW) gray[(y+1)*pxW+x+1]+=err*1/16;
+    }
+    const rowBytes = Math.ceil(pxW/8);
+    const bitmap = new Uint8Array(rowBytes*pxH);
+    for (let y=0;y<pxH;y++) for (let x=0;x<pxW;x++) if(gray[y*pxW+x]===0) bitmap[y*rowBytes+Math.floor(x/8)]|=(1<<(7-(x%8)));
+    return { bitmap, width: pxW, height: pxH, step: 1, offsetX: 0, offsetY: 0 };
+}
+
+// ───────── Init ─────────
+panels[0] = createPanel(0);
+panels[1] = createPanel(1);
+
+function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+
+document.getElementById('connectBtn').addEventListener('click', () => {
+    if (ws && ws.readyState === 1) { ws.close(); return; }
+    ws = new WebSocket('ws://localhost:7654');
+    ws.onopen = () => {
+        document.getElementById('connectBtn').innerHTML = '<i class="fas fa-plug"></i> Desconectar';
+        document.getElementById('connectBtn').classList.add('active');
+    };
+    ws.onmessage = (e) => {
+        if (typeof e.data !== 'string') return;
+        const msg = JSON.parse(e.data);
+        const machineId = msg.machine != null ? msg.machine : null;
+        if (machineId != null && panels[machineId]) {
+            panels[machineId].handleMessage(msg);
+        } else {
+            // Broadcast to both
+            panels[0].handleMessage(msg);
+            panels[1].handleMessage(msg);
+        }
+    };
+    ws.onclose = () => {
+        ws = null;
+        document.getElementById('connectBtn').innerHTML = '<i class="fas fa-plug"></i> Conectar';
+        document.getElementById('connectBtn').classList.remove('active');
+        panels[0].plog('Desconectado', 'warning');
+        panels[1].plog('Desconectado', 'warning');
+    };
+});
+
+window.addEventListener('resize', () => { panels[0].setupCanvas(); panels[1].setupCanvas(); });
+setTimeout(() => { panels[0].setupCanvas(); panels[1].setupCanvas(); }, 100);

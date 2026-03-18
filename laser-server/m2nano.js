@@ -38,15 +38,37 @@ class M2Nano {
         this._posY     = 0;
     }
 
-    /** Busca y abre el dispositivo USB. Retorna Promise (async por el init CH341). */
-    async connect() {
-        let found = null;
-        for (const d of DEVICES) {
-            const dev = usb.findByIds(d.vid, d.pid);
-            if (dev) { found = { dev, name: d.name }; break; }
+    /**
+     * Lista todos los dispositivos M2 Nano conectados.
+     * @returns {Array<{dev, name, busNumber, deviceAddress}>}
+     */
+    static listDevices() {
+        const allDevices = usb.getDeviceList();
+        const found = [];
+        for (const dev of allDevices) {
+            const desc = dev.deviceDescriptor;
+            for (const d of DEVICES) {
+                if (desc.idVendor === d.vid && desc.idProduct === d.pid) {
+                    found.push({
+                        dev,
+                        name: d.name,
+                        busNumber: dev.busNumber,
+                        deviceAddress: dev.deviceAddress,
+                    });
+                }
+            }
         }
+        return found;
+    }
 
-        if (!found) {
+    /**
+     * Busca y abre un dispositivo USB.
+     * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
+     */
+    async connect(deviceIndex = 0) {
+        const devices = M2Nano.listDevices();
+
+        if (devices.length === 0) {
             throw new Error(
                 'M2 Nano no encontrado.\n' +
                 '→ Verifica la conexión USB.\n' +
@@ -54,7 +76,12 @@ class M2Nano {
             );
         }
 
-        this.log(`Dispositivo encontrado: ${found.name}`);
+        if (deviceIndex >= devices.length) {
+            throw new Error(`Dispositivo #${deviceIndex} no encontrado. Solo hay ${devices.length} dispositivo(s) conectado(s).`);
+        }
+
+        const found = devices[deviceIndex];
+        this.log(`Dispositivo #${deviceIndex} encontrado: ${found.name} (bus=${found.busNumber} addr=${found.deviceAddress})`);
         this.device = found.dev;
         this.device.open();
 

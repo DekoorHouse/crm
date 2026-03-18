@@ -10,6 +10,166 @@
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/laser/style.css">
+    <style>
+        /* Dual panel layout */
+        .dual-workspace {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 4px;
+            height: calc(100vh - 48px);
+            overflow: hidden;
+        }
+        .machine-panel {
+            display: grid;
+            grid-template-rows: auto 1fr auto;
+            overflow: hidden;
+            border: 1px solid rgba(88,166,255,0.15);
+            border-radius: 4px;
+            background: var(--bg-primary);
+        }
+        .machine-panel .panel-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 10px;
+            background: rgba(88,166,255,0.06);
+            border-bottom: 1px solid rgba(88,166,255,0.15);
+            font-size: 12px;
+            font-weight: 600;
+            gap: 8px;
+        }
+        .machine-panel .panel-header .machine-title {
+            color: #58a6ff;
+            font-size: 13px;
+        }
+        .machine-panel .panel-header .machine-status-dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: #f85149;
+            display: inline-block;
+        }
+        .machine-panel .panel-header .machine-status-dot.connected {
+            background: #3fb950;
+        }
+        .machine-panel .panel-body {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            overflow: hidden;
+        }
+        .machine-panel .panel-controls {
+            overflow-y: auto;
+            padding: 6px;
+            font-size: 11px;
+            border-right: 1px solid rgba(88,166,255,0.1);
+        }
+        .machine-panel .panel-controls .panel-section {
+            margin-bottom: 8px;
+            padding: 6px;
+        }
+        .machine-panel .panel-controls h3 {
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+        .machine-panel .panel-controls .setting-group {
+            margin-bottom: 4px;
+        }
+        .machine-panel .panel-controls .setting-group label {
+            font-size: 10px;
+        }
+        .machine-panel .canvas-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .machine-panel canvas {
+            cursor: crosshair;
+        }
+        .machine-panel .panel-footer {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px;
+            padding: 4px 6px;
+            border-top: 1px solid rgba(88,166,255,0.15);
+            background: rgba(22,27,34,0.6);
+            font-size: 10px;
+            max-height: 120px;
+        }
+        .machine-panel .ctrl-row {
+            display: flex;
+            gap: 3px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .machine-panel .ctrl-row button {
+            padding: 3px 8px;
+            font-size: 10px;
+            border-radius: 3px;
+            border: 1px solid rgba(88,166,255,0.3);
+            background: rgba(88,166,255,0.08);
+            color: #c9d1d9;
+            cursor: pointer;
+        }
+        .machine-panel .ctrl-row button:hover { background: rgba(88,166,255,0.2); }
+        .machine-panel .ctrl-row button.start { border-color: #3fb950; color: #3fb950; }
+        .machine-panel .ctrl-row button.stop { border-color: #f85149; color: #f85149; }
+        .machine-panel .ctrl-row button.estop {
+            background: #f85149; color: #fff; border-color: #f85149; font-weight: 700;
+        }
+        .machine-panel .mini-console {
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 9px;
+            color: #8b949e;
+            max-height: 110px;
+            line-height: 1.3;
+            padding: 2px 4px;
+        }
+        .machine-panel .mini-console .log { margin: 1px 0; }
+        .machine-panel .mini-console .log.success { color: #3fb950; }
+        .machine-panel .mini-console .log.error { color: #f85149; }
+        .machine-panel .mini-console .log.warning { color: #d29922; }
+
+        .machine-panel .jog-mini {
+            display: grid;
+            grid-template-columns: repeat(3, 24px);
+            grid-template-rows: repeat(3, 24px);
+            gap: 2px;
+            justify-content: center;
+        }
+        .machine-panel .jog-mini button {
+            padding: 0; width: 24px; height: 24px;
+            font-size: 9px; text-align: center;
+            border-radius: 3px;
+            border: 1px solid rgba(88,166,255,0.3);
+            background: rgba(88,166,255,0.08);
+            color: #c9d1d9; cursor: pointer;
+        }
+        .machine-panel .jog-mini button:hover { background: rgba(88,166,255,0.2); }
+        .machine-panel .jog-mini button.home-btn { background: rgba(88,166,255,0.15); }
+
+        .machine-panel .pos-display {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 10px;
+            color: #58a6ff;
+            text-align: center;
+            padding: 2px 0;
+        }
+        .machine-panel .step-row {
+            display: flex; gap: 2px; justify-content: center; margin-top: 2px;
+        }
+        .machine-panel .step-row button {
+            padding: 1px 6px; font-size: 9px; border-radius: 2px;
+            border: 1px solid rgba(88,166,255,0.2); background: none; color: #8b949e; cursor: pointer;
+        }
+        .machine-panel .step-row button.active { background: rgba(88,166,255,0.2); color: #58a6ff; border-color: #58a6ff; }
+
+        .machine-panel .progress-bar {
+            height: 3px; background: rgba(88,166,255,0.1); border-radius: 2px; overflow: hidden;
+            margin-top: 3px;
+        }
+        .machine-panel .progress-bar .fill { height: 100%; background: #58a6ff; width: 0%; transition: width 0.3s; }
+    </style>
 </head>
 <body>
 
@@ -17,222 +177,109 @@
 <header>
     <div class="header-left">
         <img src="/favicon.png" alt="Dekoor" class="logo">
-        <span class="app-title"><i class="fas fa-crosshairs"></i> Laser K40</span>
+        <span class="app-title"><i class="fas fa-crosshairs"></i> Laser Dual</span>
     </div>
     <div class="header-center">
-        <div class="machine-status" id="machineStatus">
-            <span class="status-dot"></span>
-            <span class="status-text" id="statusText">Desconectado</span>
-        </div>
-    </div>
-    <div class="header-right">
         <button class="btn-connect" id="connectBtn">
             <i class="fas fa-plug"></i> Conectar
         </button>
     </div>
+    <div class="header-right">
+        <span style="color:#8b949e;font-size:12px">Área: 400×400mm</span>
+    </div>
 </header>
 
-<!-- Workspace -->
-<div class="workspace">
+<!-- Dual workspace -->
+<div class="dual-workspace" id="dualWorkspace"></div>
 
-    <!-- Left Panel -->
-    <aside class="left-panel">
-
-        <!-- File Upload -->
-        <section class="panel-section">
-            <h3><i class="fas fa-file-image"></i> Diseño</h3>
-            <div class="drop-zone" id="dropZone">
-                <i class="fas fa-cloud-upload-alt"></i>
-                <p>Arrastra un archivo aquí</p>
-                <span>SVG, PNG, JPG, BMP</span>
-                <input type="file" id="fileInput" accept=".svg,.png,.jpg,.jpeg,.bmp" hidden>
-            </div>
-            <div class="file-info" id="fileInfo" style="display:none">
-                <i class="fas fa-file-alt"></i>
-                <span id="fileName">archivo.svg</span>
-                <button class="btn-icon-danger" id="removeFileBtn" title="Quitar archivo"><i class="fas fa-times"></i></button>
-            </div>
-        </section>
-
-        <!-- Operation Mode -->
-        <section class="panel-section">
-            <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
-            <div class="setting-group">
-                <label>Modo</label>
-                <div class="mode-selector">
-                    <button class="mode-btn active" data-mode="engrave">
-                        <i class="fas fa-pen-nib"></i> Grabar
-                    </button>
-                    <button class="mode-btn" data-mode="cut">
-                        <i class="fas fa-scissors"></i> Cortar
-                    </button>
+<!-- Template for each machine panel -->
+<template id="machinePanelTemplate">
+    <div class="machine-panel" data-machine="__ID__">
+        <div class="panel-header">
+            <span class="machine-title"><i class="fas fa-crosshairs"></i> Láser __NUM__</span>
+            <span class="machine-status-dot" data-ref="statusDot"></span>
+        </div>
+        <div class="panel-body">
+            <div class="panel-controls">
+                <!-- File -->
+                <div class="panel-section">
+                    <h3><i class="fas fa-file-image"></i> Diseño</h3>
+                    <div data-ref="dropZone" style="border:1px dashed rgba(88,166,255,0.3);border-radius:4px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:#8b949e">
+                        <i class="fas fa-cloud-upload-alt"></i> Arrastra archivo
+                        <input type="file" data-ref="fileInput" accept=".svg,.png,.jpg,.jpeg,.bmp" hidden>
+                    </div>
+                    <div data-ref="fileInfo" style="display:none;font-size:10px;padding:4px;color:#c9d1d9">
+                        <i class="fas fa-file-alt"></i> <span data-ref="fileName"></span>
+                        <button data-ref="removeFileBtn" style="background:none;border:none;color:#f85149;cursor:pointer;font-size:10px"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
+                <!-- Params -->
+                <div class="panel-section">
+                    <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
+                    <div class="setting-group">
+                        <label>Modo</label>
+                        <div style="display:flex;gap:2px">
+                            <button data-ref="modeEngrave" class="mode-btn active" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer">Grabar</button>
+                            <button data-ref="modeCut" class="mode-btn" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer">Cortar</button>
+                        </div>
+                    </div>
+                    <div class="setting-group">
+                        <label>Velocidad <span data-ref="speedLabel">10 mm/s</span></label>
+                        <input type="range" class="param-slider" data-ref="speedSlider" min="1" max="600" value="10">
+                    </div>
+                    <div class="setting-group">
+                        <label>Interlineado <span data-ref="lineSpacingLabel">0.1 mm</span></label>
+                        <input type="range" class="param-slider" data-ref="lineSpacingSlider" min="1" max="10" value="4">
+                    </div>
+                    <div class="setting-group">
+                        <label>Pasadas <span data-ref="passesLabel">1×</span></label>
+                        <input type="range" class="param-slider" data-ref="passesSlider" min="1" max="10" value="1">
+                    </div>
+                </div>
+                <!-- Jog -->
+                <div class="panel-section">
+                    <h3><i class="fas fa-crosshairs"></i> Posición</h3>
+                    <div class="pos-display" data-ref="posDisplay">X: 0.0  Y: 0.0</div>
+                    <div class="jog-mini">
+                        <button data-jog="-1,-1"><i class="fas fa-arrow-up" style="transform:rotate(-45deg);font-size:8px"></i></button>
+                        <button data-jog="0,-1"><i class="fas fa-arrow-up" style="font-size:8px"></i></button>
+                        <button data-jog="1,-1"><i class="fas fa-arrow-up" style="transform:rotate(45deg);font-size:8px"></i></button>
+                        <button data-jog="-1,0"><i class="fas fa-arrow-left" style="font-size:8px"></i></button>
+                        <button data-jog="home" class="home-btn"><i class="fas fa-home" style="font-size:8px"></i></button>
+                        <button data-jog="1,0"><i class="fas fa-arrow-right" style="font-size:8px"></i></button>
+                        <button data-jog="-1,1"><i class="fas fa-arrow-down" style="transform:rotate(45deg);font-size:8px"></i></button>
+                        <button data-jog="0,1"><i class="fas fa-arrow-down" style="font-size:8px"></i></button>
+                        <button data-jog="1,1"><i class="fas fa-arrow-down" style="transform:rotate(-45deg);font-size:8px"></i></button>
+                    </div>
+                    <div class="step-row">
+                        <button data-step="1" class="active">1</button>
+                        <button data-step="5">5</button>
+                        <button data-step="10">10</button>
+                    </div>
                 </div>
             </div>
-            <div class="setting-group">
-                <label>Velocidad <span class="param-value" id="speedLabel">10 mm/s</span></label>
-                <input type="range" class="param-slider" id="speedSlider" min="1" max="600" value="10">
-                <div class="range-limits"><span>1</span><span>600 mm/s</span></div>
+            <div class="canvas-wrapper" data-ref="canvasWrapper">
+                <canvas data-ref="canvas"></canvas>
             </div>
-            <div class="setting-group">
-                <label>Interlineado <span class="param-value" id="lineSpacingLabel">0.1 mm</span></label>
-                <input type="range" class="param-slider" id="lineSpacingSlider" min="1" max="10" value="4" step="1">
-                <div class="range-limits"><span>0.025 mm</span><span>0.25 mm</span></div>
-            </div>
-            <div class="setting-group">
-                <label>Pasadas <span class="param-value" id="passesLabel">1×</span></label>
-                <input type="range" class="param-slider" id="passesSlider" min="1" max="10" value="1">
-                <div class="range-limits"><span>1</span><span>10×</span></div>
-            </div>
-        </section>
-
-        <!-- Material Presets -->
-        <section class="panel-section">
-            <h3><i class="fas fa-layer-group"></i> Material</h3>
-            <select id="materialSelect">
-                <option value="">— Personalizado —</option>
-                <optgroup label="Madera">
-                    <option value="plywood3">Triplay 3mm</option>
-                    <option value="plywood6">Triplay 6mm</option>
-                    <option value="mdf3">MDF 3mm</option>
-                    <option value="mdf6">MDF 6mm</option>
-                </optgroup>
-                <optgroup label="Acrílico">
-                    <option value="acrylic3">Acrílico 3mm</option>
-                    <option value="acrylic5">Acrílico 5mm</option>
-                </optgroup>
-                <optgroup label="Otros">
-                    <option value="leather">Piel / Cuero</option>
-                    <option value="paper">Papel / Cartón</option>
-                    <option value="rubber">Hule / Goma</option>
-                    <option value="foam">Foamy</option>
-                </optgroup>
-            </select>
-        </section>
-
-        <!-- Position & Jog -->
-        <section class="panel-section">
-            <h3><i class="fas fa-crosshairs"></i> Posición</h3>
-            <div class="position-display">
-                <div class="pos-item">
-                    <span class="pos-label">X</span>
-                    <span class="pos-value mono" id="posX">0.0</span>
-                    <span class="pos-unit">mm</span>
+        </div>
+        <div class="panel-footer">
+            <div>
+                <div class="ctrl-row">
+                    <button data-ref="frameBtn">Frame</button>
+                    <button data-ref="startBtn" class="start">Iniciar</button>
+                    <button data-ref="pauseBtn">Pausa</button>
+                    <button data-ref="stopBtn" class="stop">Stop</button>
+                    <button data-ref="estopBtn" class="estop">E-STOP</button>
                 </div>
-                <div class="pos-item">
-                    <span class="pos-label">Y</span>
-                    <span class="pos-value mono" id="posY">0.0</span>
-                    <span class="pos-unit">mm</span>
-                </div>
+                <div class="progress-bar"><div class="fill" data-ref="progressFill"></div></div>
             </div>
-            <div class="jog-grid">
-                <button class="jog-btn" id="jogUpLeft"   title="↖"><i class="fas fa-arrow-up"    style="transform:rotate(-45deg)"></i></button>
-                <button class="jog-btn" id="jogUp"       title="↑"><i class="fas fa-arrow-up"></i></button>
-                <button class="jog-btn" id="jogUpRight"  title="↗"><i class="fas fa-arrow-up"    style="transform:rotate(45deg)"></i></button>
-                <button class="jog-btn" id="jogLeft"     title="←"><i class="fas fa-arrow-left"></i></button>
-                <button class="jog-btn home-btn" id="jogHome" title="Origen"><i class="fas fa-home"></i></button>
-                <button class="jog-btn" id="jogRight"    title="→"><i class="fas fa-arrow-right"></i></button>
-                <button class="jog-btn" id="jogDownLeft" title="↙"><i class="fas fa-arrow-down"  style="transform:rotate(45deg)"></i></button>
-                <button class="jog-btn" id="jogDown"     title="↓"><i class="fas fa-arrow-down"></i></button>
-                <button class="jog-btn" id="jogDownRight"title="↘"><i class="fas fa-arrow-down"  style="transform:rotate(-45deg)"></i></button>
-            </div>
-            <div class="jog-step-row">
-                <span>Paso:</span>
-                <button class="step-btn active" data-step="1">1mm</button>
-                <button class="step-btn" data-step="5">5mm</button>
-                <button class="step-btn" data-step="10">10mm</button>
-            </div>
-        </section>
-
-    </aside>
-
-    <!-- Canvas Area -->
-    <main class="canvas-area">
-        <div class="canvas-toolbar">
-            <div class="toolbar-group">
-                <button class="tool-btn" id="toolZoomIn"  title="Zoom +"><i class="fas fa-search-plus"></i></button>
-                <button class="tool-btn" id="toolZoomOut" title="Zoom -"><i class="fas fa-search-minus"></i></button>
-                <button class="tool-btn" id="toolFit"     title="Ajustar vista"><i class="fas fa-expand-arrows-alt"></i></button>
-            </div>
-            <span class="zoom-display mono" id="zoomDisplay">100%</span>
-            <div class="canvas-info">
-                Área de trabajo: 400 × 400 mm
+            <div class="mini-console" data-ref="console">
+                <div class="log">Listo.</div>
             </div>
         </div>
+    </div>
+</template>
 
-        <div class="canvas-wrapper" id="canvasWrapper">
-            <canvas id="laserCanvas"></canvas>
-            <div class="laser-dot" id="laserDot"></div>
-        </div>
-
-        <div class="job-bar">
-            <div class="job-bar-info">
-                <span id="jobStatusText">Sin trabajo activo</span>
-                <span class="mono" id="jobTimeText"></span>
-            </div>
-            <div class="progress-track">
-                <div class="progress-fill" id="progressFill" style="width:0%"></div>
-            </div>
-            <span class="mono" id="progressPct">0%</span>
-        </div>
-    </main>
-
-    <!-- Right Panel -->
-    <aside class="right-panel">
-
-        <!-- Job Controls -->
-        <section class="panel-section">
-            <h3><i class="fas fa-gamepad"></i> Control</h3>
-            <div class="ctrl-grid">
-                <button class="ctrl-btn frame-btn" id="frameBtn" disabled>
-                    <i class="fas fa-border-style"></i>
-                    <span>Frame</span>
-                </button>
-                <button class="ctrl-btn start-btn" id="startBtn" disabled>
-                    <i class="fas fa-play"></i>
-                    <span>Iniciar</span>
-                </button>
-                <button class="ctrl-btn pause-btn" id="pauseBtn" disabled>
-                    <i class="fas fa-pause"></i>
-                    <span>Pausar</span>
-                </button>
-                <button class="ctrl-btn stop-btn" id="stopBtn" disabled>
-                    <i class="fas fa-stop"></i>
-                    <span>Detener</span>
-                </button>
-            </div>
-            <button class="estop-btn" id="estopBtn">
-                <i class="fas fa-exclamation-triangle"></i>
-                PARO DE EMERGENCIA
-            </button>
-        </section>
-
-        <!-- Laser Test -->
-        <section class="panel-section">
-            <h3><i class="fas fa-dot-circle"></i> Prueba</h3>
-            <button class="btn-laser-test" id="laserTestBtn" disabled>
-                <i class="fas fa-bullseye"></i> Pulso de prueba
-            </button>
-            <div class="setting-group" style="margin-top:10px">
-                <label>Duración <span class="param-value" id="pulseLabel">50ms</span></label>
-                <input type="range" class="param-slider" id="pulseSlider" min="10" max="500" value="50">
-                <div class="range-limits"><span>10ms</span><span>500ms</span></div>
-            </div>
-        </section>
-
-        <!-- Console -->
-        <section class="panel-section console-section">
-            <h3>
-                <i class="fas fa-terminal"></i> Consola
-                <button class="btn-clear-console" id="clearConsoleBtn">Limpiar</button>
-            </h3>
-            <div class="console-output" id="consoleOutput">
-                <div class="log info">Sistema listo. Conecta tu láser K40.</div>
-            </div>
-        </section>
-
-    </aside>
-</div>
-
-<script src="/laser/script.js"></script>
+<script src="/laser/dual.js"></script>
 </body>
 </html>

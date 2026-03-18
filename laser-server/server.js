@@ -1,8 +1,8 @@
 /**
- * Servidor WebSocket local para K40 con controladora M2 Nano
- * ─────────────────────────────────────────────────────────
+ * Servidor WebSocket local para K40 — soporte dual (2 máquinas)
+ * ─────────────────────────────────────────────────────────────
  * Escucha en ws://localhost:7654
- * Se conecta con la máquina por USB (requiere driver WinUSB via Zadig).
+ * Soporta 2 lásers M2 Nano conectados por USB simultáneamente.
  */
 
 const { WebSocketServer } = require('ws');
@@ -10,29 +10,45 @@ const M2Nano = require('./m2nano');
 const egv = require('./egv');
 
 const PORT = 7654;
+const MAX_MACHINES = 2;
 
 const wss = new WebSocketServer({ port: PORT, maxPayload: 50 * 1024 * 1024 });
-let laser = null;
 let client = null;
 
-// Estado del job actual
-let jobState = { running: false, paused: false, stopped: false };
-let pendingRasterData = null;
+// Estado de cada máquina
+const machines = {
+    0: { laser: null, jobState: { running: false, paused: false, stopped: false, startX: 0, startY: 0 }, pendingRaster: null },
+    1: { laser: null, jobState: { running: false, paused: false, stopped: false, startX: 0, startY: 0 }, pendingRaster: null },
+};
 
-console.log(`\n🔴 Servidor Laser K40 iniciado en ws://localhost:${PORT}`);
+console.log(`\n🔴 Servidor Laser K40 (dual) iniciado en ws://localhost:${PORT}`);
 console.log('   Abre http://app.dekoormx.com/laser y presiona "Conectar"\n');
 
 wss.on('connection', async (ws) => {
     client = ws;
     log('Cliente web conectado.');
-    send({ type: 'status', text: 'Servidor local conectado. Iniciando USB...', level: 'success' });
 
-    await connectMachine();
+    // Detectar dispositivos disponibles
+    const devs = M2Nano.listDevices();
+    send({ type: 'devices_found', count: devs.length });
+    log(`Dispositivos USB detectados: ${devs.length}`);
+
+    // Conectar automáticamente los que estén disponibles
+    for (let i = 0; i < Math.min(devs.length, MAX_MACHINES); i++) {
+        await connectMachine(i);
+    }
 
     ws.on('message', async (raw, isBinary) => {
         if (isBinary) {
-            pendingRasterData = raw;
-            log(`Datos raster recibidos: ${raw.byteLength} bytes`);
+            // Detectar a qué máquina va el raster por el pending
+            for (const id of [0, 1]) {
+                if (machines[id].expectingRaster) {
+                    machines[id].pendingRaster = raw;
+                    machines[id].expectingRaster = false;
+                    log(`[M${id}] Datos raster recibidos: ${raw.byteLength} bytes`);
+                    break;
+                }
+            }
             return;
         }
         let msg;
@@ -43,69 +59,77 @@ wss.on('connection', async (ws) => {
     ws.on('close', () => {
         log('Cliente web desconectado.');
         client = null;
-        jobState.stopped = true;
-        disconnectMachine();
+        for (const id of [0, 1]) {
+            machines[id].jobState.stopped = true;
+            disconnectMachine(id);
+        }
     });
 
-    ws.on('error', (err) => {
-        log('Error WebSocket: ' + err.message, 'error');
-    });
+    ws.on('error', (err) => log('Error WebSocket: ' + err.message, 'error'));
 });
 
 // ───────── Conexión USB ─────────
 
-async function connectMachine() {
-    if (laser) disconnectMachine();
-    laser = new M2Nano(onLaserLog);
+async function connectMachine(id) {
+    const m = machines[id];
+    if (m.laser) disconnectMachine(id);
+
+    m.laser = new M2Nano((msg) => log(`[M${id}] ${msg}`));
+
     try {
-        await laser.connect();
-        send({ type: 'machine_ready', ok: true });
-        send({ type: 'status', text: '¡Máquina K40 conectada por USB!', level: 'success' });
-        log('M2 Nano listo.');
+        await m.laser.connect(id);
+        send({ type: 'machine_ready', machine: id, ok: true });
+        log(`[M${id}] ¡Máquina conectada por USB!`, 'success');
     } catch (err) {
-        send({ type: 'machine_ready', ok: false, error: err.message });
-        log(err.message, 'error');
-        laser = null;
+        send({ type: 'machine_ready', machine: id, ok: false, error: err.message });
+        log(`[M${id}] ${err.message}`, 'error');
+        m.laser = null;
     }
 }
 
-function disconnectMachine() {
-    if (laser) { laser.disconnect(); laser = null; }
+function disconnectMachine(id) {
+    const m = machines[id];
+    if (m.laser) { m.laser.disconnect(); m.laser = null; }
 }
-
-function onLaserLog(msg) { log(msg); }
 
 // ───────── Manejador de comandos ─────────
 
 async function handleCommand(msg) {
-    if (!laser && msg.cmd !== 'stop' && msg.cmd !== 'estop') {
-        send({ type: 'status', text: 'Máquina no conectada.', level: 'error' });
-        return;
+    const id = msg.machine != null ? msg.machine : 0;
+    const m = machines[id];
+
+    if (!m || !m.laser) {
+        if (msg.cmd !== 'stop' && msg.cmd !== 'estop') {
+            send({ type: 'status', machine: id, text: `Máquina #${id} no conectada.`, level: 'error' });
+            return;
+        }
     }
+
+    const laser = m.laser;
 
     try {
         switch (msg.cmd) {
 
             case 'home':
-                send({ type: 'status', text: 'Moviendo a origen...', level: 'info' });
+                send({ type: 'status', machine: id, text: 'Moviendo a origen...', level: 'info' });
                 await laser.home();
-                send({ type: 'position', x: 0, y: 0 });
-                send({ type: 'status', text: 'En origen (0,0)', level: 'success' });
+                send({ type: 'position', machine: id, x: 0, y: 0 });
+                send({ type: 'status', machine: id, text: 'En origen (0,0)', level: 'success' });
                 break;
 
             case 'jog': {
                 const dx = parseFloat(msg.dx) || 0;
                 const dy = parseFloat(msg.dy) || 0;
                 await laser.jog(dx, dy);
-                send({ type: 'position', x: laser.posX, y: laser.posY });
-                send({ type: 'status', text: `Pos: X=${laser.posX.toFixed(1)} Y=${laser.posY.toFixed(1)} mm`, level: 'cmd' });
+                send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
+                send({ type: 'status', machine: id, text: `Pos: X=${laser.posX.toFixed(1)} Y=${laser.posY.toFixed(1)} mm`, level: 'cmd' });
                 break;
             }
 
             case 'frame':
-                send({ type: 'status', text: 'Frame: recorriendo bordes...', level: 'info' });
-                await doFrame(msg.bounds);
-                send({ type: 'status', text: 'Frame completado.', level: 'success' });
+                send({ type: 'status', machine: id, text: 'Frame: recorriendo bordes...', level: 'info' });
+                await doFrame(laser, id, msg.bounds);
+                send({ type: 'status', machine: id, text: 'Frame completado.', level: 'success' });
                 break;
 
             case 'pulse':
@@ -113,103 +137,97 @@ async function handleCommand(msg) {
                 break;
 
             case 'estop':
-                jobState.stopped = true;
-                await laser.estop();
-                send({ type: 'status', text: 'PARO DE EMERGENCIA', level: 'error' });
+                m.jobState.stopped = true;
+                if (laser) await laser.estop();
+                send({ type: 'status', machine: id, text: 'PARO DE EMERGENCIA', level: 'error' });
                 break;
 
             case 'start':
-                if (jobState.running) {
-                    send({ type: 'status', text: 'Ya hay un trabajo en ejecución.', level: 'warning' });
+                if (m.jobState.running) {
+                    send({ type: 'status', machine: id, text: 'Ya hay un trabajo en ejecución.', level: 'warning' });
                     break;
                 }
-                runJob(msg).catch(err => {
-                    send({ type: 'status', text: `Error en job: ${err.message}`, level: 'error' });
-                    log(err.message, 'error');
-                    jobState.running = false;
-                    send({ type: 'done' });
+                if (msg.mode === 'engrave' && msg.raster) {
+                    m.expectingRaster = true;
+                }
+                runJob(id, msg).catch(err => {
+                    send({ type: 'status', machine: id, text: `Error en job: ${err.message}`, level: 'error' });
+                    log(`[M${id}] ${err.message}`, 'error');
+                    m.jobState.running = false;
+                    send({ type: 'done', machine: id });
                 });
                 break;
 
             case 'stop':
-                jobState.stopped = true;
+                m.jobState.stopped = true;
                 if (laser) {
                     await laser.estop();
-                    // Volver al punto de inicio del trabajo
-                    if (jobState.startX != null) {
-                        await sleep(500); // esperar a que el estop se procese
+                    if (m.jobState.startX != null) {
+                        await sleep(500);
                         try {
-                            const dx = jobState.startX - laser.posX;
-                            const dy = jobState.startY - laser.posY;
+                            const dx = m.jobState.startX - laser.posX;
+                            const dy = m.jobState.startY - laser.posY;
                             if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
-                            send({ type: 'position', x: laser.posX, y: laser.posY });
+                            send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
                         } catch (_) {}
                     }
                 }
-                send({ type: 'status', text: 'Trabajo detenido. Cabezal regresado al inicio.', level: 'warning' });
+                send({ type: 'status', machine: id, text: 'Trabajo detenido.', level: 'warning' });
                 break;
 
             case 'pause':
-                jobState.paused = true;
-                send({ type: 'status', text: 'Trabajo pausado.', level: 'warning' });
+                m.jobState.paused = true;
+                send({ type: 'status', machine: id, text: 'Trabajo pausado.', level: 'warning' });
                 break;
 
             case 'resume':
-                jobState.paused = false;
-                send({ type: 'status', text: 'Trabajo reanudado.', level: 'success' });
+                m.jobState.paused = false;
+                send({ type: 'status', machine: id, text: 'Trabajo reanudado.', level: 'success' });
                 break;
 
             default:
-                send({ type: 'status', text: `Comando desconocido: ${msg.cmd}`, level: 'warning' });
+                send({ type: 'status', machine: id, text: `Comando desconocido: ${msg.cmd}`, level: 'warning' });
         }
     } catch (err) {
-        send({ type: 'status', text: `Error: ${err.message}`, level: 'error' });
-        log(err.message, 'error');
+        send({ type: 'status', machine: id, text: `Error: ${err.message}`, level: 'error' });
+        log(`[M${id}] ${err.message}`, 'error');
     }
 }
 
 // ───────── Ejecución de trabajos ─────────
 
-async function runJob(msg) {
+async function runJob(id, msg) {
+    const m = machines[id];
+    const laser = m.laser;
     const { mode, speed, passes } = msg;
-    jobState = { running: true, paused: false, stopped: false, startX: laser.posX, startY: laser.posY };
+    m.jobState = { running: true, paused: false, stopped: false, startX: laser.posX, startY: laser.posY };
 
     let egvString;
-
-    const startX = jobState.startX;
-    const startY = jobState.startY;
+    const startX = m.jobState.startX;
+    const startY = m.jobState.startY;
 
     if (mode === 'cut' && msg.segments) {
-        send({ type: 'status', text: `Generando EGV vectorial: ${msg.segments.length} segmentos (desde X=${startX} Y=${startY})...`, level: 'info' });
+        send({ type: 'status', machine: id, text: `Generando EGV vectorial: ${msg.segments.length} segmentos...`, level: 'info' });
         egvString = egv.generateVectorEGV(msg.segments, speed, startX, startY);
     } else if (mode === 'engrave' && msg.raster) {
-        // Esperar datos binarios del raster si no han llegado
         const maxWait = 5000;
         const start = Date.now();
-        while (!pendingRasterData && Date.now() - start < maxWait) {
-            await sleep(50);
-        }
-        if (!pendingRasterData) {
-            throw new Error('No se recibieron datos raster del frontend.');
-        }
+        while (!m.pendingRaster && Date.now() - start < maxWait) await sleep(50);
+        if (!m.pendingRaster) throw new Error('No se recibieron datos raster.');
         const { width, height, step, offsetX, offsetY } = msg.raster;
-        send({ type: 'status', text: `Generando EGV raster: ${width}×${height}px (desde X=${startX} Y=${startY})...`, level: 'info' });
-        egvString = egv.generateRasterEGV(pendingRasterData, width, height, speed, step || 1, startX + (offsetX || 0), startY + (offsetY || 0));
-        pendingRasterData = null;
+        send({ type: 'status', machine: id, text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
+        egvString = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, startX + (offsetX || 0), startY + (offsetY || 0));
+        m.pendingRaster = null;
     } else {
-        throw new Error('Datos de trabajo incompletos. Se requiere segments (corte) o raster (grabado).');
+        throw new Error('Datos de trabajo incompletos.');
     }
 
-    send({ type: 'status', text: `EGV generado: ${egvString.length} bytes. Iniciando...`, level: 'success' });
+    send({ type: 'status', machine: id, text: `EGV: ${egvString.length} bytes. Iniciando...`, level: 'success' });
 
     for (let pass = 0; pass < (passes || 1); pass++) {
-        if (jobState.stopped) break;
+        if (m.jobState.stopped) break;
+        if (passes > 1) send({ type: 'status', machine: id, text: `Pasada ${pass + 1}/${passes}...`, level: 'info' });
 
-        if (passes > 1) {
-            send({ type: 'status', text: `Pasada ${pass + 1}/${passes}...`, level: 'info' });
-        }
-
-        // Volver a la posición de inicio (no al origen) para multi-pasada
         if (pass > 0) {
             const dx = startX - laser.posX;
             const dy = startY - laser.posY;
@@ -219,49 +237,43 @@ async function runJob(msg) {
         const result = await laser.sendEGVJob(egvString, {
             onProgress: (pct) => {
                 const totalPct = ((pass + pct) / (passes || 1)) * 100;
-                send({ type: 'progress', pct: Math.round(totalPct) });
+                send({ type: 'progress', machine: id, pct: Math.round(totalPct) });
             },
-            shouldStop: () => jobState.stopped,
-            shouldPause: () => jobState.paused,
+            shouldStop: () => m.jobState.stopped,
+            shouldPause: () => m.jobState.paused,
         });
 
         if (result === 'stopped') {
-            send({ type: 'status', text: 'Trabajo detenido por usuario.', level: 'warning' });
+            send({ type: 'status', machine: id, text: 'Trabajo detenido.', level: 'warning' });
             break;
         }
     }
 
-    // Volver a posición de inicio del job
     try {
         const dx = startX - laser.posX;
         const dy = startY - laser.posY;
         if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
     } catch (_) {}
 
-    jobState.running = false;
-    send({ type: 'done' });
-    send({ type: 'status', text: 'Trabajo completado.', level: 'success' });
+    m.jobState.running = false;
+    send({ type: 'done', machine: id });
+    send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });
 }
 
 // ───────── Frame ─────────
 
-async function doFrame(bounds) {
-    const x = bounds?.x || 0;
-    const y = bounds?.y || 0;
-    const w = bounds?.w || 300;
-    const h = bounds?.h || 200;
-
-    const corners = [
-        [x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y],
-    ];
+async function doFrame(laser, id, bounds) {
+    const x = bounds?.x || 0, y = bounds?.y || 0;
+    const w = bounds?.w || 400, h = bounds?.h || 400;
+    const corners = [[x,y],[x+w,y],[x+w,y+h],[x,y+h],[x,y]];
 
     await laser.home();
-    send({ type: 'position', x: 0, y: 0 });
+    send({ type: 'position', machine: id, x: 0, y: 0 });
 
     let prevX = 0, prevY = 0;
     for (const [cx, cy] of corners) {
         await laser.jog(cx - prevX, cy - prevY);
-        send({ type: 'position', x: laser.posX, y: laser.posY });
+        send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
         prevX = cx; prevY = cy;
         await sleep(200);
     }
@@ -270,9 +282,7 @@ async function doFrame(bounds) {
 // ───────── Helpers ─────────
 
 function send(data) {
-    if (client && client.readyState === 1) {
-        client.send(JSON.stringify(data));
-    }
+    if (client && client.readyState === 1) client.send(JSON.stringify(data));
 }
 
 function log(msg, level = 'cmd') {
@@ -281,11 +291,9 @@ function log(msg, level = 'cmd') {
     send({ type: 'status', text: msg, level });
 }
 
-function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
-}
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 process.on('SIGINT', () => {
-    disconnectMachine();
+    for (const id of [0, 1]) disconnectMachine(id);
     process.exit(0);
 });
