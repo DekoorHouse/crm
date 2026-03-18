@@ -212,6 +212,7 @@ function loadFile(file) {
 
     if (ext === 'svg') {
         reader.onload = e => {
+            state.svgText = e.target.result; // guardar SVG raw para extracción de paths
             const blob = new Blob([e.target.result], { type: 'image/svg+xml' });
             const url  = URL.createObjectURL(blob);
             const img  = new Image();
@@ -472,7 +473,128 @@ laserTestBtn.addEventListener('click', () => {
     else { flashDot(state.posX, state.posY, ms); }
 });
 
+// ===== SVG PATH EXTRACTION =====
+function extractSVGSegments(svgText) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgText, 'image/svg+xml');
+    const svg = doc.querySelector('svg');
+    if (!svg) return [];
+
+    // Determinar escala: SVG coords → mm en el área de trabajo
+    const vb = svg.getAttribute('viewBox');
+    let svgW, svgH;
+    if (vb) {
+        const parts = vb.split(/[\s,]+/).map(Number);
+        svgW = parts[2]; svgH = parts[3];
+    } else {
+        svgW = parseFloat(svg.getAttribute('width'))  || WORK_W;
+        svgH = parseFloat(svg.getAttribute('height')) || WORK_H;
+    }
+
+    // Escalar para que quepa en el área de trabajo manteniendo proporción
+    const scale = Math.min(WORK_W / svgW, WORK_H / svgH);
+
+    // Insertar en DOM oculto para usar getPointAtLength
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+    container.innerHTML = svgText;
+    document.body.appendChild(container);
+    const liveSvg = container.querySelector('svg');
+
+    const segments = [];
+    const shapes = liveSvg.querySelectorAll('path, line, rect, circle, ellipse, polyline, polygon');
+
+    for (const el of shapes) {
+        const points = [];
+        if (el.getTotalLength) {
+            const len = el.getTotalLength();
+            const step = Math.max(0.5, len / 500); // máx 500 puntos por shape
+            for (let d = 0; d <= len; d += step) {
+                const p = el.getPointAtLength(d);
+                points.push({ x: p.x * scale, y: p.y * scale });
+            }
+            // Punto final exacto
+            const pEnd = el.getPointAtLength(len);
+            points.push({ x: pEnd.x * scale, y: pEnd.y * scale });
+        }
+        if (points.length >= 2) {
+            const closed = el.tagName === 'polygon' || el.tagName === 'rect' ||
+                           el.tagName === 'circle' || el.tagName === 'ellipse' ||
+                           (el.tagName === 'path' && /[zZ]\s*$/.test(el.getAttribute('d') || ''));
+            segments.push({ points, closed });
+        }
+    }
+
+    document.body.removeChild(container);
+    return segments;
+}
+
+// ===== RASTER BITMAP EXTRACTION =====
+function extractRasterBitmap(image) {
+    // Determinar tamaño en el canvas del bed
+    const imgW = image.naturalWidth || image.width;
+    const imgH = image.naturalHeight || image.height;
+    const scaleToFit = Math.min(WORK_W / imgW, WORK_H / imgH, 1);
+    const mmW = imgW * scaleToFit;
+    const mmH = imgH * scaleToFit;
+
+    // Resolución: 1000 DPI = 39.37 px/mm
+    const DPI = 39.37;
+    const pxW = Math.round(mmW * DPI);
+    const pxH = Math.round(mmH * DPI);
+
+    // Renderizar a canvas offscreen en escala de grises
+    const offCanvas = document.createElement('canvas');
+    offCanvas.width = pxW;
+    offCanvas.height = pxH;
+    const ctx = offCanvas.getContext('2d');
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, pxW, pxH);
+    ctx.drawImage(image, 0, 0, pxW, pxH);
+
+    const imageData = ctx.getImageData(0, 0, pxW, pxH);
+    const pixels = imageData.data;
+
+    // Convertir a escala de grises y aplicar threshold
+    const gray = new Uint8Array(pxW * pxH);
+    for (let i = 0; i < pxW * pxH; i++) {
+        const r = pixels[i * 4], g = pixels[i * 4 + 1], b = pixels[i * 4 + 2];
+        gray[i] = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+    }
+
+    // Floyd-Steinberg dithering → 1 bit
+    for (let y = 0; y < pxH; y++) {
+        for (let x = 0; x < pxW; x++) {
+            const idx = y * pxW + x;
+            const old = gray[idx];
+            const nw = old < 128 ? 0 : 255;
+            gray[idx] = nw;
+            const err = old - nw;
+            if (x + 1 < pxW)               gray[idx + 1]        += err * 7 / 16;
+            if (y + 1 < pxH && x > 0)      gray[(y+1)*pxW+x-1]  += err * 3 / 16;
+            if (y + 1 < pxH)               gray[(y+1)*pxW+x]    += err * 5 / 16;
+            if (y + 1 < pxH && x + 1 < pxW) gray[(y+1)*pxW+x+1] += err * 1 / 16;
+        }
+    }
+
+    // Pack a 1 bit por pixel (MSB first), pixel oscuro = 1 (láser ON)
+    const rowBytes = Math.ceil(pxW / 8);
+    const bitmap = new Uint8Array(rowBytes * pxH);
+    for (let y = 0; y < pxH; y++) {
+        for (let x = 0; x < pxW; x++) {
+            if (gray[y * pxW + x] === 0) { // oscuro = láser ON
+                const byteIdx = y * rowBytes + Math.floor(x / 8);
+                bitmap[byteIdx] |= (1 << (7 - (x % 8)));
+            }
+        }
+    }
+
+    return { bitmap, width: pxW, height: pxH, step: 1, offsetX: 0, offsetY: 0, mmW, mmH };
+}
+
 function startJob() {
+    if (!state.loadedFile) { log('No hay archivo cargado.', 'error'); return; }
+
     state.jobRunning = true;
     state.jobPaused  = false;
     state.jobStart   = Date.now();
@@ -482,9 +604,32 @@ function startJob() {
     frameBtn.disabled = true;
     jobStatusText.textContent = `Procesando: ${state.loadedFile.name}`;
     const modeStr = state.mode === 'cut' ? 'Corte' : 'Grabado';
-    log(`Iniciando trabajo: ${modeStr} @ ${state.power}% / ${state.speed}mm/min × ${state.passes}`, 'success');
-    if (state.ws) sendWs({ cmd: 'start', mode: state.mode, power: state.power, speed: state.speed, passes: state.passes });
-    else simJob();
+    log(`Iniciando trabajo: ${modeStr} @ ${state.speed}mm/s × ${state.passes}`, 'success');
+
+    if (!state.ws) { simJob(); return; }
+
+    if (state.mode === 'cut' && state.imageType === 'svg' && state.svgText) {
+        // Vector cutting
+        const segments = extractSVGSegments(state.svgText);
+        if (segments.length === 0) {
+            log('No se encontraron trazos en el SVG.', 'error');
+            stopJob(false);
+            return;
+        }
+        log(`Vector: ${segments.length} segmentos extraídos`, 'info');
+        sendWs({ cmd: 'start', mode: 'cut', speed: state.speed, passes: state.passes, segments });
+    } else {
+        // Raster engraving (BMP/PNG/SVG → bitmap)
+        const rasterData = extractRasterBitmap(state.loadedImage);
+        log(`Raster: ${rasterData.width}×${rasterData.height}px, ${rasterData.bitmap.byteLength} bytes`, 'info');
+        sendWs({
+            cmd: 'start', mode: 'engrave', speed: state.speed, passes: state.passes,
+            raster: { width: rasterData.width, height: rasterData.height, step: rasterData.step,
+                      offsetX: rasterData.offsetX, offsetY: rasterData.offsetY }
+        });
+        // Enviar bitmap como binary
+        state.ws.send(rasterData.bitmap.buffer);
+    }
 }
 
 function togglePause() {

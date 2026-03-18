@@ -3,21 +3,21 @@
  * ─────────────────────────────────────────────────────────
  * Escucha en ws://localhost:7654
  * Se conecta con la máquina por USB (requiere driver WinUSB via Zadig).
- *
- * Uso:
- *   cd laser-server
- *   npm install
- *   node server.js
  */
 
 const { WebSocketServer } = require('ws');
 const M2Nano = require('./m2nano');
+const egv = require('./egv');
 
 const PORT = 7654;
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ port: PORT, maxPayload: 50 * 1024 * 1024 });
 let laser = null;
-let client = null;  // Solo un cliente a la vez (la página web)
+let client = null;
+
+// Estado del job actual
+let jobState = { running: false, paused: false, stopped: false };
+let pendingRasterData = null;
 
 console.log(`\n🔴 Servidor Laser K40 iniciado en ws://localhost:${PORT}`);
 console.log('   Abre http://app.dekoormx.com/laser y presiona "Conectar"\n');
@@ -27,10 +27,14 @@ wss.on('connection', async (ws) => {
     log('Cliente web conectado.');
     send({ type: 'status', text: 'Servidor local conectado. Iniciando USB...', level: 'success' });
 
-    // Intentar conectar con la máquina
     await connectMachine();
 
-    ws.on('message', async (raw) => {
+    ws.on('message', async (raw, isBinary) => {
+        if (isBinary) {
+            pendingRasterData = raw;
+            log(`Datos raster recibidos: ${raw.byteLength} bytes`);
+            return;
+        }
         let msg;
         try { msg = JSON.parse(raw); } catch (_) { return; }
         await handleCommand(msg);
@@ -39,6 +43,7 @@ wss.on('connection', async (ws) => {
     ws.on('close', () => {
         log('Cliente web desconectado.');
         client = null;
+        jobState.stopped = true;
         disconnectMachine();
     });
 
@@ -51,9 +56,7 @@ wss.on('connection', async (ws) => {
 
 async function connectMachine() {
     if (laser) disconnectMachine();
-
     laser = new M2Nano(onLaserLog);
-
     try {
         await laser.connect();
         send({ type: 'machine_ready', ok: true });
@@ -70,14 +73,12 @@ function disconnectMachine() {
     if (laser) { laser.disconnect(); laser = null; }
 }
 
-function onLaserLog(msg) {
-    log(msg);
-}
+function onLaserLog(msg) { log(msg); }
 
 // ───────── Manejador de comandos ─────────
 
 async function handleCommand(msg) {
-    if (!laser) {
+    if (!laser && msg.cmd !== 'stop' && msg.cmd !== 'estop') {
         send({ type: 'status', text: 'Máquina no conectada.', level: 'error' });
         return;
     }
@@ -103,7 +104,7 @@ async function handleCommand(msg) {
 
             case 'frame':
                 send({ type: 'status', text: 'Frame: recorriendo bordes...', level: 'info' });
-                await doFrame();
+                await doFrame(msg.bounds);
                 send({ type: 'status', text: 'Frame completado.', level: 'success' });
                 break;
 
@@ -112,62 +113,133 @@ async function handleCommand(msg) {
                 break;
 
             case 'estop':
+                jobState.stopped = true;
                 await laser.estop();
                 send({ type: 'status', text: 'PARO DE EMERGENCIA', level: 'error' });
                 break;
 
             case 'start':
-                send({ type: 'status', text: 'El envío de trabajos completos estará disponible próximamente.', level: 'warning' });
-                // TODO: convertir imagen a EGV y enviar
+                if (jobState.running) {
+                    send({ type: 'status', text: 'Ya hay un trabajo en ejecución.', level: 'warning' });
+                    break;
+                }
+                runJob(msg).catch(err => {
+                    send({ type: 'status', text: `Error en job: ${err.message}`, level: 'error' });
+                    log(err.message, 'error');
+                    jobState.running = false;
+                    send({ type: 'done' });
+                });
                 break;
 
             case 'stop':
-                await laser.estop();
+                jobState.stopped = true;
+                if (laser) await laser.estop();
+                send({ type: 'status', text: 'Trabajo detenido.', level: 'warning' });
                 break;
 
             case 'pause':
-                // M2 Nano no tiene pause nativo; el servidor simplemente deja de enviar datos
-                send({ type: 'status', text: 'Pausado (detén el flujo de datos).', level: 'warning' });
+                jobState.paused = true;
+                send({ type: 'status', text: 'Trabajo pausado.', level: 'warning' });
                 break;
 
             case 'resume':
-                send({ type: 'status', text: 'Reanudado.', level: 'success' });
+                jobState.paused = false;
+                send({ type: 'status', text: 'Trabajo reanudado.', level: 'success' });
                 break;
 
             default:
                 send({ type: 'status', text: `Comando desconocido: ${msg.cmd}`, level: 'warning' });
         }
-
     } catch (err) {
         send({ type: 'status', text: `Error: ${err.message}`, level: 'error' });
         log(err.message, 'error');
     }
 }
 
-// ───────── Frame (recorre las 4 esquinas del área de trabajo) ─────────
+// ───────── Ejecución de trabajos ─────────
 
-async function doFrame() {
-    // El frame recorre las 4 esquinas del diseño cargado.
-    // Usamos el área completa del K40 (300×200mm) como referencia.
+async function runJob(msg) {
+    const { mode, speed, passes } = msg;
+    jobState = { running: true, paused: false, stopped: false };
+
+    let egvString;
+
+    if (mode === 'cut' && msg.segments) {
+        send({ type: 'status', text: `Generando EGV vectorial: ${msg.segments.length} segmentos...`, level: 'info' });
+        egvString = egv.generateVectorEGV(msg.segments, speed);
+    } else if (mode === 'engrave' && msg.raster) {
+        // Esperar datos binarios del raster si no han llegado
+        const maxWait = 5000;
+        const start = Date.now();
+        while (!pendingRasterData && Date.now() - start < maxWait) {
+            await sleep(50);
+        }
+        if (!pendingRasterData) {
+            throw new Error('No se recibieron datos raster del frontend.');
+        }
+        const { width, height, step, offsetX, offsetY } = msg.raster;
+        send({ type: 'status', text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
+        egvString = egv.generateRasterEGV(pendingRasterData, width, height, speed, step || 1, offsetX || 0, offsetY || 0);
+        pendingRasterData = null;
+    } else {
+        throw new Error('Datos de trabajo incompletos. Se requiere segments (corte) o raster (grabado).');
+    }
+
+    send({ type: 'status', text: `EGV generado: ${egvString.length} bytes. Iniciando...`, level: 'success' });
+
+    for (let pass = 0; pass < (passes || 1); pass++) {
+        if (jobState.stopped) break;
+
+        if (passes > 1) {
+            send({ type: 'status', text: `Pasada ${pass + 1}/${passes}...`, level: 'info' });
+        }
+
+        // Home antes de cada pasada
+        await laser.home();
+
+        const result = await laser.sendEGVJob(egvString, {
+            onProgress: (pct) => {
+                const totalPct = ((pass + pct) / (passes || 1)) * 100;
+                send({ type: 'progress', pct: Math.round(totalPct) });
+            },
+            shouldStop: () => jobState.stopped,
+            shouldPause: () => jobState.paused,
+        });
+
+        if (result === 'stopped') {
+            send({ type: 'status', text: 'Trabajo detenido por usuario.', level: 'warning' });
+            break;
+        }
+    }
+
+    // Home al finalizar
+    try { await laser.home(); } catch (_) {}
+
+    jobState.running = false;
+    send({ type: 'done' });
+    send({ type: 'status', text: 'Trabajo completado.', level: 'success' });
+}
+
+// ───────── Frame ─────────
+
+async function doFrame(bounds) {
+    const x = bounds?.x || 0;
+    const y = bounds?.y || 0;
+    const w = bounds?.w || 300;
+    const h = bounds?.h || 200;
+
     const corners = [
-        [0, 0],
-        [300, 0],
-        [300, 200],
-        [0, 200],
-        [0, 0],
+        [x, y], [x + w, y], [x + w, y + h], [x, y + h], [x, y],
     ];
 
-    // Mover a origen primero
     await laser.home();
     send({ type: 'position', x: 0, y: 0 });
 
     let prevX = 0, prevY = 0;
-    for (const [x, y] of corners.slice(1)) {
-        const dx = x - prevX;
-        const dy = y - prevY;
-        await laser.jog(dx, dy);
+    for (const [cx, cy] of corners) {
+        await laser.jog(cx - prevX, cy - prevY);
         send({ type: 'position', x: laser.posX, y: laser.posY });
-        prevX = x; prevY = y;
+        prevX = cx; prevY = cy;
         await sleep(200);
     }
 }
@@ -175,7 +247,7 @@ async function doFrame() {
 // ───────── Helpers ─────────
 
 function send(data) {
-    if (client && client.readyState === 1 /* OPEN */) {
+    if (client && client.readyState === 1) {
         client.send(JSON.stringify(data));
     }
 }

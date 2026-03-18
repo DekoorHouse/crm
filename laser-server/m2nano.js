@@ -229,6 +229,53 @@ class M2Nano {
         }
     }
 
+    /**
+     * Envía un job EGV largo con soporte de progreso, pausa y stop.
+     * @param {string} egvString  comando EGV completo
+     * @param {object} opts  { onProgress(0-1), shouldStop(), shouldPause() }
+     * @returns {string} 'complete' o 'stopped'
+     */
+    async sendEGVJob(egvString, { onProgress, shouldStop, shouldPause } = {}) {
+        const bytes = Buffer.from(egvString, 'ascii');
+        const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
+        this.log(`sendEGVJob: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
+
+        await this.waitReady(10000);
+
+        for (let i = 0; i < bytes.length; i += DATA_SIZE) {
+            // Verificar stop
+            if (shouldStop && shouldStop()) {
+                await this.estop();
+                return 'stopped';
+            }
+            // Verificar pausa
+            while (shouldPause && shouldPause()) {
+                if (shouldStop && shouldStop()) { await this.estop(); return 'stopped'; }
+                await sleep(200);
+            }
+
+            const chunk = bytes.slice(i, i + DATA_SIZE);
+            await this.sendPacket(chunk);
+            await sleep(5);
+
+            // Progreso cada 10 paquetes
+            const pktIdx = Math.floor(i / DATA_SIZE);
+            if (onProgress && pktIdx % 10 === 0) {
+                onProgress(pktIdx / totalPkts);
+            }
+
+            // waitReady cada 50 paquetes para no saturar el buffer
+            if (pktIdx % 50 === 0 && pktIdx > 0) {
+                try { await this.waitReady(5000); } catch (_) {}
+            }
+        }
+
+        // Esperar a que termine la ejecución
+        try { await this.waitReady(60000); } catch (_) {}
+        if (onProgress) onProgress(1);
+        return 'complete';
+    }
+
     // ───────── Comandos de alto nivel ─────────
 
     /** Mueve la cabeza al origen (0,0). */
