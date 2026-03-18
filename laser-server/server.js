@@ -28,15 +28,7 @@ wss.on('connection', async (ws) => {
     client = ws;
     log('Cliente web conectado.');
 
-    // Detectar dispositivos disponibles
-    const devs = M2Nano.listDevices();
-    send({ type: 'devices_found', count: devs.length });
-    log(`Dispositivos USB detectados: ${devs.length}`);
-
-    // Conectar automáticamente los que estén disponibles
-    for (let i = 0; i < Math.min(devs.length, MAX_MACHINES); i++) {
-        await connectMachine(i);
-    }
+    // No conectar automáticamente — el usuario conecta cada máquina individualmente
 
     ws.on('message', async (raw, isBinary) => {
         if (isBinary) {
@@ -74,15 +66,15 @@ async function connectMachine(id) {
     const m = machines[id];
     if (m.laser) disconnectMachine(id);
 
-    m.laser = new M2Nano((msg) => log(`[M${id}] ${msg}`));
+    m.laser = new M2Nano((msg) => logMachine(id, msg));
 
     try {
         await m.laser.connect(id);
         send({ type: 'machine_ready', machine: id, ok: true });
-        log(`[M${id}] ¡Máquina conectada por USB!`, 'success');
+        logMachine(id, '¡Máquina conectada por USB!', 'success');
     } catch (err) {
         send({ type: 'machine_ready', machine: id, ok: false, error: err.message });
-        log(`[M${id}] ${err.message}`, 'error');
+        logMachine(id, err.message, 'error');
         m.laser = null;
     }
 }
@@ -97,6 +89,12 @@ function disconnectMachine(id) {
 async function handleCommand(msg) {
     const id = msg.machine != null ? msg.machine : 0;
     const m = machines[id];
+
+    // Conectar máquina bajo demanda
+    if (msg.cmd === 'connect_machine') {
+        await connectMachine(id);
+        return;
+    }
 
     if (!m || !m.laser) {
         if (msg.cmd !== 'stop' && msg.cmd !== 'estop') {
@@ -289,6 +287,12 @@ function log(msg, level = 'cmd') {
     const t = new Date().toLocaleTimeString('es-MX', { hour12: false });
     console.log(`[${t}] ${msg}`);
     send({ type: 'status', text: msg, level });
+}
+
+function logMachine(id, msg, level = 'cmd') {
+    const t = new Date().toLocaleTimeString('es-MX', { hour12: false });
+    console.log(`[${t}] [M${id}] ${msg}`);
+    send({ type: 'status', machine: id, text: msg, level });
 }
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

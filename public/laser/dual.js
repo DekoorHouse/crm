@@ -330,7 +330,10 @@ function createPanel(id) {
         if (msg.type === 'machine_ready') {
             state.connected = msg.ok;
             ref('statusDot').classList.toggle('connected', msg.ok);
-            plog(msg.ok ? 'Conectado' : (msg.error || 'Error'), msg.ok ? 'success' : 'error');
+            ref('connectBtn').textContent = msg.ok ? 'Desconectar' : 'Conectar';
+            ref('connectBtn').style.borderColor = msg.ok ? '#f85149' : '#3fb950';
+            ref('connectBtn').style.color = msg.ok ? '#f85149' : '#3fb950';
+            plog(msg.ok ? 'Máquina conectada' : (msg.error || 'Error'), msg.ok ? 'success' : 'error');
         } else if (msg.type === 'position') {
             state.posX = msg.x; state.posY = msg.y;
             ref('posDisplay').textContent = `X: ${msg.x.toFixed(1)}  Y: ${msg.y.toFixed(1)}`;
@@ -344,6 +347,17 @@ function createPanel(id) {
             plog(msg.text, msg.level);
         }
     }
+
+    // ───────── Connect button per panel ─────────
+    ref('connectBtn').addEventListener('click', () => {
+        if (!ws || ws.readyState !== 1) {
+            // Abrir WebSocket global si no existe
+            connectWebSocket();
+        }
+        // Pedir al servidor conectar esta máquina
+        sendCmd({ cmd: 'connect_machine', machine: id });
+        plog('Conectando...', 'info');
+    });
 
     return { state, setupCanvas, drawCanvas, handleMessage, plog, el };
 }
@@ -446,12 +460,12 @@ panels[1] = createPanel(1);
 
 function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
-document.getElementById('connectBtn').addEventListener('click', () => {
-    if (ws && ws.readyState === 1) { ws.close(); return; }
+function connectWebSocket() {
+    if (ws && ws.readyState === 1) return;
     ws = new WebSocket('ws://localhost:7654');
     ws.onopen = () => {
-        document.getElementById('connectBtn').innerHTML = '<i class="fas fa-plug"></i> Desconectar';
-        document.getElementById('connectBtn').classList.add('active');
+        panels[0].plog('WebSocket conectado', 'success');
+        panels[1].plog('WebSocket conectado', 'success');
     };
     ws.onmessage = (e) => {
         if (typeof e.data !== 'string') return;
@@ -459,20 +473,19 @@ document.getElementById('connectBtn').addEventListener('click', () => {
         const machineId = msg.machine != null ? msg.machine : null;
         if (machineId != null && panels[machineId]) {
             panels[machineId].handleMessage(msg);
-        } else {
-            // Broadcast to both
-            panels[0].handleMessage(msg);
-            panels[1].handleMessage(msg);
         }
+        // Mensajes sin machine ID no se envían a ningún panel (evitar duplicados)
     };
     ws.onclose = () => {
         ws = null;
-        document.getElementById('connectBtn').innerHTML = '<i class="fas fa-plug"></i> Conectar';
-        document.getElementById('connectBtn').classList.remove('active');
-        panels[0].plog('Desconectado', 'warning');
-        panels[1].plog('Desconectado', 'warning');
+        for (const p of [panels[0], panels[1]]) {
+            p.state.connected = false;
+            p.el.querySelector('[data-ref="statusDot"]').classList.remove('connected');
+            p.el.querySelector('[data-ref="connectBtn"]').textContent = 'Conectar';
+            p.plog('Desconectado', 'warning');
+        }
     };
-});
+}
 
 window.addEventListener('resize', () => { panels[0].setupCanvas(); panels[1].setupCanvas(); });
 setTimeout(() => { panels[0].setupCanvas(); panels[1].setupCanvas(); }, 100);
