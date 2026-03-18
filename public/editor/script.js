@@ -4305,8 +4305,7 @@ function bmpLoadImageFromObject(obj) {
     img.crossOrigin = 'anonymous';
     const onLoaded = function(loadedImg) {
         bmpState.sourceImage = loadedImg;
-        bmpDrawOriginalPreview();
-        bmpProcessAndPreview();
+        bmpRasterizeAtDpi();
         document.getElementById('bmp-download-btn').disabled = false;
         if (bmpState.editorTarget) {
             document.getElementById('bmp-apply-editor-btn').disabled = false;
@@ -4319,6 +4318,45 @@ function bmpLoadImageFromObject(obj) {
         img2.src = obj.href;
     };
     img.src = obj.href;
+}
+
+// Re-rasterize the source image at the current DPI based on the editor object's size
+function bmpRasterizeAtDpi() {
+    const img = bmpState.sourceImage;
+    if (!img || !bmpState.editorTarget) return;
+    const obj = bmpState.editorTarget;
+    const dpi = parseInt(document.getElementById('bmp-dpi').value, 10) || 300;
+    const widthIn = obj.width / 96;
+    const heightIn = obj.height / 96;
+    const pxW = Math.round(widthIn * dpi);
+    const pxH = Math.round(heightIn * dpi);
+
+    // Rasterize at DPI-based resolution
+    const canvas = document.getElementById('bmp-preview-original');
+    canvas.width = pxW;
+    canvas.height = pxH;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, pxW, pxH);
+    bmpState.originalImageData = ctx.getImageData(0, 0, pxW, pxH);
+    bmpApplyZoom();
+
+    // Update info
+    bmpUpdateDpiInfo(pxW, pxH);
+
+    // Re-process with dithering
+    bmpProcessAndPreview();
+}
+
+function bmpUpdateDpiInfo(pxW, pxH) {
+    let info = document.getElementById('bmp-dpi-info');
+    if (!info) {
+        info = document.createElement('span');
+        info.id = 'bmp-dpi-info';
+        info.style.cssText = 'font-size:11px;color:var(--text-secondary);margin-left:4px;';
+        const dpiInput = document.getElementById('bmp-dpi');
+        dpiInput.parentNode.appendChild(info);
+    }
+    info.textContent = `${pxW} × ${pxH} px`;
 }
 
 function bmpApplyToEditor() {
@@ -5162,7 +5200,20 @@ function setupBmpConverterModal() {
         bmpScheduleUpdate();
     });
 
-    // DPI change (no preview update needed, only affects export)
+    // DPI change — re-rasterize at new resolution when editing from context menu
+    document.getElementById('bmp-dpi').addEventListener('change', () => {
+        if (bmpState.editorTarget && bmpState.sourceImage) {
+            bmpRasterizeAtDpi();
+        }
+    });
+    document.getElementById('bmp-dpi').addEventListener('input', () => {
+        if (bmpState.editorTarget && bmpState.sourceImage) {
+            if (bmpState.debounceTimer) cancelAnimationFrame(bmpState.debounceTimer);
+            bmpState.debounceTimer = requestAnimationFrame(() => {
+                bmpRasterizeAtDpi();
+            });
+        }
+    });
 
     // Download button
     document.getElementById('bmp-download-btn').addEventListener('click', () => {
