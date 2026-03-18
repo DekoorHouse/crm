@@ -152,11 +152,19 @@ window.addEventListener('mouseup', (e) => {
     const sw = Math.abs(end.x - start.x);
     const sh = Math.abs(end.y - start.y);
 
-    // Seleccionar si el recuadro cubre completamente el diseño (cualquier dirección)
-    if (state.designBox && sw > 5 && sh > 5) {
+    if (state.designBox) {
         const b = state.designBox;
-        if (sx <= b.dx && sy <= b.dy && sx + sw >= b.dx + b.dw && sy + sh >= b.dy + b.dh) {
-            state.designSelected = true;
+        if (sw <= 5 && sh <= 5) {
+            // Click simple → seleccionar si está dentro del objeto
+            const cx = start.x, cy = start.y;
+            if (cx >= b.dx && cx <= b.dx + b.dw && cy >= b.dy && cy <= b.dy + b.dh) {
+                state.designSelected = true;
+            }
+        } else {
+            // Arrastre → seleccionar si cubre completamente el objeto
+            if (sx <= b.dx && sy <= b.dy && sx + sw >= b.dx + b.dw && sy + sh >= b.dy + b.dh) {
+                state.designSelected = true;
+            }
         }
     }
     drawCanvas();
@@ -309,37 +317,37 @@ function drawCanvas() {
         // Guardar bounding box del contenido para selección y frame
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
+        // Dibujar diseño a color real con efecto neón en contornos
         ctx.save();
-        if (state.mode === 'cut') {
-            ctx.globalAlpha = 0.55;
-            ctx.filter = 'grayscale(100%)';
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.restore();
-            ctx.strokeStyle = '#ff4444';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 3]);
-            ctx.strokeRect(dx, dy, dw, dh);
-            ctx.setLineDash([]);
-        } else {
-            ctx.globalAlpha = 0.75;
-            ctx.filter = 'grayscale(80%) contrast(1.2)';
-            ctx.drawImage(img, drawX, drawY, drawW, drawH);
-            ctx.restore();
-        }
+        ctx.globalAlpha = 0.9;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.restore();
 
-        // Selección: marching ants + handles + dimensiones con fondo
+        // Efecto neón en el contorno del bbox
+        ctx.save();
+        ctx.shadowColor = '#00d4ff';
+        ctx.shadowBlur = 12;
+        ctx.strokeStyle = 'rgba(0,212,255,0.6)';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(dx, dy, dw, dh);
+        ctx.shadowBlur = 6;
+        ctx.strokeStyle = 'rgba(0,212,255,0.3)';
+        ctx.strokeRect(dx, dy, dw, dh);
+        ctx.restore();
+
+        // Selección: marching ants + handles + dimensiones por fuera
         if (state.designSelected) {
-            const pad = 3;
+            const pad = 4;
             const sx = dx - pad, sy = dy - pad, sw = dw + pad * 2, sh = dh + pad * 2;
 
             // Marching ants (borde animado)
             const offset = (Date.now() / 60) % 16;
             ctx.strokeStyle = 'rgba(0,0,0,0.5)';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 2;
             ctx.setLineDash([]);
             ctx.strokeRect(sx, sy, sw, sh);
             ctx.strokeStyle = '#58a6ff';
-            ctx.lineWidth = 1.5;
+            ctx.lineWidth = 2;
             ctx.setLineDash([6, 4]);
             ctx.lineDashOffset = -offset;
             ctx.strokeRect(sx, sy, sw, sh);
@@ -361,42 +369,45 @@ function drawCanvas() {
                 ctx.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
             }
 
-            // Labels de dimensiones — dentro del borde, en las aristas
-            const labelW = `↔ ${mmW.toFixed(1)} mm`;
-            const labelH = `↕ ${mmH.toFixed(1)} mm`;
+            // Labels de dimensiones — POR FUERA del objeto
+            const labelW = `${mmW.toFixed(1)} mm`;
+            const labelH = `${mmH.toFixed(1)} mm`;
             ctx.font = 'bold 11px JetBrains Mono, monospace';
             const lPad = 6;
-            const lH = 18;
+            const lHt = 18;
 
-            // Ancho — arista superior, centrado horizontal, dentro del borde
+            // Ancho — arriba del objeto, centrado
             const twW = ctx.measureText(labelW).width;
             const lxW = dx + dw / 2 - twW / 2 - lPad;
-            const lyW = Math.max(dy + pad, 2);
+            const lyW = dy - pad - lHt - 4;
             ctx.fillStyle = 'rgba(22,27,34,0.92)';
-            roundRect(ctx, lxW, lyW, twW + lPad * 2, lH, 3);
+            roundRect(ctx, lxW, lyW, twW + lPad * 2, lHt, 3);
             ctx.fill();
             ctx.strokeStyle = '#58a6ff';
             ctx.lineWidth = 1;
-            roundRect(ctx, lxW, lyW, twW + lPad * 2, lH, 3);
+            roundRect(ctx, lxW, lyW, twW + lPad * 2, lHt, 3);
             ctx.stroke();
             ctx.fillStyle = '#58a6ff';
             ctx.textAlign = 'center';
             ctx.fillText(labelW, dx + dw / 2, lyW + 13);
 
-            // Alto — arista izquierda, centrado vertical, dentro del borde
+            // Alto — a la izquierda del objeto, centrado vertical, rotado
             const twH = ctx.measureText(labelH).width;
-            const lxHpos = Math.max(dx + pad, 2);
-            const lyH = dy + dh / 2 - lH / 2;
+            ctx.save();
+            ctx.translate(dx - pad - lHt / 2 - 4, dy + dh / 2);
+            ctx.rotate(-Math.PI / 2);
+            const lxH = -twH / 2 - lPad;
             ctx.fillStyle = 'rgba(22,27,34,0.92)';
-            roundRect(ctx, lxHpos, lyH, twH + lPad * 2, lH, 3);
+            roundRect(ctx, lxH, -lHt / 2, twH + lPad * 2, lHt, 3);
             ctx.fill();
             ctx.strokeStyle = '#58a6ff';
             ctx.lineWidth = 1;
-            roundRect(ctx, lxHpos, lyH, twH + lPad * 2, lH, 3);
+            roundRect(ctx, lxH, -lHt / 2, twH + lPad * 2, lHt, 3);
             ctx.stroke();
             ctx.fillStyle = '#58a6ff';
-            ctx.textAlign = 'left';
-            ctx.fillText(labelH, lxHpos + lPad, lyH + 13);
+            ctx.textAlign = 'center';
+            ctx.fillText(labelH, 0, lHt / 2 - 4);
+            ctx.restore();
             ctx.textAlign = 'start';
 
             // Solicitar re-draw para animar marching ants
