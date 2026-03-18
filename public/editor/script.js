@@ -3000,6 +3000,16 @@ function showContextMenu(e, obj) {
         curvesOpt.style.display = 'none';
     }
 
+    // Background removal — only for image objects
+    const bgOpt = contextMenu.querySelector('[data-ctx="bg-removal"]');
+    if (bgOpt) {
+        if (obj.type === 'image') {
+            bgOpt.style.display = '';
+        } else {
+            bgOpt.style.display = 'none';
+        }
+    }
+
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -3047,6 +3057,9 @@ function setupContextMenu() {
                 }
                 case 'convert-to-curves':
                     convertTextToCurves(contextTarget.id);
+                    break;
+                case 'bg-removal':
+                    showBgRemovalModal(contextTarget);
                     break;
                 case 'bring-to-front':
                     bringToFront();
@@ -3135,6 +3148,7 @@ function handleMenuAction(action) {
         case 'join-nodes':  joinNodes(); break;
         case 'import-names': showImportNamesModal(); break;
         case 'bmp-converter': showBmpConverterModal(); break;
+        case 'bg-removal': showBgRemovalModal(); break;
     }
 }
 
@@ -3807,6 +3821,7 @@ function setupEventListeners() {
     setupPowerClipMenu();
     setupImportNamesModal();
     setupBmpConverterModal();
+    setupBgRemovalModal();
 }
 
 function setTool(tool) {
@@ -4530,6 +4545,299 @@ function bmpDownload() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// =============================================
+// BACKGROUND REMOVAL (AI)
+// =============================================
+const bgRemovalState = {
+    sourceImage: null,
+    resultBlob: null,
+    resultUrl: null,
+    sourceUrl: null,
+    isProcessing: false,
+};
+
+function showBgRemovalModal(imageObj) {
+    const modal = document.getElementById('bg-removal-modal');
+    modal.classList.remove('hidden');
+
+    // Reset state
+    bgRemovalCleanup();
+    document.getElementById('bg-apply-btn').disabled = true;
+    document.getElementById('bg-download-btn').disabled = true;
+    document.getElementById('bg-progress-section').style.display = 'none';
+    document.getElementById('bg-progress-bar').style.width = '0%';
+    document.getElementById('bg-progress-bar').classList.remove('pulsing');
+    document.getElementById('bg-status').textContent = '';
+    document.getElementById('bg-preview-result').style.display = 'none';
+    document.getElementById('bg-preview-original').style.display = 'none';
+    document.getElementById('bg-placeholder').style.display = '';
+
+    // Reset view to result
+    document.getElementById('bg-result-container').style.display = '';
+    document.getElementById('bg-orig-container').style.display = 'none';
+    document.getElementById('bg-view-result').classList.add('active');
+    document.getElementById('bg-view-original').classList.remove('active');
+
+    // Check if an image object was provided (from context menu) or selected
+    const sel = imageObj || (state.selectedIds.length === 1 ? findObject(state.selectedIds[0]) : null);
+    const btn = document.getElementById('bg-use-selected');
+
+    if (sel && sel.type === 'image' && sel.href) {
+        btn.disabled = false;
+        // Auto-load from the selected image
+        bgLoadImageFromObj(sel);
+    } else {
+        btn.disabled = !(state.selectedIds.length === 1 && findObject(state.selectedIds[0]) && findObject(state.selectedIds[0]).type === 'image');
+    }
+}
+
+function hideBgRemovalModal() {
+    document.getElementById('bg-removal-modal').classList.add('hidden');
+    bgRemovalCleanup();
+}
+
+function bgRemovalCleanup() {
+    if (bgRemovalState.resultUrl) {
+        URL.revokeObjectURL(bgRemovalState.resultUrl);
+    }
+    if (bgRemovalState.sourceUrl) {
+        URL.revokeObjectURL(bgRemovalState.sourceUrl);
+    }
+    bgRemovalState.sourceImage = null;
+    bgRemovalState.resultBlob = null;
+    bgRemovalState.resultUrl = null;
+    bgRemovalState.sourceUrl = null;
+    bgRemovalState.isProcessing = false;
+}
+
+function bgLoadImageFromObj(obj) {
+    if (!obj || obj.type !== 'image' || !obj.href) return;
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function () {
+        bgRemovalState.sourceImage = img;
+        bgShowOriginal();
+        bgRemoveBackground(img.src);
+    };
+    img.onerror = function () {
+        // Retry without crossOrigin for data URLs
+        const img2 = new Image();
+        img2.onload = function () {
+            bgRemovalState.sourceImage = img2;
+            bgShowOriginal();
+            bgRemoveBackground(img2.src);
+        };
+        img2.onerror = function () {
+            document.getElementById('bg-status').textContent = 'Error al cargar la imagen.';
+            document.getElementById('bg-progress-section').style.display = '';
+        };
+        img2.src = obj.href;
+    };
+    img.src = obj.href;
+}
+
+function bgLoadImageFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        const img = new Image();
+        img.onload = function () {
+            bgRemovalState.sourceImage = img;
+            bgShowOriginal();
+            bgRemoveBackground(img.src);
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function bgShowOriginal() {
+    const img = bgRemovalState.sourceImage;
+    if (!img) return;
+    document.getElementById('bg-placeholder').style.display = 'none';
+    const origEl = document.getElementById('bg-preview-original');
+    origEl.src = img.src;
+    origEl.style.display = '';
+    // Also show in result area initially (will be replaced once processed)
+    const resultEl = document.getElementById('bg-preview-result');
+    resultEl.src = img.src;
+    resultEl.style.display = '';
+}
+
+async function bgRemoveBackground(imageSource) {
+    if (bgRemovalState.isProcessing) return;
+    bgRemovalState.isProcessing = true;
+
+    const statusEl = document.getElementById('bg-status');
+    const progressEl = document.getElementById('bg-progress-bar');
+    const progressSection = document.getElementById('bg-progress-section');
+
+    progressSection.style.display = '';
+    progressEl.style.width = '5%';
+    progressEl.classList.add('pulsing');
+    statusEl.textContent = 'Cargando librer\u00eda de IA...';
+
+    // Disable buttons during processing
+    document.getElementById('bg-apply-btn').disabled = true;
+    document.getElementById('bg-download-btn').disabled = true;
+
+    try {
+        // Wait for the library to be available
+        if (!window.imglyRemoveBackground) {
+            statusEl.textContent = 'Cargando librer\u00eda...';
+            await new Promise((resolve, reject) => {
+                const check = setInterval(() => {
+                    if (window.imglyRemoveBackground) {
+                        clearInterval(check);
+                        resolve();
+                    }
+                }, 200);
+                setTimeout(() => {
+                    clearInterval(check);
+                    reject(new Error('No se pudo cargar la librer\u00eda de IA. Verifica tu conexi\u00f3n.'));
+                }, 30000);
+            });
+        }
+
+        progressEl.style.width = '15%';
+        statusEl.textContent = 'Descargando modelo de IA (primera vez puede tardar)...';
+
+        const config = {
+            progress: (key, current, total) => {
+                if (total > 0) {
+                    const pct = Math.round((current / total) * 55) + 15;
+                    progressEl.style.width = Math.min(pct, 75) + '%';
+                }
+                if (key.includes('fetch')) {
+                    statusEl.textContent = 'Descargando modelo de IA...';
+                }
+                if (key === 'compute:inference' || key.includes('inference')) {
+                    statusEl.textContent = 'Procesando imagen...';
+                    progressEl.style.width = '80%';
+                }
+            },
+        };
+
+        const blob = await window.imglyRemoveBackground(imageSource, config);
+
+        progressEl.style.width = '100%';
+        progressEl.classList.remove('pulsing');
+        statusEl.textContent = '\u00a1Listo! Fondo eliminado.';
+
+        bgRemovalState.resultBlob = blob;
+        if (bgRemovalState.resultUrl) URL.revokeObjectURL(bgRemovalState.resultUrl);
+        bgRemovalState.resultUrl = URL.createObjectURL(blob);
+
+        // Show result in preview
+        bgShowResult();
+
+        // Enable action buttons
+        document.getElementById('bg-apply-btn').disabled = false;
+        document.getElementById('bg-download-btn').disabled = false;
+
+    } catch (err) {
+        statusEl.textContent = 'Error: ' + err.message;
+        progressEl.style.width = '0%';
+        progressEl.classList.remove('pulsing');
+        console.error('Background removal failed:', err);
+    } finally {
+        bgRemovalState.isProcessing = false;
+    }
+}
+
+function bgShowResult() {
+    if (!bgRemovalState.resultUrl) return;
+    const resultEl = document.getElementById('bg-preview-result');
+    resultEl.src = bgRemovalState.resultUrl;
+    resultEl.style.display = '';
+    document.getElementById('bg-placeholder').style.display = 'none';
+
+    // Switch to result view
+    document.getElementById('bg-result-container').style.display = '';
+    document.getElementById('bg-orig-container').style.display = 'none';
+    document.getElementById('bg-view-result').classList.add('active');
+    document.getElementById('bg-view-original').classList.remove('active');
+}
+
+function bgApplyToCanvas() {
+    const sel = state.selectedIds.length === 1 ? findObject(state.selectedIds[0]) : null;
+    if (!sel || sel.type !== 'image' || !bgRemovalState.resultBlob) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+        saveUndoState();
+        sel.href = reader.result;
+        refreshElement(sel);
+        hideBgRemovalModal();
+    };
+    reader.readAsDataURL(bgRemovalState.resultBlob);
+}
+
+function bgDownloadPNG() {
+    if (!bgRemovalState.resultBlob) return;
+    const url = URL.createObjectURL(bgRemovalState.resultBlob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'sin_fondo.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+function setupBgRemovalModal() {
+    const modal = document.getElementById('bg-removal-modal');
+    if (!modal) return;
+
+    // Close buttons
+    modal.querySelectorAll('[data-action="cancel"]').forEach(btn => {
+        btn.addEventListener('click', hideBgRemovalModal);
+    });
+    modal.querySelector('.modal-overlay').addEventListener('click', hideBgRemovalModal);
+    modal.querySelector('.modal-close').addEventListener('click', hideBgRemovalModal);
+
+    // Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !modal.classList.contains('hidden')) {
+            hideBgRemovalModal();
+        }
+    });
+
+    // File upload
+    document.getElementById('bg-file-input').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) bgLoadImageFromFile(file);
+        e.target.value = '';
+    });
+
+    // Use selected image button
+    document.getElementById('bg-use-selected').addEventListener('click', () => {
+        const sel = state.selectedIds.length === 1 ? findObject(state.selectedIds[0]) : null;
+        if (sel && sel.type === 'image' && sel.href) {
+            bgLoadImageFromObj(sel);
+        }
+    });
+
+    // Apply to canvas
+    document.getElementById('bg-apply-btn').addEventListener('click', bgApplyToCanvas);
+
+    // Download PNG
+    document.getElementById('bg-download-btn').addEventListener('click', bgDownloadPNG);
+
+    // View toggle (Original / Sin fondo)
+    document.getElementById('bg-view-original').addEventListener('click', () => {
+        document.getElementById('bg-orig-container').style.display = '';
+        document.getElementById('bg-result-container').style.display = 'none';
+        document.getElementById('bg-view-original').classList.add('active');
+        document.getElementById('bg-view-result').classList.remove('active');
+    });
+    document.getElementById('bg-view-result').addEventListener('click', () => {
+        document.getElementById('bg-orig-container').style.display = 'none';
+        document.getElementById('bg-result-container').style.display = '';
+        document.getElementById('bg-view-result').classList.add('active');
+        document.getElementById('bg-view-original').classList.remove('active');
+    });
 }
 
 // --- Modal setup ---

@@ -1432,3 +1432,226 @@ body.dark .bmp-slider-group input[type="range"] {
 body.dark .bmp-checkbox-visual {
     background: var(--surface-active);
 }
+
+/* ============================================
+   Background Removal Modal
+   ============================================ */
+.bg-modal-content {
+    max-width: 720px;
+    width: 85vw;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.bg-modal-body {
+    gap: 14px !important;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Source row */
+.bg-source-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.bg-upload-btn,
+.bg-use-selected-btn {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px !important;
+    padding: 8px 14px !important;
+    border: 1px solid var(--border) !important;
+    border-radius: var(--radius-sm) !important;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.bg-upload-btn:hover,
+.bg-use-selected-btn:hover:not(:disabled) {
+    border-color: var(--accent) !important;
+    color: var(--accent);
+    background: var(--accent-soft) !important;
+}
+
+.bg-use-selected-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.bg-use-selected-btn svg,
+.bg-upload-btn svg {
+    flex-shrink: 0;
+}
+
+/* Preview toolbar */
+.bg-preview-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.bg-view-toggle {
+    display: flex;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.bg-view-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.bg-view-btn:hover {
+    color: var(--text);
+    background: var(--surface-active);
+}
+
+.bg-view-btn.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Single preview area */
+.bg-preview-single {
+    flex: 1;
+    min-height: 320px;
+    display: flex;
+    position: relative;
+}
+
+.bg-preview-container {
+    flex: 1;
+    width: 100%;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.bg-preview-img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    display: block;
+}
+
+/* Checkerboard pattern for transparency */
+.bg-checkerboard {
+    background-image:
+        linear-gradient(45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(-45deg, #e0e0e0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e0e0e0 75%),
+        linear-gradient(-45deg, transparent 75%, #e0e0e0 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+body.dark .bg-checkerboard {
+    background-image:
+        linear-gradient(45deg, #2a2a2a 25%, transparent 25%),
+        linear-gradient(-45deg, #2a2a2a 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #2a2a2a 75%),
+        linear-gradient(-45deg, transparent 75%, #2a2a2a 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+}
+
+/* Placeholder */
+.bg-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding: 40px 20px;
+    color: var(--text-muted);
+    font-size: 13px;
+    text-align: center;
+}
+
+/* Progress section */
+.bg-progress-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.bg-progress-track {
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+}
+
+.bg-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+    width: 0%;
+}
+
+@keyframes bg-progress-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.bg-progress-bar.pulsing {
+    animation: bg-progress-pulse 1.5s ease-in-out infinite;
+}
+
+.bg-status {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    text-align: center;
+}
+
+/* Action buttons */
+#bg-apply-btn,
+#bg-download-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#bg-apply-btn:disabled,
+#bg-download-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Dark theme */
+body.dark .bg-preview-container:not(.bg-checkerboard) {
+    background: rgba(20, 18, 28, 0.6);
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .bg-modal-content {
+        width: 95vw;
+    }
+    .bg-source-row {
+        flex-wrap: wrap;
+    }
+}
