@@ -346,11 +346,19 @@ function drawCanvas() {
         state.designBox = { dx, dy, dw, dh, mmW, mmH, mmX: (dx / W) * WORK_W, mmY: (dy / H) * WORK_H };
 
         // Dibujar diseño con líneas azul neón
+        // 1) Dibujar original tenue como referencia
         ctx.save();
-        ctx.globalAlpha = 0.9;
-        // Efecto neón: shadow glow en las líneas del propio SVG/imagen
+        ctx.globalAlpha = 0.15;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.restore();
+        // 2) Redibujar con filtro azul neón + glow
+        ctx.save();
+        ctx.globalAlpha = 1;
+        ctx.filter = 'brightness(0) saturate(100%) invert(70%) sepia(100%) saturate(1000%) hue-rotate(165deg)';
         ctx.shadowColor = '#00d4ff';
-        ctx.shadowBlur = 8;
+        ctx.shadowBlur = 10;
+        ctx.drawImage(img, drawX, drawY, drawW, drawH);
+        ctx.shadowBlur = 4;
         ctx.drawImage(img, drawX, drawY, drawW, drawH);
         ctx.restore();
 
