@@ -4173,6 +4173,51 @@ function bmpScheduleUpdate() {
 }
 
 // --- Zoom controls ---
+// Redraw canvases at target resolution for perfect pixel-sharp rendering
+function bmpRedrawAtZoom(canvas, sourceImageData, scale) {
+    if (!sourceImageData) return;
+    const sw = sourceImageData.width, sh = sourceImageData.height;
+    const dw = Math.round(sw * scale), dh = Math.round(sh * scale);
+    canvas.width = dw;
+    canvas.height = dh;
+    const ctx = canvas.getContext('2d');
+    // Draw pixel-by-pixel for perfect 1-bit rendering
+    const src = sourceImageData.data;
+    const dst = ctx.createImageData(dw, dh);
+    const dstData = dst.data;
+    const s = Math.max(1, Math.round(scale));
+    if (scale >= 1) {
+        // Upscale: each source pixel becomes an s×s block
+        for (let sy = 0; sy < sh; sy++) {
+            for (let sx = 0; sx < sw; sx++) {
+                const si = (sy * sw + sx) * 4;
+                const r = src[si], g = src[si+1], b = src[si+2], a = src[si+3];
+                for (let dy = 0; dy < s && sy*s+dy < dh; dy++) {
+                    for (let dx = 0; dx < s && sx*s+dx < dw; dx++) {
+                        const di = ((sy*s+dy) * dw + (sx*s+dx)) * 4;
+                        dstData[di] = r; dstData[di+1] = g; dstData[di+2] = b; dstData[di+3] = a;
+                    }
+                }
+            }
+        }
+    } else {
+        // Downscale: nearest-neighbor sampling
+        for (let y = 0; y < dh; y++) {
+            const srcY = Math.floor(y / scale);
+            for (let x = 0; x < dw; x++) {
+                const srcX = Math.floor(x / scale);
+                const si = (srcY * sw + srcX) * 4;
+                const di = (y * dw + x) * 4;
+                dstData[di] = src[si]; dstData[di+1] = src[si+1];
+                dstData[di+2] = src[si+2]; dstData[di+3] = src[si+3];
+            }
+        }
+    }
+    ctx.putImageData(dst, 0, 0);
+    canvas.style.width = '';
+    canvas.style.height = '';
+}
+
 function bmpApplyZoom() {
     const origContainer = document.getElementById('bmp-orig-container');
     const procContainer = document.getElementById('bmp-proc-container');
@@ -4181,27 +4226,33 @@ function bmpApplyZoom() {
     const valEl = document.getElementById('bmp-zoom-val');
 
     if (bmpState.zoom === 0) {
-        // Fit mode
+        // Fit mode — use CSS scaling
         valEl.textContent = 'Ajustar';
         origContainer.classList.remove('zoomed');
         procContainer.classList.remove('zoomed');
-        origCanvas.style.width = '';
-        origCanvas.style.height = '';
-        procCanvas.style.width = '';
-        procCanvas.style.height = '';
+        // Restore original resolution canvases
+        if (bmpState.originalImageData) {
+            origCanvas.width = bmpState.originalImageData.width;
+            origCanvas.height = bmpState.originalImageData.height;
+            origCanvas.getContext('2d').putImageData(bmpState.originalImageData, 0, 0);
+            origCanvas.style.width = '';
+            origCanvas.style.height = '';
+        }
+        if (bmpState.processedImageData) {
+            procCanvas.width = bmpState.processedImageData.width;
+            procCanvas.height = bmpState.processedImageData.height;
+            procCanvas.getContext('2d').putImageData(bmpState.processedImageData, 0, 0);
+            procCanvas.style.width = '';
+            procCanvas.style.height = '';
+        }
     } else {
+        // Pixel-perfect zoom: redraw at target resolution
         valEl.textContent = bmpState.zoom + '%';
         origContainer.classList.add('zoomed');
         procContainer.classList.add('zoomed');
         const scale = bmpState.zoom / 100;
-        if (origCanvas.width > 0) {
-            origCanvas.style.width = Math.round(origCanvas.width * scale) + 'px';
-            origCanvas.style.height = Math.round(origCanvas.height * scale) + 'px';
-        }
-        if (procCanvas.width > 0) {
-            procCanvas.style.width = Math.round(procCanvas.width * scale) + 'px';
-            procCanvas.style.height = Math.round(procCanvas.height * scale) + 'px';
-        }
+        bmpRedrawAtZoom(origCanvas, bmpState.originalImageData, scale);
+        bmpRedrawAtZoom(procCanvas, bmpState.processedImageData, scale);
     }
 }
 
