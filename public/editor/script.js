@@ -4041,6 +4041,11 @@ function showBmpConverterModal() {
     bmpState.processedImageData = null;
     bmpState.zoom = 0;
     bmpApplyZoom();
+    // Reset view to Procesado
+    document.getElementById('bmp-orig-container').style.display = 'none';
+    document.getElementById('bmp-proc-container').style.display = '';
+    document.getElementById('bmp-view-processed').classList.add('active');
+    document.getElementById('bmp-view-original').classList.remove('active');
     // Clear preview canvases
     const origCanvas = document.getElementById('bmp-preview-original');
     const procCanvas = document.getElementById('bmp-preview-processed');
@@ -4605,6 +4610,20 @@ function setupBmpConverterModal() {
             if (e.deltaY < 0) bmpZoomIn(); else bmpZoomOut();
         }, { passive: false });
     }
+
+    // View toggle (Original / Procesado)
+    document.getElementById('bmp-view-original').addEventListener('click', () => {
+        document.getElementById('bmp-orig-container').style.display = '';
+        document.getElementById('bmp-proc-container').style.display = 'none';
+        document.getElementById('bmp-view-original').classList.add('active');
+        document.getElementById('bmp-view-processed').classList.remove('active');
+    });
+    document.getElementById('bmp-view-processed').addEventListener('click', () => {
+        document.getElementById('bmp-orig-container').style.display = 'none';
+        document.getElementById('bmp-proc-container').style.display = '';
+        document.getElementById('bmp-view-processed').classList.add('active');
+        document.getElementById('bmp-view-original').classList.remove('active');
+    });
 }
 
 // =============================================

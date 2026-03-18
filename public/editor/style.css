@@ -1090,10 +1090,17 @@ body.dark .btn-primary:hover {
 .bmp-modal-content {
     max-width: 900px;
     width: 90vw;
+    max-height: 92vh;
+    display: flex;
+    flex-direction: column;
 }
 
 .bmp-modal-body {
     gap: 14px !important;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 /* Source row */
@@ -1156,37 +1163,57 @@ body.dark .btn-primary:hover {
     font-variant-numeric: tabular-nums;
 }
 
-/* Preview area */
-.bmp-preview-area {
+/* Preview toolbar */
+.bmp-preview-toolbar {
     display: flex;
-    gap: 12px;
-    min-height: 200px;
-    max-height: 340px;
+    align-items: center;
+    justify-content: space-between;
 }
 
-.bmp-preview-panel {
+.bmp-view-toggle {
+    display: flex;
+    background: var(--surface-hover);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+}
+
+.bmp-view-btn {
+    padding: 6px 16px;
+    font-size: 12px;
+    font-weight: 600;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.bmp-view-btn:hover {
+    color: var(--text);
+    background: var(--surface-active);
+}
+
+.bmp-view-btn.active {
+    background: var(--accent);
+    color: #fff;
+}
+
+/* Single preview area — fills available space */
+.bmp-preview-single {
     flex: 1;
+    min-height: 300px;
     display: flex;
-    flex-direction: column;
-    gap: 6px;
-    min-width: 0;
-}
-
-.bmp-preview-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
+    position: relative;
 }
 
 .bmp-preview-container {
     flex: 1;
+    width: 100%;
     background: var(--surface-hover);
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
     overflow: auto;
-    min-height: 160px;
     position: relative;
     display: flex;
     align-items: center;
@@ -1381,15 +1408,15 @@ body.dark .btn-primary:hover {
 
 /* Responsive adjustments */
 @media (max-width: 700px) {
-    .bmp-preview-area {
-        flex-direction: column;
-        max-height: none;
-    }
     .bmp-sliders {
         grid-template-columns: 1fr;
     }
     .bmp-controls-row {
         flex-wrap: wrap;
+    }
+    .bmp-preview-toolbar {
+        flex-direction: column;
+        gap: 8px;
     }
 }
 
