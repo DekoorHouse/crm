@@ -162,6 +162,20 @@ window.addEventListener('mouseup', (e) => {
     drawCanvas();
 });
 
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+}
+
 function drawCanvas() {
     const W = canvasW, H = canvasH;
     ctx.clearRect(0, 0, W, H);
@@ -333,39 +347,42 @@ function drawCanvas() {
                 ctx.strokeRect(hx - hs, hy - hs, hs * 2, hs * 2);
             }
 
-            // Labels de dimensiones con fondo
-            const labelW = `${mmW.toFixed(1)} mm`;
-            const labelH = `${mmH.toFixed(1)} mm`;
+            // Labels de dimensiones — dentro del borde, en las aristas
+            const labelW = `↔ ${mmW.toFixed(1)} mm`;
+            const labelH = `↕ ${mmH.toFixed(1)} mm`;
             ctx.font = 'bold 11px JetBrains Mono, monospace';
+            const lPad = 6;
+            const lH = 18;
 
-            // Ancho (arriba, centrado)
+            // Ancho — arista superior, centrado horizontal, dentro del borde
             const twW = ctx.measureText(labelW).width;
-            const lxW = dx + dw / 2 - twW / 2 - 4;
-            const lyW = dy - pad - 18;
-            ctx.fillStyle = 'rgba(22,27,34,0.9)';
-            ctx.fillRect(lxW, lyW, twW + 8, 16);
+            const lxW = dx + dw / 2 - twW / 2 - lPad;
+            const lyW = Math.max(dy + pad, 2);
+            ctx.fillStyle = 'rgba(22,27,34,0.92)';
+            roundRect(ctx, lxW, lyW, twW + lPad * 2, lH, 3);
+            ctx.fill();
             ctx.strokeStyle = '#58a6ff';
             ctx.lineWidth = 1;
-            ctx.strokeRect(lxW, lyW, twW + 8, 16);
+            roundRect(ctx, lxW, lyW, twW + lPad * 2, lH, 3);
+            ctx.stroke();
             ctx.fillStyle = '#58a6ff';
             ctx.textAlign = 'center';
-            ctx.fillText(labelW, dx + dw / 2, lyW + 12);
+            ctx.fillText(labelW, dx + dw / 2, lyW + 13);
 
-            // Alto (izquierda, centrado vertical)
+            // Alto — arista izquierda, centrado vertical, dentro del borde
             const twH = ctx.measureText(labelH).width;
-            ctx.save();
-            ctx.translate(dx - pad - 18, dy + dh / 2);
-            ctx.rotate(-Math.PI / 2);
-            const lxH = -twH / 2 - 4;
-            ctx.fillStyle = 'rgba(22,27,34,0.9)';
-            ctx.fillRect(lxH, -8, twH + 8, 16);
+            const lxHpos = Math.max(dx + pad, 2);
+            const lyH = dy + dh / 2 - lH / 2;
+            ctx.fillStyle = 'rgba(22,27,34,0.92)';
+            roundRect(ctx, lxHpos, lyH, twH + lPad * 2, lH, 3);
+            ctx.fill();
             ctx.strokeStyle = '#58a6ff';
             ctx.lineWidth = 1;
-            ctx.strokeRect(lxH, -8, twH + 8, 16);
+            roundRect(ctx, lxHpos, lyH, twH + lPad * 2, lH, 3);
+            ctx.stroke();
             ctx.fillStyle = '#58a6ff';
-            ctx.textAlign = 'center';
-            ctx.fillText(labelH, 0, 4);
-            ctx.restore();
+            ctx.textAlign = 'left';
+            ctx.fillText(labelH, lxHpos + lPad, lyH + 13);
             ctx.textAlign = 'start';
 
             // Solicitar re-draw para animar marching ants
