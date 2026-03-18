@@ -200,15 +200,19 @@ class M2Nano {
      * NO usa framing 0xA6 — el primer byte es el comando directamente.
      */
     sendCommand(cmd) {
-        return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(CMD_PKT_SIZE, 0);
-            pkt[0] = cmd;  // Comando directo (ej: 0xA0 para status)
-
-            this.epOut.transfer(pkt, err => {
-                if (err) reject(err);
-                else resolve();
-            });
-        });
+        return Promise.race([
+            new Promise((resolve, reject) => {
+                const pkt = Buffer.alloc(CMD_PKT_SIZE, 0);
+                pkt[0] = cmd;
+                this.epOut.transfer(pkt, err => {
+                    if (err) reject(err);
+                    else resolve();
+                });
+            }),
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error('sendCommand timeout')), 2000)
+            ),
+        ]);
     }
 
     /** Lee la respuesta de estado (6 bytes) con timeout. */
@@ -232,9 +236,6 @@ class M2Nano {
         let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
-                // Leer status via CH341 (raw 0xA0 — NO enviar paquete EPP aquí,
-                // porque cada paquete EPP se encola como comando en la placa).
-                // El hello EPP solo se envía en connect().
                 await this.sendCommand(CMD_STATUS);
                 const resp = await this.readStatus(readTimeout);
 
@@ -246,7 +247,9 @@ class M2Nano {
                 }
 
                 if (s === 0xCE || s === 0xCF || s === 0xEC) return;
-            } catch (_) {}
+            } catch (e) {
+                this.log(`waitReady error: ${e.message}`);
+            }
             await sleep(80);
         }
         this.log(`waitReady timeout (último status: 0x${lastStatus.toString(16).padStart(2,'00')})`);
@@ -281,8 +284,13 @@ class M2Nano {
         const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
         this.log(`sendEGVJob: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
 
-        await this.waitReady(10000);
-        this.log('Board listo. Enviando raster...');
+        this.log('Esperando board ready...');
+        try {
+            await this.waitReady(10000);
+            this.log('Board listo. Enviando raster...');
+        } catch (e) {
+            this.log(`waitReady falló: ${e.message} — intentando enviar de todas formas...`);
+        }
 
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const pktIdx = Math.floor(i / DATA_SIZE);
