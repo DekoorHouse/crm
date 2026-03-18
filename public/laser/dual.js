@@ -38,6 +38,8 @@ function createPanel(id) {
         designBox: null,
         designSelected: false,
         jobRunning: false,
+        invertColors: false,
+        previewBitmapData: null,
     };
 
     let canvasW = 100, canvasH = 100;
@@ -102,8 +104,20 @@ function createPanel(id) {
 
             state.designBox = { dx, dy, dw, dh, mmW, mmH };
 
-            // Draw image
-            if (state.imageType === 'svg') {
+            // Draw image or preview
+            if (state.previewBitmapData) {
+                // Mostrar preview del bitmap dithered
+                const pv = state.previewBitmapData;
+                const pvMmW = pv.width / 39.37;
+                const pvMmH = pv.height / 39.37 * state.lineSpacing;
+                const pvX = (pv.offsetX / WORK_W) * W;
+                const pvY = (pv.offsetY / WORK_H) * H;
+                const pvW = (pvMmW / WORK_W) * W;
+                const pvH = (pvMmH / WORK_H) * H;
+                ctx.save(); ctx.globalAlpha = 0.95;
+                ctx.drawImage(pv.canvas, pvX, pvY, pvW, pvH);
+                ctx.restore();
+            } else if (state.imageType === 'svg') {
                 const hasImg = state.svgText && /<image[\s>]/i.test(state.svgText);
                 if (hasImg) {
                     ctx.save(); ctx.shadowColor = '#00d4ff'; ctx.shadowBlur = 6;
@@ -167,7 +181,7 @@ function createPanel(id) {
 
     ref('removeFileBtn').addEventListener('click', () => {
         state.loadedFile = null; state.loadedImage = null; state.imageType = null;
-        state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null;
+        state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null;
         ref('fileInfo').style.display = 'none'; dropZone.style.display = '';
         drawCanvas();
     });
@@ -184,7 +198,7 @@ function createPanel(id) {
                 const img = new Image();
                 img.onload = () => {
                     state.loadedImage = img; state.imageType = 'svg'; state.loadedFile = file;
-                    state.designSelected = false;
+                    state.designSelected = false; state.previewBitmapData = null;
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     URL.revokeObjectURL(url); drawCanvas();
                     plog(`SVG: ${file.name}`, 'success');
@@ -197,7 +211,7 @@ function createPanel(id) {
                 const img = new Image();
                 img.onload = () => {
                     state.loadedImage = img; state.imageType = 'raster'; state.loadedFile = file;
-                    state.designSelected = false;
+                    state.designSelected = false; state.previewBitmapData = null;
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     drawCanvas();
                     plog(`Img: ${file.name}`, 'success');
@@ -269,6 +283,8 @@ function createPanel(id) {
     ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedLabel').textContent = `${state.speed} mm/s`; });
     ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
     ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
+    ref('invertCheck').addEventListener('change', e => { state.invertColors = e.target.checked; state.previewBitmapData = null; drawCanvas(); });
+    ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; });
 
     // Jog
     el.querySelectorAll('[data-jog]').forEach(btn => {
@@ -289,6 +305,7 @@ function createPanel(id) {
 
     // Job controls
     ref('frameBtn').addEventListener('click', () => sendCmd({ cmd: 'frame', machine: id }));
+    ref('previewBtn').addEventListener('click', () => generatePreview());
     ref('startBtn').addEventListener('click', () => startJob());
     ref('pauseBtn').addEventListener('click', () => {
         state.jobRunning ? sendCmd({ cmd: state.jobPaused ? 'resume' : 'pause', machine: id }) : null;
@@ -296,6 +313,39 @@ function createPanel(id) {
     });
     ref('stopBtn').addEventListener('click', () => { sendCmd({ cmd: 'stop', machine: id }); state.jobRunning = false; });
     ref('estopBtn').addEventListener('click', () => { sendCmd({ cmd: 'estop', machine: id }); state.jobRunning = false; });
+
+    function generatePreview() {
+        if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
+        plog('Generando vista previa...', 'info');
+        const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+        const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors });
+
+        // Convertir bitmap 1-bit a canvas para mostrar
+        const pvCanvas = document.createElement('canvas');
+        pvCanvas.width = rd.width; pvCanvas.height = rd.height;
+        const pvCx = pvCanvas.getContext('2d');
+        const imgData = pvCx.createImageData(rd.width, rd.height);
+        const d = imgData.data;
+        const rowBytes = Math.ceil(rd.width / 8);
+        for (let y = 0; y < rd.height; y++) {
+            for (let x = 0; x < rd.width; x++) {
+                const bit = (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+                const idx = (y * rd.width + x) * 4;
+                const v = bit ? 0 : 255; // bit=1 → negro (láser ON)
+                d[idx] = v; d[idx+1] = v; d[idx+2] = v; d[idx+3] = 255;
+            }
+        }
+        pvCx.putImageData(imgData, 0, 0);
+
+        state.previewBitmapData = {
+            canvas: pvCanvas,
+            width: rd.width, height: rd.height,
+            offsetX: rd.offsetX, offsetY: rd.offsetY,
+        };
+        const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
+        plog(`Preview: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm ${state.invertColors ? '(invertido)' : ''}`, 'success');
+        drawCanvas();
+    }
 
     function startJob() {
         if (!state.loadedFile || !ws) return;
@@ -309,7 +359,7 @@ function createPanel(id) {
         } else {
             // Para SVGs, usar el bbox de los objetos (no el canvas completo)
             const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox);
+            const rd = extractRasterBitmap(state.loadedImage, state.lineSpacing, bbox, { invert: state.invertColors });
             const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
@@ -433,7 +483,7 @@ function extractSVGSegments(svgText) {
     return segments;
 }
 
-function extractRasterBitmap(image, lineSpacing = 1, bbox = null) {
+function extractRasterBitmap(image, lineSpacing = 1, bbox = null, options = {}) {
     const imgW = image.naturalWidth || image.width;
     const imgH = image.naturalHeight || image.height;
     const pxToMm = 25.4 / 96;
@@ -484,6 +534,10 @@ function extractRasterBitmap(image, lineSpacing = 1, bbox = null) {
     const id = cx.getImageData(0, 0, pxW, pxH); const px = id.data;
     const gray = new Uint8Array(pxW * pxH);
     for (let i = 0; i < pxW * pxH; i++) gray[i] = Math.round(0.299*px[i*4] + 0.587*px[i*4+1] + 0.114*px[i*4+2]);
+    // Invertir colores (para acrílico: graba las zonas claras)
+    if (options.invert) {
+        for (let i = 0; i < pxW * pxH; i++) gray[i] = 255 - gray[i];
+    }
     // Floyd-Steinberg dithering
     for (let y = 0; y < pxH; y++) for (let x = 0; x < pxW; x++) {
         const idx = y*pxW+x; const old = gray[idx]; const nw = old < 128 ? 0 : 255; gray[idx] = nw; const err = old - nw;

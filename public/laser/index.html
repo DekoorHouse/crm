@@ -232,6 +232,10 @@
                         <label>Pasadas <span data-ref="passesLabel">1×</span></label>
                         <input type="range" class="param-slider" data-ref="passesSlider" min="1" max="10" value="1">
                     </div>
+                    <div class="setting-group" style="display:flex;align-items:center;gap:6px;margin-top:6px">
+                        <input type="checkbox" data-ref="invertCheck" id="invertCheck___ID__" style="accent-color:#58a6ff;cursor:pointer">
+                        <label for="invertCheck___ID__" style="font-size:10px;cursor:pointer;margin:0">Invertir colores (acrílico)</label>
+                    </div>
                 </div>
                 <!-- Jog -->
                 <div class="panel-section">
@@ -263,6 +267,7 @@
             <div>
                 <div class="ctrl-row">
                     <button data-ref="frameBtn">Frame</button>
+                    <button data-ref="previewBtn" style="border-color:#d29922;color:#d29922">Vista previa</button>
                     <button data-ref="startBtn" class="start">Iniciar</button>
                     <button data-ref="pauseBtn">Pausa</button>
                     <button data-ref="stopBtn" class="stop">Stop</button>
