@@ -64,31 +64,27 @@ class M2Nano {
     /**
      * Busca y abre un dispositivo USB.
      * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
-     * @param {Set} [usedDevices]  set de devices ya abiertos (para evitar duplicados)
      */
     async connect(deviceIndex = 0) {
-        // Para el primer dispositivo: usar findByIds (método probado que funciona)
-        // Para el segundo: buscar en la lista completa excluyendo el primero
-        let found = null;
+        // Siempre listar TODOS los CH341 para poder elegir por índice
+        const allDevs = usb.getDeviceList();
+        const matching = [];
+        for (const dev of allDevs) {
+            const desc = dev.deviceDescriptor;
+            const match = DEVICES.find(d => desc.idVendor === d.vid && desc.idProduct === d.pid);
+            if (match) {
+                matching.push({ dev, name: match.name, bus: dev.busNumber, addr: dev.deviceAddress });
+            }
+        }
+        this.log(`CH341 detectados: ${matching.length} (pidiendo índice ${deviceIndex})`);
+        for (let i = 0; i < matching.length; i++) {
+            const m = matching[i];
+            this.log(`  [${i}] ${m.name} bus=${m.bus} addr=${m.addr}`);
+        }
 
-        if (deviceIndex === 0) {
-            for (const d of DEVICES) {
-                const dev = usb.findByIds(d.vid, d.pid);
-                if (dev) { found = { dev, name: d.name }; break; }
-            }
-        } else {
-            // Segundo dispositivo: buscar en la lista todos los CH341
-            const allDevs = usb.getDeviceList();
-            const matching = [];
-            for (const dev of allDevs) {
-                const desc = dev.deviceDescriptor;
-                const match = DEVICES.find(d => desc.idVendor === d.vid && desc.idProduct === d.pid);
-                if (match) matching.push({ dev, name: match.name });
-            }
-            this.log(`Dispositivos CH341 encontrados: ${matching.length}`);
-            if (deviceIndex < matching.length) {
-                found = matching[deviceIndex];
-            }
+        let found = null;
+        if (deviceIndex < matching.length) {
+            found = matching[deviceIndex];
         }
 
         if (!found) {
