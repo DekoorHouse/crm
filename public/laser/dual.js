@@ -350,13 +350,15 @@ function createPanel(id) {
 
     // ───────── Connect button per panel ─────────
     ref('connectBtn').addEventListener('click', () => {
-        if (!ws || ws.readyState !== 1) {
-            // Abrir WebSocket global si no existe
-            connectWebSocket();
-        }
-        // Pedir al servidor conectar esta máquina
-        sendCmd({ cmd: 'connect_machine', machine: id });
         plog('Conectando...', 'info');
+        if (!ws || ws.readyState !== 1) {
+            // Abrir WebSocket y enviar connect_machine cuando esté listo
+            connectWebSocket(() => {
+                sendCmd({ cmd: 'connect_machine', machine: id });
+            });
+        } else {
+            sendCmd({ cmd: 'connect_machine', machine: id });
+        }
     });
 
     return { state, setupCanvas, drawCanvas, handleMessage, plog, el };
@@ -460,12 +462,16 @@ panels[1] = createPanel(1);
 
 function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
-function connectWebSocket() {
-    if (ws && ws.readyState === 1) return;
+let _wsOnOpenCallbacks = [];
+
+function connectWebSocket(onReady) {
+    if (onReady) _wsOnOpenCallbacks.push(onReady);
+    if (ws && ws.readyState === 1) { _wsOnOpenCallbacks.forEach(cb => cb()); _wsOnOpenCallbacks = []; return; }
+    if (ws && ws.readyState === 0) return; // ya está conectando
     ws = new WebSocket('ws://localhost:7654');
     ws.onopen = () => {
-        panels[0].plog('WebSocket conectado', 'success');
-        panels[1].plog('WebSocket conectado', 'success');
+        _wsOnOpenCallbacks.forEach(cb => cb());
+        _wsOnOpenCallbacks = [];
     };
     ws.onmessage = (e) => {
         if (typeof e.data !== 'string') return;
