@@ -3010,6 +3010,16 @@ function showContextMenu(e, obj) {
         }
     }
 
+    // Convert to bitmap — only for image objects
+    const bmpOpt = contextMenu.querySelector('[data-ctx="convert-to-bitmap"]');
+    if (bmpOpt) {
+        if (obj.type === 'image') {
+            bmpOpt.style.display = '';
+        } else {
+            bmpOpt.style.display = 'none';
+        }
+    }
+
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -3060,6 +3070,9 @@ function setupContextMenu() {
                     break;
                 case 'bg-removal':
                     showBgRemovalModal(contextTarget);
+                    break;
+                case 'convert-to-bitmap':
+                    showConvertBitmapModal(contextTarget);
                     break;
                 case 'bring-to-front':
                     bringToFront();
@@ -3163,11 +3176,12 @@ async function exportSVG() {
     }
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
+    const mmToPx = 96 / 25.4;
     const root = document.createElementNS(ns, 'svg');
     root.setAttribute('xmlns', ns);
     root.setAttribute('xmlns:xlink', xlink);
-    root.setAttribute('width', state.pageWidth); root.setAttribute('height', state.pageHeight);
-    root.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
+    root.setAttribute('width', state.pageWidth + 'mm'); root.setAttribute('height', state.pageHeight + 'mm');
+    root.setAttribute('viewBox', `0 0 ${state.pageWidth * mmToPx} ${state.pageHeight * mmToPx}`);
     function exportObj(obj, parent) {
         if (obj.type === 'text') {
             // Convert text to curves (path) using opentype.js
@@ -3227,10 +3241,16 @@ async function exportSVG() {
             parent.appendChild(clone);
         }
     }
-    for (const obj of state.objects) exportObj(obj, root);
+    // Wrap content in scale group to convert mm coords → px (96 DPI)
+    const contentGroup = document.createElementNS(ns, 'g');
+    contentGroup.setAttribute('transform', `scale(${mmToPx})`);
+    for (const obj of state.objects) exportObj(obj, contentGroup);
+    root.appendChild(contentGroup);
     let str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
     // Fix namespace: some serializers output "ns0:href" instead of "xlink:href"
     str = str.replace(/ns\d+:href/g, 'xlink:href');
+    // Add Inkscape metadata so K40 Whisperer recognises 96 DPI without asking
+    str = str.replace('<svg ', '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" inkscape:version="0.92.4" ');
     const blob = new Blob([str], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'dibujo.svg';
@@ -3820,6 +3840,7 @@ function setupEventListeners() {
     setupContextMenu();
     setupPowerClipMenu();
     setupImportNamesModal();
+    setupConvertBitmapModal();
     setupBmpConverterModal();
     setupBgRemovalModal();
 }
@@ -4021,6 +4042,130 @@ function updateThemeShadow() {
         s1.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s1.setAttribute('flood-opacity', isDark ? '0.25' : '0.10');
         s2.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s2.setAttribute('flood-opacity', isDark ? '0.15' : '0.06');
     }
+}
+
+// =============================================
+// CONVERT TO BITMAP
+// =============================================
+let convertBmpTarget = null;
+
+function showConvertBitmapModal(obj) {
+    if (!obj || obj.type !== 'image') return;
+    convertBmpTarget = obj;
+    const modal = document.getElementById('convert-bitmap-modal');
+    modal.classList.remove('hidden');
+    const dpiInput = document.getElementById('convert-bmp-dpi');
+    dpiInput.value = 300;
+    updateConvertBmpPresetHighlight(300);
+    updateConvertBmpInfo();
+}
+
+function hideConvertBitmapModal() {
+    document.getElementById('convert-bitmap-modal').classList.add('hidden');
+    convertBmpTarget = null;
+}
+
+function updateConvertBmpPresetHighlight(dpi) {
+    document.querySelectorAll('.convert-bmp-preset').forEach(btn => {
+        if (parseInt(btn.dataset.dpi) === dpi) {
+            btn.classList.add('active');
+        } else {
+            btn.classList.remove('active');
+        }
+    });
+}
+
+function updateConvertBmpInfo() {
+    const info = document.getElementById('convert-bmp-info');
+    if (!convertBmpTarget) { info.textContent = ''; return; }
+    const dpi = parseInt(document.getElementById('convert-bmp-dpi').value) || 300;
+    const widthIn = convertBmpTarget.width / 96;
+    const heightIn = convertBmpTarget.height / 96;
+    const pxW = Math.round(widthIn * dpi);
+    const pxH = Math.round(heightIn * dpi);
+    info.textContent = `Resultado: ${pxW} \u00d7 ${pxH} px`;
+}
+
+function applyConvertToBitmap() {
+    if (!convertBmpTarget) return;
+    const obj = convertBmpTarget;
+    const dpi = parseInt(document.getElementById('convert-bmp-dpi').value) || 300;
+
+    // Calculate pixel dimensions based on DPI
+    const widthIn = obj.width / 96;
+    const heightIn = obj.height / 96;
+    const pxW = Math.round(widthIn * dpi);
+    const pxH = Math.round(heightIn * dpi);
+
+    // Load the image and re-rasterize at the target DPI
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = pxW;
+        canvas.height = pxH;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, pxW, pxH);
+        const dataUrl = canvas.toDataURL('image/png');
+
+        // Update the object's href with the re-rasterized image
+        saveUndoState();
+        obj.href = dataUrl;
+        obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+        obj.element.setAttribute('href', dataUrl);
+        refreshElement(obj);
+        hideConvertBitmapModal();
+    };
+    img.onerror = function() {
+        // Retry without crossOrigin for data URLs
+        const img2 = new Image();
+        img2.onload = function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = pxW;
+            canvas.height = pxH;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img2, 0, 0, pxW, pxH);
+            const dataUrl = canvas.toDataURL('image/png');
+            saveUndoState();
+            obj.href = dataUrl;
+            obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+            obj.element.setAttribute('href', dataUrl);
+            refreshElement(obj);
+            hideConvertBitmapModal();
+        };
+        img2.src = obj.href;
+    };
+    img.src = obj.href;
+}
+
+function setupConvertBitmapModal() {
+    const modal = document.getElementById('convert-bitmap-modal');
+    if (!modal) return;
+    modal.querySelector('.modal-overlay').addEventListener('click', hideConvertBitmapModal);
+    modal.querySelector('.modal-close').addEventListener('click', hideConvertBitmapModal);
+
+    const dpiInput = document.getElementById('convert-bmp-dpi');
+    const applyBtn = document.getElementById('convert-bmp-apply');
+
+    // Apply button (checkmark)
+    applyBtn.addEventListener('click', applyConvertToBitmap);
+
+    // DPI input change updates info and preset highlight
+    dpiInput.addEventListener('input', () => {
+        const v = parseInt(dpiInput.value) || 0;
+        updateConvertBmpPresetHighlight(v);
+        updateConvertBmpInfo();
+    });
+
+    // Preset buttons
+    document.querySelectorAll('.convert-bmp-preset').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const dpi = parseInt(btn.dataset.dpi);
+            dpiInput.value = dpi;
+            updateConvertBmpPresetHighlight(dpi);
+            updateConvertBmpInfo();
+        });
+    });
 }
 
 // =============================================
