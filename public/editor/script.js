@@ -95,6 +95,7 @@ const state = {
 
     previewElement: null,
     spaceHeld: false,
+    wHeld: false,
 
     unit: 'mm',
     lockAspect: true,
@@ -1695,12 +1696,31 @@ function handleMouseUp() {
         clearPCHighlight();
         clearSnapGuideLines();
         snapLayer.innerHTML = '';
+        // W+drop: convert object under cursor to powerclip and insert dragged object
+        if (!pcEditingId && state.wHeld && state.selectedIds.length === 1) {
+            const draggedId = state.selectedIds[0];
+            const dragged = findObject(draggedId);
+            if (dragged && dragged.type !== 'powerclip') {
+                const cursorPt = screenToSVG(event.clientX, event.clientY);
+                const underObj = objectUnderCursor(cursorPt, draggedId);
+                if (underObj && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
+                    // Convert underObj to powerclip, then add dragged as content
+                    makePowerClip(underObj.id);
+                    // Find the newly created powerclip (it replaced underObj at same position)
+                    const newPc = findObject(underObj.id);
+                    if (newPc && newPc.type === 'powerclip') {
+                        addToPowerClip(draggedId, newPc.id);
+                    }
+                    state.wHeld = false;
+                    return;
+                }
+            }
+        }
         // Auto-insert into PowerClip: only if cursor is inside a powerclip, and not in PC edit mode
         if (!pcEditingId && state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
             const dragged = findObject(draggedId);
             if (dragged && dragged.type !== 'powerclip') {
-                // Use the cursor position (last known mouse point) not object bounds
                 const cursorPt = screenToSVG(event.clientX, event.clientY);
                 const pcTarget = findPowerClipAtPoint(cursorPt, draggedId);
                 if (pcTarget) {
@@ -1875,6 +1895,48 @@ function showPCHighlight(pc) {
     previewLayer.appendChild(pcHighlightEl);
 }
 
+// Find any non-selected object under a point (for W+drag powerclip creation)
+function objectUnderCursor(pt, excludeId) {
+    for (let i = state.objects.length - 1; i >= 0; i--) {
+        const obj = state.objects[i];
+        if (obj.id === excludeId || state.selectedIds.includes(obj.id)) continue;
+        if (hitTest(obj, pt)) return obj;
+    }
+    return null;
+}
+
+// Show lilac highlight on a regular object (not a powerclip container)
+function showPCHighlightForObj(obj) {
+    if (pcHighlightId === obj.id && pcHighlightEl) return;
+    clearPCHighlight();
+    pcHighlightId = obj.id;
+    const ns = 'http://www.w3.org/2000/svg';
+    const b = getObjBounds(obj);
+    pcHighlightEl = document.createElementNS(ns, obj.type === 'ellipse' ? 'ellipse' : 'rect');
+    pcHighlightEl.setAttribute('pointer-events', 'none');
+    pcHighlightEl.setAttribute('fill', 'rgba(168, 130, 255, 0.30)');
+    pcHighlightEl.setAttribute('stroke', '#9366f0');
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    pcHighlightEl.setAttribute('stroke-width', 2 * screenScale);
+    pcHighlightEl.setAttribute('stroke-dasharray', `${6*screenScale} ${3*screenScale}`);
+    if (obj.type === 'ellipse') {
+        pcHighlightEl.setAttribute('cx', obj.cx);
+        pcHighlightEl.setAttribute('cy', obj.cy);
+        pcHighlightEl.setAttribute('rx', obj.rx);
+        pcHighlightEl.setAttribute('ry', obj.ry);
+    } else {
+        pcHighlightEl.setAttribute('x', b.x);
+        pcHighlightEl.setAttribute('y', b.y);
+        pcHighlightEl.setAttribute('width', b.w);
+        pcHighlightEl.setAttribute('height', b.h);
+        if (obj.rotation) {
+            const cx = b.x + b.w/2, cy = b.y + b.h/2;
+            pcHighlightEl.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+        }
+    }
+    previewLayer.appendChild(pcHighlightEl);
+}
+
 function handleDragMove(pt) {
     const dx = pt.x - state.dragStart.x, dy = pt.y - state.dragStart.y;
     // Apply initial moves
@@ -1944,8 +2006,16 @@ function handleDragMove(pt) {
         const draggedId = state.selectedIds[0];
         const dragged = findObject(draggedId);
         if (dragged && dragged.type !== 'powerclip') {
-            const pcTarget = findPowerClipAtPoint(pt, draggedId);
-            if (pcTarget) { showPCHighlight(pcTarget); } else { clearPCHighlight(); }
+            // W held: highlight any object under cursor as potential new powerclip container
+            if (state.wHeld) {
+                const underObj = objectUnderCursor(pt, draggedId);
+                if (underObj && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
+                    showPCHighlightForObj(underObj);
+                } else { clearPCHighlight(); }
+            } else {
+                const pcTarget = findPowerClipAtPoint(pt, draggedId);
+                if (pcTarget) { showPCHighlight(pcTarget); } else { clearPCHighlight(); }
+            }
         } else { clearPCHighlight(); }
     } else { clearPCHighlight(); }
 }
@@ -3646,7 +3716,15 @@ function setupEventListeners() {
 
     document.addEventListener('keyup', (e) => {
         if (e.key === ' ') { state.spaceHeld = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; }
+        if (e.key.toLowerCase() === 'w') { state.wHeld = false; clearPCHighlight(); }
     });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key.toLowerCase() === 'w' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+            state.wHeld = true;
+        }
+    }, true);
 
     // Paste images from clipboard
     document.addEventListener('paste', (e) => {
