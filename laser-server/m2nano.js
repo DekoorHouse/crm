@@ -66,22 +66,28 @@ class M2Nano {
      * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
      * @param {Set} [usedDevices]  set de devices ya abiertos (para evitar duplicados)
      */
-    async connect(deviceIndex = 0, usedDevices = new Set()) {
-        // Usar findByIds iterando VID/PIDs conocidos, saltando los ya usados
+    async connect(deviceIndex = 0) {
+        // Para el primer dispositivo: usar findByIds (método probado que funciona)
+        // Para el segundo: buscar en la lista completa excluyendo el primero
         let found = null;
-        let skipped = 0;
-        for (const d of DEVICES) {
-            // getDeviceList + filter para encontrar todos con este VID/PID
-            const allDevs = usb.getDeviceList().filter(dev => {
-                const desc = dev.deviceDescriptor;
-                return desc.idVendor === d.vid && desc.idProduct === d.pid && !usedDevices.has(dev);
-            });
-            for (const dev of allDevs) {
-                if (skipped < deviceIndex) { skipped++; continue; }
-                found = { dev, name: d.name };
-                break;
+
+        if (deviceIndex === 0) {
+            for (const d of DEVICES) {
+                const dev = usb.findByIds(d.vid, d.pid);
+                if (dev) { found = { dev, name: d.name }; break; }
             }
-            if (found) break;
+        } else {
+            // Segundo dispositivo: buscar en la lista excluyendo los ya abiertos
+            const allDevs = usb.getDeviceList();
+            let idx = 0;
+            for (const dev of allDevs) {
+                const desc = dev.deviceDescriptor;
+                const match = DEVICES.find(d => desc.idVendor === d.vid && desc.idProduct === d.pid);
+                if (match) {
+                    if (idx === deviceIndex) { found = { dev, name: match.name }; break; }
+                    idx++;
+                }
+            }
         }
 
         if (!found) {
@@ -92,7 +98,7 @@ class M2Nano {
             );
         }
 
-        this.log(`Dispositivo #${deviceIndex} encontrado: ${found.name}`);
+        this.log(`Dispositivo #${deviceIndex}: ${found.name}`);
         this.device = found.dev;
         this.device.open();
 
@@ -143,42 +149,12 @@ class M2Nano {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
 
-        // K40-Whisperer: _read_data() — leer datos pendientes del IN endpoint
-        try {
-            this.epIn.transfer(168, (err, data) => {}); // no-op, solo limpiar buffer
-            await sleep(200);
-        } catch (_) {}
-        this.log('Flush IN OK.');
-
-        // K40-Whisperer: _say_hello() — enviar [160] como paquete EPP + leer respuesta
-        try {
-            await this.sendPacket(Buffer.from([0xA0]));
-            const resp = await this.readStatus(500);
-            const s = resp[1];
-            this.log(`Say hello → 0x${s.toString(16).padStart(2, '0')}`);
-        } catch (e) {
-            this.log(`Say hello: ${e.message} (continuando...)`);
-        }
-
-        // K40-Whisperer: unlock_rail() → IS2P + _say_hello()
+        // Unlock rail (IS2P) — como K40-Whisperer
         try {
             await this.sendEGV('IS2P');
-            await this.sendPacket(Buffer.from([0xA0]));
-            try { await this.readStatus(500); } catch (_) {}
             this.log('Unlock rail (IS2P) OK.');
         } catch (e) {
             this.log(`Unlock rail aviso: ${e.message}`);
-        }
-
-        // K40-Whisperer: home_position() al inicializar
-        try {
-            await this.sendEGV('IPP');
-            await this.sendPacket(Buffer.from([0xA0]));
-            try { await this.readStatus(500); } catch (_) {}
-            this._posX = 0; this._posY = 0;
-            this.log('Home init OK.');
-        } catch (e) {
-            this.log(`Home init aviso: ${e.message}`);
         }
     }
 
