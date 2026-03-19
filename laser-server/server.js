@@ -198,7 +198,8 @@ async function runJob(id, msg) {
     m.jobState = { running: true, paused: false, stopped: false, startX: laser.posX, startY: laser.posY };
 
     let egvString;
-    let rasterEndX = 0, rasterEndY = 0; // displacement after raster EGV (mm)
+    let rasterEndX = 0, rasterEndY = 0;
+    let rasterJogX = 0, rasterJogY = 0; // jog antes del EGV raster
     const startX = m.jobState.startX;
     const startY = m.jobState.startY;
 
@@ -213,11 +214,13 @@ async function runJob(id, msg) {
         if (!m.pendingRaster) throw new Error('No se recibieron datos raster.');
         const { width, height, step } = msg.raster;
         send({ type: 'status', machine: id, text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
-        // offset (0,0): el raster empieza en el current point del cabezal
         const rasterResult = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, 0, 0);
         egvString = rasterResult.egv;
         rasterEndX = rasterResult.endX;
         rasterEndY = rasterResult.endY;
+        // Jog al inicio del raster ANTES del EGV (a velocidad segura, no a 300mm/s)
+        rasterJogX = rasterResult.jogX;
+        rasterJogY = rasterResult.jogY;
         m.pendingRaster = null;
     } else {
         throw new Error('Datos de trabajo incompletos.');
@@ -230,9 +233,16 @@ async function runJob(id, msg) {
         if (passes > 1) send({ type: 'status', machine: id, text: `Pasada ${pass + 1}/${passes}...`, level: 'info' });
 
         if (pass > 0) {
+            // Volver al punto de inicio para la siguiente pasada
             const dx = startX - laser.posX;
             const dy = startY - laser.posY;
             if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+        }
+
+        // Jog al inicio del raster a velocidad segura (ANTES del EGV a velocidad raster)
+        if (mode === 'engrave' && (rasterJogX !== 0 || rasterJogY !== 0)) {
+            send({ type: 'status', machine: id, text: 'Posicionando cabezal...', level: 'info' });
+            await laser.jog(rasterJogX, rasterJogY);
         }
 
         const result = await laser.sendEGVJob(egvString, {

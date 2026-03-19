@@ -271,15 +271,14 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         if (runLen > 0) parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
     }
 
+    // Jog offset: posición a la que el servidor debe hacer jog ANTES del EGV
+    // (el jog se hace a velocidad segura, no a velocidad raster)
+    const jogX = (Math.round(offsetX * STEPS_PER_MM) + gMinX - overscan) / STEPS_PER_MM;
+    const jogY = (Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep) / STEPS_PER_MM;
+
     const speed = encodeSpeed(speedMmS, rasterStep);
     const parts = ['I', speed, 'NRBS1E'];
-
-    // Initial move to gMinX - overscan (left edge minus overscan room)
-    const initX = Math.round(offsetX * STEPS_PER_MM) + gMinX - overscan;
-    const initY = Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep;
-    if (initX !== 0 || initY !== 0) {
-        parts.push(encodeMoveXY(initX, initY, false));
-    }
+    // NO initial move inside EGV — el servidor hace jog antes
 
     let posX = gMinX - overscan; // absolute pixel position (= steps)
     let leftToRight = true;
@@ -354,11 +353,12 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         }
     }
 
-    const posY = initY + (scanH > 1 ? (scanH - 1) * rasterStep : 0);
+    // endX/endY: desplazamiento del cabezal DURANTE el EGV (relativo al inicio del EGV)
+    const endY = (scanH > 1 ? (scanH - 1) * rasterStep : 0) / STEPS_PER_MM;
     parts.push('FNSE');
     const result = parts.join('');
-    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars`);
-    return { egv: result, endX: posX / STEPS_PER_MM, endY: posY / STEPS_PER_MM };
+    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm`);
+    return { egv: result, endX: posX / STEPS_PER_MM, endY, jogX, jogY };
 }
 
 module.exports = {
