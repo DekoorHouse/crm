@@ -324,14 +324,25 @@ class M2Nano {
             }
         }
 
-        this.log('Todos los paquetes enviados. Esperando que el board termine de ejecutar...');
-        // Esperar TASK_COMPLETE (0xEC) — NO aceptar 0xCE (buffer con espacio)
-        // porque el board puede tener datos pendientes en su buffer.
-        const deadline = Date.now() + 600000; // 10 min max
+        this.log('Todos los paquetes enviados. Esperando que el board termine...');
+        // Esperar a que el board termine de ejecutar los datos de su buffer.
+        // El board puede enviar 0xEC (TASK_COMPLETE) o 0xCE (idle/ready).
+        // Algunos boards nunca envían 0xEC — aceptar 0xCE después de 2s como "terminado".
+        let gotBusy = false;
+        const deadline = Date.now() + 300000; // 5 min max
         while (Date.now() < deadline) {
             try {
                 const s = await this.sayHello();
-                if (s === 0xEC) break; // TASK_COMPLETE — board terminó de ejecutar
+                if (s === 0xEC) { this.log('Board: TASK_COMPLETE (0xEC)'); break; }
+                if (s === 0xEE) { gotBusy = true; } // board still executing
+                if (s === 0xCE && gotBusy) { this.log('Board: 0xCE después de busy → terminado'); break; }
+                if (s === 0xCE && !gotBusy) {
+                    // Board nunca reportó busy — esperar un momento por si aún no empezó
+                    await sleep(500);
+                    const s2 = await this.sayHello();
+                    if (s2 === 0xCE || s2 === 0xEC) { this.log(`Board: confirmado terminado (0x${s2.toString(16)})`); break; }
+                    gotBusy = true; // assume it went busy between checks
+                }
             } catch (_) {}
         }
         if (onProgress) onProgress(1);
