@@ -212,6 +212,14 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         return !!(bitmap[byteIdx] & (1 << (7 - (px & 7))));
     }
 
+    // ── Overscan: extra laser-off distance for acceleration/deceleration ──
+    // Based on M2 Nano firmware acceleration gears (with margin)
+    let overscan;
+    if (speedMmS <= 25)  overscan = Math.round(4 * STEPS_PER_MM);   // 4mm
+    else if (speedMmS <= 127) overscan = Math.round(7 * STEPS_PER_MM);   // 7mm
+    else if (speedMmS <= 320) overscan = Math.round(10 * STEPS_PER_MM);  // 10mm
+    else                      overscan = Math.round(12 * STEPS_PER_MM);  // 12mm
+
     // ── Scan bitmap for global content bounds ──
     let gMinX = width, gMaxX = -1, firstRow = -1, lastRow = -1;
     for (let row = 0; row < height; row++) {
@@ -232,10 +240,11 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
 
     const scanW = gMaxX - gMinX + 1;
     const scanH = lastRow - firstRow + 1;
+    const scanWOS = scanW + 2 * overscan; // scan width including overscan on both sides
 
     // ── Pre-compute per-row content bounds (absolute pixel positions) ──
-    const rowFO = new Int32Array(scanH).fill(-1); // firstOn per row
-    const rowLO = new Int32Array(scanH).fill(-1); // lastOn per row
+    const rowFO = new Int32Array(scanH).fill(-1);
+    const rowLO = new Int32Array(scanH).fill(-1);
     for (let i = 0; i < scanH; i++) {
         for (let x = gMinX; x <= gMaxX; x++) {
             if (getBit(firstRow + i, x)) {
@@ -245,7 +254,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         }
     }
 
-    console.log(`  EGV raster: content X[${gMinX}..${gMaxX}] Y[${firstRow}..${lastRow}] → ${scanW}×${scanH}px (de ${width}×${height}px)`);
+    console.log(`  EGV raster: content X[${gMinX}..${gMaxX}] Y[${firstRow}..${lastRow}] → ${scanW}×${scanH}px, overscan=${(overscan/STEPS_PER_MM).toFixed(1)}mm (${overscan}steps)`);
 
     // ── Helper: encode active pixel runs for one row ──
     function encodeRuns(fo, lo, row, ltr) {
@@ -265,14 +274,14 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     const speed = encodeSpeed(speedMmS, rasterStep);
     const parts = ['I', speed, 'NRBS1E'];
 
-    // Initial move to gMinX (left edge of global content)
-    const initX = Math.round(offsetX * STEPS_PER_MM) + gMinX;
+    // Initial move to gMinX - overscan (left edge minus overscan room)
+    const initX = Math.round(offsetX * STEPS_PER_MM) + gMinX - overscan;
     const initY = Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep;
     if (initX !== 0 || initY !== 0) {
         parts.push(encodeMoveXY(initX, initY, false));
     }
 
-    let posX = gMinX; // absolute pixel position (= steps)
+    let posX = gMinX - overscan; // absolute pixel position (= steps)
     let leftToRight = true;
 
     for (let i = 0; i < scanH; i++) {
@@ -280,22 +289,21 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         const dir = leftToRight ? 'B' : 'T';
 
         if (fo < 0) {
-            // Empty row — traverse full scanW for safe position reset
-            // (ensures posX returns to gMinX or gMaxX+1 for next row)
-            parts.push('U', dir, encodeDistance(scanW));
-            posX += leftToRight ? scanW : -scanW;
+            // Empty row — traverse scanW + 2*overscan for safe position reset
+            parts.push('U', dir, encodeDistance(scanWOS));
+            posX += leftToRight ? scanWOS : -scanWOS;
             leftToRight = !leftToRight;
             continue;
         }
 
-        // Check if next row is empty (needs full scanW reset)
+        // Check next row's content for trailing extension
         const nextIsEmpty = (i + 1 >= scanH || rowFO[i + 1] < 0);
         const nextFo = (!nextIsEmpty) ? rowFO[i + 1] : -1;
         const nextLo = (!nextIsEmpty) ? rowLO[i + 1] : -1;
 
         if (leftToRight) {
             // ── L→R row ──
-            // Leading: skip from posX to firstOn
+            // Leading: skip from posX to firstOn (posX should be <= fo - overscan)
             const leading = fo - posX;
             if (leading > 0) parts.push('U', 'B', encodeDistance(leading));
 
@@ -303,14 +311,13 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             encodeRuns(fo, lo, firstRow + i, true);
             posX = lo + 1;
 
-            // Trailing: extend for next row
+            // Trailing: extend for overscan + next row needs
             let targetRight;
             if (nextIsEmpty) {
-                // Next row is empty or last: extend to right edge so empty row resets correctly
-                targetRight = gMinX + scanW; // = gMaxX + 1
+                targetRight = gMaxX + 1 + overscan;
             } else {
-                // Next row is R→L non-empty: need posX >= nextLo + 1
-                targetRight = Math.max(posX, nextLo + 1);
+                // Next R→L row needs posX >= nextLo + 1 + overscan (overscan room before content)
+                targetRight = Math.max(posX, nextLo + 1 + overscan);
             }
             if (posX < targetRight) {
                 parts.push('U', 'B', encodeDistance(targetRight - posX));
@@ -318,7 +325,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             }
         } else {
             // ── R→L row ──
-            // Leading: skip from posX down to lastOn + 1
+            // Leading: skip from posX down to lastOn + 1 (posX should be >= lo + 1 + overscan)
             const leading = posX - (lo + 1);
             if (leading > 0) parts.push('U', 'T', encodeDistance(leading));
 
@@ -326,13 +333,13 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             encodeRuns(fo, lo, firstRow + i, false);
             posX = fo;
 
-            // Trailing: extend for next row
+            // Trailing: extend for overscan + next row needs
             let targetLeft;
             if (nextIsEmpty) {
-                targetLeft = gMinX;
+                targetLeft = gMinX - overscan;
             } else {
-                // Next row is L→R non-empty: need posX <= nextFo
-                targetLeft = Math.min(posX, nextFo);
+                // Next L→R row needs posX <= nextFo - overscan (overscan room before content)
+                targetLeft = Math.min(posX, nextFo - overscan);
             }
             if (posX > targetLeft) {
                 parts.push('U', 'T', encodeDistance(posX - targetLeft));
