@@ -393,19 +393,7 @@ function createPanel(id) {
                 const rd = await autoGenerateRaster(state);
                 state.rasterResult = rd;
                 // Also show preview on main canvas
-                const pvCanvas = document.createElement('canvas');
-                pvCanvas.width = rd.width; pvCanvas.height = rd.height;
-                const pvCx = pvCanvas.getContext('2d');
-                const imgData = pvCx.createImageData(rd.width, rd.height);
-                const d = imgData.data;
-                const rowBytes = Math.ceil(rd.width / 8);
-                for (let y = 0; y < rd.height; y++) for (let x = 0; x < rd.width; x++) {
-                    const bit = (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
-                    const idx = (y * rd.width + x) * 4;
-                    const v = bit ? 0 : 255;
-                    d[idx] = v; d[idx + 1] = v; d[idx + 2] = v; d[idx + 3] = 255;
-                }
-                pvCx.putImageData(imgData, 0, 0);
+                const pvCanvas = bitmapToPreviewCanvas(rd.bitmap, rd.width, rd.height);
                 state.previewBitmapData = { canvas: pvCanvas, width: rd.width, height: rd.height, offsetX: rd.offsetX, offsetY: rd.offsetY, dpi: rd.dpi };
                 drawCanvas();
                 plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
@@ -691,6 +679,27 @@ function createEngraveSvgImage(svgText) {
         img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
         img.src = url;
     });
+}
+
+// ───────── Bitmap to Preview Canvas (burn=black on transparent) ─────────
+function bitmapToPreviewCanvas(bitmap, w, h) {
+    const pvCanvas = document.createElement('canvas');
+    pvCanvas.width = w; pvCanvas.height = h;
+    const pvCx = pvCanvas.getContext('2d');
+    const imgData = pvCx.createImageData(w, h);
+    const d = imgData.data;
+    const rowBytes = Math.ceil(w / 8);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const bit = (bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+        const idx = (y * w + x) * 4;
+        if (bit) {
+            d[idx] = 0; d[idx+1] = 0; d[idx+2] = 0; d[idx+3] = 255; // burn = black opaque
+        } else {
+            d[idx+3] = 0; // no burn = transparent
+        }
+    }
+    pvCx.putImageData(imgData, 0, 0);
+    return pvCanvas;
 }
 
 // ───────── Raster Pipeline ─────────
@@ -1071,21 +1080,7 @@ async function bmpModalFinalize() {
         const offY = parseFloat(res.headers.get('X-Offset-Y'));
         const bitmap = new Uint8Array(await res.arrayBuffer());
 
-        // Create preview canvas from the bitmap
-        const pvCanvas = document.createElement('canvas');
-        pvCanvas.width = w; pvCanvas.height = h;
-        const pvCx = pvCanvas.getContext('2d');
-        const imgData = pvCx.createImageData(w, h);
-        const d = imgData.data;
-        const rowBytes = Math.ceil(w / 8);
-        for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-            const bit = (bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
-            const idx = (y * w + x) * 4;
-            const v = bit ? 0 : 255;
-            d[idx] = v; d[idx + 1] = v; d[idx + 2] = v; d[idx + 3] = 255;
-        }
-        pvCx.putImageData(imgData, 0, 0);
-
+        const pvCanvas = bitmapToPreviewCanvas(bitmap, w, h);
         const state = bmpModal.panelState;
         const modalDpi = parseInt(document.getElementById('bmpModalDpi').value) || 1000;
         state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
@@ -1108,21 +1103,7 @@ function bmpModalFinalizeClient() {
     const offX = bmpModal.offsetX, offY = bmpModal.offsetY;
     const modalDpi = bmpModal.clientDpi;
 
-    // Create preview canvas
-    const pvCanvas = document.createElement('canvas');
-    pvCanvas.width = w; pvCanvas.height = h;
-    const pvCx = pvCanvas.getContext('2d');
-    const imgData = pvCx.createImageData(w, h);
-    const d = imgData.data;
-    const rowBytes = Math.ceil(w / 8);
-    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-        const bit = (bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
-        const idx = (y * w + x) * 4;
-        const v = bit ? 0 : 255;
-        d[idx] = v; d[idx+1] = v; d[idx+2] = v; d[idx+3] = 255;
-    }
-    pvCx.putImageData(imgData, 0, 0);
-
+    const pvCanvas = bitmapToPreviewCanvas(bitmap, w, h);
     const state = bmpModal.panelState;
     state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
     state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
