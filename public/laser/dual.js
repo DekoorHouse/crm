@@ -978,7 +978,7 @@ async function autoGenerateRaster(state) {
     const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
     const formData = new FormData();
     formData.append('image', state.loadedFile);
-    formData.append('dpi', '1000');
+    formData.append('dpi', '300');
     formData.append('lineSpacing', String(state.lineSpacing));
     formData.append('algorithm', isBmp ? 'threshold' : 'atkinson');
     if (state.imageType === 'svg' && state._svgBBox) {
