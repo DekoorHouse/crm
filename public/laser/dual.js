@@ -1243,18 +1243,18 @@ function simDrawFrame() {
     const hy = laserSim.headY * scaleY;
     // Glow
     const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10);
-    grad.addColorStop(0, 'rgba(255,51,0,0.9)');
-    grad.addColorStop(0.4, 'rgba(255,51,0,0.3)');
-    grad.addColorStop(1, 'rgba(255,51,0,0)');
+    grad.addColorStop(0, 'rgba(0,212,255,0.9)');
+    grad.addColorStop(0.4, 'rgba(0,212,255,0.3)');
+    grad.addColorStop(1, 'rgba(0,212,255,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(hx - 10, hy - 10, 20, 20);
     // Dot
-    ctx.fillStyle = '#ff3300';
+    ctx.fillStyle = '#00d4ff';
     ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(hx, hy, 1.2, 0, Math.PI * 2); ctx.fill();
     // Crosshair
-    ctx.strokeStyle = 'rgba(255,51,0,0.3)'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = 'rgba(0,212,255,0.3)'; ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, H); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
 
@@ -1278,9 +1278,9 @@ function simStep(count) {
 
     // Setup cut trail style
     cutCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    cutCtx.strokeStyle = '#ff3300';
+    cutCtx.strokeStyle = '#00d4ff';
     cutCtx.lineWidth = isRaster ? 0.8 : 1.5;
-    cutCtx.shadowColor = isRaster ? 'transparent' : '#ff3300';
+    cutCtx.shadowColor = isRaster ? 'transparent' : '#00d4ff';
     cutCtx.shadowBlur = isRaster ? 0 : 3;
     cutCtx.beginPath();
 
