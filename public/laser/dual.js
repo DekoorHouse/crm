@@ -599,26 +599,34 @@ function extractSVGSegments(svgText) {
 
 // ───────── SVG Transparency ─────────
 function createTransparentSvgImage(svgText, callback) {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(svgText, 'image/svg+xml');
-    const svg = doc.querySelector('svg');
-    if (!svg) { callback(null); return; }
+    // Insert into DOM to use getComputedStyle for reliable fill detection
+    const container = document.createElement('div');
+    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+    container.innerHTML = svgText;
+    document.body.appendChild(container);
+    const svg = container.querySelector('svg');
+    if (!svg) { document.body.removeChild(container); callback(null); return; }
     const vb = svg.getAttribute('viewBox');
     let svgW, svgH;
     if (vb) { const p = vb.split(/[\s,]+/).map(Number); svgW = p[2]; svgH = p[3]; }
     else { svgW = parseFloat(svg.getAttribute('width'))||300; svgH = parseFloat(svg.getAttribute('height'))||200; }
-    // Eliminar rects de fondo (primer rect que cubre todo el SVG con fill blanco)
+    // Remove rects that cover the full SVG area with white/near-white fill
     for (const r of svg.querySelectorAll('rect')) {
-        const x = parseFloat(r.getAttribute('x')||0), y = parseFloat(r.getAttribute('y')||0);
-        const w = parseFloat(r.getAttribute('width')||0), h = parseFloat(r.getAttribute('height')||0);
-        const fill = (r.getAttribute('fill')||'').toLowerCase().replace(/\s/g,'');
-        if (x<=0 && y<=0 && Math.abs(w-svgW)<1 && Math.abs(h-svgH)<1 &&
-            (fill===''||fill==='white'||fill==='#ffffff'||fill==='#fff'||fill==='rgb(255,255,255)')) {
-            r.remove(); break;
-        }
+        const b = r.getBBox();
+        const coversAll = b.x <= 1 && b.y <= 1 && Math.abs(b.width - svgW) < 2 && Math.abs(b.height - svgH) < 2;
+        if (!coversAll) continue;
+        // Check computed fill (catches attribute, style, inheritance, CSS classes)
+        const computed = window.getComputedStyle(r);
+        const fill = computed.fill || '';
+        // Match white in any format: rgb(255,255,255), #fff, #ffffff, white
+        const isWhite = fill === 'white' || fill === '#ffffff' || fill === '#fff' ||
+            /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/.test(fill);
+        if (isWhite || !fill || fill === 'none') { r.remove(); }
     }
-    svg.setAttribute('style','background:transparent');
-    const blob = new Blob([new XMLSerializer().serializeToString(svg)], {type:'image/svg+xml'});
+    svg.setAttribute('style', (svg.getAttribute('style') || '') + ';background:transparent');
+    const serialized = new XMLSerializer().serializeToString(svg);
+    document.body.removeChild(container);
+    const blob = new Blob([serialized], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
     const img = new Image();
     img.onload = () => { URL.revokeObjectURL(url); callback(img); };
