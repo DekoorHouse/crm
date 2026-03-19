@@ -298,25 +298,27 @@ class M2Nano {
         }
 
         this.log('Todos los paquetes enviados. Esperando que el board termine...');
-        // Esperar a que el board termine de ejecutar los datos de su buffer.
-        // El board puede enviar 0xEC (TASK_COMPLETE) o 0xCE (idle/ready).
-        // Algunos boards nunca envían 0xEC — aceptar 0xCE después de 2s como "terminado".
-        let gotBusy = false;
-        const deadline = Date.now() + 300000; // 5 min max
+        // 0xCE = "buffer con espacio" (puede estar aún ejecutando)
+        // 0xEE = "buffer lleno / ejecutando"
+        // 0xEC = "tarea completada" (algunos boards nunca lo envían)
+        // Estrategia: esperar 0xCE consistente por 2 segundos seguidos
+        const deadline = Date.now() + 300000;
+        let ceStartTime = 0;
+        const CE_STABLE_MS = 2000; // 0xCE debe persistir 2s para considerar "terminado"
         while (Date.now() < deadline) {
             try {
                 const s = await this.sayHello();
                 if (s === 0xEC) { this.log('Board: TASK_COMPLETE (0xEC)'); break; }
-                if (s === 0xEE) { gotBusy = true; } // board still executing
-                if (s === 0xCE && gotBusy) { this.log('Board: 0xCE después de busy → terminado'); break; }
-                if (s === 0xCE && !gotBusy) {
-                    // Board nunca reportó busy — esperar un momento por si aún no empezó
-                    await sleep(500);
-                    const s2 = await this.sayHello();
-                    if (s2 === 0xCE || s2 === 0xEC) { this.log(`Board: confirmado terminado (0x${s2.toString(16)})`); break; }
-                    gotBusy = true; // assume it went busy between checks
+                if (s === 0xCE) {
+                    if (ceStartTime === 0) ceStartTime = Date.now();
+                    if (Date.now() - ceStartTime >= CE_STABLE_MS) {
+                        this.log('Board: 0xCE estable por 2s → terminado');
+                        break;
+                    }
+                } else {
+                    ceStartTime = 0; // reset si el board reporta algo diferente (0xEE busy)
                 }
-            } catch (_) {}
+            } catch (_) { ceStartTime = 0; }
         }
         if (onProgress) onProgress(1);
         return 'complete';
