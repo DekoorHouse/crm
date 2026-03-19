@@ -386,8 +386,36 @@ function createPanel(id) {
     // Job controls
     ref('frameBtn').addEventListener('click', () => sendCmd({ cmd: 'frame', machine: id }));
     ref('previewBtn').addEventListener('click', () => generatePreview());
-    ref('simBtn').addEventListener('click', () => {
+    ref('simBtn').addEventListener('click', async () => {
         if (!state.loadedImage) { plog('Sin imagen para simular', 'error'); return; }
+        // For engrave mode without bitmap data, auto-generate it first
+        if (state.mode !== 'cut' && !state.rasterResult && !state.previewBitmapData) {
+            plog('Generando bitmap para simulación...', 'info');
+            try {
+                const rd = await autoGenerateRaster(state);
+                state.rasterResult = rd;
+                // Also show preview on main canvas
+                const pvCanvas = document.createElement('canvas');
+                pvCanvas.width = rd.width; pvCanvas.height = rd.height;
+                const pvCx = pvCanvas.getContext('2d');
+                const imgData = pvCx.createImageData(rd.width, rd.height);
+                const d = imgData.data;
+                const rowBytes = Math.ceil(rd.width / 8);
+                for (let y = 0; y < rd.height; y++) for (let x = 0; x < rd.width; x++) {
+                    const bit = (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+                    const idx = (y * rd.width + x) * 4;
+                    const v = bit ? 0 : 255;
+                    d[idx] = v; d[idx + 1] = v; d[idx + 2] = v; d[idx + 3] = 255;
+                }
+                pvCx.putImageData(imgData, 0, 0);
+                state.previewBitmapData = { canvas: pvCanvas, width: rd.width, height: rd.height, offsetX: rd.offsetX, offsetY: rd.offsetY };
+                drawCanvas();
+                plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
+            } catch (err) {
+                plog('Error generando bitmap: ' + err.message, 'error');
+                return;
+            }
+        }
         plog('Abriendo simulación...', 'info');
         openLaserSim(state, plog, drawCanvas);
     });
@@ -943,6 +971,47 @@ function closeBmpModal() {
         fetch('/api/laser/dither/session/' + bmpModal.sessionId, { method: 'DELETE' }).catch(() => {});
     }
     bmpModal.sessionId = null;
+}
+
+// ───────── Auto-generate raster (for simulation without BMP config) ─────────
+async function autoGenerateRaster(state) {
+    const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
+    const formData = new FormData();
+    formData.append('image', state.loadedFile);
+    formData.append('dpi', '1000');
+    formData.append('lineSpacing', String(state.lineSpacing));
+    formData.append('algorithm', isBmp ? 'threshold' : 'atkinson');
+    if (state.imageType === 'svg' && state._svgBBox) {
+        const bb = state._svgBBox;
+        formData.append('bboxMmX', String(bb.mmX));
+        formData.append('bboxMmY', String(bb.mmY));
+        formData.append('bboxMmW', String(bb.mmW));
+        formData.append('bboxMmH', String(bb.mmH));
+    }
+    // Upload
+    const uploadRes = await fetch('/api/laser/dither/upload', { method: 'POST', body: formData });
+    if (!uploadRes.ok) throw new Error((await uploadRes.json()).error || uploadRes.statusText);
+    const uploadData = await uploadRes.json();
+    const sessionId = uploadData.sessionId;
+    // Finalize directly with default options
+    const finalRes = await fetch('/api/laser/dither/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            sessionId, algorithm: isBmp ? 'threshold' : 'atkinson',
+            brightness: 0, contrast: 0, gamma: 1.0,
+            invert: false, clahe: false, unsharp: false, threshold: 128,
+        }),
+    });
+    if (!finalRes.ok) throw new Error('Finalize failed');
+    const w = parseInt(finalRes.headers.get('X-Bitmap-Width'));
+    const h = parseInt(finalRes.headers.get('X-Bitmap-Height'));
+    const offX = parseFloat(finalRes.headers.get('X-Offset-X'));
+    const offY = parseFloat(finalRes.headers.get('X-Offset-Y'));
+    const bitmap = new Uint8Array(await finalRes.arrayBuffer());
+    // Cleanup session
+    fetch('/api/laser/dither/session/' + sessionId, { method: 'DELETE' }).catch(() => {});
+    return { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
 }
 
 // ───────── Laser Simulation Preview ─────────
