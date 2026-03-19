@@ -526,7 +526,7 @@ function svgToMmScale(svg) {
 
 function computeSvgBBox(state) {
     const container = document.createElement('div');
-    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+    container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:2000px;height:2000px;overflow:hidden;visibility:hidden';
     container.innerHTML = state.svgText;
     document.body.appendChild(container);
     const liveSvg = container.querySelector('svg');
@@ -535,26 +535,21 @@ function computeSvgBBox(state) {
     let pageW, pageH;
     if (vb) { const p = vb.split(/[\s,]+/).map(Number); pageW = p[2]*scale; pageH = p[3]*scale; }
     else { pageW = (parseFloat(liveSvg.getAttribute('width'))||300)*scale; pageH = (parseFloat(liveSvg.getAttribute('height'))||200)*scale; }
-    // Get SVG viewBox dimensions for background rect detection
     const vbParts = vb ? vb.split(/[\s,]+/).map(Number) : null;
     const svgVbW = vbParts ? vbParts[2] : (parseFloat(liveSvg.getAttribute('width')) || 300);
     const svgVbH = vbParts ? vbParts[3] : (parseFloat(liveSvg.getAttribute('height')) || 200);
-    // Query individual shapes (no <g> to avoid double-counting with children)
     const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon,text,image,use');
-    // SVG-root inverse CTM to convert screen coords → SVG user coords
-    const svgCTM = liveSvg.getScreenCTM();
-    const svgCTMInv = svgCTM ? svgCTM.inverse() : null;
+    // Root CTM to transform local element coords → SVG viewBox coords
+    const rootCTM = liveSvg.getCTM();
+    const rootCTMInv = rootCTM ? rootCTM.inverse() : null;
     let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
     for (const el of shapes) {
         try {
-            // Skip elements inside non-rendering containers
             if (el.closest('defs,clipPath,mask,symbol,pattern,marker')) continue;
-            // Skip hidden elements
             const cs = window.getComputedStyle(el);
             if (cs.display === 'none' || cs.visibility === 'hidden') continue;
             const b = el.getBBox();
             if (b.width === 0 && b.height === 0) continue;
-            // Skip background rects (cover entire SVG with white/no fill)
             if (el.tagName === 'rect') {
                 const rx = parseFloat(el.getAttribute('x') || 0);
                 const ry = parseFloat(el.getAttribute('y') || 0);
@@ -565,15 +560,16 @@ function computeSvgBBox(state) {
                 const isBgFill = !fill || fill === 'white' || fill === '#ffffff' || fill === '#fff' || fill === 'rgb(255,255,255)' || fill === 'none';
                 if (isBgSize && isBgFill) continue;
             }
-            // Use screen bbox → SVG coords to account for transforms
-            const rect = el.getBoundingClientRect();
-            if (rect.width === 0 && rect.height === 0) continue;
-            if (svgCTMInv) {
-                const svgPt = (cx, cy) => { const p = liveSvg.createSVGPoint(); p.x = cx; p.y = cy; return p.matrixTransform(svgCTMInv); };
-                const tl = svgPt(rect.left, rect.top);
-                const br = svgPt(rect.right, rect.bottom);
-                minX = Math.min(minX, tl.x); minY = Math.min(minY, tl.y);
-                maxX = Math.max(maxX, br.x); maxY = Math.max(maxY, br.y);
+            // Transform local bbox corners → viewBox coords via CTM chain
+            const elCTM = el.getCTM();
+            if (rootCTMInv && elCTM) {
+                const m = rootCTMInv.multiply(elCTM);
+                for (const [cx, cy] of [[b.x,b.y],[b.x+b.width,b.y],[b.x,b.y+b.height],[b.x+b.width,b.y+b.height]]) {
+                    const p = liveSvg.createSVGPoint(); p.x = cx; p.y = cy;
+                    const tp = p.matrixTransform(m);
+                    minX = Math.min(minX, tp.x); minY = Math.min(minY, tp.y);
+                    maxX = Math.max(maxX, tp.x); maxY = Math.max(maxY, tp.y);
+                }
             } else {
                 minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
                 maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
