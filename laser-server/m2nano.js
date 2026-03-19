@@ -36,6 +36,7 @@ class M2Nano {
         this.log       = onLog || console.log;
         this._posX     = 0;
         this._posY     = 0;
+        this._deviceIndex = 0;
     }
 
     /**
@@ -66,6 +67,7 @@ class M2Nano {
      * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
      */
     async connect(deviceIndex = 0) {
+        this._deviceIndex = deviceIndex;
         // Siempre listar TODOS los CH341 para poder elegir por índice
         const allDevs = usb.getDeviceList();
         const matching = [];
@@ -194,12 +196,21 @@ class M2Nano {
                 }), 5000, 'sendPacket');
                 return;
             } catch (e) {
+                this.log(`sendPacket retry ${attempt + 1}/3: ${e.message}`);
                 if (attempt < 2) {
-                    this.log(`sendPacket retry ${attempt + 1}/3: ${e.message}`);
                     await this._clearEndpoints();
                     await sleep(500);
                 } else {
-                    throw e;
+                    // Último intento falló: reset USB completo y reintentar una vez más
+                    try {
+                        await this._resetUSB();
+                        await this._usbTimeout(new Promise((resolve, reject) => {
+                            this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
+                        }), 5000, 'sendPacket post-reset');
+                        return;
+                    } catch (e2) {
+                        throw new Error(`USB irrecuperable tras reset: ${e2.message}`);
+                    }
                 }
             }
         }
@@ -235,6 +246,18 @@ class M2Nano {
         });
         if (this.epOut) await clear(this.epOut);
         if (this.epIn)  await clear(this.epIn);
+    }
+
+    /**
+     * Reset completo del USB: cierra y reconecta el dispositivo.
+     * Cancela cualquier transfer pendiente y reinicia el CH341.
+     */
+    async _resetUSB() {
+        this.log('Reconectando USB...');
+        this.disconnect();
+        await sleep(1000);
+        await this.connect(this._deviceIndex);
+        this.log('USB reconectado OK.');
     }
 
     /** Wrapper con timeout para operaciones USB que pueden congelarse. */
