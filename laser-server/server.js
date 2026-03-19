@@ -264,28 +264,29 @@ async function runJob(id, msg) {
             break;
         }
 
-        // Update tracked position solo si el EGV completó correctamente
+        // endX/endY = 0 para raster (el EGV incluye retorno interno)
+        // Para vector, adjustPos con el desplazamiento
         if (mode === 'engrave') {
-            log(`[M${id}] adjustPos(${rasterEndX.toFixed(2)}, ${rasterEndY.toFixed(2)}) — pos antes: (${laser.posX.toFixed(2)}, ${laser.posY.toFixed(2)})`);
-            laser.adjustPos(rasterEndX, rasterEndY);
-            log(`[M${id}] pos después: (${laser.posX.toFixed(2)}, ${laser.posY.toFixed(2)})`);
+            // El EGV raster ya incluye el retorno — endX/endY = 0
+            // Solo ajustar por el jog previo (jogX, jogY) que ya fue sumado por laser.jog()
+            // No necesitamos adjustPos porque el EGV vuelve a su punto de inicio
         }
     }
 
     if (!m.jobState.stopped) {
-        // Return to starting position (solo en completado normal)
-        const dx = startX - laser.posX;
-        const dy = startY - laser.posY;
-        log(`[M${id}] Return: start=(${startX.toFixed(2)},${startY.toFixed(2)}) pos=(${laser.posX.toFixed(2)},${laser.posY.toFixed(2)}) dx=${dx.toFixed(2)} dy=${dy.toFixed(2)}`);
-        try {
-            if (dx !== 0 || dy !== 0) {
-                send({ type: 'status', machine: id, text: `Volviendo al origen (${dx.toFixed(1)}, ${dy.toFixed(1)})mm...`, level: 'info' });
-                await laser.jog(dx, dy);
+        // Para raster: el EGV ya incluyó el retorno al inicio del EGV.
+        // Solo falta deshacer el jog previo (jogX, jogY).
+        if (mode === 'engrave' && (rasterJogX !== 0 || rasterJogY !== 0)) {
+            log(`[M${id}] Return jog: deshaciendo jog previo (${(-rasterJogX).toFixed(1)}, ${(-rasterJogY).toFixed(1)})mm`);
+            try {
+                await laser.jog(-rasterJogX, -rasterJogY);
+            } catch (e) {
+                log(`[M${id}] Error en jog de retorno: ${e.message}`, 'error');
             }
-            send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
-        } catch (e) {
-            log(`[M${id}] Error en jog de retorno: ${e.message}`, 'error');
+        } else if (mode === 'cut') {
+            // Vector: el EGV ya incluye retorno, no necesita jog adicional
         }
+        send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
         send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });
     }
 
