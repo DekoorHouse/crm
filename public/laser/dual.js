@@ -541,9 +541,17 @@ function computeSvgBBox(state) {
     const svgVbH = vbParts ? vbParts[3] : (parseFloat(liveSvg.getAttribute('height')) || 200);
     // Query individual shapes (no <g> to avoid double-counting with children)
     const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon,text,image,use');
+    // SVG-root inverse CTM to convert screen coords → SVG user coords
+    const svgCTM = liveSvg.getScreenCTM();
+    const svgCTMInv = svgCTM ? svgCTM.inverse() : null;
     let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
     for (const el of shapes) {
         try {
+            // Skip elements inside non-rendering containers
+            if (el.closest('defs,clipPath,mask,symbol,pattern,marker')) continue;
+            // Skip hidden elements
+            const cs = window.getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') continue;
             const b = el.getBBox();
             if (b.width === 0 && b.height === 0) continue;
             // Skip background rects (cover entire SVG with white/no fill)
@@ -552,13 +560,24 @@ function computeSvgBBox(state) {
                 const ry = parseFloat(el.getAttribute('y') || 0);
                 const rw = parseFloat(el.getAttribute('width') || 0);
                 const rh = parseFloat(el.getAttribute('height') || 0);
-                const fill = (el.getAttribute('fill') || window.getComputedStyle(el).fill || '').toLowerCase().replace(/\s/g, '');
+                const fill = (cs.fill || '').toLowerCase().replace(/\s/g, '');
                 const isBgSize = Math.abs(rx) < 1 && Math.abs(ry) < 1 && Math.abs(rw - svgVbW) < 2 && Math.abs(rh - svgVbH) < 2;
                 const isBgFill = !fill || fill === 'white' || fill === '#ffffff' || fill === '#fff' || fill === 'rgb(255,255,255)' || fill === 'none';
                 if (isBgSize && isBgFill) continue;
             }
-            minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
-            maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
+            // Use screen bbox → SVG coords to account for transforms
+            const rect = el.getBoundingClientRect();
+            if (rect.width === 0 && rect.height === 0) continue;
+            if (svgCTMInv) {
+                const svgPt = (cx, cy) => { const p = liveSvg.createSVGPoint(); p.x = cx; p.y = cy; return p.matrixTransform(svgCTMInv); };
+                const tl = svgPt(rect.left, rect.top);
+                const br = svgPt(rect.right, rect.bottom);
+                minX = Math.min(minX, tl.x); minY = Math.min(minY, tl.y);
+                maxX = Math.max(maxX, br.x); maxY = Math.max(maxY, br.y);
+            } else {
+                minX = Math.min(minX, b.x); minY = Math.min(minY, b.y);
+                maxX = Math.max(maxX, b.x + b.width); maxY = Math.max(maxY, b.y + b.height);
+            }
         } catch(_) {}
     }
     document.body.removeChild(container);
