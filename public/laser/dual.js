@@ -367,10 +367,18 @@ function createPanel(id) {
     });
 
     // Sliders
-    ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedLabel').textContent = `${state.speed} mm/s`; });
-    ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
-    ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
+    // Velocidad: slider ↔ input numérico
+    ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedInput').value = state.speed; });
+    ref('speedInput').addEventListener('change', e => { state.speed = Math.max(1, Math.min(600, +e.target.value || 1)); e.target.value = state.speed; ref('speedSlider').value = state.speed; });
+
+    // Interlineado: slider (2-10 internal) ↔ input numérico (mm)
+    ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingInput').value = (state.lineSpacing * 0.025).toFixed(3); });
+    ref('lineSpacingInput').addEventListener('change', e => { const mm = Math.max(0.050, Math.min(0.250, +e.target.value || 0.1)); state.lineSpacing = Math.round(mm / 0.025); e.target.value = (state.lineSpacing * 0.025).toFixed(3); ref('lineSpacingSlider').value = state.lineSpacing; state.previewBitmapData = null; state.rasterResult = null; updateBmpBadge(); drawCanvas(); });
     ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; state.rasterResult = null; updateBmpBadge(); drawCanvas(); });
+
+    // Pasadas: slider ↔ input numérico
+    ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesInput').value = state.passes; });
+    ref('passesInput').addEventListener('change', e => { state.passes = Math.max(1, Math.min(10, Math.round(+e.target.value) || 1)); e.target.value = state.passes; ref('passesSlider').value = state.passes; });
 
     // Jog
     el.querySelectorAll('[data-jog]').forEach(btn => {
