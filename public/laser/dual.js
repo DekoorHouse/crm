@@ -750,13 +750,17 @@ function ditherBayer(gray, out, w, h, size) {
     for(let y=0;y<h;y++) for(let x=0;x<w;x++) out[y*w+x]=gray[y*w+x]>((m[y%n][x%n]+0.5)/d)*255?255:0;
 }
 
-// ───────── BMP Modal (Backend-powered) ─────────
+// ───────── BMP Modal (Backend-powered, with client fallback) ─────────
 const bmpModal = {
     panelState: null, panelPlog: null, panelDrawCanvas: null,
     sessionId: null,
     width: 0, height: 0, offsetX: 0, offsetY: 0, lineSpacing: 1,
     debounceTimer: null, abortCtrl: null,
-    previewImg: null, // <img> for showing base64 PNG previews
+    previewImg: null,
+    // Client-side fallback fields
+    clientMode: false,   // true when server can't handle the file
+    clientGray: null,    // Float32Array grayscale source
+    clientDpi: 1000,
 };
 
 function bmpModalGetOptions() {
@@ -824,6 +828,8 @@ async function openBmpModal(state, plog, drawCanvas) {
         formData.append('bboxMmH', String(bb.mmH));
     }
 
+    bmpModal.clientMode = false;
+    bmpModal.clientGray = null;
     try {
         const res = await fetch('/api/laser/dither/upload', { method: 'POST', body: formData });
         if (!res.ok) throw new Error((await res.json()).error || res.statusText);
@@ -837,8 +843,19 @@ async function openBmpModal(state, plog, drawCanvas) {
         document.getElementById('bmpModalLoading').style.display = 'none';
         bmpModalShowPreview(data.preview, data.info);
     } catch (err) {
-        document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
-        plog('Error upload: ' + err.message, 'error');
+        // Fallback: client-side processing
+        plog('Servidor no disponible, usando procesamiento local', 'warning');
+        bmpModal.clientMode = true;
+        bmpModal.clientDpi = 1000;
+        const dpmm = 1000 / 25.4;
+        const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        bmpModal.clientGray = raw.gray;
+        bmpModal.width = raw.width;
+        bmpModal.height = raw.height;
+        bmpModal.offsetX = raw.offsetX;
+        bmpModal.offsetY = raw.offsetY;
+        bmpModalProcessClient();
     }
 }
 
@@ -856,6 +873,7 @@ function bmpModalShowPreview(base64Png, info) {
 }
 
 async function bmpModalProcess() {
+    if (bmpModal.clientMode) { bmpModalProcessClient(); return; }
     if (!bmpModal.sessionId) return;
     if (bmpModal.abortCtrl) bmpModal.abortCtrl.abort();
     bmpModal.abortCtrl = new AbortController();
@@ -874,9 +892,31 @@ async function bmpModalProcess() {
         document.getElementById('bmpModalLoading').style.display = 'none';
         bmpModalShowPreview(data.preview, data.info);
     } catch (err) {
-        if (err.name === 'AbortError') return; // Cancelled, new request coming
+        if (err.name === 'AbortError') return;
         document.getElementById('bmpModalLoading').style.display = 'none';
     }
+}
+
+function bmpModalProcessClient() {
+    if (!bmpModal.clientGray) return;
+    const opts = bmpModalGetOptions();
+    const w = bmpModal.width, h = bmpModal.height;
+    const dithered = processGray(bmpModal.clientGray, w, h, opts);
+    // Render to canvas preview
+    const canvas = document.getElementById('bmpModalCanvas');
+    canvas.width = w; canvas.height = h;
+    const cx = canvas.getContext('2d');
+    const imgData = cx.createImageData(w, h);
+    for (let i = 0; i < w * h; i++) {
+        const v = dithered[i]; const idx = i * 4;
+        imgData.data[idx] = v; imgData.data[idx+1] = v; imgData.data[idx+2] = v; imgData.data[idx+3] = 255;
+    }
+    cx.putImageData(imgData, 0, 0);
+    bmpModalFitCanvas();
+    const dpmm = bmpModal.clientDpi / 25.4;
+    const mmW = (w / dpmm).toFixed(1), mmH = (h / dpmm * bmpModal.lineSpacing).toFixed(1);
+    document.getElementById('bmpModalInfo').textContent = `${w}×${h}px | ${mmW}×${mmH}mm | ${bmpModal.clientDpi} DPI (local)`;
+    document.getElementById('bmpModalLoading').style.display = 'none';
 }
 
 function bmpModalScheduleUpdate() {
@@ -885,8 +925,25 @@ function bmpModalScheduleUpdate() {
 }
 
 function bmpModalOnDpiChange() {
-    // DPI change requires re-upload (new resolution)
+    // DPI change requires re-render (new resolution)
     if (!bmpModal.panelState) return;
+    if (bmpModal.clientMode) {
+        // Client mode: re-render at new DPI
+        const newDpi = parseInt(document.getElementById('bmpModalDpi').value) || 1000;
+        document.getElementById('bmpModalDpiNum').value = newDpi;
+        bmpModal.clientDpi = newDpi;
+        const dpmm = newDpi / 25.4;
+        const state = bmpModal.panelState;
+        const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        bmpModal.clientGray = raw.gray;
+        bmpModal.width = raw.width;
+        bmpModal.height = raw.height;
+        bmpModal.offsetX = raw.offsetX;
+        bmpModal.offsetY = raw.offsetY;
+        bmpModalProcessClient();
+        return;
+    }
     document.getElementById('bmpModalDpiNum').value = document.getElementById('bmpModalDpi').value;
     document.getElementById('bmpModalLoading').style.display = '';
     document.getElementById('bmpModalLoading').textContent = 'Re-renderizando...';
@@ -924,6 +981,7 @@ function bmpModalOnDpiChange() {
 }
 
 async function bmpModalFinalize() {
+    if (bmpModal.clientMode) { bmpModalFinalizeClient(); return; }
     if (!bmpModal.sessionId) return;
     document.getElementById('bmpModalLoading').style.display = '';
     document.getElementById('bmpModalLoading').textContent = 'Generando bitmap final...';
@@ -966,6 +1024,39 @@ async function bmpModalFinalize() {
     } catch (err) {
         document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
     }
+}
+
+function bmpModalFinalizeClient() {
+    if (!bmpModal.clientGray) return;
+    const opts = bmpModalGetOptions();
+    const w = bmpModal.width, h = bmpModal.height;
+    const dithered = processGray(bmpModal.clientGray, w, h, opts);
+    const bitmap = grayToBitmap(dithered, w, h);
+    const offX = bmpModal.offsetX, offY = bmpModal.offsetY;
+    const modalDpi = bmpModal.clientDpi;
+
+    // Create preview canvas
+    const pvCanvas = document.createElement('canvas');
+    pvCanvas.width = w; pvCanvas.height = h;
+    const pvCx = pvCanvas.getContext('2d');
+    const imgData = pvCx.createImageData(w, h);
+    const d = imgData.data;
+    const rowBytes = Math.ceil(w / 8);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+        const bit = (bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+        const idx = (y * w + x) * 4;
+        const v = bit ? 0 : 255;
+        d[idx] = v; d[idx+1] = v; d[idx+2] = v; d[idx+3] = 255;
+    }
+    pvCx.putImageData(imgData, 0, 0);
+
+    const state = bmpModal.panelState;
+    state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
+    state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
+
+    closeBmpModal();
+    if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
+    if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${w}×${h}px (local)`, 'success');
 }
 
 function closeBmpModal() {
