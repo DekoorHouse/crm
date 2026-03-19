@@ -1111,30 +1111,45 @@ function buildSimCommands(state) {
                 getBit = (x, y) => imgData.data[(y * w + x) * 4] === 0 ? 1 : 0;
             } else return cmds;
 
-            // Sample rows and columns to keep total commands under ~50k
-            const maxCmds = 50000;
-            const rowStep = Math.max(1, Math.round(h * w / maxCmds));
-            const colStep = Math.max(1, Math.round(w / 600));
+            // Target ~400 visible rows for smooth animation
+            const maxRows = 400;
+            const rowStep = Math.max(1, Math.floor(h / maxRows));
 
             for (let y = 0; y < h; y += rowStep) {
                 const mmY = offY + y * pxToMm * ls;
-                const ltr = (Math.floor(y / rowStep) % 2 === 0);
+                const rowIdx = Math.floor(y / rowStep);
+                const ltr = (rowIdx % 2 === 0);
+
+                // Run-length encode this row: find start/end of burn runs
+                // Scan left-to-right always, then reverse if needed
+                let runs = []; // [{startPx, endPx}]
+                let runStart = -1;
+                for (let x = 0; x < w; x++) {
+                    const bit = getBit(x, y);
+                    if (bit && runStart < 0) runStart = x;
+                    else if (!bit && runStart >= 0) { runs.push({ s: runStart, e: x - 1 }); runStart = -1; }
+                }
+                if (runStart >= 0) runs.push({ s: runStart, e: w - 1 });
+
+                if (runs.length === 0) continue; // empty row, skip entirely
+
+                // Move to start of line
                 const startX = ltr ? offX : offX + (w - 1) * pxToMm;
                 cmds.push({ type: 'move', x: startX, y: mmY });
 
-                // Scan this row, find runs of on-pixels
-                let laserOn = false;
-                const xs = ltr ? 0 : w - 1, xe = ltr ? w : -1, xd = ltr ? colStep : -colStep;
-                for (let x = xs; ltr ? x < xe : x > xe; x += xd) {
-                    const bit = getBit(Math.min(x, w - 1), y);
-                    const mmX = offX + x * pxToMm;
-                    if (bit) {
-                        cmds.push({ type: 'cut', x: mmX, y: mmY });
-                        laserOn = true;
-                    } else if (laserOn) {
-                        cmds.push({ type: 'move', x: mmX, y: mmY });
-                        laserOn = false;
+                if (!ltr) runs.reverse(); // reverse order for right-to-left
+
+                let lastX = ltr ? 0 : w - 1;
+                for (const run of runs) {
+                    const rs = ltr ? run.s : run.e;
+                    const re = ltr ? run.e : run.s;
+                    // Move to start of run (if not already there)
+                    if (rs !== lastX) {
+                        cmds.push({ type: 'move', x: offX + rs * pxToMm, y: mmY });
                     }
+                    // Cut to end of run
+                    cmds.push({ type: 'cut', x: offX + re * pxToMm, y: mmY });
+                    lastX = re;
                 }
             }
         } else {
