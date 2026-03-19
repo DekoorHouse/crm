@@ -178,7 +178,7 @@ async function getUpcomingQueue() {
     const enabled = process.env.AUTOPOST_ENABLED === 'true';
     if (!enabled) return [];
 
-    const photos = await listPhotoIds();
+    const photos = await fetchAvailablePhotos();
     if (!photos.length) return [];
 
     // Obtener IDs ya publicados
@@ -217,6 +217,7 @@ async function getUpcomingQueue() {
                 const absoluteTime = new Date(mxTime.getTime() + offsetMs);
                 queue.push({
                     photoFilename: unposted[queue.length].filename,
+                    thumbnailUrl: unposted[queue.length].thumbnailUrl,
                     scheduledAt: absoluteTime
                 });
             }

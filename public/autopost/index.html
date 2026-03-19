@@ -164,9 +164,9 @@
       <div class="card-title"><i class="fas fa-history"></i> Historial de Publicaciones</div>
       <div style="overflow-x: auto;">
         <table class="log-table">
-          <thead><tr><th>Fecha</th><th>Foto</th><th>Caption</th><th>Estado</th></tr></thead>
+          <thead><tr><th>Fecha</th><th>Foto</th><th>Caption</th><th>Estado</th><th></th></tr></thead>
           <tbody id="logBody">
-            <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px;">Cargando...</td></tr>
+            <tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">Cargando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -175,6 +175,7 @@
 
   <script>
     const API = window.API_BASE_URL || '';
+    let queuedFilenames = new Set();
 
     async function api(path, options = {}) {
       const res = await fetch(`${API}/api/autopost${path}`, options);
@@ -222,15 +223,18 @@
     async function loadPhotos() {
       try {
         const data = await api('/photos');
-        document.getElementById('photosCount').textContent = data.count;
         const grid = document.getElementById('photoGrid');
 
-        if (!data.photos?.length) {
-          grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:16px;">No hay fotos. Sube algunas para empezar.</p>';
+        // Filtrar fotos que ya estan en cola (se muestran en historial)
+        const available = (data.photos || []).filter(p => !queuedFilenames.has(p.filename));
+        document.getElementById('photosCount').textContent = data.count;
+
+        if (!available.length) {
+          grid.innerHTML = '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;padding:16px;">No hay fotos nuevas. Sube algunas para agregar a la cola.</p>';
           return;
         }
 
-        grid.innerHTML = data.photos.map(p => `
+        grid.innerHTML = available.map(p => `
           <div class="photo-item">
             <img src="${p.thumbnailUrl}" alt="${p.filename}" loading="lazy">
             <div class="photo-name">${p.filename}</div>
@@ -253,7 +257,7 @@
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         toast(`${data.count} foto(s) subida(s)!`);
-        loadPhotos();
+        loadLog();
       } catch (e) {
         toast('Error subiendo: ' + e.message, 'error');
       }
@@ -265,7 +269,7 @@
       try {
         await api(`/photos/${encodeURIComponent(filename)}`, { method: 'DELETE' });
         toast('Foto eliminada');
-        loadPhotos();
+        loadLog();
       } catch (e) {
         toast('Error: ' + e.message, 'error');
       }
@@ -315,6 +319,9 @@
         const data = await api('/log?limit=15');
         const tbody = document.getElementById('logBody');
 
+        // Trackear fotos en cola para filtrarlas del grid
+        queuedFilenames = new Set((data.upcoming || []).map(e => e.photoFilename));
+
         let html = '';
 
         // Mostrar cola de proximas publicaciones
@@ -326,6 +333,7 @@
               <td>${entry.photoFilename}</td>
               <td class="caption-cell" style="color:var(--text-muted);">Pendiente</td>
               <td><span class="badge badge-info"><i class="fas fa-clock"></i> en cola</span></td>
+              <td>${entry.thumbnailUrl ? `<img src="${entry.thumbnailUrl}" style="width:44px;height:44px;object-fit:cover;border-radius:8px;">` : '-'}</td>
             </tr>`;
           }).join('');
         }
@@ -341,24 +349,27 @@
               <td>${entry.photoFilename || '-'}</td>
               <td class="caption-cell" title="${entry.caption || ''}">${entry.caption || entry.error || '-'}</td>
               <td><span class="badge ${badge}"><i class="fas fa-${icon}"></i> ${entry.status}</span></td>
+              <td></td>
             </tr>`;
           }).join('');
         }
 
         if (!html) {
-          tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px;">Sin publicaciones aun</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--text-muted);padding:32px;">Sin publicaciones aun</td></tr>';
           return;
         }
 
         tbody.innerHTML = html;
+
+        // Refrescar grid para quitar fotos ya en cola
+        loadPhotos();
       } catch (e) {
-        document.getElementById('logBody').innerHTML = '<tr><td colspan="4" style="color:var(--danger);text-align:center">Error cargando historial</td></tr>';
+        document.getElementById('logBody').innerHTML = '<tr><td colspan="5" style="color:var(--danger);text-align:center">Error cargando historial</td></tr>';
       }
     }
 
     // --- Init ---
     loadStatus();
-    loadPhotos();
     loadLog();
   </script>
 </body>
