@@ -1298,23 +1298,23 @@ function buildSimCommands(state) {
 
                 if (runs.length === 0) continue; // empty row, skip entirely
 
-                // Move to start of line
-                const startX = ltr ? offX : offX + (w - 1) * pxToMm;
-                cmds.push({ type: 'move', x: startX, y: mmY });
-
                 if (!ltr) runs.reverse(); // reverse order for right-to-left
 
-                let lastX = ltr ? 0 : w - 1;
-                for (const run of runs) {
+                // Move directly to first burn run (not full line width)
+                const firstRun = runs[0];
+                const firstX = ltr ? firstRun.s : firstRun.e;
+                cmds.push({ type: 'move', x: offX + firstX * pxToMm, y: mmY });
+
+                for (let ri = 0; ri < runs.length; ri++) {
+                    const run = runs[ri];
                     const rs = ltr ? run.s : run.e;
                     const re = ltr ? run.e : run.s;
-                    // Move to start of run (if not already there)
-                    if (rs !== lastX) {
+                    // Move to start of run (skip if first run, already there)
+                    if (ri > 0) {
                         cmds.push({ type: 'move', x: offX + rs * pxToMm, y: mmY });
                     }
                     // Cut to end of run
                     cmds.push({ type: 'cut', x: offX + re * pxToMm, y: mmY });
-                    lastX = re;
                 }
             }
         } else {
