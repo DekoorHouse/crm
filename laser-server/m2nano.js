@@ -349,35 +349,37 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        let cmd = 'I';
-        if (sy > 0) cmd += (dy < 0 ? 'L' : 'R') + encodeDistance(sy);
-        if (sx > 0) cmd += (dx > 0 ? 'B' : 'T') + encodeDistance(sx);
-        cmd += 'S1P';
+        // Dos comandos separados (Y luego X) — el M2 Nano solo ejecuta la
+        // última dirección si se combinan ambas en un solo I...S1P.
+        const cmds = [];
+        if (sy > 0) cmds.push('I' + (dy < 0 ? 'L' : 'R') + encodeDistance(sy) + 'S1P');
+        if (sx > 0) cmds.push('I' + (dx > 0 ? 'B' : 'T') + encodeDistance(sx) + 'S1P');
 
         this.log(`Jog: dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} pasos=${sx},${sy}`);
 
-        try { await this.waitReady(5000); } catch (_) {
-            this.log('waitReady timeout antes de jog');
-        }
+        for (const cmd of cmds) {
+            try { await this.waitReady(5000); } catch (_) {
+                this.log('waitReady timeout antes de jog');
+            }
 
-        // Enviar paquete directamente — NO usar sendEGV (que manda sayHello
-        // inmediatamente después y puede interferir con el jog)
-        const bytes = Buffer.from(cmd, 'ascii');
-        const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
-        for (let i = 0; i < bytes.length; i += DATA_SIZE) {
-            await this.sendPacket(bytes.slice(i, i + DATA_SIZE), i === 0);
-        }
+            // Enviar paquete directamente — NO usar sendEGV (que manda sayHello
+            // inmediatamente después y puede interferir con el jog)
+            const bytes = Buffer.from(cmd, 'ascii');
+            for (let i = 0; i < bytes.length; i += DATA_SIZE) {
+                await this.sendPacket(bytes.slice(i, i + DATA_SIZE), i === 0);
+            }
 
-        // Dar tiempo al board para procesar el comando y empezar a mover
-        await sleep(300);
+            // Dar tiempo al board para procesar el comando y empezar a mover
+            await sleep(300);
 
-        // Esperar a que el jog termine: board va de 0xCE → posiblemente 0xEE → 0xCE
-        const deadline = Date.now() + 30000;
-        while (Date.now() < deadline) {
-            try {
-                const s = await this.sayHello();
-                if (s === 0xCE || s === 0xEC) break;
-            } catch (_) {}
+            // Esperar a que el jog termine: board va de 0xCE → posiblemente 0xEE → 0xCE
+            const deadline = Date.now() + 30000;
+            while (Date.now() < deadline) {
+                try {
+                    const s = await this.sayHello();
+                    if (s === 0xCE || s === 0xEC) break;
+                } catch (_) {}
+            }
         }
 
         this._posX += dx;

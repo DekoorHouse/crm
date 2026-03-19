@@ -349,23 +349,18 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         }
     }
 
-    // ── Return move: volver al inicio dentro del mismo EGV ──
-    // FNSE sale de raster mode. Dos jogs separados (Y luego X)
-    // porque el board solo ejecuta la última dirección si se combinan.
+    // ── Return: calcular desplazamiento para volver al inicio ──
+    // No embebemos jogs después de FNSE — el board no los procesa de
+    // forma confiable desde el buffer. El server hará jogs explícitos.
     const retX = -(posX - gMinX);
     const retY = -((scanH > 1 ? (scanH - 1) * rasterStep : 0));
     parts.push('FNSE');
-    if (retY !== 0) {
-        parts.push('I', retY < 0 ? 'L' : 'R', encodeDistance(Math.abs(retY)), 'S1P');
-    }
-    if (retX !== 0) {
-        parts.push('I', retX < 0 ? 'T' : 'B', encodeDistance(Math.abs(retX)), 'S1P');
-    }
 
     const result = parts.join('');
-    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm, ret=(${(retX/STEPS_PER_MM).toFixed(1)},${(retY/STEPS_PER_MM).toFixed(1)})mm`);
-    // endX/endY = 0 porque el EGV incluye el retorno
-    return { egv: result, endX: 0, endY: 0, jogX, jogY };
+    const endXmm = retX / STEPS_PER_MM;
+    const endYmm = retY / STEPS_PER_MM;
+    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm, ret=(${endXmm.toFixed(1)},${endYmm.toFixed(1)})mm`);
+    return { egv: result, endX: endXmm, endY: endYmm, jogX, jogY };
 }
 
 module.exports = {

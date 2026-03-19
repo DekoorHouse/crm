@@ -264,12 +264,10 @@ async function runJob(id, msg) {
             break;
         }
 
-        // endX/endY = 0 para raster (el EGV incluye retorno interno)
-        // Para vector, adjustPos con el desplazamiento
-        if (mode === 'engrave') {
-            // El EGV raster ya incluye el retorno — endX/endY = 0
-            // Solo ajustar por el jog previo (jogX, jogY) que ya fue sumado por laser.jog()
-            // No necesitamos adjustPos porque el EGV vuelve a su punto de inicio
+        // Retorno explícito desde el fin del scan al inicio del EGV
+        if (mode === 'engrave' && (rasterEndX !== 0 || rasterEndY !== 0)) {
+            log(`[M${id}] Retorno scan: (${rasterEndX.toFixed(1)}, ${rasterEndY.toFixed(1)})mm`);
+            await laser.jog(rasterEndX, rasterEndY);
         }
     }
 
