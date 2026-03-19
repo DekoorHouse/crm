@@ -213,21 +213,48 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     const rowBytes = Math.ceil(width / 8);
     let leftToRight = true;
 
-    for (let row = 0; row < height; row++) {
-        // NO enviar movimiento Y explícito — el M2 Nano en modo raster
-        // avanza Y automáticamente (G parameter) al cambiar dirección B↔T.
+    // Helper: check if pixel is ON
+    function getBit(row, px) {
+        const byteIdx = row * rowBytes + (px >> 3);
+        return !!(bitmap[byteIdx] & (1 << (7 - (px & 7))));
+    }
 
-        // Leer pixels de esta fila directamente
-        const rowOffset = row * rowBytes;
+    for (let row = 0; row < height; row++) {
+        // Find first and last ON pixel in this row
+        let firstOn = -1, lastOn = -1;
+        for (let x = 0; x < width; x++) {
+            if (getBit(row, x)) {
+                if (firstOn < 0) firstOn = x;
+                lastOn = x;
+            }
+        }
+
         const dir = leftToRight ? 'B' : 'T';
+
+        if (firstOn < 0) {
+            // Empty row — minimal 1-step move to trigger Y advancement
+            parts.push('U', dir, 'a');
+            leftToRight = !leftToRight;
+            continue;
+        }
+
+        // Only encode from firstOn to lastOn (trim empty leading/trailing pixels)
+        // Move to firstOn position with laser off (skip leading empty pixels)
+        const leadingEmpty = leftToRight ? firstOn : (width - 1 - lastOn);
+        if (leadingEmpty > 0) {
+            parts.push('U', dir, encodeDistance(leadingEmpty));
+        }
+
+        // Encode only the active pixels (firstOn..lastOn)
+        const activeStart = leftToRight ? firstOn : lastOn;
+        const activeEnd = leftToRight ? lastOn : firstOn;
+        const activeLen = lastOn - firstOn + 1;
         let runOn = false;
         let runLen = 0;
 
-        for (let i = 0; i < width; i++) {
-            const px = leftToRight ? i : (width - 1 - i);
-            const byteIdx = rowOffset + (px >> 3);
-            const bitIdx = 7 - (px & 7);
-            const isOn = !!(bitmap[byteIdx] & (1 << bitIdx));
+        for (let i = 0; i < activeLen; i++) {
+            const px = leftToRight ? (firstOn + i) : (lastOn - i);
+            const isOn = getBit(row, px);
 
             if (runLen === 0) {
                 runOn = isOn;
@@ -246,7 +273,6 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
 
         leftToRight = !leftToRight;
 
-        // Log progreso cada 500 filas
         if (row % 500 === 0 && row > 0) {
             process.stdout.write(`  EGV raster: ${row}/${height} filas...\r`);
         }
