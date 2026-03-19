@@ -403,6 +403,9 @@ class M2Nano {
         } catch (_) {}
     }
 
+    /** Ajusta posición interna sin mover el cabezal (post-EGV). */
+    adjustPos(dx, dy) { this._posX += dx; this._posY += dy; }
+
     get posX() { return this._posX; }
     get posY() { return this._posY; }
 }

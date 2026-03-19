@@ -182,6 +182,11 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
         }
     }
 
+    // Return to starting position (laser off)
+    if (curX !== 0 || curY !== 0) {
+        cmd += encodeMoveXY(-curX, -curY, false);
+    }
+
     cmd += 'FNSE';
     return cmd;
 }
@@ -197,7 +202,7 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
  * @param {number} rasterStep  paso entre líneas en device units (1-3)
  * @param {number} offsetX  offset X en mm desde el origen
  * @param {number} offsetY  offset Y en mm desde el origen
- * @returns {string} comando EGV completo
+ * @returns {{ egv: string, endX: number, endY: number }} comando EGV y desplazamiento final en mm
  */
 function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offsetX = 0, offsetY = 0) {
     const speed = encodeSpeed(speedMmS, rasterStep);
@@ -212,6 +217,9 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
 
     const rowBytes = Math.ceil(width / 8);
     let leftToRight = true;
+
+    // Track head position (steps, relative to pre-EGV position)
+    let posX = startX;
 
     // Helper: check if pixel is ON
     function getBit(row, px) {
@@ -234,6 +242,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         if (firstOn < 0) {
             // Empty row — minimal 1-step move to trigger Y advancement
             parts.push('U', dir, 'a');
+            posX += leftToRight ? 1 : -1;
             leftToRight = !leftToRight;
             continue;
         }
@@ -271,6 +280,10 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
         }
 
+        // Track X: total row steps = leadingEmpty + activeLen
+        const rowSteps = leadingEmpty + activeLen;
+        posX += leftToRight ? rowSteps : -rowSteps;
+
         leftToRight = !leftToRight;
 
         if (row % 500 === 0 && row > 0) {
@@ -278,12 +291,15 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         }
     }
 
+    // Y displacement: rasterStep per row transition (height-1 transitions)
+    const posY = startY + (height > 0 ? (height - 1) * rasterStep : 0);
+
     parts.push('FNSE');
     const result = parts.join('');
     console.log(`  EGV raster: ${height} filas completas. Total: ${result.length} chars`);
     console.log(`  EGV header+primeros 300 chars: ${result.substring(0, 300)}`);
     console.log(`  EGV últimos 100 chars: ${result.substring(result.length - 100)}`);
-    return result;
+    return { egv: result, endX: posX / STEPS_PER_MM, endY: posY / STEPS_PER_MM };
 }
 
 module.exports = {

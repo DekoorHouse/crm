@@ -201,12 +201,14 @@ async function runJob(id, msg) {
     m.jobState = { running: true, paused: false, stopped: false, startX: laser.posX, startY: laser.posY };
 
     let egvString;
+    let rasterEndX = 0, rasterEndY = 0; // displacement after raster EGV (mm)
     const startX = m.jobState.startX;
     const startY = m.jobState.startY;
 
     if (mode === 'cut' && msg.segments) {
         send({ type: 'status', machine: id, text: `Generando EGV vectorial: ${msg.segments.length} segmentos...`, level: 'info' });
         egvString = egv.generateVectorEGV(msg.segments, speed, startX, startY);
+        // Vector EGV already includes return-to-start move, no position adjustment needed
     } else if (mode === 'engrave' && msg.raster) {
         const maxWait = 5000;
         const start = Date.now();
@@ -214,7 +216,10 @@ async function runJob(id, msg) {
         if (!m.pendingRaster) throw new Error('No se recibieron datos raster.');
         const { width, height, step, offsetX, offsetY } = msg.raster;
         send({ type: 'status', machine: id, text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
-        egvString = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, startX + (offsetX || 0), startY + (offsetY || 0));
+        const rasterResult = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, offsetX || 0, offsetY || 0);
+        egvString = rasterResult.egv;
+        rasterEndX = rasterResult.endX;
+        rasterEndY = rasterResult.endY;
         m.pendingRaster = null;
     } else {
         throw new Error('Datos de trabajo incompletos.');
@@ -241,16 +246,24 @@ async function runJob(id, msg) {
             shouldPause: () => m.jobState.paused,
         });
 
+        // Update tracked position to reflect where the head actually is after the EGV
+        if (mode === 'engrave') laser.adjustPos(rasterEndX, rasterEndY);
+
         if (result === 'stopped') {
             send({ type: 'status', machine: id, text: 'Trabajo detenido.', level: 'warning' });
             break;
         }
     }
 
+    // Return to starting position
     try {
         const dx = startX - laser.posX;
         const dy = startY - laser.posY;
-        if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+        if (dx !== 0 || dy !== 0) {
+            send({ type: 'status', machine: id, text: 'Volviendo al origen...', level: 'info' });
+            await laser.jog(dx, dy);
+        }
+        send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
     } catch (_) {}
 
     m.jobState.running = false;
