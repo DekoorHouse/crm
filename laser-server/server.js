@@ -13,6 +13,19 @@ const PORT = 7654;
 const MAX_MACHINES = 2;
 
 const wss = new WebSocketServer({ port: PORT, maxPayload: 50 * 1024 * 1024 });
+wss.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+        console.error(`\n⚠ Puerto ${PORT} ya está en uso. Cerrando proceso anterior...`);
+        require('child_process').exec(
+            `for /f "tokens=5" %a in ('netstat -aon ^| findstr :${PORT} ^| findstr LISTENING') do taskkill /F /PID %a`,
+            { shell: 'cmd.exe' },
+            () => { setTimeout(() => process.exit(0), 1000); } // el .bat loop reinicia
+        );
+    } else {
+        console.error('Error del servidor:', err);
+        process.exit(1);
+    }
+});
 let client = null;
 
 // Estado de cada máquina
