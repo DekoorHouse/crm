@@ -954,8 +954,9 @@ async function bmpModalFinalize() {
         pvCx.putImageData(imgData, 0, 0);
 
         const state = bmpModal.panelState;
-        state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY };
-        state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
+        const modalDpi = parseInt(document.getElementById('bmpModalDpi').value) || 1000;
+        state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
+        state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
 
         closeBmpModal();
         if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
@@ -1010,7 +1011,7 @@ async function autoGenerateRaster(state) {
         const offY = parseFloat(finalRes.headers.get('X-Offset-Y'));
         const bitmap = new Uint8Array(await finalRes.arrayBuffer());
         fetch('/api/laser/dither/session/' + sessionId, { method: 'DELETE' }).catch(() => {});
-        return { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
+        return { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: 300 };
     } catch (_serverErr) {
         // Fallback: client-side Canvas pipeline (works with any image the browser can display)
         const dpmm = 300 / 25.4;
@@ -1020,7 +1021,7 @@ async function autoGenerateRaster(state) {
             brightness: 0, contrast: 0, algorithm: isBmp ? 'threshold' : 'atkinson', invert: false,
         });
         const bitmap = grayToBitmap(processed, raw.width, raw.height);
-        return { bitmap, width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY };
+        return { bitmap, width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY, dpi: 300 };
     }
 }
 
@@ -1110,7 +1111,8 @@ function buildSimCommands(state) {
             const w = rd.width, h = rd.height;
             const offX = rd.offsetX || 0, offY = rd.offsetY || 0;
             const ls = state.lineSpacing;
-            const pxToMm = 1 / 39.37;
+            const rdDpi = rd.dpi || 1000;
+            const pxToMm = 25.4 / rdDpi;
             const rowBytes = Math.ceil(w / 8);
             let getBit;
             if (rd.bitmap) {
