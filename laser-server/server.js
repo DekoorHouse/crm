@@ -163,9 +163,10 @@ async function handleCommand(msg) {
                     if (m.jobState.startX != null) {
                         await sleep(500);
                         try {
-                            const dx = m.jobState.startX - laser.posX;
-                            const dy = m.jobState.startY - laser.posY;
-                            if (dx !== 0 || dy !== 0) await laser.jog(dx, dy);
+                            // Posición desconocida tras estop → home y volver al origen
+                            await laser.home();
+                            const sx = m.jobState.startX, sy = m.jobState.startY;
+                            if (sx !== 0 || sy !== 0) await laser.jog(sx, sy);
                             send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
                         } catch (_) {}
                     }
