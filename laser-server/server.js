@@ -160,15 +160,11 @@ async function handleCommand(msg) {
                 m.jobState.stopped = true;
                 if (laser) {
                     await laser.estop();
+                    // No home — el cabezal se queda donde está.
+                    // Posición desconocida: resetear a startX/startY (última posición conocida)
                     if (m.jobState.startX != null) {
-                        await sleep(500);
-                        try {
-                            // Posición desconocida tras estop → home y volver al origen
-                            await laser.home();
-                            const sx = m.jobState.startX, sy = m.jobState.startY;
-                            if (sx !== 0 || sy !== 0) await laser.jog(sx, sy);
-                            send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
-                        } catch (_) {}
+                        laser.resetPos(m.jobState.startX, m.jobState.startY);
+                        send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
                     }
                 }
                 send({ type: 'status', machine: id, text: 'Trabajo detenido.', level: 'warning' });

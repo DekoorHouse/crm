@@ -205,21 +205,7 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
  * @returns {{ egv: string, endX: number, endY: number }} comando EGV y desplazamiento final en mm
  */
 function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offsetX = 0, offsetY = 0) {
-    const speed = encodeSpeed(speedMmS, rasterStep);
-    const parts = ['I', speed, 'NRBS1E'];
-
-    // Mover al inicio del raster (sin láser)
-    const startX = Math.round(offsetX * STEPS_PER_MM);
-    const startY = Math.round(offsetY * STEPS_PER_MM);
-    if (startX !== 0 || startY !== 0) {
-        parts.push(encodeMoveXY(startX, startY, false));
-    }
-
     const rowBytes = Math.ceil(width / 8);
-    let leftToRight = true;
-
-    // Track head position (steps, relative to pre-EGV position)
-    let posX = startX;
 
     // Helper: check if pixel is ON
     function getBit(row, px) {
@@ -227,28 +213,64 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         return !!(bitmap[byteIdx] & (1 << (7 - (px & 7))));
     }
 
+    // ── Scan bitmap for global content bounds ──
+    let gMinX = width, gMaxX = -1, firstRow = -1, lastRow = -1;
     for (let row = 0; row < height; row++) {
-        // Find first and last ON pixel in this row
-        let firstOn = -1, lastOn = -1;
         for (let x = 0; x < width; x++) {
             if (getBit(row, x)) {
-                if (firstOn < 0) firstOn = x;
-                lastOn = x;
+                if (firstRow < 0) firstRow = row;
+                lastRow = row;
+                if (x < gMinX) gMinX = x;
+                if (x > gMaxX) gMaxX = x;
+            }
+        }
+    }
+
+    if (firstRow < 0) {
+        // Bitmap completamente vacío
+        console.log('  EGV raster: bitmap vacío, nada que grabar.');
+        return { egv: 'IFNSE', endX: 0, endY: 0 };
+    }
+
+    const scanW = gMaxX - gMinX + 1;
+    const scanH = lastRow - firstRow + 1;
+    console.log(`  EGV raster: content bounds X[${gMinX}..${gMaxX}] Y[${firstRow}..${lastRow}] → ${scanW}×${scanH}px (de ${width}×${height}px original)`);
+
+    const speed = encodeSpeed(speedMmS, rasterStep);
+    const parts = ['I', speed, 'NRBS1E'];
+
+    // Mover al inicio del contenido (offset + margen vacío del bitmap)
+    const startX = Math.round(offsetX * STEPS_PER_MM) + gMinX;
+    const startY = Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep;
+    if (startX !== 0 || startY !== 0) {
+        parts.push(encodeMoveXY(startX, startY, false));
+    }
+
+    let leftToRight = true;
+    let posX = startX;
+
+    for (let row = firstRow; row <= lastRow; row++) {
+        // Find first and last ON pixel in this row (within content X bounds)
+        let firstOn = -1, lastOn = -1;
+        for (let x = gMinX; x <= gMaxX; x++) {
+            if (getBit(row, x)) {
+                if (firstOn < 0) firstOn = x - gMinX;
+                lastOn = x - gMinX;
             }
         }
 
         const dir = leftToRight ? 'B' : 'T';
 
         if (firstOn < 0) {
-            // Empty row — full width to maintain position
-            parts.push('U', dir, encodeDistance(width));
-            posX += leftToRight ? width : -width;
+            // Empty row within content area — traverse scan width
+            parts.push('U', dir, encodeDistance(scanW));
+            posX += leftToRight ? scanW : -scanW;
             leftToRight = !leftToRight;
             continue;
         }
 
         // Leading empty: move to first active pixel (laser off)
-        const leadingEmpty = leftToRight ? firstOn : (width - 1 - lastOn);
+        const leadingEmpty = leftToRight ? firstOn : (scanW - 1 - lastOn);
         if (leadingEmpty > 0) {
             parts.push('U', dir, encodeDistance(leadingEmpty));
         }
@@ -259,7 +281,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         let runLen = 0;
 
         for (let i = 0; i < activeLen; i++) {
-            const px = leftToRight ? (firstOn + i) : (lastOn - i);
+            const px = leftToRight ? (gMinX + firstOn + i) : (gMinX + lastOn - i);
             const isOn = getBit(row, px);
 
             if (runLen === 0) {
@@ -277,29 +299,26 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
         }
 
-        // Trailing empty: complete full width to reach the far edge
-        const trailing = leftToRight ? (width - 1 - lastOn) : firstOn;
+        // Trailing empty: complete scan width
+        const trailing = leftToRight ? (scanW - 1 - lastOn) : firstOn;
         if (trailing > 0) {
             parts.push('U', dir, encodeDistance(trailing));
         }
 
-        posX += leftToRight ? width : -width;
-
+        posX += leftToRight ? scanW : -scanW;
         leftToRight = !leftToRight;
 
-        if (row % 500 === 0 && row > 0) {
-            process.stdout.write(`  EGV raster: ${row}/${height} filas...\r`);
+        if (row % 500 === 0 && row > firstRow) {
+            process.stdout.write(`  EGV raster: ${row - firstRow}/${scanH} filas...\r`);
         }
     }
 
-    // Y displacement: rasterStep per row transition (height-1 transitions)
-    const posY = startY + (height > 0 ? (height - 1) * rasterStep : 0);
+    // Y displacement: rasterStep per row transition within content area
+    const posY = startY + (scanH > 1 ? (scanH - 1) * rasterStep : 0);
 
     parts.push('FNSE');
     const result = parts.join('');
-    console.log(`  EGV raster: ${height} filas completas. Total: ${result.length} chars`);
-    console.log(`  EGV header+primeros 300 chars: ${result.substring(0, 300)}`);
-    console.log(`  EGV últimos 100 chars: ${result.substring(result.length - 100)}`);
+    console.log(`  EGV raster: ${scanH} filas (de ${height} total). Total: ${result.length} chars`);
     return { egv: result, endX: posX / STEPS_PER_MM, endY: posY / STEPS_PER_MM };
 }
 
