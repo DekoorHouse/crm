@@ -606,18 +606,20 @@ function createTransparentSvgImage(svgText, callback) {
     document.body.appendChild(container);
     const svg = container.querySelector('svg');
     if (!svg) { document.body.removeChild(container); callback(null); return; }
-    const vb = svg.getAttribute('viewBox');
-    let svgW, svgH;
-    if (vb) { const p = vb.split(/[\s,]+/).map(Number); svgW = p[2]; svgH = p[3]; }
-    else { svgW = parseFloat(svg.getAttribute('width'))||300; svgH = parseFloat(svg.getAttribute('height'))||200; }
-    // Remove ALL rects with white or near-white computed fill (backgrounds)
+    // Replace white fills with none in CSS <style> blocks (CorelDRAW uses CSS classes)
+    for (const styleEl of svg.querySelectorAll('style')) {
+        styleEl.textContent = styleEl.textContent
+            .replace(/fill\s*:\s*white\b/gi, 'fill:none')
+            .replace(/fill\s*:\s*#fff(?:fff)?\b/gi, 'fill:none')
+            .replace(/fill\s*:\s*rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/gi, 'fill:none');
+    }
+    // Also remove rects with white computed fill (inline or attribute-based)
     for (const r of [...svg.querySelectorAll('rect')]) {
         const computed = window.getComputedStyle(r);
         const fill = (computed.fill || '').toLowerCase();
         const isWhite = fill === 'white' || fill === '#ffffff' || fill === '#fff' ||
             /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/.test(fill);
-        const isNone = !fill || fill === 'none' || fill === 'transparent';
-        if (isWhite || isNone) r.remove();
+        if (isWhite) r.remove();
     }
     svg.setAttribute('style', (svg.getAttribute('style') || '') + ';background:transparent');
     const serialized = new XMLSerializer().serializeToString(svg);
