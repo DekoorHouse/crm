@@ -222,17 +222,14 @@ function createPanel(id) {
         if (ext === 'svg') {
             reader.onload = e => {
                 state.svgText = e.target.result; state._svgBBox = null;
-                const blob = new Blob([e.target.result], { type: 'image/svg+xml' });
-                const url = URL.createObjectURL(blob);
-                const img = new Image();
-                img.onload = () => {
+                createTransparentSvgImage(e.target.result, (img) => {
+                    if (!img) { plog('Error cargando SVG', 'error'); return; }
                     state.loadedImage = img; state.imageType = 'svg'; state.loadedFile = file;
                     state.designSelected = false; state.previewBitmapData = null; state.rasterResult = null;
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
-                    URL.revokeObjectURL(url); drawCanvas();
+                    drawCanvas();
                     plog(`SVG: ${file.name}`, 'success');
-                };
-                img.src = url;
+                });
             };
             reader.readAsText(file);
         } else {
