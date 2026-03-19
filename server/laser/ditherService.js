@@ -53,17 +53,16 @@ function stripSvgBackground(svgBuffer) {
 }
 
 // ───────── SVG Cut Line Removal ─────────
-// Remove geometric cut shapes (circle, ellipse, line, polyline, polygon) with stroke
-// These are cut outlines in laser workflows — keep paths, images, text, rects
+// Any element with a visible stroke color is a cut line — remove for engraving.
 function stripSvgCutLines(svgBuffer) {
     let svgStr = svgBuffer.toString('utf8');
-    // Remove circle, ellipse, line, polyline, polygon elements that have a stroke
+    // Remove any shape element that has a stroke color set (not "none")
     svgStr = svgStr.replace(
-        /<(circle|ellipse|line|polyline|polygon)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
+        /<(path|rect|circle|ellipse|line|polyline|polygon|text|use)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
         (match, tag, attrs) => {
-            const hasStrokeAttr = /\bstroke\s*=\s*"(?!none)/.test(attrs);
-            const hasStrokeStyle = /style\s*=\s*"[^"]*stroke\s*:/i.test(attrs);
-            if (hasStrokeAttr || hasStrokeStyle) return ''; // Remove cut shape
+            const hasStrokeAttr = /\bstroke\s*=\s*"(?!none\b)([^"]+)"/i.test(attrs);
+            const hasStrokeStyle = /style\s*=\s*"[^"]*stroke\s*:\s*(?!none\b)/i.test(attrs);
+            if (hasStrokeAttr || hasStrokeStyle) return '';
             return match;
         }
     );
