@@ -171,7 +171,7 @@ class M2Nano {
      * Envía un paquete de datos EGV de 34 bytes (formato K40-Whisperer).
      * Formato: [0xA6][0x00][payload (30 bytes)][0xA6][CRC-8]
      */
-    sendPacket(data, logFirst = false) {
+    async sendPacket(data, logFirst = false) {
         const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
         pkt[0] = PKT_FRAME;                       // 0xA6
         pkt[1] = 0x00;
@@ -186,9 +186,22 @@ class M2Nano {
             this.log(`PKT[0]: ${hex}`);
         }
 
-        return this._usbTimeout(new Promise((resolve, reject) => {
-            this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
-        }), 5000, 'sendPacket');
+        // Reintentar hasta 3 veces si el USB falla/timeout
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                await this._usbTimeout(new Promise((resolve, reject) => {
+                    this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
+                }), 5000, 'sendPacket');
+                return;
+            } catch (e) {
+                if (attempt < 2) {
+                    this.log(`sendPacket retry ${attempt + 1}/3: ${e.message}`);
+                    await sleep(500);
+                } else {
+                    throw e;
+                }
+            }
+        }
     }
 
     /**
