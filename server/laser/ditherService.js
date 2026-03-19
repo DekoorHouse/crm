@@ -52,6 +52,30 @@ function stripSvgBackground(svgBuffer) {
     return Buffer.from(svgStr);
 }
 
+// ───────── SVG Cut Line Removal ─────────
+// Remove stroke-only elements (cut lines) from SVG before rasterizing for engrave mode
+function stripSvgCutLines(svgBuffer) {
+    let svgStr = svgBuffer.toString('utf8');
+    // Match shape elements with fill="none" — these are cut lines
+    // Handles: <circle .../>, <ellipse .../>, <path .../>, <line .../>, <polyline .../>, <polygon .../>
+    // Also handles non-self-closing like <circle ...>...</circle>
+    svgStr = svgStr.replace(
+        /<(path|circle|ellipse|line|polyline|polygon|rect)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
+        (match, tag, attrs) => {
+            // Check inline fill attribute
+            const fillAttr = ((attrs.match(/\bfill\s*=\s*"([^"]+)"/) || [])[1] || '').toLowerCase().replace(/\s/g, '');
+            // Check style fill
+            const styleFill = ((attrs.match(/style\s*=\s*"[^"]*fill\s*:\s*([^;"]+)/) || [])[1] || '').toLowerCase().replace(/\s/g, '');
+            const effectiveFill = styleFill || fillAttr;
+            if (effectiveFill === 'none' || effectiveFill === 'transparent') {
+                return ''; // Remove cut-line element
+            }
+            return match;
+        }
+    );
+    return Buffer.from(svgStr);
+}
+
 // ───────── Create Session ─────────
 async function createSession(imageBuffer, originalName, options) {
     const isSvg = originalName.toLowerCase().endsWith('.svg');
@@ -60,7 +84,10 @@ async function createSession(imageBuffer, originalName, options) {
     const dpmm = dpi / 25.4;
 
     let imgBuffer = imageBuffer;
-    if (isSvg) imgBuffer = stripSvgBackground(imageBuffer);
+    if (isSvg) {
+        imgBuffer = stripSvgBackground(imageBuffer);
+        imgBuffer = stripSvgCutLines(imgBuffer);
+    }
 
     // For SVGs, pass density so Sharp/librsvg knows the render resolution.
     // If Sharp can't decode the format, try converting to PNG first.

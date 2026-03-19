@@ -629,6 +629,37 @@ function createTransparentSvgImage(svgText, callback) {
     img.src = url;
 }
 
+// ───────── SVG Engrave (strip cut lines) ─────────
+// Removes stroke-only elements (cut lines) from SVG for engraving.
+// Returns a Promise<Image> with only fill-based shapes.
+function createEngraveSvgImage(svgText) {
+    return new Promise((resolve) => {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(svgText, 'image/svg+xml');
+        const svg = doc.querySelector('svg');
+        if (!svg) { resolve(null); return; }
+        // Remove stroke-only elements (shapes with fill=none and a visible stroke)
+        const shapes = svg.querySelectorAll('path,line,circle,ellipse,polyline,polygon,rect');
+        for (const el of shapes) {
+            const fill = (el.getAttribute('fill') || '').toLowerCase().replace(/\s/g, '');
+            const style = el.getAttribute('style') || '';
+            const styleFill = (style.match(/fill\s*:\s*([^;]+)/i) || [])[1] || '';
+            const effectiveFill = styleFill.toLowerCase().replace(/\s/g, '') || fill;
+            // If fill is none/transparent, this is a stroke-only element (cut line)
+            if (effectiveFill === 'none' || effectiveFill === 'transparent') {
+                el.remove();
+            }
+        }
+        svg.setAttribute('style', 'background:transparent');
+        const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+    });
+}
+
 // ───────── Raster Pipeline ─────────
 function renderImageToGray(image, lineSpacing, bbox, dpmm) {
     const imgW = image.naturalWidth || image.width;
@@ -761,6 +792,7 @@ const bmpModal = {
     clientMode: false,   // true when server can't handle the file
     clientGray: null,    // Float32Array grayscale source
     clientDpi: 1000,
+    clientImg: null,     // cached engrave image (SVG without cut lines)
 };
 
 function bmpModalGetOptions() {
@@ -849,7 +881,14 @@ async function openBmpModal(state, plog, drawCanvas) {
         bmpModal.clientDpi = 1000;
         const dpmm = 1000 / 25.4;
         const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        // For SVGs, strip cut lines before rasterizing
+        let img = state.loadedImage;
+        if (state.imageType === 'svg' && state.svgText) {
+            const engraveImg = await createEngraveSvgImage(state.svgText);
+            if (engraveImg) img = engraveImg;
+        }
+        bmpModal.clientImg = img;
+        const raw = renderImageToGray(img, state.lineSpacing, bbox, dpmm);
         bmpModal.clientGray = raw.gray;
         bmpModal.width = raw.width;
         bmpModal.height = raw.height;
@@ -928,14 +967,15 @@ function bmpModalOnDpiChange() {
     // DPI change requires re-render (new resolution)
     if (!bmpModal.panelState) return;
     if (bmpModal.clientMode) {
-        // Client mode: re-render at new DPI
+        // Client mode: re-render at new DPI using cached engrave image
         const newDpi = parseInt(document.getElementById('bmpModalDpi').value) || 1000;
         document.getElementById('bmpModalDpiNum').value = newDpi;
         bmpModal.clientDpi = newDpi;
         const dpmm = newDpi / 25.4;
         const state = bmpModal.panelState;
         const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        const img = bmpModal.clientImg || state.loadedImage;
+        const raw = renderImageToGray(img, state.lineSpacing, bbox, dpmm);
         bmpModal.clientGray = raw.gray;
         bmpModal.width = raw.width;
         bmpModal.height = raw.height;
@@ -1109,7 +1149,13 @@ async function autoGenerateRaster(state) {
         // Fallback: client-side Canvas pipeline (works with any image the browser can display)
         const dpmm = 300 / 25.4;
         const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
-        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        // For SVGs, strip cut lines (stroke-only elements) before rasterizing
+        let img = state.loadedImage;
+        if (state.imageType === 'svg' && state.svgText) {
+            const engraveImg = await createEngraveSvgImage(state.svgText);
+            if (engraveImg) img = engraveImg;
+        }
+        const raw = renderImageToGray(img, state.lineSpacing, bbox, dpmm);
         const processed = processGray(raw.gray, raw.width, raw.height, {
             brightness: 0, contrast: 0, algorithm: isBmp ? 'threshold' : 'atkinson', invert: false,
         });
