@@ -244,29 +244,31 @@ async function runJob(id, msg) {
             shouldPause: () => m.jobState.paused,
         });
 
-        // Update tracked position to reflect where the head actually is after the EGV
-        if (mode === 'engrave') laser.adjustPos(rasterEndX, rasterEndY);
-
         if (result === 'stopped') {
-            send({ type: 'status', machine: id, text: 'Trabajo detenido.', level: 'warning' });
+            // Posición desconocida — stop handler ya hizo resetPos
             break;
         }
+
+        // Update tracked position solo si el EGV completó correctamente
+        if (mode === 'engrave') laser.adjustPos(rasterEndX, rasterEndY);
     }
 
-    // Return to starting position
-    try {
-        const dx = startX - laser.posX;
-        const dy = startY - laser.posY;
-        if (dx !== 0 || dy !== 0) {
-            send({ type: 'status', machine: id, text: 'Volviendo al origen...', level: 'info' });
-            await laser.jog(dx, dy);
-        }
-        send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
-    } catch (_) {}
+    if (!m.jobState.stopped) {
+        // Return to starting position (solo en completado normal)
+        try {
+            const dx = startX - laser.posX;
+            const dy = startY - laser.posY;
+            if (dx !== 0 || dy !== 0) {
+                send({ type: 'status', machine: id, text: 'Volviendo al origen...', level: 'info' });
+                await laser.jog(dx, dy);
+            }
+            send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
+        } catch (_) {}
+        send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });
+    }
 
     m.jobState.running = false;
     send({ type: 'done', machine: id });
-    send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });
 }
 
 // ───────── Frame ─────────
