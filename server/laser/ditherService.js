@@ -53,19 +53,20 @@ function stripSvgBackground(svgBuffer) {
 }
 
 // ───────── SVG Cut Line Removal ─────────
-// Any element with a visible stroke color is a cut line — remove for engraving.
+// Strip all stroke attributes from the SVG so only fills render for engraving.
+// This handles inherited strokes from <g> and <svg> parents.
 function stripSvgCutLines(svgBuffer) {
     let svgStr = svgBuffer.toString('utf8');
-    // Remove any shape element that has a stroke color set (not "none")
-    svgStr = svgStr.replace(
-        /<(path|rect|circle|ellipse|line|polyline|polygon|text|use)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
-        (match, tag, attrs) => {
-            const hasStrokeAttr = /\bstroke\s*=\s*"(?!none\b)([^"]+)"/i.test(attrs);
-            const hasStrokeStyle = /style\s*=\s*"[^"]*stroke\s*:\s*(?!none\b)/i.test(attrs);
-            if (hasStrokeAttr || hasStrokeStyle) return '';
-            return match;
-        }
-    );
+    // Remove stroke/stroke-width attributes from ALL elements (including <g>, <svg>)
+    svgStr = svgStr.replace(/\bstroke\s*=\s*"[^"]*"/gi, '');
+    svgStr = svgStr.replace(/\bstroke-width\s*=\s*"[^"]*"/gi, '');
+    svgStr = svgStr.replace(/\bstroke-dasharray\s*=\s*"[^"]*"/gi, '');
+    svgStr = svgStr.replace(/\bstroke-linecap\s*=\s*"[^"]*"/gi, '');
+    svgStr = svgStr.replace(/\bstroke-linejoin\s*=\s*"[^"]*"/gi, '');
+    svgStr = svgStr.replace(/\bstroke-opacity\s*=\s*"[^"]*"/gi, '');
+    // Remove stroke from inline styles
+    svgStr = svgStr.replace(/stroke\s*:[^;"]+;?/gi, '');
+    svgStr = svgStr.replace(/stroke-width\s*:[^;"]+;?/gi, '');
     return Buffer.from(svgStr);
 }
 

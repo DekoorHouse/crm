@@ -630,27 +630,37 @@ function createTransparentSvgImage(svgText, callback) {
 }
 
 // ───────── SVG Engrave (strip stroked elements) ─────────
-// Any element with a visible stroke color is a cut line — remove it for engraving.
-// Only <image> and elements without stroke are kept.
+// Any element with a visible stroke (including inherited) is a cut line — remove for engraving.
+// Uses getComputedStyle to catch inherited strokes from parent <g> or <svg>.
 function createEngraveSvgImage(svgText) {
     return new Promise((resolve) => {
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(svgText, 'image/svg+xml');
-        const svg = doc.querySelector('svg');
-        if (!svg) { resolve(null); return; }
+        // Insert SVG into DOM so getComputedStyle works (detects inherited stroke)
+        const container = document.createElement('div');
+        container.style.cssText = 'position:absolute;left:-9999px;top:-9999px;width:0;height:0;overflow:hidden';
+        container.innerHTML = svgText;
+        document.body.appendChild(container);
+        const svg = container.querySelector('svg');
+        if (!svg) { document.body.removeChild(container); resolve(null); return; }
+        // Check all shape elements for computed stroke
         const allShapes = svg.querySelectorAll('path,rect,circle,ellipse,line,polyline,polygon,text,use');
         for (const el of allShapes) {
-            const stroke = (el.getAttribute('stroke') || '').toLowerCase().trim();
-            const style = el.getAttribute('style') || '';
-            const styleStroke = (style.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/i) || [])[1] || '';
-            const effectiveStroke = styleStroke.toLowerCase().trim() || stroke;
-            // If element has any stroke color (not none, not empty), remove it
-            if (effectiveStroke && effectiveStroke !== 'none') {
+            const computed = window.getComputedStyle(el);
+            const stroke = computed.stroke || '';
+            // Remove if stroke is any color (not none, not empty)
+            if (stroke && stroke !== 'none' && stroke !== '') {
                 el.remove();
             }
         }
-        svg.setAttribute('style', 'background:transparent');
+        // Also strip stroke from <g> and <svg> so remaining elements don't inherit it
+        for (const g of svg.querySelectorAll('g,svg')) {
+            g.removeAttribute('stroke');
+            g.removeAttribute('stroke-width');
+            const style = g.getAttribute('style') || '';
+            if (style) g.setAttribute('style', style.replace(/stroke\s*:[^;]+;?/gi, '').replace(/stroke-width\s*:[^;]+;?/gi, ''));
+        }
+        svg.setAttribute('style', (svg.getAttribute('style') || '') + ';background:transparent');
         const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });
+        document.body.removeChild(container);
         const url = URL.createObjectURL(blob);
         const img = new Image();
         img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
