@@ -126,6 +126,10 @@ class M2Nano {
             throw new Error('Endpoints USB no encontrados en el dispositivo.');
         }
 
+        // Timeout nativo: libusb cancela el transfer limpiamente (no queda pendiente)
+        this.epOut.timeout = 5000;
+        this.epIn.timeout  = 5000;
+
         this.log(`Puerto USB abierto y reclamado. EP_OUT=0x${this.epOut.address.toString(16)} EP_IN=0x${this.epIn.address.toString(16)} type=${this.epOut.transferType} maxPkt=${this.epOut.descriptor.wMaxPacketSize}`);
 
         // K40-Whisperer: ctrl_transfer(0x40, 177, 0x0102, 0, 0, 2000)
@@ -188,12 +192,14 @@ class M2Nano {
             this.log(`PKT[0]: ${hex}`);
         }
 
+        const transfer = () => new Promise((resolve, reject) => {
+            this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
+        });
+
         // Reintentar hasta 3 veces si el USB falla/timeout
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
-                await this._usbTimeout(new Promise((resolve, reject) => {
-                    this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
-                }), 5000, 'sendPacket');
+                await transfer();
                 return;
             } catch (e) {
                 this.log(`sendPacket retry ${attempt + 1}/3: ${e.message}`);
@@ -204,9 +210,7 @@ class M2Nano {
                     // Último intento falló: reset USB completo y reintentar una vez más
                     try {
                         await this._resetUSB();
-                        await this._usbTimeout(new Promise((resolve, reject) => {
-                            this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
-                        }), 5000, 'sendPacket post-reset');
+                        await transfer();
                         return;
                     } catch (e2) {
                         throw new Error(`USB irrecuperable tras reset: ${e2.message}`);
@@ -223,19 +227,19 @@ class M2Nano {
      */
     async sayHello() {
         try {
-            return await this._usbTimeout(new Promise((resolve) => {
+            return await new Promise((resolve, reject) => {
                 const cmd = Buffer.from([CMD_STATUS]); // [0xA0] — 1 byte, como K40 Whisperer
                 this.epOut.transfer(cmd, (err) => {
-                    if (err) { resolve(null); return; }
+                    if (err) { reject(err); return; }
                     this.epIn.transfer(168, (err2, data) => {
-                        if (err2 || !data || data.length < 2) { resolve(null); return; }
+                        if (err2) { reject(err2); return; }
+                        if (!data || data.length < 2) { resolve(null); return; }
                         resolve(data[1]); // status byte
                     });
                 });
-            }), 5000, 'sayHello');
+            });
         } catch (_) {
-            await this._clearEndpoints();
-            return null; // timeout → null para no romper loops
+            return null; // timeout o error USB → null para no romper loops
         }
     }
 
@@ -282,16 +286,6 @@ class M2Nano {
         }
         if (waitLogged && this._onUSBWaiting) this._onUSBWaiting(false);
         throw new Error('Timeout esperando reconexión USB (60s).');
-    }
-
-    /** Wrapper con timeout para operaciones USB que pueden congelarse. */
-    _usbTimeout(promise, ms, label) {
-        return Promise.race([
-            promise,
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error(`USB timeout (${label}, ${ms}ms)`)), ms)
-            ),
-        ]);
     }
 
     /** Espera a que la máquina esté lista (para init, jog, etc.). */
