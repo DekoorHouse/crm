@@ -100,17 +100,28 @@ async function verifyPageToken() {
     if (!pageToken) return { valid: false, error: 'Token no configurado' };
 
     try {
+        // Verificar token con campos basicos
         const response = await axios.get('https://graph.facebook.com/v21.0/me', {
-            params: { access_token: pageToken, fields: 'id,name,instagram_business_account' }
+            params: { access_token: pageToken, fields: 'id,name' }
         });
 
-        const hasInstagram = !!response.data.instagram_business_account;
+        // Intentar obtener Instagram (opcional)
+        let hasInstagram = false;
+        let igAccountId = null;
+        try {
+            const igResponse = await axios.get(`https://graph.facebook.com/v21.0/${response.data.id}`, {
+                params: { access_token: pageToken, fields: 'instagram_business_account' }
+            });
+            hasInstagram = !!igResponse.data.instagram_business_account;
+            igAccountId = igResponse.data.instagram_business_account?.id;
+        } catch (e) { /* Instagram no disponible */ }
+
         return {
             valid: true,
             pageId: response.data.id,
             pageName: response.data.name,
             instagram: hasInstagram,
-            igAccountId: response.data.instagram_business_account?.id
+            igAccountId
         };
     } catch (error) {
         return { valid: false, error: error.response?.data?.error?.message || error.message };
