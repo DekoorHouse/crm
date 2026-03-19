@@ -122,8 +122,9 @@ function createPanel(id) {
             if (state.previewBitmapData) {
                 // Mostrar preview del bitmap dithered
                 const pv = state.previewBitmapData;
-                const pvMmW = pv.width / 39.37;
-                const pvMmH = pv.height / 39.37 * state.lineSpacing;
+                const pvDpmm = (pv.dpi || 1000) / 25.4;
+                const pvMmW = pv.width / pvDpmm;
+                const pvMmH = pv.height / pvDpmm * state.lineSpacing;
                 const pvX = (pv.offsetX / WORK_W) * W;
                 const pvY = (pv.offsetY / WORK_H) * H;
                 const pvW = (pvMmW / WORK_W) * W;
@@ -452,7 +453,8 @@ function createPanel(id) {
                 const processed = processGray(raw.gray, raw.width, raw.height, { brightness:0, contrast:0, algorithm:'atkinson', invert:false });
                 rd = { bitmap: grayToBitmap(processed, raw.width, raw.height), width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY };
             }
-            const mmW = (rd.width / 39.37).toFixed(1), mmH = (rd.height / 39.37 * state.lineSpacing).toFixed(1);
+            const rdDpmm = (rd.dpi || 1000) / 25.4;
+            const mmW = (rd.width / rdDpmm).toFixed(1), mmH = (rd.height / rdDpmm * state.lineSpacing).toFixed(1);
             plog(`Bitmap: ${rd.width}×${rd.height}px → ${mmW}×${mmH}mm, offset=(${rd.offsetX.toFixed(1)},${rd.offsetY.toFixed(1)})mm, step=${state.lineSpacing}, bytes=${rd.bitmap.byteLength}`, 'info');
             sendCmd({ cmd: 'start', machine: id, mode: 'engrave', speed: state.speed, passes: state.passes,
                 raster: { width: rd.width, height: rd.height, step: state.lineSpacing, offsetX: rd.offsetX, offsetY: rd.offsetY } });
@@ -1124,7 +1126,7 @@ function buildSimCommands(state) {
             } else return cmds;
 
             // Target ~400 visible rows for smooth animation
-            const maxRows = 400;
+            const maxRows = 800;
             const rowStep = Math.max(1, Math.floor(h / maxRows));
 
             for (let y = 0; y < h; y += rowStep) {
