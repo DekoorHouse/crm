@@ -138,48 +138,82 @@ function encodeLineSteps(dx, dy, laserOn) {
 function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
     const speed = encodeSpeed(speedMmS, 0);
     let cmd = 'I' + speed + 'NRBS1E';
+    let curX = 0, curY = 0;
 
-    // curX/curY = 0 porque el EGV es relativo a la posición actual del cabezal.
-    // Las coordenadas del diseño (en mm) se suman al offset para posicionar correctamente.
-    let curX = 0, curY = 0; // posición en steps, relativo al punto de inicio
+    // ── Deduplicación de aristas empalmadas ──
+    // Redondear a steps (resolución del dispositivo) para comparar
+    const rnd = v => Math.round(v * STEPS_PER_MM);
+    function edgeKey(x1, y1, x2, y2) {
+        const a = rnd(x1), b = rnd(y1), c = rnd(x2), d = rnd(y2);
+        if (a < c || (a === c && b < d)) return `${a},${b}|${c},${d}`;
+        return `${c},${d}|${a},${b}`;
+    }
 
+    // Contar aristas en todos los segmentos
+    const edgeCount = new Map();
+    for (const seg of segments) {
+        const pts = seg.points;
+        for (let i = 0; i < pts.length - 1; i++) {
+            const k = edgeKey(pts[i].x, pts[i].y, pts[i + 1].x, pts[i + 1].y);
+            edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+        }
+        if (seg.closed && pts.length > 2) {
+            const k = edgeKey(pts[pts.length - 1].x, pts[pts.length - 1].y, pts[0].x, pts[0].y);
+            edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+        }
+    }
+
+    const cutEdges = new Set();
+    let dupCount = 0;
+    function shouldCut(x1, y1, x2, y2) {
+        const k = edgeKey(x1, y1, x2, y2);
+        if ((edgeCount.get(k) || 1) <= 1) return true;  // arista única
+        if (cutEdges.has(k)) { dupCount++; return false; } // ya cortada
+        cutEdges.add(k);
+        return true; // primera vez
+    }
+
+    // ── Generar EGV procesando arista por arista ──
     for (const seg of segments) {
         if (seg.points.length < 2) continue;
 
-        // Mover al inicio del segmento (sin láser)
-        const startX = Math.round(seg.points[0].x * STEPS_PER_MM);
-        const startY = Math.round(seg.points[0].y * STEPS_PER_MM);
-        const moveDx = startX - curX;
-        const moveDy = startY - curY;
-        if (moveDx !== 0 || moveDy !== 0) {
-            cmd += encodeMoveXY(moveDx, moveDy, false);
+        const edges = [];
+        for (let i = 0; i < seg.points.length - 1; i++) {
+            edges.push([seg.points[i], seg.points[i + 1]]);
         }
-        curX = startX;
-        curY = startY;
-
-        // Cortar siguiendo los puntos (con láser)
-        for (let i = 1; i < seg.points.length; i++) {
-            const px = Math.round(seg.points[i].x * STEPS_PER_MM);
-            const py = Math.round(seg.points[i].y * STEPS_PER_MM);
-            const dx = px - curX;
-            const dy = py - curY;
-            if (dx !== 0 || dy !== 0) {
-                cmd += encodeLineSteps(dx, dy, true);
-            }
-            curX = px;
-            curY = py;
-        }
-
-        // Cerrar el path si es necesario
         if (seg.closed && seg.points.length > 2) {
-            const dx = startX - curX;
-            const dy = startY - curY;
-            if (dx !== 0 || dy !== 0) {
-                cmd += encodeLineSteps(dx, dy, true);
-            }
-            curX = startX;
-            curY = startY;
+            edges.push([seg.points[seg.points.length - 1], seg.points[0]]);
         }
+
+        for (const [from, to] of edges) {
+            const fromX = Math.round(from.x * STEPS_PER_MM);
+            const fromY = Math.round(from.y * STEPS_PER_MM);
+            const toX = Math.round(to.x * STEPS_PER_MM);
+            const toY = Math.round(to.y * STEPS_PER_MM);
+            const dx = toX - fromX;
+            const dy = toY - fromY;
+            if (dx === 0 && dy === 0) continue;
+
+            if (!shouldCut(from.x, from.y, to.x, to.y)) continue;
+
+            // Mover al inicio de la arista (sin láser) si es necesario
+            const moveDx = fromX - curX;
+            const moveDy = fromY - curY;
+            if (moveDx !== 0 || moveDy !== 0) {
+                cmd += encodeMoveXY(moveDx, moveDy, false);
+            }
+            curX = fromX;
+            curY = fromY;
+
+            // Cortar (con láser)
+            cmd += encodeLineSteps(dx, dy, true);
+            curX = toX;
+            curY = toY;
+        }
+    }
+
+    if (dupCount > 0) {
+        console.log(`  Vector dedup: ${dupCount} aristas duplicadas eliminadas`);
     }
 
     // Return to starting position (laser off)
