@@ -195,70 +195,45 @@ class M2Nano {
     }
 
     /**
-     * Envía un paquete de comando (status, reset, etc.) de 32 bytes.
-     * Formato: [cmd][0x00...0x00]
-     * NO usa framing 0xA6 — el primer byte es el comando directamente.
+     * say_hello — exacto como K40 Whisperer.
+     * Envía [0xA0] (1 byte), lee 168 bytes, retorna status byte (resp[1]).
+     * Status: 0xCE(206)=OK, 0xEE(238)=BUFFER_FULL, 0xCF(207)=CRC_ERROR, 0xEC(236)=TASK_COMPLETE
      */
-    sendCommand(cmd) {
-        return Promise.race([
-            new Promise((resolve, reject) => {
-                const pkt = Buffer.alloc(CMD_PKT_SIZE, 0);
-                pkt[0] = cmd;
-                this.epOut.transfer(pkt, err => {
-                    if (err) reject(err);
-                    else resolve();
+    sayHello() {
+        return new Promise((resolve) => {
+            const cmd = Buffer.from([CMD_STATUS]); // [0xA0] — 1 byte, como K40 Whisperer
+            this.epOut.transfer(cmd, (err) => {
+                if (err) { resolve(null); return; }
+                this.epIn.transfer(168, (err2, data) => {
+                    if (err2 || !data || data.length < 2) { resolve(null); return; }
+                    resolve(data[1]); // status byte
                 });
-            }),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('sendCommand timeout')), 2000)
-            ),
-        ]);
+            });
+        });
     }
 
-    /** Lee la respuesta de estado (6 bytes) con timeout. */
-    readStatus(timeout = 500) {
-        return Promise.race([
-            new Promise((resolve, reject) => {
-                this.epIn.transfer(RESP_SIZE, (err, data) => {
-                    if (err) reject(err);
-                    else resolve(data);
-                });
-            }),
-            new Promise((_, reject) =>
-                setTimeout(() => reject(new Error('USB read timeout')), timeout)
-            ),
-        ]);
-    }
-
-    /** Espera a que la máquina esté lista. */
-    async waitReady(timeout = 6000, readTimeout = 500) {
+    /** Espera a que la máquina esté lista (para init, jog, etc.). */
+    async waitReady(timeout = 6000) {
         const deadline = Date.now() + timeout;
         let lastStatus = -1;
         while (Date.now() < deadline) {
             try {
-                await this.sendCommand(CMD_STATUS);
-                const resp = await this.readStatus(readTimeout);
-
-                const s = resp[1];
-                if (s !== lastStatus) {
-                    const hex = Array.from(resp).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' ');
-                    this.log(`Board status: [${hex}] → 0x${s.toString(16).padStart(2, '0')}`);
+                const s = await this.sayHello();
+                if (s !== null && s !== lastStatus) {
+                    this.log(`Board status: 0x${s.toString(16).padStart(2, '0')} (${s})`);
                     lastStatus = s;
                 }
-
-                if (s === 0xCE || s === 0xCF || s === 0xEC) return;
-            } catch (e) {
-                this.log(`waitReady error: ${e.message}`);
-            }
+                // 0xCE=OK, 0xEC=TASK_COMPLETE
+                if (s === 0xCE || s === 0xEC) return;
+            } catch (_) {}
             await sleep(80);
         }
-        this.log(`waitReady timeout (último status: 0x${lastStatus.toString(16).padStart(2,'00')})`);
+        this.log(`waitReady timeout (status: 0x${(lastStatus >= 0 ? lastStatus : 0).toString(16).padStart(2,'00')})`);
         throw new Error('Timeout: la máquina no respondió.');
     }
 
     /**
      * Envía un comando EGV dividido en chunks de 30 bytes.
-     * Itera sobre todo el buffer enviando cada paquete secuencialmente.
      */
     async sendEGV(cmd) {
         const bytes = Buffer.from(cmd, 'ascii');
@@ -268,42 +243,49 @@ class M2Nano {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             const pktIdx = Math.floor(i / DATA_SIZE);
             await this.sendPacket(chunk, pktIdx === 0);
-            this.log(`  PKT[${pktIdx}/${totalPkts - 1}]: ${chunk.length} bytes enviados`);
-            await sleep(5);
+            // Flow control como K40 Whisperer
+            const s = await this.sayHello();
+            while (s === 0xEE) { await this.sayHello(); }
         }
     }
 
     /**
-     * Verifica que el buffer del board tenga espacio para más datos.
-     * Status byte (resp[1]):
-     *   0xCE/0xCF = ejecutando, buffer con espacio → seguir enviando
-     *   0xEC/0x00 = idle → seguir enviando
-     *   otro = buffer lleno → esperar
+     * Envía un paquete con flow control — exacto como K40 Whisperer
+     * send_packet_w_error_checking:
+     * 1. ANTES: sayHello() — si BUFFER_FULL (0xEE), poll en tight loop
+     * 2. Enviar paquete de 34 bytes
+     * 3. DESPUÉS: sayHello() — si CRC_ERROR (0xCF), reintentar
      */
-    async waitBufferReady(maxRetries = 2000) {
-        for (let i = 0; i < maxRetries; i++) {
+    async sendPacketChecked(data) {
+        for (let retry = 0; retry < 20; retry++) {
+            // 1. Esperar buffer disponible
+            let s = await this.sayHello();
+            while (s === 0xEE) { // BUFFER_FULL — tight loop, sin sleep
+                s = await this.sayHello();
+            }
+
+            // 2. Enviar paquete
             try {
-                await this.sendCommand(CMD_STATUS);
-                const resp = await this.readStatus(200);
-                const s = resp[1];
-                if (s === 0xCE || s === 0xCF || s === 0xEC || s === 0x00) return s;
-            } catch (_) {}
-            await sleep(2);
+                await this.sendPacket(data);
+            } catch (e) {
+                continue; // retry on send error
+            }
+
+            // 3. Verificar respuesta
+            s = await this.sayHello();
+            if (s === 0xCF) { // CRC_ERROR — reintentar
+                continue;
+            }
+            return; // OK (0xCE) o cualquier otro → siguiente paquete
         }
-        // No lanzar error — intentar enviar de todas formas
     }
 
     /**
-     * Envía un job EGV largo con soporte de progreso, pausa y stop.
-     *
-     * Como K40 Whisperer (rapid_feed): envía datos tan rápido como USB
-     * permita, sin flow control explícito. El USB bulk transfer provee
-     * flow control nativo (NAK cuando el endpoint buffer está lleno).
-     *
-     * IMPORTANTE: NO usar sleep() para yields — en Windows sleep(1)
-     * realmente duerme 10-15ms (resolución del timer del OS), causando
-     * buffer underrun a velocidades altas. Usar setImmediate() que tiene
-     * latencia ~0ms.
+     * Envía un job EGV largo con flow control por paquete.
+     * Protocolo EXACTO de K40 Whisperer send_data/send_packet_w_error_checking:
+     * - sayHello antes de cada paquete (esperar si BUFFER_FULL)
+     * - sayHello después de cada paquete (reintentar si CRC_ERROR)
+     * - Sin sleep/delay — tight polling
      */
     async sendEGVJob(egvString, { onProgress, shouldStop, shouldPause } = {}) {
         const bytes = Buffer.from(egvString, 'ascii');
@@ -334,13 +316,7 @@ class M2Nano {
             }
 
             const chunk = bytes.slice(i, i + DATA_SIZE);
-            await this.sendPacket(chunk);
-
-            // Yield al event loop con setImmediate (NO sleep — sleep(1) en Windows = 10-15ms)
-            // Solo cada 100 paquetes para minimizar overhead
-            if (pktIdx % 100 === 0 && pktIdx > 0) {
-                await new Promise(resolve => setImmediate(resolve));
-            }
+            await this.sendPacketChecked(chunk);
 
             // Progreso cada 500 paquetes
             if (onProgress && pktIdx % 500 === 0) {
