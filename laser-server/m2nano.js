@@ -196,6 +196,7 @@ class M2Nano {
             } catch (e) {
                 if (attempt < 2) {
                     this.log(`sendPacket retry ${attempt + 1}/3: ${e.message}`);
+                    await this._clearEndpoints();
                     await sleep(500);
                 } else {
                     throw e;
@@ -222,8 +223,18 @@ class M2Nano {
                 });
             }), 5000, 'sayHello');
         } catch (_) {
+            await this._clearEndpoints();
             return null; // timeout → null para no romper loops
         }
+    }
+
+    /** Limpia el estado halt/stall de ambos endpoints USB. */
+    async _clearEndpoints() {
+        const clear = (ep) => new Promise(resolve => {
+            try { ep.clearHalt(resolve); } catch (_) { resolve(); }
+        });
+        if (this.epOut) await clear(this.epOut);
+        if (this.epIn)  await clear(this.epIn);
     }
 
     /** Wrapper con timeout para operaciones USB que pueden congelarse. */
@@ -282,6 +293,9 @@ class M2Nano {
         const bytes = Buffer.from(egvString, 'ascii');
         const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
         this.log(`sendEGVJob: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
+
+        // Limpiar estado de endpoints antes de cada job
+        await this._clearEndpoints();
 
         this.log('Esperando board ready...');
         try {
