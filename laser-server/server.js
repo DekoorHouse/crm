@@ -264,6 +264,14 @@ async function runJob(id, msg) {
             break;
         }
 
+        // Soft reset para limpiar estado residual del modo raster
+        // antes de enviar jogs de retorno (sin esto el board puede
+        // invertir la dirección L/R del primer jog post-EGV).
+        if (mode === 'engrave') {
+            await laser.sendEGV('IS2P');
+            await sleep(500);
+        }
+
         // Retorno explícito desde el fin del scan al inicio del EGV
         if (mode === 'engrave' && (rasterEndX !== 0 || rasterEndY !== 0)) {
             log(`[M${id}] Retorno scan: (${rasterEndX.toFixed(1)}, ${rasterEndY.toFixed(1)})mm`);
