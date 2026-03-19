@@ -240,23 +240,20 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         const dir = leftToRight ? 'B' : 'T';
 
         if (firstOn < 0) {
-            // Empty row — minimal 1-step move to trigger Y advancement
-            parts.push('U', dir, 'a');
-            posX += leftToRight ? 1 : -1;
+            // Empty row — full width to maintain position
+            parts.push('U', dir, encodeDistance(width));
+            posX += leftToRight ? width : -width;
             leftToRight = !leftToRight;
             continue;
         }
 
-        // Only encode from firstOn to lastOn (trim empty leading/trailing pixels)
-        // Move to firstOn position with laser off (skip leading empty pixels)
+        // Leading empty: move to first active pixel (laser off)
         const leadingEmpty = leftToRight ? firstOn : (width - 1 - lastOn);
         if (leadingEmpty > 0) {
             parts.push('U', dir, encodeDistance(leadingEmpty));
         }
 
-        // Encode only the active pixels (firstOn..lastOn)
-        const activeStart = leftToRight ? firstOn : lastOn;
-        const activeEnd = leftToRight ? lastOn : firstOn;
+        // Encode active pixels (firstOn..lastOn)
         const activeLen = lastOn - firstOn + 1;
         let runOn = false;
         let runLen = 0;
@@ -280,9 +277,13 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
             parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
         }
 
-        // Track X: total row steps = leadingEmpty + activeLen
-        const rowSteps = leadingEmpty + activeLen;
-        posX += leftToRight ? rowSteps : -rowSteps;
+        // Trailing empty: complete full width to reach the far edge
+        const trailing = leftToRight ? (width - 1 - lastOn) : firstOn;
+        if (trailing > 0) {
+            parts.push('U', dir, encodeDistance(trailing));
+        }
+
+        posX += leftToRight ? width : -width;
 
         leftToRight = !leftToRight;
 
