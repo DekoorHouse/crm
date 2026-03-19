@@ -324,8 +324,16 @@ class M2Nano {
             }
         }
 
-        this.log('Todos los paquetes enviados. Esperando finalización...');
-        try { await this.waitReady(300000); } catch (_) {}
+        this.log('Todos los paquetes enviados. Esperando que el board termine de ejecutar...');
+        // Esperar TASK_COMPLETE (0xEC) — NO aceptar 0xCE (buffer con espacio)
+        // porque el board puede tener datos pendientes en su buffer.
+        const deadline = Date.now() + 600000; // 10 min max
+        while (Date.now() < deadline) {
+            try {
+                const s = await this.sayHello();
+                if (s === 0xEC) break; // TASK_COMPLETE — board terminó de ejecutar
+            } catch (_) {}
+        }
         if (onProgress) onProgress(1);
         return 'complete';
     }
