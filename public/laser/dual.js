@@ -129,6 +129,8 @@ function createPanel(id) {
                 const pvY = (pv.offsetY / WORK_H) * H;
                 const pvW = (pvMmW / WORK_W) * W;
                 const pvH = (pvMmH / WORK_H) * H;
+                // Update designBox to match actual bitmap area
+                state.designBox = { dx: pvX, dy: pvY, dw: pvW, dh: pvH, mmW: pvMmW, mmH: pvMmH };
                 ctx.save(); ctx.globalAlpha = 0.95;
                 ctx.drawImage(pv.canvas, pvX, pvY, pvW, pvH);
                 ctx.restore();
