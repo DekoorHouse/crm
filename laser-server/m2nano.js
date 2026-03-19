@@ -172,26 +172,23 @@ class M2Nano {
      * Formato: [0xA6][0x00][payload (30 bytes)][0xA6][CRC-8]
      */
     sendPacket(data, logFirst = false) {
-        return new Promise((resolve, reject) => {
-            const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
-            pkt[0] = PKT_FRAME;                       // 0xA6
-            pkt[1] = 0x00;
-            pkt.fill(0x46, 2, 32);                    // Padding 'F' en payload
-            const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
-            src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
-            pkt[32] = PKT_FRAME;                      // 0xA6
-            pkt[33] = crc8(pkt.subarray(2, 32));     // CRC sobre 30 bytes de payload
+        const pkt = Buffer.alloc(PKT_SIZE, 0);  // 34 bytes
+        pkt[0] = PKT_FRAME;                       // 0xA6
+        pkt[1] = 0x00;
+        pkt.fill(0x46, 2, 32);                    // Padding 'F' en payload
+        const src = Buffer.isBuffer(data) ? data : Buffer.from(data, 'ascii');
+        src.copy(pkt, 2, 0, Math.min(src.length, DATA_SIZE));  // Payload en bytes 2-31
+        pkt[32] = PKT_FRAME;                      // 0xA6
+        pkt[33] = crc8(pkt.subarray(2, 32));     // CRC sobre 30 bytes de payload
 
-            if (logFirst) {
-                const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
-                this.log(`PKT[0]: ${hex}`);
-            }
+        if (logFirst) {
+            const hex = Array.from(pkt).map(b => b.toString(16).padStart(2, '0')).join(' ');
+            this.log(`PKT[0]: ${hex}`);
+        }
 
-            this.epOut.transfer(pkt, err => {
-                if (err) reject(err);
-                else resolve();
-            });
-        });
+        return this._usbTimeout(new Promise((resolve, reject) => {
+            this.epOut.transfer(pkt, err => err ? reject(err) : resolve());
+        }), 5000, 'sendPacket');
     }
 
     /**
@@ -199,17 +196,31 @@ class M2Nano {
      * Envía [0xA0] (1 byte), lee 168 bytes, retorna status byte (resp[1]).
      * Status: 0xCE(206)=OK, 0xEE(238)=BUFFER_FULL, 0xCF(207)=CRC_ERROR, 0xEC(236)=TASK_COMPLETE
      */
-    sayHello() {
-        return new Promise((resolve) => {
-            const cmd = Buffer.from([CMD_STATUS]); // [0xA0] — 1 byte, como K40 Whisperer
-            this.epOut.transfer(cmd, (err) => {
-                if (err) { resolve(null); return; }
-                this.epIn.transfer(168, (err2, data) => {
-                    if (err2 || !data || data.length < 2) { resolve(null); return; }
-                    resolve(data[1]); // status byte
+    async sayHello() {
+        try {
+            return await this._usbTimeout(new Promise((resolve) => {
+                const cmd = Buffer.from([CMD_STATUS]); // [0xA0] — 1 byte, como K40 Whisperer
+                this.epOut.transfer(cmd, (err) => {
+                    if (err) { resolve(null); return; }
+                    this.epIn.transfer(168, (err2, data) => {
+                        if (err2 || !data || data.length < 2) { resolve(null); return; }
+                        resolve(data[1]); // status byte
+                    });
                 });
-            });
-        });
+            }), 5000, 'sayHello');
+        } catch (_) {
+            return null; // timeout → null para no romper loops
+        }
+    }
+
+    /** Wrapper con timeout para operaciones USB que pueden congelarse. */
+    _usbTimeout(promise, ms, label) {
+        return Promise.race([
+            promise,
+            new Promise((_, reject) =>
+                setTimeout(() => reject(new Error(`USB timeout (${label}, ${ms}ms)`)), ms)
+            ),
+        ]);
     }
 
     /** Espera a que la máquina esté lista (para init, jog, etc.). */
