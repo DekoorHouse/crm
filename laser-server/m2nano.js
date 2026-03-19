@@ -274,7 +274,29 @@ class M2Nano {
     }
 
     /**
+     * Verifica que el buffer del board tenga espacio para más datos.
+     * Status byte (resp[1]):
+     *   0xCE/0xCF = ejecutando, buffer con espacio → seguir enviando
+     *   0xEC/0x00 = idle → seguir enviando
+     *   otro = buffer lleno → esperar
+     */
+    async waitBufferReady(maxRetries = 2000) {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                await this.sendCommand(CMD_STATUS);
+                const resp = await this.readStatus(200);
+                const s = resp[1];
+                if (s === 0xCE || s === 0xCF || s === 0xEC || s === 0x00) return s;
+            } catch (_) {}
+            await sleep(2);
+        }
+        // No lanzar error — intentar enviar de todas formas
+    }
+
+    /**
      * Envía un job EGV largo con soporte de progreso, pausa y stop.
+     * Flow control: verifica status del board después de cada paquete
+     * (como K40 Whisperer) para evitar overflow del buffer interno.
      * @param {string} egvString  comando EGV completo
      * @param {object} opts  { onProgress(0-1), shouldStop(), shouldPause() }
      * @returns {string} 'complete' o 'stopped'
@@ -287,7 +309,7 @@ class M2Nano {
         this.log('Esperando board ready...');
         try {
             await this.waitReady(10000);
-            this.log('Board listo. Enviando raster...');
+            this.log('Board listo. Enviando...');
         } catch (e) {
             this.log(`waitReady falló: ${e.message} — intentando enviar de todas formas...`);
         }
@@ -310,22 +332,17 @@ class M2Nano {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             await this.sendPacket(chunk);
 
+            // Flow control: verificar que el board puede recibir más datos
+            // (como K40 Whisperer say_hello entre paquetes)
+            await this.waitBufferReady();
+
             // Progreso cada 200 paquetes
             if (onProgress && pktIdx % 200 === 0) {
                 onProgress(pktIdx / totalPkts);
             }
-
-            // Yield al event loop cada 100 paquetes para mantener WS responsivo
-            // NO usar waitReady aquí — durante raster el board reporta 0xEE (busy)
-            // y waitReady haría timeout en cada llamada, bloqueando horas.
-            // El USB bulk transfer provee flow control nativo.
-            if (pktIdx % 100 === 0 && pktIdx > 0) {
-                await sleep(1);
-            }
         }
 
         this.log('Todos los paquetes enviados. Esperando finalización...');
-        // Esperar a que la máquina termine de ejecutar el raster
         try { await this.waitReady(300000); } catch (_) {}
         if (onProgress) onProgress(1);
         return 'complete';
