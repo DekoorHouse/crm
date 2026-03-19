@@ -976,42 +976,52 @@ function closeBmpModal() {
 // ───────── Auto-generate raster (for simulation without BMP config) ─────────
 async function autoGenerateRaster(state) {
     const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
-    const formData = new FormData();
-    formData.append('image', state.loadedFile);
-    formData.append('dpi', '300');
-    formData.append('lineSpacing', String(state.lineSpacing));
-    formData.append('algorithm', isBmp ? 'threshold' : 'atkinson');
-    if (state.imageType === 'svg' && state._svgBBox) {
-        const bb = state._svgBBox;
-        formData.append('bboxMmX', String(bb.mmX));
-        formData.append('bboxMmY', String(bb.mmY));
-        formData.append('bboxMmW', String(bb.mmW));
-        formData.append('bboxMmH', String(bb.mmH));
+    // Try server first, fall back to client-side Canvas pipeline
+    try {
+        const formData = new FormData();
+        formData.append('image', state.loadedFile);
+        formData.append('dpi', '300');
+        formData.append('lineSpacing', String(state.lineSpacing));
+        formData.append('algorithm', isBmp ? 'threshold' : 'atkinson');
+        if (state.imageType === 'svg' && state._svgBBox) {
+            const bb = state._svgBBox;
+            formData.append('bboxMmX', String(bb.mmX));
+            formData.append('bboxMmY', String(bb.mmY));
+            formData.append('bboxMmW', String(bb.mmW));
+            formData.append('bboxMmH', String(bb.mmH));
+        }
+        const uploadRes = await fetch('/api/laser/dither/upload', { method: 'POST', body: formData });
+        if (!uploadRes.ok) throw new Error((await uploadRes.json()).error || uploadRes.statusText);
+        const uploadData = await uploadRes.json();
+        const sessionId = uploadData.sessionId;
+        const finalRes = await fetch('/api/laser/dither/finalize', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId, algorithm: isBmp ? 'threshold' : 'atkinson',
+                brightness: 0, contrast: 0, gamma: 1.0,
+                invert: false, clahe: false, unsharp: false, threshold: 128,
+            }),
+        });
+        if (!finalRes.ok) throw new Error('Finalize failed');
+        const w = parseInt(finalRes.headers.get('X-Bitmap-Width'));
+        const h = parseInt(finalRes.headers.get('X-Bitmap-Height'));
+        const offX = parseFloat(finalRes.headers.get('X-Offset-X'));
+        const offY = parseFloat(finalRes.headers.get('X-Offset-Y'));
+        const bitmap = new Uint8Array(await finalRes.arrayBuffer());
+        fetch('/api/laser/dither/session/' + sessionId, { method: 'DELETE' }).catch(() => {});
+        return { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
+    } catch (_serverErr) {
+        // Fallback: client-side Canvas pipeline (works with any image the browser can display)
+        const dpmm = 300 / 25.4;
+        const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
+        const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+        const processed = processGray(raw.gray, raw.width, raw.height, {
+            brightness: 0, contrast: 0, algorithm: isBmp ? 'threshold' : 'atkinson', invert: false,
+        });
+        const bitmap = grayToBitmap(processed, raw.width, raw.height);
+        return { bitmap, width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY };
     }
-    // Upload
-    const uploadRes = await fetch('/api/laser/dither/upload', { method: 'POST', body: formData });
-    if (!uploadRes.ok) throw new Error((await uploadRes.json()).error || uploadRes.statusText);
-    const uploadData = await uploadRes.json();
-    const sessionId = uploadData.sessionId;
-    // Finalize directly with default options
-    const finalRes = await fetch('/api/laser/dither/finalize', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            sessionId, algorithm: isBmp ? 'threshold' : 'atkinson',
-            brightness: 0, contrast: 0, gamma: 1.0,
-            invert: false, clahe: false, unsharp: false, threshold: 128,
-        }),
-    });
-    if (!finalRes.ok) throw new Error('Finalize failed');
-    const w = parseInt(finalRes.headers.get('X-Bitmap-Width'));
-    const h = parseInt(finalRes.headers.get('X-Bitmap-Height'));
-    const offX = parseFloat(finalRes.headers.get('X-Offset-X'));
-    const offY = parseFloat(finalRes.headers.get('X-Offset-Y'));
-    const bitmap = new Uint8Array(await finalRes.arrayBuffer());
-    // Cleanup session
-    fetch('/api/laser/dither/session/' + sessionId, { method: 'DELETE' }).catch(() => {});
-    return { bitmap, width: w, height: h, offsetX: offX, offsetY: offY };
 }
 
 // ───────── Laser Simulation Preview ─────────
