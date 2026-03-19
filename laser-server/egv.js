@@ -207,7 +207,6 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
 function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offsetX = 0, offsetY = 0) {
     const rowBytes = Math.ceil(width / 8);
 
-    // Helper: check if pixel is ON
     function getBit(row, px) {
         const byteIdx = row * rowBytes + (px >> 3);
         return !!(bitmap[byteIdx] & (1 << (7 - (px & 7))));
@@ -227,98 +226,131 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     }
 
     if (firstRow < 0) {
-        // Bitmap completamente vacío
         console.log('  EGV raster: bitmap vacío, nada que grabar.');
         return { egv: 'IFNSE', endX: 0, endY: 0 };
     }
 
     const scanW = gMaxX - gMinX + 1;
     const scanH = lastRow - firstRow + 1;
-    console.log(`  EGV raster: content bounds X[${gMinX}..${gMaxX}] Y[${firstRow}..${lastRow}] → ${scanW}×${scanH}px (de ${width}×${height}px original)`);
+
+    // ── Pre-compute per-row content bounds (absolute pixel positions) ──
+    const rowFO = new Int32Array(scanH).fill(-1); // firstOn per row
+    const rowLO = new Int32Array(scanH).fill(-1); // lastOn per row
+    for (let i = 0; i < scanH; i++) {
+        for (let x = gMinX; x <= gMaxX; x++) {
+            if (getBit(firstRow + i, x)) {
+                if (rowFO[i] < 0) rowFO[i] = x;
+                rowLO[i] = x;
+            }
+        }
+    }
+
+    console.log(`  EGV raster: content X[${gMinX}..${gMaxX}] Y[${firstRow}..${lastRow}] → ${scanW}×${scanH}px (de ${width}×${height}px)`);
+
+    // ── Helper: encode active pixel runs for one row ──
+    function encodeRuns(fo, lo, row, ltr) {
+        const activeLen = lo - fo + 1;
+        const dir = ltr ? 'B' : 'T';
+        let runOn = false, runLen = 0;
+        for (let i = 0; i < activeLen; i++) {
+            const px = ltr ? (fo + i) : (lo - i);
+            const isOn = getBit(row, px);
+            if (runLen === 0) { runOn = isOn; runLen = 1; }
+            else if (isOn === runOn) { runLen++; }
+            else { parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen)); runOn = isOn; runLen = 1; }
+        }
+        if (runLen > 0) parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
+    }
 
     const speed = encodeSpeed(speedMmS, rasterStep);
     const parts = ['I', speed, 'NRBS1E'];
 
-    // Mover al inicio del contenido (offset + margen vacío del bitmap)
-    const startX = Math.round(offsetX * STEPS_PER_MM) + gMinX;
-    const startY = Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep;
-    if (startX !== 0 || startY !== 0) {
-        parts.push(encodeMoveXY(startX, startY, false));
+    // Initial move to gMinX (left edge of global content)
+    const initX = Math.round(offsetX * STEPS_PER_MM) + gMinX;
+    const initY = Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep;
+    if (initX !== 0 || initY !== 0) {
+        parts.push(encodeMoveXY(initX, initY, false));
     }
 
+    let posX = gMinX; // absolute pixel position (= steps)
     let leftToRight = true;
-    let posX = startX;
 
-    for (let row = firstRow; row <= lastRow; row++) {
-        // Find first and last ON pixel in this row (within content X bounds)
-        let firstOn = -1, lastOn = -1;
-        for (let x = gMinX; x <= gMaxX; x++) {
-            if (getBit(row, x)) {
-                if (firstOn < 0) firstOn = x - gMinX;
-                lastOn = x - gMinX;
-            }
-        }
-
+    for (let i = 0; i < scanH; i++) {
+        const fo = rowFO[i], lo = rowLO[i];
         const dir = leftToRight ? 'B' : 'T';
 
-        if (firstOn < 0) {
-            // Empty row within content area — traverse scan width
+        if (fo < 0) {
+            // Empty row — traverse full scanW for safe position reset
+            // (ensures posX returns to gMinX or gMaxX+1 for next row)
             parts.push('U', dir, encodeDistance(scanW));
             posX += leftToRight ? scanW : -scanW;
             leftToRight = !leftToRight;
             continue;
         }
 
-        // Leading empty: move to first active pixel (laser off)
-        const leadingEmpty = leftToRight ? firstOn : (scanW - 1 - lastOn);
-        if (leadingEmpty > 0) {
-            parts.push('U', dir, encodeDistance(leadingEmpty));
-        }
+        // Check if next row is empty (needs full scanW reset)
+        const nextIsEmpty = (i + 1 >= scanH || rowFO[i + 1] < 0);
+        const nextFo = (!nextIsEmpty) ? rowFO[i + 1] : -1;
+        const nextLo = (!nextIsEmpty) ? rowLO[i + 1] : -1;
 
-        // Encode active pixels (firstOn..lastOn)
-        const activeLen = lastOn - firstOn + 1;
-        let runOn = false;
-        let runLen = 0;
+        if (leftToRight) {
+            // ── L→R row ──
+            // Leading: skip from posX to firstOn
+            const leading = fo - posX;
+            if (leading > 0) parts.push('U', 'B', encodeDistance(leading));
 
-        for (let i = 0; i < activeLen; i++) {
-            const px = leftToRight ? (gMinX + firstOn + i) : (gMinX + lastOn - i);
-            const isOn = getBit(row, px);
+            // Content: encode active runs
+            encodeRuns(fo, lo, firstRow + i, true);
+            posX = lo + 1;
 
-            if (runLen === 0) {
-                runOn = isOn;
-                runLen = 1;
-            } else if (isOn === runOn) {
-                runLen++;
+            // Trailing: extend for next row
+            let targetRight;
+            if (nextIsEmpty) {
+                // Next row is empty or last: extend to right edge so empty row resets correctly
+                targetRight = gMinX + scanW; // = gMaxX + 1
             } else {
-                parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
-                runOn = isOn;
-                runLen = 1;
+                // Next row is R→L non-empty: need posX >= nextLo + 1
+                targetRight = Math.max(posX, nextLo + 1);
+            }
+            if (posX < targetRight) {
+                parts.push('U', 'B', encodeDistance(targetRight - posX));
+                posX = targetRight;
+            }
+        } else {
+            // ── R→L row ──
+            // Leading: skip from posX down to lastOn + 1
+            const leading = posX - (lo + 1);
+            if (leading > 0) parts.push('U', 'T', encodeDistance(leading));
+
+            // Content: encode active runs (right to left)
+            encodeRuns(fo, lo, firstRow + i, false);
+            posX = fo;
+
+            // Trailing: extend for next row
+            let targetLeft;
+            if (nextIsEmpty) {
+                targetLeft = gMinX;
+            } else {
+                // Next row is L→R non-empty: need posX <= nextFo
+                targetLeft = Math.min(posX, nextFo);
+            }
+            if (posX > targetLeft) {
+                parts.push('U', 'T', encodeDistance(posX - targetLeft));
+                posX = targetLeft;
             }
         }
-        if (runLen > 0) {
-            parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
-        }
 
-        // Trailing empty: complete scan width
-        const trailing = leftToRight ? (scanW - 1 - lastOn) : firstOn;
-        if (trailing > 0) {
-            parts.push('U', dir, encodeDistance(trailing));
-        }
-
-        posX += leftToRight ? scanW : -scanW;
         leftToRight = !leftToRight;
 
-        if (row % 500 === 0 && row > firstRow) {
-            process.stdout.write(`  EGV raster: ${row - firstRow}/${scanH} filas...\r`);
+        if (i % 500 === 0 && i > 0) {
+            process.stdout.write(`  EGV raster: ${i}/${scanH} filas...\r`);
         }
     }
 
-    // Y displacement: rasterStep per row transition within content area
-    const posY = startY + (scanH > 1 ? (scanH - 1) * rasterStep : 0);
-
+    const posY = initY + (scanH > 1 ? (scanH - 1) * rasterStep : 0);
     parts.push('FNSE');
     const result = parts.join('');
-    console.log(`  EGV raster: ${scanH} filas (de ${height} total). Total: ${result.length} chars`);
+    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars`);
     return { egv: result, endX: posX / STEPS_PER_MM, endY: posY / STEPS_PER_MM };
 }
 
