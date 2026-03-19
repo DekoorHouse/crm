@@ -630,25 +630,23 @@ function createTransparentSvgImage(svgText, callback) {
 }
 
 // ───────── SVG Engrave (strip cut lines) ─────────
-// Removes stroke-only elements (cut lines) from SVG for engraving.
-// Returns a Promise<Image> with only fill-based shapes.
+// Removes geometric cut-line shapes (circle, ellipse, line) from SVG for engraving.
+// Keeps: <path> (artwork), <image> (raster), <text>, <rect> (backgrounds), <g>, <use>
+// Removes: <circle>, <ellipse>, <line>, <polyline>, <polygon> with visible stroke (cut outlines)
 function createEngraveSvgImage(svgText) {
     return new Promise((resolve) => {
         const parser = new DOMParser();
         const doc = parser.parseFromString(svgText, 'image/svg+xml');
         const svg = doc.querySelector('svg');
         if (!svg) { resolve(null); return; }
-        // Remove stroke-only elements (shapes with fill=none and a visible stroke)
-        const shapes = svg.querySelectorAll('path,line,circle,ellipse,polyline,polygon,rect');
-        for (const el of shapes) {
-            const fill = (el.getAttribute('fill') || '').toLowerCase().replace(/\s/g, '');
+        // Remove geometric cut shapes: circle, ellipse, line, polyline, polygon
+        // These are typically cut outlines in laser workflows
+        const cutShapes = svg.querySelectorAll('circle,ellipse,line,polyline,polygon');
+        for (const el of cutShapes) {
+            const stroke = el.getAttribute('stroke') || '';
             const style = el.getAttribute('style') || '';
-            const styleFill = (style.match(/fill\s*:\s*([^;]+)/i) || [])[1] || '';
-            const effectiveFill = styleFill.toLowerCase().replace(/\s/g, '') || fill;
-            // If fill is none/transparent, this is a stroke-only element (cut line)
-            if (effectiveFill === 'none' || effectiveFill === 'transparent') {
-                el.remove();
-            }
+            const hasStroke = (stroke && stroke !== 'none') || /stroke\s*:/i.test(style);
+            if (hasStroke) el.remove();
         }
         svg.setAttribute('style', 'background:transparent');
         const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: 'image/svg+xml' });

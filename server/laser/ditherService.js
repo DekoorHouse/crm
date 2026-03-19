@@ -53,23 +53,17 @@ function stripSvgBackground(svgBuffer) {
 }
 
 // ───────── SVG Cut Line Removal ─────────
-// Remove stroke-only elements (cut lines) from SVG before rasterizing for engrave mode
+// Remove geometric cut shapes (circle, ellipse, line, polyline, polygon) with stroke
+// These are cut outlines in laser workflows — keep paths, images, text, rects
 function stripSvgCutLines(svgBuffer) {
     let svgStr = svgBuffer.toString('utf8');
-    // Match shape elements with fill="none" — these are cut lines
-    // Handles: <circle .../>, <ellipse .../>, <path .../>, <line .../>, <polyline .../>, <polygon .../>
-    // Also handles non-self-closing like <circle ...>...</circle>
+    // Remove circle, ellipse, line, polyline, polygon elements that have a stroke
     svgStr = svgStr.replace(
-        /<(path|circle|ellipse|line|polyline|polygon|rect)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
+        /<(circle|ellipse|line|polyline|polygon)\b([^>]*?)(?:\/>|>[\s\S]*?<\/\1>)/gi,
         (match, tag, attrs) => {
-            // Check inline fill attribute
-            const fillAttr = ((attrs.match(/\bfill\s*=\s*"([^"]+)"/) || [])[1] || '').toLowerCase().replace(/\s/g, '');
-            // Check style fill
-            const styleFill = ((attrs.match(/style\s*=\s*"[^"]*fill\s*:\s*([^;"]+)/) || [])[1] || '').toLowerCase().replace(/\s/g, '');
-            const effectiveFill = styleFill || fillAttr;
-            if (effectiveFill === 'none' || effectiveFill === 'transparent') {
-                return ''; // Remove cut-line element
-            }
+            const hasStrokeAttr = /\bstroke\s*=\s*"(?!none)/.test(attrs);
+            const hasStrokeStyle = /style\s*=\s*"[^"]*stroke\s*:/i.test(attrs);
+            if (hasStrokeAttr || hasStrokeStyle) return ''; // Remove cut shape
             return match;
         }
     );
