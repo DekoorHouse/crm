@@ -212,15 +212,11 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         return !!(bitmap[byteIdx] & (1 << (7 - (px & 7))));
     }
 
-    // ── Overscan: distancia extra laser-off para aceleración/desaceleración ──
-    // Firmware M2 Nano gears: 3.25mm, 6.5mm, 9.75mm, 11.4mm
-    // Se usa ~2x para cubrir arranque desde parado (sin inercia de dirección previa)
-    // y per-row optimization (filas angostas necesitan margen)
-    let overscan;
-    if (speedMmS <= 25)  overscan = Math.round(5 * STEPS_PER_MM);    // 5mm  (gear 1: 3.25mm)
-    else if (speedMmS <= 127) overscan = Math.round(12 * STEPS_PER_MM);  // 12mm (gear 2: 6.5mm)
-    else if (speedMmS <= 320) overscan = Math.round(20 * STEPS_PER_MM);  // 20mm (gear 3: 9.75mm)
-    else                      overscan = Math.round(25 * STEPS_PER_MM);  // 25mm (gear 4: 11.4mm)
+    // Sin overscan — el firmware M2 Nano maneja aceleración/desaceleración
+    // internamente via gears (3.25-11.4mm según velocidad).
+    // El jog posiciona el cabezal ANTES del EGV a velocidad segura.
+    // K40 Whisperer tampoco usa overscan.
+    const overscan = 0;
 
     // ── Scan bitmap for global content bounds ──
     let gMinX = width, gMaxX = -1, firstRow = -1, lastRow = -1;
