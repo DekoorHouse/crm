@@ -207,6 +207,11 @@ function createPanel(id) {
     dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = ''; if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
     fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
 
+    ref('bmpConfigBtn').addEventListener('click', () => {
+        if (!state.loadedImage) return;
+        plog('Abriendo configuración BMP...', 'info');
+        openBmpModal(state, plog, drawCanvas);
+    });
     ref('removeFileBtn').addEventListener('click', () => {
         state.loadedFile = null; state.loadedImage = null; state.imageType = null;
         state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null; state.rasterResult = null;
@@ -396,8 +401,8 @@ function createPanel(id) {
 
     function generatePreview() {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
-        plog('Abriendo configuración BMP...', 'info');
-        openBmpModal(state, plog, drawCanvas);
+        plog('Abriendo simulación...', 'info');
+        openLaserSim(state, plog, drawCanvas);
     }
 
     function startJob() {
@@ -917,6 +922,329 @@ function closeBmpModal() {
     bmpModal.sessionId = null;
 }
 
+// ───────── Laser Simulation Preview ─────────
+const laserSim = {
+    state: null, plog: null, drawCanvas: null,
+    playing: false, animFrame: null,
+    commands: [],       // [{type:'move'|'cut', x, y}]
+    cmdIndex: 0,
+    headX: 0, headY: 0,
+    trail: [],          // [{x1,y1,x2,y2,type:'move'|'cut'}]
+    speed: 5,
+    lastTime: 0,
+    stepsPerFrame: 1,
+};
+
+function openLaserSim(panelState, plog, drawCanvas) {
+    const modal = document.getElementById('laserSimModal');
+    modal.style.display = '';
+    laserSim.state = panelState;
+    laserSim.plog = plog;
+    laserSim.drawCanvas = drawCanvas;
+    laserSim.playing = false;
+    laserSim.cmdIndex = 0;
+    laserSim.headX = 0; laserSim.headY = 0;
+    laserSim.trail = [];
+    laserSim.speed = 5;
+    document.getElementById('simSpeedSlider').value = 5;
+    document.getElementById('simSpeedLabel').textContent = '5×';
+    document.getElementById('simPlayBtn').innerHTML = '<i class="fas fa-play"></i>';
+
+    // Build command list based on mode
+    laserSim.commands = buildSimCommands(panelState);
+    const totalCuts = laserSim.commands.filter(c => c.type === 'cut').length;
+    const totalMoves = laserSim.commands.filter(c => c.type === 'move').length;
+
+    // Calculate estimated distance
+    let cutDist = 0, moveDist = 0;
+    let px = 0, py = 0;
+    for (const cmd of laserSim.commands) {
+        const d = Math.sqrt((cmd.x - px) ** 2 + (cmd.y - py) ** 2);
+        if (cmd.type === 'cut') cutDist += d; else moveDist += d;
+        px = cmd.x; py = cmd.y;
+    }
+    const estTime = cutDist / panelState.speed; // seconds at configured speed
+
+    document.getElementById('simInfoBox').innerHTML =
+        `<b>Modo:</b> ${panelState.mode === 'cut' ? 'Corte' : 'Grabado'}<br>` +
+        `<b>Comandos:</b> ${laserSim.commands.length.toLocaleString()}<br>` +
+        `<b>Dist. corte:</b> ${cutDist.toFixed(0)} mm<br>` +
+        `<b>Dist. viaje:</b> ${moveDist.toFixed(0)} mm<br>` +
+        `<b>Vel.:</b> ${panelState.speed} mm/s<br>` +
+        `<b>Est.:</b> ${formatSimTime(estTime)}`;
+
+    document.getElementById('simProgressLabel').textContent = '0%';
+    document.getElementById('simProgressBar').style.width = '0%';
+    document.getElementById('simTimeLabel').textContent = formatSimTime(estTime);
+
+    simFitCanvas();
+    simDrawFrame();
+}
+
+function formatSimTime(s) {
+    if (!isFinite(s) || s < 0) return '--:--';
+    const m = Math.floor(s / 60), sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}
+
+function buildSimCommands(state) {
+    const cmds = [];
+    if (state.mode === 'cut' && state.imageType === 'svg' && state.svgText) {
+        // Vector cut mode: follow SVG segments
+        const segments = extractSVGSegments(state.svgText);
+        for (const seg of segments) {
+            if (seg.points.length < 2) continue;
+            // Travel to start of segment
+            cmds.push({ type: 'move', x: seg.points[0].x, y: seg.points[0].y });
+            // Cut along segment
+            for (let i = 1; i < seg.points.length; i++) {
+                cmds.push({ type: 'cut', x: seg.points[i].x, y: seg.points[i].y });
+            }
+            // Close if needed
+            if (seg.closed) {
+                cmds.push({ type: 'cut', x: seg.points[0].x, y: seg.points[0].y });
+            }
+        }
+    } else {
+        // Engrave mode: simulate raster scanning
+        const rd = state.rasterResult || state.previewBitmapData;
+        if (rd) {
+            // Use actual bitmap data for accurate simulation
+            const w = rd.width;
+            const h = rd.height;
+            const offX = rd.offsetX || 0;
+            const offY = rd.offsetY || 0;
+            const ls = state.lineSpacing;
+            const stepsPerMm = 39.37;
+            const pxToMm = 1 / stepsPerMm;
+            const rowBytes = Math.ceil(w / 8);
+            // For rasterResult we have packed bitmap; for previewBitmapData we have canvas
+            let getBit;
+            if (rd.bitmap) {
+                getBit = (x, y) => (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
+            } else if (rd.canvas) {
+                const pvCx = rd.canvas.getContext('2d');
+                const imgData = pvCx.getImageData(0, 0, w, h);
+                getBit = (x, y) => imgData.data[(y * w + x) * 4] === 0 ? 1 : 0;
+            } else {
+                return cmds;
+            }
+            // Sample every N pixels to keep command count reasonable
+            const sampleStep = Math.max(1, Math.round(w / 400));
+            for (let y = 0; y < h; y++) {
+                const mmY = offY + y * pxToMm * ls;
+                const leftToRight = (y % 2 === 0);
+                // Move to start of line
+                const startX = leftToRight ? offX : offX + (w - 1) * pxToMm;
+                cmds.push({ type: 'move', x: startX, y: mmY });
+                let laserOn = false;
+                const xStart = leftToRight ? 0 : w - 1;
+                const xEnd = leftToRight ? w : -1;
+                const xStep = leftToRight ? sampleStep : -sampleStep;
+                for (let x = xStart; leftToRight ? x < xEnd : x > xEnd; x += xStep) {
+                    const bit = getBit(x, y);
+                    const mmX = offX + x * pxToMm;
+                    if (bit) {
+                        cmds.push({ type: 'cut', x: mmX, y: mmY });
+                        laserOn = true;
+                    } else {
+                        if (laserOn) {
+                            cmds.push({ type: 'move', x: mmX, y: mmY });
+                            laserOn = false;
+                        }
+                    }
+                }
+            }
+        } else {
+            // No bitmap data yet, generate simple raster pattern from image dimensions
+            const bb = state._svgBBox;
+            let ox, oy, mw, mh;
+            if (bb) { ox = bb.mmX; oy = bb.mmY; mw = bb.mmW; mh = bb.mmH; }
+            else {
+                const img = state.loadedImage;
+                const imgW = img.naturalWidth || img.width;
+                const imgH = img.naturalHeight || img.height;
+                const pxToMm = 25.4 / 96;
+                const rW = imgW * pxToMm, rH = imgH * pxToMm;
+                const fit = Math.min(WORK_W / rW, WORK_H / rH, 1);
+                mw = rW * fit; mh = rH * fit;
+                ox = (WORK_W - mw) / 2; oy = (WORK_H - mh) / 2;
+            }
+            const stepMm = state.lineSpacing * 0.025;
+            const rows = Math.ceil(mh / stepMm);
+            for (let r = 0; r < rows; r++) {
+                const y = oy + r * stepMm;
+                const leftToRight = (r % 2 === 0);
+                cmds.push({ type: 'move', x: leftToRight ? ox : ox + mw, y });
+                cmds.push({ type: 'cut', x: leftToRight ? ox + mw : ox, y });
+            }
+        }
+    }
+    // Return to origin
+    if (cmds.length > 0) cmds.push({ type: 'move', x: 0, y: 0 });
+    return cmds;
+}
+
+function simFitCanvas() {
+    const canvas = document.getElementById('simCanvas');
+    const area = document.getElementById('simCanvasArea');
+    const maxW = area.clientWidth - 20;
+    const maxH = area.clientHeight - 20;
+    const aspect = WORK_W / WORK_H;
+    let w = maxW, h = w / aspect;
+    if (h > maxH) { h = maxH; w = h * aspect; }
+    canvas.width = Math.round(w * (window.devicePixelRatio || 1));
+    canvas.height = Math.round(h * (window.devicePixelRatio || 1));
+    canvas.style.width = Math.round(w) + 'px';
+    canvas.style.height = Math.round(h) + 'px';
+}
+
+function simDrawFrame() {
+    const canvas = document.getElementById('simCanvas');
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const W = canvas.width / dpr;
+    const H = canvas.height / dpr;
+    const scaleX = W / WORK_W;
+    const scaleY = H / WORK_H;
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Background
+    ctx.fillStyle = '#0d1117';
+    ctx.fillRect(0, 0, W, H);
+    // Work area
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, W, H);
+    // Grid
+    const gx = W / (WORK_W / 10), gy = H / (WORK_H / 10);
+    ctx.strokeStyle = 'rgba(88,166,255,0.07)'; ctx.lineWidth = 0.5;
+    for (let x = 0; x <= W; x += gx) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
+    for (let y = 0; y <= H; y += gy) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
+    ctx.strokeStyle = 'rgba(88,166,255,0.35)'; ctx.lineWidth = 1;
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+    // Origin
+    ctx.fillStyle = '#3fb950';
+    ctx.beginPath(); ctx.arc(4, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    // Draw trails - batch by type for performance
+    // Travel moves (blue dashed)
+    ctx.strokeStyle = 'rgba(88,166,255,0.25)';
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 2]);
+    ctx.beginPath();
+    for (const t of laserSim.trail) {
+        if (t.type !== 'move') continue;
+        ctx.moveTo(t.x1 * scaleX, t.y1 * scaleY);
+        ctx.lineTo(t.x2 * scaleX, t.y2 * scaleY);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // Cut trails (red glow)
+    ctx.strokeStyle = '#ff3300';
+    ctx.lineWidth = 1;
+    ctx.shadowColor = '#ff3300';
+    ctx.shadowBlur = 2;
+    ctx.beginPath();
+    for (const t of laserSim.trail) {
+        if (t.type !== 'cut') continue;
+        ctx.moveTo(t.x1 * scaleX, t.y1 * scaleY);
+        ctx.lineTo(t.x2 * scaleX, t.y2 * scaleY);
+    }
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // Laser head
+    const hx = laserSim.headX * scaleX;
+    const hy = laserSim.headY * scaleY;
+    // Glow
+    const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 8);
+    grad.addColorStop(0, 'rgba(255,51,0,0.8)');
+    grad.addColorStop(0.5, 'rgba(255,51,0,0.3)');
+    grad.addColorStop(1, 'rgba(255,51,0,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(hx - 8, hy - 8, 16, 16);
+    // Dot
+    ctx.fillStyle = '#ff3300';
+    ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(hx, hy, 1.2, 0, Math.PI * 2); ctx.fill();
+
+    // Crosshair
+    ctx.strokeStyle = 'rgba(255,51,0,0.4)'; ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, H); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
+
+    // Position label
+    document.getElementById('simPosLabel').textContent =
+        `X: ${laserSim.headX.toFixed(1)}  Y: ${laserSim.headY.toFixed(1)}`;
+}
+
+function simStep(count) {
+    const cmds = laserSim.commands;
+    if (laserSim.cmdIndex >= cmds.length) {
+        simPause();
+        return;
+    }
+    for (let i = 0; i < count && laserSim.cmdIndex < cmds.length; i++) {
+        const cmd = cmds[laserSim.cmdIndex];
+        laserSim.trail.push({
+            x1: laserSim.headX, y1: laserSim.headY,
+            x2: cmd.x, y2: cmd.y,
+            type: cmd.type,
+        });
+        laserSim.headX = cmd.x;
+        laserSim.headY = cmd.y;
+        laserSim.cmdIndex++;
+    }
+    // Update progress
+    const pct = cmds.length > 0 ? Math.round((laserSim.cmdIndex / cmds.length) * 100) : 0;
+    document.getElementById('simProgressLabel').textContent = pct + '%';
+    document.getElementById('simProgressBar').style.width = pct + '%';
+}
+
+function simAnimate(ts) {
+    if (!laserSim.playing) return;
+    const speed = laserSim.speed;
+    // Steps per frame scales with speed slider
+    const stepsPerFrame = Math.max(1, Math.round(speed * speed * 0.4));
+    simStep(stepsPerFrame);
+    simDrawFrame();
+    if (laserSim.cmdIndex < laserSim.commands.length) {
+        laserSim.animFrame = requestAnimationFrame(simAnimate);
+    } else {
+        simPause();
+    }
+}
+
+function simPlay() {
+    if (laserSim.cmdIndex >= laserSim.commands.length) simRestart();
+    laserSim.playing = true;
+    document.getElementById('simPlayBtn').innerHTML = '<i class="fas fa-pause"></i>';
+    laserSim.animFrame = requestAnimationFrame(simAnimate);
+}
+
+function simPause() {
+    laserSim.playing = false;
+    if (laserSim.animFrame) { cancelAnimationFrame(laserSim.animFrame); laserSim.animFrame = null; }
+    document.getElementById('simPlayBtn').innerHTML = '<i class="fas fa-play"></i>';
+}
+
+function simRestart() {
+    simPause();
+    laserSim.cmdIndex = 0;
+    laserSim.headX = 0; laserSim.headY = 0;
+    laserSim.trail = [];
+    document.getElementById('simProgressLabel').textContent = '0%';
+    document.getElementById('simProgressBar').style.width = '0%';
+    simDrawFrame();
+}
+
+function closeLaserSim() {
+    simPause();
+    document.getElementById('laserSimModal').style.display = 'none';
+}
+
 // ───────── Init ─────────
 panels[0] = createPanel(0);
 panels[1] = createPanel(1);
@@ -946,7 +1274,26 @@ document.getElementById('bmpModalClahe').addEventListener('change', bmpModalSche
 document.getElementById('bmpModalUnsharp').addEventListener('change', bmpModalScheduleUpdate);
 // Cerrar modal con Escape
 document.addEventListener('keydown', e => {
-    if (e.key === 'Escape' && document.getElementById('bmpPreviewModal').style.display !== 'none') closeBmpModal();
+    if (e.key === 'Escape') {
+        if (document.getElementById('laserSimModal').style.display !== 'none') closeLaserSim();
+        else if (document.getElementById('bmpPreviewModal').style.display !== 'none') closeBmpModal();
+    }
+});
+// Simulation modal event listeners
+document.getElementById('simCloseBtn').addEventListener('click', closeLaserSim);
+document.getElementById('simPlayBtn').addEventListener('click', () => {
+    laserSim.playing ? simPause() : simPlay();
+});
+document.getElementById('simRestartBtn').addEventListener('click', simRestart);
+document.getElementById('simStepBtn').addEventListener('click', () => {
+    if (laserSim.playing) simPause();
+    const speed = laserSim.speed;
+    simStep(Math.max(1, Math.round(speed * speed * 0.2)));
+    simDrawFrame();
+});
+document.getElementById('simSpeedSlider').addEventListener('input', e => {
+    laserSim.speed = +e.target.value;
+    document.getElementById('simSpeedLabel').textContent = e.target.value + '×';
 });
 
 function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
@@ -982,5 +1329,8 @@ function connectWebSocket(onReady) {
     };
 }
 
-window.addEventListener('resize', () => { panels[0].setupCanvas(); panels[1].setupCanvas(); });
+window.addEventListener('resize', () => {
+    panels[0].setupCanvas(); panels[1].setupCanvas();
+    if (document.getElementById('laserSimModal').style.display !== 'none') { simFitCanvas(); simDrawFrame(); }
+});
 setTimeout(() => { panels[0].setupCanvas(); panels[1].setupCanvas(); }, 100);
