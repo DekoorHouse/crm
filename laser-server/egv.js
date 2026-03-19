@@ -92,37 +92,34 @@ function encodeLineSteps(dx, dy, laserOn) {
         return encodeMoveXY(dx, dy, laserOn);
     }
 
-    // Diagonal: Bresenham paso a paso
+    // Diagonal: Bresenham paso a paso (array + join para evitar OOM)
     const prefix = laserOn ? 'D' : 'U';
-    let cmd = prefix;
-    const sx = dx > 0 ? 1 : -1;
-    const sy = dy > 0 ? 1 : -1;
     const dirX = dx > 0 ? 'B' : 'T';
     const dirY = dy > 0 ? 'R' : 'L';
+    const parts = [prefix];
 
-    let x = 0, y = 0;
     if (absDx >= absDy) {
         let err = absDx / 2;
         for (let i = 0; i < absDx; i++) {
-            cmd += dirX + 'a'; // 1 step X
+            parts.push(dirX, 'a');
             err -= absDy;
             if (err < 0) {
-                cmd += dirY + 'a'; // 1 step Y
+                parts.push(dirY, 'a');
                 err += absDx;
             }
         }
     } else {
         let err = absDy / 2;
         for (let i = 0; i < absDy; i++) {
-            cmd += dirY + 'a'; // 1 step Y
+            parts.push(dirY, 'a');
             err -= absDx;
             if (err < 0) {
-                cmd += dirX + 'a'; // 1 step X
+                parts.push(dirX, 'a');
                 err += absDy;
             }
         }
     }
-    return cmd;
+    return parts.join('');
 }
 
 // ───────── Vector cutting EGV ─────────
@@ -137,7 +134,7 @@ function encodeLineSteps(dx, dy, laserOn) {
  */
 function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
     const speed = encodeSpeed(speedMmS, 0);
-    let cmd = 'I' + speed + 'NRBS1E';
+    const parts = ['I' + speed + 'NRBS1E'];
     let curX = 0, curY = 0;
 
     // ── Deduplicación de aristas empalmadas ──
@@ -200,13 +197,13 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
             const moveDx = fromX - curX;
             const moveDy = fromY - curY;
             if (moveDx !== 0 || moveDy !== 0) {
-                cmd += encodeMoveXY(moveDx, moveDy, false);
+                parts.push(encodeMoveXY(moveDx, moveDy, false));
             }
             curX = fromX;
             curY = fromY;
 
             // Cortar (con láser)
-            cmd += encodeLineSteps(dx, dy, true);
+            parts.push(encodeLineSteps(dx, dy, true));
             curX = toX;
             curY = toY;
         }
@@ -218,11 +215,11 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
 
     // Return to starting position (laser off)
     if (curX !== 0 || curY !== 0) {
-        cmd += encodeMoveXY(-curX, -curY, false);
+        parts.push(encodeMoveXY(-curX, -curY, false));
     }
 
-    cmd += 'FNSE';
-    return cmd;
+    parts.push('FNSE');
+    return parts.join('');
 }
 
 // ───────── Raster engraving EGV ─────────
