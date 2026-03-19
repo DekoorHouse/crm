@@ -885,8 +885,8 @@ async function openBmpModal(state, plog, drawCanvas) {
     // Reset controls
     const isBmp = state.loadedFile && state.loadedFile.name.toLowerCase().endsWith('.bmp');
     document.getElementById('bmpModalAlgo').value = isBmp ? 'threshold' : 'atkinson';
-    document.getElementById('bmpModalDpi').value = 1000;
-    document.getElementById('bmpModalDpiNum').value = 1000;
+    document.getElementById('bmpModalDpi').value = 300;
+    document.getElementById('bmpModalDpiNum').value = 300;
     document.getElementById('bmpModalBright').value = 0;
     document.getElementById('bmpModalBrightNum').value = 0;
     document.getElementById('bmpModalContrast').value = 0;
