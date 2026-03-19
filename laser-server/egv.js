@@ -271,28 +271,15 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
         if (runLen > 0) parts.push(runOn ? 'D' : 'U', dir, encodeDistance(runLen));
     }
 
-    // ── Warmup rows: filas vacías al inicio para estabilizar firmware ──
-    // A velocidades altas, el firmware necesita llenar su buffer y
-    // estabilizar el timing de steps antes de grabar contenido real.
-    const WARMUP_ROWS = speedMmS > 100 ? 8 : 0; // 8 filas (par) para ≥100mm/s
-
     // Jog offset: posición a la que el servidor debe hacer jog ANTES del EGV
     const jogX = (Math.round(offsetX * STEPS_PER_MM) + gMinX - overscan) / STEPS_PER_MM;
-    const jogY = (Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep - WARMUP_ROWS * rasterStep) / STEPS_PER_MM;
+    const jogY = (Math.round(offsetY * STEPS_PER_MM) + firstRow * rasterStep) / STEPS_PER_MM;
 
     const speed = encodeSpeed(speedMmS, rasterStep);
     const parts = ['I', speed, 'NRBS1E'];
 
     let posX = gMinX - overscan;
     let leftToRight = true;
-
-    // Warmup: filas vacías (laser off) para que el firmware estabilice
-    for (let w = 0; w < WARMUP_ROWS; w++) {
-        const dir = leftToRight ? 'B' : 'T';
-        parts.push('U', dir, encodeDistance(scanWOS));
-        posX += leftToRight ? scanWOS : -scanWOS;
-        leftToRight = !leftToRight;
-    }
 
     for (let i = 0; i < scanH; i++) {
         const fo = rowFO[i], lo = rowLO[i];
@@ -365,8 +352,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     }
 
     // endX/endY: desplazamiento del cabezal DURANTE el EGV (relativo al inicio del EGV)
-    const totalRows = WARMUP_ROWS + scanH;
-    const endY = (totalRows > 1 ? (totalRows - 1) * rasterStep : 0) / STEPS_PER_MM;
+    const endY = (scanH > 1 ? (scanH - 1) * rasterStep : 0) / STEPS_PER_MM;
     parts.push('FNSE');
     const result = parts.join('');
     console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm`);

@@ -296,14 +296,14 @@ class M2Nano {
     /**
      * Envía un job EGV largo con soporte de progreso, pausa y stop.
      *
-     * Flow control: los primeros BURST_PKTS paquetes se envían sin pausa
-     * para llenar el buffer del M2 Nano. Después, status check cada
-     * FC_INTERVAL paquetes. USB bulk transfer provee flow control
-     * adicional (NAK si el endpoint está lleno).
+     * Como K40 Whisperer (rapid_feed): envía datos tan rápido como USB
+     * permita, sin flow control explícito. El USB bulk transfer provee
+     * flow control nativo (NAK cuando el endpoint buffer está lleno).
      *
-     * A 300mm/s el firmware consume ~18 bytes/ms. Un status check cuesta
-     * ~2-3ms. Si se checa cada paquete, throughput = ~10 bytes/ms < 18 → stall.
-     * Checar cada 5+ paquetes mantiene throughput > 18 bytes/ms.
+     * IMPORTANTE: NO usar sleep() para yields — en Windows sleep(1)
+     * realmente duerme 10-15ms (resolución del timer del OS), causando
+     * buffer underrun a velocidades altas. Usar setImmediate() que tiene
+     * latencia ~0ms.
      */
     async sendEGVJob(egvString, { onProgress, shouldStop, shouldPause } = {}) {
         const bytes = Buffer.from(egvString, 'ascii');
@@ -317,9 +317,6 @@ class M2Nano {
         } catch (e) {
             this.log(`waitReady falló: ${e.message} — intentando enviar de todas formas...`);
         }
-
-        const BURST_PKTS = 30;    // Paquetes iniciales sin flow control (llenar buffer)
-        const FC_INTERVAL = 10;   // Status check cada N paquetes (después del burst)
 
         for (let i = 0; i < bytes.length; i += DATA_SIZE) {
             const pktIdx = Math.floor(i / DATA_SIZE);
@@ -339,13 +336,14 @@ class M2Nano {
             const chunk = bytes.slice(i, i + DATA_SIZE);
             await this.sendPacket(chunk);
 
-            // Flow control: después del burst inicial, chequear buffer cada FC_INTERVAL pkts
-            if (pktIdx >= BURST_PKTS && pktIdx % FC_INTERVAL === 0) {
-                await this.waitBufferReady();
+            // Yield al event loop con setImmediate (NO sleep — sleep(1) en Windows = 10-15ms)
+            // Solo cada 100 paquetes para minimizar overhead
+            if (pktIdx % 100 === 0 && pktIdx > 0) {
+                await new Promise(resolve => setImmediate(resolve));
             }
 
-            // Progreso cada 200 paquetes
-            if (onProgress && pktIdx % 200 === 0) {
+            // Progreso cada 500 paquetes
+            if (onProgress && pktIdx % 500 === 0) {
                 onProgress(pktIdx / totalPkts);
             }
         }
