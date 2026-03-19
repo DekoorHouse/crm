@@ -267,7 +267,7 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
 
     if (firstRow < 0) {
         console.log('  EGV raster: bitmap vacío, nada que grabar.');
-        return { egv: 'IFNSE', endX: 0, endY: 0 };
+        return { egv: 'IFNSE', endX: 0, endY: 0, jogX: 0, jogY: 0 };
     }
 
     const scanW = gMaxX - gMinX + 1;
