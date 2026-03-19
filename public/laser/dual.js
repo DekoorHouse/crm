@@ -207,11 +207,6 @@ function createPanel(id) {
     dropZone.addEventListener('drop', e => { e.preventDefault(); dropZone.style.borderColor = ''; if (e.dataTransfer.files[0]) loadFile(e.dataTransfer.files[0]); });
     fileInput.addEventListener('change', e => { if (e.target.files[0]) loadFile(e.target.files[0]); });
 
-    ref('bmpConfigBtn').addEventListener('click', () => {
-        if (!state.loadedImage) return;
-        plog('Abriendo configuración BMP...', 'info');
-        openBmpModal(state, plog, drawCanvas);
-    });
     ref('removeFileBtn').addEventListener('click', () => {
         state.loadedFile = null; state.loadedImage = null; state.imageType = null;
         state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null; state.rasterResult = null;
@@ -391,6 +386,11 @@ function createPanel(id) {
     // Job controls
     ref('frameBtn').addEventListener('click', () => sendCmd({ cmd: 'frame', machine: id }));
     ref('previewBtn').addEventListener('click', () => generatePreview());
+    ref('simBtn').addEventListener('click', () => {
+        if (!state.loadedImage) { plog('Sin imagen para simular', 'error'); return; }
+        plog('Abriendo simulación...', 'info');
+        openLaserSim(state, plog, drawCanvas);
+    });
     ref('startBtn').addEventListener('click', () => startJob());
     ref('pauseBtn').addEventListener('click', () => {
         state.jobRunning ? sendCmd({ cmd: state.jobPaused ? 'resume' : 'pause', machine: id }) : null;
@@ -401,8 +401,8 @@ function createPanel(id) {
 
     function generatePreview() {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
-        plog('Abriendo simulación...', 'info');
-        openLaserSim(state, plog, drawCanvas);
+        plog('Abriendo configuración BMP...', 'info');
+        openBmpModal(state, plog, drawCanvas);
     }
 
     function startJob() {
@@ -929,10 +929,12 @@ const laserSim = {
     commands: [],       // [{type:'move'|'cut', x, y}]
     cmdIndex: 0,
     headX: 0, headY: 0,
-    trail: [],          // [{x1,y1,x2,y2,type:'move'|'cut'}]
     speed: 5,
-    lastTime: 0,
-    stepsPerFrame: 1,
+    // Offscreen buffer canvases for trails (avoid re-drawing thousands of lines)
+    bufferCut: null,    // canvas for cut trails
+    bufferMove: null,   // canvas for move trails
+    bufW: 0, bufH: 0,
+    isRaster: false,
 };
 
 function openLaserSim(panelState, plog, drawCanvas) {
@@ -944,16 +946,14 @@ function openLaserSim(panelState, plog, drawCanvas) {
     laserSim.playing = false;
     laserSim.cmdIndex = 0;
     laserSim.headX = 0; laserSim.headY = 0;
-    laserSim.trail = [];
     laserSim.speed = 5;
+    laserSim.isRaster = !(panelState.mode === 'cut' && panelState.imageType === 'svg');
     document.getElementById('simSpeedSlider').value = 5;
     document.getElementById('simSpeedLabel').textContent = '5×';
     document.getElementById('simPlayBtn').innerHTML = '<i class="fas fa-play"></i>';
 
     // Build command list based on mode
     laserSim.commands = buildSimCommands(panelState);
-    const totalCuts = laserSim.commands.filter(c => c.type === 'cut').length;
-    const totalMoves = laserSim.commands.filter(c => c.type === 'move').length;
 
     // Calculate estimated distance
     let cutDist = 0, moveDist = 0;
@@ -963,7 +963,7 @@ function openLaserSim(panelState, plog, drawCanvas) {
         if (cmd.type === 'cut') cutDist += d; else moveDist += d;
         px = cmd.x; py = cmd.y;
     }
-    const estTime = cutDist / panelState.speed; // seconds at configured speed
+    const estTime = cutDist / panelState.speed;
 
     document.getElementById('simInfoBox').innerHTML =
         `<b>Modo:</b> ${panelState.mode === 'cut' ? 'Corte' : 'Grabado'}<br>` +
@@ -978,6 +978,7 @@ function openLaserSim(panelState, plog, drawCanvas) {
     document.getElementById('simTimeLabel').textContent = formatSimTime(estTime);
 
     simFitCanvas();
+    simInitBuffers();
     simDrawFrame();
 }
 
@@ -994,31 +995,21 @@ function buildSimCommands(state) {
         const segments = extractSVGSegments(state.svgText);
         for (const seg of segments) {
             if (seg.points.length < 2) continue;
-            // Travel to start of segment
             cmds.push({ type: 'move', x: seg.points[0].x, y: seg.points[0].y });
-            // Cut along segment
             for (let i = 1; i < seg.points.length; i++) {
                 cmds.push({ type: 'cut', x: seg.points[i].x, y: seg.points[i].y });
             }
-            // Close if needed
-            if (seg.closed) {
-                cmds.push({ type: 'cut', x: seg.points[0].x, y: seg.points[0].y });
-            }
+            if (seg.closed) cmds.push({ type: 'cut', x: seg.points[0].x, y: seg.points[0].y });
         }
     } else {
         // Engrave mode: simulate raster scanning
         const rd = state.rasterResult || state.previewBitmapData;
         if (rd) {
-            // Use actual bitmap data for accurate simulation
-            const w = rd.width;
-            const h = rd.height;
-            const offX = rd.offsetX || 0;
-            const offY = rd.offsetY || 0;
+            const w = rd.width, h = rd.height;
+            const offX = rd.offsetX || 0, offY = rd.offsetY || 0;
             const ls = state.lineSpacing;
-            const stepsPerMm = 39.37;
-            const pxToMm = 1 / stepsPerMm;
+            const pxToMm = 1 / 39.37;
             const rowBytes = Math.ceil(w / 8);
-            // For rasterResult we have packed bitmap; for previewBitmapData we have canvas
             let getBit;
             if (rd.bitmap) {
                 getBit = (x, y) => (rd.bitmap[y * rowBytes + Math.floor(x / 8)] >> (7 - (x % 8))) & 1;
@@ -1026,37 +1017,36 @@ function buildSimCommands(state) {
                 const pvCx = rd.canvas.getContext('2d');
                 const imgData = pvCx.getImageData(0, 0, w, h);
                 getBit = (x, y) => imgData.data[(y * w + x) * 4] === 0 ? 1 : 0;
-            } else {
-                return cmds;
-            }
-            // Sample every N pixels to keep command count reasonable
-            const sampleStep = Math.max(1, Math.round(w / 400));
-            for (let y = 0; y < h; y++) {
+            } else return cmds;
+
+            // Sample rows and columns to keep total commands under ~50k
+            const maxCmds = 50000;
+            const rowStep = Math.max(1, Math.round(h * w / maxCmds));
+            const colStep = Math.max(1, Math.round(w / 600));
+
+            for (let y = 0; y < h; y += rowStep) {
                 const mmY = offY + y * pxToMm * ls;
-                const leftToRight = (y % 2 === 0);
-                // Move to start of line
-                const startX = leftToRight ? offX : offX + (w - 1) * pxToMm;
+                const ltr = (Math.floor(y / rowStep) % 2 === 0);
+                const startX = ltr ? offX : offX + (w - 1) * pxToMm;
                 cmds.push({ type: 'move', x: startX, y: mmY });
+
+                // Scan this row, find runs of on-pixels
                 let laserOn = false;
-                const xStart = leftToRight ? 0 : w - 1;
-                const xEnd = leftToRight ? w : -1;
-                const xStep = leftToRight ? sampleStep : -sampleStep;
-                for (let x = xStart; leftToRight ? x < xEnd : x > xEnd; x += xStep) {
-                    const bit = getBit(x, y);
+                const xs = ltr ? 0 : w - 1, xe = ltr ? w : -1, xd = ltr ? colStep : -colStep;
+                for (let x = xs; ltr ? x < xe : x > xe; x += xd) {
+                    const bit = getBit(Math.min(x, w - 1), y);
                     const mmX = offX + x * pxToMm;
                     if (bit) {
                         cmds.push({ type: 'cut', x: mmX, y: mmY });
                         laserOn = true;
-                    } else {
-                        if (laserOn) {
-                            cmds.push({ type: 'move', x: mmX, y: mmY });
-                            laserOn = false;
-                        }
+                    } else if (laserOn) {
+                        cmds.push({ type: 'move', x: mmX, y: mmY });
+                        laserOn = false;
                     }
                 }
             }
         } else {
-            // No bitmap data yet, generate simple raster pattern from image dimensions
+            // No bitmap yet: zigzag pattern showing raster direction
             const bb = state._svgBBox;
             let ox, oy, mw, mh;
             if (bb) { ox = bb.mmX; oy = bb.mmY; mw = bb.mmW; mh = bb.mmH; }
@@ -1070,17 +1060,17 @@ function buildSimCommands(state) {
                 mw = rW * fit; mh = rH * fit;
                 ox = (WORK_W - mw) / 2; oy = (WORK_H - mh) / 2;
             }
-            const stepMm = state.lineSpacing * 0.025;
+            // Use ~200 lines max for the preview pattern
+            const stepMm = Math.max(mh / 200, state.lineSpacing * 0.025);
             const rows = Math.ceil(mh / stepMm);
             for (let r = 0; r < rows; r++) {
                 const y = oy + r * stepMm;
-                const leftToRight = (r % 2 === 0);
-                cmds.push({ type: 'move', x: leftToRight ? ox : ox + mw, y });
-                cmds.push({ type: 'cut', x: leftToRight ? ox + mw : ox, y });
+                const ltr = (r % 2 === 0);
+                cmds.push({ type: 'move', x: ltr ? ox : ox + mw, y });
+                cmds.push({ type: 'cut', x: ltr ? ox + mw : ox, y });
             }
         }
     }
-    // Return to origin
     if (cmds.length > 0) cmds.push({ type: 'move', x: 0, y: 0 });
     return cmds;
 }
@@ -1093,10 +1083,23 @@ function simFitCanvas() {
     const aspect = WORK_W / WORK_H;
     let w = maxW, h = w / aspect;
     if (h > maxH) { h = maxH; w = h * aspect; }
-    canvas.width = Math.round(w * (window.devicePixelRatio || 1));
-    canvas.height = Math.round(h * (window.devicePixelRatio || 1));
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.round(w * dpr);
+    canvas.height = Math.round(h * dpr);
     canvas.style.width = Math.round(w) + 'px';
     canvas.style.height = Math.round(h) + 'px';
+}
+
+function simInitBuffers() {
+    const canvas = document.getElementById('simCanvas');
+    const w = canvas.width, h = canvas.height;
+    laserSim.bufW = w; laserSim.bufH = h;
+    // Create offscreen buffer for cut trails
+    laserSim.bufferCut = document.createElement('canvas');
+    laserSim.bufferCut.width = w; laserSim.bufferCut.height = h;
+    // Create offscreen buffer for move trails
+    laserSim.bufferMove = document.createElement('canvas');
+    laserSim.bufferMove.width = w; laserSim.bufferMove.height = h;
 }
 
 function simDrawFrame() {
@@ -1105,108 +1108,115 @@ function simDrawFrame() {
     const dpr = window.devicePixelRatio || 1;
     const W = canvas.width / dpr;
     const H = canvas.height / dpr;
-    const scaleX = W / WORK_W;
-    const scaleY = H / WORK_H;
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Background
-    ctx.fillStyle = '#0d1117';
-    ctx.fillRect(0, 0, W, H);
-    // Work area
+    // Background + grid
     ctx.fillStyle = '#111827';
     ctx.fillRect(0, 0, W, H);
-    // Grid
     const gx = W / (WORK_W / 10), gy = H / (WORK_H / 10);
     ctx.strokeStyle = 'rgba(88,166,255,0.07)'; ctx.lineWidth = 0.5;
     for (let x = 0; x <= W; x += gx) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke(); }
     for (let y = 0; y <= H; y += gy) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke(); }
     ctx.strokeStyle = 'rgba(88,166,255,0.35)'; ctx.lineWidth = 1;
     ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
-    // Origin
     ctx.fillStyle = '#3fb950';
     ctx.beginPath(); ctx.arc(4, 4, 2.5, 0, Math.PI * 2); ctx.fill();
 
-    // Draw trails - batch by type for performance
-    // Travel moves (blue dashed)
-    ctx.strokeStyle = 'rgba(88,166,255,0.25)';
-    ctx.lineWidth = 0.5;
-    ctx.setLineDash([2, 2]);
-    ctx.beginPath();
-    for (const t of laserSim.trail) {
-        if (t.type !== 'move') continue;
-        ctx.moveTo(t.x1 * scaleX, t.y1 * scaleY);
-        ctx.lineTo(t.x2 * scaleX, t.y2 * scaleY);
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-
-    // Cut trails (red glow)
-    ctx.strokeStyle = '#ff3300';
-    ctx.lineWidth = 1;
-    ctx.shadowColor = '#ff3300';
-    ctx.shadowBlur = 2;
-    ctx.beginPath();
-    for (const t of laserSim.trail) {
-        if (t.type !== 'cut') continue;
-        ctx.moveTo(t.x1 * scaleX, t.y1 * scaleY);
-        ctx.lineTo(t.x2 * scaleX, t.y2 * scaleY);
-    }
-    ctx.stroke();
-    ctx.shadowBlur = 0;
+    // Composite the buffer canvases (all accumulated trails)
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0); // raw pixel space
+    if (laserSim.bufferMove) { ctx.globalAlpha = 0.3; ctx.drawImage(laserSim.bufferMove, 0, 0); }
+    if (laserSim.bufferCut) { ctx.globalAlpha = 1.0; ctx.drawImage(laserSim.bufferCut, 0, 0); }
+    ctx.restore();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     // Laser head
+    const scaleX = W / WORK_W, scaleY = H / WORK_H;
     const hx = laserSim.headX * scaleX;
     const hy = laserSim.headY * scaleY;
     // Glow
-    const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 8);
-    grad.addColorStop(0, 'rgba(255,51,0,0.8)');
-    grad.addColorStop(0.5, 'rgba(255,51,0,0.3)');
+    const grad = ctx.createRadialGradient(hx, hy, 0, hx, hy, 10);
+    grad.addColorStop(0, 'rgba(255,51,0,0.9)');
+    grad.addColorStop(0.4, 'rgba(255,51,0,0.3)');
     grad.addColorStop(1, 'rgba(255,51,0,0)');
     ctx.fillStyle = grad;
-    ctx.fillRect(hx - 8, hy - 8, 16, 16);
+    ctx.fillRect(hx - 10, hy - 10, 20, 20);
     // Dot
     ctx.fillStyle = '#ff3300';
     ctx.beginPath(); ctx.arc(hx, hy, 3, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.beginPath(); ctx.arc(hx, hy, 1.2, 0, Math.PI * 2); ctx.fill();
-
     // Crosshair
-    ctx.strokeStyle = 'rgba(255,51,0,0.4)'; ctx.lineWidth = 0.5;
+    ctx.strokeStyle = 'rgba(255,51,0,0.3)'; ctx.lineWidth = 0.5;
     ctx.beginPath(); ctx.moveTo(hx, 0); ctx.lineTo(hx, H); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, hy); ctx.lineTo(W, hy); ctx.stroke();
 
-    // Position label
     document.getElementById('simPosLabel').textContent =
         `X: ${laserSim.headX.toFixed(1)}  Y: ${laserSim.headY.toFixed(1)}`;
 }
 
 function simStep(count) {
     const cmds = laserSim.commands;
-    if (laserSim.cmdIndex >= cmds.length) {
-        simPause();
-        return;
-    }
+    if (laserSim.cmdIndex >= cmds.length) { simPause(); return; }
+
+    const dpr = window.devicePixelRatio || 1;
+    const W = laserSim.bufW / dpr;
+    const H = laserSim.bufH / dpr;
+    const scaleX = W / WORK_W, scaleY = H / WORK_H;
+    const isRaster = laserSim.isRaster;
+
+    // Draw new trail segments directly onto the buffer canvases
+    const cutCtx = laserSim.bufferCut.getContext('2d');
+    const moveCtx = laserSim.bufferMove.getContext('2d');
+
+    // Setup cut trail style
+    cutCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    cutCtx.strokeStyle = '#ff3300';
+    cutCtx.lineWidth = isRaster ? 0.8 : 1.5;
+    cutCtx.shadowColor = isRaster ? 'transparent' : '#ff3300';
+    cutCtx.shadowBlur = isRaster ? 0 : 3;
+    cutCtx.beginPath();
+
+    // Setup move trail style
+    moveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    moveCtx.strokeStyle = '#58a6ff';
+    moveCtx.lineWidth = 0.5;
+    moveCtx.setLineDash([3, 3]);
+    moveCtx.beginPath();
+
+    let hasCut = false, hasMove = false;
+
     for (let i = 0; i < count && laserSim.cmdIndex < cmds.length; i++) {
         const cmd = cmds[laserSim.cmdIndex];
-        laserSim.trail.push({
-            x1: laserSim.headX, y1: laserSim.headY,
-            x2: cmd.x, y2: cmd.y,
-            type: cmd.type,
-        });
+        const x1 = laserSim.headX * scaleX, y1 = laserSim.headY * scaleY;
+        const x2 = cmd.x * scaleX, y2 = cmd.y * scaleY;
+
+        if (cmd.type === 'cut') {
+            cutCtx.moveTo(x1, y1); cutCtx.lineTo(x2, y2);
+            hasCut = true;
+        } else {
+            moveCtx.moveTo(x1, y1); moveCtx.lineTo(x2, y2);
+            hasMove = true;
+        }
         laserSim.headX = cmd.x;
         laserSim.headY = cmd.y;
         laserSim.cmdIndex++;
     }
+
+    if (hasCut) cutCtx.stroke();
+    if (hasMove) moveCtx.stroke();
+    moveCtx.setLineDash([]);
+    cutCtx.shadowBlur = 0;
+
     // Update progress
     const pct = cmds.length > 0 ? Math.round((laserSim.cmdIndex / cmds.length) * 100) : 0;
     document.getElementById('simProgressLabel').textContent = pct + '%';
     document.getElementById('simProgressBar').style.width = pct + '%';
 }
 
-function simAnimate(ts) {
+function simAnimate() {
     if (!laserSim.playing) return;
     const speed = laserSim.speed;
-    // Steps per frame scales with speed slider
     const stepsPerFrame = Math.max(1, Math.round(speed * speed * 0.4));
     simStep(stepsPerFrame);
     simDrawFrame();
@@ -1234,7 +1244,7 @@ function simRestart() {
     simPause();
     laserSim.cmdIndex = 0;
     laserSim.headX = 0; laserSim.headY = 0;
-    laserSim.trail = [];
+    simInitBuffers(); // Clear the buffer canvases
     document.getElementById('simProgressLabel').textContent = '0%';
     document.getElementById('simProgressBar').style.width = '0%';
     simDrawFrame();
