@@ -388,24 +388,27 @@ function createPanel(id) {
     ref('previewBtn').addEventListener('click', () => generatePreview());
     ref('simBtn').addEventListener('click', async () => {
         if (!state.loadedImage) { plog('Sin imagen para simular', 'error'); return; }
-        // For engrave mode without bitmap data, auto-generate it first
-        if (state.mode !== 'cut' && !state.rasterResult && !state.previewBitmapData) {
-            plog('Generando bitmap para simulación...', 'info');
-            try {
-                const rd = await autoGenerateRaster(state);
-                state.rasterResult = rd;
-                // Also show preview on main canvas
-                const pvCanvas = bitmapToPreviewCanvas(rd.bitmap, rd.width, rd.height);
-                state.previewBitmapData = { canvas: pvCanvas, width: rd.width, height: rd.height, offsetX: rd.offsetX, offsetY: rd.offsetY, dpi: rd.dpi };
-                drawCanvas();
-                plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
-            } catch (err) {
-                plog('Error generando bitmap: ' + err.message, 'error');
-                return;
+        if (state.mode === 'cut') {
+            // Cut mode: simulate vector segments directly
+            if (!state.svgText) { plog('Sin SVG para simular corte', 'error'); return; }
+            plog('Abriendo simulación de corte...', 'info');
+            openLaserSim(state, plog, drawCanvas);
+        } else {
+            // Engrave mode: auto-generate bitmap if needed
+            if (!state.rasterResult) {
+                plog('Generando bitmap para simulación...', 'info');
+                try {
+                    const rd = await autoGenerateRaster(state);
+                    state.rasterResult = rd;
+                    plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
+                } catch (err) {
+                    plog('Error generando bitmap: ' + err.message, 'error');
+                    return;
+                }
             }
+            plog('Abriendo simulación de grabado...', 'info');
+            openLaserSim(state, plog, drawCanvas);
         }
-        plog('Abriendo simulación...', 'info');
-        openLaserSim(state, plog, drawCanvas);
     });
     ref('startBtn').addEventListener('click', () => startJob());
     ref('pauseBtn').addEventListener('click', () => {
@@ -569,8 +572,14 @@ function extractSVGSegments(svgText) {
     document.body.appendChild(container);
     const liveSvg = container.querySelector('svg');
     const segments = [];
+    // Only extract elements with visible stroke (cut lines)
     const shapes = liveSvg.querySelectorAll('path,line,rect,circle,ellipse,polyline,polygon');
     for (const el of shapes) {
+        // Check computed stroke — only include elements with stroke (cut lines)
+        const computed = window.getComputedStyle(el);
+        const stroke = computed.stroke || '';
+        if (!stroke || stroke === 'none') continue;
+
         const points = [];
         if (el.getTotalLength) {
             const len = el.getTotalLength();
@@ -1082,15 +1091,14 @@ async function bmpModalFinalize() {
         const offY = parseFloat(res.headers.get('X-Offset-Y'));
         const bitmap = new Uint8Array(await res.arrayBuffer());
 
-        const pvCanvas = bitmapToPreviewCanvas(bitmap, w, h);
         const state = bmpModal.panelState;
         const modalDpi = parseInt(document.getElementById('bmpModalDpi').value) || 1000;
-        state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
         state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
+        state.previewBitmapData = null; // Don't replace canvas — show original SVG
 
         closeBmpModal();
         if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
-        if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${w}×${h}px`, 'success');
+        if (bmpModal.panelPlog) bmpModal.panelPlog(`BMP listo: ${w}×${h}px`, 'success');
     } catch (err) {
         document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
     }
@@ -1105,10 +1113,9 @@ function bmpModalFinalizeClient() {
     const offX = bmpModal.offsetX, offY = bmpModal.offsetY;
     const modalDpi = bmpModal.clientDpi;
 
-    const pvCanvas = bitmapToPreviewCanvas(bitmap, w, h);
     const state = bmpModal.panelState;
-    state.previewBitmapData = { canvas: pvCanvas, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
     state.rasterResult = { bitmap, width: w, height: h, offsetX: offX, offsetY: offY, dpi: modalDpi };
+    state.previewBitmapData = null;
 
     closeBmpModal();
     if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
