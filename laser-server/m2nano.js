@@ -349,25 +349,35 @@ class M2Nano {
         const sy = Math.round(Math.abs(dy) * STEPS_PER_MM);
         if (sx === 0 && sy === 0) return;
 
-        // EGV rapid move (sin láser): I + dirección + distancia compacta + S1P
-        // K40-Whisperer: Y se procesa antes que X en make_dir_dist()
         let cmd = 'I';
         if (sy > 0) cmd += (dy < 0 ? 'L' : 'R') + encodeDistance(sy);
         if (sx > 0) cmd += (dx > 0 ? 'B' : 'T') + encodeDistance(sx);
         cmd += 'S1P';
 
-        this.log(`Jog: dx=${dx} dy=${dy} pasos=${sx},${sy} bytes=${cmd.length}`);
+        this.log(`Jog: dx=${dx.toFixed(2)} dy=${dy.toFixed(2)} pasos=${sx},${sy}`);
 
-        try { await this.waitReady(5000, 400); } catch (e) {
-            this.log('waitReady timeout antes de jog (continuando de todas formas)');
+        try { await this.waitReady(5000); } catch (_) {
+            this.log('waitReady timeout antes de jog');
         }
-        await this.sendEGV(cmd);
 
-        // Esperar a que la placa termine de ejecutar el jog
-        try {
-            await this.waitReady(15000, 500);
-        } catch (e) {
-            this.log('waitReady timeout POST-jog (el movimiento puede haber fallado)');
+        // Enviar paquete directamente — NO usar sendEGV (que manda sayHello
+        // inmediatamente después y puede interferir con el jog)
+        const bytes = Buffer.from(cmd, 'ascii');
+        const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
+        for (let i = 0; i < bytes.length; i += DATA_SIZE) {
+            await this.sendPacket(bytes.slice(i, i + DATA_SIZE), i === 0);
+        }
+
+        // Dar tiempo al board para procesar el comando y empezar a mover
+        await sleep(300);
+
+        // Esperar a que el jog termine: board va de 0xCE → posiblemente 0xEE → 0xCE
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+            try {
+                const s = await this.sayHello();
+                if (s === 0xCE || s === 0xEC) break;
+            } catch (_) {}
         }
 
         this._posX += dx;
