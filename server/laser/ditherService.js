@@ -62,8 +62,23 @@ async function createSession(imageBuffer, originalName, options) {
     let imgBuffer = imageBuffer;
     if (isSvg) imgBuffer = stripSvgBackground(imageBuffer);
 
-    // Decode image with sharp, get dimensions
-    const meta = await sharp(imgBuffer).metadata();
+    // For SVGs, pass density so Sharp/librsvg knows the render resolution.
+    // If Sharp can't decode the format, try converting to PNG first.
+    const sharpOpts = isSvg ? { density: Math.min(dpi, 600) } : {};
+    let meta;
+    try {
+        meta = await sharp(imgBuffer, sharpOpts).metadata();
+    } catch (decodeErr) {
+        // Retry: force-convert to PNG via Sharp's built-in format negotiation
+        try {
+            const pngBuf = await sharp(imgBuffer, { failOn: 'none', ...sharpOpts })
+                .png().toBuffer();
+            imgBuffer = pngBuf;
+            meta = await sharp(imgBuffer).metadata();
+        } catch (_) {
+            throw new Error('Formato de imagen no soportado: ' + decodeErr.message);
+        }
+    }
     const imgW = meta.width, imgH = meta.height;
     const pxToMm = 25.4 / (meta.density || 96);
 
@@ -91,7 +106,7 @@ async function createSession(imageBuffer, originalName, options) {
     const fullPxH = Math.round(fullMmH * fit * dpmm / lineSpacing);
 
     // Decode to RGBA, resize, extract region
-    let pipeline = sharp(imgBuffer).resize(fullPxW, fullPxH, { fit: 'fill' }).ensureAlpha();
+    let pipeline = sharp(imgBuffer, sharpOpts).resize(fullPxW, fullPxH, { fit: 'fill' }).ensureAlpha();
     const { data: rgba, info } = await pipeline.raw().toBuffer({ resolveWithObject: true });
 
     // Extract crop region
