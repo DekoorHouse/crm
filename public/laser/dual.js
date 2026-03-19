@@ -610,18 +610,14 @@ function createTransparentSvgImage(svgText, callback) {
     let svgW, svgH;
     if (vb) { const p = vb.split(/[\s,]+/).map(Number); svgW = p[2]; svgH = p[3]; }
     else { svgW = parseFloat(svg.getAttribute('width'))||300; svgH = parseFloat(svg.getAttribute('height'))||200; }
-    // Remove rects that cover the full SVG area with white/near-white fill
-    for (const r of svg.querySelectorAll('rect')) {
-        const b = r.getBBox();
-        const coversAll = b.x <= 1 && b.y <= 1 && Math.abs(b.width - svgW) < 2 && Math.abs(b.height - svgH) < 2;
-        if (!coversAll) continue;
-        // Check computed fill (catches attribute, style, inheritance, CSS classes)
+    // Remove ALL rects with white or near-white computed fill (backgrounds)
+    for (const r of [...svg.querySelectorAll('rect')]) {
         const computed = window.getComputedStyle(r);
-        const fill = computed.fill || '';
-        // Match white in any format: rgb(255,255,255), #fff, #ffffff, white
+        const fill = (computed.fill || '').toLowerCase();
         const isWhite = fill === 'white' || fill === '#ffffff' || fill === '#fff' ||
             /rgb\(\s*255\s*,\s*255\s*,\s*255\s*\)/.test(fill);
-        if (isWhite || !fill || fill === 'none') { r.remove(); }
+        const isNone = !fill || fill === 'none' || fill === 'transparent';
+        if (isWhite || isNone) r.remove();
     }
     svg.setAttribute('style', (svg.getAttribute('style') || '') + ';background:transparent');
     const serialized = new XMLSerializer().serializeToString(svg);
