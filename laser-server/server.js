@@ -90,6 +90,15 @@ async function handleCommand(msg) {
     const id = msg.machine != null ? msg.machine : 0;
     const m = machines[id];
 
+    // Reiniciar servidor
+    if (msg.cmd === 'restart_server') {
+        log('Servidor reiniciándose por solicitud del cliente...', 'warning');
+        send({ type: 'status', machine: 0, text: 'Reiniciando servidor...', level: 'warning' });
+        for (const i of [0, 1]) disconnectMachine(i);
+        setTimeout(() => process.exit(0), 500);
+        return;
+    }
+
     // Conectar máquina bajo demanda
     if (msg.cmd === 'connect_machine') {
         await connectMachine(id);

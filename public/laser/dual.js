@@ -1627,6 +1627,12 @@ document.getElementById('simSpeedSlider').addEventListener('input', e => {
 
 function sendCmd(msg) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(msg)); }
 
+document.getElementById('restartServerBtn').addEventListener('click', () => {
+    if (confirm('¿Reiniciar el servidor láser?')) {
+        sendCmd({ cmd: 'restart_server' });
+    }
+});
+
 let _wsOnOpenCallbacks = [];
 
 function connectWebSocket(onReady) {
