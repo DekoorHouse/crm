@@ -42,6 +42,9 @@ function createPanel(id) {
         rasterResult: null,
     };
 
+    const bmpBadge = ref('bmpBadge');
+    function updateBmpBadge() { bmpBadge.style.display = state.rasterResult ? '' : 'none'; }
+
     let canvasW = 100, canvasH = 100;
     let viewZoom = 1, viewPanX = 0, viewPanY = 0;
 
@@ -213,6 +216,7 @@ function createPanel(id) {
     ref('removeFileBtn').addEventListener('click', () => {
         state.loadedFile = null; state.loadedImage = null; state.imageType = null;
         state.svgText = null; state._svgBBox = null; state.designSelected = false; state.designBox = null; state.previewBitmapData = null; state.rasterResult = null;
+        updateBmpBadge();
         ref('fileInfo').style.display = 'none'; dropZone.style.display = '';
         drawCanvas();
     });
@@ -228,6 +232,7 @@ function createPanel(id) {
                     if (!img) { plog('Error cargando SVG', 'error'); return; }
                     state.loadedImage = img; state.imageType = 'svg'; state.loadedFile = file;
                     state.designSelected = false; state.previewBitmapData = null; state.rasterResult = null;
+                    updateBmpBadge();
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     drawCanvas();
                     plog(`SVG: ${file.name}`, 'success');
@@ -240,6 +245,7 @@ function createPanel(id) {
                 img.onload = () => {
                     state.loadedImage = img; state.imageType = 'raster'; state.loadedFile = file;
                     state.designSelected = false; state.previewBitmapData = null; state.rasterResult = null;
+                    updateBmpBadge();
                     ref('fileName').textContent = file.name; ref('fileInfo').style.display = ''; dropZone.style.display = 'none';
                     drawCanvas();
                     plog(`Img: ${file.name}`, 'success');
@@ -364,7 +370,7 @@ function createPanel(id) {
     ref('speedSlider').addEventListener('input', e => { state.speed = +e.target.value; ref('speedLabel').textContent = `${state.speed} mm/s`; });
     ref('lineSpacingSlider').addEventListener('input', e => { state.lineSpacing = +e.target.value; ref('lineSpacingLabel').textContent = `${(state.lineSpacing*0.025).toFixed(3)} mm`; });
     ref('passesSlider').addEventListener('input', e => { state.passes = +e.target.value; ref('passesLabel').textContent = `${state.passes}×`; });
-    ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; state.rasterResult = null; drawCanvas(); });
+    ref('lineSpacingSlider').addEventListener('change', () => { state.previewBitmapData = null; state.rasterResult = null; updateBmpBadge(); drawCanvas(); });
 
     // Jog
     el.querySelectorAll('[data-jog]').forEach(btn => {
@@ -399,7 +405,7 @@ function createPanel(id) {
                 plog('Generando bitmap para simulación...', 'info');
                 try {
                     const rd = await autoGenerateRaster(state);
-                    state.rasterResult = rd;
+                    state.rasterResult = rd; updateBmpBadge();
                     plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
                 } catch (err) {
                     plog('Error generando bitmap: ' + err.message, 'error');
@@ -421,7 +427,7 @@ function createPanel(id) {
     function generatePreview() {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }
         plog('Abriendo configuración BMP...', 'info');
-        openBmpModal(state, plog, drawCanvas);
+        openBmpModal(state, plog, drawCanvas, updateBmpBadge);
     }
 
     function startJob() {
@@ -874,12 +880,13 @@ function bmpModalFitCanvas() {
     canvas.style.height = Math.round(dH) + 'px';
 }
 
-async function openBmpModal(state, plog, drawCanvas) {
+async function openBmpModal(state, plog, drawCanvas, onBmpReady) {
     const modal = document.getElementById('bmpPreviewModal');
     modal.style.display = '';
     bmpModal.panelState = state;
     bmpModal.panelPlog = plog;
     bmpModal.panelDrawCanvas = drawCanvas;
+    bmpModal.onBmpReady = onBmpReady;
     bmpModal.lineSpacing = state.lineSpacing;
     bmpModal.sessionId = null;
     // Reset controls
@@ -1098,6 +1105,7 @@ async function bmpModalFinalize() {
 
         closeBmpModal();
         if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
+        if (bmpModal.onBmpReady) bmpModal.onBmpReady();
         if (bmpModal.panelPlog) bmpModal.panelPlog(`BMP listo: ${w}×${h}px`, 'success');
     } catch (err) {
         document.getElementById('bmpModalLoading').textContent = 'Error: ' + err.message;
@@ -1119,6 +1127,7 @@ function bmpModalFinalizeClient() {
 
     closeBmpModal();
     if (bmpModal.panelDrawCanvas) bmpModal.panelDrawCanvas();
+    if (bmpModal.onBmpReady) bmpModal.onBmpReady();
     if (bmpModal.panelPlog) bmpModal.panelPlog(`Preview: ${w}×${h}px (local)`, 'success');
 }
 
