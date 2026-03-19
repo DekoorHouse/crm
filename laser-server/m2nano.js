@@ -63,12 +63,10 @@ class M2Nano {
     }
 
     /**
-     * Busca y abre un dispositivo USB.
-     * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
+     * Abre el enlace USB: busca dispositivo, open, setConfiguration, claim, CH341 init.
+     * NO envía comandos EGV (IS2P) — eso lo hace connect().
      */
-    async connect(deviceIndex = 0) {
-        this._deviceIndex = deviceIndex;
-        // Siempre listar TODOS los CH341 para poder elegir por índice
+    async _openUSB(deviceIndex = 0) {
         const allDevs = usb.getDeviceList();
         const matching = [];
         for (const dev of allDevs) {
@@ -101,23 +99,17 @@ class M2Nano {
         this.device = found.dev;
         this.device.open();
 
-        // SET_CONFIGURATION — activa los endpoints USB.
-        // pyusb (K40 Whisperer, MeerK40t) llama set_configuration() obligatoriamente.
-        // node-usb NO lo hace automáticamente. Sin esto el CH341 puede ignorar
-        // bulk transfers aunque los ACK a nivel USB.
         try {
             await new Promise((resolve, reject) => {
                 this.device.setConfiguration(1, err => err ? reject(err) : resolve());
             });
             this.log('USB setConfiguration(1) OK.');
         } catch (e) {
-            // En Windows con WinUSB puede fallar si ya está configurado — eso es OK.
             this.log(`setConfiguration aviso: ${e.message} (continuando...)`);
         }
 
         this.iface = this.device.interface(0);
 
-        // En Linux/Mac puede necesitar liberar el driver del kernel
         try {
             if (this.iface.isKernelDriverActive()) {
                 this.iface.detachKernelDriver();
@@ -138,7 +130,6 @@ class M2Nano {
 
         // K40-Whisperer: ctrl_transfer(0x40, 177, 0x0102, 0, 0, 2000)
         // Request 0xB1 (177), wValue 0x0102 — inicializa el CH341 para EPP.
-        // ANTES teníamos 0xA1 con wValue=0 que era INCORRECTO.
         try {
             await new Promise((resolve, reject) => {
                 this.device.controlTransfer(0x40, 0xB1, 0x0102, 0, Buffer.alloc(0), err => err ? reject(err) : resolve());
@@ -147,6 +138,15 @@ class M2Nano {
         } catch (e) {
             this.log(`CH341 init aviso: ${e.message} (continuando...)`);
         }
+    }
+
+    /**
+     * Conexión completa: abre USB + envía IS2P (unlock rails).
+     * @param {number} [deviceIndex=0]  índice del dispositivo (0=primero, 1=segundo)
+     */
+    async connect(deviceIndex = 0) {
+        this._deviceIndex = deviceIndex;
+        await this._openUSB(deviceIndex);
 
         // Unlock rail (IS2P) — como K40-Whisperer
         try {
@@ -266,7 +266,8 @@ class M2Nano {
                 throw new Error('Job detenido durante reconexión USB.');
             }
             try {
-                await this.connect(this._deviceIndex);
+                // Solo reconectar USB (sin IS2P que cortaría el job en curso)
+                await this._openUSB(this._deviceIndex);
                 if (waitLogged && this._onUSBWaiting) this._onUSBWaiting(false);
                 this.log('USB reconectado OK.');
                 return;
