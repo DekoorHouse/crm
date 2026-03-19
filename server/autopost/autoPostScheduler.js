@@ -1,6 +1,6 @@
 const cron = require('node-cron');
 const { db } = require('../config');
-const { fetchAvailablePhotos, pickUnpostedPhoto, downloadPhoto, deletePhoto } = require('./photoService');
+const { fetchAvailablePhotos, listPhotoIds, pickUnpostedPhoto, downloadPhoto, deletePhoto } = require('./photoService');
 const { generateCaption } = require('./captionService');
 const { publishPhotoToPage, publishPhotoToInstagram } = require('./facebookPostService');
 
@@ -174,10 +174,63 @@ function getSchedulerStatus() {
     };
 }
 
+async function getUpcomingQueue() {
+    const enabled = process.env.AUTOPOST_ENABLED === 'true';
+    if (!enabled) return [];
+
+    const photos = await listPhotoIds();
+    if (!photos.length) return [];
+
+    // Obtener IDs ya publicados
+    const logSnapshot = await db.collection('auto_post_log')
+        .where('status', '==', 'success')
+        .select('photoId')
+        .get();
+    const postedIds = new Set(logSnapshot.docs.map(d => d.data().photoId));
+    const unposted = photos.filter(p => !postedIds.has(p.id));
+
+    if (!unposted.length) return [];
+
+    // Calcular proximos horarios del cron
+    const cronExpr = process.env.AUTOPOST_CRON || '0 9,12,15,18,21 * * *';
+    const hours = cronExpr.split(' ')[1].split(',').map(Number).sort((a, b) => a - b);
+
+    const now = new Date();
+    const mxNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const offsetMs = now.getTime() - mxNow.getTime();
+
+    const queue = [];
+    const startDay = new Date(mxNow);
+    startDay.setHours(0, 0, 0, 0);
+
+    for (let d = 0; d < 60 && queue.length < unposted.length; d++) {
+        const dayDate = new Date(startDay);
+        dayDate.setDate(startDay.getDate() + d);
+
+        for (const hour of hours) {
+            if (queue.length >= unposted.length) break;
+
+            const mxTime = new Date(dayDate);
+            mxTime.setHours(hour, 0, 0, 0);
+
+            if (mxTime > mxNow) {
+                const absoluteTime = new Date(mxTime.getTime() + offsetMs);
+                queue.push({
+                    photoFilename: unposted[queue.length].filename,
+                    scheduledAt: absoluteTime
+                });
+            }
+        }
+    }
+
+    return queue;
+}
+
 module.exports = {
     executeAutoPost,
     previewNextPost,
     getLog,
+    getUpcomingQueue,
     startScheduler,
     stopScheduler,
     getSchedulerStatus

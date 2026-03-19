@@ -3,7 +3,7 @@ const router = express.Router();
 const multer = require('multer');
 const { fetchAvailablePhotos, uploadPhoto, deletePhoto } = require('./photoService');
 const { verifyPageToken } = require('./facebookPostService');
-const { executeAutoPost, previewNextPost, getLog, getSchedulerStatus } = require('./autoPostScheduler');
+const { executeAutoPost, previewNextPost, getLog, getUpcomingQueue, getSchedulerStatus } = require('./autoPostScheduler');
 
 // Multer para subir archivos en memoria
 const upload = multer({
@@ -74,8 +74,11 @@ router.get('/status', (req, res) => {
 router.get('/log', async (req, res) => {
     try {
         const limit = parseInt(req.query.limit) || 20;
-        const log = await getLog(limit);
-        res.json({ log });
+        const [log, upcoming] = await Promise.all([
+            getLog(limit),
+            getUpcomingQueue()
+        ]);
+        res.json({ log, upcoming });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

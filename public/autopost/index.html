@@ -48,6 +48,7 @@
     .badge-success { background: var(--success-light); color: var(--success); }
     .badge-danger { background: var(--danger-light); color: var(--danger); }
     .badge-warning { background: var(--warning-light); color: var(--warning); }
+    .badge-info { background: rgba(99, 102, 241, 0.1); color: var(--primary); }
     .btn { display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; border-radius: var(--radius-md); font-size: 0.9rem; font-weight: 600; border: none; cursor: pointer; transition: all 0.2s; font-family: inherit; }
     .btn:hover { transform: translateY(-1px); box-shadow: var(--shadow-lg); }
     .btn:active { transform: translateY(0); }
@@ -313,21 +314,43 @@
       try {
         const data = await api('/log?limit=15');
         const tbody = document.getElementById('logBody');
-        if (!data.log?.length) {
+
+        let html = '';
+
+        // Mostrar cola de proximas publicaciones
+        if (data.upcoming?.length) {
+          html += data.upcoming.map(entry => {
+            const date = new Date(entry.scheduledAt).toLocaleString('es-MX');
+            return `<tr style="background: rgba(99, 102, 241, 0.04);">
+              <td>${date}</td>
+              <td>${entry.photoFilename}</td>
+              <td class="caption-cell" style="color:var(--text-muted);">Pendiente</td>
+              <td><span class="badge badge-info"><i class="fas fa-clock"></i> en cola</span></td>
+            </tr>`;
+          }).join('');
+        }
+
+        // Historial de publicaciones pasadas
+        if (data.log?.length) {
+          html += data.log.map(entry => {
+            const date = entry.startedAt?._seconds ? new Date(entry.startedAt._seconds * 1000).toLocaleString('es-MX') : '-';
+            const badge = { success: 'badge-success', failed: 'badge-danger', skipped: 'badge-warning', in_progress: 'badge-warning' }[entry.status] || '';
+            const icon = { success: 'check', failed: 'times', skipped: 'forward', in_progress: 'spinner fa-spin' }[entry.status] || 'question';
+            return `<tr>
+              <td>${date}</td>
+              <td>${entry.photoFilename || '-'}</td>
+              <td class="caption-cell" title="${entry.caption || ''}">${entry.caption || entry.error || '-'}</td>
+              <td><span class="badge ${badge}"><i class="fas fa-${icon}"></i> ${entry.status}</span></td>
+            </tr>`;
+          }).join('');
+        }
+
+        if (!html) {
           tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:32px;">Sin publicaciones aun</td></tr>';
           return;
         }
-        tbody.innerHTML = data.log.map(entry => {
-          const date = entry.startedAt?._seconds ? new Date(entry.startedAt._seconds * 1000).toLocaleString('es-MX') : '-';
-          const badge = { success: 'badge-success', failed: 'badge-danger', skipped: 'badge-warning', in_progress: 'badge-warning' }[entry.status] || '';
-          const icon = { success: 'check', failed: 'times', skipped: 'forward', in_progress: 'spinner fa-spin' }[entry.status] || 'question';
-          return `<tr>
-            <td>${date}</td>
-            <td>${entry.photoFilename || '-'}</td>
-            <td class="caption-cell" title="${entry.caption || ''}">${entry.caption || entry.error || '-'}</td>
-            <td><span class="badge ${badge}"><i class="fas fa-${icon}"></i> ${entry.status}</span></td>
-          </tr>`;
-        }).join('');
+
+        tbody.innerHTML = html;
       } catch (e) {
         document.getElementById('logBody').innerHTML = '<tr><td colspan="4" style="color:var(--danger);text-align:center">Error cargando historial</td></tr>';
       }
