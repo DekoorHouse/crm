@@ -80,6 +80,9 @@ async function connectMachine(id) {
     if (m.laser) disconnectMachine(id);
 
     m.laser = new M2Nano((msg) => logMachine(id, msg));
+    m.laser._onUSBWaiting = (waiting) => {
+        send({ type: 'status', machine: id, text: waiting ? 'Cable USB desconectado. Reconecta para continuar...' : 'Reconexión cancelada.', level: waiting ? 'warning' : 'info' });
+    };
 
     try {
         await m.laser.connect(id);

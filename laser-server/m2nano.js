@@ -250,14 +250,37 @@ class M2Nano {
 
     /**
      * Reset completo del USB: cierra y reconecta el dispositivo.
-     * Cancela cualquier transfer pendiente y reinicia el CH341.
+     * Si el dispositivo no está presente (cable desconectado), espera
+     * hasta que reaparezca en el bus USB (máx 60s).
      */
     async _resetUSB() {
         this.log('Reconectando USB...');
         this.disconnect();
         await sleep(1000);
-        await this.connect(this._deviceIndex);
-        this.log('USB reconectado OK.');
+
+        const deadline = Date.now() + 60000;
+        let waitLogged = false;
+        while (Date.now() < deadline) {
+            if (this._shouldStop && this._shouldStop()) {
+                if (waitLogged && this._onUSBWaiting) this._onUSBWaiting(false);
+                throw new Error('Job detenido durante reconexión USB.');
+            }
+            try {
+                await this.connect(this._deviceIndex);
+                if (waitLogged && this._onUSBWaiting) this._onUSBWaiting(false);
+                this.log('USB reconectado OK.');
+                return;
+            } catch (_) {
+                if (!waitLogged) {
+                    this.log('Dispositivo USB no encontrado. Esperando reconexión (60s)...');
+                    if (this._onUSBWaiting) this._onUSBWaiting(true);
+                    waitLogged = true;
+                }
+                await sleep(2000);
+            }
+        }
+        if (waitLogged && this._onUSBWaiting) this._onUSBWaiting(false);
+        throw new Error('Timeout esperando reconexión USB (60s).');
     }
 
     /** Wrapper con timeout para operaciones USB que pueden congelarse. */
@@ -313,6 +336,7 @@ class M2Nano {
      * sayHello solo cuando el board reporta buffer lleno (0xEE).
      */
     async sendEGVJob(egvString, { onProgress, shouldStop, shouldPause } = {}) {
+        this._shouldStop = shouldStop || null;
         const bytes = Buffer.from(egvString, 'ascii');
         const totalPkts = Math.ceil(bytes.length / DATA_SIZE);
         this.log(`sendEGVJob: ${bytes.length} bytes → ${totalPkts} paquete(s)`);
@@ -381,6 +405,7 @@ class M2Nano {
                 }
             } catch (_) { ceStartTime = 0; }
         }
+        this._shouldStop = null;
         if (onProgress) onProgress(1);
         return 'complete';
     }
