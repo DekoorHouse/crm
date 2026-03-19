@@ -430,7 +430,7 @@ function createPanel(id) {
         openBmpModal(state, plog, drawCanvas, updateBmpBadge);
     }
 
-    function startJob() {
+    async function startJob() {
         if (!state.loadedFile || !ws) return;
         state.jobRunning = true;
         plog(`Iniciando ${state.mode}...`, 'success');
@@ -445,7 +445,13 @@ function createPanel(id) {
             if (!rd) {
                 const bbox = (state.imageType === 'svg' && state._svgBBox) ? state._svgBBox : null;
                 const dpmm = 1000 / 25.4;
-                const raw = renderImageToGray(state.loadedImage, state.lineSpacing, bbox, dpmm);
+                // Para SVG: usar imagen sin strokes (solo fills/rellenos)
+                let img = state.loadedImage;
+                if (state.imageType === 'svg' && state.svgText) {
+                    const engraveImg = await createEngraveSvgImage(state.svgText);
+                    if (engraveImg) img = engraveImg;
+                }
+                const raw = renderImageToGray(img, state.lineSpacing, bbox, dpmm);
                 const processed = processGray(raw.gray, raw.width, raw.height, { brightness:0, contrast:0, algorithm:'atkinson', invert:false });
                 rd = { bitmap: grayToBitmap(processed, raw.width, raw.height), width: raw.width, height: raw.height, offsetX: raw.offsetX, offsetY: raw.offsetY };
             }
