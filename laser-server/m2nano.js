@@ -250,42 +250,9 @@ class M2Nano {
     }
 
     /**
-     * Envía un paquete con flow control — exacto como K40 Whisperer
-     * send_packet_w_error_checking:
-     * 1. ANTES: sayHello() — si BUFFER_FULL (0xEE), poll en tight loop
-     * 2. Enviar paquete de 34 bytes
-     * 3. DESPUÉS: sayHello() — si CRC_ERROR (0xCF), reintentar
-     */
-    async sendPacketChecked(data) {
-        for (let retry = 0; retry < 20; retry++) {
-            // 1. Esperar buffer disponible
-            let s = await this.sayHello();
-            while (s === 0xEE) { // BUFFER_FULL — tight loop, sin sleep
-                s = await this.sayHello();
-            }
-
-            // 2. Enviar paquete
-            try {
-                await this.sendPacket(data);
-            } catch (e) {
-                continue; // retry on send error
-            }
-
-            // 3. Verificar respuesta
-            s = await this.sayHello();
-            if (s === 0xCF) { // CRC_ERROR — reintentar
-                continue;
-            }
-            return; // OK (0xCE) o cualquier otro → siguiente paquete
-        }
-    }
-
-    /**
-     * Envía un job EGV largo con flow control por paquete.
-     * Protocolo EXACTO de K40 Whisperer send_data/send_packet_w_error_checking:
-     * - sayHello antes de cada paquete (esperar si BUFFER_FULL)
-     * - sayHello después de cada paquete (reintentar si CRC_ERROR)
-     * - Sin sleep/delay — tight polling
+     * Envía un job EGV largo.
+     * Envía paquetes lo más rápido posible (USB bulk flow control nativo).
+     * sayHello solo cuando el board reporta buffer lleno (0xEE).
      */
     async sendEGVJob(egvString, { onProgress, shouldStop, shouldPause } = {}) {
         const bytes = Buffer.from(egvString, 'ascii');
@@ -316,7 +283,13 @@ class M2Nano {
             }
 
             const chunk = bytes.slice(i, i + DATA_SIZE);
-            await this.sendPacketChecked(chunk);
+            await this.sendPacket(chunk);
+
+            // sayHello cada 20 paquetes para detectar buffer lleno
+            if (pktIdx % 20 === 0 && pktIdx > 0) {
+                let s = await this.sayHello();
+                while (s === 0xEE) { s = await this.sayHello(); } // tight loop si lleno
+            }
 
             // Progreso cada 500 paquetes
             if (onProgress && pktIdx % 500 === 0) {
