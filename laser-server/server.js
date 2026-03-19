@@ -214,9 +214,10 @@ async function runJob(id, msg) {
         const start = Date.now();
         while (!m.pendingRaster && Date.now() - start < maxWait) await sleep(50);
         if (!m.pendingRaster) throw new Error('No se recibieron datos raster.');
-        const { width, height, step, offsetX, offsetY } = msg.raster;
+        const { width, height, step } = msg.raster;
         send({ type: 'status', machine: id, text: `Generando EGV raster: ${width}×${height}px...`, level: 'info' });
-        const rasterResult = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, offsetX || 0, offsetY || 0);
+        // offset (0,0): el raster empieza en el current point del cabezal
+        const rasterResult = egv.generateRasterEGV(m.pendingRaster, width, height, speed, step || 1, 0, 0);
         egvString = rasterResult.egv;
         rasterEndX = rasterResult.endX;
         rasterEndY = rasterResult.endY;
