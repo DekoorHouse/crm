@@ -409,7 +409,7 @@ function createPanel(id) {
                     d[idx] = v; d[idx + 1] = v; d[idx + 2] = v; d[idx + 3] = 255;
                 }
                 pvCx.putImageData(imgData, 0, 0);
-                state.previewBitmapData = { canvas: pvCanvas, width: rd.width, height: rd.height, offsetX: rd.offsetX, offsetY: rd.offsetY };
+                state.previewBitmapData = { canvas: pvCanvas, width: rd.width, height: rd.height, offsetX: rd.offsetX, offsetY: rd.offsetY, dpi: rd.dpi };
                 drawCanvas();
                 plog(`Bitmap: ${rd.width}×${rd.height}px`, 'success');
             } catch (err) {
