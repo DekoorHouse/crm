@@ -410,6 +410,15 @@ class M2Nano {
         } catch (_) {}
     }
 
+    /** Desbloquea los rieles (libera steppers). Protocolo K40: IS2P */
+    async unlock() {
+        this.log('Desbloqueando rieles...');
+        try {
+            await this.waitReady(3000);
+            await this.sendEGV('IS2P');
+        } catch (_) {}
+    }
+
     /** Ajusta posición interna sin mover el cabezal (post-EGV). */
     adjustPos(dx, dy) { this._posX += dx; this._posY += dy; }
 

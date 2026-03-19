@@ -422,7 +422,7 @@ function createPanel(id) {
         state.jobPaused = !state.jobPaused;
     });
     ref('stopBtn').addEventListener('click', () => { sendCmd({ cmd: 'stop', machine: id }); state.jobRunning = false; });
-    ref('estopBtn').addEventListener('click', () => { sendCmd({ cmd: 'estop', machine: id }); state.jobRunning = false; });
+    ref('unlockBtn').addEventListener('click', () => { sendCmd({ cmd: 'unlock', machine: id }); plog('Riel desbloqueado', 'success'); });
 
     function generatePreview() {
         if (!state.loadedImage) { plog('Sin imagen para previsualizar', 'error'); return; }

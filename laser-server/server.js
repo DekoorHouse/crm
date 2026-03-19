@@ -140,6 +140,11 @@ async function handleCommand(msg) {
                 send({ type: 'status', machine: id, text: 'PARO DE EMERGENCIA', level: 'error' });
                 break;
 
+            case 'unlock':
+                if (laser) await laser.unlock();
+                send({ type: 'status', machine: id, text: 'Riel desbloqueado.', level: 'success' });
+                break;
+
             case 'start':
                 if (m.jobState.running) {
                     send({ type: 'status', machine: id, text: 'Ya hay un trabajo en ejecución.', level: 'warning' });

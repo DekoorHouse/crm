@@ -350,11 +350,13 @@ function generateRasterEGV(bitmap, width, height, speedMmS, rasterStep = 1, offs
     }
 
     // endX/endY: desplazamiento del cabezal DURANTE el EGV (relativo al inicio del EGV)
+    // endX = posX_final - posX_initial (NO posX absoluto)
+    const endX = (posX - gMinX) / STEPS_PER_MM;
     const endY = (scanH > 1 ? (scanH - 1) * rasterStep : 0) / STEPS_PER_MM;
     parts.push('FNSE');
     const result = parts.join('');
-    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm`);
-    return { egv: result, endX: posX / STEPS_PER_MM, endY, jogX, jogY };
+    console.log(`  EGV raster: ${scanH} filas. Total: ${result.length} chars, jog=(${jogX.toFixed(1)},${jogY.toFixed(1)})mm, end=(${endX.toFixed(1)},${endY.toFixed(1)})mm`);
+    return { egv: result, endX, endY, jogX, jogY };
 }
 
 module.exports = {
