@@ -265,20 +265,27 @@ async function runJob(id, msg) {
         }
 
         // Update tracked position solo si el EGV completó correctamente
-        if (mode === 'engrave') laser.adjustPos(rasterEndX, rasterEndY);
+        if (mode === 'engrave') {
+            log(`[M${id}] adjustPos(${rasterEndX.toFixed(2)}, ${rasterEndY.toFixed(2)}) — pos antes: (${laser.posX.toFixed(2)}, ${laser.posY.toFixed(2)})`);
+            laser.adjustPos(rasterEndX, rasterEndY);
+            log(`[M${id}] pos después: (${laser.posX.toFixed(2)}, ${laser.posY.toFixed(2)})`);
+        }
     }
 
     if (!m.jobState.stopped) {
         // Return to starting position (solo en completado normal)
+        const dx = startX - laser.posX;
+        const dy = startY - laser.posY;
+        log(`[M${id}] Return: start=(${startX.toFixed(2)},${startY.toFixed(2)}) pos=(${laser.posX.toFixed(2)},${laser.posY.toFixed(2)}) dx=${dx.toFixed(2)} dy=${dy.toFixed(2)}`);
         try {
-            const dx = startX - laser.posX;
-            const dy = startY - laser.posY;
             if (dx !== 0 || dy !== 0) {
-                send({ type: 'status', machine: id, text: 'Volviendo al origen...', level: 'info' });
+                send({ type: 'status', machine: id, text: `Volviendo al origen (${dx.toFixed(1)}, ${dy.toFixed(1)})mm...`, level: 'info' });
                 await laser.jog(dx, dy);
             }
             send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
-        } catch (_) {}
+        } catch (e) {
+            log(`[M${id}] Error en jog de retorno: ${e.message}`, 'error');
+        }
         send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });
     }
 
