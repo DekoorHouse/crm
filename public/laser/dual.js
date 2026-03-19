@@ -626,10 +626,31 @@ function createTransparentSvgImage(svgText, callback) {
     document.body.removeChild(container);
     const blob = new Blob([serialized], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => { URL.revokeObjectURL(url); callback(img); };
-    img.onerror = () => { URL.revokeObjectURL(url); callback(null); };
-    img.src = url;
+    const tmpImg = new Image();
+    tmpImg.onload = () => {
+        URL.revokeObjectURL(url);
+        // Render to canvas and make white/near-white pixels transparent
+        const c = document.createElement('canvas');
+        c.width = tmpImg.naturalWidth; c.height = tmpImg.naturalHeight;
+        const cx = c.getContext('2d');
+        cx.drawImage(tmpImg, 0, 0);
+        const imgData = cx.getImageData(0, 0, c.width, c.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            // If pixel is white or near-white (R>240, G>240, B>240), make transparent
+            if (d[i] > 240 && d[i+1] > 240 && d[i+2] > 240) {
+                d[i+3] = 0;
+            }
+        }
+        cx.putImageData(imgData, 0, 0);
+        // Create final image from the processed canvas
+        const finalImg = new Image();
+        finalImg.onload = () => callback(finalImg);
+        finalImg.onerror = () => callback(null);
+        finalImg.src = c.toDataURL('image/png');
+    };
+    tmpImg.onerror = () => { URL.revokeObjectURL(url); callback(null); };
+    tmpImg.src = url;
 }
 
 // ───────── SVG Engrave (strip stroked elements) ─────────
