@@ -3,11 +3,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Meta Config - Conectar Página a Dataset</title>
+    <title>Meta Config - Páginas y Datasets</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1c1e21; padding: 20px; }
-        .container { max-width: 720px; margin: 0 auto; }
+        .container { max-width: 760px; margin: 0 auto; }
         h1 { font-size: 22px; margin-bottom: 8px; }
         .subtitle { color: #65676b; font-size: 14px; margin-bottom: 24px; }
         .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
@@ -21,78 +21,137 @@
         .btn-primary:disabled { background: #a0c4ff; cursor: not-allowed; }
         .btn-secondary { background: #e4e6eb; color: #1c1e21; }
         .btn-secondary:hover { background: #d8dadf; }
-        .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+        .btn-danger { background: #e74c3c; color: #fff; }
+        .btn-danger:hover { background: #c0392b; }
+        .btn-success { background: #27ae60; color: #fff; }
+        .btn-success:hover { background: #219a52; }
+        .btn-row { display: flex; gap: 8px; margin-top: 4px; flex-wrap: wrap; }
         .status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
         .status.success { background: #e6f9e6; color: #1a7f1a; border: 1px solid #b7e4b7; }
         .status.error { background: #fce8e8; color: #c0392b; border: 1px solid #f5c6c6; }
         .status.info { background: #e8f0fe; color: #1a56db; border: 1px solid #bcd4f7; }
+        .status.warning { background: #fff8e1; color: #e67e22; border: 1px solid #f5deb3; }
         .info-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; }
         .info-grid .label { color: #65676b; font-weight: 600; }
+        .dataset-item { display: flex; align-items: center; justify-content: space-between; padding: 12px; border: 1px solid #e4e6eb; border-radius: 8px; margin-bottom: 8px; }
+        .dataset-item .ds-id { font-weight: 600; font-size: 14px; font-family: monospace; }
+        .dataset-item .ds-label { color: #65676b; font-size: 12px; }
         .page-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #e4e6eb; border-radius: 8px; margin-bottom: 8px; }
-        .page-item .page-name { font-weight: 600; font-size: 14px; }
-        .page-item .page-id { color: #65676b; font-size: 12px; }
-        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #1877f2; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .step-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #1877f2; color: #fff; font-size: 12px; font-weight: 700; margin-right: 8px; }
+        .section-icon { font-size: 20px; margin-right: 8px; vertical-align: middle; }
         .help-text { font-size: 12px; color: #65676b; margin-top: -8px; margin-bottom: 12px; }
         .results-item { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
         .results-item.ok { background: #e6f9e6; }
         .results-item.fail { background: #fce8e8; }
+        .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e4e6eb; }
+        .tab { padding: 12px 24px; font-size: 14px; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -2px; color: #65676b; transition: all 0.2s; }
+        .tab:hover { color: #1877f2; }
+        .tab.active { color: #1877f2; border-bottom-color: #1877f2; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .divider { border-top: 1px solid #e4e6eb; margin: 16px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Meta CAPI - Conectar Página a Dataset</h1>
-        <p class="subtitle">Conecta tu página de Facebook al dataset (pixel) para que los eventos business_messaging funcionen correctamente.</p>
+        <h1>Meta CAPI - Configuracion de Datasets</h1>
+        <p class="subtitle">Gestiona la conexion entre tu WABA, paginas de Facebook y datasets (pixels) para la API de Conversiones.</p>
 
-        <!-- Paso 1: Token -->
+        <!-- Token -->
         <div class="card">
-            <h2><span class="step-num">1</span>Access Token</h2>
+            <h2><span class="section-icon">🔑</span>Access Token</h2>
             <label for="accessToken">Token con permisos de administrador</label>
-            <input type="password" id="accessToken" placeholder="Pega tu access token aquí...">
-            <p class="help-text">Genera uno en <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> con permisos: pages_show_list, ads_management, business_management</p>
+            <input type="password" id="accessToken" placeholder="Pega tu access token aqui...">
+            <p class="help-text">Genera uno en <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> con permisos: pages_show_list, business_management, whatsapp_business_management</p>
             <div class="btn-row">
-                <button class="btn-primary" onclick="loadPages()">Cargar páginas</button>
+                <button class="btn-primary" onclick="loadPages()">Cargar paginas de Facebook</button>
             </div>
             <div id="tokenStatus"></div>
         </div>
 
-        <!-- Paso 2: Dataset info -->
-        <div class="card">
-            <h2><span class="step-num">2</span>Dataset (Pixel)</h2>
-            <label for="datasetId">Dataset ID</label>
-            <input type="text" id="datasetId" value="1452903482578288">
-            <button class="btn-secondary" onclick="loadDataset()">Ver info del dataset</button>
-            <div id="datasetInfo"></div>
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('waba')">WABA - Datasets</div>
+            <div class="tab" onclick="switchTab('pages')">Paginas - Datasets</div>
+            <div class="tab" onclick="switchTab('test')">Verificar</div>
         </div>
 
-        <!-- Paso 3: Conectar -->
-        <div class="card">
-            <h2><span class="step-num">3</span>Conectar Página al Dataset</h2>
-            <label for="pageSelect">Selecciona la página</label>
-            <select id="pageSelect" disabled>
-                <option value="">-- Primero carga las páginas (paso 1) --</option>
-            </select>
-            <div class="btn-row">
-                <button class="btn-primary" id="connectBtn" onclick="connectPage()" disabled>Conectar página al dataset</button>
+        <!-- Tab 1: WABA - Datasets -->
+        <div id="tab-waba" class="tab-content active">
+            <div class="card">
+                <h2><span class="section-icon">📡</span>Datasets vinculados a tu WABA</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Consulta que datasets estan asociados a tu cuenta de WhatsApp Business.</p>
+                <button class="btn-secondary" onclick="loadWabaDatasets()">Consultar datasets de WABA</button>
+                <div id="wabaDatasets"></div>
             </div>
-            <div id="connectResult"></div>
+
+            <div class="card">
+                <h2><span class="section-icon">🔗</span>Vincular dataset a WABA</h2>
+                <label for="newDatasetId">Dataset ID a vincular</label>
+                <input type="text" id="newDatasetId" placeholder="Ej: 1132757258729363">
+                <div class="btn-row">
+                    <button class="btn-success" onclick="linkDataset()">Vincular dataset</button>
+                </div>
+                <div id="linkResult"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="section-icon">🔓</span>Desvincular dataset de WABA</h2>
+                <label for="unlinkDatasetId">Dataset ID a desvincular</label>
+                <input type="text" id="unlinkDatasetId" placeholder="Ej: 1452903482578288">
+                <div class="btn-row">
+                    <button class="btn-danger" onclick="unlinkDataset()">Desvincular dataset</button>
+                </div>
+                <div id="unlinkResult"></div>
+            </div>
         </div>
 
-        <!-- Descubrir -->
-        <div class="card">
-            <h2><span class="step-num">4</span>Descubrir Edges (Debug)</h2>
-            <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Consulta qué conexiones/edges están disponibles en la API para el dataset, página y WABA.</p>
-            <button class="btn-secondary" onclick="discover()">Descubrir edges disponibles</button>
-            <div id="discoverResult"></div>
+        <!-- Tab 2: Pages - Datasets -->
+        <div id="tab-pages" class="tab-content">
+            <div class="card">
+                <h2><span class="section-icon">📋</span>Info del Dataset</h2>
+                <label for="datasetId">Dataset ID</label>
+                <input type="text" id="datasetId" placeholder="Ej: 1452903482578288">
+                <button class="btn-secondary" onclick="loadDataset()">Ver info del dataset</button>
+                <div id="datasetInfo"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="section-icon">📄</span>Conectar Pagina al Dataset</h2>
+                <label for="pageSelect">Selecciona la pagina</label>
+                <select id="pageSelect" disabled>
+                    <option value="">-- Primero carga las paginas con el boton de arriba --</option>
+                </select>
+                <div class="btn-row">
+                    <button class="btn-primary" id="connectBtn" onclick="connectPage()" disabled>Conectar pagina al dataset</button>
+                </div>
+                <div id="connectResult"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="section-icon">🔍</span>Descubrir Edges (Debug)</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Consulta que conexiones estan disponibles en la API para el dataset, pagina y WABA.</p>
+                <button class="btn-secondary" onclick="discover()">Descubrir edges disponibles</button>
+                <div id="discoverResult"></div>
+            </div>
         </div>
 
-        <!-- Resultado final -->
-        <div class="card">
-            <h2><span class="step-num">5</span>Verificar</h2>
-            <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Después de conectar, prueba enviar un evento de prueba para confirmar que funciona.</p>
-            <button class="btn-primary" onclick="testEvent()">Enviar evento de prueba</button>
-            <div id="testResult"></div>
+        <!-- Tab 3: Verificar -->
+        <div id="tab-test" class="tab-content">
+            <div class="card">
+                <h2><span class="section-icon">🧪</span>Evento de prueba</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Envia un evento Purchase de prueba para verificar que la configuracion funciona correctamente.</p>
+                <button class="btn-primary" onclick="testEvent()">Enviar evento de prueba</button>
+                <div id="testResult"></div>
+            </div>
+
+            <div class="card">
+                <h2><span class="section-icon">📊</span>Estado actual</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Resumen de la configuracion actual del servidor.</p>
+                <button class="btn-secondary" onclick="loadServerConfig()">Ver configuracion del servidor</button>
+                <div id="serverConfig"></div>
+            </div>
         </div>
     </div>
 
@@ -105,15 +164,152 @@
         }
 
         function showStatus(elementId, message, type) {
-            const el = document.getElementById(elementId);
-            el.innerHTML = `<div class="status ${type}">${message}</div>`;
+            document.getElementById(elementId).innerHTML = `<div class="status ${type}">${message}</div>`;
         }
+
+        function switchTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+            document.getElementById('tab-' + tabName).classList.add('active');
+            event.target.classList.add('active');
+        }
+
+        // === WABA - DATASETS ===
+
+        async function loadWabaDatasets() {
+            const token = getToken();
+            const params = token ? `?token=${encodeURIComponent(token)}` : '';
+            showStatus('wabaDatasets', '<span class="spinner"></span> Consultando...', 'info');
+
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/waba-datasets${params}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    return showStatus('wabaDatasets', `Error: ${typeof data.error === 'string' ? data.error : JSON.stringify(data.error)}`, 'error');
+                }
+
+                let html = `<div class="status info" style="margin-bottom:12px;">WABA ID: <strong>${data.waba_id}</strong> | Token usado: <strong>${data.token_used}</strong></div>`;
+
+                const datasets = data.datasets?.data || [];
+                if (datasets.length === 0) {
+                    html += '<div class="status warning">No hay datasets vinculados a esta WABA.</div>';
+                } else {
+                    datasets.forEach(ds => {
+                        html += `<div class="dataset-item">
+                            <div>
+                                <div class="ds-id">${ds.id}</div>
+                                <div class="ds-label">Dataset vinculado</div>
+                            </div>
+                            <button class="btn-danger" style="padding:6px 12px;font-size:12px;" onclick="document.getElementById('unlinkDatasetId').value='${ds.id}';switchTab('waba');">Desvincular</button>
+                        </div>`;
+                    });
+                }
+
+                document.getElementById('wabaDatasets').innerHTML = html;
+            } catch (err) {
+                showStatus('wabaDatasets', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function linkDataset() {
+            const token = getToken();
+            const newDatasetId = document.getElementById('newDatasetId').value.trim();
+            if (!newDatasetId) return showStatus('linkResult', 'Ingresa el Dataset ID a vincular.', 'error');
+
+            showStatus('linkResult', '<span class="spinner"></span> Vinculando dataset...', 'info');
+
+            try {
+                const body = { new_dataset_id: newDatasetId };
+                if (token) body.token = token;
+
+                const res = await fetch(`${API_BASE}/meta/config/switch-waba-dataset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                let html = '';
+                const postResult = data.results?.find(r => r.step.includes('POST new') && r.success);
+                if (postResult) {
+                    html += `<div class="status success">Dataset ${newDatasetId} vinculado exitosamente.</div>`;
+                } else {
+                    html += `<div class="status error">No se pudo vincular el dataset.</div>`;
+                }
+
+                html += '<br><strong style="font-size:13px;">Detalle:</strong>';
+                (data.results || []).forEach(r => {
+                    const cls = r.success ? 'ok' : 'fail';
+                    const icon = r.success ? '✅' : '❌';
+                    const detail = r.success ? JSON.stringify(r.data || r.datasets_remaining) : (r.error?.message || JSON.stringify(r.error));
+                    html += `<div class="results-item ${cls}">${icon} <strong>${r.step}</strong>: ${detail}</div>`;
+                });
+
+                document.getElementById('linkResult').innerHTML = html;
+            } catch (err) {
+                showStatus('linkResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function unlinkDataset() {
+            const token = getToken();
+            const datasetId = document.getElementById('unlinkDatasetId').value.trim();
+            if (!datasetId) return showStatus('unlinkResult', 'Ingresa el Dataset ID a desvincular.', 'error');
+
+            if (!confirm(`Desvincular dataset ${datasetId} de tu WABA?`)) return;
+
+            showStatus('unlinkResult', '<span class="spinner"></span> Desvinculando dataset (probando multiples metodos)...', 'info');
+
+            try {
+                const body = { dataset_id: datasetId };
+                if (token) body.token = token;
+
+                const res = await fetch(`${API_BASE}/meta/config/waba-dataset`, {
+                    method: 'DELETE',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                const data = await res.json();
+
+                let html = '';
+                if (data.success) {
+                    html += `<div class="status success">Dataset ${datasetId} desvinculado exitosamente.</div>`;
+                } else {
+                    html += `<div class="status error">No se pudo desvincular por API. Puede requerir hacerlo desde Meta Business Manager o contactar soporte de Meta.</div>`;
+                }
+
+                const successResults = (data.results || []).filter(r => r.success);
+                const failResults = (data.results || []).filter(r => !r.success);
+
+                if (successResults.length > 0) {
+                    html += '<br><strong style="font-size:13px;">Exitosos:</strong>';
+                    successResults.forEach(r => {
+                        html += `<div class="results-item ok">✅ <strong>${r.step}</strong>: ${JSON.stringify(r.data || r.datasets_remaining)}</div>`;
+                    });
+                }
+
+                if (failResults.length > 0) {
+                    html += `<br><details><summary style="font-size:13px;cursor:pointer;color:#65676b;">Ver ${failResults.length} intentos fallidos</summary>`;
+                    failResults.forEach(r => {
+                        html += `<div class="results-item fail">❌ <strong>${r.step}</strong>: ${r.error?.message || JSON.stringify(r.error)}</div>`;
+                    });
+                    html += '</details>';
+                }
+
+                document.getElementById('unlinkResult').innerHTML = html;
+            } catch (err) {
+                showStatus('unlinkResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        // === PAGES - DATASETS ===
 
         async function loadPages() {
             const token = getToken();
             if (!token) return showStatus('tokenStatus', 'Ingresa un access token.', 'error');
 
-            showStatus('tokenStatus', '<span class="spinner"></span> Cargando páginas...', 'info');
+            showStatus('tokenStatus', '<span class="spinner"></span> Cargando paginas...', 'info');
 
             try {
                 const res = await fetch(`${API_BASE}/meta/config/pages?token=${encodeURIComponent(token)}`);
@@ -125,12 +321,11 @@
 
                 pagesData = data.pages || [];
                 if (pagesData.length === 0) {
-                    return showStatus('tokenStatus', 'No se encontraron páginas con este token. Verifica los permisos.', 'error');
+                    return showStatus('tokenStatus', 'No se encontraron paginas con este token. Verifica los permisos.', 'error');
                 }
 
-                // Poblar select
                 const select = document.getElementById('pageSelect');
-                select.innerHTML = '<option value="">-- Selecciona una página --</option>';
+                select.innerHTML = '<option value="">-- Selecciona una pagina --</option>';
                 pagesData.forEach(p => {
                     const opt = document.createElement('option');
                     opt.value = p.id;
@@ -140,7 +335,7 @@
                 select.disabled = false;
                 document.getElementById('connectBtn').disabled = false;
 
-                showStatus('tokenStatus', `${pagesData.length} página(s) encontrada(s).`, 'success');
+                showStatus('tokenStatus', `${pagesData.length} pagina(s) encontrada(s).`, 'success');
             } catch (err) {
                 showStatus('tokenStatus', `Error de red: ${err.message}`, 'error');
             }
@@ -173,12 +368,12 @@
                 html += '</div>';
 
                 if (data.connectedPages && data.connectedPages.length > 0) {
-                    html += '<br><strong style="font-size:13px;">Páginas conectadas:</strong>';
+                    html += '<br><strong style="font-size:13px;">Paginas conectadas:</strong>';
                     data.connectedPages.forEach(p => {
                         html += `<div class="page-item"><span>${p.name || p.id}</span></div>`;
                     });
                 } else {
-                    html += '<br><div class="status info">No se detectaron páginas conectadas (o el endpoint no las expone). Intenta conectar una en el paso 3.</div>';
+                    html += '<br><div class="status info">No se detectaron paginas conectadas.</div>';
                 }
 
                 document.getElementById('datasetInfo').innerHTML = html;
@@ -194,14 +389,13 @@
 
             if (!token) return showStatus('connectResult', 'Falta el access token.', 'error');
             if (!datasetId) return showStatus('connectResult', 'Falta el dataset ID.', 'error');
-            if (!pageId) return showStatus('connectResult', 'Selecciona una página.', 'error');
+            if (!pageId) return showStatus('connectResult', 'Selecciona una pagina.', 'error');
 
-            // Obtener el page access token de la lista de páginas cargadas
             const pageData = pagesData.find(p => p.id === pageId);
             const pageName = pageData?.name || pageId;
             const pageToken = pageData?.access_token || null;
 
-            showStatus('connectResult', `<span class="spinner"></span> Intentando conectar "${pageName}" al dataset ${datasetId} (probando múltiples métodos)...`, 'info');
+            showStatus('connectResult', `<span class="spinner"></span> Conectando "${pageName}" al dataset ${datasetId}...`, 'info');
 
             try {
                 const res = await fetch(`${API_BASE}/meta/config/connect-page`, {
@@ -213,9 +407,9 @@
 
                 let html = '';
                 if (data.success) {
-                    html += `<div class="status success">Conexión exitosa de "${pageName}" al dataset ${datasetId}.</div>`;
+                    html += `<div class="status success">Conexion exitosa de "${pageName}" al dataset ${datasetId}.</div>`;
                 } else {
-                    html += `<div class="status error">Ningún método logró conectar la página. Revisa los detalles abajo.</div>`;
+                    html += `<div class="status error">Ningun metodo logro conectar la pagina.</div>`;
                 }
 
                 html += '<br><strong style="font-size:13px;">Detalle de intentos:</strong>';
@@ -239,7 +433,7 @@
             const datasetId = document.getElementById('datasetId').value.trim();
             const pageId = document.getElementById('pageSelect').value;
 
-            showStatus('discoverResult', '<span class="spinner"></span> Descubriendo edges disponibles...', 'info');
+            showStatus('discoverResult', '<span class="spinner"></span> Descubriendo edges...', 'info');
 
             try {
                 const params = new URLSearchParams();
@@ -251,26 +445,26 @@
                 const data = await res.json();
 
                 let html = '<div style="font-size:12px; margin-top:12px;">';
-
                 for (const [key, info] of Object.entries(data)) {
                     html += `<h3 style="margin:12px 0 6px;color:#1877f2;">${key.toUpperCase()}</h3>`;
                     if (info.error) {
                         html += `<div class="status error">${info.error.message || JSON.stringify(info.error)}</div>`;
                     } else if (info.connections) {
-                        html += `<div class="status info"><strong>Tipo:</strong> ${info.type || 'N/A'}<br><strong>Nombre:</strong> ${info.name || 'N/A'}<br><strong>ID:</strong> ${info.id || 'N/A'}<br><br><strong>Edges disponibles:</strong><br>${Object.keys(info.connections).join(', ')}</div>`;
+                        html += `<div class="status info"><strong>Tipo:</strong> ${info.type || 'N/A'}<br><strong>Nombre:</strong> ${info.name || 'N/A'}<br><strong>ID:</strong> ${info.id || 'N/A'}<br><br><strong>Edges:</strong><br>${Object.keys(info.connections).join(', ')}</div>`;
                     } else if (Array.isArray(info)) {
                         html += `<div class="status info">${info.map(b => `${b.name} (${b.id})`).join('<br>')}</div>`;
                     } else {
                         html += `<div class="status info"><pre>${JSON.stringify(info, null, 2)}</pre></div>`;
                     }
                 }
-
                 html += '</div>';
                 document.getElementById('discoverResult').innerHTML = html;
             } catch (err) {
                 showStatus('discoverResult', `Error de red: ${err.message}`, 'error');
             }
         }
+
+        // === VERIFICAR ===
 
         async function testEvent() {
             showStatus('testResult', '<span class="spinner"></span> Enviando evento de prueba...', 'info');
@@ -279,12 +473,40 @@
                 const data = await res.json();
 
                 if (data.testEventResult?.status === 'SUCCESS') {
-                    showStatus('testResult', `Evento de prueba enviado con éxito.\n\nRespuesta: ${JSON.stringify(data.testEventResult.metaResponse, null, 2)}`, 'success');
+                    showStatus('testResult', `Evento de prueba enviado con exito.\n\nRespuesta: ${JSON.stringify(data.testEventResult.metaResponse, null, 2)}`, 'success');
                 } else {
                     showStatus('testResult', `Error en evento de prueba:\n\n${JSON.stringify(data.testEventResult, null, 2)}`, 'error');
                 }
             } catch (err) {
                 showStatus('testResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function loadServerConfig() {
+            showStatus('serverConfig', '<span class="spinner"></span> Cargando...', 'info');
+            try {
+                const [wabaRes, testRes] = await Promise.all([
+                    fetch(`${API_BASE}/meta/config/waba-datasets`).then(r => r.json()).catch(() => null),
+                    fetch(`${API_BASE}/meta/test-event`).then(r => r.json()).catch(() => null)
+                ]);
+
+                let html = '<div class="info-grid">';
+                if (testRes?.testEventResult) {
+                    const t = testRes.testEventResult;
+                    html += `<span class="label">META_PIXEL_ID:</span><span>${t.pixelId || 'No configurado'}</span>`;
+                    html += `<span class="label">CAPI Token:</span><span>${t.hasCapiToken ? '✅ Configurado' : '❌ Falta'}</span>`;
+                    html += `<span class="label">WABA ID:</span><span>${t.wabaId || 'No configurado'}</span>`;
+                    html += `<span class="label">FB Page ID:</span><span>${t.pageId || 'No configurado'}</span>`;
+                }
+                if (wabaRes?.datasets?.data) {
+                    const ds = wabaRes.datasets.data.map(d => d.id).join(', ') || 'Ninguno';
+                    html += `<span class="label">Datasets WABA:</span><span>${ds}</span>`;
+                }
+                html += '</div>';
+
+                document.getElementById('serverConfig').innerHTML = html;
+            } catch (err) {
+                showStatus('serverConfig', `Error: ${err.message}`, 'error');
             }
         }
     </script>
