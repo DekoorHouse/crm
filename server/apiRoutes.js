@@ -3408,12 +3408,14 @@ router.post('/remove-background', async (req, res) => {
 router.get('/meta/test-event', async (req, res) => {
     const META_PIXEL_ID = process.env.META_PIXEL_ID;
     const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
+    const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
     const diagnostics = {
         META_PIXEL_ID_SET: !!META_PIXEL_ID,
         META_PIXEL_ID_PREVIEW: META_PIXEL_ID ? `${META_PIXEL_ID.substring(0, 4)}...` : null,
         META_CAPI_ACCESS_TOKEN_SET: !!META_CAPI_ACCESS_TOKEN,
         META_CAPI_ACCESS_TOKEN_LENGTH: META_CAPI_ACCESS_TOKEN ? META_CAPI_ACCESS_TOKEN.length : 0,
+        FB_PAGE_ID_SET: !!FB_PAGE_ID,
         testEventResult: null
     };
 
@@ -3424,6 +3426,11 @@ router.get('/meta/test-event', async (req, res) => {
 
     // Enviar evento de prueba con test_event_code para que no afecte métricas reales
     const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
+    const userData = {
+        ph: [require('crypto').createHash('sha256').update('5215500000000').digest('hex')]
+    };
+    if (FB_PAGE_ID) userData.page_id = FB_PAGE_ID;
+
     const testPayload = {
         data: [{
             event_name: 'Purchase',
@@ -3431,9 +3438,7 @@ router.get('/meta/test-event', async (req, res) => {
             event_id: `test_diag_${Date.now()}`,
             action_source: 'business_messaging',
             messaging_channel: 'whatsapp',
-            user_data: {
-                ph: [require('crypto').createHash('sha256').update('5215500000000').digest('hex')]
-            },
+            user_data: userData,
             custom_data: {
                 value: 0.01,
                 currency: 'MXN'

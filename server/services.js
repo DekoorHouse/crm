@@ -7,6 +7,7 @@ const { db, admin } = require('./config');
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
+const FB_PAGE_ID = process.env.FB_PAGE_ID;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -786,6 +787,9 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     }
     if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
         userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
+    }
+    if (FB_PAGE_ID) {
+        userData.page_id = FB_PAGE_ID;
     }
     const isAdReferral = referralInfo && referralInfo.ctwa_clid;
     if (isAdReferral) userData.ctwa_clid = referralInfo.ctwa_clid;
