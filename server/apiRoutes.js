@@ -2197,23 +2197,29 @@ router.post('/orders', async (req, res) => {
 
         // --- INICIO: Enviar evento Purchase a Meta ---
         try {
+            console.log(`[META EVENT] Iniciando envío de evento Purchase para pedido DH${newOrderNumber}, contactId: ${contactId}`);
             // Obtener datos actualizados del contacto para el evento
             const contactDoc = await contactRef.get();
-            if (contactDoc.exists) {
+            if (!contactDoc.exists) {
+                console.warn(`[META EVENT] No se encontró el documento del contacto ${contactId}. No se enviará evento Purchase.`);
+            } else {
                 const contactData = contactDoc.data();
-                
+
                 // Verificar si tiene wa_id (necesario para Meta)
-                if (contactData.wa_id) {
+                if (!contactData.wa_id) {
+                    console.warn(`[META EVENT] El contacto ${contactId} no tiene wa_id. No se puede enviar evento Purchase a Meta.`);
+                } else {
                     const eventInfo = {
                         wa_id: contactData.wa_id,
                         profile: { name: contactData.name }
                     };
-                    
+
                     const customData = {
                         value: parseFloat(precio) || 0,
                         currency: 'MXN'
                     };
 
+                    console.log(`[META EVENT] Datos: wa_id=${contactData.wa_id}, adReferral=${JSON.stringify(contactData.adReferral || {})}, valor=${precio}`);
                     // Enviar evento
                     await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
                     console.log(`[META EVENT] Evento Purchase enviado por pedido DH${newOrderNumber} valor $${precio}`);
@@ -2221,6 +2227,7 @@ router.post('/orders', async (req, res) => {
             }
         } catch (metaError) {
             console.error('[META EVENT] Error al enviar evento Purchase automático:', metaError.message);
+            if (metaError.response) console.error('[META EVENT] Respuesta de Meta:', JSON.stringify(metaError.response.data));
             // No fallar el request principal si falla el evento
         }
         // --- FIN: Enviar evento Purchase a Meta ---
@@ -3395,6 +3402,61 @@ router.post('/remove-background', async (req, res) => {
         console.error('Background removal error:', err);
         res.status(500).json({ error: err.message });
     }
+});
+
+// --- Endpoint GET /api/meta/test-event (Diagnóstico de conexión con Meta CAPI) ---
+router.get('/meta/test-event', async (req, res) => {
+    const META_PIXEL_ID = process.env.META_PIXEL_ID;
+    const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
+
+    const diagnostics = {
+        META_PIXEL_ID_SET: !!META_PIXEL_ID,
+        META_PIXEL_ID_PREVIEW: META_PIXEL_ID ? `${META_PIXEL_ID.substring(0, 4)}...` : null,
+        META_CAPI_ACCESS_TOKEN_SET: !!META_CAPI_ACCESS_TOKEN,
+        META_CAPI_ACCESS_TOKEN_LENGTH: META_CAPI_ACCESS_TOKEN ? META_CAPI_ACCESS_TOKEN.length : 0,
+        testEventResult: null
+    };
+
+    if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
+        diagnostics.testEventResult = 'SKIP: Faltan credenciales. Configura META_PIXEL_ID y META_CAPI_ACCESS_TOKEN en las variables de entorno.';
+        return res.json(diagnostics);
+    }
+
+    // Enviar evento de prueba con test_event_code para que no afecte métricas reales
+    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
+    const testPayload = {
+        data: [{
+            event_name: 'Purchase',
+            event_time: Math.floor(Date.now() / 1000),
+            event_id: `test_diag_${Date.now()}`,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp',
+            user_data: {
+                ph: [require('crypto').createHash('sha256').update('5215500000000').digest('hex')]
+            },
+            custom_data: {
+                value: 0.01,
+                currency: 'MXN'
+            }
+        }],
+        test_event_code: 'TEST_DIAG_CRM'
+    };
+
+    try {
+        const response = await axios.post(url, testPayload, {
+            headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        diagnostics.testEventResult = { status: 'SUCCESS', metaResponse: response.data };
+    } catch (error) {
+        diagnostics.testEventResult = {
+            status: 'ERROR',
+            message: error.message,
+            metaResponse: error.response ? error.response.data : null,
+            httpStatus: error.response ? error.response.status : null
+        };
+    }
+
+    res.json(diagnostics);
 });
 
 module.exports = router;

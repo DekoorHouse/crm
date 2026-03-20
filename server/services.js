@@ -766,7 +766,7 @@ function sha256(data) {
 
 async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.warn('Advertencia: Faltan credenciales de Meta (PIXEL_ID o CAPI_ACCESS_TOKEN). No se enviará el evento.');
+        console.warn(`[META CAPI] ⚠️ Faltan credenciales de Meta. PIXEL_ID=${!!META_PIXEL_ID}, CAPI_TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
         return;
     }
     if (!contactInfo || !contactInfo.wa_id) {
@@ -808,11 +808,11 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
         }],
     };
     try {
-        console.log(`Enviando evento '${eventName}' para ${contactInfo.wa_id}. Payload:`, JSON.stringify(payload, null, 2));
-        await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
-        console.log(`✅ Evento '${eventName}' enviado a Meta.`);
+        console.log(`[META CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id} al pixel ${META_PIXEL_ID}. Payload:`, JSON.stringify(payload, null, 2));
+        const response = await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
+        console.log(`[META CAPI] ✅ Evento '${eventName}' enviado a Meta. Respuesta:`, JSON.stringify(response.data));
     } catch (error) {
-        console.error(`❌ Error al enviar evento '${eventName}' a Meta.`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}' a Meta. HTTP ${error.response?.status || 'N/A'}`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 }
