@@ -3794,17 +3794,47 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
     ].filter(([, t]) => t);
 
     const results = [];
+    const apiVersions = ['v21.0', 'v19.0'];
 
-    // Paso 1: DELETE del dataset
-    for (const [label, tk] of tokensToTry) {
-        try {
-            const r = await axios.delete(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
-                data: { dataset_id, access_token: tk }
-            });
-            results.push({ step: `DELETE (${label})`, success: true, data: r.data });
-            break;
-        } catch (e) {
-            results.push({ step: `DELETE (${label})`, success: false, error: e.response?.data?.error || e.message });
+    // Intentar DELETE con múltiples métodos y versiones de API
+    let deleted = false;
+    for (const version of apiVersions) {
+        if (deleted) break;
+        for (const [label, tk] of tokensToTry) {
+            if (deleted) break;
+            // Método 1: query params
+            try {
+                const r = await axios.delete(`https://graph.facebook.com/${version}/${wabaId}/dataset`, {
+                    params: { dataset_id, access_token: tk }
+                });
+                results.push({ step: `DELETE params ${version} (${label})`, success: true, data: r.data });
+                deleted = true;
+                break;
+            } catch (e) {
+                results.push({ step: `DELETE params ${version} (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
+            // Método 2: body
+            try {
+                const r = await axios.delete(`https://graph.facebook.com/${version}/${wabaId}/dataset`, {
+                    data: { dataset_id, access_token: tk }
+                });
+                results.push({ step: `DELETE body ${version} (${label})`, success: true, data: r.data });
+                deleted = true;
+                break;
+            } catch (e) {
+                results.push({ step: `DELETE body ${version} (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
+            // Método 3: POST con method=delete (override)
+            try {
+                const r = await axios.post(`https://graph.facebook.com/${version}/${wabaId}/dataset`, {
+                    dataset_id, access_token: tk, method: 'delete'
+                });
+                results.push({ step: `POST method=delete ${version} (${label})`, success: true, data: r.data });
+                deleted = true;
+                break;
+            } catch (e) {
+                results.push({ step: `POST method=delete ${version} (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
         }
     }
 
