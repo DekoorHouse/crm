@@ -301,6 +301,10 @@ async function runJob(id, msg) {
         if (mode === 'engrave' && (rasterEndX !== 0 || rasterEndY !== 0)) {
             log(`[M${id}] Retorno scan: (${rasterEndX.toFixed(1)}, ${rasterEndY.toFixed(1)})mm`);
             await laser.jog(rasterEndX, rasterEndY);
+            // El EGV movió el cabezal (rasterMovement) y el jog lo devolvió (-rasterMovement).
+            // Desplazamiento neto = 0, pero jog() sumó endX/endY a _pos sin contar el EGV.
+            // Cancelar la actualización para que _pos refleje la posición real.
+            laser.adjustPos(-rasterEndX, -rasterEndY);
         }
     }
 
