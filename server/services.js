@@ -816,12 +816,26 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
         eventData.action_source = 'website';
     }
     const payload = { data: [eventData] };
+    const headers = { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
     try {
-        console.log(`[META CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id} al pixel ${META_PIXEL_ID}. Payload:`, JSON.stringify(payload, null, 2));
-        const response = await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });
+        console.log(`[META CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id} al pixel ${META_PIXEL_ID}. action_source=${eventData.action_source}`);
+        const response = await axios.post(url, payload, { headers });
         console.log(`[META CAPI] ✅ Evento '${eventName}' enviado a Meta. Respuesta:`, JSON.stringify(response.data));
     } catch (error) {
-        console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}' a Meta. HTTP ${error.response?.status || 'N/A'}`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}' (${eventData.action_source}). HTTP ${error.response?.status || 'N/A'}`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        // Si business_messaging falla, reintentar como website para no perder el evento
+        if (eventData.action_source === 'business_messaging') {
+            console.log(`[META CAPI] Reintentando '${eventName}' como action_source=website...`);
+            eventData.action_source = 'website';
+            delete eventData.messaging_channel;
+            try {
+                const retryResponse = await axios.post(url, { data: [eventData] }, { headers });
+                console.log(`[META CAPI] ✅ Evento '${eventName}' enviado como website (fallback). Respuesta:`, JSON.stringify(retryResponse.data));
+                return;
+            } catch (retryError) {
+                console.error(`[META CAPI] ❌ Fallback website también falló. HTTP ${retryError.response?.status || 'N/A'}`, retryError.response ? JSON.stringify(retryError.response.data, null, 2) : retryError.message);
+            }
+        }
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 }
