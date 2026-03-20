@@ -826,10 +826,20 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
         // Si business_messaging falla, reintentar como website para no perder el evento
         if (eventData.action_source === 'business_messaging') {
             console.log(`[META CAPI] Reintentando '${eventName}' como action_source=website...`);
-            eventData.action_source = 'website';
-            delete eventData.messaging_channel;
+            // Limpiar campos específicos de business_messaging que pueden causar error 500
+            const websiteEventData = {
+                event_name: eventData.event_name,
+                event_time: eventData.event_time,
+                event_id: eventData.event_id + '_web',
+                action_source: 'website',
+                user_data: {
+                    ph: eventData.user_data.ph,
+                    fn: eventData.user_data.fn
+                },
+                custom_data: eventData.custom_data
+            };
             try {
-                const retryResponse = await axios.post(url, { data: [eventData] }, { headers });
+                const retryResponse = await axios.post(url, { data: [websiteEventData] }, { headers });
                 console.log(`[META CAPI] ✅ Evento '${eventName}' enviado como website (fallback). Respuesta:`, JSON.stringify(retryResponse.data));
                 return;
             } catch (retryError) {
