@@ -3653,16 +3653,30 @@ router.post('/meta/config/connect-page', async (req, res) => {
         }
     }
 
-    // Método 5: A través del WABA
+    // Método 5: POST /{waba-id}/dataset (singular - edge descubierto en metadata)
     if (wabaId) {
         for (const [label, tk] of allTokens) {
             try {
-                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/datasets`, {
+                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
                     dataset_id, page_id, access_token: tk
                 });
-                results.push({ method: `waba/datasets (${label})`, success: true, data: r.data });
+                results.push({ method: `waba/dataset (${label})`, success: true, data: r.data });
             } catch (e) {
-                results.push({ method: `waba/datasets (${label})`, success: false, error: e.response?.data?.error || e.message });
+                results.push({ method: `waba/dataset (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
+        }
+    }
+
+    // Método 6: POST /{waba-id}/dataset solo con dataset_id (sin page_id)
+    if (wabaId) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                    dataset_id, access_token: tk
+                });
+                results.push({ method: `waba/dataset no-page (${label})`, success: true, data: r.data });
+            } catch (e) {
+                results.push({ method: `waba/dataset no-page (${label})`, success: false, error: e.response?.data?.error || e.message });
             }
         }
     }
