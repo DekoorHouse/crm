@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Config - Conectar Página a Dataset</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f0f2f5; color: #1c1e21; padding: 20px; }
+        .container { max-width: 720px; margin: 0 auto; }
+        h1 { font-size: 22px; margin-bottom: 8px; }
+        .subtitle { color: #65676b; font-size: 14px; margin-bottom: 24px; }
+        .card { background: #fff; border-radius: 12px; padding: 24px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .card h2 { font-size: 16px; margin-bottom: 16px; color: #1877f2; }
+        label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; color: #444; }
+        input, select { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+        input:focus, select:focus { outline: none; border-color: #1877f2; box-shadow: 0 0 0 2px rgba(24,119,242,0.2); }
+        button { padding: 10px 20px; border: none; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn-primary { background: #1877f2; color: #fff; }
+        .btn-primary:hover { background: #166fe5; }
+        .btn-primary:disabled { background: #a0c4ff; cursor: not-allowed; }
+        .btn-secondary { background: #e4e6eb; color: #1c1e21; }
+        .btn-secondary:hover { background: #d8dadf; }
+        .btn-row { display: flex; gap: 8px; margin-top: 4px; }
+        .status { padding: 12px; border-radius: 8px; margin-top: 12px; font-size: 13px; white-space: pre-wrap; word-break: break-word; }
+        .status.success { background: #e6f9e6; color: #1a7f1a; border: 1px solid #b7e4b7; }
+        .status.error { background: #fce8e8; color: #c0392b; border: 1px solid #f5c6c6; }
+        .status.info { background: #e8f0fe; color: #1a56db; border: 1px solid #bcd4f7; }
+        .info-grid { display: grid; grid-template-columns: 140px 1fr; gap: 6px 12px; font-size: 13px; }
+        .info-grid .label { color: #65676b; font-weight: 600; }
+        .page-item { display: flex; align-items: center; justify-content: space-between; padding: 10px; border: 1px solid #e4e6eb; border-radius: 8px; margin-bottom: 8px; }
+        .page-item .page-name { font-weight: 600; font-size: 14px; }
+        .page-item .page-id { color: #65676b; font-size: 12px; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #fff; border-top-color: transparent; border-radius: 50%; animation: spin 0.6s linear infinite; vertical-align: middle; margin-right: 6px; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .step-num { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%; background: #1877f2; color: #fff; font-size: 12px; font-weight: 700; margin-right: 8px; }
+        .help-text { font-size: 12px; color: #65676b; margin-top: -8px; margin-bottom: 12px; }
+        .results-item { padding: 8px 12px; border-radius: 6px; margin-bottom: 6px; font-size: 13px; }
+        .results-item.ok { background: #e6f9e6; }
+        .results-item.fail { background: #fce8e8; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Meta CAPI - Conectar Página a Dataset</h1>
+        <p class="subtitle">Conecta tu página de Facebook al dataset (pixel) para que los eventos business_messaging funcionen correctamente.</p>
+
+        <!-- Paso 1: Token -->
+        <div class="card">
+            <h2><span class="step-num">1</span>Access Token</h2>
+            <label for="accessToken">Token con permisos de administrador</label>
+            <input type="password" id="accessToken" placeholder="Pega tu access token aquí...">
+            <p class="help-text">Genera uno en <a href="https://developers.facebook.com/tools/explorer/" target="_blank">Graph API Explorer</a> con permisos: pages_show_list, ads_management, business_management</p>
+            <div class="btn-row">
+                <button class="btn-primary" onclick="loadPages()">Cargar páginas</button>
+            </div>
+            <div id="tokenStatus"></div>
+        </div>
+
+        <!-- Paso 2: Dataset info -->
+        <div class="card">
+            <h2><span class="step-num">2</span>Dataset (Pixel)</h2>
+            <label for="datasetId">Dataset ID</label>
+            <input type="text" id="datasetId" value="1452903482578288">
+            <button class="btn-secondary" onclick="loadDataset()">Ver info del dataset</button>
+            <div id="datasetInfo"></div>
+        </div>
+
+        <!-- Paso 3: Conectar -->
+        <div class="card">
+            <h2><span class="step-num">3</span>Conectar Página al Dataset</h2>
+            <label for="pageSelect">Selecciona la página</label>
+            <select id="pageSelect" disabled>
+                <option value="">-- Primero carga las páginas (paso 1) --</option>
+            </select>
+            <div class="btn-row">
+                <button class="btn-primary" id="connectBtn" onclick="connectPage()" disabled>Conectar página al dataset</button>
+            </div>
+            <div id="connectResult"></div>
+        </div>
+
+        <!-- Resultado final -->
+        <div class="card">
+            <h2><span class="step-num">4</span>Verificar</h2>
+            <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Después de conectar, prueba enviar un evento de prueba para confirmar que funciona.</p>
+            <button class="btn-primary" onclick="testEvent()">Enviar evento de prueba</button>
+            <div id="testResult"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin + '/api';
+        let pagesData = [];
+
+        function getToken() {
+            return document.getElementById('accessToken').value.trim();
+        }
+
+        function showStatus(elementId, message, type) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = `<div class="status ${type}">${message}</div>`;
+        }
+
+        async function loadPages() {
+            const token = getToken();
+            if (!token) return showStatus('tokenStatus', 'Ingresa un access token.', 'error');
+
+            showStatus('tokenStatus', '<span class="spinner"></span> Cargando páginas...', 'info');
+
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/pages?token=${encodeURIComponent(token)}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    return showStatus('tokenStatus', `Error: ${data.error.message || JSON.stringify(data.error)}`, 'error');
+                }
+
+                pagesData = data.pages || [];
+                if (pagesData.length === 0) {
+                    return showStatus('tokenStatus', 'No se encontraron páginas con este token. Verifica los permisos.', 'error');
+                }
+
+                // Poblar select
+                const select = document.getElementById('pageSelect');
+                select.innerHTML = '<option value="">-- Selecciona una página --</option>';
+                pagesData.forEach(p => {
+                    const opt = document.createElement('option');
+                    opt.value = p.id;
+                    opt.textContent = `${p.name} (${p.id})`;
+                    select.appendChild(opt);
+                });
+                select.disabled = false;
+                document.getElementById('connectBtn').disabled = false;
+
+                showStatus('tokenStatus', `${pagesData.length} página(s) encontrada(s).`, 'success');
+            } catch (err) {
+                showStatus('tokenStatus', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function loadDataset() {
+            const token = getToken();
+            const datasetId = document.getElementById('datasetId').value.trim();
+            if (!datasetId) return showStatus('datasetInfo', 'Ingresa un dataset ID.', 'error');
+
+            showStatus('datasetInfo', '<span class="spinner"></span> Cargando info...', 'info');
+
+            try {
+                const params = new URLSearchParams({ dataset_id: datasetId });
+                if (token) params.set('token', token);
+                const res = await fetch(`${API_BASE}/meta/config/dataset?${params}`);
+                const data = await res.json();
+
+                if (data.error) {
+                    return showStatus('datasetInfo', `Error: ${data.error.message || JSON.stringify(data.error)}`, 'error');
+                }
+
+                const ds = data.dataset;
+                let html = '<div class="info-grid">';
+                html += `<span class="label">Nombre:</span><span>${ds.name || 'N/A'}</span>`;
+                html += `<span class="label">ID:</span><span>${ds.id}</span>`;
+                if (ds.owner_business) {
+                    html += `<span class="label">Business:</span><span>${ds.owner_business.name || ds.owner_business.id}</span>`;
+                }
+                html += '</div>';
+
+                if (data.connectedPages && data.connectedPages.length > 0) {
+                    html += '<br><strong style="font-size:13px;">Páginas conectadas:</strong>';
+                    data.connectedPages.forEach(p => {
+                        html += `<div class="page-item"><span>${p.name || p.id}</span></div>`;
+                    });
+                } else {
+                    html += '<br><div class="status info">No se detectaron páginas conectadas (o el endpoint no las expone). Intenta conectar una en el paso 3.</div>';
+                }
+
+                document.getElementById('datasetInfo').innerHTML = html;
+            } catch (err) {
+                showStatus('datasetInfo', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function connectPage() {
+            const token = getToken();
+            const datasetId = document.getElementById('datasetId').value.trim();
+            const pageId = document.getElementById('pageSelect').value;
+
+            if (!token) return showStatus('connectResult', 'Falta el access token.', 'error');
+            if (!datasetId) return showStatus('connectResult', 'Falta el dataset ID.', 'error');
+            if (!pageId) return showStatus('connectResult', 'Selecciona una página.', 'error');
+
+            const pageName = pagesData.find(p => p.id === pageId)?.name || pageId;
+            showStatus('connectResult', `<span class="spinner"></span> Intentando conectar "${pageName}" al dataset ${datasetId}...`, 'info');
+
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/connect-page`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, dataset_id: datasetId, page_id: pageId })
+                });
+                const data = await res.json();
+
+                let html = '';
+                if (data.success) {
+                    html += `<div class="status success">Conexión exitosa de "${pageName}" al dataset ${datasetId}.</div>`;
+                } else {
+                    html += `<div class="status error">Ningún método logró conectar la página. Revisa los detalles abajo.</div>`;
+                }
+
+                html += '<br><strong style="font-size:13px;">Detalle de intentos:</strong>';
+                data.results.forEach(r => {
+                    const cls = r.success ? 'ok' : 'fail';
+                    const icon = r.success ? '✅' : '❌';
+                    const detail = r.success
+                        ? JSON.stringify(r.data)
+                        : (r.error?.message || JSON.stringify(r.error));
+                    html += `<div class="results-item ${cls}">${icon} <strong>${r.method}</strong>: ${detail}</div>`;
+                });
+
+                document.getElementById('connectResult').innerHTML = html;
+            } catch (err) {
+                showStatus('connectResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function testEvent() {
+            showStatus('testResult', '<span class="spinner"></span> Enviando evento de prueba...', 'info');
+            try {
+                const res = await fetch(`${API_BASE}/meta/test-event`);
+                const data = await res.json();
+
+                if (data.testEventResult?.status === 'SUCCESS') {
+                    showStatus('testResult', `Evento de prueba enviado con éxito.\n\nRespuesta: ${JSON.stringify(data.testEventResult.metaResponse, null, 2)}`, 'success');
+                } else {
+                    showStatus('testResult', `Error en evento de prueba:\n\n${JSON.stringify(data.testEventResult, null, 2)}`, 'error');
+                }
+            } catch (err) {
+                showStatus('testResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

@@ -3463,4 +3463,95 @@ router.get('/meta/test-event', async (req, res) => {
     res.json(diagnostics);
 });
 
+// --- Endpoints para configuración Meta: conectar páginas a datasets ---
+
+// Obtener info del dataset y sus páginas conectadas
+router.get('/meta/config/dataset', async (req, res) => {
+    const token = req.query.token || process.env.META_CAPI_ACCESS_TOKEN;
+    const pixelId = req.query.dataset_id || process.env.META_PIXEL_ID;
+    if (!token || !pixelId) return res.status(400).json({ error: 'Falta token o dataset_id' });
+
+    try {
+        // Info del dataset
+        const dsRes = await axios.get(`https://graph.facebook.com/v19.0/${pixelId}`, {
+            params: { fields: 'name,id,owner_business', access_token: token }
+        });
+        // Páginas conectadas
+        let connectedPages = [];
+        try {
+            const pagesRes = await axios.get(`https://graph.facebook.com/v19.0/${pixelId}/stats`, {
+                params: { fields: 'connected_page', access_token: token }
+            });
+            connectedPages = pagesRes.data.data || [];
+        } catch (e) {
+            // Intentar otro edge
+        }
+        res.json({ dataset: dsRes.data, connectedPages });
+    } catch (error) {
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Listar páginas de Facebook accesibles con el token
+router.get('/meta/config/pages', async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ error: 'Se requiere un access_token' });
+
+    try {
+        const response = await axios.get('https://graph.facebook.com/v19.0/me/accounts', {
+            params: { fields: 'id,name,access_token', limit: 100, access_token: token }
+        });
+        res.json({ pages: response.data.data || [] });
+    } catch (error) {
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Conectar una página a un dataset
+router.post('/meta/config/connect-page', async (req, res) => {
+    const { token, dataset_id, page_id } = req.body;
+    if (!token || !dataset_id || !page_id) {
+        return res.status(400).json({ error: 'Se requieren token, dataset_id y page_id' });
+    }
+
+    const results = [];
+
+    // Intento 1: POST /{pixel_id}/page_activities
+    try {
+        const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/page_activities`, {
+            page_id, access_token: token
+        });
+        results.push({ method: 'page_activities', success: true, data: r.data });
+    } catch (e) {
+        results.push({ method: 'page_activities', success: false, error: e.response?.data?.error || e.message });
+    }
+
+    // Intento 2: POST /{pixel_id}/shared_accounts con page
+    try {
+        const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/adaccounts`, {
+            page_id, access_token: token
+        });
+        results.push({ method: 'adaccounts', success: true, data: r.data });
+    } catch (e) {
+        results.push({ method: 'adaccounts', success: false, error: e.response?.data?.error || e.message });
+    }
+
+    // Intento 3: POST /{page_id}/ads_pixel con dataset
+    try {
+        const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/ads_pixels`, {
+            ads_pixel_id: dataset_id, access_token: token
+        });
+        results.push({ method: 'page/ads_pixels', success: true, data: r.data });
+    } catch (e) {
+        results.push({ method: 'page/ads_pixels', success: false, error: e.response?.data?.error || e.message });
+    }
+
+    const anySuccess = results.some(r => r.success);
+    res.json({ success: anySuccess, results });
+});
+
 module.exports = router;
