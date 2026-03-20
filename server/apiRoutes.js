@@ -3744,4 +3744,76 @@ router.post('/meta/config/switch-waba-dataset', async (req, res) => {
     res.json({ results });
 });
 
+// GET — Ver qué datasets están vinculados a la WABA
+router.get('/meta/config/waba-datasets', async (req, res) => {
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const userToken = req.query.token;
+
+    if (!wabaId) return res.status(400).json({ error: 'WHATSAPP_BUSINESS_ACCOUNT_ID no configurado' });
+
+    const tokensToTry = [
+        ['user_token', userToken],
+        ['system_token', systemToken]
+    ].filter(([, t]) => t);
+
+    for (const [label, tk] of tokensToTry) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                params: { access_token: tk }
+            });
+            return res.json({ waba_id: wabaId, token_used: label, datasets: r.data });
+        } catch (e) {
+            console.log(`[WABA datasets] ${label} falló:`, e.response?.data?.error || e.message);
+        }
+    }
+    res.status(500).json({ error: 'No se pudo consultar datasets vinculados con ningún token disponible' });
+});
+
+// DELETE — Desvincular un dataset de la WABA (sin vincular otro)
+router.delete('/meta/config/waba-dataset', async (req, res) => {
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const { dataset_id, token } = req.body;
+
+    if (!wabaId) return res.status(400).json({ error: 'WHATSAPP_BUSINESS_ACCOUNT_ID no configurado' });
+    if (!dataset_id) return res.status(400).json({ error: 'Se requiere dataset_id a desvincular' });
+
+    const tokensToTry = [
+        ['user_token', token],
+        ['system_token', systemToken]
+    ].filter(([, t]) => t);
+
+    const results = [];
+
+    // Paso 1: DELETE del dataset
+    for (const [label, tk] of tokensToTry) {
+        try {
+            const r = await axios.delete(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                data: { dataset_id, access_token: tk }
+            });
+            results.push({ step: `DELETE (${label})`, success: true, data: r.data });
+            break;
+        } catch (e) {
+            results.push({ step: `DELETE (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    // Paso 2: Verificar estado actual
+    for (const [label, tk] of tokensToTry) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                params: { access_token: tk }
+            });
+            results.push({ step: `GET verify (${label})`, success: true, datasets_remaining: r.data });
+            break;
+        } catch (e) {
+            results.push({ step: `GET verify (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    const delinkSuccess = results.some(r => r.step.startsWith('DELETE') && r.success);
+    res.status(delinkSuccess ? 200 : 500).json({ waba_id: wabaId, dataset_delinked: dataset_id, results });
+});
+
 module.exports = router;
