@@ -79,9 +79,17 @@
             <div id="connectResult"></div>
         </div>
 
+        <!-- Descubrir -->
+        <div class="card">
+            <h2><span class="step-num">4</span>Descubrir Edges (Debug)</h2>
+            <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Consulta qué conexiones/edges están disponibles en la API para el dataset, página y WABA.</p>
+            <button class="btn-secondary" onclick="discover()">Descubrir edges disponibles</button>
+            <div id="discoverResult"></div>
+        </div>
+
         <!-- Resultado final -->
         <div class="card">
-            <h2><span class="step-num">4</span>Verificar</h2>
+            <h2><span class="step-num">5</span>Verificar</h2>
             <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Después de conectar, prueba enviar un evento de prueba para confirmar que funciona.</p>
             <button class="btn-primary" onclick="testEvent()">Enviar evento de prueba</button>
             <div id="testResult"></div>
@@ -223,6 +231,44 @@
                 document.getElementById('connectResult').innerHTML = html;
             } catch (err) {
                 showStatus('connectResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function discover() {
+            const token = getToken();
+            const datasetId = document.getElementById('datasetId').value.trim();
+            const pageId = document.getElementById('pageSelect').value;
+
+            showStatus('discoverResult', '<span class="spinner"></span> Descubriendo edges disponibles...', 'info');
+
+            try {
+                const params = new URLSearchParams();
+                if (token) params.set('token', token);
+                if (datasetId) params.set('dataset_id', datasetId);
+                if (pageId) params.set('page_id', pageId);
+
+                const res = await fetch(`${API_BASE}/meta/config/discover?${params}`);
+                const data = await res.json();
+
+                let html = '<div style="font-size:12px; margin-top:12px;">';
+
+                for (const [key, info] of Object.entries(data)) {
+                    html += `<h3 style="margin:12px 0 6px;color:#1877f2;">${key.toUpperCase()}</h3>`;
+                    if (info.error) {
+                        html += `<div class="status error">${info.error.message || JSON.stringify(info.error)}</div>`;
+                    } else if (info.connections) {
+                        html += `<div class="status info"><strong>Tipo:</strong> ${info.type || 'N/A'}<br><strong>Nombre:</strong> ${info.name || 'N/A'}<br><strong>ID:</strong> ${info.id || 'N/A'}<br><br><strong>Edges disponibles:</strong><br>${Object.keys(info.connections).join(', ')}</div>`;
+                    } else if (Array.isArray(info)) {
+                        html += `<div class="status info">${info.map(b => `${b.name} (${b.id})`).join('<br>')}</div>`;
+                    } else {
+                        html += `<div class="status info"><pre>${JSON.stringify(info, null, 2)}</pre></div>`;
+                    }
+                }
+
+                html += '</div>';
+                document.getElementById('discoverResult').innerHTML = html;
+            } catch (err) {
+                showStatus('discoverResult', `Error de red: ${err.message}`, 'error');
             }
         }
 

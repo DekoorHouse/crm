@@ -3511,6 +3511,70 @@ router.get('/meta/config/pages', async (req, res) => {
     }
 });
 
+// Descubrir edges disponibles en el dataset y la página
+router.get('/meta/config/discover', async (req, res) => {
+    const token = req.query.token;
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const datasetId = req.query.dataset_id || process.env.META_PIXEL_ID;
+    const pageId = req.query.page_id;
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+
+    const discovery = {};
+
+    // 1. Metadata del dataset (con system token que sabemos tiene acceso)
+    if (systemToken && datasetId) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/${datasetId}`, {
+                params: { metadata: 1, access_token: systemToken }
+            });
+            discovery.dataset = { id: r.data.id, name: r.data.name, type: r.data.metadata?.type, connections: r.data.metadata?.connections };
+        } catch (e) {
+            discovery.dataset = { error: e.response?.data?.error || e.message };
+        }
+    }
+
+    // 2. Metadata de la página (con user token)
+    if (token && pageId) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/${pageId}`, {
+                params: { metadata: 1, access_token: token }
+            });
+            discovery.page = { id: r.data.id, name: r.data.name, type: r.data.metadata?.type, connections: r.data.metadata?.connections };
+        } catch (e) {
+            discovery.page = { error: e.response?.data?.error || e.message };
+        }
+    }
+
+    // 3. WABA info y datasets vinculados
+    if (wabaId) {
+        const tk = token || systemToken;
+        if (tk) {
+            try {
+                const r = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}`, {
+                    params: { metadata: 1, access_token: tk }
+                });
+                discovery.waba = { id: r.data.id, name: r.data.name, type: r.data.metadata?.type, connections: r.data.metadata?.connections };
+            } catch (e) {
+                discovery.waba = { error: e.response?.data?.error || e.message };
+            }
+        }
+    }
+
+    // 4. Businesses del usuario
+    if (token) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/me/businesses`, {
+                params: { fields: 'id,name', access_token: token }
+            });
+            discovery.businesses = r.data.data || [];
+        } catch (e) {
+            discovery.businesses = { error: e.response?.data?.error || e.message };
+        }
+    }
+
+    res.json(discovery);
+});
+
 // Conectar una página a un dataset
 router.post('/meta/config/connect-page', async (req, res) => {
     const { token, page_token, dataset_id, page_id } = req.body;
@@ -3521,54 +3585,85 @@ router.post('/meta/config/connect-page', async (req, res) => {
     const results = [];
     const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
     const phoneNumberId = process.env.PHONE_NUMBER_ID;
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    const allTokens = [
+        ['page_token', page_token],
+        ['user_token', token],
+        ['system_token', systemToken]
+    ].filter(([, t]) => t);
 
-    // Intento 1: POST /{page-id}/page_whatsapp_number_dataset (endpoint específico para WhatsApp CAPI)
-    // Usa el page token que viene de /me/accounts
-    if (page_token) {
-        try {
-            const body = { dataset_id, access_token: page_token };
-            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
-            results.push({ method: 'page_whatsapp_number_dataset (page_token)', success: true, data: r.data });
-        } catch (e) {
-            results.push({ method: 'page_whatsapp_number_dataset (page_token)', success: false, error: e.response?.data?.error || e.message });
-        }
-    }
-
-    // Intento 2: Lo mismo pero con el token del usuario
+    // Descubrir business_id primero
+    let businessId = null;
     if (token) {
         try {
-            const body = { dataset_id, access_token: token };
+            const r = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
+                params: { fields: 'id,name', access_token: token }
+            });
+            if (r.data.data?.length > 0) businessId = r.data.data[0].id;
+        } catch (e) { /* ignore */ }
+    }
+
+    // Método 1: POST /{page-id}/page_whatsapp_number_datasets (plural)
+    for (const [label, tk] of allTokens) {
+        try {
+            const body = { dataset_id, access_token: tk };
             if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
-            results.push({ method: 'page_whatsapp_number_dataset (user_token)', success: true, data: r.data });
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_datasets`, body);
+            results.push({ method: `page_whatsapp_number_datasets (${label})`, success: true, data: r.data });
         } catch (e) {
-            results.push({ method: 'page_whatsapp_number_dataset (user_token)', success: false, error: e.response?.data?.error || e.message });
+            results.push({ method: `page_whatsapp_number_datasets (${label})`, success: false, error: e.response?.data?.error || e.message });
         }
     }
 
-    // Intento 3: Con el system user token del servidor
-    if (systemToken) {
+    // Método 2: POST /{dataset-id}/connected_pages
+    for (const [label, tk] of allTokens) {
         try {
-            const body = { dataset_id, access_token: systemToken };
-            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
-            results.push({ method: 'page_whatsapp_number_dataset (system_token)', success: true, data: r.data });
-        } catch (e) {
-            results.push({ method: 'page_whatsapp_number_dataset (system_token)', success: false, error: e.response?.data?.error || e.message });
-        }
-    }
-
-    // Intento 4: POST /{dataset-id}/pages con page_id (alternativo)
-    for (const [label, tk] of [['page_token', page_token], ['user_token', token], ['system_token', systemToken]]) {
-        if (!tk) continue;
-        try {
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/pages`, {
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/connected_pages`, {
                 page_id, access_token: tk
             });
-            results.push({ method: `dataset/pages (${label})`, success: true, data: r.data });
+            results.push({ method: `connected_pages (${label})`, success: true, data: r.data });
         } catch (e) {
-            results.push({ method: `dataset/pages (${label})`, success: false, error: e.response?.data?.error || e.message });
+            results.push({ method: `connected_pages (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    // Método 3: A través del Business Manager - POST /{business-id}/adspixels/{pixel-id}/pages
+    if (businessId) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v19.0/${businessId}/adspixels`, {
+                    adspixel_id: dataset_id, page_id, access_token: tk
+                });
+                results.push({ method: `business/adspixels (${label})`, success: true, data: r.data });
+            } catch (e) {
+                results.push({ method: `business/adspixels (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
+        }
+    }
+
+    // Método 4: POST /{dataset-id}/shared_pages
+    for (const [label, tk] of allTokens) {
+        try {
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/shared_pages`, {
+                page_id, access_token: tk
+            });
+            results.push({ method: `shared_pages (${label})`, success: true, data: r.data });
+        } catch (e) {
+            results.push({ method: `shared_pages (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    // Método 5: A través del WABA
+    if (wabaId) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/datasets`, {
+                    dataset_id, page_id, access_token: tk
+                });
+                results.push({ method: `waba/datasets (${label})`, success: true, data: r.data });
+            } catch (e) {
+                results.push({ method: `waba/datasets (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
         }
     }
 
