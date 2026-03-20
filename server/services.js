@@ -801,6 +801,13 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     };
     Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
+    // business_messaging usa nombres de eventos diferentes
+    const businessMessagingEventMap = {
+        'Lead': 'LeadSubmitted',
+        'ViewContent': 'ViewContent',
+        'Purchase': 'Purchase',
+    };
+
     // business_messaging requiere ctwa_clid y page_id; para orgánicos usar website
     const eventData = {
         event_name: eventName,
@@ -812,6 +819,7 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     if (isAdReferral) {
         eventData.action_source = 'business_messaging';
         eventData.messaging_channel = 'whatsapp';
+        eventData.event_name = businessMessagingEventMap[eventName] || eventName;
     } else {
         eventData.action_source = 'website';
     }
