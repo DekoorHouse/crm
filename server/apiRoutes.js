@@ -3754,9 +3754,12 @@ router.get('/meta/config/waba-datasets', async (req, res) => {
 
     const tokensToTry = [
         ['user_token', userToken],
+        ['whatsapp_token', process.env.WHATSAPP_TOKEN],
+        ['meta_graph_token', process.env.META_GRAPH_TOKEN],
         ['system_token', systemToken]
     ].filter(([, t]) => t);
 
+    const errors = [];
     for (const [label, tk] of tokensToTry) {
         try {
             const r = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
@@ -3764,10 +3767,12 @@ router.get('/meta/config/waba-datasets', async (req, res) => {
             });
             return res.json({ waba_id: wabaId, token_used: label, datasets: r.data });
         } catch (e) {
-            console.log(`[WABA datasets] ${label} falló:`, e.response?.data?.error || e.message);
+            const err = e.response?.data?.error || e.message;
+            console.log(`[WABA datasets] ${label} falló:`, err);
+            errors.push({ token: label, error: err });
         }
     }
-    res.status(500).json({ error: 'No se pudo consultar datasets vinculados con ningún token disponible' });
+    res.status(500).json({ error: 'No se pudo consultar datasets con ningún token', details: errors });
 });
 
 // DELETE — Desvincular un dataset de la WABA (sin vincular otro)
@@ -3781,6 +3786,8 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
 
     const tokensToTry = [
         ['user_token', token],
+        ['whatsapp_token', process.env.WHATSAPP_TOKEN],
+        ['meta_graph_token', process.env.META_GRAPH_TOKEN],
         ['system_token', systemToken]
     ].filter(([, t]) => t);
 
