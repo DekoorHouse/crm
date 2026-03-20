@@ -3685,4 +3685,63 @@ router.post('/meta/config/connect-page', async (req, res) => {
     res.json({ success: anySuccess, results });
 });
 
+// Desvincular y revincular WABA a un dataset diferente
+router.post('/meta/config/switch-waba-dataset', async (req, res) => {
+    const { token, old_dataset_id, new_dataset_id } = req.body;
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+
+    if (!wabaId) return res.status(400).json({ error: 'WHATSAPP_BUSINESS_ACCOUNT_ID no configurado' });
+    if (!new_dataset_id) return res.status(400).json({ error: 'Se requiere new_dataset_id' });
+
+    const results = [];
+    const tokensToTry = [
+        ['user_token', token],
+        ['system_token', systemToken]
+    ].filter(([, t]) => t);
+
+    // Paso 1: Intentar DELETE del dataset viejo
+    if (old_dataset_id) {
+        for (const [label, tk] of tokensToTry) {
+            try {
+                const r = await axios.delete(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                    data: { dataset_id: old_dataset_id, access_token: tk }
+                });
+                results.push({ step: `DELETE old (${label})`, success: true, data: r.data });
+                break; // Si funciona, no intentar con otro token
+            } catch (e) {
+                results.push({ step: `DELETE old (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
+        }
+    }
+
+    // Paso 2: POST del dataset nuevo
+    for (const [label, tk] of tokensToTry) {
+        try {
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                dataset_id: new_dataset_id, access_token: tk
+            });
+            results.push({ step: `POST new (${label})`, success: true, data: r.data });
+            break;
+        } catch (e) {
+            results.push({ step: `POST new (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    // Paso 3: Verificar cuál dataset está vinculado ahora
+    for (const [label, tk] of tokensToTry) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
+                params: { access_token: tk }
+            });
+            results.push({ step: `GET verify (${label})`, success: true, data: r.data });
+            break;
+        } catch (e) {
+            results.push({ step: `GET verify (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    res.json({ results });
+});
+
 module.exports = router;
