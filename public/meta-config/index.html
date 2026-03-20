@@ -74,6 +74,7 @@
         <div class="tabs">
             <div class="tab active" onclick="switchTab('waba')">WABA - Datasets</div>
             <div class="tab" onclick="switchTab('pages')">Paginas - Datasets</div>
+            <div class="tab" onclick="switchTab('claim')">Reclamar Pagina</div>
             <div class="tab" onclick="switchTab('test')">Verificar</div>
         </div>
 
@@ -137,7 +138,21 @@
             </div>
         </div>
 
-        <!-- Tab 3: Verificar -->
+        <!-- Tab 3: Reclamar Página -->
+        <div id="tab-claim" class="tab-content">
+            <div class="card">
+                <h2><span class="section-icon">🔑</span>Reclamar pagina para tu Business Manager</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Agrega una pagina de la que eres admin a tu Business Manager actual. Util si la pagina esta en un BM al que ya no tienes acceso.</p>
+                <label for="claimPageId">Page ID a reclamar</label>
+                <input type="text" id="claimPageId" placeholder="Ej: 123456789">
+                <div class="btn-row">
+                    <button class="btn-primary" onclick="claimPage()">Reclamar pagina</button>
+                </div>
+                <div id="claimResult"></div>
+            </div>
+        </div>
+
+        <!-- Tab 4: Verificar -->
         <div id="tab-test" class="tab-content">
             <div class="card">
                 <h2><span class="section-icon">🧪</span>Evento de prueba</h2>
@@ -425,6 +440,50 @@
                 document.getElementById('connectResult').innerHTML = html;
             } catch (err) {
                 showStatus('connectResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function claimPage() {
+            const token = getToken();
+            const pageId = document.getElementById('claimPageId').value.trim();
+            if (!pageId) return showStatus('claimResult', 'Ingresa el Page ID.', 'error');
+            if (!token) return showStatus('claimResult', 'Se requiere un User Token con permisos de admin de la pagina.', 'error');
+
+            showStatus('claimResult', '<span class="spinner"></span> Intentando reclamar pagina...', 'info');
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/claim-page`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ token, page_id: pageId })
+                });
+                const data = await res.json();
+                let html = '';
+                if (data.success) {
+                    html += `<div class="status success">Pagina ${pageId} reclamada exitosamente en BM ${data.business_id}.</div>`;
+                } else {
+                    html += `<div class="status error">No se pudo reclamar la pagina. Revisa los intentos abajo.</div>`;
+                }
+                // Mostrar exitosos
+                const successes = (data.results || []).filter(r => r.success);
+                const failures = (data.results || []).filter(r => !r.success);
+                if (successes.length > 0) {
+                    html += '<h3 style="margin-top:12px;">Exitosos:</h3>';
+                    successes.forEach(r => {
+                        const detail = JSON.stringify(r.data || r);
+                        html += `<div class="status success">${r.step}: ${detail}</div>`;
+                    });
+                }
+                if (failures.length > 0) {
+                    html += `<details style="margin-top:12px;"><summary>Ver ${failures.length} intentos fallidos</summary>`;
+                    failures.forEach(r => {
+                        const err = typeof r.error === 'string' ? r.error : (r.error?.message || JSON.stringify(r.error));
+                        html += `<div class="status error" style="font-size:12px;margin:4px 0;">❌ ${r.step}: ${err}</div>`;
+                    });
+                    html += '</details>';
+                }
+                document.getElementById('claimResult').innerHTML = html;
+            } catch (err) {
+                showStatus('claimResult', `Error de red: ${err.message}`, 'error');
             }
         }
 

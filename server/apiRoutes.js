@@ -3959,4 +3959,97 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
     res.status(deleted ? 200 : 500).json({ waba_id: wabaId, dataset_delinked: dataset_id, success: deleted, results });
 });
 
+// POST — Reclamar/agregar una página a tu Business Manager actual
+router.post('/meta/config/claim-page', async (req, res) => {
+    const { token, page_id } = req.body;
+    if (!token || !page_id) return res.status(400).json({ error: 'Se requieren token y page_id' });
+
+    const results = [];
+    let claimed = false;
+
+    // Descubrir business_id
+    let businessId = null;
+    try {
+        const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+            params: { fields: 'id,name', access_token: token }
+        });
+        if (r.data.data?.length > 0) {
+            businessId = r.data.data[0].id;
+            results.push({ step: 'discover_business', success: true, business: r.data.data[0] });
+        }
+    } catch (e) {
+        results.push({ step: 'discover_business', success: false, error: e.response?.data?.error?.message || e.message });
+    }
+
+    if (!businessId) return res.status(400).json({ error: 'No se pudo encontrar tu Business Manager', results });
+
+    const apiVersions = ['v21.0', 'v19.0'];
+
+    async function tryOp(stepName, fn) {
+        if (claimed) return;
+        for (const v of apiVersions) {
+            if (claimed) break;
+            try {
+                const r = await fn(v);
+                results.push({ step: `${stepName} ${v}`, success: true, data: r.data });
+                claimed = true;
+            } catch (e) {
+                results.push({ step: `${stepName} ${v}`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
+            }
+        }
+    }
+
+    // 1. POST /{business_id}/pages — agregar página al BM (requiere ser admin de la página)
+    await tryOp(`POST /${businessId}/pages`, (v) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
+            page_id, access_token: token
+        })
+    );
+
+    // 2. POST /{business_id}/owned_pages
+    await tryOp(`POST /${businessId}/owned_pages`, (v) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/owned_pages`, {
+            page_id, access_token: token
+        })
+    );
+
+    // 3. POST /{business_id}/client_pages — como página de cliente
+    await tryOp(`POST /${businessId}/client_pages`, (v) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/client_pages`, {
+            page_id, access_token: token
+        })
+    );
+
+    // 4. POST /{business_id}/pages con permitted_tasks
+    await tryOp(`POST /${businessId}/pages full_access`, (v) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
+            page_id, access_token: token,
+            permitted_tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
+        })
+    );
+
+    // 5. POST /{business_id}/managed_pages
+    await tryOp(`POST /${businessId}/managed_pages`, (v) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/managed_pages`, {
+            page_id, access_token: token
+        })
+    );
+
+    // Verificar si la página está ahora en el BM
+    for (const v of apiVersions) {
+        try {
+            const r = await axios.get(`https://graph.facebook.com/${v}/${businessId}/owned_pages`, {
+                params: { access_token: token, fields: 'id,name' }
+            });
+            const found = r.data.data?.some(p => p.id === page_id);
+            results.push({ step: `VERIFY owned_pages ${v}`, success: true, page_found: found, pages: r.data.data });
+            break;
+        } catch (e) {
+            results.push({ step: `VERIFY ${v}`, success: false, error: e.response?.data?.error?.message || e.message });
+        }
+    }
+
+    res.json({ success: claimed, business_id: businessId, page_id, results });
+});
+
 module.exports = router;
