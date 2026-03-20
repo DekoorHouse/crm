@@ -3603,85 +3603,101 @@ router.post('/meta/config/connect-page', async (req, res) => {
         } catch (e) { /* ignore */ }
     }
 
-    // Método 1: POST /{page-id}/page_whatsapp_number_datasets (plural)
-    for (const [label, tk] of allTokens) {
-        try {
-            const body = { dataset_id, access_token: tk };
-            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_datasets`, body);
-            results.push({ method: `page_whatsapp_number_datasets (${label})`, success: true, data: r.data });
-        } catch (e) {
-            results.push({ method: `page_whatsapp_number_datasets (${label})`, success: false, error: e.response?.data?.error || e.message });
+    const apiVersion = 'v21.0';
+    let anySuccess = false;
+
+    // Helper para intentar un método con todos los tokens
+    async function tryMethod(methodName, fn) {
+        if (anySuccess) return;
+        for (const [label, tk] of allTokens) {
+            if (anySuccess) return;
+            try {
+                const r = await fn(tk, label);
+                results.push({ method: `${methodName} (${label})`, success: true, data: r.data });
+                anySuccess = true;
+            } catch (e) {
+                results.push({ method: `${methodName} (${label})`, success: false, error: e.response?.data?.error || e.message });
+            }
         }
     }
 
-    // Método 2: POST /{dataset-id}/connected_pages
-    for (const [label, tk] of allTokens) {
-        try {
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/connected_pages`, {
-                page_id, access_token: tk
-            });
-            results.push({ method: `connected_pages (${label})`, success: true, data: r.data });
-        } catch (e) {
-            results.push({ method: `connected_pages (${label})`, success: false, error: e.response?.data?.error || e.message });
-        }
-    }
+    // 1. POST /{dataset_id}/pages — asociar página al dataset
+    await tryMethod('dataset/pages', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/pages`, { page_id, access_token: tk })
+    );
 
-    // Método 3: A través del Business Manager - POST /{business-id}/adspixels/{pixel-id}/pages
+    // 2. POST /{dataset_id}/pages con params en URL
+    await tryMethod('dataset/pages (params)', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/pages?page_id=${page_id}&access_token=${tk}`)
+    );
+
+    // 3. POST /{page_id}/datasets — desde la página
+    await tryMethod('page/datasets', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${page_id}/datasets`, { dataset_id, access_token: tk })
+    );
+
+    // 4. POST /{dataset_id}/adaccounts — compartir con la ad account asociada a la página
+    await tryMethod('dataset/adaccounts', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/adaccounts`, { page_id, access_token: tk })
+    );
+
+    // 5. POST /{page_id}/page_whatsapp_number_datasets
+    await tryMethod('page/whatsapp_number_datasets', (tk) => {
+        const body = { dataset_id, access_token: tk };
+        if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
+        return axios.post(`https://graph.facebook.com/${apiVersion}/${page_id}/page_whatsapp_number_datasets`, body);
+    });
+
+    // 6. POST /{dataset_id}/connected_pages
+    await tryMethod('dataset/connected_pages', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/connected_pages`, { page_id, access_token: tk })
+    );
+
+    // 7. POST /{dataset_id}/shared_pages
+    await tryMethod('dataset/shared_pages', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/shared_pages`, { page_id, access_token: tk })
+    );
+
+    // 8. A través del Business Manager - POST /{business-id}/adspixels con sharing
     if (businessId) {
-        for (const [label, tk] of allTokens) {
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v19.0/${businessId}/adspixels`, {
-                    adspixel_id: dataset_id, page_id, access_token: tk
-                });
-                results.push({ method: `business/adspixels (${label})`, success: true, data: r.data });
-            } catch (e) {
-                results.push({ method: `business/adspixels (${label})`, success: false, error: e.response?.data?.error || e.message });
-            }
-        }
+        await tryMethod('business/adspixels/shared_accounts', (tk) =>
+            axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/shared_accounts`, {
+                business: businessId, page_id, access_token: tk
+            })
+        );
+
+        await tryMethod('business/adspixels/users', (tk) =>
+            axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/users`, {
+                business: businessId, page_id, access_token: tk
+            })
+        );
     }
 
-    // Método 4: POST /{dataset-id}/shared_pages
-    for (const [label, tk] of allTokens) {
-        try {
-            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/shared_pages`, {
-                page_id, access_token: tk
-            });
-            results.push({ method: `shared_pages (${label})`, success: true, data: r.data });
-        } catch (e) {
-            results.push({ method: `shared_pages (${label})`, success: false, error: e.response?.data?.error || e.message });
-        }
-    }
-
-    // Método 5: POST /{waba-id}/dataset (singular - edge descubierto en metadata)
+    // 9. POST /{waba_id}/dataset con page_id
     if (wabaId) {
-        for (const [label, tk] of allTokens) {
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
-                    dataset_id, page_id, access_token: tk
-                });
-                results.push({ method: `waba/dataset (${label})`, success: true, data: r.data });
-            } catch (e) {
-                results.push({ method: `waba/dataset (${label})`, success: false, error: e.response?.data?.error || e.message });
-            }
-        }
+        await tryMethod('waba/dataset+page', (tk) =>
+            axios.post(`https://graph.facebook.com/${apiVersion}/${wabaId}/dataset`, {
+                dataset_id, page_id, access_token: tk
+            })
+        );
     }
 
-    // Método 6: POST /{waba-id}/dataset solo con dataset_id (sin page_id)
-    if (wabaId) {
-        for (const [label, tk] of allTokens) {
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v19.0/${wabaId}/dataset`, {
-                    dataset_id, access_token: tk
-                });
-                results.push({ method: `waba/dataset no-page (${label})`, success: true, data: r.data });
-            } catch (e) {
-                results.push({ method: `waba/dataset no-page (${label})`, success: false, error: e.response?.data?.error || e.message });
-            }
-        }
+    // 10. POST /{dataset_id}/event_source_groups
+    await tryMethod('dataset/event_source_groups', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/event_source_groups`, {
+            page_id, access_token: tk
+        })
+    );
+
+    // 11. Conectar via pixel sharing: POST /{pixel_id}/agencies
+    if (businessId) {
+        await tryMethod('pixel/agencies', (tk) =>
+            axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/agencies`, {
+                business: businessId, access_token: tk
+            })
+        );
     }
 
-    const anySuccess = results.some(r => r.success);
     res.json({ success: anySuccess, results });
 });
 
