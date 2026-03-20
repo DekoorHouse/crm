@@ -3621,17 +3621,27 @@ router.post('/meta/config/connect-page', async (req, res) => {
         }
     }
 
-    // 1. POST /{dataset_id}/pages — asociar página al dataset
+    // 1. POST /{page_id}/dataset (singular) — edge descubierto en metadata de la página
+    await tryMethod('page/dataset', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${page_id}/dataset`, { dataset_id, access_token: tk })
+    );
+
+    // 2. POST /{page_id}/dataset con params en URL
+    await tryMethod('page/dataset (params)', (tk) =>
+        axios.post(`https://graph.facebook.com/${apiVersion}/${page_id}/dataset?dataset_id=${dataset_id}&access_token=${tk}`)
+    );
+
+    // 3. POST /{dataset_id}/pages — asociar página al dataset
     await tryMethod('dataset/pages', (tk) =>
         axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/pages`, { page_id, access_token: tk })
     );
 
-    // 2. POST /{dataset_id}/pages con params en URL
+    // 4. POST /{dataset_id}/pages con params en URL
     await tryMethod('dataset/pages (params)', (tk) =>
         axios.post(`https://graph.facebook.com/${apiVersion}/${dataset_id}/pages?page_id=${page_id}&access_token=${tk}`)
     );
 
-    // 3. POST /{page_id}/datasets — desde la página
+    // 5. POST /{page_id}/datasets (plural) — desde la página
     await tryMethod('page/datasets', (tk) =>
         axios.post(`https://graph.facebook.com/${apiVersion}/${page_id}/datasets`, { dataset_id, access_token: tk })
     );
