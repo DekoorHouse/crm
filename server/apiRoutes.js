@@ -3821,65 +3821,122 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
 
     const results = [];
     let deleted = false;
+    const apiVersions = ['v21.0', 'v19.0', 'v18.0'];
 
-    // Edges a intentar desde el lado del DATASET (quitar WABA del dataset)
-    const datasetEdges = [
-        'whatsapp_business_accounts',
-        'connected_whatsapp_business_accounts',
-        'dataset_whatsapp_business_accounts'
-    ];
-
-    // Lado dataset: DELETE /{dataset_id}/{edge} con waba_id
-    for (const edge of datasetEdges) {
-        if (deleted) break;
-        for (const [label, tk] of tokensToTry) {
+    // Helper para intentar una operación con todos los tokens y versiones de API
+    async function tryOp(stepName, fn) {
+        if (deleted) return;
+        for (const version of apiVersions) {
             if (deleted) break;
-            try {
-                const r = await axios.delete(`https://graph.facebook.com/v21.0/${dataset_id}/${edge}`, {
-                    params: { whatsapp_business_account_id: wabaId, access_token: tk }
-                });
-                results.push({ step: `DELETE /${dataset_id}/${edge} params (${label})`, success: true, data: r.data });
-                deleted = true;
-            } catch (e) {
-                results.push({ step: `DELETE /${dataset_id}/${edge} params (${label})`, success: false, error: e.response?.data?.error || e.message });
-            }
-        }
-    }
-
-    // Lado WABA: DELETE /{waba_id}/dataset con dataset_id (params y body)
-    if (!deleted) {
-        for (const [label, tk] of tokensToTry) {
-            if (deleted) break;
-            try {
-                const r = await axios.delete(`https://graph.facebook.com/v21.0/${wabaId}/dataset`, {
-                    params: { dataset_id, access_token: tk }
-                });
-                results.push({ step: `DELETE /${wabaId}/dataset params (${label})`, success: true, data: r.data });
-                deleted = true;
-            } catch (e) {
-                results.push({ step: `DELETE /${wabaId}/dataset params (${label})`, success: false, error: e.response?.data?.error || e.message });
-            }
-        }
-    }
-
-    // POST method override como último recurso
-    if (!deleted) {
-        for (const [label, tk] of tokensToTry) {
-            if (deleted) break;
-            for (const edge of datasetEdges) {
+            for (const [label, tk] of tokensToTry) {
                 if (deleted) break;
                 try {
-                    const r = await axios.post(`https://graph.facebook.com/v21.0/${dataset_id}/${edge}`, null, {
-                        params: { whatsapp_business_account_id: wabaId, access_token: tk, method: 'delete' }
-                    });
-                    results.push({ step: `POST method=delete /${dataset_id}/${edge} (${label})`, success: true, data: r.data });
+                    const r = await fn(tk, version);
+                    results.push({ step: `${stepName} ${version} (${label})`, success: true, data: r.data });
                     deleted = true;
                 } catch (e) {
-                    results.push({ step: `POST method=delete /${dataset_id}/${edge} (${label})`, success: false, error: e.response?.data?.error || e.message });
+                    results.push({ step: `${stepName} ${version} (${label})`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
                 }
             }
         }
     }
+
+    // --- Lado WABA ---
+
+    // 1. DELETE /{waba_id}/dataset con params
+    await tryOp(`DELETE /${wabaId}/dataset params`, (tk, v) =>
+        axios.delete(`https://graph.facebook.com/${v}/${wabaId}/dataset`, {
+            params: { dataset_id, access_token: tk }
+        })
+    );
+
+    // 2. DELETE /{waba_id}/dataset con body
+    await tryOp(`DELETE /${wabaId}/dataset body`, (tk, v) =>
+        axios.delete(`https://graph.facebook.com/${v}/${wabaId}/dataset`, {
+            data: { dataset_id, access_token: tk }
+        })
+    );
+
+    // 3. DELETE /{waba_id}/datasets (plural)
+    await tryOp(`DELETE /${wabaId}/datasets`, (tk, v) =>
+        axios.delete(`https://graph.facebook.com/${v}/${wabaId}/datasets`, {
+            params: { dataset_id, access_token: tk }
+        })
+    );
+
+    // 4. POST /{waba_id}/dataset con method=delete en body
+    await tryOp(`POST method=delete /${wabaId}/dataset`, (tk, v) =>
+        axios.post(`https://graph.facebook.com/${v}/${wabaId}/dataset`, {
+            dataset_id, access_token: tk, method: 'delete'
+        })
+    );
+
+    // --- Lado Dataset ---
+
+    const datasetEdges = ['whatsapp_business_accounts', 'event_source_groups'];
+
+    for (const edge of datasetEdges) {
+        // 5. DELETE /{dataset_id}/{edge} con params
+        await tryOp(`DELETE /${dataset_id}/${edge} params`, (tk, v) =>
+            axios.delete(`https://graph.facebook.com/${v}/${dataset_id}/${edge}`, {
+                params: { whatsapp_business_account_id: wabaId, access_token: tk }
+            })
+        );
+
+        // 6. DELETE /{dataset_id}/{edge} con body
+        await tryOp(`DELETE /${dataset_id}/${edge} body`, (tk, v) =>
+            axios.delete(`https://graph.facebook.com/${v}/${dataset_id}/${edge}`, {
+                data: { whatsapp_business_account_id: wabaId, access_token: tk }
+            })
+        );
+
+        // 7. POST method=delete /{dataset_id}/{edge}
+        await tryOp(`POST method=delete /${dataset_id}/${edge}`, (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/${dataset_id}/${edge}`, {
+                whatsapp_business_account_id: wabaId, access_token: tk, method: 'delete'
+            })
+        );
+    }
+
+    // --- Vía Business Manager ---
+
+    // Descubrir business_id
+    let businessId = null;
+    for (const [label, tk] of tokensToTry) {
+        if (businessId) break;
+        try {
+            const r = await axios.get(`https://graph.facebook.com/v21.0/me/businesses`, {
+                params: { fields: 'id,name', access_token: tk }
+            });
+            if (r.data.data?.length > 0) businessId = r.data.data[0].id;
+        } catch (e) { /* ignore */ }
+    }
+
+    if (businessId) {
+        // 8. DELETE /{business_id}/adspixels con pixel_id
+        await tryOp(`DELETE /${businessId}/adspixels`, (tk, v) =>
+            axios.delete(`https://graph.facebook.com/${v}/${businessId}/adspixels`, {
+                params: { pixel_id: dataset_id, access_token: tk }
+            })
+        );
+
+        // 9. POST dissociate pixel from business
+        await tryOp(`POST /${dataset_id}/shared_accounts remove`, (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/${dataset_id}/shared_accounts`, {
+                business: businessId, access_token: tk, method: 'delete'
+            })
+        );
+    }
+
+    // --- Intentar vincular nuevo dataset vacío para forzar reemplazo ---
+    // (WABA solo puede tener 1 dataset, vincular otro lo reemplaza)
+
+    // 10. POST /{waba_id}/dataset SIN dataset_id (para desvincular sin revincular)
+    await tryOp(`POST /${wabaId}/dataset empty`, (tk, v) =>
+        axios.post(`https://graph.facebook.com/${v}/${wabaId}/dataset`, {
+            access_token: tk
+        })
+    );
 
     // Verificar estado actual
     for (const [label, tk] of tokensToTry) {
@@ -3890,7 +3947,7 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
             results.push({ step: `GET verify (${label})`, success: true, datasets_remaining: r.data });
             break;
         } catch (e) {
-            results.push({ step: `GET verify (${label})`, success: false, error: e.response?.data?.error || e.message });
+            results.push({ step: `GET verify (${label})`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
         }
     }
 
