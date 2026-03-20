@@ -230,13 +230,16 @@ async function runJob(id, msg) {
     let egvString;
     let rasterEndX = 0, rasterEndY = 0;
     let rasterJogX = 0, rasterJogY = 0; // jog antes del EGV raster
+    let vectorEndX = 0, vectorEndY = 0;
     const startX = m.jobState.startX;
     const startY = m.jobState.startY;
 
     if (mode === 'cut' && msg.segments) {
         send({ type: 'status', machine: id, text: `Generando EGV vectorial: ${msg.segments.length} segmentos...`, level: 'info' });
-        egvString = egv.generateVectorEGV(msg.segments, speed, startX, startY);
-        // Vector EGV already includes return-to-start move, no position adjustment needed
+        const vectorResult = egv.generateVectorEGV(msg.segments, speed);
+        egvString = vectorResult.egv;
+        vectorEndX = vectorResult.endX;
+        vectorEndY = vectorResult.endY;
     } else if (mode === 'engrave' && msg.raster) {
         const maxWait = 5000;
         const start = Date.now();
@@ -289,15 +292,14 @@ async function runJob(id, msg) {
             break;
         }
 
-        // Soft reset para limpiar estado residual del modo raster
-        // antes de enviar jogs de retorno (sin esto el board puede
-        // invertir la dirección L/R del primer jog post-EGV).
-        if (mode === 'engrave') {
+        // Soft reset para limpiar estado residual del board antes de jogs de retorno.
+        // Sin esto el board puede invertir la dirección del primer jog post-EGV.
+        if (mode === 'engrave' || mode === 'cut') {
             await laser.sendEGV('IS2P');
             await sleep(500);
         }
 
-        // Retorno explícito desde el fin del scan al inicio del EGV
+        // Retorno explícito (raster y vector usan el mismo patrón)
         if (mode === 'engrave' && (rasterEndX !== 0 || rasterEndY !== 0)) {
             log(`[M${id}] Retorno scan: (${rasterEndX.toFixed(1)}, ${rasterEndY.toFixed(1)})mm`);
             await laser.jog(rasterEndX, rasterEndY);
@@ -305,6 +307,9 @@ async function runJob(id, msg) {
             // Desplazamiento neto = 0, pero jog() sumó endX/endY a _pos sin contar el EGV.
             // Cancelar la actualización para que _pos refleje la posición real.
             laser.adjustPos(-rasterEndX, -rasterEndY);
+        } else if (mode === 'cut' && (vectorEndX !== 0 || vectorEndY !== 0)) {
+            log(`[M${id}] Retorno vector: (-${vectorEndX.toFixed(2)}, -${vectorEndY.toFixed(2)})mm`);
+            await laser.jog(-vectorEndX, -vectorEndY);
         }
     }
 
@@ -318,8 +323,6 @@ async function runJob(id, msg) {
             } catch (e) {
                 log(`[M${id}] Error en jog de retorno: ${e.message}`, 'error');
             }
-        } else if (mode === 'cut') {
-            // Vector: el EGV ya incluye retorno, no necesita jog adicional
         }
         send({ type: 'position', machine: id, x: laser.posX, y: laser.posY });
         send({ type: 'status', machine: id, text: 'Trabajo completado.', level: 'success' });

@@ -128,11 +128,9 @@ function encodeLineSteps(dx, dy, laserOn) {
  * Genera EGV para corte vectorial.
  * @param {Array} segments  [{points:[{x,y},...], closed:bool}, ...]  coordenadas en mm
  * @param {number} speedMmS  velocidad en mm/s
- * @param {number} offsetX  offset X en mm (posición actual del cabezal)
- * @param {number} offsetY  offset Y en mm (posición actual del cabezal)
- * @returns {string} comando EGV completo
+ * @returns {{ egv: string, endX: number, endY: number }} EGV y posición final del cabezal en mm
  */
-function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
+function generateVectorEGV(segments, speedMmS) {
     const speed = encodeSpeed(speedMmS, 0);
     const parts = ['I' + speed + 'NRBS1E'];
     let curX = 0, curY = 0;
@@ -213,13 +211,13 @@ function generateVectorEGV(segments, speedMmS, offsetX = 0, offsetY = 0) {
         console.log(`  Vector dedup: ${dupCount} aristas duplicadas eliminadas`);
     }
 
-    // Return to starting position (laser off)
-    if (curX !== 0 || curY !== 0) {
-        parts.push(encodeMoveXY(-curX, -curY, false));
-    }
-
     parts.push('FNSE');
-    return parts.join('');
+
+    const endXmm = curX / STEPS_PER_MM;
+    const endYmm = curY / STEPS_PER_MM;
+    const result = parts.join('');
+    console.log(`  EGV vector: ${result.length} chars, end=(${endXmm.toFixed(1)},${endYmm.toFixed(1)})mm`);
+    return { egv: result, endX: endXmm, endY: endYmm };
 }
 
 // ───────── Raster engraving EGV ─────────
