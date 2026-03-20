@@ -800,17 +800,22 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
         ...customData
     };
     Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
-    const payload = {
-        data: [{
-            event_name: eventName,
-            event_time: eventTime,
-            event_id: eventId,
-            action_source: 'business_messaging',
-            messaging_channel: 'whatsapp',
-            user_data: userData,
-            custom_data: finalCustomData,
-        }],
+
+    // business_messaging requiere ctwa_clid y page_id; para orgánicos usar website
+    const eventData = {
+        event_name: eventName,
+        event_time: eventTime,
+        event_id: eventId,
+        user_data: userData,
+        custom_data: finalCustomData,
     };
+    if (isAdReferral) {
+        eventData.action_source = 'business_messaging';
+        eventData.messaging_channel = 'whatsapp';
+    } else {
+        eventData.action_source = 'website';
+    }
+    const payload = { data: [eventData] };
     try {
         console.log(`[META CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id} al pixel ${META_PIXEL_ID}. Payload:`, JSON.stringify(payload, null, 2));
         const response = await axios.post(url, payload, { headers: { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' } });

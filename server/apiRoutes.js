@@ -3436,8 +3436,7 @@ router.get('/meta/test-event', async (req, res) => {
             event_name: 'Purchase',
             event_time: Math.floor(Date.now() / 1000),
             event_id: `test_diag_${Date.now()}`,
-            action_source: 'business_messaging',
-            messaging_channel: 'whatsapp',
+            action_source: 'website',
             user_data: userData,
             custom_data: {
                 value: 0.01,
