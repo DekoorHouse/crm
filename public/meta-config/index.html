@@ -188,14 +188,18 @@
             if (!datasetId) return showStatus('connectResult', 'Falta el dataset ID.', 'error');
             if (!pageId) return showStatus('connectResult', 'Selecciona una página.', 'error');
 
-            const pageName = pagesData.find(p => p.id === pageId)?.name || pageId;
-            showStatus('connectResult', `<span class="spinner"></span> Intentando conectar "${pageName}" al dataset ${datasetId}...`, 'info');
+            // Obtener el page access token de la lista de páginas cargadas
+            const pageData = pagesData.find(p => p.id === pageId);
+            const pageName = pageData?.name || pageId;
+            const pageToken = pageData?.access_token || null;
+
+            showStatus('connectResult', `<span class="spinner"></span> Intentando conectar "${pageName}" al dataset ${datasetId} (probando múltiples métodos)...`, 'info');
 
             try {
                 const res = await fetch(`${API_BASE}/meta/config/connect-page`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, dataset_id: datasetId, page_id: pageId })
+                    body: JSON.stringify({ token, page_token: pageToken, dataset_id: datasetId, page_id: pageId })
                 });
                 const data = await res.json();
 

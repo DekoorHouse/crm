@@ -3513,41 +3513,63 @@ router.get('/meta/config/pages', async (req, res) => {
 
 // Conectar una página a un dataset
 router.post('/meta/config/connect-page', async (req, res) => {
-    const { token, dataset_id, page_id } = req.body;
-    if (!token || !dataset_id || !page_id) {
-        return res.status(400).json({ error: 'Se requieren token, dataset_id y page_id' });
+    const { token, page_token, dataset_id, page_id } = req.body;
+    if (!dataset_id || !page_id) {
+        return res.status(400).json({ error: 'Se requieren dataset_id y page_id' });
     }
 
     const results = [];
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const phoneNumberId = process.env.PHONE_NUMBER_ID;
 
-    // Intento 1: POST /{pixel_id}/page_activities
-    try {
-        const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/page_activities`, {
-            page_id, access_token: token
-        });
-        results.push({ method: 'page_activities', success: true, data: r.data });
-    } catch (e) {
-        results.push({ method: 'page_activities', success: false, error: e.response?.data?.error || e.message });
+    // Intento 1: POST /{page-id}/page_whatsapp_number_dataset (endpoint específico para WhatsApp CAPI)
+    // Usa el page token que viene de /me/accounts
+    if (page_token) {
+        try {
+            const body = { dataset_id, access_token: page_token };
+            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
+            results.push({ method: 'page_whatsapp_number_dataset (page_token)', success: true, data: r.data });
+        } catch (e) {
+            results.push({ method: 'page_whatsapp_number_dataset (page_token)', success: false, error: e.response?.data?.error || e.message });
+        }
     }
 
-    // Intento 2: POST /{pixel_id}/shared_accounts con page
-    try {
-        const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/adaccounts`, {
-            page_id, access_token: token
-        });
-        results.push({ method: 'adaccounts', success: true, data: r.data });
-    } catch (e) {
-        results.push({ method: 'adaccounts', success: false, error: e.response?.data?.error || e.message });
+    // Intento 2: Lo mismo pero con el token del usuario
+    if (token) {
+        try {
+            const body = { dataset_id, access_token: token };
+            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
+            results.push({ method: 'page_whatsapp_number_dataset (user_token)', success: true, data: r.data });
+        } catch (e) {
+            results.push({ method: 'page_whatsapp_number_dataset (user_token)', success: false, error: e.response?.data?.error || e.message });
+        }
     }
 
-    // Intento 3: POST /{page_id}/ads_pixel con dataset
-    try {
-        const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/ads_pixels`, {
-            ads_pixel_id: dataset_id, access_token: token
-        });
-        results.push({ method: 'page/ads_pixels', success: true, data: r.data });
-    } catch (e) {
-        results.push({ method: 'page/ads_pixels', success: false, error: e.response?.data?.error || e.message });
+    // Intento 3: Con el system user token del servidor
+    if (systemToken) {
+        try {
+            const body = { dataset_id, access_token: systemToken };
+            if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${page_id}/page_whatsapp_number_dataset`, body);
+            results.push({ method: 'page_whatsapp_number_dataset (system_token)', success: true, data: r.data });
+        } catch (e) {
+            results.push({ method: 'page_whatsapp_number_dataset (system_token)', success: false, error: e.response?.data?.error || e.message });
+        }
+    }
+
+    // Intento 4: POST /{dataset-id}/pages con page_id (alternativo)
+    for (const [label, tk] of [['page_token', page_token], ['user_token', token], ['system_token', systemToken]]) {
+        if (!tk) continue;
+        try {
+            const r = await axios.post(`https://graph.facebook.com/v19.0/${dataset_id}/pages`, {
+                page_id, access_token: tk
+            });
+            results.push({ method: `dataset/pages (${label})`, success: true, data: r.data });
+        } catch (e) {
+            results.push({ method: `dataset/pages (${label})`, success: false, error: e.response?.data?.error || e.message });
+        }
     }
 
     const anySuccess = results.some(r => r.success);
