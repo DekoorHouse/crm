@@ -3697,6 +3697,8 @@ router.post('/meta/config/switch-waba-dataset', async (req, res) => {
     const results = [];
     const tokensToTry = [
         ['user_token', token],
+        ['whatsapp_token', process.env.WHATSAPP_TOKEN],
+        ['meta_graph_token', process.env.META_GRAPH_TOKEN],
         ['system_token', systemToken]
     ].filter(([, t]) => t);
 
