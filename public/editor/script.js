@@ -976,6 +976,12 @@ function drawSnapIndicators(mousePt) {
 
     // Show snap indicators for ALL objects (not just selected ones)
     for (const obj of state.objects) {
+        // Quick bbox proximity check — skip expensive operations if mouse is far from object
+        const b = getObjBounds(obj);
+        const margin = edgeThreshold;
+        if (mousePt.x < b.x - margin || mousePt.x > b.x + b.w + margin ||
+            mousePt.y < b.y - margin || mousePt.y > b.y + b.h + margin) continue;
+
         // 1) Fixed snap points (center, corners, quadrants, edges, endpoints)
         const snaps = getSnapPoints(obj);
         let fixedShown = false;
@@ -1689,9 +1695,11 @@ function handleMouseDown(e) {
     }
 }
 
+let _moveRafId = null;
 function handleMouseMove(e) {
     const pt = screenToSVG(e.clientX, e.clientY);
     document.getElementById('status-coords').textContent = `X: ${Math.round(pt.x)}  Y: ${Math.round(pt.y)}`;
+    // Critical interactive operations: run immediately (no throttle)
     if (state.isPanning) {
         const dx = e.clientX - state.panStart.x, dy = e.clientY - state.panStart.y;
         const scale = state.viewBox.w / svg.getBoundingClientRect().width;
@@ -1702,7 +1710,6 @@ function handleMouseMove(e) {
     if (state.nodeEditDragging) {
         const obj = findObject(state.nodeEditId);
         if (obj) {
-            // Apply snap for the node position
             const snapAdj = calcSnapAdjustmentForPoint(pt.x, pt.y, state.nodeEditId);
             const snappedX = pt.x + snapAdj.dx;
             const snappedY = pt.y + snapAdj.dy;
@@ -1724,23 +1731,26 @@ function handleMouseMove(e) {
     if (state.isResizing) { handleResizeMove(pt, e); return; }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
-    if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
-    // Snap indicators
-    drawSnapIndicators(pt);
-    if (state.tool === 'select' && !state.spaceHeld) {
-        if (state.nodeEditId) {
-            // In node edit mode, show crosshair near nodes, otherwise default
-            const hit = nodeAtPoint(pt);
-            svg.style.cursor = hit ? 'crosshair' : 'default';
-        } else {
-            const handle = getHandleAtPoint(pt);
-            if (handle) {
-                svg.style.cursor = HANDLE_CURSORS[handle.handle];
+    // Non-critical visual feedback: throttle to one per animation frame
+    if (_moveRafId) return;
+    _moveRafId = requestAnimationFrame(() => {
+        _moveRafId = null;
+        if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
+        drawSnapIndicators(pt);
+        if (state.tool === 'select' && !state.spaceHeld) {
+            if (state.nodeEditId) {
+                const hit = nodeAtPoint(pt);
+                svg.style.cursor = hit ? 'crosshair' : 'default';
             } else {
-                svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+                const handle = getHandleAtPoint(pt);
+                if (handle) {
+                    svg.style.cursor = HANDLE_CURSORS[handle.handle];
+                } else {
+                    svg.style.cursor = objectAtPoint(pt) ? 'move' : 'default';
+                }
             }
         }
-    }
+    });
 }
 
 function handleMouseUp() {
@@ -3615,6 +3625,7 @@ function offsetObject(obj, dx, dy) {
 // =============================================
 // ZOOM
 // =============================================
+let _wheelRafId = null;
 function handleWheel(e) {
     e.preventDefault();
     const factor = e.deltaY > 0 ? 1.1 : 1/1.1;
@@ -3625,8 +3636,14 @@ function handleWheel(e) {
     state.viewBox.y = pt.y - (pt.y - state.viewBox.y) * factor;
     state.viewBox.w = newW; state.viewBox.h = newH;
     updateViewBox();
-    snapLayer.innerHTML = '';
-    if (state.selectedIds.length) { drawSelection(); updatePowerClipMenu(); }
+    // Defer expensive redraws to animation frame (coalesce rapid wheel events)
+    if (!_wheelRafId) {
+        _wheelRafId = requestAnimationFrame(() => {
+            _wheelRafId = null;
+            snapLayer.innerHTML = '';
+            if (state.selectedIds.length) { drawSelection(); updatePowerClipMenu(); }
+        });
+    }
 }
 
 // =============================================
