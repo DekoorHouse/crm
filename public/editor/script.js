@@ -310,7 +310,7 @@ function createObject(type, props) {
         rotation: 0,
         ...props,
     };
-    if (type === 'group' || type === 'image' || type === 'powerclip' || type === 'curvepath') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
+    if (type === 'group' || type === 'image' || type === 'powerclip') { obj.fill = 'none'; obj.stroke = 'none'; obj.strokeWidth = 0; }
     const elem = buildSVGElement(obj);
     obj.element = elem;
     elem.dataset.objectId = obj.id;
