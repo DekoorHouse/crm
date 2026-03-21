@@ -3725,8 +3725,8 @@ function importSVG() {
                 // Skip CorelDRAW cosmetic background fills: white-filled, no stroke, outside any clip group
                 // These are the background paths CorelDRAW places before each clip group for rendering purposes
                 if (isCorelDRAW && !insideClip && sty.fill === 'white' && sty.stroke === 'none') return;
-                // Skip completely invisible elements (no fill, no stroke)
-                if (sty.fill === 'none' && sty.stroke === 'none' && tag !== 'g') return;
+                // Skip completely invisible elements (no fill, no stroke) — but never skip images
+                if (sty.fill === 'none' && sty.stroke === 'none' && tag !== 'g' && tag !== 'image') return;
 
                 if (tag === 'rect') {
                     const x = parseFloat(el.getAttribute('x')) || 0;
