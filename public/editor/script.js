@@ -360,6 +360,7 @@ function buildSVGElement(obj) {
             elem = document.createElementNS(ns, 'path');
             elem.setAttribute('d', obj.d);
             elem.setAttribute('fill', obj.fill);
+            if (obj.fillRule) elem.setAttribute('fill-rule', obj.fillRule);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
             // Apply transform for position/scale
@@ -471,6 +472,17 @@ function buildClipShape(container, ns) {
             shape = document.createElementNS(ns, 'ellipse');
             shape.setAttribute('cx', container.cx); shape.setAttribute('cy', container.cy);
             shape.setAttribute('rx', container.rx); shape.setAttribute('ry', container.ry);
+            break;
+        case 'curvepath':
+            shape = document.createElementNS(ns, 'path');
+            shape.setAttribute('d', container.d);
+            if (container._origBounds) {
+                const orig = container._origBounds;
+                const sx = container.width / orig.w, sy = container.height / orig.h;
+                const tx = container.x - orig.x * sx, ty = container.y - orig.y * sy;
+                if (Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6 || Math.abs(tx) > 1e-6 || Math.abs(ty) > 1e-6)
+                    shape.setAttribute('transform', `translate(${tx},${ty}) scale(${sx},${sy})`);
+            }
             break;
         default:
             shape = document.createElementNS(ns, 'rect');
@@ -3524,9 +3536,14 @@ function importSVG() {
                 offsetY = (state.pageHeight - contentH * fitScale) / 2 - vbY * fitScale;
             }
 
+            // Detect CorelDRAW exports: check xmlns:xodm namespace attr or fil0/str0 CSS class pattern
+            const isCorelDRAW =
+                svgRoot.getAttribute('xmlns:xodm') !== null ||
+                (Object.keys(cssMap).some(k => /^fil\d+$/.test(k)) && Object.keys(cssMap).some(k => /^str\d+$/.test(k)));
+
             // Helper: resolve fill/stroke/stroke-width from attributes, CSS classes, and style attribute
             function resolveStyle(el) {
-                let fill = null, stroke = null, sw = null;
+                let fill = null, stroke = null, sw = null, fillRule = null;
                 // From CSS classes
                 const cls = el.getAttribute('class');
                 if (cls) {
@@ -3536,6 +3553,7 @@ function importSVG() {
                             if (p.fill !== undefined) fill = p.fill;
                             if (p.stroke !== undefined) stroke = p.stroke;
                             if (p['stroke-width'] !== undefined) sw = parseFloat(p['stroke-width']);
+                            if (p['fill-rule'] !== undefined) fillRule = p['fill-rule'];
                         }
                     }
                 }
@@ -3543,17 +3561,20 @@ function importSVG() {
                 if (el.getAttribute('fill')) fill = el.getAttribute('fill');
                 if (el.getAttribute('stroke')) stroke = el.getAttribute('stroke');
                 if (el.getAttribute('stroke-width')) sw = parseFloat(el.getAttribute('stroke-width'));
+                if (el.getAttribute('fill-rule')) fillRule = el.getAttribute('fill-rule');
                 // From style attribute (highest priority)
                 const style = el.getAttribute('style');
                 if (style) {
                     const fm = style.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/i);
                     const sm = style.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/i);
                     const swm = style.match(/(?:^|;)\s*stroke-width\s*:\s*([^;]+)/i);
+                    const frm = style.match(/(?:^|;)\s*fill-rule\s*:\s*([^;]+)/i);
                     if (fm) fill = fm[1].trim();
                     if (sm) stroke = sm[1].trim();
                     if (swm) sw = parseFloat(swm[1]);
+                    if (frm) fillRule = frm[1].trim();
                 }
-                return { fill: fill || 'none', stroke: stroke || 'none', sw: sw || 0 };
+                return { fill: fill || 'none', stroke: stroke || 'none', sw: sw || 0, fillRule };
             }
 
             // Helper: parse transform including matrix()
@@ -3594,42 +3615,102 @@ function importSVG() {
             }
 
             // Import a path via browser sampling + manual CTM application
+            // Apply a pure scale+translate transform directly to SVG path data,
+            // preserving all sub-paths (M, L, C, Q, A, Z commands) without sampling.
+            function applyScaleTranslateToPath(d, sx, sy, tx, ty) {
+                const re = /([MLCQAZTSHVmlcqatzshv])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+\-]?\d+)?)/g;
+                const tokens = [];
+                let m;
+                while ((m = re.exec(d)) !== null) tokens.push(m[0]);
+                const argCounts = { M:2,L:2,H:1,V:1,C:6,Q:4,S:4,T:2,A:7,Z:0, m:2,l:2,h:1,v:1,c:6,q:4,s:4,t:2,a:7,z:0 };
+                let result = '';
+                let i = 0;
+                while (i < tokens.length) {
+                    const cmd = tokens[i++];
+                    if (!/^[MLCQAZTSHVmlcqatzshv]$/.test(cmd)) continue;
+                    const cnt = argCounts[cmd] ?? 0;
+                    result += cmd;
+                    if (cnt === 0) { result += ' '; continue; }
+                    while (i < tokens.length && /^-/.test(tokens[i][0]) || (i < tokens.length && /\d|\./.test(tokens[i][0]))) {
+                        const nums = [];
+                        for (let j = 0; j < cnt && i < tokens.length; j++) nums.push(parseFloat(tokens[i++]));
+                        if (nums.length < cnt) break;
+                        const f = (n) => +n.toFixed(4);
+                        if (cmd === 'M' || cmd === 'L' || cmd === 'T')
+                            result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)}`;
+                        else if (cmd === 'm' || cmd === 'l' || cmd === 't')
+                            result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)}`;
+                        else if (cmd === 'H') result += ` ${f(nums[0]*sx+tx)}`;
+                        else if (cmd === 'h') result += ` ${f(nums[0]*sx)}`;
+                        else if (cmd === 'V') result += ` ${f(nums[0]*sy+ty)}`;
+                        else if (cmd === 'v') result += ` ${f(nums[0]*sy)}`;
+                        else if (cmd === 'C')
+                            result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)} ${f(nums[4]*sx+tx)},${f(nums[5]*sy+ty)}`;
+                        else if (cmd === 'c')
+                            result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)} ${f(nums[4]*sx)},${f(nums[5]*sy)}`;
+                        else if (cmd === 'Q')
+                            result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)}`;
+                        else if (cmd === 'q')
+                            result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)}`;
+                        else if (cmd === 'S')
+                            result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)}`;
+                        else if (cmd === 's')
+                            result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)}`;
+                        else if (cmd === 'A')
+                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${nums[4]} ${f(nums[5]*sx+tx)},${f(nums[6]*sy+ty)}`;
+                        else if (cmd === 'a')
+                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${nums[4]} ${f(nums[5]*sx)},${f(nums[6]*sy)}`;
+                    }
+                }
+                return result.trim();
+            }
+
             function importPath(d, sty, ctm) {
                 const ns = 'http://www.w3.org/2000/svg';
-                // Create temp SVG to sample the path geometry (NO transform on the path)
-                const tempSvg = document.createElementNS(ns, 'svg');
-                tempSvg.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
-                tempSvg.setAttribute('viewBox', '0 0 100000 100000');
-                document.body.appendChild(tempSvg);
-                const path = document.createElementNS(ns, 'path');
-                path.setAttribute('d', d);
-                tempSvg.appendChild(path);
-                let len;
-                try { len = path.getTotalLength(); } catch(e) { document.body.removeChild(tempSvg); return; }
-                if (len < 0.01) { document.body.removeChild(tempSvg); return; }
-                // Sample the path in LOCAL coords, then apply CTM to each point
-                const numSamples = Math.min(500, Math.max(80, Math.ceil(len / 2)));
-                let newD = '';
-                for (let i = 0; i <= numSamples; i++) {
-                    const local = path.getPointAtLength(i * len / numSamples);
-                    const pt = applyMatrix(ctm, local.x, local.y);
-                    newD += (i === 0 ? 'M' : 'L') + ` ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+                let newD = null;
+                let scale = Math.max(Math.abs(ctm[0]), Math.abs(ctm[1]), Math.abs(ctm[2]), Math.abs(ctm[3]));
+
+                // For pure scale+translate (no rotation/shear), transform directly — preserves sub-paths
+                if (Math.abs(ctm[1]) < 1e-9 && Math.abs(ctm[2]) < 1e-9) {
+                    try { newD = applyScaleTranslateToPath(d, ctm[0], ctm[3], ctm[4], ctm[5]); } catch(e) { newD = null; }
                 }
-                if (/[Zz]\s*$/.test(d.trim())) newD += 'Z';
-                document.body.removeChild(tempSvg);
-                // Get bounds of the sampled path
+
+                if (!newD) {
+                    // Fall back to sampling for transforms with rotation/shear
+                    const tempSvg = document.createElementNS(ns, 'svg');
+                    tempSvg.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+                    tempSvg.setAttribute('viewBox', '0 0 100000 100000');
+                    document.body.appendChild(tempSvg);
+                    const path = document.createElementNS(ns, 'path');
+                    path.setAttribute('d', d);
+                    tempSvg.appendChild(path);
+                    let len;
+                    try { len = path.getTotalLength(); } catch(e) { document.body.removeChild(tempSvg); return; }
+                    if (len < 0.01) { document.body.removeChild(tempSvg); return; }
+                    const numSamples = Math.min(500, Math.max(80, Math.ceil(len / 2)));
+                    newD = '';
+                    for (let i = 0; i <= numSamples; i++) {
+                        const local = path.getPointAtLength(i * len / numSamples);
+                        const pt = applyMatrix(ctm, local.x, local.y);
+                        newD += (i === 0 ? 'M' : 'L') + ` ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+                    }
+                    if (/[Zz]\s*$/.test(d.trim())) newD += 'Z';
+                    document.body.removeChild(tempSvg);
+                }
+
+                // Get bounds of the transformed path
                 const tempPath = document.createElementNS(ns, 'path');
                 tempPath.setAttribute('d', newD);
                 objectsLayer.appendChild(tempPath);
                 const bb = tempPath.getBBox();
                 objectsLayer.removeChild(tempPath);
                 if (bb.width < 0.01 && bb.height < 0.01) return;
-                const scale = Math.max(Math.abs(ctm[0]), Math.abs(ctm[1]), Math.abs(ctm[2]), Math.abs(ctm[3]));
                 createObject('curvepath', {
                     d: newD,
                     x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
                     _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
                     fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * scale,
+                    fillRule: sty.fillRule,
                 });
             }
 
@@ -3640,6 +3721,12 @@ function importSVG() {
                 const localMat = parseTransform(el);
                 const m = mulMatrix(ctm, localMat);
                 const sty = resolveStyle(el);
+
+                // Skip CorelDRAW cosmetic background fills: white-filled, no stroke, outside any clip group
+                // These are the background paths CorelDRAW places before each clip group for rendering purposes
+                if (isCorelDRAW && !insideClip && sty.fill === 'white' && sty.stroke === 'none') return;
+                // Skip completely invisible elements (no fill, no stroke)
+                if (sty.fill === 'none' && sty.stroke === 'none' && tag !== 'g') return;
 
                 if (tag === 'rect') {
                     const x = parseFloat(el.getAttribute('x')) || 0;
@@ -3728,8 +3815,8 @@ function importSVG() {
                     // Check for clip-path (CorelDRAW uses style="clip-path:url(#id)")
                     const clipRef = (el.getAttribute('clip-path') || '').match(/url\(\s*#([^)]+)\)/) ||
                                     ((el.getAttribute('style') || '').match(/clip-path\s*:\s*url\(\s*#([^)]+)\)/));
-                    if (clipRef && !insideClip) {
-                        // Outermost clip group → create PowerClip
+                    if (clipRef) {
+                        // Clip group → create PowerClip (works for nested clips too)
                         const clipEl = svgRoot.querySelector('#' + clipRef[1]);
                         if (clipEl) {
                             const clipChild = clipEl.querySelector('path,rect,ellipse,circle,polygon');
