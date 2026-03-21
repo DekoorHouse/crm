@@ -131,6 +131,23 @@
             </div>
 
             <div class="card">
+                <h2><span class="section-icon">🆕</span>Crear Dataset Propio + Conectar Pagina + WABA</h2>
+                <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Crea un dataset nuevo en tu Ad Account, le conecta la pagina, y lo vincula a la WABA. Usa esto cuando el dataset existente no permite conectar la pagina por API.</p>
+                <label for="newDatasetName">Nombre del nuevo dataset</label>
+                <input type="text" id="newDatasetName" placeholder="Ej: Mi Dataset CAPI">
+                <label for="createPageSelect">Pagina a conectar</label>
+                <select id="createPageSelect" disabled>
+                    <option value="">-- Primero carga las paginas con el boton de arriba --</option>
+                </select>
+                <label for="oldDatasetId">Dataset viejo a desvincular de WABA (opcional)</label>
+                <input type="text" id="oldDatasetId" placeholder="Ej: 1452903482578288 (dejar vacio para no desvincular)">
+                <div class="btn-row">
+                    <button class="btn-primary" id="createConnectBtn" onclick="createAndConnect()" disabled>Crear dataset, conectar pagina y vincular WABA</button>
+                </div>
+                <div id="createConnectResult"></div>
+            </div>
+
+            <div class="card">
                 <h2><span class="section-icon">🔍</span>Descubrir Edges (Debug)</h2>
                 <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Consulta que conexiones estan disponibles en la API para el dataset, pagina y WABA.</p>
                 <button class="btn-secondary" onclick="discover()">Descubrir edges disponibles</button>
@@ -355,6 +372,20 @@
                 select.disabled = false;
                 document.getElementById('connectBtn').disabled = false;
 
+                // También llenar el select de "Crear Dataset"
+                const createSelect = document.getElementById('createPageSelect');
+                if (createSelect) {
+                    createSelect.innerHTML = '<option value="">-- Selecciona una pagina --</option>';
+                    pagesData.forEach(p => {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = `${p.name} (${p.id})`;
+                        createSelect.appendChild(opt);
+                    });
+                    createSelect.disabled = false;
+                    document.getElementById('createConnectBtn').disabled = false;
+                }
+
                 showStatus('tokenStatus', `${pagesData.length} pagina(s) encontrada(s).`, 'success');
             } catch (err) {
                 showStatus('tokenStatus', `Error de red: ${err.message}`, 'error');
@@ -457,6 +488,68 @@
                 document.getElementById('connectResult').innerHTML = html;
             } catch (err) {
                 showStatus('connectResult', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        async function createAndConnect() {
+            const token = getToken();
+            const datasetName = document.getElementById('newDatasetName').value.trim();
+            const pageId = document.getElementById('createPageSelect').value;
+            const oldDatasetId = document.getElementById('oldDatasetId').value.trim();
+
+            if (!token) return showStatus('createConnectResult', 'Falta el access token.', 'error');
+            if (!datasetName) return showStatus('createConnectResult', 'Ingresa un nombre para el dataset.', 'error');
+            if (!pageId) return showStatus('createConnectResult', 'Selecciona una pagina.', 'error');
+
+            const pageData = pagesData.find(p => p.id === pageId);
+            const pageName = pageData?.name || pageId;
+            const pageToken = pageData?.access_token || null;
+
+            showStatus('createConnectResult', `<span class="spinner"></span> Creando dataset "${datasetName}", conectando "${pageName}" y vinculando a WABA...`, 'info');
+
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/create-and-connect`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        token,
+                        page_token: pageToken,
+                        page_id: pageId,
+                        dataset_name: datasetName,
+                        old_dataset_id: oldDatasetId || undefined
+                    })
+                });
+                const data = await res.json();
+
+                let html = '';
+                if (data.success && data.page_connected && data.waba_linked) {
+                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}), pagina conectada y WABA vinculada exitosamente.</div>`;
+                } else if (data.success && data.page_connected) {
+                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}) y pagina conectada. WABA no se pudo vincular.</div>`;
+                } else if (data.success) {
+                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}) pero no se pudo conectar la pagina.</div>`;
+                } else {
+                    html += `<div class="status error">${data.error || 'Error al crear el dataset.'}</div>`;
+                }
+
+                if (data.new_dataset_id) {
+                    html += `<div class="status info">Nuevo Dataset ID: <strong>${data.new_dataset_id}</strong> — guardalo para configurar en tus variables de entorno (META_PIXEL_ID).</div>`;
+                }
+
+                if (data.steps) {
+                    html += '<br><strong style="font-size:13px;">Detalle de pasos:</strong>';
+                    data.steps.forEach(s => {
+                        const icon = s.success ? '✅' : '❌';
+                        const detail = s.success
+                            ? JSON.stringify(s.data || {})
+                            : (s.error || 'Error desconocido');
+                        html += `<div class="results-item ${s.success ? 'ok' : 'fail'}">${icon} <strong>${s.step}</strong>: ${detail}</div>`;
+                    });
+                }
+
+                document.getElementById('createConnectResult').innerHTML = html;
+            } catch (err) {
+                showStatus('createConnectResult', `Error de red: ${err.message}`, 'error');
             }
         }
 
