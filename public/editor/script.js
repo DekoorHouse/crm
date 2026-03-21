@@ -2284,7 +2284,9 @@ function updateBSplinePreview(mousePt) {
     drawSnapGuideLines(adj);
     if (adj.dx !== 0 || adj.dy !== 0) drawSnapIndicators(snappedPt);
     const ns = 'http://www.w3.org/2000/svg';
-    const all = [...state.bsplinePoints, {x:snappedPt.x,y:snappedPt.y}];
+    const last = state.bsplinePoints[state.bsplinePoints.length - 1];
+    const isDuplicate = last && Math.abs(last.x - snappedPt.x) < 1e-6 && Math.abs(last.y - snappedPt.y) < 1e-6;
+    const all = isDuplicate ? [...state.bsplinePoints] : [...state.bsplinePoints, {x:snappedPt.x,y:snappedPt.y}];
     const sw = state.viewBox.w * 0.001, cs = state.viewBox.w * 0.005;
     if (all.length > 1) {
         const pl = document.createElementNS(ns, 'polyline');
