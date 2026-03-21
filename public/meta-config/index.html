@@ -428,12 +428,20 @@
                 let html = '';
                 if (data.verified) {
                     html += `<div class="status success">Conexion verificada de "${pageName}" al dataset ${datasetId}.</div>`;
-                } else if (data.success && !data.verified) {
-                    html += `<div class="status success">Un metodo reporto exito pero no se pudo verificar la conexion en Event Manager. Revisa manualmente en el Administrador de Eventos.</div>`;
                 } else if (data.waba_only) {
-                    html += `<div class="status error">El dataset se vinculo a la WABA pero NO se conecto la pagina al dataset en Event Manager. Esto es una limitacion del tipo de dataset (CAPI/WABA). La conexion pagina↔dataset debe hacerse manualmente en el Administrador de Eventos de Meta.</div>`;
+                    html += `<div class="status error">El dataset se vinculo a la WABA pero NO se conecto la pagina en Event Manager.</div>`;
+                    if (data.pending_request_id) {
+                        html += `<div class="status info">Se creo solicitud de agencia (ID: ${data.pending_request_id}). Acepta la solicitud en el Business Manager que posee el dataset, luego vuelve a intentar.</div>`;
+                    } else {
+                        html += `<div class="status info">Para datasets CAPI/WABA, la conexion pagina↔dataset debe hacerse en: Meta Business Suite → Administrador de Eventos → Dataset → Configuracion → Recursos conectados.</div>`;
+                    }
+                } else if (data.success && !data.verified) {
+                    html += `<div class="status success">Un metodo reporto exito. Revisa en el Administrador de Eventos si la pagina aparece conectada.</div>`;
                 } else {
                     html += `<div class="status error">Ningun metodo logro conectar la pagina al dataset.</div>`;
+                    if (data.pending_request_id) {
+                        html += `<div class="status info">Solicitud de agencia pendiente (ID: ${data.pending_request_id}). Acepta la solicitud en el BM dueño del dataset y vuelve a intentar.</div>`;
+                    }
                 }
 
                 html += '<br><strong style="font-size:13px;">Detalle de intentos:</strong>';
