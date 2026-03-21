@@ -3672,21 +3672,26 @@ router.post('/meta/config/connect-page', async (req, res) => {
 
     if (businessId) {
         // 7. POST /{dataset_id}/agencies con permitted_tasks
+        // Nota: esto crea solicitud pendiente, NO conecta página directamente.
+        // Por eso usamos skipIfSuccess: false para que no bloquee los demás.
         await tryMethod('dataset/agencies', (tk, v) =>
             axios.post(`https://graph.facebook.com/${v}/${dataset_id}/agencies`, {
                 business: businessId,
                 permitted_tasks: ['ADVERTISE', 'ANALYZE'],
                 access_token: tk
-            })
+            }),
+            { skipIfSuccess: false }
         );
 
         // 8. POST /{business_id}/event_source_groups — crea grupo que conecta dataset + page
+        // Este es el método más prometedor: opera a nivel BM y vincula dataset↔page
         await tryMethod('bm/event_source_groups', (tk, v) =>
             axios.post(`https://graph.facebook.com/${v}/${businessId}/event_source_groups`, {
                 name: `ESG_${page_id}_${dataset_id}`,
                 event_sources: [dataset_id],
                 access_token: tk
-            })
+            }),
+            { skipIfSuccess: false }
         );
 
         // 8b. Si hay ad accounts, intentar compartir dataset con cada una
@@ -3696,7 +3701,8 @@ router.post('/meta/config/connect-page', async (req, res) => {
                     business: businessId,
                     account_id: `act_${acctId}`,
                     access_token: tk
-                })
+                }),
+                { skipIfSuccess: false }
             );
         }
     }
@@ -3723,34 +3729,39 @@ router.post('/meta/config/connect-page', async (req, res) => {
         }
     }
 
+    // --- CUARTO: Desde la PÁGINA ---
+    // Todos con skipIfSuccess: false porque cada uno intenta algo diferente
+
     // 10. POST /{page_id}/page_whatsapp_number_datasets (conecta DESDE la página)
     await tryMethod('page/whatsapp_number_datasets', (tk, v) => {
         const body = { dataset_id, access_token: tk };
         if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
         return axios.post(`https://graph.facebook.com/${v}/${page_id}/page_whatsapp_number_datasets`, body);
-    });
+    }, { skipIfSuccess: false });
 
     // 11. POST /{page_id}/datasets (conectar dataset desde la página)
     await tryMethod('page/datasets', (tk, v) =>
         axios.post(`https://graph.facebook.com/${v}/${page_id}/datasets`, {
             dataset_id, access_token: tk
-        })
+        }),
+        { skipIfSuccess: false }
     );
 
     // 12. POST /{dataset_id}/assigned_users — asignar la página como usuario/activo
     await tryMethod('dataset/assigned_users', (tk, v) =>
         axios.post(`https://graph.facebook.com/${v}/${dataset_id}/assigned_users`, {
             user: page_id, tasks: ['MANAGE', 'ADVERTISE', 'ANALYZE'], access_token: tk
-        })
+        }),
+        { skipIfSuccess: false }
     );
 
     // 13. Vía ad account: compartir el pixel con la página
     for (const acctId of adAccountIds) {
-        // POST /act_{id}/adspixels con el dataset como pixel, vinculando página
         await tryMethod(`adaccount(${acctId})/adspixels_share`, (tk, v) =>
             axios.post(`https://graph.facebook.com/${v}/act_${acctId}/adspixels`, {
                 pixel_id: dataset_id, page_id, access_token: tk
-            })
+            }),
+            { skipIfSuccess: false }
         );
     }
 
