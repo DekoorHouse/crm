@@ -67,7 +67,7 @@ const SNAP_DIST = 12; // screen pixels
 // =============================================
 const state = {
     tool: 'select',
-    fillColor: '#ffffff',
+    fillColor: 'none',
     strokeColor: '#000000',
     strokeWidth: 2,
 
@@ -303,9 +303,10 @@ function createObject(type, props) {
     const obj = {
         id: state.nextId++,
         type,
-        fill: (type === 'line' || type === 'bspline') ? 'none' : state.fillColor,
-        stroke: state.strokeColor,
-        strokeWidth: state.strokeWidth,
+        fill: type === 'text' ? (state.fillColor === 'none' ? '#000000' : state.fillColor)
+            : (type === 'line' || type === 'bspline') ? 'none' : state.fillColor,
+        stroke: type === 'text' ? 'none' : state.strokeColor,
+        strokeWidth: type === 'text' ? 0 : state.strokeWidth,
         rotation: 0,
         ...props,
     };
