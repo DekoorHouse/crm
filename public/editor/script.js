@@ -71,8 +71,8 @@ const state = {
     strokeColor: '#000000',
     strokeWidth: 2,
 
-    pageWidth: 800,
-    pageHeight: 600,
+    pageWidth: Math.round(350 * 96 / 25.4),
+    pageHeight: Math.round(330 * 96 / 25.4),
 
     objects: [],
     nextId: 1,
@@ -4437,6 +4437,81 @@ function setupEventListeners() {
                 reader.readAsDataURL(file);
                 break;
             }
+        }
+    });
+
+    // Drag and drop SVG / image files onto the canvas
+    const workspace = document.getElementById('workspace');
+    workspace.addEventListener('dragover', (e) => {
+        const types = e.dataTransfer && e.dataTransfer.types;
+        if (types && types.includes('Files')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        }
+    });
+    workspace.addEventListener('drop', (e) => {
+        const files = e.dataTransfer && e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        e.preventDefault();
+        const dropPt = screenToSVG(e.clientX, e.clientY);
+        for (const file of files) {
+            if (!file.type.startsWith('image/') && !file.name.toLowerCase().endsWith('.svg')) continue;
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const dataUrl = ev.target.result;
+                const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+                if (isSVG) {
+                    // Embed SVG as image; use intrinsic size or fallback
+                    const img = new Image();
+                    img.onload = () => {
+                        let w = img.naturalWidth || state.pageWidth * 0.5;
+                        let h = img.naturalHeight || state.pageHeight * 0.5;
+                        const maxW = state.pageWidth * 0.8, maxH = state.pageHeight * 0.8;
+                        if (w > maxW || h > maxH) {
+                            const scale = Math.min(maxW / w, maxH / h);
+                            w *= scale; h *= scale;
+                        }
+                        const obj = createObject('image', {
+                            x: dropPt.x - w / 2, y: dropPt.y - h / 2,
+                            width: w, height: h,
+                            href: dataUrl,
+                        });
+                        selectObject(obj.id);
+                        setTool('select');
+                    };
+                    img.onerror = () => {
+                        // SVG with no intrinsic size — use page fractions
+                        const w = state.pageWidth * 0.5, h = state.pageHeight * 0.5;
+                        const obj = createObject('image', {
+                            x: dropPt.x - w / 2, y: dropPt.y - h / 2,
+                            width: w, height: h,
+                            href: dataUrl,
+                        });
+                        selectObject(obj.id);
+                        setTool('select');
+                    };
+                    img.src = dataUrl;
+                } else {
+                    const img = new Image();
+                    img.onload = () => {
+                        let w = img.naturalWidth, h = img.naturalHeight;
+                        const maxW = state.pageWidth * 0.8, maxH = state.pageHeight * 0.8;
+                        if (w > maxW || h > maxH) {
+                            const scale = Math.min(maxW / w, maxH / h);
+                            w *= scale; h *= scale;
+                        }
+                        const obj = createObject('image', {
+                            x: dropPt.x - w / 2, y: dropPt.y - h / 2,
+                            width: w, height: h,
+                            href: dataUrl,
+                        });
+                        selectObject(obj.id);
+                        setTool('select');
+                    };
+                    img.src = dataUrl;
+                }
+            };
+            reader.readAsDataURL(file);
         }
     });
 
