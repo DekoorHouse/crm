@@ -3513,29 +3513,43 @@ function importSVG() {
                 return { x: m[0]*x + m[2]*y + m[4], y: m[1]*x + m[3]*y + m[5] };
             }
 
-            // Import a path/polygon as curvepath using the browser's SVG engine for accurate bounds
+            // Import a path via browser sampling — lets the SVG engine handle all parsing & transforms
             function importPath(d, sty, ctm) {
                 const ns = 'http://www.w3.org/2000/svg';
+                // Create temp SVG to use browser's path engine with transform
+                const tempSvg = document.createElementNS(ns, 'svg');
+                tempSvg.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
+                tempSvg.setAttribute('viewBox', '0 0 100000 100000');
+                document.body.appendChild(tempSvg);
+                const path = document.createElementNS(ns, 'path');
+                path.setAttribute('d', d);
+                path.setAttribute('transform', `matrix(${ctm.join(',')})`);
+                tempSvg.appendChild(path);
+                let len;
+                try { len = path.getTotalLength(); } catch(e) { document.body.removeChild(tempSvg); return; }
+                if (len < 0.01) { document.body.removeChild(tempSvg); return; }
+                // Sample the transformed path
+                const numSamples = Math.min(500, Math.max(80, Math.ceil(len / 2)));
+                let newD = '';
+                for (let i = 0; i <= numSamples; i++) {
+                    const pt = path.getPointAtLength(i * len / numSamples);
+                    newD += (i === 0 ? 'M' : 'L') + ` ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
+                }
+                if (/[Zz]\s*$/.test(d.trim())) newD += 'Z';
+                document.body.removeChild(tempSvg);
+                // Get bounds of the sampled path
                 const tempPath = document.createElementNS(ns, 'path');
-                tempPath.setAttribute('d', d);
-                // Apply full CTM as transform so getBBox accounts for it
-                tempPath.setAttribute('transform', `matrix(${ctm.join(',')})`);
+                tempPath.setAttribute('d', newD);
                 objectsLayer.appendChild(tempPath);
                 const bb = tempPath.getBBox();
                 objectsLayer.removeChild(tempPath);
                 if (bb.width < 0.01 && bb.height < 0.01) return;
-                // Build the scaled path data
-                const scaledD = scaleSVGPath(d, ctm[0], ctm[3], ctm[4], ctm[5], ctm[2], ctm[1]);
-                const tempPath2 = document.createElementNS(ns, 'path');
-                tempPath2.setAttribute('d', scaledD);
-                objectsLayer.appendChild(tempPath2);
-                const bb2 = tempPath2.getBBox();
-                objectsLayer.removeChild(tempPath2);
+                const scale = Math.max(Math.abs(ctm[0]), Math.abs(ctm[1]), Math.abs(ctm[2]), Math.abs(ctm[3]));
                 createObject('curvepath', {
-                    d: scaledD,
-                    x: bb2.x, y: bb2.y, width: bb2.width || 1, height: bb2.height || 1,
-                    _origBounds: { x: bb2.x, y: bb2.y, w: bb2.width || 1, h: bb2.height || 1 },
-                    fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(ctm[0]),
+                    d: newD,
+                    x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
+                    _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
+                    fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * scale,
                 });
             }
 
@@ -3624,7 +3638,89 @@ function importSVG() {
                         createObject('image', { x: minX, y: minY, width: w, height: h, href });
                     }
                 } else if (tag === 'g') {
+                    // Check for clip-path (CorelDRAW uses style="clip-path:url(#id)")
+                    const clipRef = (el.getAttribute('clip-path') || '').match(/url\(\s*#([^)]+)\)/) ||
+                                    ((el.getAttribute('style') || '').match(/clip-path\s*:\s*url\(\s*#([^)]+)\)/));
+                    if (clipRef) {
+                        // Find the clipPath definition and import as PowerClip
+                        const clipEl = svgRoot.querySelector('#' + clipRef[1]);
+                        if (clipEl) {
+                            const clipChild = clipEl.querySelector('path,rect,ellipse,circle,polygon');
+                            if (clipChild) {
+                                // Import clip shape as container
+                                const clipD = clipChild.getAttribute('d') || pointsToD(clipChild);
+                                if (clipD) {
+                                    // First import the clip shape
+                                    importPath(clipD, { fill: 'none', stroke: 'none', sw: 0 }, m);
+                                    const containerObj = state.objects[state.objects.length - 1];
+                                    // Import children as content
+                                    const contentsBefore = state.objects.length;
+                                    for (const child of el.children) importElement(child, m);
+                                    const contents = state.objects.splice(contentsBefore);
+                                    if (containerObj && contents.length > 0) {
+                                        // Create PowerClip
+                                        try {
+                                            makePowerClipFromImport(containerObj, contents);
+                                        } catch(e) {
+                                            // Fallback: just add content back
+                                            state.objects.push(...contents);
+                                        }
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                        // Fallback: skip clipped group content to avoid overlap
+                        return;
+                    }
                     for (const child of el.children) importElement(child, m);
+                }
+            }
+
+            // Convert polygon/polyline points attribute to path d
+            function pointsToD(el) {
+                const pts = el.getAttribute('points');
+                if (!pts) return null;
+                const coords = pts.trim().split(/[\s,]+/).map(Number);
+                let d = '';
+                for (let i = 0; i < coords.length - 1; i += 2) {
+                    d += (i === 0 ? 'M' : 'L') + ` ${coords[i]} ${coords[i+1]} `;
+                }
+                if (el.tagName.toLowerCase() === 'polygon') d += 'Z';
+                return d;
+            }
+
+            // Create PowerClip from imported container shape + content objects
+            function makePowerClipFromImport(containerObj, contentObjs) {
+                // Remove container from objects array (it was added by createObject)
+                const cidx = state.objects.indexOf(containerObj);
+                if (cidx >= 0) state.objects.splice(cidx, 1);
+                containerObj.element.remove();
+                // Rebuild container as a plain shape (not in objects layer yet)
+                const containerData = { ...containerObj };
+                delete containerData.element;
+                // Add content objects back to objects layer
+                for (const c of contentObjs) {
+                    if (!c.element.parentNode) objectsLayer.appendChild(c.element);
+                }
+                // Use the existing makePowerClip-like logic
+                const pcObj = {
+                    id: state.nextId++,
+                    type: 'powerclip',
+                    container: containerData,
+                    contents: contentObjs,
+                    fill: 'none', stroke: 'none', strokeWidth: 0, rotation: 0,
+                };
+                const elem = buildSVGElement(pcObj);
+                pcObj.element = elem;
+                elem.dataset.objectId = pcObj.id;
+                objectsLayer.appendChild(elem);
+                state.objects.push(pcObj);
+                // Remove individual content from objects array (they're now inside the PC)
+                for (const c of contentObjs) {
+                    const idx = state.objects.indexOf(c);
+                    if (idx >= 0) state.objects.splice(idx, 1);
+                    if (c.element.parentNode === objectsLayer) c.element.remove();
                 }
             }
 
@@ -3640,59 +3736,6 @@ function importSVG() {
         reader.readAsText(file);
     });
     input.click();
-}
-
-function scaleSVGPath(d, a, d2, tx, ty, c, b) {
-    // Apply affine transform to SVG path data
-    // For simple scale+translate: a=sx, d2=sy, tx, ty, c=0, b=0
-    c = c || 0; b = b || 0;
-    const tokens = [];
-    const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g;
-    let match;
-    while ((match = re.exec(d)) !== null) {
-        tokens.push(match[1] || match[2]);
-    }
-    let result = '', i = 0;
-    while (i < tokens.length) {
-        const cmd = tokens[i]; i++;
-        if (/[Zz]/.test(cmd)) { result += cmd + ' '; continue; }
-        const isRel = cmd === cmd.toLowerCase();
-        const C = cmd.toUpperCase();
-        const offX = isRel ? 0 : tx, offY = isRel ? 0 : ty;
-        const sa = isRel ? a : a, sd = isRel ? d2 : d2;
-        const sc = isRel ? c : c, sb = isRel ? b : b;
-        if (C === 'H') {
-            const x = parseFloat(tokens[i++]) || 0;
-            result += cmd + ' ' + (sa * x + offX) + ' ';
-        } else if (C === 'V') {
-            const y = parseFloat(tokens[i++]) || 0;
-            result += cmd + ' ' + (sd * y + offY) + ' ';
-        } else if (C === 'A') {
-            // Arc: rx ry x-rot large-arc sweep x y
-            const rx = parseFloat(tokens[i++]) || 0;
-            const ry = parseFloat(tokens[i++]) || 0;
-            const xrot = parseFloat(tokens[i++]) || 0;
-            const larc = tokens[i++];
-            const sweep = tokens[i++];
-            const x = parseFloat(tokens[i++]) || 0;
-            const y = parseFloat(tokens[i++]) || 0;
-            result += cmd + ' ' + (rx * Math.abs(sa)) + ' ' + (ry * Math.abs(sd)) + ' ' + xrot + ' ' + larc + ' ' + sweep + ' ' + (sa * x + sc * y + offX) + ' ' + (sb * x + sd * y + offY) + ' ';
-        } else {
-            // M, L, C, S, Q, T - all have x,y pairs
-            const counts = { M: 2, L: 2, C: 6, S: 4, Q: 4, T: 2 };
-            const cnt = counts[C] || 2;
-            result += cmd + ' ';
-            // Handle implicit repeated commands
-            while (i < tokens.length && !/[A-Za-z]/.test(tokens[i])) {
-                for (let j = 0; j < cnt && i < tokens.length; j += 2) {
-                    const x = parseFloat(tokens[i++]) || 0;
-                    const y = parseFloat(tokens[i++]) || 0;
-                    result += (sa * x + sc * y + offX) + ' ' + (sb * x + sd * y + offY) + ' ';
-                }
-            }
-        }
-    }
-    return result.trim();
 }
 
 // =============================================
