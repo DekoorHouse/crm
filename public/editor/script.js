@@ -260,11 +260,23 @@ function resetView() {
 }
 
 let _shadowS1 = null, _shadowS2 = null;
+// Cached layout values — updated on zoom/resize instead of every frame
+let _cachedSvgRect = null;
+let _cachedScreenScale = 1;
+let _cachedCTMInverse = null;
+let _statusCoordsEl = null;
+
+function invalidateLayoutCache() {
+    _cachedSvgRect = svg.getBoundingClientRect();
+    _cachedScreenScale = state.viewBox.w / (_cachedSvgRect.width || 1);
+    _cachedCTMInverse = null; // recomputed lazily in screenToSVG
+}
+
 function updateViewBox() {
     svg.setAttribute('viewBox', `${state.viewBox.x} ${state.viewBox.y} ${state.viewBox.w} ${state.viewBox.h}`);
-    const wsW = document.getElementById('workspace').getBoundingClientRect().width;
-    if (wsW > 0) {
-        const zoom = Math.round((wsW / state.viewBox.w) * 100);
+    invalidateLayoutCache();
+    if (_cachedSvgRect.width > 0) {
+        const zoom = Math.round((_cachedSvgRect.width / state.viewBox.w) * 100);
         document.getElementById('status-zoom').textContent = `${zoom}%`;
     }
     // Scale shadow filter with zoom so the blur kernel stays constant in screen pixels
@@ -283,9 +295,10 @@ function updateViewBox() {
 // COORDINATE CONVERSION
 // =============================================
 function screenToSVG(clientX, clientY) {
+    if (!_cachedCTMInverse) _cachedCTMInverse = svg.getScreenCTM().inverse();
     const pt = svg.createSVGPoint();
     pt.x = clientX; pt.y = clientY;
-    return pt.matrixTransform(svg.getScreenCTM().inverse());
+    return pt.matrixTransform(_cachedCTMInverse);
 }
 
 // =============================================
@@ -980,7 +993,7 @@ function closestPointOnSeg(p, a, b) {
 function drawSnapIndicators(mousePt) {
     snapLayer.innerHTML = '';
     const ns = 'http://www.w3.org/2000/svg';
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const threshold = SNAP_DIST * screenScale;
     const edgeThreshold = threshold * 1.5;
     const r = 4.5 * screenScale;
@@ -1427,7 +1440,7 @@ function nodeAtPoint(pt) {
     const obj = findObject(state.nodeEditId);
     if (!obj) return null;
     const nodes = getEditableNodes(obj);
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const threshold = 8 * screenScale;
     for (const n of nodes) {
         if (Math.hypot(pt.x - n.x, pt.y - n.y) <= threshold) {
@@ -1537,7 +1550,7 @@ function applyNodeDrag(obj, idx, wx, wy) {
 // SNAP TO REFERENCE POINTS
 // =============================================
 function calcSnapAdjustment(selectedIds) {
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const threshold = SNAP_DIST * screenScale;
 
     // Collect snap points of selected objects
@@ -1593,7 +1606,7 @@ function drawSnapGuideLines(snapResult) {
     const existing = snapLayer.querySelectorAll('.snap-guide');
     existing.forEach(el => el.remove());
     const ns = 'http://www.w3.org/2000/svg';
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const sw = 1 * screenScale;
 
     if (snapResult.snapLineX) {
@@ -1629,7 +1642,7 @@ function clearSnapGuideLines() {
 
 // Calc snap for a single point (used in node editing)
 function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const threshold = SNAP_DIST * screenScale;
 
     const targetPts = [];
@@ -1709,11 +1722,12 @@ function handleMouseDown(e) {
 let _moveRafId = null;
 function handleMouseMove(e) {
     const pt = screenToSVG(e.clientX, e.clientY);
-    document.getElementById('status-coords').textContent = `X: ${Math.round(pt.x)}  Y: ${Math.round(pt.y)}`;
+    if (!_statusCoordsEl) _statusCoordsEl = document.getElementById('status-coords');
+    _statusCoordsEl.textContent = `X: ${Math.round(pt.x)}  Y: ${Math.round(pt.y)}`;
     // Critical interactive operations: run immediately (no throttle)
     if (state.isPanning) {
         const dx = e.clientX - state.panStart.x, dy = e.clientY - state.panStart.y;
-        const scale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const scale = _cachedScreenScale;
         state.viewBox.x = state.panViewBoxStart.x - dx*scale;
         state.viewBox.y = state.panViewBoxStart.y - dy*scale;
         updateViewBox(); return;
@@ -1859,7 +1873,7 @@ function getHandleAtPoint(pt) {
     const b = getObjBounds(obj);
     const rot = obj.rotation || 0;
     const cx = b.x + b.w/2, cy = b.y + b.h/2;
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const threshold = 8 * screenScale;
     const hs = state.viewBox.w * 0.007;
     const off = hs * 0.8; // same offset as drawSelection
@@ -1967,7 +1981,7 @@ function handleSelectDown(pt, e) {
         state.marqueeStart = { x: pt.x, y: pt.y };
         // Create marquee rect in selection layer
         const ns = 'http://www.w3.org/2000/svg';
-        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const screenScale = _cachedScreenScale;
         state.marqueeEl = document.createElementNS(ns, 'rect');
         state.marqueeEl.setAttribute('fill', 'rgba(124, 92, 240, 0.08)');
         state.marqueeEl.setAttribute('stroke', '#7c5cf0');
@@ -2000,7 +2014,7 @@ function showPCHighlight(pc) {
     pcHighlightEl.setAttribute('pointer-events', 'none');
     pcHighlightEl.setAttribute('fill', 'rgba(168, 130, 255, 0.30)');
     pcHighlightEl.setAttribute('stroke', '#9366f0');
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     pcHighlightEl.setAttribute('stroke-width', 2 * screenScale);
     pcHighlightEl.setAttribute('stroke-dasharray', `${6*screenScale} ${3*screenScale}`);
     if (c.type === 'ellipse') {
@@ -2039,7 +2053,7 @@ function showPCHighlightForObj(obj) {
     pcHighlightEl.setAttribute('pointer-events', 'none');
     pcHighlightEl.setAttribute('fill', 'rgba(168, 130, 255, 0.30)');
     pcHighlightEl.setAttribute('stroke', '#9366f0');
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     pcHighlightEl.setAttribute('stroke-width', 2 * screenScale);
     pcHighlightEl.setAttribute('stroke-dasharray', `${6*screenScale} ${3*screenScale}`);
     if (obj.type === 'ellipse') {
@@ -2091,7 +2105,7 @@ function handleDragMove(pt) {
             const obj = findObject(id);
             if (obj) selPts.push(...getSnapPoints(obj));
         }
-        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const screenScale = _cachedScreenScale;
         const threshold = SNAP_DIST * screenScale * 1.5;
         const targetPts = [];
         for (const obj of state.objects) {
@@ -2357,7 +2371,7 @@ function handleBSplineClick(pt) {
     // Check if closing the spline (clicking near the first point with >= 3 points)
     if (state.bsplinePoints.length >= 3) {
         const first = state.bsplinePoints[0];
-        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const screenScale = _cachedScreenScale;
         const threshold = SNAP_DIST * screenScale;
         if (Math.hypot(snapped.x - first.x, snapped.y - first.y) <= threshold) {
             const obj = createObject('bspline', {
@@ -2397,7 +2411,7 @@ function updateBSplinePreview(mousePt) {
     const isDuplicate = last && Math.abs(last.x - snappedPt.x) < 1e-6 && Math.abs(last.y - snappedPt.y) < 1e-6;
     // Detect if hovering near the first point (to close the spline)
     const first = state.bsplinePoints[0];
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     const closeThreshold = SNAP_DIST * screenScale;
     const isClosing = state.bsplinePoints.length >= 3 && first &&
         Math.hypot(snappedPt.x - first.x, snappedPt.y - first.y) <= closeThreshold;
@@ -3007,7 +3021,7 @@ function enterPowerClipEdit(pcId) {
     }
     outlineEl.setAttribute('fill', 'none');
     outlineEl.setAttribute('stroke', 'rgba(124, 92, 240, 0.55)');
-    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const screenScale = _cachedScreenScale;
     outlineEl.setAttribute('stroke-width', 2.5 * screenScale);
     if (c.rotation) {
         const rcx = c.type === 'ellipse' ? c.cx : c.x + c.width/2;
@@ -3852,7 +3866,7 @@ function setupEventListeners() {
             editTextObject(obj, e);
         } else if (obj && obj.type === 'powerclip' && obj.id !== pcEditingId) {
             // Skip if already editing this powerclip
-            const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+            const screenScale = _cachedScreenScale;
             const borderThreshold = 8 * screenScale;
             const ne = nearestEdgePoint(obj.container, pt);
             if (ne && ne.dist <= borderThreshold) {
@@ -4008,7 +4022,7 @@ function setupEventListeners() {
         }
     });
 
-    window.addEventListener('resize', () => resetView());
+    window.addEventListener('resize', () => { invalidateLayoutCache(); resetView(); });
     setupMenus();
     setupPageSizeModal();
     setupPropsPanel();
