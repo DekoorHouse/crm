@@ -426,10 +426,14 @@
                 const data = await res.json();
 
                 let html = '';
-                if (data.success) {
-                    html += `<div class="status success">Conexion exitosa de "${pageName}" al dataset ${datasetId}.</div>`;
+                if (data.verified) {
+                    html += `<div class="status success">Conexion verificada de "${pageName}" al dataset ${datasetId}.</div>`;
+                } else if (data.success && !data.verified) {
+                    html += `<div class="status success">Un metodo reporto exito pero no se pudo verificar la conexion en Event Manager. Revisa manualmente en el Administrador de Eventos.</div>`;
+                } else if (data.waba_only) {
+                    html += `<div class="status error">El dataset se vinculo a la WABA pero NO se conecto la pagina al dataset en Event Manager. Esto es una limitacion del tipo de dataset (CAPI/WABA). La conexion pagina↔dataset debe hacerse manualmente en el Administrador de Eventos de Meta.</div>`;
                 } else {
-                    html += `<div class="status error">Ningun metodo logro conectar la pagina.</div>`;
+                    html += `<div class="status error">Ningun metodo logro conectar la pagina al dataset.</div>`;
                 }
 
                 html += '<br><strong style="font-size:13px;">Detalle de intentos:</strong>';

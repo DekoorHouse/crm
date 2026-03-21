@@ -3605,23 +3605,26 @@ router.post('/meta/config/connect-page', async (req, res) => {
 
     const apiVersions = ['v21.0', 'v19.0'];
     let anySuccess = false;
+    let wabaLinked = false;
 
     // Helper para intentar un método con todos los tokens y versiones de API
-    async function tryMethod(methodName, fn) {
-        if (anySuccess) return;
+    async function tryMethod(methodName, fn, { skipIfSuccess = true } = {}) {
+        if (skipIfSuccess && anySuccess) return;
         for (const version of apiVersions) {
-            if (anySuccess) return;
+            if (skipIfSuccess && anySuccess) return;
             for (const [label, tk] of allTokens) {
-                if (anySuccess) return;
+                if (skipIfSuccess && anySuccess) return;
                 try {
                     const r = await fn(tk, version);
                     results.push({ method: `${methodName} ${version} (${label})`, success: true, data: r.data });
                     anySuccess = true;
+                    return true;
                 } catch (e) {
                     results.push({ method: `${methodName} ${version} (${label})`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
                 }
             }
         }
+        return false;
     }
 
     // --- PRIMERO: Métodos desde el lado del DATASET (vinculan al dataset existente) ---
@@ -3675,25 +3678,45 @@ router.post('/meta/config/connect-page', async (req, res) => {
     }
 
     // --- TERCERO: Vía WABA ---
+    // NOTA: El método WABA vincula el dataset a la WABA, pero NO conecta la página
+    // al dataset en Event Manager. Por eso no debe bloquear los demás métodos.
 
     if (wabaId) {
         // 9. POST /{waba_id}/dataset con page_id y dataset_id
-        await tryMethod('waba/dataset+page', (tk, v) =>
+        // Guardamos anySuccess antes para restaurarlo — este método vincula WABA↔dataset,
+        // no página↔dataset en Event Manager
+        const prevSuccess = anySuccess;
+        const wabaResult = await tryMethod('waba/dataset+page', (tk, v) =>
             axios.post(`https://graph.facebook.com/${v}/${wabaId}/dataset`, {
                 dataset_id, page_id, access_token: tk
-            })
+            }),
+            { skipIfSuccess: false }
         );
+        if (wabaResult && !prevSuccess) {
+            // El WABA method no cuenta como conexión de página real
+            anySuccess = false;
+            wabaLinked = true;
+        }
     }
 
-    // 10. POST /{page_id}/page_whatsapp_number_datasets
+    // 10. POST /{page_id}/page_whatsapp_number_datasets (conecta DESDE la página)
     await tryMethod('page/whatsapp_number_datasets', (tk, v) => {
         const body = { dataset_id, access_token: tk };
         if (phoneNumberId) body.whatsapp_business_phone_number_id = phoneNumberId;
         return axios.post(`https://graph.facebook.com/${v}/${page_id}/page_whatsapp_number_datasets`, body);
     });
 
+    // 11. POST /{page_id}/datasets (conectar dataset desde la página)
+    await tryMethod('page/datasets', (tk, v) =>
+        axios.post(`https://graph.facebook.com/${v}/${page_id}/datasets`, {
+            dataset_id, access_token: tk
+        })
+    );
+
     // --- Verificación: consultar páginas conectadas al dataset ---
     let verified = false;
+
+    // 1. Verificar vía campo connected_page del dataset
     for (const [label, tk] of allTokens) {
         try {
             const r = await axios.get(`https://graph.facebook.com/v21.0/${dataset_id}`, {
@@ -3707,13 +3730,60 @@ router.post('/meta/config/connect-page', async (req, res) => {
                 data: r.data,
                 page_linked: verified
             });
-            break;
+            if (verified) break;
         } catch (e) {
-            results.push({ method: `VERIFY (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            results.push({ method: `VERIFY connected_page (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
         }
     }
 
-    res.json({ success: anySuccess, verified, results });
+    // 2. Si no se verificó, intentar con campos alternativos (page, pages)
+    if (!verified) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.get(`https://graph.facebook.com/v21.0/${dataset_id}`, {
+                    params: { fields: 'id,name,page', access_token: tk }
+                });
+                if (r.data.page?.id === page_id) {
+                    verified = true;
+                    results.push({ method: `VERIFY dataset page field (${label})`, success: true, data: r.data, page_linked: true });
+                    break;
+                }
+            } catch (e) {
+                // silenciar — ya reportamos errores arriba
+            }
+        }
+    }
+
+    // 3. Si hay WABA, verificar qué datasets están vinculados
+    let wabaVerified = false;
+    if (wabaId) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.get(`https://graph.facebook.com/v21.0/${wabaId}/dataset`, {
+                    params: { access_token: tk }
+                });
+                const datasets = r.data?.data || (r.data?.id ? [r.data] : []);
+                wabaVerified = datasets.some(d => d.id === dataset_id);
+                results.push({
+                    method: `VERIFY waba/dataset (${label})`,
+                    success: true,
+                    data: r.data,
+                    waba_dataset_linked: wabaVerified
+                });
+                break;
+            } catch (e) {
+                results.push({ method: `VERIFY waba/dataset (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    res.json({
+        success: anySuccess || verified,
+        verified,
+        waba_linked: wabaLinked || wabaVerified,
+        waba_only: !anySuccess && !verified && (wabaLinked || wabaVerified),
+        results
+    });
 });
 
 // Desvincular y revincular WABA a un dataset diferente
