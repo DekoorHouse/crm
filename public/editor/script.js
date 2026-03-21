@@ -3633,7 +3633,7 @@ function importSVG() {
                 });
             }
 
-            function importElement(el, ctm) {
+            function importElement(el, ctm, insideClip) {
                 const tag = el.tagName.toLowerCase();
                 if (tag === 'defs' || tag === 'metadata' || tag === 'title' || tag === 'desc' || tag === 'style' || tag === 'clippath') return;
 
@@ -3721,28 +3721,25 @@ function importSVG() {
                     // Check for clip-path (CorelDRAW uses style="clip-path:url(#id)")
                     const clipRef = (el.getAttribute('clip-path') || '').match(/url\(\s*#([^)]+)\)/) ||
                                     ((el.getAttribute('style') || '').match(/clip-path\s*:\s*url\(\s*#([^)]+)\)/));
-                    if (clipRef) {
-                        // Find the clipPath definition and import as PowerClip
+                    if (clipRef && !insideClip) {
+                        // Outermost clip group → create PowerClip
                         const clipEl = svgRoot.querySelector('#' + clipRef[1]);
                         if (clipEl) {
                             const clipChild = clipEl.querySelector('path,rect,ellipse,circle,polygon');
                             if (clipChild) {
-                                // Import clip shape as container
                                 const clipD = clipChild.getAttribute('d') || pointsToD(clipChild);
                                 if (clipD) {
-                                    // First import the clip shape
+                                    // Import clip shape as container
                                     importPath(clipD, { fill: 'none', stroke: 'none', sw: 0 }, m);
                                     const containerObj = state.objects[state.objects.length - 1];
-                                    // Import children as content
+                                    // Import all children (nested clips just pass through)
                                     const contentsBefore = state.objects.length;
-                                    for (const child of el.children) importElement(child, m);
+                                    for (const child of el.children) importElement(child, m, true);
                                     const contents = state.objects.splice(contentsBefore);
                                     if (containerObj && contents.length > 0) {
-                                        // Create PowerClip
                                         try {
                                             makePowerClipFromImport(containerObj, contents);
                                         } catch(e) {
-                                            // Fallback: just add content back
                                             state.objects.push(...contents);
                                         }
                                     }
@@ -3750,10 +3747,11 @@ function importSVG() {
                                 }
                             }
                         }
-                        // Fallback: skip clipped group content to avoid overlap
+                        // Fallback: skip clipped content to avoid overlap
                         return;
                     }
-                    for (const child of el.children) importElement(child, m);
+                    // Inside a clip or no clip: just import children normally
+                    for (const child of el.children) importElement(child, m, insideClip);
                 }
             }
 
