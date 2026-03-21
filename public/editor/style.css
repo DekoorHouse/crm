@@ -921,18 +921,18 @@ body.dark .btn-primary:hover {
     position: fixed;
     z-index: 600;
     background: transparent;
-    border: 2px dashed var(--accent);
-    border-radius: 2px;
-    padding: 2px 4px;
+    border: none;
+    border-radius: 0;
+    padding: 0;
     color: var(--text);
     outline: none;
     resize: none;
     overflow: hidden;
-    min-width: 40px;
+    min-width: 2px;
     min-height: 1.2em;
+    caret-color: var(--accent);
     line-height: 1.2;
     white-space: pre;
-    box-shadow: 0 0 0 3px var(--accent-glow);
 }
 .text-input-overlay.hidden { display: none; }
 
