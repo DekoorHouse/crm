@@ -3592,14 +3592,23 @@ router.post('/meta/config/connect-page', async (req, res) => {
         ['system_token', systemToken]
     ].filter(([, t]) => t);
 
-    // Descubrir business_id primero
+    // Descubrir business_id y ad accounts primero
     let businessId = null;
+    let adAccountIds = [];
     if (token) {
         try {
-            const r = await axios.get('https://graph.facebook.com/v19.0/me/businesses', {
+            const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
                 params: { fields: 'id,name', access_token: token }
             });
             if (r.data.data?.length > 0) businessId = r.data.data[0].id;
+        } catch (e) { /* ignore */ }
+
+        // Descubrir ad accounts del usuario
+        try {
+            const r = await axios.get('https://graph.facebook.com/v21.0/me/adaccounts', {
+                params: { fields: 'id,name,account_id', limit: 10, access_token: token }
+            });
+            adAccountIds = (r.data.data || []).map(a => a.account_id || a.id.replace('act_', ''));
         } catch (e) { /* ignore */ }
     }
 
@@ -3662,19 +3671,34 @@ router.post('/meta/config/connect-page', async (req, res) => {
     // --- SEGUNDO: Vía Business Manager ---
 
     if (businessId) {
-        // 7. POST /{dataset_id}/shared_accounts
-        await tryMethod('dataset/shared_accounts', (tk, v) =>
-            axios.post(`https://graph.facebook.com/${v}/${dataset_id}/shared_accounts`, {
-                business: businessId, page_id, access_token: tk
+        // 7. POST /{dataset_id}/agencies con permitted_tasks
+        await tryMethod('dataset/agencies', (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/${dataset_id}/agencies`, {
+                business: businessId,
+                permitted_tasks: ['ADVERTISE', 'ANALYZE'],
+                access_token: tk
             })
         );
 
-        // 8. POST /{dataset_id}/agencies
-        await tryMethod('dataset/agencies', (tk, v) =>
-            axios.post(`https://graph.facebook.com/${v}/${dataset_id}/agencies`, {
-                business: businessId, access_token: tk
+        // 8. POST /{business_id}/event_source_groups — crea grupo que conecta dataset + page
+        await tryMethod('bm/event_source_groups', (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/${businessId}/event_source_groups`, {
+                name: `ESG_${page_id}_${dataset_id}`,
+                event_sources: [dataset_id],
+                access_token: tk
             })
         );
+
+        // 8b. Si hay ad accounts, intentar compartir dataset con cada una
+        for (const acctId of adAccountIds) {
+            await tryMethod(`dataset/shared_accounts(${acctId})`, (tk, v) =>
+                axios.post(`https://graph.facebook.com/${v}/${dataset_id}/shared_accounts`, {
+                    business: businessId,
+                    account_id: `act_${acctId}`,
+                    access_token: tk
+                })
+            );
+        }
     }
 
     // --- TERCERO: Vía WABA ---
@@ -3712,6 +3736,23 @@ router.post('/meta/config/connect-page', async (req, res) => {
             dataset_id, access_token: tk
         })
     );
+
+    // 12. POST /{dataset_id}/assigned_users — asignar la página como usuario/activo
+    await tryMethod('dataset/assigned_users', (tk, v) =>
+        axios.post(`https://graph.facebook.com/${v}/${dataset_id}/assigned_users`, {
+            user: page_id, tasks: ['MANAGE', 'ADVERTISE', 'ANALYZE'], access_token: tk
+        })
+    );
+
+    // 13. Vía ad account: compartir el pixel con la página
+    for (const acctId of adAccountIds) {
+        // POST /act_{id}/adspixels con el dataset como pixel, vinculando página
+        await tryMethod(`adaccount(${acctId})/adspixels_share`, (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/act_${acctId}/adspixels`, {
+                pixel_id: dataset_id, page_id, access_token: tk
+            })
+        );
+    }
 
     // --- Verificación: consultar páginas conectadas al dataset ---
     let verified = false;
