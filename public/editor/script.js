@@ -3714,7 +3714,10 @@ function importSVG() {
                     const w = Math.hypot(p1.x - p0.x, p1.y - p0.y);
                     const h = Math.hypot(p2.x - p0.x, p2.y - p0.y);
                     // Rotation from the top edge direction
-                    const rotation = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    const det = m[0]*m[3] - m[1]*m[2];
+                    let rotation = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    // Negative determinant = reflection; negate angle to compensate
+                    if (det < 0) rotation = -rotation;
                     // Center of the transformed image
                     const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
                     const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
