@@ -259,12 +259,23 @@ function resetView() {
     updateViewBox();
 }
 
+let _shadowS1 = null, _shadowS2 = null;
 function updateViewBox() {
     svg.setAttribute('viewBox', `${state.viewBox.x} ${state.viewBox.y} ${state.viewBox.w} ${state.viewBox.h}`);
     const wsW = document.getElementById('workspace').getBoundingClientRect().width;
     if (wsW > 0) {
         const zoom = Math.round((wsW / state.viewBox.w) * 100);
         document.getElementById('status-zoom').textContent = `${zoom}%`;
+    }
+    // Scale shadow filter with zoom so the blur kernel stays constant in screen pixels
+    if (!_shadowS1) _shadowS1 = document.querySelector('#page-shadow-filter feDropShadow:first-child');
+    if (!_shadowS2) _shadowS2 = document.querySelector('#page-shadow-filter feDropShadow:last-child');
+    if (_shadowS1 && _shadowS2) {
+        const scale = state.viewBox.w / state.pageWidth;
+        _shadowS1.setAttribute('stdDeviation', Math.max(0.5, 6 * scale));
+        _shadowS1.setAttribute('dy', 2 * scale);
+        _shadowS2.setAttribute('stdDeviation', Math.max(0.5, 16 * scale));
+        _shadowS2.setAttribute('dy', 8 * scale);
     }
 }
 
