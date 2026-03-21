@@ -3317,30 +3317,38 @@ async function exportSVG() {
     }
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
-    const mmToPx = 96 / 25.4;
+    // Use 100 user units per mm (CorelDRAW convention for mm-based documents)
+    const S = 100;
+    const vbW = state.pageWidth * S, vbH = state.pageHeight * S;
+
     const root = document.createElementNS(ns, 'svg');
     root.setAttribute('xmlns', ns);
     root.setAttribute('xmlns:xlink', xlink);
-    root.setAttribute('width', state.pageWidth + 'mm'); root.setAttribute('height', state.pageHeight + 'mm');
-    root.setAttribute('viewBox', `0 0 ${state.pageWidth * mmToPx} ${state.pageHeight * mmToPx}`);
+    root.setAttribute('xml:space', 'preserve');
+    root.setAttribute('width', state.pageWidth + 'mm');
+    root.setAttribute('height', state.pageHeight + 'mm');
+    root.setAttribute('version', '1.1');
+    root.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
+    root.setAttribute('style', 'shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd');
+
+    let clipCounter = 0;
+
     function exportObj(obj, parent) {
         if (obj.type === 'text') {
-            // Convert text to curves (path) using opentype.js
             const pathData = textToPath(obj);
             if (pathData) {
                 const p = document.createElementNS(ns, 'path');
-                p.setAttribute('d', pathData);
+                p.setAttribute('d', scalePathD(pathData, S));
                 p.setAttribute('fill', obj.fill);
                 p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
-                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth * S);
                 if (obj.rotation) {
                     const b = getObjBounds(obj);
-                    const cx = b.x + b.w/2, cy = b.y + b.h/2;
+                    const cx = (b.x + b.w/2) * S, cy = (b.y + b.h/2) * S;
                     p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
                 }
                 parent.appendChild(p);
             } else {
-                // Fallback: render text to canvas bitmap and embed as image
                 const fallback = textToFallbackSVG(obj, ns);
                 parent.appendChild(fallback);
             }
@@ -3348,49 +3356,97 @@ async function exportSVG() {
         }
         if (obj.type === 'image') {
             const img = document.createElementNS(ns, 'image');
-            img.setAttribute('x', obj.x); img.setAttribute('y', obj.y);
-            img.setAttribute('width', obj.width); img.setAttribute('height', obj.height);
+            img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
+            img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
             img.setAttribute('preserveAspectRatio', 'none');
             img.setAttributeNS(xlink, 'xlink:href', obj.href);
             img.setAttribute('href', obj.href);
             if (obj.rotation) {
-                const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
+                const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
             }
             parent.appendChild(img);
         } else if (obj.type === 'powerclip') {
-            // Export powerclip as group with clipPath
             const g = document.createElementNS(ns, 'g');
-            const clipId = 'export-clip-' + obj.id;
+            const clipId = 'clip' + (clipCounter++);
             const defs = document.createElementNS(ns, 'defs');
             const cp = document.createElementNS(ns, 'clipPath');
             cp.setAttribute('id', clipId);
-            cp.appendChild(buildClipShape(obj.container, ns));
+            // Build clip shape scaled to viewBox
+            const clipShape = buildClipShape(obj.container, ns);
+            scaleElement(clipShape, S);
+            cp.appendChild(clipShape);
             defs.appendChild(cp);
             g.appendChild(defs);
-            // Container shape (visible)
+            // Container shape (visible border)
             exportObj(obj.container, g);
-            // Clipped contents
+            // Clipped contents — use style= for CorelDRAW compatibility
             const cg = document.createElementNS(ns, 'g');
-            cg.setAttribute('clip-path', `url(#${clipId})`);
+            cg.setAttribute('style', `clip-path:url(#${clipId})`);
             for (const c of obj.contents) exportObj(c, cg);
             g.appendChild(cg);
             parent.appendChild(g);
         } else {
+            // rect, ellipse, line, bspline, curvepath — clone and scale
             const clone = obj.element.cloneNode(true);
             clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
+            scaleElement(clone, S);
             parent.appendChild(clone);
         }
     }
-    // Wrap content in scale group to convert mm coords → px (96 DPI)
-    const contentGroup = document.createElementNS(ns, 'g');
-    contentGroup.setAttribute('transform', `scale(${mmToPx})`);
-    for (const obj of state.objects) exportObj(obj, contentGroup);
-    root.appendChild(contentGroup);
-    let str = '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(root);
-    // Fix namespace: some serializers output "ns0:href" instead of "xlink:href"
+
+    // Scale an SVG element's coordinates by factor S
+    function scaleElement(el, s) {
+        const tag = el.tagName;
+        const attrs = { x: s, y: s, width: s, height: s, cx: s, cy: s, rx: s, ry: s,
+                        x1: s, y1: s, x2: s, y2: s, 'stroke-width': s };
+        for (const [attr, factor] of Object.entries(attrs)) {
+            const v = el.getAttribute(attr);
+            if (v !== null && !isNaN(parseFloat(v))) {
+                el.setAttribute(attr, parseFloat(v) * factor);
+            }
+        }
+        // Scale path d attribute
+        if (el.hasAttribute('d')) {
+            el.setAttribute('d', scalePathD(el.getAttribute('d'), s));
+        }
+        // Scale font-size
+        if (el.hasAttribute('font-size')) {
+            el.setAttribute('font-size', parseFloat(el.getAttribute('font-size')) * s);
+        }
+        // Scale transform if present
+        const t = el.getAttribute('transform');
+        if (t) {
+            const rotMatch = t.match(/rotate\(\s*([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s*\)/);
+            if (rotMatch) {
+                el.setAttribute('transform', `rotate(${rotMatch[1]} ${parseFloat(rotMatch[2]) * s} ${parseFloat(rotMatch[3]) * s})`);
+            }
+        }
+    }
+
+    // Scale all coordinates in a path d string by factor s
+    function scalePathD(d, s) {
+        return d.replace(/([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g, (m) => {
+            return (parseFloat(m) * s).toFixed(2);
+        });
+    }
+
+    // Layer group (CorelDRAW convention)
+    const layerGroup = document.createElementNS(ns, 'g');
+    layerGroup.setAttribute('id', 'Capa_x0020_1');
+    const meta = document.createElementNS(ns, 'metadata');
+    meta.setAttribute('id', 'CorelCorpID_0Corel-Layer');
+    layerGroup.appendChild(meta);
+
+    for (const obj of state.objects) exportObj(obj, layerGroup);
+    root.appendChild(layerGroup);
+
+    let str = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    str += '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
+    str += new XMLSerializer().serializeToString(root);
+    // Fix namespace serialization
     str = str.replace(/ns\d+:href/g, 'xlink:href');
-    // Add Inkscape metadata so K40 Whisperer recognises 96 DPI without asking
+    // Add Inkscape metadata for K40 Whisperer compatibility
     str = str.replace('<svg ', '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" inkscape:version="0.92.4" ');
     const blob = new Blob([str], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
@@ -3433,16 +3489,40 @@ function importSVG() {
                 }
             }
 
-            // 2) Determine viewBox dimensions
+            // 2) Determine viewBox dimensions and compute mapping to editor page
             const vb = svgRoot.getAttribute('viewBox');
+            const svgW = svgRoot.getAttribute('width') || '';
+            const svgH = svgRoot.getAttribute('height') || '';
             let contentW = state.pageWidth, contentH = state.pageHeight;
+            let vbX = 0, vbY = 0;
             if (vb) {
                 const parts = vb.split(/[\s,]+/).map(Number);
+                vbX = parts[0]; vbY = parts[1];
                 contentW = parts[2]; contentH = parts[3];
             }
-            const fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
-            const offsetX = (state.pageWidth - contentW * fitScale) / 2;
-            const offsetY = (state.pageHeight - contentH * fitScale) / 2;
+            // Detect CorelDRAW mm-based SVGs: width="350mm" viewBox="0 0 35000 33000"
+            // means 100 viewBox units per mm. Convert to editor's mm coordinate space.
+            let mmW = 0, mmH = 0;
+            const mmMatchW = svgW.match(/([\d.]+)\s*mm/i);
+            const mmMatchH = svgH.match(/([\d.]+)\s*mm/i);
+            if (mmMatchW) mmW = parseFloat(mmMatchW[1]);
+            if (mmMatchH) mmH = parseFloat(mmMatchH[1]);
+            // If SVG specifies mm units, map viewBox to page proportionally
+            let fitScale, offsetX, offsetY;
+            if (mmW > 0 && mmH > 0) {
+                // CorelDRAW: viewBox units to mm ratio
+                const unitsPerMmX = contentW / mmW;
+                const unitsPerMmY = contentH / mmH;
+                // Scale to fit editor page (which is in mm)
+                const pageScale = Math.min(state.pageWidth / mmW, state.pageHeight / mmH) * 0.9;
+                fitScale = pageScale / unitsPerMmX;
+                offsetX = (state.pageWidth - mmW * pageScale) / 2 - vbX * fitScale;
+                offsetY = (state.pageHeight - mmH * pageScale) / 2 - vbY * fitScale;
+            } else {
+                fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
+                offsetX = (state.pageWidth - contentW * fitScale) / 2 - vbX * fitScale;
+                offsetY = (state.pageHeight - contentH * fitScale) / 2 - vbY * fitScale;
+            }
 
             // Helper: resolve fill/stroke/stroke-width from attributes, CSS classes, and style attribute
             function resolveStyle(el) {
