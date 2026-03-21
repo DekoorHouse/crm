@@ -3425,19 +3425,19 @@ router.get('/meta/test-event', async (req, res) => {
     }
 
     // Enviar evento de prueba con test_event_code para que no afecte métricas reales
-    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
-    const userData = {
-        ph: [require('crypto').createHash('sha256').update('5215500000000').digest('hex')]
-    };
-    if (FB_PAGE_ID) userData.page_id = FB_PAGE_ID;
+    const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
 
     const testPayload = {
         data: [{
             event_name: 'Purchase',
             event_time: Math.floor(Date.now() / 1000),
             event_id: `test_diag_${Date.now()}`,
-            action_source: 'website',
-            user_data: userData,
+            action_source: 'business_messaging',
+            messaging_channel: 'whatsapp',
+            user_data: {
+                page_id: '110927358587213',
+                ctwa_clid: 'TEST_CLICK_ID_DIAGNOSTIC'
+            },
             custom_data: {
                 value: 0.01,
                 currency: 'MXN'

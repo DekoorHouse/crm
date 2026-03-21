@@ -1,10 +1,8 @@
 const { google } = require('googleapis');
-const crypto = require('crypto');
 const fetch = require('node-fetch');
 const axios = require('axios');
 const { db, admin } = require('./config');
 
-const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
@@ -760,100 +758,45 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 // === SERVICIOS DE META (API DE CONVERSIONES) =====================
 // =================================================================
 
-function sha256(data) {
-    if (!data) return null;
-    return crypto.createHash('sha256').update(data.toString().toLowerCase().replace(/\s/g, '')).digest('hex');
-}
-
 async function sendConversionEvent(eventName, contactInfo, referralInfo, customData = {}) {
     if (!META_PIXEL_ID || !META_CAPI_ACCESS_TOKEN) {
-        console.warn(`[META CAPI] ⚠️ Faltan credenciales de Meta. PIXEL_ID=${!!META_PIXEL_ID}, CAPI_TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
+        console.warn(`[META CAPI] Faltan credenciales. PIXEL_ID=${!!META_PIXEL_ID}, TOKEN=${!!META_CAPI_ACCESS_TOKEN}. No se enviará evento '${eventName}'.`);
         return;
     }
-    if (!contactInfo || !contactInfo.wa_id) {
-        console.error(`❌ Error Crítico: No se puede enviar el evento '${eventName}' porque falta el 'wa_id' del contacto.`);
-        throw new Error(`No se pudo enviar el evento '${eventName}' a Meta: falta el ID de WhatsApp del contacto.`);
+    if (!referralInfo?.ctwa_clid) {
+        console.log(`[META CAPI] Contacto ${contactInfo?.wa_id || 'desconocido'} sin ctwa_clid (orgánico). Se omite evento '${eventName}'.`);
+        return;
     }
-    const url = `https://graph.facebook.com/v19.0/${META_PIXEL_ID}/events`;
+
+    const url = `https://graph.facebook.com/v22.0/${META_PIXEL_ID}/events`;
     const eventTime = Math.floor(Date.now() / 1000);
-    const eventId = `${eventName}_${contactInfo.wa_id}_${eventTime}`;
-    const userData = { ph: [] };
-    try {
-        userData.ph.push(sha256(contactInfo.wa_id));
-        if (contactInfo.profile?.name) userData.fn = sha256(contactInfo.profile.name);
-    } catch (hashError) {
-        console.error(`❌ Error al hashear los datos del usuario para el evento '${eventName}':`, hashError);
-        throw new Error(`Falló la preparación de datos para el evento '${eventName}'.`);
-    }
-    if (WHATSAPP_BUSINESS_ACCOUNT_ID) {
-        userData.whatsapp_business_account_id = WHATSAPP_BUSINESS_ACCOUNT_ID;
-    }
-    if (FB_PAGE_ID) {
-        userData.page_id = FB_PAGE_ID;
-    }
-    const isAdReferral = referralInfo && referralInfo.ctwa_clid;
-    if (isAdReferral) userData.ctwa_clid = referralInfo.ctwa_clid;
-    const finalCustomData = {
-        lead_source: isAdReferral ? 'WhatsApp Ad' : 'WhatsApp Organic',
-        ad_headline: isAdReferral ? referralInfo.headline : undefined,
-        ad_id: isAdReferral ? referralInfo.source_id : undefined,
-        ...customData
-    };
-    Object.keys(finalCustomData).forEach(key => finalCustomData[key] === undefined && delete finalCustomData[key]);
 
-    // business_messaging usa nombres de eventos diferentes
-    const businessMessagingEventMap = {
-        'Lead': 'LeadSubmitted',
-        'ViewContent': 'ViewContent',
-        'Purchase': 'Purchase',
-    };
-
-    // business_messaging requiere ctwa_clid y page_id; para orgánicos usar website
     const eventData = {
         event_name: eventName,
         event_time: eventTime,
-        event_id: eventId,
-        user_data: userData,
-        custom_data: finalCustomData,
+        event_id: `${eventName}_${contactInfo?.wa_id || 'unknown'}_${eventTime}`,
+        action_source: 'business_messaging',
+        messaging_channel: 'whatsapp',
+        user_data: {
+            page_id: '110927358587213',
+            ctwa_clid: referralInfo.ctwa_clid
+        },
     };
-    if (isAdReferral) {
-        eventData.action_source = 'business_messaging';
-        eventData.messaging_channel = 'whatsapp';
-        eventData.event_name = businessMessagingEventMap[eventName] || eventName;
-    } else {
-        eventData.action_source = 'website';
+
+    if (customData && Object.keys(customData).length > 0) {
+        eventData.custom_data = { ...customData };
     }
+
     const payload = { data: [eventData] };
     const headers = { 'Authorization': `Bearer ${META_CAPI_ACCESS_TOKEN}`, 'Content-Type': 'application/json' };
+
     try {
-        console.log(`[META CAPI] Enviando evento '${eventName}' para ${contactInfo.wa_id} al pixel ${META_PIXEL_ID}. action_source=${eventData.action_source}`);
+        console.log(`[META CAPI] Enviando evento '${eventName}' al dataset ${META_PIXEL_ID}. ctwa_clid=${referralInfo.ctwa_clid}`);
         const response = await axios.post(url, payload, { headers });
-        console.log(`[META CAPI] ✅ Evento '${eventName}' enviado a Meta. Respuesta:`, JSON.stringify(response.data));
+        console.log(`[META CAPI] ✅ Evento '${eventName}' enviado. Respuesta:`, JSON.stringify(response.data));
     } catch (error) {
-        console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}' (${eventData.action_source}). HTTP ${error.response?.status || 'N/A'}`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        // Si business_messaging falla, reintentar como website para no perder el evento
-        if (eventData.action_source === 'business_messaging') {
-            console.log(`[META CAPI] Reintentando '${eventName}' como action_source=website...`);
-            // Limpiar campos específicos de business_messaging que pueden causar error 500
-            const websiteEventData = {
-                event_name: eventData.event_name,
-                event_time: eventData.event_time,
-                event_id: eventData.event_id + '_web',
-                action_source: 'website',
-                user_data: {
-                    ph: eventData.user_data.ph,
-                    fn: eventData.user_data.fn
-                },
-                custom_data: eventData.custom_data
-            };
-            try {
-                const retryResponse = await axios.post(url, { data: [websiteEventData] }, { headers });
-                console.log(`[META CAPI] ✅ Evento '${eventName}' enviado como website (fallback). Respuesta:`, JSON.stringify(retryResponse.data));
-                return;
-            } catch (retryError) {
-                console.error(`[META CAPI] ❌ Fallback website también falló. HTTP ${retryError.response?.status || 'N/A'}`, retryError.response ? JSON.stringify(retryError.response.data, null, 2) : retryError.message);
-            }
-        }
+        console.error(`[META CAPI] ❌ Error al enviar evento '${eventName}'. HTTP ${error.response?.status || 'N/A'}`,
+            error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw new Error(`Falló el envío del evento '${eventName}' a Meta.`);
     }
 }
