@@ -602,18 +602,19 @@
                 const data = await res.json();
 
                 let html = '';
-                if (data.success && data.page_connected && data.waba_linked) {
-                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}), pagina conectada y WABA vinculada exitosamente.</div>`;
-                } else if (data.success && data.page_connected) {
-                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}) y pagina conectada. WABA no se pudo vincular.</div>`;
+                if (data.success && data.waba_linked) {
+                    html += `<div class="status success">Dataset ${data.is_new ? 'creado' : 'encontrado'} (ID: ${data.new_dataset_id}) y WABA vinculada.</div>`;
                 } else if (data.success) {
-                    html += `<div class="status success">Dataset creado (ID: ${data.new_dataset_id}) pero no se pudo conectar la pagina.</div>`;
+                    html += `<div class="status success">Dataset ${data.is_new ? 'creado' : 'encontrado'} (ID: ${data.new_dataset_id}). WABA no se pudo vincular.</div>`;
                 } else {
                     html += `<div class="status error">${data.error || 'Error al crear el dataset.'}</div>`;
                 }
 
                 if (data.new_dataset_id) {
-                    html += `<div class="status info">Nuevo Dataset ID: <strong>${data.new_dataset_id}</strong> — guardalo para configurar en tus variables de entorno (META_PIXEL_ID).</div>`;
+                    html += `<div class="status info">Dataset ID: <strong>${data.new_dataset_id}</strong></div>`;
+                }
+                if (data.page_connect_note) {
+                    html += `<div class="status info">${data.page_connect_note}</div>`;
                 }
 
                 if (data.steps) {

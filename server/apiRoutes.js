@@ -3607,6 +3607,9 @@ router.get('/meta/config/discover', async (req, res) => {
 });
 
 // Conectar una página a un dataset
+// NOTA: Para AdsPixels/CAPI datasets, POST /{dataset_id}/pages NO funciona.
+// La conexión página↔pixel solo se puede hacer en Meta Events Manager UI.
+// Este endpoint intenta el método directo y vía WABA, y reporta claramente el estado.
 router.post('/meta/config/connect-page', async (req, res) => {
     const { token, page_token, dataset_id, page_id } = req.body;
     if (!dataset_id || !page_id) {
@@ -3619,27 +3622,10 @@ router.post('/meta/config/connect-page', async (req, res) => {
     const allTokens = [
         ['page_token', page_token],
         ['user_token', token],
-        ['system_token', systemToken],
-        ['whatsapp_token', process.env.WHATSAPP_TOKEN],
-        ['meta_graph_token', process.env.META_GRAPH_TOKEN]
+        ['system_token', systemToken]
     ].filter(([, t]) => t);
 
-    // Descubrir business_id
-    let businessId = null;
-    if (token) {
-        try {
-            const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
-                params: { fields: 'id,name', access_token: token }
-            });
-            if (r.data.data?.length > 0) businessId = r.data.data[0].id;
-        } catch (e) { /* ignore */ }
-    }
-
-    let anySuccess = false;
-    let wabaLinked = false;
-    let pendingRequestId = null;
-
-    // Helper: intenta con todos los tokens, solo v21.0 (v19.0 no añade valor)
+    // Helper: intenta con todos los tokens
     async function tryTokens(methodName, fn) {
         for (const [label, tk] of allTokens) {
             try {
@@ -3653,45 +3639,16 @@ router.post('/meta/config/connect-page', async (req, res) => {
         return null;
     }
 
-    // === PASO 1: Método directo — POST /{dataset_id}/pages ===
+    let pageConnected = false;
+    let wabaLinked = false;
+
+    // 1. Método directo — POST /{dataset_id}/pages (funciona con offline_conversion_data_sets, NO con AdsPixels)
     const directResult = await tryTokens('dataset/pages', tk =>
         axios.post(`https://graph.facebook.com/v21.0/${dataset_id}/pages`, { page_id, access_token: tk })
     );
-    if (directResult) anySuccess = true;
+    if (directResult) pageConnected = true;
 
-    // === PASO 2: Si falló, solicitar acceso vía agencia y auto-aceptar ===
-    if (!anySuccess && businessId) {
-        // 2a. Solicitar acceso como agencia
-        const agencyResult = await tryTokens('dataset/agencies', tk =>
-            axios.post(`https://graph.facebook.com/v21.0/${dataset_id}/agencies`, {
-                business: businessId,
-                permitted_tasks: ['ADVERTISE', 'ANALYZE'],
-                access_token: tk
-            })
-        );
-
-        if (agencyResult?.pending_request_id) {
-            pendingRequestId = agencyResult.pending_request_id;
-
-            // 2b. Auto-aceptar la solicitud pendiente
-            const acceptResult = await tryTokens(`accept_request/${pendingRequestId}`, tk =>
-                axios.post(`https://graph.facebook.com/v21.0/${pendingRequestId}`, {
-                    request_status: 'approve',
-                    access_token: tk
-                })
-            );
-
-            if (acceptResult) {
-                // 2c. Reintentar dataset/pages después de aceptar
-                const retryResult = await tryTokens('dataset/pages (post-agency)', tk =>
-                    axios.post(`https://graph.facebook.com/v21.0/${dataset_id}/pages`, { page_id, access_token: tk })
-                );
-                if (retryResult) anySuccess = true;
-            }
-        }
-    }
-
-    // === PASO 3: Vía WABA (vincula WABA↔dataset, NO página↔dataset en Event Manager) ===
+    // 2. Vía WABA — vincula dataset a WABA (NO conecta página en Event Manager)
     if (wabaId) {
         const wabaResult = await tryTokens('waba/dataset+page', tk =>
             axios.post(`https://graph.facebook.com/v21.0/${wabaId}/dataset`, {
@@ -3701,39 +3658,7 @@ router.post('/meta/config/connect-page', async (req, res) => {
         if (wabaResult) wabaLinked = true;
     }
 
-    // === PASO 4: Método vía pixel — POST /{dataset_id}/users (asignar acceso) ===
-    if (!anySuccess) {
-        const usersResult = await tryTokens('dataset/users', tk =>
-            axios.post(`https://graph.facebook.com/v21.0/${dataset_id}/userpermissions`, {
-                user: page_id,
-                business: businessId,
-                access_token: tk
-            })
-        );
-        if (usersResult) anySuccess = true;
-    }
-
-    // === VERIFICACIÓN ===
-    let verified = false;
-
-    // 1. Campo connected_page
-    for (const [label, tk] of allTokens) {
-        try {
-            const r = await axios.get(`https://graph.facebook.com/v21.0/${dataset_id}`, {
-                params: { fields: 'id,name,connected_page', access_token: tk }
-            });
-            if (r.data.connected_page?.id === page_id) {
-                verified = true;
-                results.push({ method: `VERIFY connected_page (${label})`, success: true, data: r.data, page_linked: true });
-                break;
-            }
-            results.push({ method: `VERIFY connected_page (${label})`, success: true, data: r.data, page_linked: false });
-        } catch (e) {
-            results.push({ method: `VERIFY connected_page (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-        }
-    }
-
-    // 2. WABA verification
+    // 3. Verificar WABA
     let wabaVerified = false;
     if (wabaId) {
         for (const [label, tk] of allTokens) {
@@ -3752,16 +3677,17 @@ router.post('/meta/config/connect-page', async (req, res) => {
     }
 
     res.json({
-        success: anySuccess || verified,
-        verified,
-        pending_request_id: pendingRequestId,
+        success: pageConnected,
+        page_connected: pageConnected,
         waba_linked: wabaLinked || wabaVerified,
-        waba_only: !anySuccess && !verified && (wabaLinked || wabaVerified),
+        waba_only: !pageConnected && (wabaLinked || wabaVerified),
         results
     });
 });
 
-// Crear dataset propio, conectar página, y vincular a WABA — todo en un flujo
+// Crear/encontrar pixel en ad account, compartir con BM, y vincular a WABA
+// NOTA: AdsPixels NO soportan POST /{id}/pages. La conexión página↔pixel
+// debe hacerse manualmente en Meta Events Manager → Configuración → Recursos conectados.
 router.post('/meta/config/create-and-connect', async (req, res) => {
     const { token, page_token, page_id, dataset_name, old_dataset_id, business_id, ad_account_id } = req.body;
     const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
@@ -3772,19 +3698,16 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
     if (!dataset_name) return res.status(400).json({ error: 'Se requiere dataset_name' });
 
     const allTokens = [
-        ['page_token', page_token],
         ['user_token', token],
-        ['system_token', systemToken],
-        ['whatsapp_token', process.env.WHATSAPP_TOKEN],
-        ['meta_graph_token', process.env.META_GRAPH_TOKEN]
+        ['page_token', page_token],
+        ['system_token', systemToken]
     ].filter(([, t]) => t);
 
     const steps = [];
     let newDatasetId = null;
-    let pageConnected = false;
     let wabaLinked = false;
 
-    // === PASO 1: Usar BM y Ad Account seleccionados, o descubrir ===
+    // === PASO 1: BM y Ad Account ===
     let businessId = business_id || null;
     let adAccountId = ad_account_id || null;
 
@@ -3795,134 +3718,86 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
             });
             if (r.data.data?.length > 0) {
                 businessId = r.data.data[0].id;
-                steps.push({ step: 'Descubrir BM', success: true, data: { business_id: businessId, name: r.data.data[0].name } });
+                steps.push({ step: 'Descubrir BM', success: true, data: { id: businessId, name: r.data.data[0].name } });
             }
         } catch (e) {
             steps.push({ step: 'Descubrir BM', success: false, error: e.response?.data?.error?.message || e.message });
         }
     } else {
-        steps.push({ step: 'BM seleccionado', success: true, data: { business_id: businessId } });
+        steps.push({ step: 'BM seleccionado', success: true, data: { id: businessId } });
     }
 
     if (!adAccountId) {
         try {
             const r = await axios.get('https://graph.facebook.com/v21.0/me/adaccounts', {
-                params: { fields: 'id,name,account_id', limit: 5, access_token: token }
+                params: { fields: 'id,name', limit: 5, access_token: token }
             });
             if (r.data.data?.length > 0) {
                 adAccountId = r.data.data[0].id;
-                steps.push({ step: 'Descubrir Ad Account', success: true, data: { ad_account: adAccountId, name: r.data.data[0].name } });
+                steps.push({ step: 'Descubrir Ad Account', success: true, data: { id: adAccountId, name: r.data.data[0].name } });
             }
         } catch (e) {
             steps.push({ step: 'Descubrir Ad Account', success: false, error: e.response?.data?.error?.message || e.message });
         }
     } else {
-        // Asegurar formato act_
         if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
-        steps.push({ step: 'Ad Account seleccionada', success: true, data: { ad_account: adAccountId } });
+        steps.push({ step: 'Ad Account seleccionada', success: true, data: { id: adAccountId } });
     }
 
     if (!adAccountId) {
-        return res.status(400).json({ error: 'No se encontró ninguna Ad Account. Se necesita al menos una para crear el dataset.', steps });
+        return res.status(400).json({ error: 'No se encontró ninguna Ad Account.', steps });
     }
 
-    // === PASO 2: Crear dataset ===
-    let datasetType = null;
+    // === PASO 2: Crear pixel o usar existente ===
+    let isNew = false;
 
-    // 2a. Intentar offline_conversion_data_sets vía BM con v19.0 (deprecado en v20+, pero soporta /pages)
-    if (businessId) {
-        for (const [label, tk] of allTokens) {
-            if (newDatasetId) break;
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v19.0/${businessId}/offline_conversion_data_sets`, {
-                    name: dataset_name,
-                    access_token: tk
-                });
-                newDatasetId = r.data.id;
-                datasetType = 'offline_conversion_data_set';
-                steps.push({ step: `Crear offline dataset v19 (${label})`, success: true, data: r.data });
-            } catch (e) {
-                steps.push({ step: `Crear offline dataset v19 (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-            }
-        }
-    }
+    // 2a. Intentar crear pixel nuevo
+    try {
+        const r = await axios.post(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
+            name: dataset_name, access_token: token
+        });
+        newDatasetId = r.data.id;
+        isNew = true;
+        steps.push({ step: 'Crear pixel', success: true, data: r.data });
+    } catch (e) {
+        const msg = e.response?.data?.error?.message || e.message;
+        steps.push({ step: 'Crear pixel', success: false, error: msg });
 
-    // 2b. Intentar crear AdsPixel vía Ad Account
-    if (!newDatasetId) {
-        for (const [label, tk] of allTokens) {
-            if (newDatasetId) break;
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
-                    name: dataset_name,
-                    access_token: tk
-                });
-                newDatasetId = r.data.id;
-                datasetType = 'ads_pixel';
-                steps.push({ step: `Crear pixel (${label})`, success: true, data: r.data });
-            } catch (e) {
-                steps.push({ step: `Crear pixel (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-            }
-        }
-    }
-
-    // 2c. Si el pixel ya existe, buscar el existente en la ad account
-    if (!newDatasetId) {
-        for (const [label, tk] of allTokens) {
-            if (newDatasetId) break;
+        // 2b. Si ya existe, buscar el existente
+        if (msg.includes('already exists')) {
             try {
                 const r = await axios.get(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
-                    params: { fields: 'id,name', access_token: tk }
+                    params: { fields: 'id,name', access_token: token }
                 });
                 if (r.data.data?.length > 0) {
                     newDatasetId = r.data.data[0].id;
-                    datasetType = 'ads_pixel_existing';
-                    steps.push({ step: `Usar pixel existente (${label})`, success: true, data: r.data.data[0] });
+                    steps.push({ step: 'Usar pixel existente', success: true, data: r.data.data[0] });
                 }
-            } catch (e) {
-                steps.push({ step: `Buscar pixel existente (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            } catch (e2) {
+                steps.push({ step: 'Buscar pixel existente', success: false, error: e2.response?.data?.error?.message || e2.message });
             }
         }
     }
 
     if (!newDatasetId) {
-        return res.status(500).json({ error: 'No se pudo crear ni encontrar un dataset.', steps });
+        return res.status(500).json({ error: 'No se pudo crear ni encontrar un pixel/dataset.', steps });
     }
 
-    // === PASO 3: Conectar la página al nuevo dataset ===
-    // 3a. POST /{dataset_id}/pages (funciona con offline_conversion_data_sets)
-    for (const [label, tk] of allTokens) {
-        if (pageConnected) break;
+    // === PASO 3: Compartir pixel con ad account del BM (da acceso al BM) ===
+    if (businessId) {
         try {
-            const r = await axios.post(`https://graph.facebook.com/v21.0/${newDatasetId}/pages`, {
-                page_id,
-                access_token: tk
+            const r = await axios.post(`https://graph.facebook.com/v21.0/${newDatasetId}/shared_accounts`, {
+                business: businessId,
+                account_id: adAccountId.replace('act_', ''),
+                access_token: token
             });
-            pageConnected = true;
-            steps.push({ step: `Conectar página via /pages (${label})`, success: true, data: r.data });
+            steps.push({ step: 'Compartir con ad account', success: true, data: r.data });
         } catch (e) {
-            steps.push({ step: `Conectar página via /pages (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            steps.push({ step: 'Compartir con ad account', success: false, error: e.response?.data?.error?.message || e.message });
         }
     }
 
-    // 3b. Si /pages falló (ej: AdsPixel), intentar compartir pixel con ad accounts del BM
-    if (!pageConnected && businessId) {
-        for (const [label, tk] of allTokens) {
-            if (pageConnected) break;
-            try {
-                const r = await axios.post(`https://graph.facebook.com/v21.0/${newDatasetId}/shared_accounts`, {
-                    business: businessId,
-                    account_id: adAccountId.replace('act_', ''),
-                    access_token: tk
-                });
-                steps.push({ step: `Compartir dataset con ad account (${label})`, success: true, data: r.data });
-                // No es page connection directa, pero da acceso
-            } catch (e) {
-                steps.push({ step: `Compartir dataset con ad account (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-            }
-        }
-    }
-
-    // === PASO 4: Desvincular dataset viejo de WABA (si se proporcionó) ===
+    // === PASO 4: Desvincular dataset viejo de WABA ===
     if (wabaId && old_dataset_id) {
         for (const [label, tk] of allTokens) {
             try {
@@ -3937,26 +3812,19 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
         }
     }
 
-    // === PASO 5: Vincular nuevo dataset a WABA ===
+    // === PASO 5: Vincular a WABA ===
     if (wabaId) {
         for (const [label, tk] of allTokens) {
             if (wabaLinked) break;
             try {
                 const r = await axios.post(`https://graph.facebook.com/v21.0/${wabaId}/dataset`, {
-                    dataset_id: newDatasetId,
-                    page_id,
-                    access_token: tk
+                    dataset_id: newDatasetId, page_id, access_token: tk
                 });
-                // Verificar que respondió con el ID correcto
                 const linkedId = r.data?.id;
-                if (linkedId === newDatasetId) {
-                    wabaLinked = true;
-                    steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data });
-                } else {
-                    steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data,
-                        warning: `WABA respondió con ID ${linkedId} en vez de ${newDatasetId}. Puede que necesites desvincular el dataset viejo primero.` });
-                    wabaLinked = false;
-                }
+                wabaLinked = linkedId === newDatasetId;
+                steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data,
+                    ...(linkedId !== newDatasetId ? { warning: `WABA respondió con ID ${linkedId}. Desvincula el dataset viejo primero.` } : {})
+                });
             } catch (e) {
                 steps.push({ step: `Vincular WABA (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
             }
@@ -3964,27 +3832,22 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
     }
 
     // === PASO 6: Verificar ===
-    let verified = false;
-    for (const [label, tk] of allTokens) {
-        try {
-            const r = await axios.get(`https://graph.facebook.com/v21.0/${newDatasetId}`, {
-                params: { fields: 'id,name,owner_business{id,name}', access_token: tk }
-            });
-            steps.push({ step: `Verificar dataset (${label})`, success: true, data: r.data });
-            verified = true;
-            break;
-        } catch (e) {
-            steps.push({ step: `Verificar dataset (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-        }
+    try {
+        const r = await axios.get(`https://graph.facebook.com/v21.0/${newDatasetId}`, {
+            params: { fields: 'id,name,owner_business{id,name}', access_token: token }
+        });
+        steps.push({ step: 'Verificar dataset', success: true, data: r.data });
+    } catch (e) {
+        steps.push({ step: 'Verificar dataset', success: false, error: e.response?.data?.error?.message || e.message });
     }
 
     res.json({
         success: !!newDatasetId,
         new_dataset_id: newDatasetId,
-        dataset_type: datasetType,
-        page_connected: pageConnected,
+        is_new: isNew,
+        page_connected: false, // AdsPixels no soportan /pages — debe hacerse manual
+        page_connect_note: 'La conexión página↔pixel debe hacerse en Meta Events Manager → Configuración → Recursos conectados.',
         waba_linked: wabaLinked,
-        old_dataset_unlinked: !!old_dataset_id,
         steps
     });
 });
