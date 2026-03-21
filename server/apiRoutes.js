@@ -3826,28 +3826,28 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
         return res.status(400).json({ error: 'No se encontró ninguna Ad Account. Se necesita al menos una para crear el dataset.', steps });
     }
 
-    // === PASO 2: Crear dataset — PRIMERO offline_conversion_data_sets (soporta /pages) ===
+    // === PASO 2: Crear dataset ===
     let datasetType = null;
 
-    // 2a. Intentar offline_conversion_data_sets vía BM (soporta POST /{id}/pages)
+    // 2a. Intentar offline_conversion_data_sets vía BM con v19.0 (deprecado en v20+, pero soporta /pages)
     if (businessId) {
         for (const [label, tk] of allTokens) {
             if (newDatasetId) break;
             try {
-                const r = await axios.post(`https://graph.facebook.com/v21.0/${businessId}/offline_conversion_data_sets`, {
+                const r = await axios.post(`https://graph.facebook.com/v19.0/${businessId}/offline_conversion_data_sets`, {
                     name: dataset_name,
                     access_token: tk
                 });
                 newDatasetId = r.data.id;
                 datasetType = 'offline_conversion_data_set';
-                steps.push({ step: `Crear offline dataset (${label})`, success: true, data: r.data });
+                steps.push({ step: `Crear offline dataset v19 (${label})`, success: true, data: r.data });
             } catch (e) {
-                steps.push({ step: `Crear offline dataset (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+                steps.push({ step: `Crear offline dataset v19 (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
             }
         }
     }
 
-    // 2b. Fallback: crear AdsPixel vía Ad Account
+    // 2b. Intentar crear AdsPixel vía Ad Account
     if (!newDatasetId) {
         for (const [label, tk] of allTokens) {
             if (newDatasetId) break;
@@ -3865,8 +3865,27 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
         }
     }
 
+    // 2c. Si el pixel ya existe, buscar el existente en la ad account
     if (!newDatasetId) {
-        return res.status(500).json({ error: 'No se pudo crear el dataset con ningún método.', steps });
+        for (const [label, tk] of allTokens) {
+            if (newDatasetId) break;
+            try {
+                const r = await axios.get(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
+                    params: { fields: 'id,name', access_token: tk }
+                });
+                if (r.data.data?.length > 0) {
+                    newDatasetId = r.data.data[0].id;
+                    datasetType = 'ads_pixel_existing';
+                    steps.push({ step: `Usar pixel existente (${label})`, success: true, data: r.data.data[0] });
+                }
+            } catch (e) {
+                steps.push({ step: `Buscar pixel existente (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    if (!newDatasetId) {
+        return res.status(500).json({ error: 'No se pudo crear ni encontrar un dataset.', steps });
     }
 
     // === PASO 3: Conectar la página al nuevo dataset ===
