@@ -133,14 +133,31 @@
             <div class="card">
                 <h2><span class="section-icon">🆕</span>Crear Dataset Propio + Conectar Pagina + WABA</h2>
                 <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Crea un dataset nuevo en tu Ad Account, le conecta la pagina, y lo vincula a la WABA. Usa esto cuando el dataset existente no permite conectar la pagina por API.</p>
+
+                <button class="btn-secondary" onclick="loadBusinessesAndAccounts()">Cargar negocios y cuentas publicitarias</button>
+                <div id="bizLoadStatus"></div>
+
+                <label for="createBmSelect">Negocio (Business Manager)</label>
+                <select id="createBmSelect" disabled onchange="filterAdAccounts()">
+                    <option value="">-- Primero carga los negocios --</option>
+                </select>
+
+                <label for="createAdAccountSelect">Cuenta publicitaria</label>
+                <select id="createAdAccountSelect" disabled>
+                    <option value="">-- Primero carga las cuentas --</option>
+                </select>
+
                 <label for="newDatasetName">Nombre del nuevo dataset</label>
                 <input type="text" id="newDatasetName" placeholder="Ej: Mi Dataset CAPI">
+
                 <label for="createPageSelect">Pagina a conectar</label>
                 <select id="createPageSelect" disabled>
                     <option value="">-- Primero carga las paginas con el boton de arriba --</option>
                 </select>
+
                 <label for="oldDatasetId">Dataset viejo a desvincular de WABA (opcional)</label>
                 <input type="text" id="oldDatasetId" placeholder="Ej: 1452903482578288 (dejar vacio para no desvincular)">
+
                 <div class="btn-row">
                     <button class="btn-primary" id="createConnectBtn" onclick="createAndConnect()" disabled>Crear dataset, conectar pagina y vincular WABA</button>
                 </div>
@@ -491,11 +508,72 @@
             }
         }
 
+        let allAdAccounts = [];
+
+        async function loadBusinessesAndAccounts() {
+            const token = getToken();
+            if (!token) return showStatus('bizLoadStatus', 'Ingresa un access token.', 'error');
+
+            showStatus('bizLoadStatus', '<span class="spinner"></span> Cargando negocios y cuentas...', 'info');
+
+            try {
+                const res = await fetch(`${API_BASE}/meta/config/businesses?token=${encodeURIComponent(token)}`);
+                const data = await res.json();
+
+                if (data.error) return showStatus('bizLoadStatus', `Error: ${data.error.message || JSON.stringify(data.error)}`, 'error');
+
+                // Llenar select de BMs
+                const bmSelect = document.getElementById('createBmSelect');
+                bmSelect.innerHTML = '<option value="">-- Selecciona un negocio --</option>';
+                (data.businesses || []).forEach(b => {
+                    const opt = document.createElement('option');
+                    opt.value = b.id;
+                    opt.textContent = `${b.name} (${b.id})`;
+                    bmSelect.appendChild(opt);
+                });
+                bmSelect.disabled = false;
+
+                // Guardar ad accounts para filtrar después
+                allAdAccounts = data.ad_accounts || [];
+
+                // Llenar select de Ad Accounts (todas)
+                fillAdAccountSelect(allAdAccounts);
+
+                showStatus('bizLoadStatus', `${data.businesses?.length || 0} negocio(s), ${allAdAccounts.length} cuenta(s) publicitaria(s).`, 'success');
+            } catch (err) {
+                showStatus('bizLoadStatus', `Error de red: ${err.message}`, 'error');
+            }
+        }
+
+        function fillAdAccountSelect(accounts) {
+            const select = document.getElementById('createAdAccountSelect');
+            select.innerHTML = '<option value="">-- Selecciona una cuenta publicitaria --</option>';
+            accounts.forEach(a => {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = `${a.name || 'Sin nombre'} (${a.id})${a.business_name ? ' — ' + a.business_name : ''}`;
+                select.appendChild(opt);
+            });
+            select.disabled = false;
+        }
+
+        function filterAdAccounts() {
+            const bmId = document.getElementById('createBmSelect').value;
+            if (bmId) {
+                const filtered = allAdAccounts.filter(a => a.business_id === bmId);
+                fillAdAccountSelect(filtered.length > 0 ? filtered : allAdAccounts);
+            } else {
+                fillAdAccountSelect(allAdAccounts);
+            }
+        }
+
         async function createAndConnect() {
             const token = getToken();
             const datasetName = document.getElementById('newDatasetName').value.trim();
             const pageId = document.getElementById('createPageSelect').value;
             const oldDatasetId = document.getElementById('oldDatasetId').value.trim();
+            const businessId = document.getElementById('createBmSelect').value;
+            const adAccountId = document.getElementById('createAdAccountSelect').value;
 
             if (!token) return showStatus('createConnectResult', 'Falta el access token.', 'error');
             if (!datasetName) return showStatus('createConnectResult', 'Ingresa un nombre para el dataset.', 'error');
@@ -516,7 +594,9 @@
                         page_token: pageToken,
                         page_id: pageId,
                         dataset_name: datasetName,
-                        old_dataset_id: oldDatasetId || undefined
+                        old_dataset_id: oldDatasetId || undefined,
+                        business_id: businessId || undefined,
+                        ad_account_id: adAccountId || undefined
                     })
                 });
                 const data = await res.json();

@@ -3511,6 +3511,37 @@ router.get('/meta/config/pages', async (req, res) => {
     }
 });
 
+// Listar negocios y ad accounts del usuario
+router.get('/meta/config/businesses', async (req, res) => {
+    const token = req.query.token;
+    if (!token) return res.status(400).json({ error: 'Se requiere un access_token' });
+
+    try {
+        const [bizRes, adRes] = await Promise.all([
+            axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+                params: { fields: 'id,name', limit: 50, access_token: token }
+            }),
+            axios.get('https://graph.facebook.com/v21.0/me/adaccounts', {
+                params: { fields: 'id,name,account_id,business{id,name}', limit: 50, access_token: token }
+            })
+        ]);
+        res.json({
+            businesses: bizRes.data.data || [],
+            ad_accounts: (adRes.data.data || []).map(a => ({
+                id: a.id,
+                account_id: a.account_id,
+                name: a.name,
+                business_id: a.business?.id,
+                business_name: a.business?.name
+            }))
+        });
+    } catch (error) {
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
 // Descubrir edges disponibles en el dataset y la página
 router.get('/meta/config/discover', async (req, res) => {
     const token = req.query.token;
@@ -3732,7 +3763,7 @@ router.post('/meta/config/connect-page', async (req, res) => {
 
 // Crear dataset propio, conectar página, y vincular a WABA — todo en un flujo
 router.post('/meta/config/create-and-connect', async (req, res) => {
-    const { token, page_token, page_id, dataset_name, old_dataset_id } = req.body;
+    const { token, page_token, page_id, dataset_name, old_dataset_id, business_id, ad_account_id } = req.body;
     const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
     const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 
@@ -3753,31 +3784,42 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
     let pageConnected = false;
     let wabaLinked = false;
 
-    // === PASO 1: Descubrir BM y ad account ===
-    let businessId = null;
-    let adAccountId = null;
-    try {
-        const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
-            params: { fields: 'id,name', access_token: token }
-        });
-        if (r.data.data?.length > 0) {
-            businessId = r.data.data[0].id;
-            steps.push({ step: 'Descubrir BM', success: true, data: { business_id: businessId, name: r.data.data[0].name } });
+    // === PASO 1: Usar BM y Ad Account seleccionados, o descubrir ===
+    let businessId = business_id || null;
+    let adAccountId = ad_account_id || null;
+
+    if (!businessId) {
+        try {
+            const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+                params: { fields: 'id,name', access_token: token }
+            });
+            if (r.data.data?.length > 0) {
+                businessId = r.data.data[0].id;
+                steps.push({ step: 'Descubrir BM', success: true, data: { business_id: businessId, name: r.data.data[0].name } });
+            }
+        } catch (e) {
+            steps.push({ step: 'Descubrir BM', success: false, error: e.response?.data?.error?.message || e.message });
         }
-    } catch (e) {
-        steps.push({ step: 'Descubrir BM', success: false, error: e.response?.data?.error?.message || e.message });
+    } else {
+        steps.push({ step: 'BM seleccionado', success: true, data: { business_id: businessId } });
     }
 
-    try {
-        const r = await axios.get('https://graph.facebook.com/v21.0/me/adaccounts', {
-            params: { fields: 'id,name,account_id', limit: 5, access_token: token }
-        });
-        if (r.data.data?.length > 0) {
-            adAccountId = r.data.data[0].id; // formato "act_123456"
-            steps.push({ step: 'Descubrir Ad Account', success: true, data: { ad_account: adAccountId, name: r.data.data[0].name } });
+    if (!adAccountId) {
+        try {
+            const r = await axios.get('https://graph.facebook.com/v21.0/me/adaccounts', {
+                params: { fields: 'id,name,account_id', limit: 5, access_token: token }
+            });
+            if (r.data.data?.length > 0) {
+                adAccountId = r.data.data[0].id;
+                steps.push({ step: 'Descubrir Ad Account', success: true, data: { ad_account: adAccountId, name: r.data.data[0].name } });
+            }
+        } catch (e) {
+            steps.push({ step: 'Descubrir Ad Account', success: false, error: e.response?.data?.error?.message || e.message });
         }
-    } catch (e) {
-        steps.push({ step: 'Descubrir Ad Account', success: false, error: e.response?.data?.error?.message || e.message });
+    } else {
+        // Asegurar formato act_
+        if (!adAccountId.startsWith('act_')) adAccountId = `act_${adAccountId}`;
+        steps.push({ step: 'Ad Account seleccionada', success: true, data: { ad_account: adAccountId } });
     }
 
     if (!adAccountId) {
