@@ -3615,6 +3615,7 @@ router.post('/meta/config/connect-page', async (req, res) => {
     const apiVersions = ['v21.0', 'v19.0'];
     let anySuccess = false;
     let wabaLinked = false;
+    let esgId = null;
 
     // Helper para intentar un método con todos los tokens y versiones de API
     async function tryMethod(methodName, fn, { skipIfSuccess = true } = {}) {
@@ -3684,7 +3685,6 @@ router.post('/meta/config/connect-page', async (req, res) => {
         );
 
         // 8. POST /{business_id}/event_source_groups — crea ESG que conecta dataset + page
-        let esgId = null;
         for (const version of apiVersions) {
             if (esgId) break;
             for (const [label, tk] of allTokens) {
