@@ -3593,26 +3593,26 @@ function importSVG() {
                 return { x: m[0]*x + m[2]*y + m[4], y: m[1]*x + m[3]*y + m[5] };
             }
 
-            // Import a path via browser sampling — lets the SVG engine handle all parsing & transforms
+            // Import a path via browser sampling + manual CTM application
             function importPath(d, sty, ctm) {
                 const ns = 'http://www.w3.org/2000/svg';
-                // Create temp SVG to use browser's path engine with transform
+                // Create temp SVG to sample the path geometry (NO transform on the path)
                 const tempSvg = document.createElementNS(ns, 'svg');
                 tempSvg.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
                 tempSvg.setAttribute('viewBox', '0 0 100000 100000');
                 document.body.appendChild(tempSvg);
                 const path = document.createElementNS(ns, 'path');
                 path.setAttribute('d', d);
-                path.setAttribute('transform', `matrix(${ctm.join(',')})`);
                 tempSvg.appendChild(path);
                 let len;
                 try { len = path.getTotalLength(); } catch(e) { document.body.removeChild(tempSvg); return; }
                 if (len < 0.01) { document.body.removeChild(tempSvg); return; }
-                // Sample the transformed path
+                // Sample the path in LOCAL coords, then apply CTM to each point
                 const numSamples = Math.min(500, Math.max(80, Math.ceil(len / 2)));
                 let newD = '';
                 for (let i = 0; i <= numSamples; i++) {
-                    const pt = path.getPointAtLength(i * len / numSamples);
+                    const local = path.getPointAtLength(i * len / numSamples);
+                    const pt = applyMatrix(ctm, local.x, local.y);
                     newD += (i === 0 ? 'M' : 'L') + ` ${pt.x.toFixed(2)} ${pt.y.toFixed(2)} `;
                 }
                 if (/[Zz]\s*$/.test(d.trim())) newD += 'Z';
