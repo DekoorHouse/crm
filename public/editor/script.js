@@ -241,6 +241,11 @@ function updatePage() {
     pageRect.setAttribute('y', 0);
     pageRect.setAttribute('width', state.pageWidth);
     pageRect.setAttribute('height', state.pageHeight);
+    // Position shadow rects behind the page
+    const s1 = document.getElementById('page-shadow-1');
+    const s2 = document.getElementById('page-shadow-2');
+    if (s1) { s1.setAttribute('x', 2); s1.setAttribute('y', 4); s1.setAttribute('width', state.pageWidth); s1.setAttribute('height', state.pageHeight); }
+    if (s2) { s2.setAttribute('x', 4); s2.setAttribute('y', 10); s2.setAttribute('width', state.pageWidth + 2); s2.setAttribute('height', state.pageHeight + 2); }
     document.getElementById('status-page').textContent =
         `${toUnit(state.pageWidth)} × ${toUnit(state.pageHeight)} ${state.unit}`;
 }
@@ -259,7 +264,6 @@ function resetView() {
     updateViewBox();
 }
 
-let _shadowS1 = null, _shadowS2 = null;
 // Cached layout values — updated on zoom/resize instead of every frame
 let _cachedSvgRect = null;
 let _cachedScreenScale = 1;
@@ -278,16 +282,6 @@ function updateViewBox() {
     if (_cachedSvgRect.width > 0) {
         const zoom = Math.round((_cachedSvgRect.width / state.viewBox.w) * 100);
         document.getElementById('status-zoom').textContent = `${zoom}%`;
-    }
-    // Scale shadow filter with zoom so the blur kernel stays constant in screen pixels
-    if (!_shadowS1) _shadowS1 = document.querySelector('#page-shadow-filter feDropShadow:first-child');
-    if (!_shadowS2) _shadowS2 = document.querySelector('#page-shadow-filter feDropShadow:last-child');
-    if (_shadowS1 && _shadowS2) {
-        const scale = state.viewBox.w / state.pageWidth;
-        _shadowS1.setAttribute('stdDeviation', Math.max(0.5, 6 * scale));
-        _shadowS1.setAttribute('dy', 2 * scale);
-        _shadowS2.setAttribute('stdDeviation', Math.max(0.5, 16 * scale));
-        _shadowS2.setAttribute('dy', 8 * scale);
     }
 }
 
@@ -4233,12 +4227,10 @@ function toggleTheme() {
 
 function updateThemeShadow() {
     const isDark = document.body.classList.contains('dark');
-    const s1 = document.querySelector('#page-shadow-filter feDropShadow:first-child');
-    const s2 = document.querySelector('#page-shadow-filter feDropShadow:last-child');
-    if (s1 && s2) {
-        s1.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s1.setAttribute('flood-opacity', isDark ? '0.25' : '0.10');
-        s2.setAttribute('flood-color', isDark ? '#000' : '#3d2e5c'); s2.setAttribute('flood-opacity', isDark ? '0.15' : '0.06');
-    }
+    const s1 = document.getElementById('page-shadow-1');
+    const s2 = document.getElementById('page-shadow-2');
+    if (s1) { s1.setAttribute('fill', isDark ? '#000' : '#3d2e5c'); s1.setAttribute('opacity', isDark ? '0.15' : '0.06'); }
+    if (s2) { s2.setAttribute('fill', isDark ? '#000' : '#3d2e5c'); s2.setAttribute('opacity', isDark ? '0.10' : '0.04'); }
 }
 
 // =============================================

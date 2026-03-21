@@ -223,13 +223,9 @@
 
             <!-- SVG Canvas -->
             <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
-                <defs>
-                    <filter id="page-shadow-filter" x="-10%" y="-10%" width="125%" height="125%">
-                        <feDropShadow dx="0" dy="2" stdDeviation="6" flood-color="#3d2e5c" flood-opacity="0.10"/>
-                        <feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#3d2e5c" flood-opacity="0.06"/>
-                    </filter>
-                </defs>
-                <rect id="page" fill="#f7f7f5" filter="url(#page-shadow-filter)" rx="2"/>
+                <rect id="page-shadow-1" fill="#3d2e5c" opacity="0.06" rx="4"/>
+                <rect id="page-shadow-2" fill="#3d2e5c" opacity="0.04" rx="6"/>
+                <rect id="page" fill="#f7f7f5" rx="2"/>
                 <g id="objects-layer"></g>
                 <g id="selection-layer"></g>
                 <g id="snap-layer"></g>
