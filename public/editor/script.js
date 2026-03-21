@@ -3292,6 +3292,7 @@ function setupMenus() {
 
 function handleMenuAction(action) {
     switch (action) {
+        case 'import-svg':  importSVG(); break;
         case 'export-svg':  exportSVG(); break;
         case 'clear-all':   clearAll(); break;
         case 'page-size':   showPageSizeModal(); break;
@@ -3396,6 +3397,222 @@ async function exportSVG() {
     const a = document.createElement('a'); a.href = url; a.download = 'dibujo.svg';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     URL.revokeObjectURL(url);
+}
+
+// =============================================
+// SVG IMPORT
+// =============================================
+function importSVG() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.svg,image/svg+xml';
+    input.addEventListener('change', () => {
+        const file = input.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+            const parser = new DOMParser();
+            const doc = parser.parseFromString(ev.target.result, 'image/svg+xml');
+            const svgRoot = doc.documentElement;
+            if (svgRoot.tagName !== 'svg') return;
+            saveUndoState();
+            // Determine scale factor from SVG viewBox/dimensions
+            let scale = 1;
+            const vb = svgRoot.getAttribute('viewBox');
+            const svgW = svgRoot.getAttribute('width');
+            const svgH = svgRoot.getAttribute('height');
+            let contentW = state.pageWidth, contentH = state.pageHeight;
+            if (vb) {
+                const parts = vb.split(/[\s,]+/).map(Number);
+                contentW = parts[2]; contentH = parts[3];
+            }
+            // If SVG has mm/cm units, convert to our coordinate space
+            if (svgW) {
+                const mmMatch = svgW.match(/([\d.]+)\s*mm/i);
+                const cmMatch = svgW.match(/([\d.]+)\s*cm/i);
+                if (mmMatch) {
+                    const mmToPx = 96 / 25.4;
+                    scale = parseFloat(mmMatch[1]) / (contentW / mmToPx);
+                } else if (cmMatch) {
+                    const cmToPx = 96 / 2.54;
+                    scale = parseFloat(cmMatch[1]) * 10 / (contentW / (96 / 25.4));
+                }
+            }
+            // Fit imported content to page
+            const fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
+            const offsetX = (state.pageWidth - contentW * fitScale) / 2;
+            const offsetY = (state.pageHeight - contentH * fitScale) / 2;
+
+            function parseTransform(el) {
+                const t = el.getAttribute('transform');
+                if (!t) return { tx: 0, ty: 0, rot: 0, sx: 1, sy: 1 };
+                let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1;
+                const translateMatch = t.match(/translate\(\s*([\d.\-e]+)[\s,]+([\d.\-e]+)\s*\)/);
+                if (translateMatch) { tx = parseFloat(translateMatch[1]); ty = parseFloat(translateMatch[2]); }
+                const scaleMatch = t.match(/scale\(\s*([\d.\-e]+)(?:[\s,]+([\d.\-e]+))?\s*\)/);
+                if (scaleMatch) { sx = parseFloat(scaleMatch[1]); sy = scaleMatch[2] ? parseFloat(scaleMatch[2]) : sx; }
+                const rotMatch = t.match(/rotate\(\s*([\d.\-e]+)/);
+                if (rotMatch) rot = parseFloat(rotMatch[1]);
+                return { tx, ty, rot, sx, sy };
+            }
+
+            function importElement(el, parentTx, parentTy, parentSx, parentSy) {
+                const tx = parentTx, ty = parentTy, sc = parentSx;
+                const t = parseTransform(el);
+                const ex = tx + t.tx * sc * t.sx;
+                const ey = ty + t.ty * sc * t.sy;
+                const esx = sc * t.sx;
+                const esy = sc * t.sy;
+                const tag = el.tagName.toLowerCase();
+
+                const fill = el.getAttribute('fill') || 'none';
+                const stroke = el.getAttribute('stroke') || 'none';
+                const sw = parseFloat(el.getAttribute('stroke-width')) || 1;
+                const rot = t.rot;
+
+                if (tag === 'rect' && !el.id?.startsWith('page')) {
+                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
+                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
+                    const w = (parseFloat(el.getAttribute('width')) || 0) * esx;
+                    const h = (parseFloat(el.getAttribute('height')) || 0) * esy;
+                    if (w > 0.1 && h > 0.1) {
+                        createObject('rect', { x, y, width: w, height: h, fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                    }
+                } else if (tag === 'ellipse') {
+                    const cx = (parseFloat(el.getAttribute('cx')) || 0) * esx + ex;
+                    const cy = (parseFloat(el.getAttribute('cy')) || 0) * esy + ey;
+                    const rx = (parseFloat(el.getAttribute('rx')) || 0) * esx;
+                    const ry = (parseFloat(el.getAttribute('ry')) || 0) * esy;
+                    if (rx > 0.1 && ry > 0.1) {
+                        createObject('ellipse', { cx, cy, rx, ry, fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                    }
+                } else if (tag === 'circle') {
+                    const cx = (parseFloat(el.getAttribute('cx')) || 0) * esx + ex;
+                    const cy = (parseFloat(el.getAttribute('cy')) || 0) * esy + ey;
+                    const r = (parseFloat(el.getAttribute('r')) || 0) * esx;
+                    if (r > 0.1) {
+                        createObject('ellipse', { cx, cy, rx: r, ry: r * (esy / esx), fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                    }
+                } else if (tag === 'line') {
+                    const x1 = (parseFloat(el.getAttribute('x1')) || 0) * esx + ex;
+                    const y1 = (parseFloat(el.getAttribute('y1')) || 0) * esy + ey;
+                    const x2 = (parseFloat(el.getAttribute('x2')) || 0) * esx + ex;
+                    const y2 = (parseFloat(el.getAttribute('y2')) || 0) * esy + ey;
+                    createObject('line', { x1, y1, x2, y2, stroke, strokeWidth: sw * esx, rotation: rot });
+                } else if (tag === 'path') {
+                    const d = el.getAttribute('d');
+                    if (d) {
+                        // Create a temp path to get bounds
+                        const ns = 'http://www.w3.org/2000/svg';
+                        const tempPath = document.createElementNS(ns, 'path');
+                        tempPath.setAttribute('d', d);
+                        objectsLayer.appendChild(tempPath);
+                        const bb = tempPath.getBBox();
+                        objectsLayer.removeChild(tempPath);
+                        // Scale and translate the path data
+                        const scaledD = scaleSVGPath(d, esx, esy, ex, ey);
+                        const tempPath2 = document.createElementNS(ns, 'path');
+                        tempPath2.setAttribute('d', scaledD);
+                        objectsLayer.appendChild(tempPath2);
+                        const bb2 = tempPath2.getBBox();
+                        objectsLayer.removeChild(tempPath2);
+                        createObject('curvepath', {
+                            d: scaledD,
+                            x: bb2.x, y: bb2.y, width: bb2.width || 1, height: bb2.height || 1,
+                            _origBounds: { x: bb2.x, y: bb2.y, w: bb2.width || 1, h: bb2.height || 1 },
+                            fill, stroke, strokeWidth: sw * esx, rotation: rot,
+                        });
+                    }
+                } else if (tag === 'polyline' || tag === 'polygon') {
+                    const pts = el.getAttribute('points');
+                    if (pts) {
+                        const coords = pts.trim().split(/[\s,]+/).map(Number);
+                        let d = '';
+                        for (let i = 0; i < coords.length; i += 2) {
+                            const px = coords[i] * esx + ex, py = coords[i + 1] * esy + ey;
+                            d += (i === 0 ? 'M' : 'L') + ` ${px} ${py} `;
+                        }
+                        if (tag === 'polygon') d += 'Z';
+                        const ns = 'http://www.w3.org/2000/svg';
+                        const tempPath = document.createElementNS(ns, 'path');
+                        tempPath.setAttribute('d', d);
+                        objectsLayer.appendChild(tempPath);
+                        const bb = tempPath.getBBox();
+                        objectsLayer.removeChild(tempPath);
+                        createObject('curvepath', {
+                            d, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
+                            _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
+                            fill, stroke, strokeWidth: sw * esx, rotation: rot,
+                        });
+                    }
+                } else if (tag === 'text') {
+                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
+                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
+                    const fontSize = parseFloat(el.getAttribute('font-size')) || 32;
+                    const text = el.textContent.trim();
+                    if (text) {
+                        createObject('text', {
+                            x, y, text, fontSize: fontSize * esx,
+                            fontFamily: 'Inter',
+                            fill: fill === 'none' ? '#000000' : fill,
+                            stroke: 'none', strokeWidth: 0,
+                        });
+                    }
+                } else if (tag === 'image') {
+                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
+                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
+                    const w = (parseFloat(el.getAttribute('width')) || 0) * esx;
+                    const h = (parseFloat(el.getAttribute('height')) || 0) * esy;
+                    const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+                    if (href && w > 0.1 && h > 0.1) {
+                        createObject('image', { x, y, width: w, height: h, href });
+                    }
+                } else if (tag === 'g') {
+                    for (const child of el.children) {
+                        importElement(child, ex, ey, esx, esy);
+                    }
+                }
+            }
+
+            // Process all top-level children
+            for (const child of svgRoot.children) {
+                const tag = child.tagName.toLowerCase();
+                if (tag === 'defs' || tag === 'metadata' || tag === 'title' || tag === 'desc') continue;
+                importElement(child, offsetX, offsetY, fitScale, fitScale);
+            }
+
+            drawSelection();
+            setTool('select');
+        };
+        reader.readAsText(file);
+    });
+    input.click();
+}
+
+function scaleSVGPath(d, sx, sy, tx, ty) {
+    // Scale and translate SVG path data
+    return d.replace(/([MLHVCSQTAZ])\s*/gi, '\n$1 ').split('\n').filter(s => s.trim()).map(segment => {
+        const cmd = segment[0];
+        const args = segment.slice(1).trim().split(/[\s,]+/).map(Number);
+        const isRel = cmd === cmd.toLowerCase();
+        const c = cmd.toUpperCase();
+        if (c === 'Z') return cmd;
+        if (c === 'H') {
+            return cmd + ' ' + (isRel ? args[0] * sx : args[0] * sx + tx);
+        }
+        if (c === 'V') {
+            return cmd + ' ' + (isRel ? args[0] * sy : args[0] * sy + ty);
+        }
+        // All other commands have x,y pairs
+        const out = [];
+        for (let i = 0; i < args.length; i += 2) {
+            if (i + 1 < args.length) {
+                out.push(isRel ? args[i] * sx : args[i] * sx + tx);
+                out.push(isRel ? args[i + 1] * sy : args[i + 1] * sy + ty);
+            }
+        }
+        return cmd + ' ' + out.join(' ');
+    }).join(' ');
 }
 
 // =============================================
@@ -3942,6 +4159,8 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
         if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
         if (e.key.toLowerCase() === 'j' && e.ctrlKey) { e.preventDefault(); joinNodes(); return; }
+        if (e.key.toLowerCase() === 'i' && e.ctrlKey) { e.preventDefault(); importSVG(); return; }
+        if (e.key.toLowerCase() === 'e' && e.ctrlKey) { e.preventDefault(); exportSVG(); return; }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
