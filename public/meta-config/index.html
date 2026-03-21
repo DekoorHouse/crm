@@ -620,9 +620,10 @@
                     html += '<br><strong style="font-size:13px;">Detalle de pasos:</strong>';
                     data.steps.forEach(s => {
                         const icon = s.success ? '✅' : '❌';
-                        const detail = s.success
+                        let detail = s.success
                             ? JSON.stringify(s.data || {})
                             : (s.error || 'Error desconocido');
+                        if (s.warning) detail += ` ⚠️ ${s.warning}`;
                         html += `<div class="results-item ${s.success ? 'ok' : 'fail'}">${icon} <strong>${s.step}</strong>: ${detail}</div>`;
                     });
                 }

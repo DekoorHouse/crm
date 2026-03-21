@@ -3826,23 +3826,11 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
         return res.status(400).json({ error: 'No se encontró ninguna Ad Account. Se necesita al menos una para crear el dataset.', steps });
     }
 
-    // === PASO 2: Crear pixel/dataset en la Ad Account ===
-    for (const [label, tk] of allTokens) {
-        if (newDatasetId) break;
-        try {
-            const r = await axios.post(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
-                name: dataset_name,
-                access_token: tk
-            });
-            newDatasetId = r.data.id;
-            steps.push({ step: `Crear dataset (${label})`, success: true, data: r.data });
-        } catch (e) {
-            steps.push({ step: `Crear dataset (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
-        }
-    }
+    // === PASO 2: Crear dataset — PRIMERO offline_conversion_data_sets (soporta /pages) ===
+    let datasetType = null;
 
-    // Si no se pudo crear con adspixels, intentar vía BM offline_conversion_data_sets
-    if (!newDatasetId && businessId) {
+    // 2a. Intentar offline_conversion_data_sets vía BM (soporta POST /{id}/pages)
+    if (businessId) {
         for (const [label, tk] of allTokens) {
             if (newDatasetId) break;
             try {
@@ -3851,9 +3839,28 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
                     access_token: tk
                 });
                 newDatasetId = r.data.id;
+                datasetType = 'offline_conversion_data_set';
                 steps.push({ step: `Crear offline dataset (${label})`, success: true, data: r.data });
             } catch (e) {
                 steps.push({ step: `Crear offline dataset (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    // 2b. Fallback: crear AdsPixel vía Ad Account
+    if (!newDatasetId) {
+        for (const [label, tk] of allTokens) {
+            if (newDatasetId) break;
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v21.0/${adAccountId}/adspixels`, {
+                    name: dataset_name,
+                    access_token: tk
+                });
+                newDatasetId = r.data.id;
+                datasetType = 'ads_pixel';
+                steps.push({ step: `Crear pixel (${label})`, success: true, data: r.data });
+            } catch (e) {
+                steps.push({ step: `Crear pixel (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
             }
         }
     }
@@ -3863,6 +3870,7 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
     }
 
     // === PASO 3: Conectar la página al nuevo dataset ===
+    // 3a. POST /{dataset_id}/pages (funciona con offline_conversion_data_sets)
     for (const [label, tk] of allTokens) {
         if (pageConnected) break;
         try {
@@ -3871,9 +3879,27 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
                 access_token: tk
             });
             pageConnected = true;
-            steps.push({ step: `Conectar página (${label})`, success: true, data: r.data });
+            steps.push({ step: `Conectar página via /pages (${label})`, success: true, data: r.data });
         } catch (e) {
-            steps.push({ step: `Conectar página (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            steps.push({ step: `Conectar página via /pages (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+        }
+    }
+
+    // 3b. Si /pages falló (ej: AdsPixel), intentar compartir pixel con ad accounts del BM
+    if (!pageConnected && businessId) {
+        for (const [label, tk] of allTokens) {
+            if (pageConnected) break;
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v21.0/${newDatasetId}/shared_accounts`, {
+                    business: businessId,
+                    account_id: adAccountId.replace('act_', ''),
+                    access_token: tk
+                });
+                steps.push({ step: `Compartir dataset con ad account (${label})`, success: true, data: r.data });
+                // No es page connection directa, pero da acceso
+            } catch (e) {
+                steps.push({ step: `Compartir dataset con ad account (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
         }
     }
 
@@ -3902,8 +3928,16 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
                     page_id,
                     access_token: tk
                 });
-                wabaLinked = true;
-                steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data });
+                // Verificar que respondió con el ID correcto
+                const linkedId = r.data?.id;
+                if (linkedId === newDatasetId) {
+                    wabaLinked = true;
+                    steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data });
+                } else {
+                    steps.push({ step: `Vincular WABA (${label})`, success: true, data: r.data,
+                        warning: `WABA respondió con ID ${linkedId} en vez de ${newDatasetId}. Puede que necesites desvincular el dataset viejo primero.` });
+                    wabaLinked = false;
+                }
             } catch (e) {
                 steps.push({ step: `Vincular WABA (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
             }
@@ -3928,6 +3962,7 @@ router.post('/meta/config/create-and-connect', async (req, res) => {
     res.json({
         success: !!newDatasetId,
         new_dataset_id: newDatasetId,
+        dataset_type: datasetType,
         page_connected: pageConnected,
         waba_linked: wabaLinked,
         old_dataset_unlinked: !!old_dataset_id,
