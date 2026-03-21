@@ -4031,36 +4031,31 @@ router.post('/meta/config/claim-page', async (req, res) => {
         })
     );
 
-    // 2. POST /{business_id}/client_pages
-    await tryOp(`POST /${businessId}/client_pages`, (v, tk) =>
+    // 2. POST /{business_id}/client_pages con permitted_tasks
+    await tryOp(`POST /${businessId}/client_pages permitted_tasks`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/client_pages`, {
-            page_id, access_token: tk
+            page_id, access_token: tk,
+            permitted_tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
         })
     );
 
-    // 3. POST /{business_id}/pages
+    // 3. POST /{business_id}/client_pages con permitted_roles
+    await tryOp(`POST /${businessId}/client_pages permitted_roles`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/client_pages`, {
+            page_id, access_token: tk,
+            permitted_roles: ['MANAGER']
+        })
+    );
+
+    // 4. POST /{business_id}/pages
     await tryOp(`POST /${businessId}/pages`, (v, tk) =>
-        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
-            page_id, access_token: tk
-        })
-    );
-
-    // 4. POST /{business_id}/pages con permitted_tasks
-    await tryOp(`POST /${businessId}/pages full_access`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
             page_id, access_token: tk,
             permitted_tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
         })
     );
 
-    // 5. POST /{business_id}/claimed_pages
-    await tryOp(`POST /${businessId}/claimed_pages`, (v, tk) =>
-        axios.post(`https://graph.facebook.com/${v}/${businessId}/claimed_pages`, {
-            page_id, access_token: tk
-        })
-    );
-
-    // 6. POST /{page_id}/agencies — compartir página con el BM
+    // 5. POST /{page_id}/agencies — compartir página con el BM
     await tryOp(`POST /${page_id}/agencies`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${page_id}/agencies`, {
             business: businessId, access_token: tk,
@@ -4068,18 +4063,29 @@ router.post('/meta/config/claim-page', async (req, res) => {
         })
     );
 
-    // 7. POST /{page_id}/assigned_users — asignar usuario del BM a la página
-    await tryOp(`POST /${page_id}/assigned_users`, (v, tk) =>
-        axios.post(`https://graph.facebook.com/${v}/${page_id}/assigned_users`, {
-            business: businessId, access_token: tk,
-            tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
-        })
-    );
+    // 6. POST /{page_id}/assigned_users con user ID
+    // Obtener user ID primero
+    let userId = null;
+    try {
+        const r = await axios.get('https://graph.facebook.com/v21.0/me', {
+            params: { fields: 'id', access_token: token }
+        });
+        userId = r.data.id;
+    } catch (e) { /* ignore */ }
 
-    // 8. POST /{business_id}/pages con params en URL
+    if (userId) {
+        await tryOp(`POST /${page_id}/assigned_users`, (v, tk) =>
+            axios.post(`https://graph.facebook.com/${v}/${page_id}/assigned_users`, {
+                user: userId, business: businessId, access_token: tk,
+                tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
+            })
+        );
+    }
+
+    // 7. POST /{business_id}/pages con params en URL
     await tryOp(`POST /${businessId}/pages (params)`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, null, {
-            params: { page_id, access_token: tk }
+            params: { page_id, access_token: tk, permitted_tasks: 'MANAGE,CREATE_CONTENT,MODERATE,ADVERTISE,ANALYZE' }
         })
     );
 
