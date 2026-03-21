@@ -3416,169 +3416,222 @@ function importSVG() {
             const svgRoot = doc.documentElement;
             if (svgRoot.tagName !== 'svg') return;
             saveUndoState();
-            // Determine scale factor from SVG viewBox/dimensions
-            let scale = 1;
+
+            // 1) Parse <style> blocks to resolve CSS classes (CorelDRAW uses these)
+            const cssMap = {};
+            for (const styleEl of svgRoot.querySelectorAll('style')) {
+                const css = styleEl.textContent;
+                const re = /\.([a-zA-Z0-9_-]+)\s*\{([^}]+)\}/g;
+                let m;
+                while ((m = re.exec(css)) !== null) {
+                    const cls = m[1], props = {};
+                    m[2].split(';').forEach(p => {
+                        const [k, v] = p.split(':').map(s => s.trim());
+                        if (k && v) props[k] = v;
+                    });
+                    cssMap[cls] = props;
+                }
+            }
+
+            // 2) Determine viewBox dimensions
             const vb = svgRoot.getAttribute('viewBox');
-            const svgW = svgRoot.getAttribute('width');
-            const svgH = svgRoot.getAttribute('height');
             let contentW = state.pageWidth, contentH = state.pageHeight;
             if (vb) {
                 const parts = vb.split(/[\s,]+/).map(Number);
                 contentW = parts[2]; contentH = parts[3];
             }
-            // If SVG has mm/cm units, convert to our coordinate space
-            if (svgW) {
-                const mmMatch = svgW.match(/([\d.]+)\s*mm/i);
-                const cmMatch = svgW.match(/([\d.]+)\s*cm/i);
-                if (mmMatch) {
-                    const mmToPx = 96 / 25.4;
-                    scale = parseFloat(mmMatch[1]) / (contentW / mmToPx);
-                } else if (cmMatch) {
-                    const cmToPx = 96 / 2.54;
-                    scale = parseFloat(cmMatch[1]) * 10 / (contentW / (96 / 25.4));
-                }
-            }
-            // Fit imported content to page
             const fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
             const offsetX = (state.pageWidth - contentW * fitScale) / 2;
             const offsetY = (state.pageHeight - contentH * fitScale) / 2;
 
-            function parseTransform(el) {
-                const t = el.getAttribute('transform');
-                if (!t) return { tx: 0, ty: 0, rot: 0, sx: 1, sy: 1 };
-                let tx = 0, ty = 0, rot = 0, sx = 1, sy = 1;
-                const translateMatch = t.match(/translate\(\s*([\d.\-e]+)[\s,]+([\d.\-e]+)\s*\)/);
-                if (translateMatch) { tx = parseFloat(translateMatch[1]); ty = parseFloat(translateMatch[2]); }
-                const scaleMatch = t.match(/scale\(\s*([\d.\-e]+)(?:[\s,]+([\d.\-e]+))?\s*\)/);
-                if (scaleMatch) { sx = parseFloat(scaleMatch[1]); sy = scaleMatch[2] ? parseFloat(scaleMatch[2]) : sx; }
-                const rotMatch = t.match(/rotate\(\s*([\d.\-e]+)/);
-                if (rotMatch) rot = parseFloat(rotMatch[1]);
-                return { tx, ty, rot, sx, sy };
+            // Helper: resolve fill/stroke/stroke-width from attributes, CSS classes, and style attribute
+            function resolveStyle(el) {
+                let fill = null, stroke = null, sw = null;
+                // From CSS classes
+                const cls = el.getAttribute('class');
+                if (cls) {
+                    for (const c of cls.split(/\s+/)) {
+                        const p = cssMap[c];
+                        if (p) {
+                            if (p.fill !== undefined) fill = p.fill;
+                            if (p.stroke !== undefined) stroke = p.stroke;
+                            if (p['stroke-width'] !== undefined) sw = parseFloat(p['stroke-width']);
+                        }
+                    }
+                }
+                // From inline attributes (override classes)
+                if (el.getAttribute('fill')) fill = el.getAttribute('fill');
+                if (el.getAttribute('stroke')) stroke = el.getAttribute('stroke');
+                if (el.getAttribute('stroke-width')) sw = parseFloat(el.getAttribute('stroke-width'));
+                // From style attribute (highest priority)
+                const style = el.getAttribute('style');
+                if (style) {
+                    const fm = style.match(/(?:^|;)\s*fill\s*:\s*([^;]+)/i);
+                    const sm = style.match(/(?:^|;)\s*stroke\s*:\s*([^;]+)/i);
+                    const swm = style.match(/(?:^|;)\s*stroke-width\s*:\s*([^;]+)/i);
+                    if (fm) fill = fm[1].trim();
+                    if (sm) stroke = sm[1].trim();
+                    if (swm) sw = parseFloat(swm[1]);
+                }
+                return { fill: fill || 'none', stroke: stroke || 'none', sw: sw || 0 };
             }
 
-            function importElement(el, parentTx, parentTy, parentSx, parentSy) {
-                const tx = parentTx, ty = parentTy, sc = parentSx;
-                const t = parseTransform(el);
-                const ex = tx + t.tx * sc * t.sx;
-                const ey = ty + t.ty * sc * t.sy;
-                const esx = sc * t.sx;
-                const esy = sc * t.sy;
+            // Helper: parse transform including matrix()
+            function parseTransform(el) {
+                const t = el.getAttribute('transform');
+                if (!t) return [1, 0, 0, 1, 0, 0]; // identity matrix [a,b,c,d,e,f]
+                const matMatch = t.match(/matrix\(\s*([^)]+)\)/);
+                if (matMatch) {
+                    return matMatch[1].split(/[\s,]+/).map(Number);
+                }
+                // Build matrix from individual transforms
+                let a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
+                const scaleMatch = t.match(/scale\(\s*([\d.\-eE]+)(?:[\s,]+([\d.\-eE]+))?\s*\)/);
+                if (scaleMatch) { a = parseFloat(scaleMatch[1]); d = scaleMatch[2] ? parseFloat(scaleMatch[2]) : a; }
+                const translateMatch = t.match(/translate\(\s*([\d.\-eE]+)[\s,]+([\d.\-eE]+)\s*\)/);
+                if (translateMatch) { e = parseFloat(translateMatch[1]); f = parseFloat(translateMatch[2]); }
+                const rotMatch = t.match(/rotate\(\s*([\d.\-eE]+)/);
+                if (rotMatch) {
+                    const rad = parseFloat(rotMatch[1]) * Math.PI / 180;
+                    const cos = Math.cos(rad), sin = Math.sin(rad);
+                    a = cos; b = sin; c = -sin; d = cos;
+                }
+                return [a, b, c, d, e, f];
+            }
+
+            // Multiply two affine matrices [a,b,c,d,e,f]
+            function mulMatrix(m1, m2) {
+                return [
+                    m1[0]*m2[0] + m1[2]*m2[1],       m1[1]*m2[0] + m1[3]*m2[1],
+                    m1[0]*m2[2] + m1[2]*m2[3],       m1[1]*m2[2] + m1[3]*m2[3],
+                    m1[0]*m2[4] + m1[2]*m2[5] + m1[4], m1[1]*m2[4] + m1[3]*m2[5] + m1[5],
+                ];
+            }
+
+            // Apply matrix to a point
+            function applyMatrix(m, x, y) {
+                return { x: m[0]*x + m[2]*y + m[4], y: m[1]*x + m[3]*y + m[5] };
+            }
+
+            // Import a path/polygon as curvepath using the browser's SVG engine for accurate bounds
+            function importPath(d, sty, ctm) {
+                const ns = 'http://www.w3.org/2000/svg';
+                const tempPath = document.createElementNS(ns, 'path');
+                tempPath.setAttribute('d', d);
+                // Apply full CTM as transform so getBBox accounts for it
+                tempPath.setAttribute('transform', `matrix(${ctm.join(',')})`);
+                objectsLayer.appendChild(tempPath);
+                const bb = tempPath.getBBox();
+                objectsLayer.removeChild(tempPath);
+                if (bb.width < 0.01 && bb.height < 0.01) return;
+                // Build the scaled path data
+                const scaledD = scaleSVGPath(d, ctm[0], ctm[3], ctm[4], ctm[5], ctm[2], ctm[1]);
+                const tempPath2 = document.createElementNS(ns, 'path');
+                tempPath2.setAttribute('d', scaledD);
+                objectsLayer.appendChild(tempPath2);
+                const bb2 = tempPath2.getBBox();
+                objectsLayer.removeChild(tempPath2);
+                createObject('curvepath', {
+                    d: scaledD,
+                    x: bb2.x, y: bb2.y, width: bb2.width || 1, height: bb2.height || 1,
+                    _origBounds: { x: bb2.x, y: bb2.y, w: bb2.width || 1, h: bb2.height || 1 },
+                    fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(ctm[0]),
+                });
+            }
+
+            function importElement(el, ctm) {
                 const tag = el.tagName.toLowerCase();
+                if (tag === 'defs' || tag === 'metadata' || tag === 'title' || tag === 'desc' || tag === 'style' || tag === 'clippath') return;
 
-                const fill = el.getAttribute('fill') || 'none';
-                const stroke = el.getAttribute('stroke') || 'none';
-                const sw = parseFloat(el.getAttribute('stroke-width')) || 1;
-                const rot = t.rot;
+                const localMat = parseTransform(el);
+                const m = mulMatrix(ctm, localMat);
+                const sty = resolveStyle(el);
 
-                if (tag === 'rect' && !el.id?.startsWith('page')) {
-                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
-                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
-                    const w = (parseFloat(el.getAttribute('width')) || 0) * esx;
-                    const h = (parseFloat(el.getAttribute('height')) || 0) * esy;
-                    if (w > 0.1 && h > 0.1) {
-                        createObject('rect', { x, y, width: w, height: h, fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                if (tag === 'rect') {
+                    const x = parseFloat(el.getAttribute('x')) || 0;
+                    const y = parseFloat(el.getAttribute('y')) || 0;
+                    const w = parseFloat(el.getAttribute('width')) || 0;
+                    const h = parseFloat(el.getAttribute('height')) || 0;
+                    if (w > 0.01 && h > 0.01) {
+                        const p = applyMatrix(m, x, y);
+                        const pw = w * Math.abs(m[0]), ph = h * Math.abs(m[3]);
+                        createObject('rect', { x: p.x, y: p.y, width: pw, height: ph, fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(m[0]) });
                     }
                 } else if (tag === 'ellipse') {
-                    const cx = (parseFloat(el.getAttribute('cx')) || 0) * esx + ex;
-                    const cy = (parseFloat(el.getAttribute('cy')) || 0) * esy + ey;
-                    const rx = (parseFloat(el.getAttribute('rx')) || 0) * esx;
-                    const ry = (parseFloat(el.getAttribute('ry')) || 0) * esy;
-                    if (rx > 0.1 && ry > 0.1) {
-                        createObject('ellipse', { cx, cy, rx, ry, fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                    const cx = parseFloat(el.getAttribute('cx')) || 0;
+                    const cy = parseFloat(el.getAttribute('cy')) || 0;
+                    const rx = parseFloat(el.getAttribute('rx')) || 0;
+                    const ry = parseFloat(el.getAttribute('ry')) || 0;
+                    if (rx > 0.01 && ry > 0.01) {
+                        const p = applyMatrix(m, cx, cy);
+                        createObject('ellipse', { cx: p.x, cy: p.y, rx: rx * Math.abs(m[0]), ry: ry * Math.abs(m[3]), fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(m[0]) });
                     }
                 } else if (tag === 'circle') {
-                    const cx = (parseFloat(el.getAttribute('cx')) || 0) * esx + ex;
-                    const cy = (parseFloat(el.getAttribute('cy')) || 0) * esy + ey;
-                    const r = (parseFloat(el.getAttribute('r')) || 0) * esx;
-                    if (r > 0.1) {
-                        createObject('ellipse', { cx, cy, rx: r, ry: r * (esy / esx), fill, stroke, strokeWidth: sw * esx, rotation: rot });
+                    const cx = parseFloat(el.getAttribute('cx')) || 0;
+                    const cy = parseFloat(el.getAttribute('cy')) || 0;
+                    const r = parseFloat(el.getAttribute('r')) || 0;
+                    if (r > 0.01) {
+                        const p = applyMatrix(m, cx, cy);
+                        createObject('ellipse', { cx: p.x, cy: p.y, rx: r * Math.abs(m[0]), ry: r * Math.abs(m[3]), fill: sty.fill, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(m[0]) });
                     }
                 } else if (tag === 'line') {
-                    const x1 = (parseFloat(el.getAttribute('x1')) || 0) * esx + ex;
-                    const y1 = (parseFloat(el.getAttribute('y1')) || 0) * esy + ey;
-                    const x2 = (parseFloat(el.getAttribute('x2')) || 0) * esx + ex;
-                    const y2 = (parseFloat(el.getAttribute('y2')) || 0) * esy + ey;
-                    createObject('line', { x1, y1, x2, y2, stroke, strokeWidth: sw * esx, rotation: rot });
+                    const p1 = applyMatrix(m, parseFloat(el.getAttribute('x1')) || 0, parseFloat(el.getAttribute('y1')) || 0);
+                    const p2 = applyMatrix(m, parseFloat(el.getAttribute('x2')) || 0, parseFloat(el.getAttribute('y2')) || 0);
+                    createObject('line', { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, stroke: sty.stroke, strokeWidth: sty.sw * Math.abs(m[0]) });
                 } else if (tag === 'path') {
                     const d = el.getAttribute('d');
-                    if (d) {
-                        // Create a temp path to get bounds
-                        const ns = 'http://www.w3.org/2000/svg';
-                        const tempPath = document.createElementNS(ns, 'path');
-                        tempPath.setAttribute('d', d);
-                        objectsLayer.appendChild(tempPath);
-                        const bb = tempPath.getBBox();
-                        objectsLayer.removeChild(tempPath);
-                        // Scale and translate the path data
-                        const scaledD = scaleSVGPath(d, esx, esy, ex, ey);
-                        const tempPath2 = document.createElementNS(ns, 'path');
-                        tempPath2.setAttribute('d', scaledD);
-                        objectsLayer.appendChild(tempPath2);
-                        const bb2 = tempPath2.getBBox();
-                        objectsLayer.removeChild(tempPath2);
-                        createObject('curvepath', {
-                            d: scaledD,
-                            x: bb2.x, y: bb2.y, width: bb2.width || 1, height: bb2.height || 1,
-                            _origBounds: { x: bb2.x, y: bb2.y, w: bb2.width || 1, h: bb2.height || 1 },
-                            fill, stroke, strokeWidth: sw * esx, rotation: rot,
-                        });
-                    }
-                } else if (tag === 'polyline' || tag === 'polygon') {
+                    if (d) importPath(d, sty, m);
+                } else if (tag === 'polygon' || tag === 'polyline') {
                     const pts = el.getAttribute('points');
                     if (pts) {
                         const coords = pts.trim().split(/[\s,]+/).map(Number);
                         let d = '';
-                        for (let i = 0; i < coords.length; i += 2) {
-                            const px = coords[i] * esx + ex, py = coords[i + 1] * esy + ey;
-                            d += (i === 0 ? 'M' : 'L') + ` ${px} ${py} `;
+                        for (let i = 0; i < coords.length - 1; i += 2) {
+                            d += (i === 0 ? 'M' : 'L') + ` ${coords[i]} ${coords[i+1]} `;
                         }
                         if (tag === 'polygon') d += 'Z';
-                        const ns = 'http://www.w3.org/2000/svg';
-                        const tempPath = document.createElementNS(ns, 'path');
-                        tempPath.setAttribute('d', d);
-                        objectsLayer.appendChild(tempPath);
-                        const bb = tempPath.getBBox();
-                        objectsLayer.removeChild(tempPath);
-                        createObject('curvepath', {
-                            d, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
-                            _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
-                            fill, stroke, strokeWidth: sw * esx, rotation: rot,
-                        });
+                        importPath(d, sty, m);
                     }
                 } else if (tag === 'text') {
-                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
-                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
+                    const x = parseFloat(el.getAttribute('x')) || 0;
+                    const y = parseFloat(el.getAttribute('y')) || 0;
+                    const p = applyMatrix(m, x, y);
                     const fontSize = parseFloat(el.getAttribute('font-size')) || 32;
                     const text = el.textContent.trim();
                     if (text) {
                         createObject('text', {
-                            x, y, text, fontSize: fontSize * esx,
+                            x: p.x, y: p.y, text, fontSize: fontSize * Math.abs(m[0]),
                             fontFamily: 'Inter',
-                            fill: fill === 'none' ? '#000000' : fill,
+                            fill: sty.fill === 'none' ? '#000000' : sty.fill,
                             stroke: 'none', strokeWidth: 0,
                         });
                     }
                 } else if (tag === 'image') {
-                    const x = (parseFloat(el.getAttribute('x')) || 0) * esx + ex;
-                    const y = (parseFloat(el.getAttribute('y')) || 0) * esy + ey;
-                    const w = (parseFloat(el.getAttribute('width')) || 0) * esx;
-                    const h = (parseFloat(el.getAttribute('height')) || 0) * esy;
                     const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
-                    if (href && w > 0.1 && h > 0.1) {
-                        createObject('image', { x, y, width: w, height: h, href });
+                    if (!href) return;
+                    const iw = parseFloat(el.getAttribute('width')) || 0;
+                    const ih = parseFloat(el.getAttribute('height')) || 0;
+                    // Use the full matrix to compute image bounds
+                    const p0 = applyMatrix(m, 0, 0);
+                    const p1 = applyMatrix(m, iw, 0);
+                    const p2 = applyMatrix(m, 0, ih);
+                    const p3 = applyMatrix(m, iw, ih);
+                    const xs = [p0.x, p1.x, p2.x, p3.x], ys = [p0.y, p1.y, p2.y, p3.y];
+                    const minX = Math.min(...xs), minY = Math.min(...ys);
+                    const maxX = Math.max(...xs), maxY = Math.max(...ys);
+                    const w = maxX - minX, h = maxY - minY;
+                    if (w > 0.1 && h > 0.1) {
+                        createObject('image', { x: minX, y: minY, width: w, height: h, href });
                     }
                 } else if (tag === 'g') {
-                    for (const child of el.children) {
-                        importElement(child, ex, ey, esx, esy);
-                    }
+                    for (const child of el.children) importElement(child, m);
                 }
             }
 
-            // Process all top-level children
+            // Base matrix: fit to page
+            const baseMat = [fitScale, 0, 0, fitScale, offsetX, offsetY];
             for (const child of svgRoot.children) {
-                const tag = child.tagName.toLowerCase();
-                if (tag === 'defs' || tag === 'metadata' || tag === 'title' || tag === 'desc') continue;
-                importElement(child, offsetX, offsetY, fitScale, fitScale);
+                importElement(child, baseMat);
             }
 
             drawSelection();
@@ -3589,30 +3642,57 @@ function importSVG() {
     input.click();
 }
 
-function scaleSVGPath(d, sx, sy, tx, ty) {
-    // Scale and translate SVG path data
-    return d.replace(/([MLHVCSQTAZ])\s*/gi, '\n$1 ').split('\n').filter(s => s.trim()).map(segment => {
-        const cmd = segment[0];
-        const args = segment.slice(1).trim().split(/[\s,]+/).map(Number);
+function scaleSVGPath(d, a, d2, tx, ty, c, b) {
+    // Apply affine transform to SVG path data
+    // For simple scale+translate: a=sx, d2=sy, tx, ty, c=0, b=0
+    c = c || 0; b = b || 0;
+    const tokens = [];
+    const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g;
+    let match;
+    while ((match = re.exec(d)) !== null) {
+        tokens.push(match[1] || match[2]);
+    }
+    let result = '', i = 0;
+    while (i < tokens.length) {
+        const cmd = tokens[i]; i++;
+        if (/[Zz]/.test(cmd)) { result += cmd + ' '; continue; }
         const isRel = cmd === cmd.toLowerCase();
-        const c = cmd.toUpperCase();
-        if (c === 'Z') return cmd;
-        if (c === 'H') {
-            return cmd + ' ' + (isRel ? args[0] * sx : args[0] * sx + tx);
-        }
-        if (c === 'V') {
-            return cmd + ' ' + (isRel ? args[0] * sy : args[0] * sy + ty);
-        }
-        // All other commands have x,y pairs
-        const out = [];
-        for (let i = 0; i < args.length; i += 2) {
-            if (i + 1 < args.length) {
-                out.push(isRel ? args[i] * sx : args[i] * sx + tx);
-                out.push(isRel ? args[i + 1] * sy : args[i + 1] * sy + ty);
+        const C = cmd.toUpperCase();
+        const offX = isRel ? 0 : tx, offY = isRel ? 0 : ty;
+        const sa = isRel ? a : a, sd = isRel ? d2 : d2;
+        const sc = isRel ? c : c, sb = isRel ? b : b;
+        if (C === 'H') {
+            const x = parseFloat(tokens[i++]) || 0;
+            result += cmd + ' ' + (sa * x + offX) + ' ';
+        } else if (C === 'V') {
+            const y = parseFloat(tokens[i++]) || 0;
+            result += cmd + ' ' + (sd * y + offY) + ' ';
+        } else if (C === 'A') {
+            // Arc: rx ry x-rot large-arc sweep x y
+            const rx = parseFloat(tokens[i++]) || 0;
+            const ry = parseFloat(tokens[i++]) || 0;
+            const xrot = parseFloat(tokens[i++]) || 0;
+            const larc = tokens[i++];
+            const sweep = tokens[i++];
+            const x = parseFloat(tokens[i++]) || 0;
+            const y = parseFloat(tokens[i++]) || 0;
+            result += cmd + ' ' + (rx * Math.abs(sa)) + ' ' + (ry * Math.abs(sd)) + ' ' + xrot + ' ' + larc + ' ' + sweep + ' ' + (sa * x + sc * y + offX) + ' ' + (sb * x + sd * y + offY) + ' ';
+        } else {
+            // M, L, C, S, Q, T - all have x,y pairs
+            const counts = { M: 2, L: 2, C: 6, S: 4, Q: 4, T: 2 };
+            const cnt = counts[C] || 2;
+            result += cmd + ' ';
+            // Handle implicit repeated commands
+            while (i < tokens.length && !/[A-Za-z]/.test(tokens[i])) {
+                for (let j = 0; j < cnt && i < tokens.length; j += 2) {
+                    const x = parseFloat(tokens[i++]) || 0;
+                    const y = parseFloat(tokens[i++]) || 0;
+                    result += (sa * x + sc * y + offX) + ' ' + (sb * x + sd * y + offY) + ' ';
+                }
             }
         }
-        return cmd + ' ' + out.join(' ');
-    }).join(' ');
+    }
+    return result.trim();
 }
 
 // =============================================
