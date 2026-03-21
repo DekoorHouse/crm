@@ -3705,17 +3705,21 @@ function importSVG() {
                     if (!href) return;
                     const iw = parseFloat(el.getAttribute('width')) || 0;
                     const ih = parseFloat(el.getAttribute('height')) || 0;
-                    // Use the full matrix to compute image bounds
+                    // Decompose the combined matrix into position, size, and rotation
                     const p0 = applyMatrix(m, 0, 0);
                     const p1 = applyMatrix(m, iw, 0);
                     const p2 = applyMatrix(m, 0, ih);
                     const p3 = applyMatrix(m, iw, ih);
-                    const xs = [p0.x, p1.x, p2.x, p3.x], ys = [p0.y, p1.y, p2.y, p3.y];
-                    const minX = Math.min(...xs), minY = Math.min(...ys);
-                    const maxX = Math.max(...xs), maxY = Math.max(...ys);
-                    const w = maxX - minX, h = maxY - minY;
+                    // Width/height from edge lengths of the transformed quad
+                    const w = Math.hypot(p1.x - p0.x, p1.y - p0.y);
+                    const h = Math.hypot(p2.x - p0.x, p2.y - p0.y);
+                    // Rotation from the top edge direction
+                    const rotation = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    // Center of the transformed image
+                    const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
+                    const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
                     if (w > 0.1 && h > 0.1) {
-                        createObject('image', { x: minX, y: minY, width: w, height: h, href });
+                        createObject('image', { x: cx - w/2, y: cy - h/2, width: w, height: h, rotation, href });
                     }
                 } else if (tag === 'g') {
                     // Check for clip-path (CorelDRAW uses style="clip-path:url(#id)")
