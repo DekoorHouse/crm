@@ -1171,7 +1171,7 @@ function sampleClosedBSpline(ctrlPts, numSamples) {
     // Uniform knot vector
     const knots = [];
     for (let i = 0; i < numKnots; i++) knots.push(i);
-    const tMin = degree, tMax = n;
+    const tMin = degree, tMax = n + degree;
     const out = [];
     for (let s = 0; s <= numSamples; s++) {
         let t = tMin + (s / numSamples) * (tMax - tMin);
