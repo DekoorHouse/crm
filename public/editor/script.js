@@ -612,9 +612,7 @@ function hitTest(obj, pt) {
             return distToSeg(pt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2}) <= m + obj.strokeWidth;
         case 'bspline': {
             if (obj.points.length < 2) return false;
-            const samples = obj.closed
-                ? sampleClosedBSpline(obj.points, 80)
-                : sampleBSpline(obj.points, 80);
+            const samples = sampleBSplineAll(obj.points, 80, obj.closed);
             // If closed and filled, use point-in-polygon test
             if (obj.closed && obj.fill && obj.fill !== 'none') {
                 let inside = false;
@@ -828,9 +826,7 @@ function getObjBounds(obj) {
         }
         case 'bspline': {
             if (!obj.points.length) return {x:0,y:0,w:0,h:0};
-            const pts = obj.closed
-                ? sampleClosedBSpline(obj.points, 80)
-                : sampleBSpline(obj.points, 80);
+            const pts = sampleBSplineAll(obj.points, 80, obj.closed);
             let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
             for (const p of pts) { if(p.x<x1)x1=p.x; if(p.x>x2)x2=p.x; if(p.y<y1)y1=p.y; if(p.y>y2)y2=p.y; }
             return {x:x1,y:y1,w:(x2-x1)||1,h:(y2-y1)||1};
@@ -1108,14 +1104,22 @@ function drawSnapMarker(ns, sp, r, sw) {
 function bsplineToPath(points, closed) {
     if (!points.length) return '';
     if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
-    if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-    const numSamples = Math.max(60, points.length * 20);
-    const samples = closed
-        ? sampleClosedBSpline(points, numSamples)
-        : sampleBSpline(points, numSamples);
+    if (points.length === 2) {
+        let d = `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
+        if (closed) d += ' Z';
+        return d;
+    }
+    const samples = sampleBSpline(points, Math.max(60, points.length * 20));
     let d = `M ${samples[0].x.toFixed(2)} ${samples[0].y.toFixed(2)}`;
     for (let i = 1; i < samples.length; i++) d += ` L ${samples[i].x.toFixed(2)} ${samples[i].y.toFixed(2)}`;
-    if (closed) d += ' Z';
+    if (closed) {
+        // Close with a smooth cubic Bezier maintaining C1 tangent continuity
+        const cb = bsplineClosingBezier(points);
+        if (cb) {
+            d += ` C ${cb.cp1.x.toFixed(2)} ${cb.cp1.y.toFixed(2)}, ${cb.cp2.x.toFixed(2)} ${cb.cp2.y.toFixed(2)}, ${cb.p3.x.toFixed(2)} ${cb.p3.y.toFixed(2)}`;
+        }
+        d += ' Z';
+    }
     return d;
 }
 
@@ -1159,44 +1163,46 @@ function sampleBSpline(ctrlPts, numSamples) {
     return out;
 }
 
-function sampleClosedBSpline(ctrlPts, numSamples) {
-    const n = ctrlPts.length;
-    if (n < 3) return sampleBSpline(ctrlPts, numSamples);
-    const degree = Math.min(3, n - 1);
-    // Wrap first 'degree' control points at the end
-    const wrapped = [...ctrlPts];
-    for (let i = 0; i < degree; i++) wrapped.push(ctrlPts[i]);
-    const nw = wrapped.length;
-    const numKnots = nw + degree + 1;
-    // Uniform knot vector
-    const knots = [];
-    for (let i = 0; i < numKnots; i++) knots.push(i);
-    const tMin = degree, tMax = n + degree;
-    const out = [];
-    for (let s = 0; s <= numSamples; s++) {
-        let t = tMin + (s / numSamples) * (tMax - tMin);
-        if (t >= tMax) t = tMax - 1e-10;
-        let k = degree;
-        for (let j = degree; j < nw; j++) {
-            if (t >= knots[j] && t < knots[j + 1]) { k = j; break; }
-        }
-        const d = [];
-        for (let j = 0; j <= degree; j++) {
-            const idx = k - degree + j;
-            d.push({ x: wrapped[idx].x, y: wrapped[idx].y });
-        }
-        for (let r = 1; r <= degree; r++) {
-            for (let j = degree; j >= r; j--) {
-                const idx = k - degree + j;
-                const denom = knots[idx + degree - r + 1] - knots[idx];
-                const alpha = denom === 0 ? 0 : (t - knots[idx]) / denom;
-                d[j].x = (1 - alpha) * d[j - 1].x + alpha * d[j].x;
-                d[j].y = (1 - alpha) * d[j - 1].y + alpha * d[j].y;
+// Returns cubic Bezier control points for smoothly closing a clamped B-spline
+function bsplineClosingBezier(points) {
+    const n = points.length;
+    if (n < 3) return null;
+    const endPt = points[n - 1];
+    const startPt = points[0];
+    // Tangent at end: continues direction P_{n-2} → P_{n-1}
+    const endDir = { x: endPt.x - points[n - 2].x, y: endPt.y - points[n - 2].y };
+    // Tangent at start: approaches P0 from opposite of P0 → P1 direction
+    const startDir = { x: startPt.x - points[1].x, y: startPt.y - points[1].y };
+    const dist = Math.hypot(endPt.x - startPt.x, endPt.y - startPt.y);
+    if (dist < 1e-6) return null;
+    const endLen = Math.hypot(endDir.x, endDir.y) || 1;
+    const startLen = Math.hypot(startDir.x, startDir.y) || 1;
+    const k = dist / 3;
+    return {
+        p0: endPt,
+        cp1: { x: endPt.x + k * endDir.x / endLen, y: endPt.y + k * endDir.y / endLen },
+        cp2: { x: startPt.x + k * startDir.x / startLen, y: startPt.y + k * startDir.y / startLen },
+        p3: startPt,
+    };
+}
+
+// Returns all sample points of a B-spline including closing segment samples
+function sampleBSplineAll(points, numSamples, closed) {
+    const samples = sampleBSpline(points, numSamples);
+    if (closed && points.length >= 3) {
+        const cb = bsplineClosingBezier(points);
+        if (cb) {
+            const cs = 20;
+            for (let i = 1; i <= cs; i++) {
+                const t = i / cs, mt = 1 - t;
+                samples.push({
+                    x: mt*mt*mt*cb.p0.x + 3*mt*mt*t*cb.cp1.x + 3*mt*t*t*cb.cp2.x + t*t*t*cb.p3.x,
+                    y: mt*mt*mt*cb.p0.y + 3*mt*mt*t*cb.cp1.y + 3*mt*t*t*cb.cp2.y + t*t*t*cb.p3.y,
+                });
             }
         }
-        out.push({ x: d[degree].x, y: d[degree].y });
     }
-    return out;
+    return samples;
 }
 
 // =============================================
