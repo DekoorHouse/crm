@@ -143,6 +143,11 @@
             <div class="card">
                 <h2><span class="section-icon">🔑</span>Reclamar pagina para tu Business Manager</h2>
                 <p style="font-size:13px;color:#65676b;margin-bottom:12px;">Agrega una pagina de la que eres admin a tu Business Manager actual. Util si la pagina esta en un BM al que ya no tienes acceso.</p>
+                <label for="claimBmSelect">Business Manager destino</label>
+                <select id="claimBmSelect" disabled>
+                    <option value="">-- Cargando BMs... --</option>
+                </select>
+                <button class="btn-secondary" onclick="loadBusinessManagers()" style="margin-bottom:12px;">Cargar mis BMs</button>
                 <label for="claimPageId">Page ID a reclamar</label>
                 <input type="text" id="claimPageId" placeholder="Ej: 123456789">
                 <div class="btn-row">
@@ -443,18 +448,44 @@
             }
         }
 
+        async function loadBusinessManagers() {
+            const token = getToken();
+            if (!token) return showStatus('claimResult', 'Se requiere un User Token.', 'error');
+            try {
+                const res = await fetch(`https://graph.facebook.com/v21.0/me/businesses?fields=id,name&access_token=${token}`);
+                const data = await res.json();
+                const select = document.getElementById('claimBmSelect');
+                select.innerHTML = '';
+                if (data.data && data.data.length > 0) {
+                    data.data.forEach(bm => {
+                        const opt = document.createElement('option');
+                        opt.value = bm.id;
+                        opt.textContent = `${bm.name} (${bm.id})`;
+                        select.appendChild(opt);
+                    });
+                    select.disabled = false;
+                } else {
+                    select.innerHTML = '<option value="">No se encontraron BMs</option>';
+                }
+            } catch (err) {
+                showStatus('claimResult', `Error: ${err.message}`, 'error');
+            }
+        }
+
         async function claimPage() {
             const token = getToken();
             const pageId = document.getElementById('claimPageId').value.trim();
+            const businessId = document.getElementById('claimBmSelect').value;
             if (!pageId) return showStatus('claimResult', 'Ingresa el Page ID.', 'error');
             if (!token) return showStatus('claimResult', 'Se requiere un User Token con permisos de admin de la pagina.', 'error');
+            if (!businessId) return showStatus('claimResult', 'Selecciona un Business Manager. Click "Cargar mis BMs" primero.', 'error');
 
             showStatus('claimResult', '<span class="spinner"></span> Intentando reclamar pagina...', 'info');
             try {
                 const res = await fetch(`${API_BASE}/meta/config/claim-page`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ token, page_id: pageId })
+                    body: JSON.stringify({ token, page_id: pageId, business_id: businessId })
                 });
                 const data = await res.json();
                 let html = '';

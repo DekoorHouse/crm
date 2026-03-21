@@ -3961,24 +3961,28 @@ router.delete('/meta/config/waba-dataset', async (req, res) => {
 
 // POST — Reclamar/agregar una página a tu Business Manager actual
 router.post('/meta/config/claim-page', async (req, res) => {
-    const { token, page_id } = req.body;
+    const { token, page_id, business_id } = req.body;
     if (!token || !page_id) return res.status(400).json({ error: 'Se requieren token y page_id' });
 
     const results = [];
     let claimed = false;
 
-    // Descubrir business_id
-    let businessId = null;
-    try {
-        const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
-            params: { fields: 'id,name', access_token: token }
-        });
-        if (r.data.data?.length > 0) {
-            businessId = r.data.data[0].id;
-            results.push({ step: 'discover_business', success: true, business: r.data.data[0] });
+    // Usar business_id proporcionado o descubrir el primero
+    let businessId = business_id || null;
+    if (!businessId) {
+        try {
+            const r = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+                params: { fields: 'id,name', access_token: token }
+            });
+            if (r.data.data?.length > 0) {
+                businessId = r.data.data[0].id;
+                results.push({ step: 'discover_business', success: true, business: r.data.data[0] });
+            }
+        } catch (e) {
+            results.push({ step: 'discover_business', success: false, error: e.response?.data?.error?.message || e.message });
         }
-    } catch (e) {
-        results.push({ step: 'discover_business', success: false, error: e.response?.data?.error?.message || e.message });
+    } else {
+        results.push({ step: 'using_provided_business', success: true, business_id: businessId });
     }
 
     if (!businessId) return res.status(400).json({ error: 'No se pudo encontrar tu Business Manager', results });
