@@ -930,9 +930,15 @@ body.dark .btn-primary:hover {
     overflow: hidden;
     min-width: 2px;
     min-height: 1.2em;
-    caret-color: var(--accent);
+    caret-color: transparent;
+    border-left: 2.5px solid var(--accent);
+    animation: caret-blink 1s step-end infinite;
     line-height: 1.2;
     white-space: pre;
+}
+@keyframes caret-blink {
+    0%, 100% { border-left-color: var(--accent); }
+    50% { border-left-color: transparent; }
 }
 .text-input-overlay.hidden { display: none; }
 
