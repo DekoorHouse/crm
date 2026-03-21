@@ -102,6 +102,7 @@ const state = {
 
     fontFamily: 'Inter',
     fontSize: 32,
+    textAlign: 'left',
     isTyping: false,
     typingObj: null,
 
@@ -320,7 +321,7 @@ function buildSVGElement(obj) {
             break;
         case 'bspline':
             elem = document.createElementNS(ns, 'path');
-            elem.setAttribute('d', bsplineToPath(obj.points));
+            elem.setAttribute('d', bsplineToPath(obj.points, obj.closed));
             break;
         case 'text': {
             elem = document.createElementNS(ns, 'text');
@@ -331,6 +332,8 @@ function buildSVGElement(obj) {
             elem.setAttribute('fill', obj.fill);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            const anchor = obj.textAlign === 'center' ? 'middle' : obj.textAlign === 'right' ? 'end' : 'start';
+            elem.setAttribute('text-anchor', anchor);
             elem.textContent = obj.text || '';
             break;
         }
@@ -492,7 +495,7 @@ function refreshElement(obj) {
             elem.setAttribute('x2', obj.x2); elem.setAttribute('y2', obj.y2);
             break;
         case 'bspline':
-            elem.setAttribute('d', bsplineToPath(obj.points));
+            elem.setAttribute('d', bsplineToPath(obj.points, obj.closed));
             break;
         case 'image':
             elem.setAttribute('x', obj.x); elem.setAttribute('y', obj.y);
@@ -506,6 +509,8 @@ function refreshElement(obj) {
             elem.setAttribute('fill', obj.fill);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            const anchor = obj.textAlign === 'center' ? 'middle' : obj.textAlign === 'right' ? 'end' : 'start';
+            elem.setAttribute('text-anchor', anchor);
             elem.textContent = obj.text || '';
             break;
         }
@@ -607,7 +612,21 @@ function hitTest(obj, pt) {
             return distToSeg(pt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2}) <= m + obj.strokeWidth;
         case 'bspline': {
             if (obj.points.length < 2) return false;
-            const samples = sampleBSpline(obj.points, 80);
+            const ctrlPts = obj.closed && obj.points.length >= 3
+                ? [...obj.points, obj.points[0], obj.points[1], obj.points[2]]
+                : obj.points;
+            const samples = sampleBSpline(ctrlPts, 80);
+            // If closed and filled, use point-in-polygon test
+            if (obj.closed && obj.fill && obj.fill !== 'none') {
+                let inside = false;
+                for (let i = 0, j = samples.length - 1; i < samples.length; j = i++) {
+                    const xi = samples[i].x, yi = samples[i].y;
+                    const xj = samples[j].x, yj = samples[j].y;
+                    if (((yi > pt.y) !== (yj > pt.y)) && (pt.x < (xj - xi) * (pt.y - yi) / (yj - yi) + xi))
+                        inside = !inside;
+                }
+                if (inside) return true;
+            }
             for (let i = 0; i < samples.length - 1; i++) {
                 if (distToSeg(pt, samples[i], samples[i+1]) <= m + obj.strokeWidth) return true;
             }
@@ -810,7 +829,10 @@ function getObjBounds(obj) {
         }
         case 'bspline': {
             if (!obj.points.length) return {x:0,y:0,w:0,h:0};
-            const pts = sampleBSpline(obj.points, 80);
+            const ctrlPts = obj.closed && obj.points.length >= 3
+                ? [...obj.points, obj.points[0], obj.points[1], obj.points[2]]
+                : obj.points;
+            const pts = sampleBSpline(ctrlPts, 80);
             let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
             for (const p of pts) { if(p.x<x1)x1=p.x; if(p.x>x2)x2=p.x; if(p.y<y1)y1=p.y; if(p.y>y2)y2=p.y; }
             return {x:x1,y:y1,w:(x2-x1)||1,h:(y2-y1)||1};
@@ -1085,13 +1107,19 @@ function drawSnapMarker(ns, sp, r, sw) {
 // =============================================
 // B-SPLINE (De Boor evaluation)
 // =============================================
-function bsplineToPath(points) {
+function bsplineToPath(points, closed) {
     if (!points.length) return '';
     if (points.length === 1) return `M ${points[0].x} ${points[0].y}`;
     if (points.length === 2) return `M ${points[0].x} ${points[0].y} L ${points[1].x} ${points[1].y}`;
-    const samples = sampleBSpline(points, Math.max(60, points.length * 20));
+    // For closed splines, wrap control points so the curve joins smoothly
+    let ctrlPts = points;
+    if (closed && points.length >= 3) {
+        ctrlPts = [...points, points[0], points[1], points[2]];
+    }
+    const samples = sampleBSpline(ctrlPts, Math.max(60, ctrlPts.length * 20));
     let d = `M ${samples[0].x.toFixed(2)} ${samples[0].y.toFixed(2)}`;
     for (let i = 1; i < samples.length; i++) d += ` L ${samples[i].x.toFixed(2)} ${samples[i].y.toFixed(2)}`;
+    if (closed) d += ' Z';
     return d;
 }
 
@@ -1257,7 +1285,8 @@ function drawNodeEdit() {
 
     // For bspline: draw control polygon
     if (obj.type === 'bspline' && nodes.length > 1) {
-        const pl = document.createElementNS(ns, 'polyline');
+        const tag = obj.closed ? 'polygon' : 'polyline';
+        const pl = document.createElementNS(ns, tag);
         pl.setAttribute('points', nodes.map(n => `${n.x},${n.y}`).join(' '));
         pl.setAttribute('fill', 'none');
         pl.setAttribute('stroke', '#7c5cf0');
@@ -2262,6 +2291,23 @@ function handleDrawEnd() {
 // --- B-Spline ---
 function handleBSplineClick(pt) {
     const snapped = snapPoint(pt);
+    // Check if closing the spline (clicking near the first point with >= 3 points)
+    if (state.bsplinePoints.length >= 3) {
+        const first = state.bsplinePoints[0];
+        const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+        const threshold = SNAP_DIST * screenScale;
+        if (Math.hypot(snapped.x - first.x, snapped.y - first.y) <= threshold) {
+            const obj = createObject('bspline', {
+                points: [...state.bsplinePoints],
+                closed: true,
+                fill: state.fillColor,
+            });
+            selectObject(obj.id);
+            state.bsplinePoints = [];
+            clearPreview();
+            return;
+        }
+    }
     state.bsplinePoints.push({x:snapped.x, y:snapped.y});
     updateBSplinePreview(snapped);
 }
@@ -2286,7 +2332,13 @@ function updateBSplinePreview(mousePt) {
     const ns = 'http://www.w3.org/2000/svg';
     const last = state.bsplinePoints[state.bsplinePoints.length - 1];
     const isDuplicate = last && Math.abs(last.x - snappedPt.x) < 1e-6 && Math.abs(last.y - snappedPt.y) < 1e-6;
-    const all = isDuplicate ? [...state.bsplinePoints] : [...state.bsplinePoints, {x:snappedPt.x,y:snappedPt.y}];
+    // Detect if hovering near the first point (to close the spline)
+    const first = state.bsplinePoints[0];
+    const screenScale = state.viewBox.w / svg.getBoundingClientRect().width;
+    const closeThreshold = SNAP_DIST * screenScale;
+    const isClosing = state.bsplinePoints.length >= 3 && first &&
+        Math.hypot(snappedPt.x - first.x, snappedPt.y - first.y) <= closeThreshold;
+    const all = isDuplicate || isClosing ? [...state.bsplinePoints] : [...state.bsplinePoints, {x:snappedPt.x,y:snappedPt.y}];
     const sw = state.viewBox.w * 0.001, cs = state.viewBox.w * 0.005;
     if (all.length > 1) {
         const pl = document.createElementNS(ns, 'polyline');
@@ -2303,10 +2355,21 @@ function updateBSplinePreview(mousePt) {
         cp.setAttribute('stroke','#7c5cf0'); cp.setAttribute('stroke-width',sw);
         cp.setAttribute('pointer-events','none'); previewLayer.appendChild(cp);
     }
+    // Highlight first point when about to close
+    if (isClosing) {
+        const ring = document.createElementNS(ns, 'circle');
+        ring.setAttribute('cx', first.x); ring.setAttribute('cy', first.y);
+        ring.setAttribute('r', cs);
+        ring.setAttribute('fill', 'none'); ring.setAttribute('stroke', '#7c5cf0');
+        ring.setAttribute('stroke-width', sw * 2);
+        ring.setAttribute('pointer-events', 'none'); previewLayer.appendChild(ring);
+    }
     if (all.length >= 2) {
         const path = document.createElementNS(ns, 'path');
-        path.setAttribute('d', bsplineToPath(all));
-        path.setAttribute('fill','none'); path.setAttribute('stroke',state.strokeColor);
+        path.setAttribute('d', bsplineToPath(all, isClosing));
+        const previewFill = isClosing ? (state.fillColor !== 'none' ? state.fillColor : 'none') : 'none';
+        path.setAttribute('fill', previewFill); path.setAttribute('stroke',state.strokeColor);
+        if (previewFill !== 'none') path.setAttribute('fill-opacity', '0.3');
         path.setAttribute('stroke-width',state.strokeWidth); path.setAttribute('pointer-events','none');
         previewLayer.appendChild(path);
     }
@@ -2336,6 +2399,7 @@ function editTextObject(obj, e) {
         overlay.style.fontSize = screenFontSize + 'px';
         overlay.style.lineHeight = '1.2';
         overlay.style.color = obj.fill === 'none' ? '#000' : obj.fill;
+        overlay.style.textAlign = obj.textAlign || 'left';
         overlay.value = obj.text;
         overlay.classList.remove('hidden');
         overlay.focus();
@@ -2398,6 +2462,7 @@ function handleTextClick(pt, e) {
         overlay.style.fontSize = screenFontSize + 'px';
         overlay.style.lineHeight = '1.2';
         overlay.style.color = state.fillColor === 'none' ? '#000' : state.fillColor;
+        overlay.style.textAlign = state.textAlign;
         overlay.value = '';
         overlay.classList.remove('hidden');
         overlay.focus();
@@ -2416,6 +2481,7 @@ function handleTextClick(pt, e) {
                     text: txt,
                     fontFamily: state.fontFamily,
                     fontSize: state.fontSize,
+                    textAlign: state.textAlign,
                     fill: state.fillColor === 'none' ? '#000000' : state.fillColor,
                     stroke: 'none',
                     strokeWidth: 0,
@@ -3563,6 +3629,14 @@ function updatePropsPanel() {
     document.getElementById('prop-h').value = toUnit(rb.h);
     document.getElementById('prop-rotation').value = Math.round(obj.rotation || 0);
     document.getElementById('props-unit-label').textContent = state.unit;
+    // Update text alignment buttons
+    if (obj.type === 'text') {
+        const align = obj.textAlign || 'left';
+        state.textAlign = align;
+        document.querySelectorAll('.align-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.align === align);
+        });
+    }
 }
 
 function applyPropPosition(obj, newXu, newYu) {
@@ -3749,6 +3823,35 @@ function setupEventListeners() {
         }
     });
 
+    document.querySelectorAll('.align-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const align = btn.dataset.align;
+            state.textAlign = align;
+            document.querySelectorAll('.align-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            for (const id of state.selectedIds) {
+                const obj = findObject(id);
+                if (obj && obj.type === 'text') {
+                    saveUndoState();
+                    // Adjust x position to keep text visually in place
+                    const bbox = obj.element.getBBox();
+                    const oldAnchor = obj.textAlign || 'left';
+                    let anchorX;
+                    if (oldAnchor === 'left') anchorX = obj.x;
+                    else if (oldAnchor === 'center') anchorX = obj.x - bbox.width / 2;
+                    else anchorX = obj.x - bbox.width;
+                    if (align === 'left') obj.x = anchorX;
+                    else if (align === 'center') obj.x = anchorX + bbox.width / 2;
+                    else obj.x = anchorX + bbox.width;
+                    obj.textAlign = align;
+                    refreshElement(obj);
+                    drawSelection();
+                    updatePropsPanel();
+                }
+            }
+        });
+    });
+
     document.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
         // Undo/Redo
@@ -3921,7 +4024,14 @@ function stripProblematicTables(buf) {
 function textToPath(obj) {
     const font = loadedOTFonts[obj.fontFamily];
     if (font) {
-        const path = font.getPath(obj.text, obj.x, obj.y, obj.fontSize);
+        let x = obj.x;
+        // Adjust x for text alignment (opentype always draws from the left)
+        if (obj.textAlign === 'center' || obj.textAlign === 'right') {
+            const adv = font.getAdvanceWidth(obj.text, obj.fontSize);
+            if (obj.textAlign === 'center') x -= adv / 2;
+            else x -= adv;
+        }
+        const path = font.getPath(obj.text, x, obj.y, obj.fontSize);
         return path.toPathData(2);
     }
     return null;
@@ -3999,7 +4109,9 @@ function textToFallbackSVG(obj, ns) {
     // Convert to data URL and create an SVG image element
     const dataUrl = canvas.toDataURL('image/png');
     const img = document.createElementNS(ns, 'image');
-    const bx = obj.x - 2;
+    let bx = obj.x - 2;
+    if (obj.textAlign === 'center') bx -= w / 2;
+    else if (obj.textAlign === 'right') bx -= w;
     const by = obj.y - fontSize - 2;
     img.setAttribute('x', bx); img.setAttribute('y', by);
     img.setAttribute('width', w); img.setAttribute('height', h);
