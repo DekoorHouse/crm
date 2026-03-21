@@ -3777,18 +3777,20 @@ function importSVG() {
 
             // Create PowerClip from imported container shape + content objects
             function makePowerClipFromImport(containerObj, contentObjs) {
-                // Remove container from objects array (it was added by createObject)
+                // Remove container from objects array and DOM
                 const cidx = state.objects.indexOf(containerObj);
                 if (cidx >= 0) state.objects.splice(cidx, 1);
                 containerObj.element.remove();
-                // Rebuild container as a plain shape (not in objects layer yet)
+                // Strip element references — buildSVGElement will create fresh ones
                 const containerData = { ...containerObj };
                 delete containerData.element;
-                // Add content objects back to objects layer
+                // Remove old content elements from DOM before building PowerClip
                 for (const c of contentObjs) {
-                    if (!c.element.parentNode) objectsLayer.appendChild(c.element);
+                    if (c.element) c.element.remove();
+                    const idx = state.objects.indexOf(c);
+                    if (idx >= 0) state.objects.splice(idx, 1);
                 }
-                // Use the existing makePowerClip-like logic
+                // Build the PowerClip (buildSVGElement creates new elements inside the clip group)
                 const pcObj = {
                     id: state.nextId++,
                     type: 'powerclip',
@@ -3801,12 +3803,6 @@ function importSVG() {
                 elem.dataset.objectId = pcObj.id;
                 objectsLayer.appendChild(elem);
                 state.objects.push(pcObj);
-                // Remove individual content from objects array (they're now inside the PC)
-                for (const c of contentObjs) {
-                    const idx = state.objects.indexOf(c);
-                    if (idx >= 0) state.objects.splice(idx, 1);
-                    if (c.element.parentNode === objectsLayer) c.element.remove();
-                }
             }
 
             // Base matrix: fit to page
