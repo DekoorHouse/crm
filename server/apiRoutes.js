@@ -3683,23 +3683,63 @@ router.post('/meta/config/connect-page', async (req, res) => {
             { skipIfSuccess: false }
         );
 
-        // 8. POST /{business_id}/event_source_groups — crea grupo que conecta dataset + page
-        // Este es el método más prometedor: opera a nivel BM y vincula dataset↔page
-        await tryMethod('bm/event_source_groups', (tk, v) =>
-            axios.post(`https://graph.facebook.com/${v}/${businessId}/event_source_groups`, {
-                name: `ESG_${page_id}_${dataset_id}`,
-                event_sources: [dataset_id],
-                access_token: tk
-            }),
-            { skipIfSuccess: false }
-        );
+        // 8. POST /{business_id}/event_source_groups — crea ESG que conecta dataset + page
+        let esgId = null;
+        for (const version of apiVersions) {
+            if (esgId) break;
+            for (const [label, tk] of allTokens) {
+                if (esgId) break;
+                try {
+                    const r = await axios.post(`https://graph.facebook.com/${version}/${businessId}/event_source_groups`, {
+                        name: `ESG_${page_id}_${dataset_id}`,
+                        event_sources: [dataset_id],
+                        access_token: tk
+                    });
+                    esgId = r.data.id;
+                    results.push({ method: `bm/event_source_groups ${version} (${label})`, success: true, data: r.data });
+                    anySuccess = true;
+                } catch (e) {
+                    results.push({ method: `bm/event_source_groups ${version} (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+                }
+            }
+        }
 
-        // 8b. Si hay ad accounts, intentar compartir dataset con cada una
-        for (const acctId of adAccountIds) {
+        // 8b. Si se creó el ESG, agregar la página al grupo
+        if (esgId) {
+            for (const [label, tk] of allTokens) {
+                try {
+                    const r = await axios.post(`https://graph.facebook.com/v21.0/${esgId}/shared_accounts`, {
+                        accounts: [page_id],
+                        access_token: tk
+                    });
+                    results.push({ method: `esg/${esgId}/shared_accounts (${label})`, success: true, data: r.data });
+                    break;
+                } catch (e) {
+                    results.push({ method: `esg/${esgId}/shared_accounts (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+                }
+            }
+            // También intentar agregar la página directamente al ESG
+            for (const [label, tk] of allTokens) {
+                try {
+                    const r = await axios.post(`https://graph.facebook.com/v21.0/${esgId}/pages`, {
+                        page_id,
+                        access_token: tk
+                    });
+                    results.push({ method: `esg/${esgId}/pages (${label})`, success: true, data: r.data });
+                    break;
+                } catch (e) {
+                    results.push({ method: `esg/${esgId}/pages (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+                }
+            }
+        }
+
+        // 8c. Si hay ad accounts, compartir dataset con la primera (limitar ruido)
+        if (adAccountIds.length > 0) {
+            const acctId = adAccountIds[0];
             await tryMethod(`dataset/shared_accounts(${acctId})`, (tk, v) =>
                 axios.post(`https://graph.facebook.com/${v}/${dataset_id}/shared_accounts`, {
                     business: businessId,
-                    account_id: `act_${acctId}`,
+                    account_id: acctId,
                     access_token: tk
                 }),
                 { skipIfSuccess: false }
@@ -3747,19 +3787,20 @@ router.post('/meta/config/connect-page', async (req, res) => {
         { skipIfSuccess: false }
     );
 
-    // 12. POST /{dataset_id}/assigned_users — asignar la página como usuario/activo
-    await tryMethod('dataset/assigned_users', (tk, v) =>
-        axios.post(`https://graph.facebook.com/${v}/${dataset_id}/assigned_users`, {
-            user: page_id, tasks: ['MANAGE', 'ADVERTISE', 'ANALYZE'], access_token: tk
-        }),
-        { skipIfSuccess: false }
-    );
-
-    // 13. Vía ad account: compartir el pixel con la página
-    for (const acctId of adAccountIds) {
-        await tryMethod(`adaccount(${acctId})/adspixels_share`, (tk, v) =>
+    // 12. Vía ad account: compartir el pixel/dataset (solo primer ad account para limitar ruido)
+    if (adAccountIds.length > 0) {
+        const acctId = adAccountIds[0];
+        // 12a. POST /act_{id}/adspixels — compartir pixel con la página
+        await tryMethod(`adaccount(${acctId})/adspixels`, (tk, v) =>
             axios.post(`https://graph.facebook.com/${v}/act_${acctId}/adspixels`, {
-                pixel_id: dataset_id, page_id, access_token: tk
+                pixel_id: dataset_id, access_token: tk
+            }),
+            { skipIfSuccess: false }
+        );
+        // 12b. POST /act_{id}/shared_datasets — compartir dataset vía ad account
+        await tryMethod(`adaccount(${acctId})/shared_datasets`, (tk, v) =>
+            axios.post(`https://graph.facebook.com/${v}/act_${acctId}/shared_datasets`, {
+                dataset_id, page_id, access_token: tk
             }),
             { skipIfSuccess: false }
         );
@@ -3806,7 +3847,22 @@ router.post('/meta/config/connect-page', async (req, res) => {
         }
     }
 
-    // 3. Si hay WABA, verificar qué datasets están vinculados
+    // 3. Si se creó un ESG, verificar que contiene el dataset
+    if (esgId) {
+        for (const [label, tk] of allTokens) {
+            try {
+                const r = await axios.get(`https://graph.facebook.com/v21.0/${esgId}`, {
+                    params: { fields: 'id,name,event_sources,shared_accounts', access_token: tk }
+                });
+                results.push({ method: `VERIFY esg/${esgId} (${label})`, success: true, data: r.data });
+                break;
+            } catch (e) {
+                results.push({ method: `VERIFY esg/${esgId} (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    // 4. Si hay WABA, verificar qué datasets están vinculados
     let wabaVerified = false;
     if (wabaId) {
         for (const [label, tk] of allTokens) {
@@ -3832,6 +3888,7 @@ router.post('/meta/config/connect-page', async (req, res) => {
     res.json({
         success: anySuccess || verified,
         verified,
+        esg_created: esgId || null,
         waba_linked: wabaLinked || wabaVerified,
         waba_only: !anySuccess && !verified && (wabaLinked || wabaVerified),
         results
