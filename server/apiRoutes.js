@@ -3983,69 +3983,123 @@ router.post('/meta/config/claim-page', async (req, res) => {
 
     if (!businessId) return res.status(400).json({ error: 'No se pudo encontrar tu Business Manager', results });
 
+    // Obtener page access token (si el usuario es admin de la página)
+    let pageToken = null;
+    try {
+        const r = await axios.get(`https://graph.facebook.com/v21.0/${page_id}`, {
+            params: { fields: 'access_token,name', access_token: token }
+        });
+        pageToken = r.data.access_token;
+        results.push({ step: 'get_page_token', success: true, page_name: r.data.name });
+    } catch (e) {
+        results.push({ step: 'get_page_token', success: false, error: e.response?.data?.error?.message || e.message });
+    }
+
+    // Tokens a intentar
+    const tokensToTry = [
+        ['user_token', token],
+        ['page_token', pageToken]
+    ].filter(([, t]) => t);
+
     const apiVersions = ['v21.0', 'v19.0'];
 
     async function tryOp(stepName, fn) {
         if (claimed) return;
         for (const v of apiVersions) {
             if (claimed) break;
-            try {
-                const r = await fn(v);
-                results.push({ step: `${stepName} ${v}`, success: true, data: r.data });
-                claimed = true;
-            } catch (e) {
-                results.push({ step: `${stepName} ${v}`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
+            for (const [label, tk] of tokensToTry) {
+                if (claimed) break;
+                try {
+                    const r = await fn(v, tk);
+                    results.push({ step: `${stepName} ${v} (${label})`, success: true, data: r.data });
+                    claimed = true;
+                } catch (e) {
+                    results.push({ step: `${stepName} ${v} (${label})`, success: false, error: e.response?.data?.error?.message || e.response?.data?.error || e.message });
+                }
             }
         }
     }
 
-    // 1. POST /{business_id}/pages — agregar página al BM (requiere ser admin de la página)
-    await tryOp(`POST /${businessId}/pages`, (v) =>
-        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
-            page_id, access_token: token
-        })
-    );
-
-    // 2. POST /{business_id}/owned_pages
-    await tryOp(`POST /${businessId}/owned_pages`, (v) =>
+    // 1. POST /{business_id}/owned_pages
+    await tryOp(`POST /${businessId}/owned_pages`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/owned_pages`, {
-            page_id, access_token: token
+            page_id, access_token: tk
         })
     );
 
-    // 3. POST /{business_id}/client_pages — como página de cliente
-    await tryOp(`POST /${businessId}/client_pages`, (v) =>
+    // 2. POST /{business_id}/client_pages
+    await tryOp(`POST /${businessId}/client_pages`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/client_pages`, {
-            page_id, access_token: token
+            page_id, access_token: tk
+        })
+    );
+
+    // 3. POST /{business_id}/pages
+    await tryOp(`POST /${businessId}/pages`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
+            page_id, access_token: tk
         })
     );
 
     // 4. POST /{business_id}/pages con permitted_tasks
-    await tryOp(`POST /${businessId}/pages full_access`, (v) =>
+    await tryOp(`POST /${businessId}/pages full_access`, (v, tk) =>
         axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, {
-            page_id, access_token: token,
+            page_id, access_token: tk,
             permitted_tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
         })
     );
 
-    // 5. POST /{business_id}/managed_pages
-    await tryOp(`POST /${businessId}/managed_pages`, (v) =>
-        axios.post(`https://graph.facebook.com/${v}/${businessId}/managed_pages`, {
-            page_id, access_token: token
+    // 5. POST /{business_id}/claimed_pages
+    await tryOp(`POST /${businessId}/claimed_pages`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/claimed_pages`, {
+            page_id, access_token: tk
+        })
+    );
+
+    // 6. POST /{page_id}/agencies — compartir página con el BM
+    await tryOp(`POST /${page_id}/agencies`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${page_id}/agencies`, {
+            business: businessId, access_token: tk,
+            permitted_tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
+        })
+    );
+
+    // 7. POST /{page_id}/assigned_users — asignar usuario del BM a la página
+    await tryOp(`POST /${page_id}/assigned_users`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${page_id}/assigned_users`, {
+            business: businessId, access_token: tk,
+            tasks: ['MANAGE', 'CREATE_CONTENT', 'MODERATE', 'ADVERTISE', 'ANALYZE']
+        })
+    );
+
+    // 8. POST /{business_id}/pages con params en URL
+    await tryOp(`POST /${businessId}/pages (params)`, (v, tk) =>
+        axios.post(`https://graph.facebook.com/${v}/${businessId}/pages`, null, {
+            params: { page_id, access_token: tk }
         })
     );
 
     // Verificar si la página está ahora en el BM
-    for (const v of apiVersions) {
+    for (const [label, tk] of tokensToTry) {
         try {
-            const r = await axios.get(`https://graph.facebook.com/${v}/${businessId}/owned_pages`, {
-                params: { access_token: token, fields: 'id,name' }
+            const r = await axios.get(`https://graph.facebook.com/v21.0/${businessId}/owned_pages`, {
+                params: { access_token: tk, fields: 'id,name' }
             });
             const found = r.data.data?.some(p => p.id === page_id);
-            results.push({ step: `VERIFY owned_pages ${v}`, success: true, page_found: found, pages: r.data.data });
+            results.push({ step: `VERIFY owned_pages (${label})`, success: true, page_found: found, pages: r.data.data });
             break;
         } catch (e) {
-            results.push({ step: `VERIFY ${v}`, success: false, error: e.response?.data?.error?.message || e.message });
+            // Intentar client_pages también
+            try {
+                const r2 = await axios.get(`https://graph.facebook.com/v21.0/${businessId}/client_pages`, {
+                    params: { access_token: tk, fields: 'id,name' }
+                });
+                const found = r2.data.data?.some(p => p.id === page_id);
+                results.push({ step: `VERIFY client_pages (${label})`, success: true, page_found: found, pages: r2.data.data });
+                break;
+            } catch (e2) {
+                results.push({ step: `VERIFY (${label})`, success: false, error: e.response?.data?.error?.message || e.message });
+            }
         }
     }
 
