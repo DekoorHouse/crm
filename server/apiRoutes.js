@@ -3465,6 +3465,85 @@ router.get('/meta/test-event', async (req, res) => {
 
 // --- Endpoints para configuración Meta: conectar páginas a datasets ---
 
+// Crear dataset VÍA página (auto-asocia página↔dataset) y vincular a WABA
+router.post('/meta/config/create-page-dataset', async (req, res) => {
+    const { token, page_id, old_dataset_id } = req.body;
+    const systemToken = process.env.META_CAPI_ACCESS_TOKEN;
+    const wabaId = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+    const pageId = page_id || process.env.FB_PAGE_ID;
+
+    if (!token) return res.status(400).json({ error: 'Se requiere un User/Page Access Token' });
+    if (!pageId) return res.status(400).json({ error: 'Se requiere page_id' });
+
+    const steps = [];
+    let datasetId = null;
+
+    // === PASO 1: Crear dataset vía POST /{PAGE_ID}/dataset (auto-asocia la página) ===
+    try {
+        const r = await axios.post(`https://graph.facebook.com/v22.0/${pageId}/dataset`, {
+            access_token: token
+        });
+        datasetId = r.data?.id;
+        steps.push({ step: 'Crear dataset vía página', success: true, data: r.data });
+    } catch (e) {
+        steps.push({ step: 'Crear dataset vía página', success: false, error: e.response?.data?.error || e.message });
+        return res.status(500).json({ error: 'No se pudo crear dataset vía página', steps });
+    }
+
+    // === PASO 2: Desvincular dataset viejo del WABA (si aplica) ===
+    if (wabaId && old_dataset_id && old_dataset_id !== datasetId) {
+        const tokensToTry = [token, systemToken].filter(Boolean);
+        for (const tk of tokensToTry) {
+            try {
+                await axios.delete(`https://graph.facebook.com/v22.0/${wabaId}/dataset`, {
+                    data: { dataset_id: old_dataset_id, access_token: tk }
+                });
+                steps.push({ step: 'Desvincular dataset viejo', success: true });
+                break;
+            } catch (e) {
+                steps.push({ step: 'Desvincular dataset viejo', success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    // === PASO 3: Vincular nuevo dataset al WABA ===
+    let wabaLinked = false;
+    if (wabaId) {
+        const tokensToTry = [token, systemToken].filter(Boolean);
+        for (const tk of tokensToTry) {
+            if (wabaLinked) break;
+            try {
+                const r = await axios.post(`https://graph.facebook.com/v22.0/${wabaId}/dataset`, {
+                    dataset_id: datasetId, access_token: tk
+                });
+                wabaLinked = r.data?.id === datasetId;
+                steps.push({ step: 'Vincular WABA', success: true, data: r.data, linked: wabaLinked });
+            } catch (e) {
+                steps.push({ step: 'Vincular WABA', success: false, error: e.response?.data?.error?.message || e.message });
+            }
+        }
+    }
+
+    // === PASO 4: Verificar dataset ===
+    try {
+        const r = await axios.get(`https://graph.facebook.com/v22.0/${datasetId}`, {
+            params: { fields: 'id,name', access_token: token }
+        });
+        steps.push({ step: 'Verificar dataset', success: true, data: r.data });
+    } catch (e) {
+        steps.push({ step: 'Verificar dataset', success: false, error: e.response?.data?.error?.message || e.message });
+    }
+
+    res.json({
+        success: !!datasetId,
+        dataset_id: datasetId,
+        page_auto_associated: true,
+        waba_linked: wabaLinked,
+        update_env: `META_PIXEL_ID=${datasetId}`,
+        steps
+    });
+});
+
 // Obtener info del dataset y sus páginas conectadas
 router.get('/meta/config/dataset', async (req, res) => {
     const token = req.query.token || process.env.META_CAPI_ACCESS_TOKEN;
