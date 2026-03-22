@@ -4054,33 +4054,34 @@ function importSVG() {
             state.pendingSVGImport = (pt) => {
                 hidePlacementCursor();
                 saveUndoState();
-                // Import at origin first to find actual content bounds
-                const offsetX = -vbX * fitScale;
-                const offsetY = -vbY * fitScale;
+                // First pass: import at origin to measure content bounds
+                const offsetX0 = -vbX * fitScale;
+                const offsetY0 = -vbY * fitScale;
                 const beforeCount = state.objects.length;
-                const baseMat = [fitScale, 0, 0, fitScale, offsetX, offsetY];
+                const measureMat = [fitScale, 0, 0, fitScale, offsetX0, offsetY0];
                 for (const child of svgRoot.children) {
-                    importElement(child, baseMat);
+                    importElement(child, measureMat);
                 }
-                // Shift all new objects so content top-left aligns with click point
-                const newObjs = state.objects.slice(beforeCount);
-                if (newObjs.length > 0) {
-                    let minX = Infinity, minY = Infinity;
-                    for (const obj of newObjs) {
+                const tempObjs = state.objects.slice(beforeCount);
+                let minX = 0, minY = 0;
+                if (tempObjs.length > 0) {
+                    minX = Infinity; minY = Infinity;
+                    for (const obj of tempObjs) {
                         const b = getObjBounds(obj);
                         if (b.x < minX) minX = b.x;
                         if (b.y < minY) minY = b.y;
                     }
-                    const dx = pt.x - minX, dy = pt.y - minY;
-                    for (const obj of newObjs) {
-                        offsetObject(obj, dx, dy);
-                        // Rebuild element from scratch with updated coordinates
-                        const oldElem = obj.element;
-                        const newElem = buildSVGElement(obj);
-                        obj.element = newElem;
-                        newElem.dataset.objectId = obj.id;
-                        oldElem.replaceWith(newElem);
-                    }
+                }
+                // Clean up measurement objects
+                for (const obj of tempObjs) obj.element.remove();
+                state.objects.length = beforeCount;
+                state.nextId -= tempObjs.length + tempObjs.filter(o => o.type === 'powerclip').reduce((n, o) => n + (o.contents ? o.contents.length : 0) + 1, 0);
+
+                // Second pass: import with click offset baked into the matrix
+                const dx = pt.x - minX, dy = pt.y - minY;
+                const baseMat = [fitScale, 0, 0, fitScale, offsetX0 + dx, offsetY0 + dy];
+                for (const child of svgRoot.children) {
+                    importElement(child, baseMat);
                 }
                 drawSelection();
                 setTool('select');
