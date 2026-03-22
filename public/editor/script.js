@@ -633,7 +633,20 @@ function hitTest(obj, pt) {
         return false;
     }
     if (obj.type === 'powerclip') {
-        return hitTest(obj.container, pt);
+        // Use accurate path geometry for PowerClip container hit testing
+        const cElem = obj.container.element;
+        if (cElem && typeof cElem.isPointInFill === 'function') {
+            try {
+                const ctm = cElem.getCTM();
+                if (ctm) {
+                    const p = svg.createSVGPoint();
+                    p.x = pt.x; p.y = pt.y;
+                    const local = p.matrixTransform(ctm.inverse());
+                    return cElem.isPointInFill(local) || cElem.isPointInStroke(local);
+                }
+            } catch(e) {}
+        }
+        return hitTest(obj.container, pt); // fallback to bounding box
     }
     switch (obj.type) {
         case 'text': {
@@ -641,35 +654,7 @@ function hitTest(obj, pt) {
             return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
-        case 'curvepath': {
-            // Quick bounding box reject
-            const inBBox = pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
-                           pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
-            if (!inBBox) return false;
-            // Try accurate path geometry test
-            const elem = obj.element;
-            if (elem && typeof elem.isPointInFill === 'function') {
-                try {
-                    const ctm = elem.getCTM();
-                    if (ctm) {
-                        const p = svg.createSVGPoint();
-                        p.x = pt.x; p.y = pt.y;
-                        const local = p.matrixTransform(ctm.inverse());
-                        if (elem.isPointInFill(local)) return true;
-                        // Check near the stroke edge with margin
-                        const origSW = elem.getAttribute('stroke-width');
-                        elem.setAttribute('stroke-width', Math.max(parseFloat(origSW) || 0, m * 2));
-                        const nearStroke = elem.isPointInStroke(local);
-                        elem.setAttribute('stroke-width', origSW || '0');
-                        if (nearStroke) return true;
-                    }
-                } catch(e) { return true; } // On error, trust bounding box
-            }
-            // For small objects, fall back to bounding box to ensure selectability
-            // Large objects (like PowerClip circles) rely on geometry test above
-            return obj.width * obj.height < state.viewBox.w * state.viewBox.h * 0.05;
-        }
-        case 'rect': case 'image':
+        case 'rect': case 'image': case 'curvepath':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         case 'ellipse': {
