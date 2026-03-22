@@ -4075,7 +4075,10 @@ function importSVG() {
                     for (const obj of newObjs) {
                         offsetObject(obj, dx, dy);
                         if (obj.type === 'powerclip') rebuildPowerClipElement(obj);
-                        else { refreshElement(obj); applyRotation(obj); }
+                        else {
+                            refreshElement(obj);
+                            if (obj.type !== 'curvepath') applyRotation(obj);
+                        }
                     }
                 }
                 drawSelection();
