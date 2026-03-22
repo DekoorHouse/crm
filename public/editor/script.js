@@ -3932,12 +3932,30 @@ function importSVG() {
             // Enter placement mode: crosshair cursor, click to set top-left position
             svg.style.cursor = 'crosshair';
             state.pendingSVGImport = (pt) => {
-                const offsetX = pt.x - vbX * fitScale;
-                const offsetY = pt.y - vbY * fitScale;
                 saveUndoState();
+                // Import at origin first to find actual content bounds
+                const offsetX = -vbX * fitScale;
+                const offsetY = -vbY * fitScale;
+                const beforeCount = state.objects.length;
                 const baseMat = [fitScale, 0, 0, fitScale, offsetX, offsetY];
                 for (const child of svgRoot.children) {
                     importElement(child, baseMat);
+                }
+                // Shift all new objects so content top-left aligns with click point
+                const newObjs = state.objects.slice(beforeCount);
+                if (newObjs.length > 0) {
+                    let minX = Infinity, minY = Infinity;
+                    for (const obj of newObjs) {
+                        const b = getObjBounds(obj);
+                        if (b.x < minX) minX = b.x;
+                        if (b.y < minY) minY = b.y;
+                    }
+                    const dx = pt.x - minX, dy = pt.y - minY;
+                    for (const obj of newObjs) {
+                        offsetObject(obj, dx, dy);
+                        if (obj.type === 'powerclip') rebuildPowerClipElement(obj);
+                        else { refreshElement(obj); applyRotation(obj); }
+                    }
                 }
                 drawSelection();
                 setTool('select');
