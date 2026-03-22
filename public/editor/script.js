@@ -3577,27 +3577,46 @@ function importSVG() {
                 return { fill: fill || 'none', stroke: stroke || 'none', sw: sw || 0, fillRule };
             }
 
-            // Helper: parse transform including matrix()
+            // Helper: parse transform attribute into a combined affine matrix [a,b,c,d,e,f].
+            // Correctly composes multiple transforms (e.g. rotate(a,cx,cy) scale translate)
+            // using proper matrix multiplication, preserving SVG left-to-right application order.
             function parseTransform(el) {
                 const t = el.getAttribute('transform');
-                if (!t) return [1, 0, 0, 1, 0, 0]; // identity matrix [a,b,c,d,e,f]
-                const matMatch = t.match(/matrix\(\s*([^)]+)\)/);
-                if (matMatch) {
-                    return matMatch[1].split(/[\s,]+/).map(Number);
+                if (!t) return [1, 0, 0, 1, 0, 0];
+                let result = [1, 0, 0, 1, 0, 0];
+                const re = /(\w+)\s*\(([^)]*)\)/g;
+                let m;
+                while ((m = re.exec(t)) !== null) {
+                    const fn = m[1];
+                    const args = m[2].trim().split(/[\s,]+/).map(Number).filter(n => !isNaN(n));
+                    let mat;
+                    if (fn === 'matrix' && args.length >= 6) {
+                        mat = args.slice(0, 6);
+                    } else if (fn === 'translate') {
+                        mat = [1, 0, 0, 1, args[0] || 0, args[1] || 0];
+                    } else if (fn === 'scale') {
+                        const sx = args[0] || 1, sy = args.length > 1 ? args[1] : (args[0] || 1);
+                        mat = [sx, 0, 0, sy, 0, 0];
+                    } else if (fn === 'rotate') {
+                        const ang = (args[0] || 0) * Math.PI / 180;
+                        const cos = Math.cos(ang), sin = Math.sin(ang);
+                        if (args.length >= 3) {
+                            // rotate(angle, cx, cy) — rotation around an explicit center point
+                            const cx = args[1], cy = args[2];
+                            mat = [cos, sin, -sin, cos,
+                                   cx * (1 - cos) + cy * sin,
+                                   cy * (1 - cos) - cx * sin];
+                        } else {
+                            mat = [cos, sin, -sin, cos, 0, 0];
+                        }
+                    } else if (fn === 'skewX') {
+                        mat = [1, 0, Math.tan((args[0] || 0) * Math.PI / 180), 1, 0, 0];
+                    } else if (fn === 'skewY') {
+                        mat = [1, Math.tan((args[0] || 0) * Math.PI / 180), 0, 1, 0, 0];
+                    } else { continue; }
+                    result = mulMatrix(result, mat);
                 }
-                // Build matrix from individual transforms
-                let a = 1, b = 0, c = 0, d = 1, e = 0, f = 0;
-                const scaleMatch = t.match(/scale\(\s*([\d.\-eE]+)(?:[\s,]+([\d.\-eE]+))?\s*\)/);
-                if (scaleMatch) { a = parseFloat(scaleMatch[1]); d = scaleMatch[2] ? parseFloat(scaleMatch[2]) : a; }
-                const translateMatch = t.match(/translate\(\s*([\d.\-eE]+)[\s,]+([\d.\-eE]+)\s*\)/);
-                if (translateMatch) { e = parseFloat(translateMatch[1]); f = parseFloat(translateMatch[2]); }
-                const rotMatch = t.match(/rotate\(\s*([\d.\-eE]+)/);
-                if (rotMatch) {
-                    const rad = parseFloat(rotMatch[1]) * Math.PI / 180;
-                    const cos = Math.cos(rad), sin = Math.sin(rad);
-                    a = cos; b = sin; c = -sin; d = cos;
-                }
-                return [a, b, c, d, e, f];
+                return result;
             }
 
             // Multiply two affine matrices [a,b,c,d,e,f]
@@ -3618,6 +3637,8 @@ function importSVG() {
             // Apply a pure scale+translate transform directly to SVG path data,
             // preserving all sub-paths (M, L, C, Q, A, Z commands) without sampling.
             function applyScaleTranslateToPath(d, sx, sy, tx, ty) {
+                // When the coordinate system is reflected (one axis negated), arc sweep direction reverses
+                const flipSweep = sx * sy < 0;
                 const re = /([MLCQAZTSHVmlcqatzshv])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+\-]?\d+)?)/g;
                 const tokens = [];
                 let m;
@@ -3657,9 +3678,9 @@ function importSVG() {
                         else if (cmd === 's')
                             result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)}`;
                         else if (cmd === 'A')
-                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${nums[4]} ${f(nums[5]*sx+tx)},${f(nums[6]*sy+ty)}`;
+                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${flipSweep ? 1-nums[4] : nums[4]} ${f(nums[5]*sx+tx)},${f(nums[6]*sy+ty)}`;
                         else if (cmd === 'a')
-                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${nums[4]} ${f(nums[5]*sx)},${f(nums[6]*sy)}`;
+                            result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${flipSweep ? 1-nums[4] : nums[4]} ${f(nums[5]*sx)},${f(nums[6]*sy)}`;
                     }
                 }
                 return result.trim();
