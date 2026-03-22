@@ -4627,6 +4627,7 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'y' && e.ctrlKey) { e.preventDefault(); redo(); return; }
         if (e.key.toLowerCase() === 'z' && e.ctrlKey && e.shiftKey) { e.preventDefault(); redo(); return; }
         // Group/Ungroup shortcuts
+        if (e.key.toLowerCase() === 'a' && e.ctrlKey) { e.preventDefault(); state.selectedIds = state.objects.map(o => o.id); drawSelection(); updatePropsPanel(); return; }
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
         if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
