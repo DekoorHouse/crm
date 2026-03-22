@@ -3540,13 +3540,12 @@ function importSVG() {
             if (mmMatchW) mmW = parseFloat(mmMatchW[1]);
             if (mmMatchH) mmH = parseFloat(mmMatchH[1]);
             // Compute scale factor (offset will be determined by click position)
+            // For mm-based SVGs (CorelDRAW): map viewBox directly to page at 1:1 mm.
+            // We ignore width/height mm values because CorelDRAW selected-object exports
+            // set a smaller width (bounding box) but keep the full-page viewBox coordinates.
             let fitScale;
             if (mmW > 0 && mmH > 0) {
-                // CorelDRAW: viewBox units to mm ratio
-                const unitsPerMmX = contentW / mmW;
-                // 1:1 mm mapping; scale down only if SVG exceeds page
-                const pageScale = Math.min(1, state.pageWidth / mmW, state.pageHeight / mmH);
-                fitScale = pageScale / unitsPerMmX;
+                fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH);
             } else {
                 fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
             }
