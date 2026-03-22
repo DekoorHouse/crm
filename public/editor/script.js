@@ -501,10 +501,19 @@ function buildClipShape(container, ns) {
 
 function applyRotation(obj, elem) {
     if (!elem) elem = obj.element;
-    if (obj.rotation && obj.rotation !== 0) {
+    const hasRotation = obj.rotation && obj.rotation !== 0;
+    const hasFlip = obj.flipX || obj.flipY;
+    if (hasRotation || hasFlip) {
         const b = getObjBounds(obj);
         const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-        elem.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+        let t = '';
+        if (hasRotation) t += `rotate(${obj.rotation} ${cx} ${cy}) `;
+        if (hasFlip) {
+            const sx = obj.flipX ? -1 : 1;
+            const sy = obj.flipY ? -1 : 1;
+            t += `translate(${cx} ${cy}) scale(${sx} ${sy}) translate(${-cx} ${-cy})`;
+        }
+        elem.setAttribute('transform', t.trim());
     } else {
         elem.removeAttribute('transform');
     }
@@ -3811,26 +3820,28 @@ function importSVG() {
                 } else if (tag === 'image') {
                     const href = el.getAttribute('href') || el.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
                     if (!href) return;
+                    const ix = parseFloat(el.getAttribute('x')) || 0;
+                    const iy = parseFloat(el.getAttribute('y')) || 0;
                     const iw = parseFloat(el.getAttribute('width')) || 0;
                     const ih = parseFloat(el.getAttribute('height')) || 0;
-                    // Decompose the combined matrix into position, size, and rotation
-                    const p0 = applyMatrix(m, 0, 0);
-                    const p1 = applyMatrix(m, iw, 0);
-                    const p2 = applyMatrix(m, 0, ih);
-                    const p3 = applyMatrix(m, iw, ih);
+                    // Decompose the combined matrix into position, size, rotation, and flip
+                    const p0 = applyMatrix(m, ix, iy);
+                    const p1 = applyMatrix(m, ix + iw, iy);
+                    const p2 = applyMatrix(m, ix, iy + ih);
+                    const p3 = applyMatrix(m, ix + iw, iy + ih);
                     // Width/height from edge lengths of the transformed quad
                     const w = Math.hypot(p1.x - p0.x, p1.y - p0.y);
                     const h = Math.hypot(p2.x - p0.x, p2.y - p0.y);
                     // Rotation from the top edge direction
                     const det = m[0]*m[3] - m[1]*m[2];
-                    let rotation = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
-                    // Negative determinant = reflection; negate angle to compensate
-                    if (det < 0) rotation = -rotation;
+                    const rotation = Math.atan2(p1.y - p0.y, p1.x - p0.x) * 180 / Math.PI;
+                    // Negative determinant = reflection; apply vertical flip
+                    const flipY = det < 0;
                     // Center of the transformed image
                     const cx = (p0.x + p1.x + p2.x + p3.x) / 4;
                     const cy = (p0.y + p1.y + p2.y + p3.y) / 4;
                     if (w > 0.1 && h > 0.1) {
-                        createObject('image', { x: cx - w/2, y: cy - h/2, width: w, height: h, rotation, href });
+                        createObject('image', { x: cx - w/2, y: cy - h/2, width: w, height: h, rotation, flipY, href });
                     }
                 } else if (tag === 'g') {
                     // Check for clip-path (CorelDRAW uses style="clip-path:url(#id)")
