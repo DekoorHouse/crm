@@ -1886,19 +1886,6 @@ function handleMouseUp() {
                 }
             }
         }
-        // Auto-insert into PowerClip: only if cursor is inside a powerclip, and not in PC edit mode
-        if (!pcEditingId && state.selectedIds.length === 1) {
-            const draggedId = state.selectedIds[0];
-            const dragged = findObject(draggedId);
-            if (dragged && dragged.type !== 'powerclip') {
-                const cursorPt = screenToSVG(event.clientX, event.clientY);
-                const pcTarget = findPowerClipAtPoint(cursorPt, draggedId);
-                if (pcTarget) {
-                    addToPowerClip(draggedId, pcTarget.id);
-                    return;
-                }
-            }
-        }
         drawSelection(); updatePropsPanel(); return;
     }
     if (state.isDrawing) handleDrawEnd();
