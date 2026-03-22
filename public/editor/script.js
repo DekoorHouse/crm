@@ -1702,6 +1702,16 @@ function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
 // TOOL HANDLERS
 // =============================================
 function handleMouseDown(e) {
+    // SVG placement mode: click to place imported SVG
+    if (state.pendingSVGImport && e.button === 0 && !state.spaceHeld) {
+        e.preventDefault();
+        e.stopPropagation();
+        const cb = state.pendingSVGImport;
+        state.pendingSVGImport = null;
+        svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+        cb(screenToSVG(e.clientX, e.clientY));
+        return;
+    }
     if (e.button === 1 || (e.button === 0 && state.spaceHeld)) {
         e.preventDefault();
         state.isPanning = true;
@@ -1778,7 +1788,9 @@ function handleMouseMove(e) {
         _moveRafId = null;
         if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
         drawSnapIndicators(pt);
-        if (state.tool === 'select' && !state.spaceHeld) {
+        if (state.pendingSVGImport) {
+            svg.style.cursor = 'crosshair';
+        } else if (state.tool === 'select' && !state.spaceHeld) {
             if (state.nodeEditId) {
                 const hit = nodeAtPoint(pt);
                 svg.style.cursor = hit ? 'crosshair' : 'default';
@@ -3492,7 +3504,6 @@ function importSVG() {
             const doc = parser.parseFromString(ev.target.result, 'image/svg+xml');
             const svgRoot = doc.documentElement;
             if (svgRoot.tagName !== 'svg') return;
-            saveUndoState();
 
             // 1) Parse <style> blocks to resolve CSS classes (CorelDRAW uses these)
             const cssMap = {};
@@ -3528,21 +3539,16 @@ function importSVG() {
             const mmMatchH = svgH.match(/([\d.]+)\s*mm/i);
             if (mmMatchW) mmW = parseFloat(mmMatchW[1]);
             if (mmMatchH) mmH = parseFloat(mmMatchH[1]);
-            // If SVG specifies mm units, map viewBox to page proportionally
-            let fitScale, offsetX, offsetY;
+            // Compute scale factor (offset will be determined by click position)
+            let fitScale;
             if (mmW > 0 && mmH > 0) {
                 // CorelDRAW: viewBox units to mm ratio
                 const unitsPerMmX = contentW / mmW;
-                const unitsPerMmY = contentH / mmH;
                 // 1:1 mm mapping; scale down only if SVG exceeds page
                 const pageScale = Math.min(1, state.pageWidth / mmW, state.pageHeight / mmH);
                 fitScale = pageScale / unitsPerMmX;
-                offsetX = (state.pageWidth - mmW * pageScale) / 2 - vbX * fitScale;
-                offsetY = (state.pageHeight - mmH * pageScale) / 2 - vbY * fitScale;
             } else {
                 fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
-                offsetX = (state.pageWidth - contentW * fitScale) / 2 - vbX * fitScale;
-                offsetY = (state.pageHeight - contentH * fitScale) / 2 - vbY * fitScale;
             }
 
             // Detect CorelDRAW exports: check xmlns:xodm namespace attr or fil0/str0 CSS class pattern
@@ -3924,14 +3930,19 @@ function importSVG() {
                 state.objects.push(pcObj);
             }
 
-            // Base matrix: fit to page
-            const baseMat = [fitScale, 0, 0, fitScale, offsetX, offsetY];
-            for (const child of svgRoot.children) {
-                importElement(child, baseMat);
-            }
-
-            drawSelection();
-            setTool('select');
+            // Enter placement mode: crosshair cursor, click to set top-left position
+            svg.style.cursor = 'crosshair';
+            state.pendingSVGImport = (pt) => {
+                const offsetX = pt.x - vbX * fitScale;
+                const offsetY = pt.y - vbY * fitScale;
+                saveUndoState();
+                const baseMat = [fitScale, 0, 0, fitScale, offsetX, offsetY];
+                for (const child of svgRoot.children) {
+                    importElement(child, baseMat);
+                }
+                drawSelection();
+                setTool('select');
+            };
         };
         reader.readAsText(file);
     });
@@ -4497,7 +4508,8 @@ function setupEventListeners() {
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
-                if (pcEditingId) { exitPowerClipEdit(); }
+                if (state.pendingSVGImport) { state.pendingSVGImport = null; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; }
+                else if (pcEditingId) { exitPowerClipEdit(); }
                 else if (state.nodeEditId) { exitNodeEdit(); }
                 else if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
                 else if (state.tool !== 'select') setTool('select');
