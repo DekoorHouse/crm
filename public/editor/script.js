@@ -733,7 +733,16 @@ function drawSelection() {
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj) continue;
-        const b = getObjBounds(obj);
+        // For PowerClips, use rendered getBBox for tight visual selection
+        let b;
+        if (obj.type === 'powerclip' && obj.element && obj.element.getBBox) {
+            try {
+                const bb = obj.element.getBBox();
+                b = { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 };
+            } catch(e) { b = getObjBounds(obj); }
+        } else {
+            b = getObjBounds(obj);
+        }
         // For rotated objects, use the rotated corners for the combined bbox
         const rot = obj.rotation || 0;
         const cx = b.x + b.w/2, cy = b.y + b.h/2;
@@ -901,17 +910,8 @@ function getObjBounds(obj) {
             const estH = obj.fontSize * 1.2;
             return { x: obj.x, y: obj.y - estH, w: estW || 1, h: estH };
         }
-        case 'powerclip': {
-            // Use the actual rendered bounding box for tight selection
-            if (obj.element && obj.element.getBBox) {
-                try {
-                    const bb = obj.element.getBBox();
-                    if (bb.width > 0.01 && bb.height > 0.01)
-                        return { x: bb.x, y: bb.y, w: bb.width, h: bb.height };
-                } catch(e) {}
-            }
+        case 'powerclip':
             return getObjBounds(obj.container);
-        }
     }
 }
 
