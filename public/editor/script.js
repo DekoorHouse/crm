@@ -1721,7 +1721,6 @@ function handleMouseDown(e) {
         e.stopPropagation();
         const cb = state.pendingSVGImport;
         state.pendingSVGImport = null;
-        svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
         cb(screenToSVG(e.clientX, e.clientY));
         return;
     }
@@ -1802,7 +1801,7 @@ function handleMouseMove(e) {
         if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
         drawSnapIndicators(pt);
         if (state.pendingSVGImport) {
-            svg.style.cursor = 'crosshair';
+            updatePlacementCursor(pt);
         } else if (state.tool === 'select' && !state.spaceHeld) {
             if (state.nodeEditId) {
                 const hit = nodeAtPoint(pt);
@@ -2494,6 +2493,124 @@ function updateBSplinePreview(mousePt) {
 }
 
 function clearPreview() { previewLayer.innerHTML = ''; state.previewElement = null; }
+
+// =============================================
+// PLACEMENT CURSOR (SVG Import)
+// =============================================
+let _placementCursorGroup = null;
+
+function showPlacementCursor() {
+    hidePlacementCursor();
+    const ns = 'http://www.w3.org/2000/svg';
+    const g = document.createElementNS(ns, 'g');
+    g.setAttribute('pointer-events', 'none');
+    g.setAttribute('id', 'placement-cursor');
+
+    // Scale factor so the cursor stays a fixed screen size regardless of zoom
+    const s = _cachedScreenScale || 1;
+    const r1 = 14 * s;  // inner gap radius
+    const r2 = 22 * s;  // outer ring radius
+    const lineLen = 34 * s;
+    const bracketLen = 8 * s;
+    const bracketOff = 26 * s;
+    const dotR = 2.5 * s;
+    const sw = 1.5 * s;
+    const swThin = 1 * s;
+
+    const accent = '#7c5cf0';
+    const accentSoft = 'rgba(124,92,240,0.35)';
+
+    // Glow circle
+    const glow = document.createElementNS(ns, 'circle');
+    glow.setAttribute('r', r2);
+    glow.setAttribute('fill', 'none');
+    glow.setAttribute('stroke', accentSoft);
+    glow.setAttribute('stroke-width', 6 * s);
+    g.appendChild(glow);
+
+    // Outer dashed ring with CSS animation
+    const ring = document.createElementNS(ns, 'circle');
+    ring.setAttribute('r', r2);
+    ring.setAttribute('fill', 'none');
+    ring.setAttribute('stroke', accent);
+    ring.setAttribute('stroke-width', sw);
+    ring.setAttribute('stroke-dasharray', `${4 * s} ${4 * s}`);
+    // Add rotation animation via style
+    ring.setAttribute('style', `animation: placementSpin 4s linear infinite; transform-origin: 0 0;`);
+    g.appendChild(ring);
+
+    // Crosshair lines (4 lines with gap in center)
+    const dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (const [dx, dy] of dirs) {
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', dx * r1);
+        line.setAttribute('y1', dy * r1);
+        line.setAttribute('x2', dx * lineLen);
+        line.setAttribute('y2', dy * lineLen);
+        line.setAttribute('stroke', accent);
+        line.setAttribute('stroke-width', swThin);
+        line.setAttribute('opacity', '0.7');
+        g.appendChild(line);
+    }
+
+    // Corner brackets (4 L-shapes)
+    const corners = [[-1, -1], [1, -1], [1, 1], [-1, 1]];
+    for (const [cx, cy] of corners) {
+        const bracket = document.createElementNS(ns, 'path');
+        const bx = cx * bracketOff, by = cy * bracketOff;
+        bracket.setAttribute('d',
+            `M${bx},${by + cy * bracketLen} L${bx},${by} L${bx + cx * bracketLen},${by}`);
+        bracket.setAttribute('fill', 'none');
+        bracket.setAttribute('stroke', accent);
+        bracket.setAttribute('stroke-width', sw);
+        bracket.setAttribute('stroke-linecap', 'round');
+        g.appendChild(bracket);
+    }
+
+    // Center dot
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('r', dotR);
+    dot.setAttribute('fill', accent);
+    g.appendChild(dot);
+
+    // Label
+    const label = document.createElementNS(ns, 'text');
+    label.setAttribute('y', (r2 + 16 * s));
+    label.setAttribute('text-anchor', 'middle');
+    label.setAttribute('fill', accent);
+    label.setAttribute('font-size', 10 * s);
+    label.setAttribute('font-family', 'Inter, system-ui, sans-serif');
+    label.setAttribute('font-weight', '500');
+    label.setAttribute('opacity', '0.8');
+    label.textContent = 'IMPORTAR SVG';
+    g.appendChild(label);
+
+    previewLayer.appendChild(g);
+    _placementCursorGroup = g;
+    svg.style.cursor = 'none';
+
+    // Inject keyframe animation if not already present
+    if (!document.getElementById('placement-spin-style')) {
+        const style = document.createElement('style');
+        style.id = 'placement-spin-style';
+        style.textContent = `@keyframes placementSpin { to { transform: rotate(360deg); } }`;
+        document.head.appendChild(style);
+    }
+}
+
+function updatePlacementCursor(pt) {
+    if (_placementCursorGroup) {
+        _placementCursorGroup.setAttribute('transform', `translate(${pt.x},${pt.y})`);
+    }
+}
+
+function hidePlacementCursor() {
+    if (_placementCursorGroup) {
+        _placementCursorGroup.remove();
+        _placementCursorGroup = null;
+    }
+    svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+}
 
 // --- Text ---
 function editTextObject(obj, e) {
@@ -3945,9 +4062,10 @@ function importSVG() {
                 state.objects.push(pcObj);
             }
 
-            // Enter placement mode: crosshair cursor, click to set top-left position
-            svg.style.cursor = 'crosshair';
+            // Enter placement mode: custom cursor, click to set top-left position
+            showPlacementCursor();
             state.pendingSVGImport = (pt) => {
+                hidePlacementCursor();
                 saveUndoState();
                 // Import at origin first to find actual content bounds
                 const offsetX = -vbX * fitScale;
@@ -4541,7 +4659,7 @@ function setupEventListeners() {
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
-                if (state.pendingSVGImport) { state.pendingSVGImport = null; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; }
+                if (state.pendingSVGImport) { state.pendingSVGImport = null; hidePlacementCursor(); }
                 else if (pcEditingId) { exitPowerClipEdit(); }
                 else if (state.nodeEditId) { exitNodeEdit(); }
                 else if (state.tool === 'bspline' && state.bsplinePoints.length > 0) { state.bsplinePoints=[]; clearPreview(); }
