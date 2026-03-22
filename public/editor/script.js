@@ -901,8 +901,17 @@ function getObjBounds(obj) {
             const estH = obj.fontSize * 1.2;
             return { x: obj.x, y: obj.y - estH, w: estW || 1, h: estH };
         }
-        case 'powerclip':
+        case 'powerclip': {
+            // Use the actual rendered bounding box for tight selection
+            if (obj.element && obj.element.getBBox) {
+                try {
+                    const bb = obj.element.getBBox();
+                    if (bb.width > 0.01 && bb.height > 0.01)
+                        return { x: bb.x, y: bb.y, w: bb.width, h: bb.height };
+                } catch(e) {}
+            }
             return getObjBounds(obj.container);
+        }
     }
 }
 
