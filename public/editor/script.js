@@ -32,7 +32,7 @@ const PAGE_PRESETS = {
 
 const UNITS = {
     px: { factor: 1, dec: 1 },
-    mm: { factor: 25.4 / 96, dec: 2 },
+    mm: { factor: 25.4 / 96, dec: 1 },
     cm: { factor: 2.54 / 96, dec: 2 },
     in: { factor: 1 / 96, dec: 3 },
 };
