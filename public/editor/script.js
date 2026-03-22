@@ -642,7 +642,11 @@ function hitTest(obj, pt) {
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
         case 'curvepath': {
-            // Use actual path geometry for accurate hit testing
+            // Quick bounding box reject
+            const inBBox = pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
+                           pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+            if (!inBBox) return false;
+            // Try accurate path geometry test
             const elem = obj.element;
             if (elem && typeof elem.isPointInFill === 'function') {
                 try {
@@ -652,18 +656,18 @@ function hitTest(obj, pt) {
                         p.x = pt.x; p.y = pt.y;
                         const local = p.matrixTransform(ctm.inverse());
                         if (elem.isPointInFill(local)) return true;
-                        // Also check near the stroke edge with margin
+                        // Check near the stroke edge with margin
                         const origSW = elem.getAttribute('stroke-width');
                         elem.setAttribute('stroke-width', Math.max(parseFloat(origSW) || 0, m * 2));
                         const nearStroke = elem.isPointInStroke(local);
                         elem.setAttribute('stroke-width', origSW || '0');
-                        return nearStroke;
+                        if (nearStroke) return true;
                     }
-                } catch(e) {}
+                } catch(e) { return true; } // On error, trust bounding box
             }
-            // Fallback to bounding box
-            return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
-                   pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+            // For small objects, fall back to bounding box to ensure selectability
+            // Large objects (like PowerClip circles) rely on geometry test above
+            return obj.width * obj.height < state.viewBox.w * state.viewBox.h * 0.05;
         }
         case 'rect': case 'image':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
