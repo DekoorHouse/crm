@@ -3860,8 +3860,11 @@ function importSVG() {
                             if (clipChild) {
                                 const clipD = clipChild.getAttribute('d') || pointsToD(clipChild);
                                 if (clipD) {
-                                    // Import clip shape as container
-                                    importPath(clipD, { fill: 'none', stroke: 'none', sw: 0 }, m);
+                                    // Import clip shape as container (compose clipPath + child transforms)
+                                    const clipElMat = parseTransform(clipEl);
+                                    const clipChildMat = parseTransform(clipChild);
+                                    const clipMat = mulMatrix(m, mulMatrix(clipElMat, clipChildMat));
+                                    importPath(clipD, { fill: 'none', stroke: 'none', sw: 0 }, clipMat);
                                     const containerObj = state.objects[state.objects.length - 1];
                                     // Import all children (nested clips just pass through)
                                     const contentsBefore = state.objects.length;
