@@ -4074,11 +4074,12 @@ function importSVG() {
                     const dx = pt.x - minX, dy = pt.y - minY;
                     for (const obj of newObjs) {
                         offsetObject(obj, dx, dy);
-                        if (obj.type === 'powerclip') rebuildPowerClipElement(obj);
-                        else {
-                            refreshElement(obj);
-                            if (obj.type !== 'curvepath') applyRotation(obj);
-                        }
+                        // Rebuild element from scratch with updated coordinates
+                        const oldElem = obj.element;
+                        const newElem = buildSVGElement(obj);
+                        obj.element = newElem;
+                        newElem.dataset.objectId = obj.id;
+                        oldElem.replaceWith(newElem);
                     }
                 }
                 drawSelection();
