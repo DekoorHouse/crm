@@ -4070,16 +4070,7 @@ function importSVG() {
                 if (tempObjs.length > 0) {
                     minX = Infinity; minY = Infinity;
                     for (const obj of tempObjs) {
-                        // Use visual getBBox for PowerClips (container bounds are larger than visible)
-                        let b;
-                        if (obj.type === 'powerclip' && obj.element && obj.element.getBBox) {
-                            try {
-                                const bb = obj.element.getBBox();
-                                b = { x: bb.x, y: bb.y, w: bb.width, h: bb.height };
-                            } catch(e) { b = getObjBounds(obj); }
-                        } else {
-                            b = getObjBounds(obj);
-                        }
+                        const b = getObjBounds(obj);
                         if (b.x < minX) minX = b.x;
                         if (b.y < minY) minY = b.y;
                     }
