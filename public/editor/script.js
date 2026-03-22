@@ -641,7 +641,31 @@ function hitTest(obj, pt) {
             return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
-        case 'rect': case 'image': case 'curvepath':
+        case 'curvepath': {
+            // Use actual path geometry for accurate hit testing
+            const elem = obj.element;
+            if (elem && typeof elem.isPointInFill === 'function') {
+                try {
+                    const ctm = elem.getCTM();
+                    if (ctm) {
+                        const p = svg.createSVGPoint();
+                        p.x = pt.x; p.y = pt.y;
+                        const local = p.matrixTransform(ctm.inverse());
+                        if (elem.isPointInFill(local)) return true;
+                        // Also check near the stroke edge with margin
+                        const origSW = elem.getAttribute('stroke-width');
+                        elem.setAttribute('stroke-width', Math.max(parseFloat(origSW) || 0, m * 2));
+                        const nearStroke = elem.isPointInStroke(local);
+                        elem.setAttribute('stroke-width', origSW || '0');
+                        return nearStroke;
+                    }
+                } catch(e) {}
+            }
+            // Fallback to bounding box
+            return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
+                   pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+        }
+        case 'rect': case 'image':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         case 'ellipse': {
