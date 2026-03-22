@@ -3534,8 +3534,8 @@ function importSVG() {
                 // CorelDRAW: viewBox units to mm ratio
                 const unitsPerMmX = contentW / mmW;
                 const unitsPerMmY = contentH / mmH;
-                // Scale to fit editor page (which is in mm)
-                const pageScale = Math.min(state.pageWidth / mmW, state.pageHeight / mmH) * 0.9;
+                // 1:1 mm mapping; scale down only if SVG exceeds page
+                const pageScale = Math.min(1, state.pageWidth / mmW, state.pageHeight / mmH);
                 fitScale = pageScale / unitsPerMmX;
                 offsetX = (state.pageWidth - mmW * pageScale) / 2 - vbX * fitScale;
                 offsetY = (state.pageHeight - mmH * pageScale) / 2 - vbY * fitScale;
