@@ -596,58 +596,11 @@ function buildSVGElement(obj) {
 }
 
 function buildClipShape(container, ns) {
-    let shape;
-    switch (container.type) {
-        case 'rect':
-            shape = document.createElementNS(ns, 'rect');
-            shape.setAttribute('x', container.x); shape.setAttribute('y', container.y);
-            shape.setAttribute('width', container.width); shape.setAttribute('height', container.height);
-            if (container.rotation) {
-                const cx = container.x + container.width/2, cy = container.y + container.height/2;
-                shape.setAttribute('transform', `rotate(${container.rotation} ${cx} ${cy})`);
-            }
-            break;
-        case 'ellipse':
-            shape = document.createElementNS(ns, 'ellipse');
-            shape.setAttribute('cx', container.cx); shape.setAttribute('cy', container.cy);
-            shape.setAttribute('rx', container.rx); shape.setAttribute('ry', container.ry);
-            if (container.rotation) {
-                shape.setAttribute('transform', `rotate(${container.rotation} ${container.cx} ${container.cy})`);
-            }
-            break;
-        case 'bspline':
-            shape = document.createElementNS(ns, 'path');
-            shape.setAttribute('d', bsplineToPath(container.points, container.closed));
-            break;
-        case 'curvepath':
-            shape = document.createElementNS(ns, 'path');
-            shape.setAttribute('d', container.d);
-            if (container._origBounds) {
-                const orig = container._origBounds;
-                const sx = container.width / orig.w, sy = container.height / orig.h;
-                const tx = container.x - orig.x * sx, ty = container.y - orig.y * sy;
-                let t = '';
-                if (container.rotation) {
-                    const cx = container.x + container.width/2, cy = container.y + container.height/2;
-                    t = `rotate(${container.rotation} ${cx} ${cy}) `;
-                }
-                if (Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6 || Math.abs(tx) > 1e-6 || Math.abs(ty) > 1e-6)
-                    t += `translate(${tx},${ty}) scale(${sx},${sy})`;
-                if (t.trim()) shape.setAttribute('transform', t.trim());
-            }
-            break;
-        default:
-            shape = document.createElementNS(ns, 'rect');
-            const b = getObjBounds(container);
-            shape.setAttribute('x', b.x); shape.setAttribute('y', b.y);
-            shape.setAttribute('width', b.w); shape.setAttribute('height', b.h);
-            break;
-    }
-    if (container.rotation) {
-        const b = getObjBounds(container);
-        const cx = b.x + b.w/2, cy = b.y + b.h/2;
-        shape.setAttribute('transform', `rotate(${container.rotation} ${cx} ${cy})`);
-    }
+    // Build the exact same element as the container and clone it for the clip
+    const tempElem = buildSVGElement(container);
+    const shape = tempElem.cloneNode(true);
+    shape.removeAttribute('data-object-id');
+    shape.removeAttribute('style');
     return shape;
 }
 
@@ -3336,7 +3289,7 @@ function makePowerClip(objId) {
     const pc = {
         id: state.nextId++,
         type: 'powerclip',
-        container: { ...obj, element: null },
+        container: { ...obj, element: null, _origBounds: obj._origBounds ? { ...obj._origBounds } : undefined },
         contents: [],
         rotation: 0,
     };
