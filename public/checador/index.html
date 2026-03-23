@@ -77,13 +77,7 @@
 
     <div id="notification" class="notification">Registro exitoso</div>
 
-    <div id="network-blocked" class="network-overlay">
-        <div class="network-modal">
-            <h2 style="color: #ef4444; margin-bottom: 15px;">Acceso Restringido</h2>
-            <p style="color: #94a3b8; margin-bottom: 20px;">Para marcar asistencia, debes estar conectado a la red Wi-Fi de la oficina.</p>
-            <button onclick="checkNetwork()" style="padding: 10px 20px; border-radius: 8px; border: none; background: #4f46e5; color: white; cursor: pointer;">Reintentar</button>
-        </div>
-    </div>
+    <div id="network-blocked" style="display:none;"></div>
 
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>

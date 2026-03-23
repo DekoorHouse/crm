@@ -97,9 +97,6 @@ async function checkNetwork() {
             isAuthorized = false;
             networkStatusEl.className = "status-badge status-offline";
             networkTextEl.textContent = "RED NO AUTORIZADA";
-            networkBlockedOverlay.style.display = 'flex';
-            const blockedMsg = document.querySelector('#network-blocked p');
-            if (blockedMsg) blockedMsg.innerHTML = `Red externa (${userIp}).<br>Solo para oficina.`;
         }
     } catch (e) {
         console.error(e);
@@ -112,15 +109,15 @@ async function registerAttendance(type) {
     const inputVal = employeeIdInput.value.trim();
     if (!inputVal) { showNotification("Ingresa tu nombre", "danger"); return; }
 
-    if (!isAuthorized) {
-        showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
-        return;
-    }
-
     const employee = employeesCache.find(e =>
         e.name.toLowerCase() === inputVal.toLowerCase()
     );
     const displayName = employee ? employee.name : inputVal;
+
+    if (!isAuthorized && displayName.toLowerCase() !== 'rosario') {
+        showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
+        return;
+    }
 
     const lastRegistration = logsCache.find(log => log.name.toLowerCase() === displayName.toLowerCase());
     if (lastRegistration) {
