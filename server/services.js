@@ -422,9 +422,13 @@ async function buildStaticContext(botInstructions) {
         .map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`)
         .join('\n');
 
-    const staticText = `**Instrucciones Generales:**\n${botInstructions}\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.\n\n**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
+    // Instrucciones van en systemInstruction, no en contents
+    const systemText = `${botInstructions}\n\n**Regla Especial de Cierre de Pedido:** Cuando el usuario haya proporcionado todos los datos necesarios y el pedido esté listo para ser procesado por un humano, debes responder ÚNICAMENTE incluyendo la frase exacta "Ya registramos tu pedido" seguido de cualquier instrucción adicional de despedida. Esta frase es un comando interno para el sistema.\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta. (Ejemplo de uso correcto: Hola, este es mi primer mensaje [SPLIT] y este es mi segundo mensaje). NO escribas "Mensaje 1:" ni cosas similares, solo la etiqueta [SPLIT].\n\n**Regla de Citar Mensajes:** Si por la naturaleza de la conversación crees que es estrictamente necesario "citar" o "responder directamente" al mensaje del cliente para que no se pierda el contexto (por ejemplo, si responde a una pregunta vieja), agerga la etiqueta [CITA] al INICIO de tu respuesta. Usa esta opción con moderación. Si el flujo es normal, simplemente responde de forma natural sin la etiqueta.`;
 
-    return staticText;
+    // Material de referencia va en contents (como contexto, no como instrucciones)
+    const referenceText = `**Base de Conocimiento (Usa esta información para responder preguntas frecuentes):**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas del Equipo (Respuestas que los agentes humanos usan frecuentemente, úsalas como referencia):**\n${quickReplies || 'No hay respuestas rápidas.'}`;
+
+    return { systemText, referenceText };
 }
 
 /**
@@ -434,8 +438,8 @@ async function buildStaticContext(botInstructions) {
 async function getOrCreateCache(botInstructions) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
 
-    const staticText = await buildStaticContext(botInstructions);
-    const currentHash = simpleHash(staticText);
+    const { systemText, referenceText } = await buildStaticContext(botInstructions);
+    const currentHash = simpleHash(systemText + referenceText);
     const now = Date.now();
     const cacheExpired = (now - geminiCache.createdAt) > geminiCache.ttlMs;
 
@@ -456,15 +460,18 @@ async function getOrCreateCache(botInstructions) {
     }
 
     // Crear un nuevo caché
+    // Las instrucciones del bot van en systemInstruction para que Gemini las trate como directivas,
+    // no como un mensaje del usuario al que debe "responder".
+    // El material de referencia (knowledge base, quick replies) va en contents.
     console.log(`[CACHE] Creando nuevo caché de contexto (hash: ${currentHash})...`);
     const cachePayload = {
         model: `models/${GEMINI_MODEL}`,
         contents: [{
-            parts: [{ text: staticText }],
+            parts: [{ text: referenceText }],
             role: 'user'
         }],
         systemInstruction: {
-            parts: [{ text: 'Eres un asistente virtual de atención al cliente por WhatsApp. Responde de forma concisa, amigable y útil. Usa la información proporcionada en el contexto para responder.' }]
+            parts: [{ text: systemText }]
         },
         ttl: CACHE_TTL
     };
@@ -508,10 +515,13 @@ function invalidateGeminiCache() {
  * Genera una respuesta de Gemini usando el prompt completo (sin caché).
  * Usado como fallback y para el simulador.
  */
-async function generateGeminiResponse(prompt, imageParts = []) {
+async function generateGeminiResponse(prompt, imageParts = [], systemInstruction = null) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }, ...imageParts] }] };
+    if (systemInstruction) {
+        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
     const geminiResponse = await fetch(apiUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     if (!geminiResponse.ok) throw new Error(`La API de Gemini respondió con el estado: ${geminiResponse.status}`);
     const result = await geminiResponse.json();
@@ -733,15 +743,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 throw new Error('Caché no disponible, usando fallback.');
             }
         } catch (cacheError) {
-            // Fallback: si el caching falla por cualquier razón, usar el método tradicional
+            // Fallback: si el caching falla por cualquier razón, usar el método tradicional con systemInstruction
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
-            const fullPrompt = `
-            **Instrucciones Generales:**\n${botInstructions}\n\n
-            **Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n
-            ${await buildStaticContext(botInstructions)}${shippingInfo}\n\n
-            **Historial de la Conversación Reciente:**\n${conversationHistory}\n\n
-            **Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió archivos multimedia, estúdialos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
+            const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
+            const fullPrompt = `${fallbackRef}${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió archivos multimedia, estúdialos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            aiResult = await generateGeminiResponse(fullPrompt, mediaParts, fallbackSystem);
         }
 
         const aiResponse = aiResult.text;
