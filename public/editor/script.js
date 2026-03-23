@@ -3458,6 +3458,13 @@ function showContextMenu(e, obj) {
         }
     }
 
+    // Add to ref area — only for text objects when ref areas exist
+    const addRefOpt = contextMenu.querySelector('[data-ctx="add-to-ref-area"]');
+    if (addRefOpt) {
+        const refAreas = state.objects.filter(o => o.isRefArea);
+        addRefOpt.style.display = (obj.type === 'text' && refAreas.length > 0) ? '' : 'none';
+    }
+
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -3518,6 +3525,24 @@ function setupContextMenu() {
                 case 'toggle-ref-area':
                     toggleRefArea(contextTarget);
                     break;
+                case 'add-to-ref-area': {
+                    const refAreas = state.objects.filter(o => o.isRefArea);
+                    if (refAreas.length === 1) {
+                        addTextToRefArea(contextTarget.id, refAreas[0].id);
+                    } else if (refAreas.length > 1) {
+                        // Find nearest ref area to the text
+                        const tb = getObjBounds(contextTarget);
+                        const tcx = tb.x + tb.w / 2, tcy = tb.y + tb.h / 2;
+                        let nearest = refAreas[0], minDist = Infinity;
+                        for (const ra of refAreas) {
+                            const rb = getObjBounds(ra);
+                            const d = Math.hypot(tcx - (rb.x + rb.w/2), tcy - (rb.y + rb.h/2));
+                            if (d < minDist) { minDist = d; nearest = ra; }
+                        }
+                        addTextToRefArea(contextTarget.id, nearest.id);
+                    }
+                    break;
+                }
                 case 'bring-to-front':
                     bringToFront();
                     break;
@@ -5287,6 +5312,7 @@ function toggleRefArea(obj) {
     if (!obj) return;
     saveUndoState();
     obj.isRefArea = !obj.isRefArea;
+    if (obj.isRefArea && !obj.refTextIds) obj.refTextIds = [];
     applyRefAreaStyle(obj);
     drawSelection();
 }
@@ -5298,10 +5324,9 @@ function applyRefAreaStyle(obj) {
         elem.setAttribute('stroke', '#4da6ff');
         elem.setAttribute('stroke-dasharray', '8 4');
         elem.setAttribute('stroke-width', Math.max(obj.strokeWidth || 1, 1));
-        elem.setAttribute('fill', 'rgba(77, 166, 255, 0.04)');
+        elem.setAttribute('fill', 'rgba(77, 166, 255, 0.06)');
         elem.setAttribute('opacity', '0.7');
     } else {
-        // Restore original style
         elem.setAttribute('stroke', obj.stroke || 'none');
         elem.setAttribute('stroke-dasharray', '');
         elem.setAttribute('stroke-width', obj.strokeWidth || 0);
@@ -5311,12 +5336,17 @@ function applyRefAreaStyle(obj) {
 }
 
 function findRefAreaForText(textObj) {
+    // First check if text is explicitly linked to a ref area
+    for (const obj of state.objects) {
+        if (!obj.isRefArea || !obj.refTextIds) continue;
+        if (obj.refTextIds.includes(textObj.id)) return obj;
+    }
+    // Fallback: check if text center is inside any ref area
     const tb = getObjBounds(textObj);
     const tcx = tb.x + tb.w / 2, tcy = tb.y + tb.h / 2;
     for (const obj of state.objects) {
         if (!obj.isRefArea) continue;
         const b = getObjBounds(obj);
-        // Check if text center is inside the ref area bounds
         if (tcx >= b.x && tcx <= b.x + b.w && tcy >= b.y && tcy <= b.y + b.h) {
             return obj;
         }
@@ -5324,28 +5354,73 @@ function findRefAreaForText(textObj) {
     return null;
 }
 
+function addTextToRefArea(textId, refAreaId) {
+    const textObj = findObject(textId);
+    const refArea = findObject(refAreaId);
+    if (!textObj || !refArea || !refArea.isRefArea) return;
+    if (textObj.type !== 'text') return;
+    saveUndoState();
+
+    // Remove from any other ref area
+    for (const obj of state.objects) {
+        if (obj.isRefArea && obj.refTextIds) {
+            obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+        }
+    }
+
+    if (!refArea.refTextIds) refArea.refTextIds = [];
+    if (!refArea.refTextIds.includes(textId)) refArea.refTextIds.push(textId);
+
+    // Center text in ref area and fit
+    const rb = getObjBounds(refArea);
+    const tb = getObjBounds(textObj);
+    textObj.x = rb.x + rb.w / 2;
+    textObj.y = rb.y + rb.h / 2 + tb.h / 2;
+    if (textObj.textAlign !== 'center') {
+        textObj.textAlign = 'center';
+    }
+    refreshElement(textObj);
+    fitTextToRefArea(textObj);
+    drawSelection();
+}
+
+function removeTextFromRefArea(textId) {
+    for (const obj of state.objects) {
+        if (obj.isRefArea && obj.refTextIds) {
+            obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+        }
+    }
+}
+
 function fitTextToRefArea(textObj) {
     const refArea = findRefAreaForText(textObj);
     if (!refArea) return;
     const rb = getObjBounds(refArea);
-    // Padding inside the reference area
     const pad = Math.min(rb.w, rb.h) * 0.05;
-    const maxW = rb.w - pad * 2;
-    const maxH = rb.h - pad * 2;
-    if (maxW <= 0 || maxH <= 0) return;
+    const targetW = rb.w - pad * 2;
+    const targetH = rb.h - pad * 2;
+    if (targetW <= 0 || targetH <= 0) return;
 
-    // Shrink font until text fits
+    // Scale font to fit width, then check height
     let attempts = 0;
     while (attempts < 50) {
         const tb = getObjBounds(textObj);
-        if (tb.w <= maxW && tb.h <= maxH) break;
-        const scaleW = tb.w > maxW ? maxW / tb.w : 1;
-        const scaleH = tb.h > maxH ? maxH / tb.h : 1;
+        if (tb.w < 0.01) break;
+        const scaleW = targetW / tb.w;
+        const scaleH = targetH / tb.h;
         const scale = Math.min(scaleW, scaleH);
+        // Close enough — within 2% tolerance
+        if (Math.abs(scale - 1) < 0.02) break;
         textObj.fontSize = Math.max(4, textObj.fontSize * scale);
         refreshElement(textObj);
         attempts++;
     }
+
+    // Re-center in the ref area
+    const tb = getObjBounds(textObj);
+    textObj.x = rb.x + rb.w / 2;
+    textObj.y = rb.y + (rb.h - tb.h) / 2 + tb.h;
+    refreshElement(textObj);
 }
 
 function invertImageColors(obj) {
