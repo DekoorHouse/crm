@@ -1019,6 +1019,8 @@ function getObjBounds(obj) {
         }
         case 'powerclip':
             return getObjBounds(obj.container);
+        default:
+            return { x: 0, y: 0, w: 0, h: 0 };
     }
 }
 
