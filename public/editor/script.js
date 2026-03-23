@@ -4696,13 +4696,19 @@ function executeSingleAction(action) {
     const a = action;
     if (!a || !a.action) return {};
     // Normalize action aliases the AI might use
-    const actionName = (a.action || '').replace(/^add_shape|add|create_shape|insert$/, 'create')
-        .replace(/^change|update|set$/, 'modify')
-        .replace(/^move_to|position$/, 'moveTo')
-        .replace(/^remove|erase$/, 'delete')
-        .replace(/^copy|clone$/, 'duplicate')
-        .replace(/^reorder|z_order$/, 'order')
-        .replace(/^mirror$/, 'flip');
+    const ACTION_ALIASES = {
+        create: 'create', add: 'create', add_shape: 'create', addObject: 'create', addShape: 'create',
+        create_shape: 'create', insert: 'create', draw: 'create', createObject: 'create',
+        modify: 'modify', change: 'modify', update: 'modify', set: 'modify', edit: 'modify',
+        move: 'move', moveTo: 'moveTo', move_to: 'moveTo', position: 'moveTo',
+        resize: 'resize', scale: 'resize',
+        delete: 'delete', remove: 'delete', erase: 'delete', deleteObject: 'delete', removeObject: 'delete',
+        duplicate: 'duplicate', copy: 'duplicate', clone: 'duplicate',
+        order: 'order', reorder: 'order', z_order: 'order', zOrder: 'order',
+        flip: 'flip', mirror: 'flip',
+        select: 'select'
+    };
+    const actionName = ACTION_ALIASES[a.action] || a.action;
 
     switch (actionName) {
         case 'create': {
