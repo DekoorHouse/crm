@@ -1971,21 +1971,29 @@ function handleMouseUp() {
         clearPCHighlight();
         clearSnapGuideLines();
         snapLayer.innerHTML = '';
-        // W+drop: convert object under cursor to powerclip and insert dragged object
+        // W+drop: insert into ref area or powerclip
         if (!pcEditingId && state.wHeld && state.selectedIds.length === 1) {
             const draggedId = state.selectedIds[0];
             const dragged = findObject(draggedId);
             if (dragged && dragged.type !== 'powerclip') {
                 const cursorPt = screenToSVG(event.clientX, event.clientY);
                 const underObj = objectUnderCursor(cursorPt, draggedId);
-                if (underObj && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
-                    // Convert underObj to powerclip, then add dragged as content
-                    const newPcId = makePowerClip(underObj.id);
-                    if (newPcId) {
-                        addToPowerClip(draggedId, newPcId);
+                if (underObj) {
+                    // If target is a ref area, add text to it instead of making powerclip
+                    if (underObj.isRefArea && dragged.type === 'text') {
+                        addTextToRefArea(draggedId, underObj.id);
+                        state.wHeld = false;
+                        return;
                     }
-                    state.wHeld = false;
-                    return;
+                    // Otherwise, make powerclip (skip ref areas and invalid types)
+                    if (!underObj.isRefArea && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
+                        const newPcId = makePowerClip(underObj.id);
+                        if (newPcId) {
+                            addToPowerClip(draggedId, newPcId);
+                        }
+                        state.wHeld = false;
+                        return;
+                    }
                 }
             }
         }
@@ -2273,10 +2281,10 @@ function handleDragMove(pt) {
         const draggedId = state.selectedIds[0];
         const dragged = findObject(draggedId);
         if (dragged && dragged.type !== 'powerclip') {
-            // W held: highlight any object under cursor as potential new powerclip container
+            // W held: highlight any object under cursor as potential container (ref area or powerclip)
             if (state.wHeld) {
                 const underObj = objectUnderCursor(pt, draggedId);
-                if (underObj && underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline') {
+                if (underObj && (underObj.isRefArea || (underObj.type !== 'powerclip' && underObj.type !== 'line' && underObj.type !== 'bspline' && !underObj.isRefArea))) {
                     showPCHighlightForObj(underObj);
                 } else { clearPCHighlight(); }
             } else {
