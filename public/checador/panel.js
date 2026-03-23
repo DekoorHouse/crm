@@ -439,22 +439,29 @@ async function deleteEmployee(docId) {
 }
 
 async function updateEmployee(docId, field, value, oldName) {
+    // Obtener el id interno del empleado antes de actualizar
+    const emp = employeesCache.find(e => e._docId === docId);
+    const empId = emp ? emp.id : null;
+
     await db.collection('checador_employees').doc(docId).update({ [field]: value });
 
     // Si cambió el nombre, actualizar todos los logs históricos de ese empleado
     if (field === 'name' && oldName) {
+        // Buscar logs por nombre anterior
         const snap = await db.collection('checador_logs').where('name', '==', oldName).get();
         if (!snap.empty) {
             const batch = db.batch();
             snap.docs.forEach(doc => batch.update(doc.ref, { name: value }));
             await batch.commit();
         }
-        // También buscar por logs donde el id coincide con el nombre viejo (registros legacy)
-        const snap2 = await db.collection('checador_logs').where('id', '==', oldName).get();
-        if (!snap2.empty) {
-            const batch2 = db.batch();
-            snap2.docs.forEach(doc => batch2.update(doc.ref, { name: value }));
-            await batch2.commit();
+        // Buscar logs por id interno del empleado (cubre registros legacy donde name=id)
+        if (empId) {
+            const snap2 = await db.collection('checador_logs').where('id', '==', empId).get();
+            if (!snap2.empty) {
+                const batch2 = db.batch();
+                snap2.docs.forEach(doc => batch2.update(doc.ref, { name: value }));
+                await batch2.commit();
+            }
         }
     }
     showNotification('Empleado actualizado');
