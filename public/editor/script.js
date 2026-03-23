@@ -5473,14 +5473,8 @@ function addTextToRefArea(textId, refAreaId) {
     if (!refArea.refTextIds) refArea.refTextIds = [];
     if (!refArea.refTextIds.includes(textId)) refArea.refTextIds.push(textId);
 
-    // Center text in ref area and fit
-    const rb = getObjBounds(refArea);
-    const tb = getObjBounds(textObj);
-    textObj.x = rb.x + rb.w / 2;
-    textObj.y = rb.y + rb.h / 2 + tb.h / 2;
-    if (textObj.textAlign !== 'center') {
-        textObj.textAlign = 'center';
-    }
+    // Center text and fit
+    if (textObj.textAlign !== 'center') textObj.textAlign = 'center';
     refreshElement(textObj);
     fitTextToRefArea(textObj);
     drawSelection();
@@ -5520,10 +5514,15 @@ function fitTextToRefArea(textObj) {
         refreshElement(textObj);
     }
 
-    // Re-center in the ref area
+    // Re-center in the ref area: align text center with area center
+    refreshElement(textObj);
     const tb2 = getObjBounds(textObj);
-    textObj.x = rb.x + rb.w / 2;
-    textObj.y = rb.y + (rb.h - tb2.h) / 2 + tb2.h;
+    const areaCx = rb.x + rb.w / 2;
+    const areaCy = rb.y + rb.h / 2;
+    const textCx = tb2.x + tb2.w / 2;
+    const textCy = tb2.y + tb2.h / 2;
+    textObj.x += areaCx - textCx;
+    textObj.y += areaCy - textCy;
     refreshElement(textObj);
 }
 
