@@ -5492,9 +5492,8 @@ function fitTextToRefArea(textObj) {
     const refArea = findRefAreaForText(textObj);
     if (!refArea) return;
     const rb = getObjBounds(refArea);
-    const pad = Math.min(rb.w, rb.h) * 0.05;
-    const targetW = rb.w - pad * 2;
-    const targetH = rb.h - pad * 2;
+    const targetW = rb.w;
+    const targetH = rb.h;
     if (targetW <= 0 || targetH <= 0) return;
 
     // Force a layout so getBBox is accurate
@@ -5504,7 +5503,7 @@ function fitTextToRefArea(textObj) {
     const tb = getObjBounds(textObj);
     if (tb.w < 0.01 || tb.h < 0.01) return;
 
-    // Calculate scale in one step — scale to fill width or height (whichever is limiting)
+    // Scale to fill the area completely (font metrics provide natural visual margin)
     const scaleW = targetW / tb.w;
     const scaleH = targetH / tb.h;
     const scale = Math.min(scaleW, scaleH);
