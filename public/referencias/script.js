@@ -80,17 +80,17 @@ function handleAuthError(err) {
     }
 }
 
-// Detectar si el usuario ya tiene sesión activa (redirect o sesión previa)
+// Detectar si el usuario ya tiene sesión activa con Facebook
 auth.onAuthStateChanged(user => {
     if (user && !socialUser) {
         const fbData = user.providerData.find(p => p.providerId === 'facebook.com');
-        const fbUid = fbData ? fbData.uid : null;
+        // Solo mostrar formulario si se autenticó con Facebook
+        if (!fbData) return;
+        const fbUid = fbData.uid;
         socialUser = {
-            name: fbData ? fbData.displayName : user.displayName,
-            avatar: fbUid
-                ? `https://graph.facebook.com/${fbUid}/picture?width=200&height=200`
-                : (user.photoURL || ''),
-            profileUrl: fbUid ? `https://facebook.com/${fbUid}` : '',
+            name: fbData.displayName || user.displayName,
+            avatar: `https://graph.facebook.com/${fbUid}/picture?width=200&height=200`,
+            profileUrl: `https://facebook.com/${fbUid}`,
             uid: user.uid
         };
         showLoggedUser();
