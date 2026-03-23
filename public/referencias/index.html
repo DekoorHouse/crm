@@ -64,39 +64,6 @@
             margin-bottom: 24px;
         }
 
-        .profile-input-group {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 8px;
-        }
-        .profile-input-group .social-tab {
-            flex: 1;
-            padding: 12px;
-            border: 2px solid var(--color-border);
-            border-radius: var(--border-radius-md);
-            background: var(--color-container-bg);
-            cursor: pointer;
-            text-align: center;
-            font-weight: 600;
-            font-size: 0.95rem;
-            transition: all 0.2s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-        }
-        .profile-input-group .social-tab:hover { border-color: var(--color-text-light); }
-        .profile-input-group .social-tab.active-fb {
-            border-color: #1877F2;
-            background: rgba(24,119,242,0.08);
-            color: #1877F2;
-        }
-        .profile-input-group .social-tab.active-ig {
-            border-color: #E4405F;
-            background: rgba(228,64,95,0.08);
-            color: #E4405F;
-        }
-
         .profile-url-hint {
             font-size: 0.8rem;
             color: var(--color-text-light);
@@ -341,7 +308,6 @@
             .ref-page { padding: 24px 16px 60px; }
             .ref-header h1 { font-size: 1.5rem; }
             .ref-form-card { padding: 20px; }
-            .profile-input-group { flex-direction: column; }
         }
     </style>
 </head>
@@ -395,17 +361,11 @@
             <label style="font-weight:600;margin-bottom:8px;display:block;">Tu nombre</label>
             <input type="text" id="refNombre" placeholder="Nombre completo" required>
 
-            <label style="font-weight:600;margin-bottom:8px;display:block;">Tu perfil de red social</label>
-            <div class="profile-input-group">
-                <div class="social-tab active-fb" id="tabFb" onclick="selectSocial('facebook')">
-                    <i class="fab fa-facebook"></i> Facebook
-                </div>
-                <div class="social-tab" id="tabIg" onclick="selectSocial('instagram')">
-                    <i class="fab fa-instagram"></i> Instagram
-                </div>
-            </div>
-            <input type="url" id="refProfileUrl" placeholder="https://facebook.com/tu.perfil" required>
-            <p class="profile-url-hint" id="profileHint">Pega el link de tu perfil de Facebook para verificar tu identidad</p>
+            <label style="font-weight:600;margin-bottom:8px;display:block;">
+                <i class="fab fa-instagram" style="color:#E4405F"></i> Tu perfil de Instagram
+            </label>
+            <input type="url" id="refProfileUrl" placeholder="https://instagram.com/tu_usuario" required>
+            <p class="profile-url-hint">Pega el link de tu perfil de Instagram para verificar tu identidad</p>
 
             <label style="font-weight:600;margin-bottom:8px;display:block;">Calificación</label>
             <div class="rating-stars" id="ratingStars">

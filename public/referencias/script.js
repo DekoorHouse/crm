@@ -15,7 +15,7 @@ const API_BASE_URL = window.API_BASE_URL || '';
 // --- Estado ---
 let selectedRating = 0;
 let selectedPhoto = null;
-let selectedSocial = 'facebook';
+let selectedSocial = 'instagram';
 
 // --- Dark mode ---
 function toggleDarkMode() {
@@ -38,25 +38,6 @@ function toggleForm() {
     }
 }
 
-// --- Selector de red social ---
-function selectSocial(type) {
-    selectedSocial = type;
-    const tabFb = document.getElementById('tabFb');
-    const tabIg = document.getElementById('tabIg');
-    const input = document.getElementById('refProfileUrl');
-    const hint = document.getElementById('profileHint');
-
-    tabFb.className = 'social-tab' + (type === 'facebook' ? ' active-fb' : '');
-    tabIg.className = 'social-tab' + (type === 'instagram' ? ' active-ig' : '');
-
-    if (type === 'facebook') {
-        input.placeholder = 'https://facebook.com/tu.perfil';
-        hint.textContent = 'Pega el link de tu perfil de Facebook para verificar tu identidad';
-    } else {
-        input.placeholder = 'https://instagram.com/tu_usuario';
-        hint.textContent = 'Pega el link de tu perfil de Instagram para verificar tu identidad';
-    }
-}
 
 // --- Estrellas ---
 document.getElementById('ratingStars').addEventListener('click', (e) => {
@@ -122,14 +103,7 @@ async function submitReferencia(event) {
     if (selectedRating === 0) { alert('Selecciona una calificación de estrellas.'); return; }
     if (!texto) { alert('Escribe tu opinión.'); return; }
 
-    // Validar que el URL sea de facebook o instagram
-    const isFbUrl = profileUrl.includes('facebook.com') || profileUrl.includes('fb.com');
-    const isIgUrl = profileUrl.includes('instagram.com');
-    if (selectedSocial === 'facebook' && !isFbUrl) {
-        alert('El link no parece ser un perfil de Facebook válido.');
-        return;
-    }
-    if (selectedSocial === 'instagram' && !isIgUrl) {
+    if (!profileUrl.includes('instagram.com')) {
         alert('El link no parece ser un perfil de Instagram válido.');
         return;
     }
@@ -166,7 +140,6 @@ async function submitReferencia(event) {
         document.getElementById('refForm').reset();
         updateStarsUI();
         resetPhotoUpload();
-        selectSocial('facebook');
         toggleForm();
         alert('¡Gracias por tu referencia! Ya está publicada.');
 
@@ -220,9 +193,7 @@ function renderReferencias(refs) {
         ).join('');
 
         const initial = ref.nombre ? ref.nombre[0].toUpperCase() : '?';
-        const sourceIcon = ref.source === 'facebook'
-            ? '<i class="fab fa-facebook verified" style="color:#1877F2" title="Perfil de Facebook"></i>'
-            : '<i class="fab fa-instagram verified" style="color:#E4405F" title="Perfil de Instagram"></i>';
+        const sourceIcon = '<i class="fab fa-instagram verified" style="color:#E4405F" title="Perfil de Instagram"></i>';
 
         const photoHtml = ref.foto
             ? `<img src="${ref.foto}" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox('${ref.foto}')" loading="lazy">`
