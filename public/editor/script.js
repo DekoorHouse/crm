@@ -1317,30 +1317,32 @@ function extractPathPoints(cmds) {
 // =============================================
 // NODE EDITING MODE
 // =============================================
-function getCurvepathTransform(obj) {
-    // Read the actual transform from the rendered SVG element
+// Get world coordinates for curvepath nodes by sampling the rendered SVG element
+function getCurvepathWorldPoints(obj) {
     const elem = obj.element;
-    if (elem) {
-        const t = elem.getAttribute('transform');
-        if (t) {
-            // Parse translate(tx, ty) scale(sx, sy) format
-            const translateMatch = t.match(/translate\(\s*([^,\s]+)[,\s]+([^)]+)\)/);
-            const scaleMatch = t.match(/scale\(\s*([^,\s]+)[,\s]+([^)]+)\)/);
-            if (translateMatch && scaleMatch) {
-                return {
-                    sx: parseFloat(scaleMatch[1]),
-                    sy: parseFloat(scaleMatch[2]),
-                    tx: parseFloat(translateMatch[1]),
-                    ty: parseFloat(translateMatch[2]),
-                };
-            }
+    if (!elem || typeof elem.getTotalLength !== 'function') return null;
+    try {
+        const len = elem.getTotalLength();
+        if (len < 0.01) return null;
+        // Get the element's transform relative to the SVG viewport
+        const ctm = elem.getCTM();
+        const svgCTM = svg.getCTM();
+        if (!ctm || !svgCTM) return null;
+        const inv = svgCTM.inverse();
+        const rel = inv.multiply(ctm);
+        // Sample segment endpoints from the path
+        const cmds = parseSVGPath(obj.d);
+        const pathPts = extractPathPoints(cmds);
+        const worldPts = [];
+        for (let i = 0; i < pathPts.length; i++) {
+            const pp = pathPts[i];
+            // Apply the element's local-to-viewport transform
+            const wx = rel.a * pp.x + rel.c * pp.y + rel.e;
+            const wy = rel.b * pp.x + rel.d * pp.y + rel.f;
+            worldPts.push({ x: wx, y: wy, idx: i, nodeType: 'pathpoint', segIdx: pp.segIdx, ptIdx: pp.ptIdx });
         }
-    }
-    // Fallback to stored bounds
-    const orig = obj._origBounds;
-    if (!orig || orig.w === 0 || orig.h === 0) return null;
-    const sx = obj.width / orig.w, sy = obj.height / orig.h;
-    return { sx, sy, tx: obj.x - orig.x * sx, ty: obj.y - orig.y * sy };
+        return worldPts;
+    } catch(e) { return null; }
 }
 
 function getEditableNodes(obj) {
@@ -1368,16 +1370,19 @@ function getEditableNodes(obj) {
             }
             break;
         case 'curvepath': {
+            const wpts = getCurvepathWorldPoints(obj);
+            if (wpts) { nodes.push(...wpts); break; }
+            // Fallback to stored bounds
             if (!obj.d) break;
             const cmds = parseSVGPath(obj.d);
             const pathPts = extractPathPoints(cmds);
-            const t = getCurvepathTransform(obj);
-            if (!t) break;
+            const orig = obj._origBounds;
+            if (!orig || orig.w === 0 || orig.h === 0) break;
+            const sx = obj.width / orig.w, sy = obj.height / orig.h;
+            const ftx = obj.x - orig.x * sx, fty = obj.y - orig.y * sy;
             for (let i = 0; i < pathPts.length; i++) {
                 const pp = pathPts[i];
-                const wx = pp.x * t.sx + t.tx;
-                const wy = pp.y * t.sy + t.ty;
-                nodes.push({ x: wx, y: wy, idx: i, nodeType: 'pathpoint', segIdx: pp.segIdx, ptIdx: pp.ptIdx });
+                nodes.push({ x: pp.x * sx + ftx, y: pp.y * sy + fty, idx: i, nodeType: 'pathpoint', segIdx: pp.segIdx, ptIdx: pp.ptIdx });
             }
             break;
         }
@@ -1431,9 +1436,28 @@ function drawNodeEdit() {
     const cpObj = (obj.type === 'powerclip') ? obj.container : (obj.type === 'curvepath' ? obj : null);
     if (cpObj && cpObj.d) {
         const cmds = parseSVGPath(cpObj.d);
-        const t = getCurvepathTransform(cpObj);
-        if (t) {
-            const sx = t.sx, sy = t.sy, tx = t.tx, ty = t.ty;
+        // Get transform from element CTM
+        let sx = 1, sy = 1, tx = 0, ty = 0;
+        const cpElem = cpObj.element;
+        if (cpElem) {
+            try {
+                const ctm = cpElem.getCTM();
+                const svgCTM = svg.getCTM();
+                if (ctm && svgCTM) {
+                    const inv = svgCTM.inverse();
+                    const rel = inv.multiply(ctm);
+                    sx = rel.a; sy = rel.d; tx = rel.e; ty = rel.f;
+                }
+            } catch(e) {}
+        }
+        if (sx === 1 && sy === 1 && tx === 0 && ty === 0) {
+            const orig = cpObj._origBounds;
+            if (orig && orig.w > 0 && orig.h > 0) {
+                sx = cpObj.width / orig.w; sy = cpObj.height / orig.h;
+                tx = cpObj.x - orig.x * sx; ty = cpObj.y - orig.y * sy;
+            }
+        }
+        {
             let lastX = 0, lastY = 0;
             for (const seg of cmds) {
                 if (seg.cmd === 'M' && seg.pts.length > 0) {
