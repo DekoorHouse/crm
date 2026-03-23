@@ -1274,17 +1274,24 @@ function sampleBSplineAll(points, numSamples, closed) {
 // SVG PATH D-STRING PARSER (for curvepath node editing)
 // =============================================
 function parseSVGPath(d) {
-    // Returns array of { cmd: 'M'|'L'|'C'|'Q'|'Z', pts: [{x,y},...] }
+    // Returns array of { cmd: 'M'|'L'|'C'|'Q'|'A'|'S'|'T'|'Z', pts: [{x,y},...] }
     const cmds = [];
-    const re = /([MLCQZmlcqz])\s*([-\d.,eE+\s]*)/g;
+    const re = /([MLCQZASTmlcqzast])\s*([-\d.,eE+\s]*)/g;
     let m;
     while ((m = re.exec(d)) !== null) {
         const cmd = m[1].toUpperCase();
         const raw = m[2].trim();
         const nums = raw.length > 0 ? raw.split(/[\s,]+/).map(Number) : [];
         const pts = [];
-        for (let i = 0; i < nums.length; i += 2) {
-            if (i + 1 < nums.length) pts.push({ x: nums[i], y: nums[i + 1] });
+        if (cmd === 'A') {
+            // Arc: 7 params per arc (rx, ry, x-rotation, large-arc, sweep, x, y)
+            for (let i = 0; i + 6 < nums.length; i += 7) {
+                pts.push({ x: nums[i + 5], y: nums[i + 6] });
+            }
+        } else {
+            for (let i = 0; i < nums.length; i += 2) {
+                if (i + 1 < nums.length) pts.push({ x: nums[i], y: nums[i + 1] });
+            }
         }
         cmds.push({ cmd, pts });
     }
