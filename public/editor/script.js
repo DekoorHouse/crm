@@ -5532,29 +5532,21 @@ function fitTextToRefArea(textObj) {
     const targetH = rb.h;
     if (targetW <= 0 || targetH <= 0) return;
 
-    // Force a layout so getBBox is accurate
-    textObj.element.getBBox();
+    // Set fontSize to fill height, then check width
+    // fontSize ≈ cap-height / 0.72 for most fonts, and getBBox height ≈ fontSize * 1.15
+    // So to make getBBox height = targetH: fontSize = targetH / 1.15
+    // But we want the VISUAL height (caps) to fill, so: fontSize = targetH
+    textObj.fontSize = targetH;
+    refreshElement(textObj);
 
-    // Get current text bounds
+    // Check if width overflows and scale down if needed
     const tb = getObjBounds(textObj);
-    if (tb.w < 0.01 || tb.h < 0.01) return;
-
-    // getBBox height includes font ascenders/descenders (~20% extra space)
-    // Use fontSize as the true visual height for scaling
-    const visualH = textObj.fontSize;
-    const bboxRatio = tb.h / visualH; // typically ~1.2
-
-    const scaleW = targetW / tb.w;
-    const scaleH = (targetH / bboxRatio) / visualH; // scale based on visual height
-    const scale = Math.min(scaleW, scaleH);
-
-    if (Math.abs(scale - 1) > 0.01) {
-        textObj.fontSize = Math.max(4, textObj.fontSize * scale);
+    if (tb.w > targetW) {
+        textObj.fontSize = Math.max(4, textObj.fontSize * (targetW / tb.w));
         refreshElement(textObj);
     }
 
     // Re-center in the ref area: align text center with area center
-    refreshElement(textObj);
     const tb2 = getObjBounds(textObj);
     const areaCx = rb.x + rb.w / 2;
     const areaCy = rb.y + rb.h / 2;
