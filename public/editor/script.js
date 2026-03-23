@@ -3709,6 +3709,24 @@ function openFile(file) {
     });
 }
 
+function showToast(msg) {
+    let container = document.getElementById('toast-container');
+    if (!container) {
+        container = document.createElement('div');
+        container.id = 'toast-container';
+        document.body.appendChild(container);
+    }
+    const toast = document.createElement('div');
+    toast.className = 'toast';
+    toast.textContent = msg;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        toast.addEventListener('transitionend', () => toast.remove());
+    }, 1800);
+}
+
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -5462,6 +5480,7 @@ function setupEventListeners() {
             window._pendingSVGCopy = null;
             e.clipboardData.setData('text/plain', svgStr);
             e.clipboardData.setData('text/html', svgStr);
+            showToast('Copiado al portapapeles');
         }
     });
 
@@ -5487,6 +5506,7 @@ function setupEventListeners() {
             const vb = state.viewBox;
             const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
             importSVGText(svgText, center);
+            showToast('Pegado desde portapapeles');
             return;
         }
 
