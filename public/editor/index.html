@@ -14,7 +14,29 @@
     </style>
 </head>
 <body>
-    <div id="app">
+    <!-- Login Screen -->
+    <div id="editor-login" class="editor-login">
+        <div class="editor-login-card">
+            <div class="editor-login-brand">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/>
+                    <line x1="12" y1="22" x2="12" y2="15.5"/>
+                    <polyline points="22 8.5 12 15.5 2 8.5"/>
+                    <polyline points="2 15.5 12 8.5 22 15.5"/>
+                    <line x1="12" y1="2" x2="12" y2="8.5"/>
+                </svg>
+                <span>Dekoor Editor</span>
+            </div>
+            <form id="editor-login-form">
+                <input type="email" id="editor-login-email" required placeholder="Correo electr&#xF3;nico">
+                <input type="password" id="editor-login-password" required placeholder="Contrase&#xF1;a">
+                <div id="editor-login-error"></div>
+                <button type="submit" id="editor-login-btn">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app" style="display:none">
         <!-- Header -->
         <header id="header">
             <div class="header-left">
@@ -758,6 +780,8 @@
             from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
             from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
@@ -771,6 +795,40 @@
         const app = initializeApp(firebaseConfig, 'editor');
         const db = getFirestore(app);
         const storage = getStorage(app);
+        const auth = getAuth(app);
+
+        // --- AUTH: Login form ---
+        const loginForm = document.getElementById('editor-login-form');
+        const loginError = document.getElementById('editor-login-error');
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loginError.textContent = '';
+            const email = document.getElementById('editor-login-email').value;
+            const password = document.getElementById('editor-login-password').value;
+            const btn = document.getElementById('editor-login-btn');
+            btn.disabled = true; btn.textContent = 'Ingresando...';
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (err) {
+                loginError.textContent = err.code === 'auth/invalid-email'
+                    ? 'El formato del correo es incorrecto.'
+                    : 'Correo o contrase\u00f1a incorrectos.';
+                btn.disabled = false; btn.textContent = 'Ingresar';
+            }
+        });
+
+        // --- AUTH: State listener ---
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('editor-login').style.display = 'none';
+                document.getElementById('app').style.display = '';
+            } else {
+                document.getElementById('editor-login').style.display = '';
+                document.getElementById('app').style.display = 'none';
+            }
+        });
+
+        window.editorSignOut = () => signOut(auth);
 
         // Upload a base64 data URL to Firebase Storage, returns download URL
         window.fbUploadImage = async (dataUrl, path) => {

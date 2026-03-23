@@ -34,6 +34,78 @@
     --radius-xl: 20px;
 }
 
+/* ===== LOGIN ===== */
+.editor-login {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    background: linear-gradient(135deg, #1a1430 0%, #2a2040 50%, #1a1430 100%);
+}
+.editor-login-card {
+    background: var(--surface);
+    padding: 48px 40px;
+    border-radius: var(--radius-xl);
+    box-shadow: var(--shadow-xl);
+    width: 100%;
+    max-width: 380px;
+    text-align: center;
+}
+.editor-login-brand {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 32px;
+    font-size: 1.4em;
+    font-weight: 700;
+    color: var(--text);
+}
+.editor-login-card input {
+    width: 100%;
+    padding: 12px 16px;
+    margin-bottom: 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.95rem;
+    color: var(--text);
+    background: var(--bg);
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+.editor-login-card input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-glow);
+}
+.editor-login-card button[type="submit"] {
+    width: 100%;
+    padding: 12px;
+    margin-top: 8px;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: var(--accent);
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+.editor-login-card button[type="submit"]:hover {
+    background: var(--accent-hover);
+}
+.editor-login-card button[type="submit"]:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+#editor-login-error {
+    color: #e74c3c;
+    font-size: 0.85rem;
+    min-height: 1.2em;
+    margin-bottom: 4px;
+}
+
 /* ===== RESET ===== */
 *, *::before, *::after {
     margin: 0;
