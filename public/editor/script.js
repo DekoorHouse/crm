@@ -4252,20 +4252,27 @@ async function copySelectedAsSVG() {
     for (const obj of objs) exportObj(obj, root);
 
     let svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    svgStr += '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
     svgStr += new XMLSerializer().serializeToString(root);
     svgStr = svgStr.replace(/ns\d+:href/g, 'xlink:href');
+    svgStr = svgStr.replace('<svg ', '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" inkscape:version="0.92.4" ');
 
-    try {
-        await navigator.clipboard.write([
-            new ClipboardItem({
-                'text/plain': new Blob([svgStr], { type: 'text/plain' }),
-                'text/html': new Blob([svgStr], { type: 'text/html' }),
-            })
-        ]);
-    } catch (e) {
-        // Fallback
-        await navigator.clipboard.writeText(svgStr);
-    }
+    // Store for the copy event handler
+    window._pendingSVGCopy = svgStr;
+
+    // Trigger a real copy event so we can set clipboardData properly
+    // This is the only way to get CorelDRAW to recognize SVG from the clipboard
+    const sel = window.getSelection();
+    const range = document.createRange();
+    const temp = document.createElement('span');
+    temp.textContent = '\u200B'; // zero-width space
+    document.body.appendChild(temp);
+    range.selectNode(temp);
+    sel.removeAllRanges();
+    sel.addRange(range);
+    document.execCommand('copy');
+    sel.removeAllRanges();
+    document.body.removeChild(temp);
 }
 
 // =============================================
@@ -5446,6 +5453,17 @@ function setupEventListeners() {
             state.wHeld = true;
         }
     }, true);
+
+    // Copy event: intercept to put SVG on clipboard in a format CorelDRAW understands
+    document.addEventListener('copy', (e) => {
+        if (window._pendingSVGCopy) {
+            e.preventDefault();
+            const svgStr = window._pendingSVGCopy;
+            window._pendingSVGCopy = null;
+            e.clipboardData.setData('text/plain', svgStr);
+            e.clipboardData.setData('text/html', svgStr);
+        }
+    });
 
     // Paste from clipboard: SVG text (from CorelDRAW or this editor) or images
     document.addEventListener('paste', (e) => {
