@@ -3588,16 +3588,7 @@ function setupContextMenu() {
                     if (refAreas.length === 1) {
                         addTextToRefArea(contextTarget.id, refAreas[0].id);
                     } else if (refAreas.length > 1) {
-                        // Find nearest ref area to the text
-                        const tb = getObjBounds(contextTarget);
-                        const tcx = tb.x + tb.w / 2, tcy = tb.y + tb.h / 2;
-                        let nearest = refAreas[0], minDist = Infinity;
-                        for (const ra of refAreas) {
-                            const rb = getObjBounds(ra);
-                            const d = Math.hypot(tcx - (rb.x + rb.w/2), tcy - (rb.y + rb.h/2));
-                            if (d < minDist) { minDist = d; nearest = ra; }
-                        }
-                        addTextToRefArea(contextTarget.id, nearest.id);
+                        enterRefAreaPickMode(contextTarget.id);
                     }
                     break;
                 }
@@ -5572,6 +5563,63 @@ function fitTextToRefArea(textObj) {
     textObj.x += areaCx - textCx;
     textObj.y += areaCy - textCy;
     refreshElement(textObj);
+}
+
+let _refAreaPickTextId = null;
+
+function enterRefAreaPickMode(textId) {
+    _refAreaPickTextId = textId;
+    svg.style.cursor = 'crosshair';
+    showToast('Haz click en un \u00e1rea de referencia');
+
+    // Highlight all ref areas
+    const highlights = [];
+    for (const obj of state.objects) {
+        if (!obj.isRefArea) continue;
+        const b = getObjBounds(obj);
+        const ns = 'http://www.w3.org/2000/svg';
+        const r = document.createElementNS(ns, 'rect');
+        r.setAttribute('x', b.x); r.setAttribute('y', b.y);
+        r.setAttribute('width', b.w); r.setAttribute('height', b.h);
+        r.setAttribute('fill', 'rgba(77, 166, 255, 0.15)');
+        r.setAttribute('stroke', '#4da6ff');
+        r.setAttribute('stroke-width', state.viewBox.w * 0.003);
+        r.setAttribute('stroke-dasharray', 'none');
+        r.setAttribute('pointer-events', 'none');
+        r.setAttribute('rx', '4');
+        selectionLayer.appendChild(r);
+        highlights.push(r);
+    }
+
+    function onPickClick(e) {
+        const pt = screenToSVG(e.clientX, e.clientY);
+        // Find which ref area was clicked
+        for (const obj of state.objects) {
+            if (!obj.isRefArea) continue;
+            const b = getObjBounds(obj);
+            if (pt.x >= b.x && pt.x <= b.x + b.w && pt.y >= b.y && pt.y <= b.y + b.h) {
+                addTextToRefArea(_refAreaPickTextId, obj.id);
+                cleanup();
+                return;
+            }
+        }
+    }
+
+    function onEscape(e) {
+        if (e.key === 'Escape') cleanup();
+    }
+
+    function cleanup() {
+        _refAreaPickTextId = null;
+        svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair';
+        for (const h of highlights) h.remove();
+        svg.removeEventListener('click', onPickClick);
+        document.removeEventListener('keydown', onEscape);
+        drawSelection();
+    }
+
+    svg.addEventListener('click', onPickClick, { once: true });
+    document.addEventListener('keydown', onEscape);
 }
 
 function updateRefAreaTexts(refArea) {
