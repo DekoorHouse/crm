@@ -3599,6 +3599,41 @@ function handleMenuAction(action) {
 // FILE SAVE / OPEN (Firebase)
 // =============================================
 
+function generateThumbnail() {
+    return new Promise((resolve) => {
+        try {
+            // Clone the SVG canvas and render only the page area
+            const clone = svg.cloneNode(true);
+            // Remove selection/snap/preview layers from clone
+            for (const id of ['selection-layer', 'snap-layer', 'preview-layer']) {
+                const el = clone.querySelector('#' + id);
+                if (el) el.innerHTML = '';
+            }
+            // Set viewBox to page area
+            clone.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
+            clone.setAttribute('width', '160');
+            clone.setAttribute('height', Math.round(160 * state.pageHeight / state.pageWidth));
+            const svgStr = new XMLSerializer().serializeToString(clone);
+            const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            img.onload = () => {
+                const c = document.createElement('canvas');
+                c.width = 160;
+                c.height = Math.round(160 * state.pageHeight / state.pageWidth);
+                const ctx = c.getContext('2d');
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, 0, c.width, c.height);
+                ctx.drawImage(img, 0, 0, c.width, c.height);
+                URL.revokeObjectURL(url);
+                resolve(c.toDataURL('image/png', 0.7));
+            };
+            img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+            img.src = url;
+        } catch (e) { resolve(null); }
+    });
+}
+
 function getStateForSave() {
     return JSON.stringify({
         objects: state.objects.map(serializeObj),
@@ -3638,7 +3673,8 @@ function saveFileAs() {
 async function doSaveNew(name) {
     try {
         const stateJson = getStateForSave();
-        const docId = await window.fbSaveNewFile(name, stateJson, state.pageWidth, state.pageHeight);
+        const thumbnail = await generateThumbnail();
+        const docId = await window.fbSaveNewFile(name, stateJson, state.pageWidth, state.pageHeight, thumbnail);
         currentFileId = docId;
         currentFileName = name;
         updateFileNameDisplay();
@@ -3652,7 +3688,8 @@ async function doSaveNew(name) {
 async function doSaveUpdate() {
     try {
         const stateJson = getStateForSave();
-        await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight);
+        const thumbnail = await generateThumbnail();
+        await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight, thumbnail);
         refreshSidebarFiles();
     } catch (err) {
         console.error('Error actualizando archivo:', err);
@@ -3984,9 +4021,13 @@ function createSidebarFileItem(file) {
           })
         : '';
 
-    const icon = document.createElement('div');
-    icon.className = 'sidebar-file-icon';
-    icon.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h8l4 4v10H4z"/><path d="M12 3v4h4"/></svg>';
+    const thumb = document.createElement('div');
+    thumb.className = 'sidebar-file-thumb';
+    if (file.thumbnail) {
+        thumb.innerHTML = '<img src="' + file.thumbnail + '" alt="">';
+    } else {
+        thumb.innerHTML = '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><path d="M4 3h8l4 4v10H4z"/><path d="M12 3v4h4"/></svg>';
+    }
 
     const info = document.createElement('div');
     info.className = 'sidebar-file-info';
@@ -4001,7 +4042,6 @@ function createSidebarFileItem(file) {
 
     info.addEventListener('click', () => {
         openFile(file);
-        // Update active state
         document.querySelectorAll('.sidebar-file-item').forEach(el => el.classList.remove('active'));
         item.classList.add('active');
     });
@@ -4026,7 +4066,7 @@ function createSidebarFileItem(file) {
         }
     });
 
-    item.appendChild(icon);
+    item.appendChild(thumb);
     item.appendChild(info);
     item.appendChild(delBtn);
     return item;
@@ -4039,7 +4079,8 @@ function createSidebarFileItem(file) {
 async function doSaveTemplate(name) {
     try {
         const stateJson = getStateForSave();
-        await window.fbSaveTemplate(name, stateJson, state.pageWidth, state.pageHeight);
+        const thumbnail = await generateThumbnail();
+        await window.fbSaveTemplate(name, stateJson, state.pageWidth, state.pageHeight, thumbnail);
         refreshSidebarTemplates();
     } catch (err) {
         console.error('Error guardando plantilla:', err);
@@ -4081,9 +4122,13 @@ function createSidebarTemplateItem(tpl) {
           })
         : '';
 
-    const icon = document.createElement('div');
-    icon.className = 'sidebar-file-icon';
-    icon.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 7h14M7 3v14"/></svg>';
+    const thumb = document.createElement('div');
+    thumb.className = 'sidebar-file-thumb';
+    if (tpl.thumbnail) {
+        thumb.innerHTML = '<img src="' + tpl.thumbnail + '" alt="">';
+    } else {
+        thumb.innerHTML = '<svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.4"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 7h14M7 3v14"/></svg>';
+    }
 
     const info = document.createElement('div');
     info.className = 'sidebar-file-info';
@@ -4097,7 +4142,6 @@ function createSidebarTemplateItem(tpl) {
     delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5l.5-9"/></svg>';
 
     info.addEventListener('click', () => {
-        // Load template as new untitled file
         openFile(tpl);
         currentFileId = null;
         currentFileName = null;
@@ -4119,7 +4163,7 @@ function createSidebarTemplateItem(tpl) {
         }
     });
 
-    item.appendChild(icon);
+    item.appendChild(thumb);
     item.appendChild(info);
     item.appendChild(delBtn);
     return item;

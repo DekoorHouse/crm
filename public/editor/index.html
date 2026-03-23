@@ -702,20 +702,17 @@
 
         window.firebaseReady = true;
 
-        window.fbSaveNewFile = async (name, stateJson, pageWidth, pageHeight) => {
-            const docRef = await addDoc(collection(db, "editor_files"), {
-                name, stateJson, pageWidth, pageHeight,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
+        window.fbSaveNewFile = async (name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            const docRef = await addDoc(collection(db, "editor_files"), data);
             return docRef.id;
         };
 
-        window.fbUpdateFile = async (docId, name, stateJson, pageWidth, pageHeight) => {
-            await updateDoc(doc(db, "editor_files", docId), {
-                name, stateJson, pageWidth, pageHeight,
-                updatedAt: serverTimestamp()
-            });
+        window.fbUpdateFile = async (docId, name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            await updateDoc(doc(db, "editor_files", docId), data);
         };
 
         window.fbListFiles = async () => {
@@ -729,12 +726,10 @@
         };
 
         // Templates
-        window.fbSaveTemplate = async (name, stateJson, pageWidth, pageHeight) => {
-            const docRef = await addDoc(collection(db, "editor_templates"), {
-                name, stateJson, pageWidth, pageHeight,
-                createdAt: serverTimestamp(),
-                updatedAt: serverTimestamp()
-            });
+        window.fbSaveTemplate = async (name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            const docRef = await addDoc(collection(db, "editor_templates"), data);
             return docRef.id;
         };
         window.fbListTemplates = async () => {

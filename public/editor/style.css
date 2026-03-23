@@ -1925,6 +1925,25 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
     background: rgba(124, 92, 240, 0.1);
 }
 
+.sidebar-file-thumb {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--radius-sm);
+    background: #fff;
+    border: 1px solid rgba(230, 224, 240, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.sidebar-file-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 .sidebar-file-icon {
     width: 28px;
     height: 28px;
@@ -2023,6 +2042,11 @@ body.dark .sidebar-header {
 }
 
 body.dark .sidebar-action-btn {
+    border-color: rgba(50, 48, 64, 0.6);
+}
+
+body.dark .sidebar-file-thumb {
+    background: rgba(255, 255, 255, 0.06);
     border-color: rgba(50, 48, 64, 0.6);
 }
 
