@@ -602,11 +602,18 @@ function buildClipShape(container, ns) {
             shape = document.createElementNS(ns, 'rect');
             shape.setAttribute('x', container.x); shape.setAttribute('y', container.y);
             shape.setAttribute('width', container.width); shape.setAttribute('height', container.height);
+            if (container.rotation) {
+                const cx = container.x + container.width/2, cy = container.y + container.height/2;
+                shape.setAttribute('transform', `rotate(${container.rotation} ${cx} ${cy})`);
+            }
             break;
         case 'ellipse':
             shape = document.createElementNS(ns, 'ellipse');
             shape.setAttribute('cx', container.cx); shape.setAttribute('cy', container.cy);
             shape.setAttribute('rx', container.rx); shape.setAttribute('ry', container.ry);
+            if (container.rotation) {
+                shape.setAttribute('transform', `rotate(${container.rotation} ${container.cx} ${container.cy})`);
+            }
             break;
         case 'bspline':
             shape = document.createElementNS(ns, 'path');
@@ -619,8 +626,14 @@ function buildClipShape(container, ns) {
                 const orig = container._origBounds;
                 const sx = container.width / orig.w, sy = container.height / orig.h;
                 const tx = container.x - orig.x * sx, ty = container.y - orig.y * sy;
+                let t = '';
+                if (container.rotation) {
+                    const cx = container.x + container.width/2, cy = container.y + container.height/2;
+                    t = `rotate(${container.rotation} ${cx} ${cy}) `;
+                }
                 if (Math.abs(sx - 1) > 1e-6 || Math.abs(sy - 1) > 1e-6 || Math.abs(tx) > 1e-6 || Math.abs(ty) > 1e-6)
-                    shape.setAttribute('transform', `translate(${tx},${ty}) scale(${sx},${sy})`);
+                    t += `translate(${tx},${ty}) scale(${sx},${sy})`;
+                if (t.trim()) shape.setAttribute('transform', t.trim());
             }
             break;
         default:
