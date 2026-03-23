@@ -216,7 +216,14 @@ function renderAdminLogs() {
     // Encabezado: Fecha | Emp1 | Emp2 | ... | Total
     thead.innerHTML = `<tr>
         <th style="min-width:75px;">Fecha</th>
-        ${employees.map(e => `<th style="text-align:center; min-width:85px;">${e.name}</th>`).join('')}
+        ${employees.map(e => {
+            const isRecognized = employeesCache.some(emp => emp.name.toLowerCase() === e.name.toLowerCase());
+            if (isRecognized) {
+                return `<th style="text-align:center; min-width:85px;">${e.name}</th>`;
+            } else {
+                return `<th style="text-align:center; min-width:85px; cursor:pointer; color:var(--warning);" onclick="promptMergeEmployee('${e.name.replace(/'/g, "\\'")}')" title="Click para asignar a un empleado">${e.name} ⚠️</th>`;
+            }
+        }).join('')}
         <th style="text-align:center; min-width:70px;">Total</th>
     </tr>`;
 
@@ -264,6 +271,38 @@ function renderAdminLogs() {
     const totalRow = document.createElement('tr');
     totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; color:var(--primary); border-top:2px solid var(--glass-border);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</td>`;
     tbody.appendChild(totalRow);
+}
+
+// =====================
+// MERGE EMPLEADOS NO RECONOCIDOS
+// =====================
+async function promptMergeEmployee(oldName) {
+    const options = employeesCache.map((e, i) => `${i + 1}. ${e.name}`).join('\n');
+    const input = prompt(`"${oldName}" no es un empleado reconocido.\n\nEscribe el número o nombre del empleado al que pertenecen estos registros:\n${options}`);
+    if (!input) return;
+
+    let emp;
+    const num = parseInt(input);
+    if (!isNaN(num) && num >= 1 && num <= employeesCache.length) {
+        emp = employeesCache[num - 1];
+    } else {
+        emp = employeesCache.find(e => e.name.toLowerCase() === input.trim().toLowerCase());
+    }
+    if (!emp) { showNotification('Empleado no encontrado', 'danger'); return; }
+
+    if (!confirm(`¿Mover todos los registros de "${oldName}" a "${emp.name}"?`)) return;
+
+    const snap = await db.collection('checador_logs').where('name', '==', oldName).get();
+    if (snap.empty) { showNotification('No se encontraron registros', 'danger'); return; }
+
+    const batchSize = 500;
+    const docs = snap.docs;
+    for (let i = 0; i < docs.length; i += batchSize) {
+        const batch = db.batch();
+        docs.slice(i, i + batchSize).forEach(doc => batch.update(doc.ref, { name: emp.name, id: emp.id }));
+        await batch.commit();
+    }
+    showNotification(`${docs.length} registro(s) movidos a ${emp.name}`);
 }
 
 // =====================
