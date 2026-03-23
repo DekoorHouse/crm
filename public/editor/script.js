@@ -5445,6 +5445,12 @@ function setupEventListeners() {
             case 'b': setTool('bspline'); break;
             case 't': setTool('text'); break;
             case 'delete': case 'backspace':
+                if (e.key.toLowerCase() === 'backspace' && state.tool === 'bspline' && state.bsplinePoints.length > 0) {
+                    state.bsplinePoints.pop();
+                    if (state.bsplinePoints.length === 0) clearPreview();
+                    else updateBSplinePreview(state.bsplinePoints[state.bsplinePoints.length - 1]);
+                    break;
+                }
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
