@@ -313,6 +313,7 @@ body {
     overflow-x: auto;
     padding: 4px 8px 0;
     align-items: flex-end;
+    margin: 0 auto;
 }
 
 .editor-tab {
