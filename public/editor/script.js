@@ -3860,71 +3860,63 @@ function setupFilesSidebar() {
         });
     });
 
-    // Drag file to templates tab
+    // Drag between tabs
+    const filesTab = sidebar.querySelector('[data-tab="files"]');
     const templatesTab = sidebar.querySelector('[data-tab="templates"]');
+    const filesPanel = document.getElementById('sidebar-tab-files');
     const templatesPanel = document.getElementById('sidebar-tab-templates');
 
-    templatesTab.addEventListener('dragover', (e) => {
-        if (e.dataTransfer.types.includes('application/x-editor-file')) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-            templatesTab.classList.add('drag-over');
+    function setupDropZone(tabEl, panelEl, acceptType, onDrop) {
+        for (const el of [tabEl, panelEl]) {
+            el.addEventListener('dragover', (e) => {
+                if (e.dataTransfer.types.includes(acceptType)) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                    tabEl.classList.add('drag-over');
+                }
+            });
+            el.addEventListener('dragleave', (e) => {
+                if (!el.contains(e.relatedTarget)) tabEl.classList.remove('drag-over');
+            });
+            el.addEventListener('drop', async (e) => {
+                e.preventDefault();
+                tabEl.classList.remove('drag-over');
+                const data = e.dataTransfer.getData(acceptType);
+                if (!data) return;
+                await onDrop(JSON.parse(data));
+            });
         }
-    });
-    templatesTab.addEventListener('dragleave', () => templatesTab.classList.remove('drag-over'));
-    templatesTab.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        templatesTab.classList.remove('drag-over');
-        const data = e.dataTransfer.getData('application/x-editor-file');
-        if (!data) return;
-        const file = JSON.parse(data);
+    }
+
+    // File → Templates
+    setupDropZone(templatesTab, templatesPanel, 'application/x-editor-file', async (file) => {
         try {
             await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight);
             await window.fbDeleteFile(file.id);
-            if (currentFileId === file.id) {
-                currentFileId = null;
-                currentFileName = null;
-                updateFileNameDisplay();
-            }
+            if (currentFileId === file.id) { currentFileId = null; currentFileName = null; updateFileNameDisplay(); }
             refreshSidebarFiles();
-            // Switch to templates tab
             tabs.forEach(t => t.classList.remove('active'));
             templatesTab.classList.add('active');
-            document.getElementById('sidebar-tab-files').style.display = 'none';
+            filesPanel.style.display = 'none';
             templatesPanel.style.display = '';
             refreshSidebarTemplates();
             showToast('Movido a plantillas');
-        } catch (err) {
-            alert('Error: ' + err.message);
-        }
+        } catch (err) { alert('Error: ' + err.message); }
     });
 
-    // Also allow drop on templates panel itself
-    templatesPanel.addEventListener('dragover', (e) => {
-        if (e.dataTransfer.types.includes('application/x-editor-file')) {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = 'move';
-        }
-    });
-    templatesPanel.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        const data = e.dataTransfer.getData('application/x-editor-file');
-        if (!data) return;
-        const file = JSON.parse(data);
+    // Template → Files
+    setupDropZone(filesTab, filesPanel, 'application/x-editor-template', async (tpl) => {
         try {
-            await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight);
-            await window.fbDeleteFile(file.id);
-            if (currentFileId === file.id) {
-                currentFileId = null;
-                currentFileName = null;
-                updateFileNameDisplay();
-            }
-            refreshSidebarFiles();
+            await window.fbSaveNewFile(tpl.name, tpl.stateJson, tpl.pageWidth, tpl.pageHeight);
+            await window.fbDeleteTemplate(tpl.id);
             refreshSidebarTemplates();
-            showToast('Movido a plantillas');
-        } catch (err) {
-            alert('Error: ' + err.message);
-        }
+            tabs.forEach(t => t.classList.remove('active'));
+            filesTab.classList.add('active');
+            templatesPanel.style.display = 'none';
+            filesPanel.style.display = '';
+            refreshSidebarFiles();
+            showToast('Movido a archivos');
+        } catch (err) { alert('Error: ' + err.message); }
     });
 
     // Save as template button
@@ -4067,6 +4059,11 @@ async function refreshSidebarTemplates() {
 function createSidebarTemplateItem(tpl) {
     const item = document.createElement('div');
     item.className = 'sidebar-file-item';
+    item.draggable = true;
+    item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('application/x-editor-template', JSON.stringify({ id: tpl.id, name: tpl.name, stateJson: tpl.stateJson, pageWidth: tpl.pageWidth, pageHeight: tpl.pageHeight }));
+        e.dataTransfer.effectAllowed = 'move';
+    });
 
     const dateStr = tpl.updatedAt
         ? new Date(tpl.updatedAt.seconds * 1000).toLocaleString('es-MX', {

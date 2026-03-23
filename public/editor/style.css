@@ -1829,9 +1829,10 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
 }
 
 .sidebar-tab.drag-over {
-    background: rgba(124, 92, 240, 0.12);
+    background: rgba(124, 92, 240, 0.15);
     color: var(--primary);
     border-bottom-color: var(--primary);
+    box-shadow: inset 0 -2px 8px rgba(124, 92, 240, 0.15);
 }
 
 .sidebar-tab-content {
