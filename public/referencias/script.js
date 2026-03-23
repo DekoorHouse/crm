@@ -240,10 +240,11 @@ async function submitReferencia(event) {
 // --- Cargar referencias ---
 function loadReferencias() {
     db.collection('referencias')
-        .where('aprobado', '==', true)
         .orderBy('fecha', 'desc')
         .onSnapshot(snapshot => {
-            const refs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            const refs = snapshot.docs
+                .map(doc => ({ id: doc.id, ...doc.data() }))
+                .filter(r => r.aprobado !== false);
             renderReferencias(refs);
             updateStats(refs);
         }, error => {
