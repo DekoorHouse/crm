@@ -44,28 +44,50 @@ function loginWithFacebook() {
     const provider = new firebase.auth.FacebookAuthProvider();
     provider.addScope('public_profile');
 
-    auth.signInWithPopup(provider)
-        .then(result => {
-            const profile = result.additionalUserInfo.profile;
-            socialUser = {
-                name: profile.name || result.user.displayName,
-                avatar: result.user.photoURL || `https://graph.facebook.com/${profile.id}/picture?type=large`,
-                profileUrl: profile.link || `https://facebook.com/${profile.id}`,
-                uid: result.user.uid
-            };
-            showLoggedUser();
-        })
-        .catch(err => {
-            console.error('Error Facebook login:', err);
-            if (err.code === 'auth/account-exists-with-different-credential') {
-                alert('Ya existe una cuenta con ese correo electrónico.');
-            } else if (err.code !== 'auth/popup-closed-by-user') {
-                alert('No se pudo iniciar sesión con Facebook. Intenta de nuevo.');
-            }
-        });
+    // En móvil usar redirect (abre la app de FB directamente), en desktop usar popup
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (isMobile) {
+        auth.signInWithRedirect(provider);
+    } else {
+        auth.signInWithPopup(provider)
+            .then(handleAuthResult)
+            .catch(handleAuthError);
+    }
 }
 
+function handleAuthResult(result) {
+    const profile = result.additionalUserInfo ? result.additionalUserInfo.profile : null;
+    socialUser = {
+        name: (profile && profile.name) || result.user.displayName,
+        avatar: result.user.photoURL || `https://graph.facebook.com/${result.user.providerData[0].uid}/picture?type=large`,
+        profileUrl: (profile && profile.link) || `https://facebook.com/${result.user.providerData[0].uid}`,
+        uid: result.user.uid
+    };
+    showLoggedUser();
+}
+
+function handleAuthError(err) {
+    console.error('Error Facebook login:', err);
+    if (err.code === 'auth/account-exists-with-different-credential') {
+        alert('Ya existe una cuenta con ese correo electrónico.');
+    } else if (err.code !== 'auth/popup-closed-by-user') {
+        alert('No se pudo iniciar sesión con Facebook. Intenta de nuevo.');
+    }
+}
+
+// Capturar resultado del redirect (para móvil)
+auth.getRedirectResult()
+    .then(result => {
+        if (result.user) {
+            handleAuthResult(result);
+        }
+    })
+    .catch(handleAuthError);
+
 function showLoggedUser() {
+    // Abrir el formulario si estaba cerrado (ej. regresando de redirect en móvil)
+    document.getElementById('refFormCard').classList.remove('hidden');
     document.getElementById('socialLoginSection').classList.add('hidden');
     document.getElementById('loggedUserBar').classList.remove('hidden');
     document.getElementById('refForm').classList.remove('hidden');
