@@ -5524,7 +5524,7 @@ function removeTextFromRefArea(textId) {
     }
 }
 
-function fitTextToRefArea(textObj) {
+async function fitTextToRefArea(textObj) {
     const refArea = findRefAreaForText(textObj);
     if (!refArea) return;
     const rb = getObjBounds(refArea);
@@ -5532,27 +5532,61 @@ function fitTextToRefArea(textObj) {
     const targetH = rb.h;
     if (targetW <= 0 || targetH <= 0) return;
 
-    // Set a reference fontSize, measure bbox, then scale so bbox fills the area exactly
-    textObj.fontSize = 100; // arbitrary reference size
-    refreshElement(textObj);
-    const refBB = getObjBounds(textObj);
-    if (refBB.w < 0.01 || refBB.h < 0.01) return;
+    const fontName = textObj.fontFamily || 'Inter';
+    const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
+    const text = textObj.text || '';
+    if (!text) return;
 
-    // Scale to fill height, then cap by width
-    const scaleH = targetH / refBB.h;
-    const scaleW = targetW / refBB.w;
-    const scale = Math.min(scaleH, scaleW);
-    textObj.fontSize = Math.max(4, 100 * scale);
-    refreshElement(textObj);
+    // Ensure opentype font is loaded for tight measurement
+    if (!loadedOTFonts[fontName]) await loadOTFont(fontName);
 
-    // Re-center in the ref area: align text center with area center
-    const tb2 = getObjBounds(textObj);
-    const areaCx = rb.x + rb.w / 2;
-    const areaCy = rb.y + rb.h / 2;
-    const textCx = tb2.x + tb2.w / 2;
-    const textCy = tb2.y + tb2.h / 2;
-    textObj.x += areaCx - textCx;
-    textObj.y += areaCy - textCy;
+    const refSize = 100;
+    let relW, relH, relX, relY;
+    const otFont = loadedOTFonts[fontName];
+
+    if (otFont) {
+        // Use opentype.js for tight glyph bounding box (no ascender/descender padding)
+        const path = otFont.getPath(text, 0, 0, refSize);
+        const bb = path.getBoundingBox();
+        relW = bb.x2 - bb.x1;
+        relH = bb.y2 - bb.y1;
+        relX = bb.x1;
+        relY = bb.y1;
+    } else {
+        // Fallback: SVG measurement
+        const ns = 'http://www.w3.org/2000/svg';
+        const tmpText = document.createElementNS(ns, 'text');
+        tmpText.setAttribute('font-family', fontDef.css);
+        tmpText.setAttribute('font-size', refSize);
+        tmpText.setAttribute('x', 0);
+        tmpText.setAttribute('y', 0);
+        tmpText.textContent = text;
+        objectsLayer.appendChild(tmpText);
+        const refBBox = tmpText.getBBox();
+        objectsLayer.removeChild(tmpText);
+        relW = refBBox.width;
+        relH = refBBox.height;
+        relX = refBBox.x;
+        relY = refBBox.y;
+    }
+
+    if (relW < 0.1 || relH < 0.1) return;
+
+    // Scale to fill the area
+    const scale = Math.min(targetW / relW, targetH / relH);
+    const finalFontSize = Math.max(4, refSize * scale);
+
+    // At final size, the bbox and offsets scale linearly
+    const fW = relW * scale;
+    const fH = relH * scale;
+    const fOffX = relX * scale;
+    const fOffY = relY * scale;
+
+    // Center the tight glyph bbox in the ref area
+    textObj.fontSize = finalFontSize;
+    textObj.x = rb.x + (targetW - fW) / 2 - fOffX;
+    textObj.y = rb.y + (targetH - fH) / 2 - fOffY;
+    textObj.textAlign = 'left'; // use left align for precise positioning
     refreshElement(textObj);
 }
 
