@@ -2486,6 +2486,36 @@ function handleDrawEnd() {
 // --- B-Spline ---
 function handleBSplineClick(pt) {
     const snapped = snapPoint(pt);
+    const screenScale = _cachedScreenScale;
+    const threshold = SNAP_DIST * screenScale;
+
+    // If no points yet, check if clicking near an open bspline's endpoint to continue it
+    if (state.bsplinePoints.length === 0) {
+        for (const obj of state.objects) {
+            if (obj.type !== 'bspline' || obj.closed) continue;
+            const pts = obj.points;
+            if (pts.length < 2) continue;
+            const last = pts[pts.length - 1];
+            const first = pts[0];
+            if (Math.hypot(snapped.x - last.x, snapped.y - last.y) <= threshold) {
+                // Continue from the last point
+                saveUndoState();
+                state.bsplinePoints = pts.map(p => ({ ...p }));
+                deleteObject(obj.id);
+                updateBSplinePreview(snapped);
+                return;
+            }
+            if (Math.hypot(snapped.x - first.x, snapped.y - first.y) <= threshold) {
+                // Continue from the first point (reverse direction)
+                saveUndoState();
+                state.bsplinePoints = pts.map(p => ({ ...p })).reverse();
+                deleteObject(obj.id);
+                updateBSplinePreview(snapped);
+                return;
+            }
+        }
+    }
+
     // Check if closing the spline (clicking near the first point with >= 3 points)
     if (state.bsplinePoints.length >= 3) {
         const first = state.bsplinePoints[0];
@@ -5534,6 +5564,14 @@ function setupEventListeners() {
             case 'l': setTool('line'); break;
             case 'b': setTool('bspline'); break;
             case 't': setTool('text'); break;
+            case 'enter':
+                if (state.tool === 'bspline' && state.bsplinePoints.length >= 2) {
+                    const obj = createObject('bspline', { points: [...state.bsplinePoints] });
+                    selectObject(obj.id);
+                    state.bsplinePoints = [];
+                    clearPreview();
+                }
+                break;
             case 'delete': case 'backspace':
                 if (e.key.toLowerCase() === 'backspace' && state.tool === 'bspline' && state.bsplinePoints.length > 0) {
                     state.bsplinePoints.pop();
