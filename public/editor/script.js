@@ -2210,9 +2210,12 @@ function handleSelectDown(pt, e) {
     }
     const obj = objectAtPoint(pt);
     if (obj) {
-        selectObject(obj.id, e.shiftKey);
+        // If the object is already selected in a multi-selection, keep the selection intact for dragging
+        if (!isSelected(obj.id) || e.shiftKey) {
+            selectObject(obj.id, e.shiftKey);
+        }
         // If selected a text linked to a ref area, select the ref area instead
-        if (!e.shiftKey) {
+        if (!e.shiftKey && state.selectedIds.length === 1) {
             const sel = findObject(state.selectedIds[0]);
             if (sel && sel.type === 'text') {
                 const ra = findRefAreaForText(sel);
