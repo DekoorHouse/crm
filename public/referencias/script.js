@@ -210,7 +210,7 @@ async function submitReferencia(event) {
 
     } catch (error) {
         console.error('Error al publicar:', error);
-        alert('Hubo un error al publicar. Intenta de nuevo.');
+        alert('Error: ' + error.message);
     } finally {
         btn.disabled = false;
         btn.innerHTML = '<i class="fas fa-paper-plane"></i> Publicar referencia';
