@@ -4735,6 +4735,7 @@ function executeSingleAction(action) {
                 if (props.x2 == null) props.x2 = state.pageWidth * 0.7;
                 if (props.y2 == null) props.y2 = state.pageHeight / 2;
             }
+            console.log('[AI Create]', a.type, props);
             const obj = createObject(a.type, props);
             return { id: obj.id };
         }
@@ -4831,6 +4832,7 @@ function executeAIActions(actions) {
     _batchImporting = true; // Prevent individual saveUndoState calls inside createObject/etc
 
     const affectedIds = [];
+    console.log('[AI Actions]', JSON.stringify(actions, null, 2));
     for (const action of actions) {
         try {
             const result = executeSingleAction(action);
