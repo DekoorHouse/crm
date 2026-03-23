@@ -17,53 +17,6 @@ let logsCache = [];
 let employeesCache = [];
 let unsubscribeLogs = null;
 let unsubscribeEmployees = null;
-let officeLocation = null; // { lat, lng, radius }
-
-// Cargar configuración de ubicación de la oficina
-db.collection('checador_config').doc('office').onSnapshot(doc => {
-    if (doc.exists) {
-        officeLocation = doc.data();
-        const statusEl = document.getElementById('location-config-status');
-        const coordsEl = document.getElementById('location-coords-display');
-        const radiusInput = document.getElementById('location-radius');
-        if (statusEl) {
-            statusEl.textContent = `Radio: ${officeLocation.radius}m ✓`;
-            statusEl.style.color = 'var(--success)';
-        }
-        if (coordsEl) {
-            coordsEl.textContent = `Lat: ${officeLocation.lat.toFixed(6)}, Lng: ${officeLocation.lng.toFixed(6)}`;
-            coordsEl.style.display = 'block';
-        }
-        if (radiusInput) radiusInput.value = officeLocation.radius;
-    }
-});
-
-function haversineDistance(lat1, lng1, lat2, lng2) {
-    const R = 6371000;
-    const toRad = x => x * Math.PI / 180;
-    const dLat = toRad(lat2 - lat1);
-    const dLng = toRad(lng2 - lng1);
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function checkUserLocation() {
-    return new Promise(resolve => {
-        navigator.geolocation.getCurrentPosition(
-            pos => {
-                const distance = Math.round(haversineDistance(
-                    pos.coords.latitude, pos.coords.longitude,
-                    officeLocation.lat, officeLocation.lng
-                ));
-                resolve({ ok: distance <= officeLocation.radius, distance });
-            },
-            () => resolve({ ok: false, error: 'Permiso de ubicación denegado' }),
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
-        );
-    });
-}
-
 firebaseAuth.onAuthStateChanged(user => {
     const loginView = document.getElementById('login-view');
     if (user) {
@@ -198,19 +151,10 @@ async function registerAttendance(type) {
     const inputVal = employeeIdInput.value.trim();
     if (!inputVal) { showNotification("Ingresa tu ID o Nombre", "danger"); return; }
 
-    // Verificar ubicación si está configurada
-    if (officeLocation) {
-        btnIn.disabled = true;
-        btnOut.disabled = true;
-        showNotification("Verificando ubicación...");
-        const loc = await checkUserLocation();
-        btnIn.disabled = false;
-        btnOut.disabled = false;
-        if (!loc.ok) {
-            const msg = loc.error || `Muy lejos de la oficina (${loc.distance}m). Acércate más.`;
-            showNotification(msg, "danger");
-            return;
-        }
+    // Verificar que esté en la red WiFi de la oficina
+    if (!isAuthorized) {
+        showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
+        return;
     }
 
     const employee = employeesCache.find(e =>
@@ -696,39 +640,6 @@ document.addEventListener('click', (e) => {
         renderHistory();
         showNotification("Vista principal limpia");
     }
-});
-
-document.getElementById('set-office-location').addEventListener('click', () => {
-    const radius = parseInt(document.getElementById('location-radius').value) || 100;
-    showNotification('Obteniendo GPS...');
-    navigator.geolocation.getCurrentPosition(
-        async pos => {
-            const { latitude, longitude, accuracy } = pos.coords;
-            await db.collection('checador_config').doc('office').set({ lat: latitude, lng: longitude, radius });
-            showNotification(`Guardado. Precisión GPS: ±${Math.round(accuracy)}m`);
-        },
-        () => showNotification('No se pudo obtener ubicación. Usa el celular.', 'danger'),
-        { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
-    );
-});
-
-document.getElementById('test-location').addEventListener('click', () => {
-    if (!officeLocation) { showNotification('Primero guarda la ubicación de la oficina', 'danger'); return; }
-    navigator.geolocation.getCurrentPosition(
-        pos => {
-            const distance = Math.round(haversineDistance(
-                pos.coords.latitude, pos.coords.longitude,
-                officeLocation.lat, officeLocation.lng
-            ));
-            const ok = distance <= officeLocation.radius;
-            showNotification(
-                ok ? `✓ Dentro del radio (${distance}m de la oficina)` : `✗ Fuera del radio: ${distance}m (límite: ${officeLocation.radius}m)`,
-                ok ? 'success' : 'danger'
-            );
-        },
-        () => showNotification('No se pudo obtener ubicación', 'danger'),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-    );
 });
 
 exportCsvBtn.addEventListener('click', exportToCSV);
