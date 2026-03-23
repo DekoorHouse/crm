@@ -2006,10 +2006,15 @@ function handleMouseUp() {
                 }
             }
         }
-        // Re-fit texts when a ref area is moved
+        // Re-fit texts when a ref area is moved, or snap text back to its ref area
         for (const id of state.selectedIds) {
             const obj = findObject(id);
-            if (obj && obj.isRefArea) updateRefAreaTexts(obj);
+            if (!obj) continue;
+            if (obj.isRefArea) updateRefAreaTexts(obj);
+            if (obj.type === 'text') {
+                const ra = findRefAreaForText(obj);
+                if (ra) fitTextToRefArea(obj);
+            }
         }
         drawSelection(); updatePropsPanel(); return;
     }
