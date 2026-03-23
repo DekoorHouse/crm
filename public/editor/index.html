@@ -762,6 +762,9 @@
             const snap = await getDocs(q);
             return snap.docs.map(d => ({ id: d.id, ...d.data() }));
         };
+        window.fbUpdateTemplate = async (docId, name) => {
+            await updateDoc(doc(db, "editor_templates", docId), { name, updatedAt: serverTimestamp() });
+        };
         window.fbDeleteTemplate = async (docId) => {
             await deleteDoc(doc(db, "editor_templates", docId));
         };

@@ -4010,6 +4010,36 @@ function showToast(msg) {
     }, 1800);
 }
 
+function startInlineRename(nameEl, currentName, onSave) {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = currentName;
+    input.className = 'sidebar-rename-input';
+    nameEl.textContent = '';
+    nameEl.appendChild(input);
+    input.focus();
+    input.select();
+
+    let done = false;
+    const finish = async () => {
+        if (done) return;
+        done = true;
+        const newName = input.value.trim();
+        if (newName && newName !== currentName) {
+            nameEl.textContent = newName;
+            try { await onSave(newName); } catch (err) { alert('Error: ' + err.message); nameEl.textContent = currentName; }
+        } else {
+            nameEl.textContent = currentName;
+        }
+    };
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); finish(); }
+        if (e.key === 'Escape') { done = true; nameEl.textContent = currentName; }
+        e.stopPropagation();
+    });
+    input.addEventListener('blur', finish);
+}
+
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -4223,6 +4253,17 @@ function createSidebarFileItem(file) {
         '<div class="sidebar-file-name">' + escapeHtml(file.name) + '</div>' +
         '<div class="sidebar-file-date">' + dateStr + '</div>';
 
+    // Double-click name to rename
+    const nameEl = info.querySelector('.sidebar-file-name');
+    nameEl.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        startInlineRename(nameEl, file.name, async (newName) => {
+            file.name = newName;
+            await window.fbUpdateFile(file.id, newName, file.stateJson, file.pageWidth, file.pageHeight, file.thumbnail);
+            if (currentFileId === file.id) { currentFileName = newName; updateFileNameDisplay(); }
+        });
+    });
+
     const delBtn = document.createElement('button');
     delBtn.className = 'sidebar-file-del';
     delBtn.title = 'Eliminar';
@@ -4230,6 +4271,7 @@ function createSidebarFileItem(file) {
 
     item.addEventListener('click', (e) => {
         if (e.target.closest('.sidebar-file-del')) return;
+        if (e.target.closest('input')) return;
         openFile(file);
         document.querySelectorAll('.sidebar-file-item').forEach(el => el.classList.remove('active'));
         item.classList.add('active');
@@ -4326,6 +4368,16 @@ function createSidebarTemplateItem(tpl) {
         '<div class="sidebar-file-name">' + escapeHtml(tpl.name) + '</div>' +
         '<div class="sidebar-file-date">' + dateStr + '</div>';
 
+    // Double-click name to rename
+    const tplNameEl = info.querySelector('.sidebar-file-name');
+    tplNameEl.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        startInlineRename(tplNameEl, tpl.name, async (newName) => {
+            tpl.name = newName;
+            await window.fbUpdateTemplate(tpl.id, newName);
+        });
+    });
+
     const delBtn = document.createElement('button');
     delBtn.className = 'sidebar-file-del';
     delBtn.title = 'Eliminar';
@@ -4333,6 +4385,7 @@ function createSidebarTemplateItem(tpl) {
 
     item.addEventListener('click', (e) => {
         if (e.target.closest('.sidebar-file-del')) return;
+        if (e.target.closest('input')) return;
         openFile(tpl);
         currentFileId = null;
         currentFileName = null;
