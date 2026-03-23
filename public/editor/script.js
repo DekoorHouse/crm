@@ -4692,6 +4692,7 @@ function resolveTarget(target) {
 
 function executeSingleAction(action) {
     const a = action;
+    if (!a || !a.action) return {};
     // Normalize action aliases the AI might use
     const actionName = (a.action || '').replace(/^add_shape|add|create_shape|insert$/, 'create')
         .replace(/^change|update|set$/, 'modify')
