@@ -1324,8 +1324,26 @@ function extractPathPoints(cmds) {
     const pts = [];
     for (let si = 0; si < cmds.length; si++) {
         const seg = cmds[si];
-        for (let pi = 0; pi < seg.pts.length; pi++) {
-            pts.push({ segIdx: si, ptIdx: pi, x: seg.pts[pi].x, y: seg.pts[pi].y });
+        const cmd = seg.cmd;
+        if (cmd === 'C' && seg.pts.length === 3) {
+            // Cubic bezier: only the endpoint (index 2) is on-curve
+            pts.push({ segIdx: si, ptIdx: 2, x: seg.pts[2].x, y: seg.pts[2].y });
+        } else if (cmd === 'Q' && seg.pts.length === 2) {
+            // Quadratic bezier: only the endpoint (index 1) is on-curve
+            pts.push({ segIdx: si, ptIdx: 1, x: seg.pts[1].x, y: seg.pts[1].y });
+        } else if (cmd === 'S' && seg.pts.length === 2) {
+            // Smooth cubic: only the endpoint (index 1) is on-curve
+            pts.push({ segIdx: si, ptIdx: 1, x: seg.pts[1].x, y: seg.pts[1].y });
+        } else if (cmd === 'T' && seg.pts.length === 1) {
+            // Smooth quadratic: the single point is on-curve
+            pts.push({ segIdx: si, ptIdx: 0, x: seg.pts[0].x, y: seg.pts[0].y });
+        } else if (cmd === 'Z' || cmd === 'z') {
+            // Close path: no points
+        } else {
+            // M, L, H, V, A — all points are on-curve
+            for (let pi = 0; pi < seg.pts.length; pi++) {
+                pts.push({ segIdx: si, ptIdx: pi, x: seg.pts[pi].x, y: seg.pts[pi].y });
+            }
         }
     }
     return pts;
