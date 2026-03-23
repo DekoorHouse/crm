@@ -1285,24 +1285,59 @@ function sampleBSplineAll(points, numSamples, closed) {
 // =============================================
 function parseSVGPath(d) {
     // Returns array of { cmd: 'M'|'L'|'C'|'Q'|'A'|'S'|'T'|'Z', pts: [{x,y},...] }
+    // All coordinates are converted to absolute.
     const cmds = [];
-    const re = /([MLCQZASTmlcqzast])\s*([-\d.,eE+\s]*)/g;
+    const re = /([MLCQZASTHVmlcqzasthv])\s*([-\d.,eE+\s]*)/g;
     let m;
+    let curX = 0, curY = 0, startX = 0, startY = 0;
     while ((m = re.exec(d)) !== null) {
-        const cmd = m[1].toUpperCase();
+        const origCmd = m[1];
+        const isRel = origCmd === origCmd.toLowerCase() && origCmd !== 'z' && origCmd !== 'Z';
+        const cmd = origCmd.toUpperCase();
         const raw = m[2].trim();
         const nums = raw.length > 0 ? raw.split(/[\s,]+/).map(Number) : [];
         const pts = [];
+        if (cmd === 'Z') {
+            curX = startX; curY = startY;
+            cmds.push({ cmd: 'Z', pts: [] });
+            continue;
+        }
+        if (cmd === 'H') {
+            const x = isRel ? curX + (nums[0] || 0) : (nums[0] || 0);
+            curX = x;
+            pts.push({ x: curX, y: curY });
+            cmds.push({ cmd: 'L', pts });
+            continue;
+        }
+        if (cmd === 'V') {
+            const y = isRel ? curY + (nums[0] || 0) : (nums[0] || 0);
+            curY = y;
+            pts.push({ x: curX, y: curY });
+            cmds.push({ cmd: 'L', pts });
+            continue;
+        }
         if (cmd === 'A') {
-            // Arc: 7 params per arc (rx, ry, x-rotation, large-arc, sweep, x, y)
             for (let i = 0; i + 6 < nums.length; i += 7) {
-                pts.push({ x: nums[i + 5], y: nums[i + 6] });
+                const ex = isRel ? curX + nums[i + 5] : nums[i + 5];
+                const ey = isRel ? curY + nums[i + 6] : nums[i + 6];
+                pts.push({ x: ex, y: ey });
+                curX = ex; curY = ey;
             }
         } else {
-            for (let i = 0; i < nums.length; i += 2) {
-                if (i + 1 < nums.length) pts.push({ x: nums[i], y: nums[i + 1] });
+            // M, L, C, Q, S, T — pairs of (x, y)
+            for (let i = 0; i + 1 < nums.length; i += 2) {
+                const ax = isRel ? curX + nums[i] : nums[i];
+                const ay = isRel ? curY + nums[i + 1] : nums[i + 1];
+                pts.push({ x: ax, y: ay });
+                // Update current point at the end of each command's parameter set
+                const pairsPerCmd = { M: 2, L: 2, C: 6, Q: 4, S: 4, T: 2 };
+                const ppc = (pairsPerCmd[cmd] || 2) / 2; // number of point pairs per command
+                if ((i / 2 + 1) % ppc === 0) {
+                    curX = ax; curY = ay;
+                }
             }
         }
+        if (cmd === 'M' && pts.length > 0) { startX = pts[0].x; startY = pts[0].y; }
         cmds.push({ cmd, pts });
     }
     return cmds;
