@@ -10,12 +10,13 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
+const auth = firebase.auth();
 const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- Estado ---
+let socialUser = null;
 let selectedRating = 0;
 let selectedPhoto = null;
-let selectedSocial = 'instagram';
 
 // --- Dark mode ---
 function toggleDarkMode() {
@@ -38,6 +39,54 @@ function toggleForm() {
     }
 }
 
+// --- Login con Facebook ---
+function loginWithFacebook() {
+    const provider = new firebase.auth.FacebookAuthProvider();
+    provider.addScope('public_profile');
+
+    auth.signInWithPopup(provider)
+        .then(result => {
+            const profile = result.additionalUserInfo.profile;
+            socialUser = {
+                name: profile.name || result.user.displayName,
+                avatar: result.user.photoURL || `https://graph.facebook.com/${profile.id}/picture?type=large`,
+                profileUrl: profile.link || `https://facebook.com/${profile.id}`,
+                uid: result.user.uid
+            };
+            showLoggedUser();
+        })
+        .catch(err => {
+            console.error('Error Facebook login:', err);
+            if (err.code === 'auth/account-exists-with-different-credential') {
+                alert('Ya existe una cuenta con ese correo electrónico.');
+            } else if (err.code !== 'auth/popup-closed-by-user') {
+                alert('No se pudo iniciar sesión con Facebook. Intenta de nuevo.');
+            }
+        });
+}
+
+function showLoggedUser() {
+    document.getElementById('socialLoginSection').classList.add('hidden');
+    document.getElementById('loggedUserBar').classList.remove('hidden');
+    document.getElementById('refForm').classList.remove('hidden');
+
+    document.getElementById('loggedAvatar').src = socialUser.avatar;
+    document.getElementById('loggedName').textContent = socialUser.name;
+    document.getElementById('loggedSource').innerHTML = '<i class="fab fa-facebook" style="color:#1877F2"></i> Verificado con Facebook';
+}
+
+function logoutSocial() {
+    auth.signOut();
+    socialUser = null;
+    selectedRating = 0;
+    selectedPhoto = null;
+    document.getElementById('socialLoginSection').classList.remove('hidden');
+    document.getElementById('loggedUserBar').classList.add('hidden');
+    document.getElementById('refForm').classList.add('hidden');
+    document.getElementById('refForm').reset();
+    updateStarsUI();
+    resetPhotoUpload();
+}
 
 // --- Estrellas ---
 document.getElementById('ratingStars').addEventListener('click', (e) => {
@@ -55,9 +104,7 @@ document.getElementById('ratingStars').addEventListener('mouseout', () => {
     updateStarsUI();
 });
 
-function updateStarsUI() {
-    highlightStars(selectedRating);
-}
+function updateStarsUI() { highlightStars(selectedRating); }
 function highlightStars(val) {
     document.querySelectorAll('#ratingStars i').forEach(star => {
         star.classList.toggle('active', parseInt(star.dataset.val) <= val);
@@ -82,8 +129,7 @@ function previewPhoto(input) {
 }
 
 function resetPhotoUpload() {
-    const area = document.getElementById('photoUploadArea');
-    area.innerHTML = `
+    document.getElementById('photoUploadArea').innerHTML = `
         <i class="fas fa-camera"></i>
         <p>Toca para subir una foto</p>
         <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)">
@@ -94,19 +140,11 @@ function resetPhotoUpload() {
 async function submitReferencia(event) {
     event.preventDefault();
 
-    const nombre = document.getElementById('refNombre').value.trim();
-    const profileUrl = document.getElementById('refProfileUrl').value.trim();
+    if (!socialUser) { alert('Primero inicia sesión con Facebook.'); return; }
+    if (selectedRating === 0) { alert('Selecciona una calificación.'); return; }
+
     const texto = document.getElementById('refTexto').value.trim();
-
-    if (!nombre) { alert('Escribe tu nombre.'); return; }
-    if (!profileUrl) { alert('Pega el link de tu perfil.'); return; }
-    if (selectedRating === 0) { alert('Selecciona una calificación de estrellas.'); return; }
     if (!texto) { alert('Escribe tu opinión.'); return; }
-
-    if (!profileUrl.includes('instagram.com')) {
-        alert('El link no parece ser un perfil de Instagram válido.');
-        return;
-    }
 
     const btn = document.getElementById('btnSubmit');
     btn.disabled = true;
@@ -114,7 +152,6 @@ async function submitReferencia(event) {
 
     try {
         let photoUrl = '';
-
         if (selectedPhoto) {
             const ext = selectedPhoto.name.split('.').pop();
             const fileName = `referencias/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -124,9 +161,11 @@ async function submitReferencia(event) {
         }
 
         await db.collection('referencias').add({
-            nombre: nombre,
-            profileUrl: profileUrl,
-            source: selectedSocial,
+            nombre: socialUser.name,
+            avatar: socialUser.avatar,
+            profileUrl: socialUser.profileUrl,
+            uid: socialUser.uid,
+            source: 'facebook',
             rating: selectedRating,
             texto: texto,
             foto: photoUrl,
@@ -134,7 +173,6 @@ async function submitReferencia(event) {
             aprobado: true
         });
 
-        // Reset
         selectedRating = 0;
         selectedPhoto = null;
         document.getElementById('refForm').reset();
@@ -144,7 +182,7 @@ async function submitReferencia(event) {
         alert('¡Gracias por tu referencia! Ya está publicada.');
 
     } catch (error) {
-        console.error('Error al publicar referencia:', error);
+        console.error('Error al publicar:', error);
         alert('Hubo un error al publicar. Intenta de nuevo.');
     } finally {
         btn.disabled = false;
@@ -181,7 +219,6 @@ function renderReferencias(refs) {
         empty.classList.remove('hidden');
         return;
     }
-
     empty.classList.add('hidden');
 
     grid.innerHTML = refs.map(ref => {
@@ -192,28 +229,26 @@ function renderReferencias(refs) {
             `<i class="fas fa-star ${i < ref.rating ? '' : 'empty'}"></i>`
         ).join('');
 
-        const initial = ref.nombre ? ref.nombre[0].toUpperCase() : '?';
-        const sourceIcon = '<i class="fab fa-instagram verified" style="color:#E4405F" title="Perfil de Instagram"></i>';
-
         const photoHtml = ref.foto
             ? `<img src="${ref.foto}" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox('${ref.foto}')" loading="lazy">`
             : '';
 
-        const nameHtml = ref.profileUrl
+        const profileLink = ref.profileUrl
             ? `<a href="${escapeHtml(ref.profileUrl)}" target="_blank" rel="noopener">${escapeHtml(ref.nombre)}</a>`
             : escapeHtml(ref.nombre);
 
-        // Avatar: initial letter circle
-        const avatarHtml = ref.avatar
-            ? `<img src="${ref.avatar}" alt="${escapeHtml(ref.nombre)}" onerror="this.parentElement.innerHTML='${initial}'">`
-            : initial;
+        const defaultAvatar = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">${ref.nombre ? ref.nombre[0].toUpperCase() : '?'}</text></svg>`)}`;
 
         return `
             <div class="ref-card">
                 <div class="ref-card-header">
-                    <div class="ref-avatar">${avatarHtml}</div>
+                    <img src="${ref.avatar || defaultAvatar}" alt="${escapeHtml(ref.nombre)}" loading="lazy"
+                         onerror="this.src='${defaultAvatar}'">
                     <div class="ref-author">
-                        <div class="ref-author-name">${nameHtml} ${sourceIcon}</div>
+                        <div class="ref-author-name">
+                            ${profileLink}
+                            <i class="fab fa-facebook-square verified" style="color:#1877F2" title="Verificado con Facebook"></i>
+                        </div>
                         <div class="ref-date">${fechaStr}</div>
                     </div>
                 </div>

@@ -20,26 +20,11 @@
 
         .ref-page { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
 
-        /* --- HEADER --- */
-        .ref-header {
-            text-align: center;
-            margin-bottom: 48px;
-        }
-        .ref-header h1 {
-            font-size: 2rem;
-            font-weight: 800;
-            margin-bottom: 8px;
-        }
-        .ref-header p {
-            color: var(--color-text-light);
-            font-size: 1.05rem;
-        }
+        .ref-header { text-align: center; margin-bottom: 48px; }
+        .ref-header h1 { font-size: 2rem; font-weight: 800; margin-bottom: 8px; }
+        .ref-header p { color: var(--color-text-light); font-size: 1.05rem; }
 
-        /* --- BOTÓN ESCRIBIR REFERENCIA --- */
-        .ref-cta {
-            text-align: center;
-            margin-bottom: 48px;
-        }
+        .ref-cta { text-align: center; margin-bottom: 48px; }
         .ref-cta .btn {
             font-size: 1rem;
             padding: 14px 32px;
@@ -57,30 +42,65 @@
             box-shadow: 0 4px 20px var(--color-shadow);
         }
         .ref-form-card.hidden { display: none !important; }
+        .ref-form-card h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 24px; }
 
-        .ref-form-card h2 {
-            font-size: 1.25rem;
-            font-weight: 700;
+        .social-login-section {
+            text-align: center;
             margin-bottom: 24px;
+            padding-bottom: 24px;
+            border-bottom: 1px solid var(--color-border);
         }
-
-        .profile-url-hint {
-            font-size: 0.8rem;
+        .social-login-section p {
             color: var(--color-text-light);
             margin-bottom: 16px;
-            padding-left: 4px;
+            font-size: 0.95rem;
         }
 
-        .rating-stars {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 16px;
-        }
-        .rating-stars i {
-            font-size: 1.8rem;
-            color: var(--color-border);
+        .btn-facebook {
+            background: #1877F2;
+            color: white;
+            padding: 14px 28px;
+            border-radius: var(--border-radius-md);
+            border: none;
             cursor: pointer;
-            transition: color 0.15s ease, transform 0.15s ease;
+            font-weight: 600;
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            transition: all 0.2s ease;
+        }
+        .btn-facebook:hover { background: #166fe5; transform: translateY(-1px); }
+
+        .logged-user {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 16px;
+            background: var(--color-subtle-bg);
+            border-radius: var(--border-radius-md);
+            margin-bottom: 24px;
+        }
+        .logged-user img {
+            width: 44px; height: 44px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--color-primary);
+        }
+        .logged-user .user-info { flex: 1; }
+        .logged-user .user-name { font-weight: 700; font-size: 0.95rem; }
+        .logged-user .user-source { font-size: 0.8rem; color: var(--color-text-light); }
+        .logged-user .btn-logout {
+            background: none; border: none;
+            color: var(--color-text-light);
+            cursor: pointer; font-size: 0.85rem; padding: 4px 8px;
+        }
+        .logged-user .btn-logout:hover { color: var(--color-danger); }
+
+        .rating-stars { display: flex; gap: 6px; margin-bottom: 16px; }
+        .rating-stars i {
+            font-size: 1.8rem; color: var(--color-border);
+            cursor: pointer; transition: color 0.15s ease, transform 0.15s ease;
         }
         .rating-stars i.active { color: #f59e0b; }
         .rating-stars i:hover { transform: scale(1.15); }
@@ -88,39 +108,23 @@
         .photo-upload-area {
             border: 2px dashed var(--color-border);
             border-radius: var(--border-radius-md);
-            padding: 24px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
+            padding: 24px; text-align: center;
+            cursor: pointer; transition: all 0.2s ease;
             margin-bottom: 16px;
-            position: relative;
         }
         .photo-upload-area:hover { border-color: var(--color-primary); background: var(--color-subtle-bg); }
         .photo-upload-area i.fa-camera { font-size: 2rem; color: var(--color-text-light); margin-bottom: 8px; }
         .photo-upload-area p { color: var(--color-text-light); font-size: 0.9rem; }
         .photo-upload-area .preview-img {
-            max-width: 100%;
-            max-height: 200px;
-            border-radius: var(--border-radius-sm);
-            margin-top: 12px;
+            max-width: 100%; max-height: 200px;
+            border-radius: var(--border-radius-sm); margin-top: 12px;
         }
 
-        textarea#refTexto {
-            min-height: 100px;
-            resize: vertical;
-        }
-
-        .form-actions {
-            display: flex;
-            gap: 12px;
-            justify-content: flex-end;
-        }
+        textarea#refTexto { min-height: 100px; resize: vertical; }
+        .form-actions { display: flex; gap: 12px; justify-content: flex-end; }
 
         /* --- GRID DE REFERENCIAS --- */
-        .ref-grid {
-            display: grid;
-            gap: 24px;
-        }
+        .ref-grid { display: grid; gap: 24px; }
 
         .ref-card {
             background: var(--color-container-bg);
@@ -130,101 +134,43 @@
             box-shadow: 0 2px 12px var(--color-shadow);
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
-        .ref-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 24px var(--color-shadow);
-        }
+        .ref-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--color-shadow); }
 
-        .ref-card-header {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            margin-bottom: 12px;
-        }
-        .ref-card-header .ref-avatar {
-            width: 48px;
-            height: 48px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: white;
-            background: var(--color-primary);
-            flex-shrink: 0;
-            overflow: hidden;
-        }
-        .ref-card-header .ref-avatar img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
+        .ref-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+        .ref-card-header img {
+            width: 48px; height: 48px; border-radius: 50%;
+            object-fit: cover; border: 2px solid var(--color-primary);
         }
         .ref-card-header .ref-author { flex: 1; }
         .ref-card-header .ref-author-name {
-            font-weight: 700;
-            font-size: 0.95rem;
-            display: flex;
-            align-items: center;
-            gap: 6px;
+            font-weight: 700; font-size: 0.95rem;
+            display: flex; align-items: center; gap: 6px;
         }
-        .ref-card-header .ref-author-name a {
-            color: var(--color-text);
-            text-decoration: none;
-        }
+        .ref-card-header .ref-author-name a { color: var(--color-text); text-decoration: none; }
         .ref-card-header .ref-author-name a:hover { color: var(--color-primary); }
-        .ref-card-header .ref-author-name .verified {
-            font-size: 0.85rem;
-        }
-        .ref-card-header .ref-date {
-            font-size: 0.8rem;
-            color: var(--color-text-light);
-        }
+        .ref-card-header .ref-author-name .verified { color: #1877F2; font-size: 0.85rem; }
+        .ref-card-header .ref-date { font-size: 0.8rem; color: var(--color-text-light); }
 
-        .ref-card-stars {
-            margin-bottom: 10px;
-        }
-        .ref-card-stars i {
-            color: #f59e0b;
-            font-size: 0.95rem;
-        }
+        .ref-card-stars { margin-bottom: 10px; }
+        .ref-card-stars i { color: #f59e0b; font-size: 0.95rem; }
         .ref-card-stars i.empty { color: var(--color-border); }
 
-        .ref-card-text {
-            font-size: 0.95rem;
-            line-height: 1.6;
-            margin-bottom: 16px;
-            color: var(--color-text);
-        }
+        .ref-card-text { font-size: 0.95rem; line-height: 1.6; margin-bottom: 16px; color: var(--color-text); }
 
         .ref-card-photo {
-            width: 100%;
-            max-height: 400px;
-            object-fit: cover;
+            width: 100%; max-height: 400px; object-fit: cover;
             border-radius: var(--border-radius-md);
-            cursor: pointer;
-            transition: opacity 0.2s ease;
+            cursor: pointer; transition: opacity 0.2s ease;
         }
         .ref-card-photo:hover { opacity: 0.92; }
 
-        /* --- ESTADO VACÍO --- */
-        .ref-empty {
-            text-align: center;
-            padding: 60px 20px;
-            color: var(--color-text-light);
-        }
+        .ref-empty { text-align: center; padding: 60px 20px; color: var(--color-text-light); }
         .ref-empty i { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
         .ref-empty p { font-size: 1.05rem; }
 
-        /* --- LOADING --- */
-        .ref-loading {
-            text-align: center;
-            padding: 40px;
-            color: var(--color-text-light);
-        }
+        .ref-loading { text-align: center; padding: 40px; color: var(--color-text-light); }
         .ref-loading .spinner {
-            width: 36px;
-            height: 36px;
+            width: 36px; height: 36px;
             border: 3px solid var(--color-border);
             border-top-color: var(--color-primary);
             border-radius: 50%;
@@ -233,75 +179,41 @@
         }
         @keyframes spin { to { transform: rotate(360deg); } }
 
-        /* --- LIGHTBOX --- */
         .lightbox {
-            position: fixed;
-            inset: 0;
-            background: rgba(0,0,0,0.85);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            cursor: pointer;
-            padding: 20px;
+            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+            display: flex; align-items: center; justify-content: center;
+            z-index: 9999; cursor: pointer; padding: 20px;
         }
         .lightbox.hidden { display: none !important; }
         .lightbox img {
-            max-width: 90vw;
-            max-height: 90vh;
+            max-width: 90vw; max-height: 90vh;
             border-radius: var(--border-radius-md);
             box-shadow: 0 8px 40px rgba(0,0,0,0.5);
         }
 
-        /* --- DARK MODE TOGGLE --- */
         .dark-toggle {
-            position: fixed;
-            top: 16px;
-            right: 16px;
+            position: fixed; top: 16px; right: 16px;
             background: var(--color-container-bg);
             border: 1px solid var(--color-border);
-            border-radius: 50%;
-            width: 42px;
-            height: 42px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 1.1rem;
-            color: var(--color-text);
+            border-radius: 50%; width: 42px; height: 42px;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; font-size: 1.1rem; color: var(--color-text);
             box-shadow: 0 2px 8px var(--color-shadow);
-            z-index: 100;
-            transition: all 0.2s ease;
+            z-index: 100; transition: all 0.2s ease;
         }
         .dark-toggle:hover { transform: scale(1.1); }
 
-        /* --- RESUMEN STATS --- */
-        .ref-stats {
-            display: flex;
-            gap: 16px;
-            justify-content: center;
-            margin-bottom: 32px;
-            flex-wrap: wrap;
-        }
+        .ref-stats { display: flex; gap: 16px; justify-content: center; margin-bottom: 32px; flex-wrap: wrap; }
         .ref-stat {
             background: var(--color-container-bg);
             border: 1px solid var(--color-border);
             border-radius: var(--border-radius-md);
-            padding: 16px 24px;
-            text-align: center;
-            min-width: 120px;
+            padding: 16px 24px; text-align: center; min-width: 120px;
         }
-        .ref-stat .stat-num {
-            font-size: 1.5rem;
-            font-weight: 800;
-            color: var(--color-primary);
-        }
+        .ref-stat .stat-num { font-size: 1.5rem; font-weight: 800; color: var(--color-primary); }
         .ref-stat .stat-label {
-            font-size: 0.8rem;
-            color: var(--color-text-light);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-top: 4px;
+            font-size: 0.8rem; color: var(--color-text-light);
+            text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px;
         }
 
         @media (max-width: 600px) {
@@ -317,20 +229,17 @@
     <i class="fas fa-moon"></i>
 </button>
 
-<!-- Lightbox para fotos -->
 <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <img id="lightboxImg" src="" alt="Foto ampliada">
 </div>
 
 <div class="ref-page">
 
-    <!-- Header -->
     <div class="ref-header">
         <h1><i class="fas fa-star" style="color: #f59e0b;"></i> Lo que dicen nuestros clientes</h1>
         <p>Opiniones reales de personas que ya probaron nuestros productos</p>
     </div>
 
-    <!-- Stats -->
     <div class="ref-stats">
         <div class="ref-stat">
             <div class="stat-num" id="statTotal">0</div>
@@ -346,27 +255,35 @@
         </div>
     </div>
 
-    <!-- CTA -->
     <div class="ref-cta">
         <button class="btn btn-primary" onclick="toggleForm()">
             <i class="fas fa-pen"></i> Escribir mi referencia
         </button>
     </div>
 
-    <!-- Formulario -->
     <div id="refFormCard" class="ref-form-card hidden">
         <h2><i class="fas fa-edit"></i> Comparte tu experiencia</h2>
 
-        <form id="refForm" onsubmit="submitReferencia(event)">
-            <label style="font-weight:600;margin-bottom:8px;display:block;">Tu nombre</label>
-            <input type="text" id="refNombre" placeholder="Nombre completo" required>
+        <!-- Login con Facebook -->
+        <div id="socialLoginSection" class="social-login-section">
+            <p>Inicia sesión para verificar tu identidad</p>
+            <button class="btn-facebook" onclick="loginWithFacebook()">
+                <i class="fab fa-facebook"></i> Continuar con Facebook
+            </button>
+        </div>
 
-            <label style="font-weight:600;margin-bottom:8px;display:block;">
-                <i class="fab fa-instagram" style="color:#E4405F"></i> Tu perfil de Instagram
-            </label>
-            <input type="url" id="refProfileUrl" placeholder="https://instagram.com/tu_usuario" required>
-            <p class="profile-url-hint">Pega el link de tu perfil de Instagram para verificar tu identidad</p>
+        <!-- Usuario logueado -->
+        <div id="loggedUserBar" class="logged-user hidden">
+            <img id="loggedAvatar" src="" alt="Avatar">
+            <div class="user-info">
+                <div class="user-name" id="loggedName"></div>
+                <div class="user-source" id="loggedSource"></div>
+            </div>
+            <button class="btn-logout" onclick="logoutSocial()"><i class="fas fa-times"></i> Cambiar</button>
+        </div>
 
+        <!-- Formulario -->
+        <form id="refForm" class="hidden" onsubmit="submitReferencia(event)">
             <label style="font-weight:600;margin-bottom:8px;display:block;">Calificación</label>
             <div class="rating-stars" id="ratingStars">
                 <i class="fas fa-star" data-val="1"></i>
@@ -395,16 +312,13 @@
         </form>
     </div>
 
-    <!-- Loading -->
     <div id="refLoading" class="ref-loading">
         <div class="spinner"></div>
         <p>Cargando referencias...</p>
     </div>
 
-    <!-- Grid de referencias -->
     <div id="refGrid" class="ref-grid"></div>
 
-    <!-- Estado vacío -->
     <div id="refEmpty" class="ref-empty hidden">
         <i class="fas fa-comments"></i>
         <p>Aún no hay referencias. ¡Sé el primero en compartir tu opinión!</p>
@@ -416,6 +330,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="/env-config.js"></script>
 <script src="/referencias/script.js"></script>
 
