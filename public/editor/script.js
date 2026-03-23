@@ -6737,12 +6737,13 @@ function setupEventListeners() {
     });
 
     document.addEventListener('keyup', (e) => {
+        if (!e.key) return;
         if (e.key === ' ') { state.spaceHeld = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; }
         if (e.key.toLowerCase() === 'w') { state.wHeld = false; clearPCHighlight(); }
     });
 
     document.addEventListener('keydown', (e) => {
-        if (e.key.toLowerCase() === 'w' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.key && e.key.toLowerCase() === 'w' && !e.ctrlKey && !e.altKey && !e.metaKey) {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
             state.wHeld = true;
         }
