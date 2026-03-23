@@ -4628,17 +4628,13 @@ async function sendAIMessage() {
     document.getElementById('ai-chat-messages').scrollTop = document.getElementById('ai-chat-messages').scrollHeight;
 
     try {
-        // Build history with system instruction
-        const history = [
-            { role: 'user', content: _aiInstructions },
-            { role: 'model', content: 'Entendido. Estoy listo para ayudarte con el editor.' },
-            ..._aiChatHistory.slice(-20) // last 20 messages
-        ];
+        // Build history (instructions are handled server-side via source flag)
+        const history = _aiChatHistory.slice(-20);
 
         const res = await fetch('/api/simulate-ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history })
+            body: JSON.stringify({ message: text, history, source: 'editor' })
         });
         const data = await res.json();
         typing.remove();

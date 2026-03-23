@@ -14,7 +14,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 
 const router = express.Router();
 
@@ -337,15 +337,20 @@ const PORT = process.env.PORT || 3000;
 // --- ENDPOINT SIMULADOR IA ---
 router.post('/simulate-ai', async (req, res) => {
     try {
-        const { message, mediaBase64, mediaMimeType, history } = req.body;
-        
+        const { message, mediaBase64, mediaMimeType, history, source } = req.body;
+        const isEditor = (source === 'editor');
+
         if (!message) {
             return res.status(400).json({ success: false, message: 'Se requiere un mensaje.' });
         }
 
-        // Recuperar instrucciones del bot
-        const botDoc = await db.collection('crm_settings').doc('bot').get();
-        const systemPrompt = botDoc.exists ? botDoc.data().instructions : 'Eres un asistente virtual amigable y servicial.';
+        // Recuperar instrucciones del bot según el origen
+        const botDocId = isEditor ? 'editor_bot' : 'bot';
+        const defaultPrompt = isEditor
+            ? 'Eres un asistente de diseño gráfico integrado en un editor SVG. Ayuda al usuario con sus diseños, da sugerencias creativas y responde preguntas sobre el editor.'
+            : 'Eres un asistente virtual amigable y servicial.';
+        const botDoc = await db.collection('crm_settings').doc(botDocId).get();
+        const systemPrompt = botDoc.exists && botDoc.data().instructions ? botDoc.data().instructions : defaultPrompt;
 
         // Construir historial de conversación y recolectar media
         const mediaParts = [];
@@ -378,31 +383,39 @@ router.post('/simulate-ai', async (req, res) => {
         }
         dbHistory.push({ role: 'user', text: message || '' });
 
+        const userLabel = isEditor ? 'Usuario' : 'Cliente';
         const conversationHistory = dbHistory.map(d => {
-            return `${d.role === 'user' ? 'Cliente' : 'Asistente'}: ${d.text}`;
+            return `${d.role === 'user' ? userLabel : 'Asistente'}: ${d.text}`;
         }).join('\n');
 
-        const dynamicPrompt = `**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-
-        // Intentar con Context Caching
         let aiResult;
-        try {
-            const cacheName = await getOrCreateCache(systemPrompt);
-            if (cacheName) {
-                aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
-            } else {
-                throw new Error('Caché no disponible');
-            }
-        } catch (cacheError) {
-            // Fallback: construir prompt completo sin caché
-            console.warn(`[SIMULATOR] Caché falló (${cacheError.message}). Usando método sin caché.`);
-            const kbSnapshot = await db.collection('ai_knowledge_base').get();
-            const knowledgeBase = kbSnapshot.docs.map(doc => `P: ${doc.data().topic}\nR: ${doc.data().answer}`).join('\n\n');
-            const qrSnapshot = await db.collection('quick_replies').get();
-            const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
 
-            const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió multimedia, analízala cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        if (isEditor) {
+            // Editor: prompt simple, sin caché, sin knowledge base / quick replies
+            const fullPrompt = `**Instrucciones:**\n${systemPrompt}\n\n**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al último mensaje del usuario de manera concisa y útil.`;
             aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
+        } else {
+            // CRM: cache-first con knowledge base + quick replies fallback
+            const dynamicPrompt = `**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+
+            try {
+                const cacheName = await getOrCreateCache(systemPrompt);
+                if (cacheName) {
+                    aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
+                } else {
+                    throw new Error('Caché no disponible');
+                }
+            } catch (cacheError) {
+                // Fallback: construir prompt completo sin caché
+                console.warn(`[SIMULATOR] Caché falló (${cacheError.message}). Usando método sin caché.`);
+                const kbSnapshot = await db.collection('ai_knowledge_base').get();
+                const knowledgeBase = kbSnapshot.docs.map(doc => `P: ${doc.data().topic}\nR: ${doc.data().answer}`).join('\n\n');
+                const qrSnapshot = await db.collection('quick_replies').get();
+                const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
+
+                const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió multimedia, analízala cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+                aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
+            }
         }
 
         const rawResponse = aiResult.text || '';
@@ -1094,17 +1107,49 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
     const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // tempId es opcional, para UI optimista
 
     // Validaciones básicas
-    if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
-        return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
-    }
     if (!text && !fileUrl && !template) {
         return res.status(400).json({ success: false, message: 'El mensaje no puede estar vacío (texto, archivo o plantilla).' });
     }
 
     try {
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
-        let messageToSave; // Objeto para guardar en Firestore
-        let messageId; // ID del mensaje de WhatsApp (wamid)
+
+        // --- Detectar canal del contacto ---
+        const contactDoc = await contactRef.get();
+        const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
+
+        // === MESSENGER: Lógica de envío para Facebook Messenger ===
+        if (channel === 'messenger') {
+            const psid = contactDoc.data().psid || contactId.replace('fb_', '');
+            const sentData = await sendMessengerMessage(psid, { text, fileUrl, fileType });
+
+            // Guardar cada mensaje enviado en Firestore
+            let lastMessageToSave;
+            for (const msg of sentData.messages) {
+                const messageToSave = {
+                    from: 'page', status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: msg.id, text: msg.textForDb
+                };
+                if (msg.fileUrlForDb) messageToSave.fileUrl = msg.fileUrlForDb;
+                if (msg.fileTypeForDb) messageToSave.fileType = msg.fileTypeForDb;
+
+                const messageRef = (!lastMessageToSave && tempId) ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
+                await messageRef.set(messageToSave);
+                lastMessageToSave = messageToSave;
+            }
+
+            await contactRef.update({
+                lastMessage: sentData.lastTextForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                unreadCount: 0
+            });
+
+            return res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s) por Messenger.' });
+        }
+
+        // === WHATSAPP: Lógica existente de envío ===
+        let messageToSave;
+        let messageId;
         let isFinalCommand = false;
         let cleanedText = text;
 
@@ -1113,33 +1158,28 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             if (text.toLowerCase().includes('/final')) {
                 cleanedText = text.replace(/\/final/gi, '').trim();
             } else {
-                cleanedText = text; // Mantenemos la frase intacta si no es el comando técnico /final
+                cleanedText = text;
             }
         }
 
         // --- Lógica para enviar PLANTILLA ---
         if (template) {
-            // Construir payload de plantilla (asumiendo que buildAdvancedTemplatePayload maneja parámetros)
-            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []); // Sin imagen, sin params extra aquí
-            // Añadir contexto si se está respondiendo a un mensaje
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []);
             if (reply_to_wamid) {
                 payload.context = { message_id: reply_to_wamid };
             }
 
-            // Enviar a la API de WhatsApp
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, payload, {
                 headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
             });
             messageId = response.data.messages[0].id;
-            // Preparar datos para Firestore
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                id: messageId, text: messageToSaveText // Texto representativo de la plantilla
+                id: messageId, text: messageToSaveText
             };
         }
         // --- Lógica para enviar ARCHIVO (imagen, video, audio, documento) ---
         else if (fileUrl && fileType) {
-            // Asegurar que el archivo en GCS sea público si es de nuestro bucket
             if (fileUrl && fileUrl.includes(bucket.name)) {
                 try {
                     const filePath = fileUrl.split(`${bucket.name}/`)[1].split('?')[0];
@@ -1150,37 +1190,30 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 }
             }
 
-            // Subir el archivo a WhatsApp para obtener media ID
             const mediaId = await uploadMediaToWhatsApp(fileUrl, fileType);
 
-            // Determinar el tipo de mensaje para la API de WhatsApp
             const type = fileType.startsWith('image/') ? 'image' :
                 fileType.startsWith('video/') ? 'video' :
                     fileType.startsWith('audio/') ? 'audio' : 'document';
 
             const mediaObject = { id: mediaId };
-            // Añadir caption si es relevante y hay texto (usar texto filtrado de comandos)
             if (type !== 'audio' && cleanedText) {
                 mediaObject.caption = cleanedText;
             }
 
-            // Construir payload para la API de WhatsApp
             const messagePayload = {
                 messaging_product: 'whatsapp',
                 to: contactId,
                 type: type,
-                [type]: mediaObject // { image: { id: mediaId, caption: text } } o similar
+                [type]: mediaObject
             };
-            // Añadir contexto si se responde
             if (reply_to_wamid) {
                 messagePayload.context = { message_id: reply_to_wamid };
             }
 
-            // Enviar a la API de WhatsApp
             const response = await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, messagePayload, { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}` } });
             messageId = response.data.messages[0].id;
 
-            // Preparar datos para Firestore
             const messageTextForDb = text || (type === 'video' ? '🎥 Video' : type === 'image' ? '📷 Imagen' : type === 'audio' ? '🎵 Audio' : '📄 Documento');
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
@@ -1190,35 +1223,28 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         }
         // --- Lógica para enviar solo TEXTO ---
         else {
-            // Usar la función de envío avanzada que maneja solo texto
             const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, { text, reply_to_wamid });
             messageId = sentMessageData.id;
-            // Preparar datos para Firestore
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: sentMessageData.textForDb
             };
         }
 
-        // Añadir contexto a los datos de Firestore si se está respondiendo
         if (reply_to_wamid) {
             messageToSave.context = { id: reply_to_wamid };
         }
-        // Limpiar campos nulos antes de guardar
         Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
 
-        // Guardar en Firestore (usando tempId si se proporcionó para UI optimista)
         const messageRef = tempId ? contactRef.collection('messages').doc(tempId) : contactRef.collection('messages').doc();
-        await messageRef.set(messageToSave); // Usar set() para manejar tanto creación como posible sobreescritura (en caso de tempId)
+        await messageRef.set(messageToSave);
 
-        // Actualizar último mensaje y resetear contador de no leídos en el contacto
         const contactUpdateData = {
             lastMessage: messageToSave.text,
-            lastMessageTimestamp: messageToSave.timestamp, // Usar el timestamp del servidor
-            unreadCount: 0 // Resetear contador al enviar un mensaje
+            lastMessageTimestamp: messageToSave.timestamp,
+            unreadCount: 0
         };
 
-        // Si se detectó el comando /final, desactivar bot y mover a la cola de pendientes IA
         if (isFinalCommand) {
             contactUpdateData.botActive = false;
             contactUpdateData.status = 'pendientes_ia';
@@ -1228,9 +1254,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
-        // Manejo de errores detallado
-        console.error('❌ Error al enviar mensaje/plantilla de WhatsApp:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        res.status(500).json({ success: false, message: 'Error al enviar el mensaje a través de WhatsApp.' });
+        console.error('❌ Error al enviar mensaje:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
+        res.status(500).json({ success: false, message: 'Error al enviar el mensaje.' });
     }
 });
 // ... (resto de las rutas sin cambios)
