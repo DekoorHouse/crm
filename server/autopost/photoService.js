@@ -53,12 +53,11 @@ async function fetchAvailablePhotos(pageConfig) {
 async function pickUnpostedPhoto(photos, pageConfig) {
     if (!photos.length) return null;
 
-    // Obtener IDs ya publicados (filtrar por página si aplica)
-    let query = db.collection('auto_post_log').where('status', '==', 'success');
-    if (pageConfig?.fbPageId) {
-        query = query.where('pageId', '==', pageConfig.fbPageId);
-    }
-    const logSnapshot = await query.select('photoId').get();
+    // Obtener IDs ya publicados
+    const logSnapshot = await db.collection('auto_post_log')
+        .where('status', '==', 'success')
+        .select('photoId')
+        .get();
 
     const postedIds = new Set(logSnapshot.docs.map(d => d.data().photoId));
 

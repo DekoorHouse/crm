@@ -154,12 +154,17 @@ async function saveLog(entry) {
 }
 
 async function getLog(limit = 20, pageId) {
-    let query = db.collection('auto_post_log').orderBy('startedAt', 'desc');
+    const snapshot = await db.collection('auto_post_log')
+        .orderBy('startedAt', 'desc')
+        .limit(pageId ? limit * 3 : limit)
+        .get();
+
+    let results = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
     if (pageId) {
-        query = query.where('pageId', '==', pageId);
+        results = results.filter(r => r.pageId === pageId || !r.pageId);
+        results = results.slice(0, limit);
     }
-    const snapshot = await query.limit(limit).get();
-    return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    return results;
 }
 
 function startScheduler() {
@@ -212,11 +217,10 @@ async function getUpcomingQueue(pageConfig) {
     if (!photos.length) return [];
 
     // Obtener IDs ya publicados
-    let query = db.collection('auto_post_log').where('status', '==', 'success');
-    if (pageConfig?.fbPageId) {
-        query = query.where('pageId', '==', pageConfig.fbPageId);
-    }
-    const logSnapshot = await query.select('photoId').get();
+    const logSnapshot = await db.collection('auto_post_log')
+        .where('status', '==', 'success')
+        .select('photoId')
+        .get();
     const postedIds = new Set(logSnapshot.docs.map(d => d.data().photoId));
     const unposted = photos.filter(p => !postedIds.has(p.id));
 
