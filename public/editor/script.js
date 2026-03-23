@@ -5412,25 +5412,27 @@ function fitTextToRefArea(textObj) {
     const targetH = rb.h - pad * 2;
     if (targetW <= 0 || targetH <= 0) return;
 
-    // Scale font to fit width, then check height
-    let attempts = 0;
-    while (attempts < 50) {
-        const tb = getObjBounds(textObj);
-        if (tb.w < 0.01) break;
-        const scaleW = targetW / tb.w;
-        const scaleH = targetH / tb.h;
-        const scale = Math.min(scaleW, scaleH);
-        // Close enough — within 2% tolerance
-        if (Math.abs(scale - 1) < 0.02) break;
+    // Force a layout so getBBox is accurate
+    textObj.element.getBBox();
+
+    // Get current text bounds
+    const tb = getObjBounds(textObj);
+    if (tb.w < 0.01 || tb.h < 0.01) return;
+
+    // Calculate scale in one step — scale to fill width or height (whichever is limiting)
+    const scaleW = targetW / tb.w;
+    const scaleH = targetH / tb.h;
+    const scale = Math.min(scaleW, scaleH);
+
+    if (Math.abs(scale - 1) > 0.01) {
         textObj.fontSize = Math.max(4, textObj.fontSize * scale);
         refreshElement(textObj);
-        attempts++;
     }
 
     // Re-center in the ref area
-    const tb = getObjBounds(textObj);
+    const tb2 = getObjBounds(textObj);
     textObj.x = rb.x + rb.w / 2;
-    textObj.y = rb.y + (rb.h - tb.h) / 2 + tb.h;
+    textObj.y = rb.y + (rb.h - tb2.h) / 2 + tb2.h;
     refreshElement(textObj);
 }
 
