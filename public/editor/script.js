@@ -5504,7 +5504,7 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'j' && e.ctrlKey) { e.preventDefault(); joinNodes(); return; }
         if (e.key.toLowerCase() === 'i' && e.ctrlKey) { e.preventDefault(); importSVG(); return; }
         if (e.key.toLowerCase() === 'e' && e.ctrlKey) { e.preventDefault(); exportSVG(); return; }
-        if (e.key.toLowerCase() === 't' && e.ctrlKey) { e.preventDefault(); for (const id of state.selectedIds) { const obj = findObject(id); if (obj && obj.type === 'image') invertImageColors(obj); } return; }
+        if (e.key === 'T' && e.shiftKey && !e.ctrlKey) { e.preventDefault(); for (const id of state.selectedIds) { const obj = findObject(id); if (obj && obj.type === 'image') invertImageColors(obj); } return; }
         if (e.key.toLowerCase() === 's' && e.ctrlKey) { e.preventDefault(); saveFile(); return; }
         if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); showOpenFileModal(); return; }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
