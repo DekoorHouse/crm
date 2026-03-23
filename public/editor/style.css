@@ -2401,6 +2401,23 @@ body.dark .file-item-delete:hover {
     font-weight: 600;
 }
 
+.ai-voice-toggle {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: rgba(255,255,255,0.15);
+    border-radius: 50%;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.ai-voice-toggle:hover {
+    background: rgba(255,255,255,0.3);
+}
 .ai-chat-close {
     width: 28px;
     height: 28px;

@@ -487,6 +487,49 @@ router.post('/simulate-ai', async (req, res) => {
 });
 // --- FIN ENDPOINT SIMULADOR IA ---
 
+// --- ENDPOINT TEXT-TO-SPEECH ---
+router.post('/tts', async (req, res) => {
+    try {
+        const { text } = req.body;
+        if (!text) return res.status(400).json({ success: false, message: 'Se requiere texto.' });
+
+        // Limpiar texto: quitar bloques de acciones JSON y markdown
+        const cleanText = text
+            .replace(/```actions\s*\n[\s\S]*?```/g, '')
+            .replace(/```[\s\S]*?```/g, '')
+            .replace(/[*_#`]/g, '')
+            .trim();
+
+        if (!cleanText) return res.status(400).json({ success: false, message: 'No hay texto para sintetizar.' });
+
+        const apiKey = process.env.GEMINI_API_KEY;
+        if (!apiKey) return res.status(500).json({ success: false, message: 'API key no configurada.' });
+
+        const response = await axios.post(
+            `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`,
+            {
+                input: { text: cleanText.slice(0, 5000) },
+                voice: {
+                    languageCode: 'es-US',
+                    name: 'es-US-Neural2-A',
+                    ssmlGender: 'FEMALE'
+                },
+                audioConfig: {
+                    audioEncoding: 'MP3',
+                    speakingRate: 1.0,
+                    pitch: 0
+                }
+            }
+        );
+
+        res.status(200).json({ success: true, audioContent: response.data.audioContent });
+    } catch (error) {
+        console.error('Error TTS:', error.response?.data || error.message);
+        res.status(500).json({ success: false, message: 'Error generando audio.' });
+    }
+});
+// --- FIN ENDPOINT TTS ---
+
 // --- INICIO: NUEVAS CONSTANTES PARA COMPRESIÓN ---
 const VIDEO_SIZE_LIMIT_MB = 15.5; // Límite seguro de 15.5MB (el de WhatsApp es 16MB)
 const VIDEO_SIZE_LIMIT_BYTES = VIDEO_SIZE_LIMIT_MB * 1024 * 1024;

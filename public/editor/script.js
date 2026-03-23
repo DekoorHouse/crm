@@ -4530,6 +4530,8 @@ function createSidebarTemplateItem(tpl) {
 let _aiChatHistory = [];
 let _aiInstructions = 'Eres un asistente de dise\u00f1o gr\u00e1fico integrado en un editor SVG. Ayuda al usuario con sus dise\u00f1os, da sugerencias creativas y responde preguntas sobre el editor.';
 let _aiInstructionsLoaded = false;
+let _aiVoiceEnabled = true;
+let _aiCurrentAudio = null;
 
 async function loadAIInstructions() {
     if (_aiInstructionsLoaded) return;
@@ -4831,6 +4833,42 @@ function executeAIActions(actions) {
 
 // --- AI AGENTIC END ---
 
+// --- AI VOICE (TTS) ---
+
+async function speakAIResponse(text) {
+    if (!_aiVoiceEnabled || !text) return;
+    // Stop any currently playing audio
+    if (_aiCurrentAudio) { _aiCurrentAudio.pause(); _aiCurrentAudio = null; }
+    try {
+        const res = await fetch('/api/tts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ text })
+        });
+        const data = await res.json();
+        if (data.success && data.audioContent) {
+            const audio = new Audio('data:audio/mp3;base64,' + data.audioContent);
+            _aiCurrentAudio = audio;
+            audio.play();
+        }
+    } catch (e) {
+        console.error('TTS error:', e);
+    }
+}
+
+function toggleAIVoice() {
+    _aiVoiceEnabled = !_aiVoiceEnabled;
+    if (!_aiVoiceEnabled && _aiCurrentAudio) { _aiCurrentAudio.pause(); _aiCurrentAudio = null; }
+    const btn = document.getElementById('ai-voice-toggle');
+    if (btn) {
+        btn.textContent = _aiVoiceEnabled ? '🔊' : '🔇';
+        btn.title = _aiVoiceEnabled ? 'Silenciar voz' : 'Activar voz';
+    }
+    showToast(_aiVoiceEnabled ? 'Voz activada' : 'Voz silenciada');
+}
+
+// --- AI VOICE END ---
+
 async function sendAIMessage() {
     const input = document.getElementById('ai-chat-input');
     const text = input.value.trim();
@@ -4868,9 +4906,11 @@ async function sendAIMessage() {
             // Parse response for text and action blocks
             const parts = parseAIResponse(rawResponse);
             let hasActions = false;
+            const textParts = [];
             for (const part of parts) {
                 if (part.type === 'text') {
                     addChatMessage('ai', part.content);
+                    textParts.push(part.content);
                 } else if (part.type === 'actions') {
                     hasActions = true;
                     executeAIActions(part.content);
@@ -4878,6 +4918,10 @@ async function sendAIMessage() {
             }
             if (hasActions) {
                 addChatMessage('ai', '✅ Acciones ejecutadas.');
+            }
+            // Speak the text response (not actions)
+            if (textParts.length > 0) {
+                speakAIResponse(textParts.join(' '));
             }
         } else {
             addChatMessage('ai', 'Error: No pude obtener respuesta.');
