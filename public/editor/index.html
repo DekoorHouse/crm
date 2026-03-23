@@ -695,6 +695,8 @@
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, serverTimestamp, query, orderBy }
             from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
 
         const firebaseConfig = {
             apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
@@ -707,6 +709,21 @@
 
         const app = initializeApp(firebaseConfig, 'editor');
         const db = getFirestore(app);
+        const storage = getStorage(app);
+
+        // Upload a base64 data URL to Firebase Storage, returns download URL
+        window.fbUploadImage = async (dataUrl, path) => {
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            const storageRef = ref(storage, path);
+            await uploadBytes(storageRef, blob);
+            return await getDownloadURL(storageRef);
+        };
+
+        // Delete an image from Firebase Storage
+        window.fbDeleteImage = async (path) => {
+            try { await deleteObject(ref(storage, path)); } catch(e) {}
+        };
 
         window.firebaseReady = true;
 

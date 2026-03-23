@@ -134,6 +134,9 @@ const MAX_UNDO = 50;
 // =============================================
 let currentFileId = null;
 let currentFileName = null;
+let _autoSaveTimer = null;
+let _isDirty = false;
+let _isSaving = false;
 
 function serializeObj(obj) {
     const copy = {};
@@ -166,6 +169,7 @@ function saveUndoState() {
     undoStack.push(json);
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack.length = 0; // clear redo on new action
+    markDirty();
 }
 
 function restoreSnapshot(json) {
@@ -3686,6 +3690,85 @@ function generateThumbnail() {
     });
 }
 
+function markDirty() {
+    if (!currentFileId) return; // only auto-save if file already has a name
+    _isDirty = true;
+    updateSaveIndicator('dirty');
+    if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
+    _autoSaveTimer = setTimeout(autoSave, 10000); // 10 seconds debounce
+}
+
+async function autoSave() {
+    if (!_isDirty || !currentFileId || _isSaving) return;
+    _isSaving = true;
+    updateSaveIndicator('saving');
+    try {
+        await uploadImagesToStorage();
+        const stateJson = getStateForSave();
+        const thumbnail = await generateThumbnail();
+        await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight, thumbnail);
+        _isDirty = false;
+        updateSaveIndicator('saved');
+        refreshSidebarFiles();
+    } catch (err) {
+        console.error('Auto-save error:', err);
+        updateSaveIndicator('error');
+    }
+    _isSaving = false;
+}
+
+function updateSaveIndicator(status) {
+    const el = document.getElementById('current-file-name');
+    if (!el || !currentFileName) return;
+    switch (status) {
+        case 'dirty':
+            el.textContent = currentFileName + ' \u2022';
+            el.title = 'Cambios sin guardar';
+            break;
+        case 'saving':
+            el.textContent = currentFileName + ' \u2013 Guardando...';
+            el.title = 'Guardando...';
+            break;
+        case 'saved':
+            el.textContent = currentFileName + ' \u2713';
+            el.title = 'Guardado';
+            setTimeout(() => {
+                if (!_isDirty && el.textContent.includes('\u2713')) {
+                    el.textContent = currentFileName;
+                    el.title = '';
+                }
+            }, 2000);
+            break;
+        case 'error':
+            el.textContent = currentFileName + ' \u2717';
+            el.title = 'Error al guardar';
+            break;
+    }
+}
+
+async function uploadImagesToStorage() {
+    if (!window.fbUploadImage) return;
+    const promises = [];
+    function processObj(obj) {
+        if (obj.type === 'image' && obj.href && obj.href.startsWith('data:')) {
+            const imgId = 'editor_images/' + (currentFileId || 'temp') + '_' + obj.id + '_' + Date.now();
+            promises.push(
+                window.fbUploadImage(obj.href, imgId).then(url => {
+                    obj.href = url;
+                    if (obj.element) {
+                        obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', url);
+                        obj.element.setAttribute('href', url);
+                    }
+                }).catch(err => console.error('Error subiendo imagen:', err))
+            );
+        }
+        if (obj.children) obj.children.forEach(processObj);
+        if (obj.contents) obj.contents.forEach(processObj);
+    }
+    state.objects.forEach(processObj);
+    if (promises.length > 0) await Promise.all(promises);
+}
+
 function getStateForSave() {
     return JSON.stringify({
         objects: state.objects.map(serializeObj),
@@ -3724,11 +3807,14 @@ function saveFileAs() {
 
 async function doSaveNew(name) {
     try {
+        await uploadImagesToStorage();
         const stateJson = getStateForSave();
         const thumbnail = await generateThumbnail();
         const docId = await window.fbSaveNewFile(name, stateJson, state.pageWidth, state.pageHeight, thumbnail);
         currentFileId = docId;
         currentFileName = name;
+        _isDirty = false;
+        if (_autoSaveTimer) { clearTimeout(_autoSaveTimer); _autoSaveTimer = null; }
         updateFileNameDisplay();
         refreshSidebarFiles();
     } catch (err) {
@@ -3739,9 +3825,13 @@ async function doSaveNew(name) {
 
 async function doSaveUpdate() {
     try {
+        await uploadImagesToStorage();
         const stateJson = getStateForSave();
         const thumbnail = await generateThumbnail();
         await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight, thumbnail);
+        _isDirty = false;
+        if (_autoSaveTimer) { clearTimeout(_autoSaveTimer); _autoSaveTimer = null; }
+        updateSaveIndicator('saved');
         refreshSidebarFiles();
     } catch (err) {
         console.error('Error actualizando archivo:', err);
@@ -4131,6 +4221,7 @@ function createSidebarFileItem(file) {
 
 async function doSaveTemplate(name) {
     try {
+        await uploadImagesToStorage();
         const stateJson = getStateForSave();
         const thumbnail = await generateThumbnail();
         await window.fbSaveTemplate(name, stateJson, state.pageWidth, state.pageHeight, thumbnail);
@@ -6038,6 +6129,9 @@ function setupEventListeners() {
     });
 
     window.addEventListener('resize', () => { invalidateLayoutCache(); resetView(); });
+    window.addEventListener('beforeunload', (e) => {
+        if (_isDirty && currentFileId) { e.preventDefault(); e.returnValue = ''; }
+    });
     setupMenus();
     setupPageSizeModal();
     setupPropsPanel();
