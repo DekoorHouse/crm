@@ -2358,7 +2358,7 @@ function handleDragMove(pt) {
         const obj = findObject(id);
         if (!obj || !obj.isRefArea || !obj.refTextIds) continue;
         for (const tid of obj.refTextIds) {
-            if (state.selectedIds.includes(tid)) continue; // already being moved
+            if (state.selectedIds.includes(tid)) continue;
             const tObj = findObject(tid);
             if (!tObj) continue;
             if (!state.dragObjProps[tid]) {
@@ -6114,20 +6114,10 @@ function applyRefAreaStyle(obj) {
 }
 
 function findRefAreaForText(textObj) {
-    // First check if text is explicitly linked to a ref area
+    // Only return explicitly linked ref areas (via refTextIds)
     for (const obj of state.objects) {
         if (!obj.isRefArea || !obj.refTextIds) continue;
         if (obj.refTextIds.includes(textObj.id)) return obj;
-    }
-    // Fallback: check if text center is inside any ref area
-    const tb = getObjBounds(textObj);
-    const tcx = tb.x + tb.w / 2, tcy = tb.y + tb.h / 2;
-    for (const obj of state.objects) {
-        if (!obj.isRefArea) continue;
-        const b = getObjBounds(obj);
-        if (tcx >= b.x && tcx <= b.x + b.w && tcy >= b.y && tcy <= b.y + b.h) {
-            return obj;
-        }
     }
     return null;
 }
