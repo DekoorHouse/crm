@@ -4530,7 +4530,7 @@ function createSidebarTemplateItem(tpl) {
 let _aiChatHistory = [];
 let _aiInstructions = 'Eres un asistente de dise\u00f1o gr\u00e1fico integrado en un editor SVG. Ayuda al usuario con sus dise\u00f1os, da sugerencias creativas y responde preguntas sobre el editor.';
 let _aiInstructionsLoaded = false;
-let _aiVoiceEnabled = true;
+let _aiRespondWithVoice = false;
 let _aiCurrentAudio = null;
 
 async function loadAIInstructions() {
@@ -4590,6 +4590,9 @@ function setupAIChat() {
         chatInput.style.height = 'auto';
         chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
     });
+
+    // Microphone button
+    document.getElementById('ai-mic-btn').addEventListener('click', startVoiceInput);
 }
 
 function toggleAIChat() {
@@ -4833,11 +4836,10 @@ function executeAIActions(actions) {
 
 // --- AI AGENTIC END ---
 
-// --- AI VOICE (TTS) ---
+// --- AI VOICE (TTS) & MICROPHONE (STT) ---
 
 async function speakAIResponse(text) {
-    if (!_aiVoiceEnabled || !text) return;
-    // Stop any currently playing audio
+    if (!text) return;
     if (_aiCurrentAudio) { _aiCurrentAudio.pause(); _aiCurrentAudio = null; }
     try {
         const res = await fetch('/api/tts', {
@@ -4856,15 +4858,32 @@ async function speakAIResponse(text) {
     }
 }
 
-function toggleAIVoice() {
-    _aiVoiceEnabled = !_aiVoiceEnabled;
-    if (!_aiVoiceEnabled && _aiCurrentAudio) { _aiCurrentAudio.pause(); _aiCurrentAudio = null; }
-    const btn = document.getElementById('ai-voice-toggle');
-    if (btn) {
-        btn.textContent = _aiVoiceEnabled ? '🔊' : '🔇';
-        btn.title = _aiVoiceEnabled ? 'Silenciar voz' : 'Activar voz';
-    }
-    showToast(_aiVoiceEnabled ? 'Voz activada' : 'Voz silenciada');
+function startVoiceInput() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) { showToast('Tu navegador no soporta reconocimiento de voz'); return; }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = 'es-MX';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    const micBtn = document.getElementById('ai-mic-btn');
+    micBtn.classList.add('ai-mic-active');
+
+    recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        document.getElementById('ai-chat-input').value = transcript;
+        _aiRespondWithVoice = true;
+        sendAIMessage();
+    };
+    recognition.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        if (event.error !== 'no-speech') showToast('Error de micrófono: ' + event.error);
+        micBtn.classList.remove('ai-mic-active');
+    };
+    recognition.onend = () => { micBtn.classList.remove('ai-mic-active'); };
+
+    recognition.start();
 }
 
 // --- AI VOICE END ---
@@ -4919,10 +4938,11 @@ async function sendAIMessage() {
             if (hasActions) {
                 addChatMessage('ai', '✅ Acciones ejecutadas.');
             }
-            // Speak the text response (not actions)
-            if (textParts.length > 0) {
+            // Speak only if user sent via microphone
+            if (_aiRespondWithVoice && textParts.length > 0) {
                 speakAIResponse(textParts.join(' '));
             }
+            _aiRespondWithVoice = false;
         } else {
             addChatMessage('ai', 'Error: No pude obtener respuesta.');
         }

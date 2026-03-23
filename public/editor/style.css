@@ -2401,22 +2401,31 @@ body.dark .file-item-delete:hover {
     font-weight: 600;
 }
 
-.ai-voice-toggle {
-    width: 28px;
-    height: 28px;
+.ai-mic-btn {
+    width: 34px;
+    height: 34px;
     border: none;
-    background: rgba(255,255,255,0.15);
+    background: transparent;
+    color: rgba(255,255,255,0.6);
     border-radius: 50%;
-    color: #fff;
-    font-size: 14px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s;
+    flex-shrink: 0;
+    transition: all 0.15s;
 }
-.ai-voice-toggle:hover {
-    background: rgba(255,255,255,0.3);
+.ai-mic-btn:hover {
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+}
+.ai-mic-btn.ai-mic-active {
+    color: #ff4444;
+    animation: ai-mic-pulse 1s infinite;
+}
+@keyframes ai-mic-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 .ai-chat-close {
     width: 28px;
