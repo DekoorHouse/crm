@@ -1968,6 +1968,11 @@ function handleMouseUp() {
     if (state.isResizing) {
         state.isResizing = false;
         state.resizeHandle = null;
+        // Re-fit texts in any resized ref areas
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (obj && obj.isRefArea) updateRefAreaTexts(obj);
+        }
         drawSelection(); updatePropsPanel(); return;
     }
     if (state.isDragging) {
@@ -2000,6 +2005,11 @@ function handleMouseUp() {
                     }
                 }
             }
+        }
+        // Re-fit texts when a ref area is moved
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (obj && obj.isRefArea) updateRefAreaTexts(obj);
         }
         drawSelection(); updatePropsPanel(); return;
     }
@@ -2236,6 +2246,22 @@ function handleDragMove(pt) {
             refreshElement(obj);
         }
     }
+    // Move linked ref area texts along with the ref area
+    const finalDx = dx + (snapAdj.dx || 0), finalDy = dy + (snapAdj.dy || 0);
+    for (const id of state.selectedIds) {
+        const obj = findObject(id);
+        if (!obj || !obj.isRefArea || !obj.refTextIds) continue;
+        for (const tid of obj.refTextIds) {
+            if (state.selectedIds.includes(tid)) continue; // already being moved
+            const tObj = findObject(tid);
+            if (!tObj) continue;
+            if (!state.dragObjProps[tid]) {
+                state.dragObjProps[tid] = snapshotPos(tObj);
+            }
+            applyMove(tObj, state.dragObjProps[tid], finalDx, finalDy);
+            refreshElement(tObj);
+        }
+    }
     drawSnapGuideLines(snapAdj);
     // Clear stale snap indicators from before the drag, then show fresh ones at snap targets
     snapLayer.innerHTML = '';
@@ -2368,6 +2394,7 @@ function handleResizeMove(pt, e) {
     applyPropPosition(obj, toUnit(newX), toUnit(newY));
     applyPropSize(obj, newW, newH);
     refreshElement(obj);
+    if (obj.isRefArea) updateRefAreaTexts(obj);
     drawSelection();
     updatePropsPanel();
 }
@@ -5523,6 +5550,20 @@ function fitTextToRefArea(textObj) {
     textObj.x += areaCx - textCx;
     textObj.y += areaCy - textCy;
     refreshElement(textObj);
+}
+
+function updateRefAreaTexts(refArea) {
+    if (!refArea || !refArea.isRefArea || !refArea.refTextIds) return;
+    for (const textId of refArea.refTextIds) {
+        const textObj = findObject(textId);
+        if (textObj) fitTextToRefArea(textObj);
+    }
+}
+
+function updateAllRefAreaTexts() {
+    for (const obj of state.objects) {
+        if (obj.isRefArea) updateRefAreaTexts(obj);
+    }
 }
 
 function invertImageColors(obj) {
