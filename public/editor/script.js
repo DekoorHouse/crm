@@ -675,8 +675,8 @@ function hitTest(obj, pt) {
         case 'bspline': {
             if (obj.points.length < 2) return false;
             const samples = sampleBSplineAll(obj.points, 80, obj.closed);
-            // If closed and filled, use point-in-polygon test
-            if (obj.closed && obj.fill && obj.fill !== 'none') {
+            // If closed, use point-in-polygon test (selectable by clicking inside)
+            if (obj.closed) {
                 let inside = false;
                 for (let i = 0, j = samples.length - 1; i < samples.length; j = i++) {
                     const xi = samples[i].x, yi = samples[i].y;
