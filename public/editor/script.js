@@ -2787,13 +2787,26 @@ function editTextObject(obj, e) {
         const fontDef = FONTS.find(f => f.name === obj.fontFamily) || FONTS[0];
         const screenFontSize = obj.fontSize * scale;
 
-        overlay.style.left = screenX + 'px';
-        overlay.style.top = screenY + 'px';
         overlay.style.fontFamily = fontDef.css;
         overlay.style.fontSize = screenFontSize + 'px';
         overlay.style.lineHeight = '1.2';
         overlay.style.color = obj.fill === 'none' ? '#000' : obj.fill;
         overlay.style.textAlign = obj.textAlign || 'left';
+        overlay.style.width = 'auto';
+
+        // Check if this text is inside a ref area for positioning
+        const refArea = findRefAreaForText(obj);
+        if (refArea && obj.textAlign === 'center') {
+            const rb = getObjBounds(refArea);
+            const raScreenX = svgRect.left + (rb.x - state.viewBox.x) * scale;
+            const raScreenW = rb.w * scale;
+            overlay.style.left = raScreenX + 'px';
+            overlay.style.top = screenY + 'px';
+            overlay.style.width = raScreenW + 'px';
+        } else {
+            overlay.style.left = screenX + 'px';
+            overlay.style.top = screenY + 'px';
+        }
         overlay.value = obj.text;
         overlay.classList.remove('hidden');
         overlay.focus();
@@ -5530,9 +5543,13 @@ function fitTextToRefArea(textObj) {
     const tb = getObjBounds(textObj);
     if (tb.w < 0.01 || tb.h < 0.01) return;
 
-    // Scale to fill the area completely (font metrics provide natural visual margin)
+    // getBBox height includes font ascenders/descenders (~20% extra space)
+    // Use fontSize as the true visual height for scaling
+    const visualH = textObj.fontSize;
+    const bboxRatio = tb.h / visualH; // typically ~1.2
+
     const scaleW = targetW / tb.w;
-    const scaleH = targetH / tb.h;
+    const scaleH = (targetH / bboxRatio) / visualH; // scale based on visual height
     const scale = Math.min(scaleW, scaleH);
 
     if (Math.abs(scale - 1) > 0.01) {
