@@ -1034,34 +1034,30 @@ function drawSnapIndicators(mousePt) {
     const edgeThreshold = threshold * 1.5;
     const r = 4.5 * screenScale;
 
-    // Show snap indicators for ALL objects (not just selected ones)
+    // Collect all candidate snap points, keep only the closest one
+    let bestSnap = null, bestDist = Infinity;
+
     for (const obj of state.objects) {
-        // Quick bbox proximity check — skip expensive operations if mouse is far from object
         const b = getObjBounds(obj);
         const margin = edgeThreshold;
         if (mousePt.x < b.x - margin || mousePt.x > b.x + b.w + margin ||
             mousePt.y < b.y - margin || mousePt.y > b.y + b.h + margin) continue;
 
-        // 1) Fixed snap points (center, corners, quadrants, edges, endpoints)
-        const snaps = getSnapPoints(obj);
-        let fixedShown = false;
-        for (const sp of snaps) {
+        // Fixed snap points (center, corners, quadrants, edges, endpoints)
+        for (const sp of getSnapPoints(obj)) {
             const d = Math.hypot(mousePt.x - sp.x, mousePt.y - sp.y);
-            if (d > threshold) continue;
-            fixedShown = true;
-            drawSnapMarker(ns, sp, r, screenScale);
+            if (d < bestDist && d <= threshold) { bestDist = d; bestSnap = sp; }
         }
 
-        // 2) Dynamic nearest-edge point (shows when near the perimeter but not near a fixed snap)
-        if (!fixedShown) {
-            const ne = nearestEdgePoint(obj, mousePt);
-            if (ne && ne.dist <= edgeThreshold) {
-                drawSnapMarker(ns, { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' }, r, screenScale);
-            }
+        // Dynamic nearest-edge point
+        const ne = nearestEdgePoint(obj, mousePt);
+        if (ne && ne.dist < bestDist && ne.dist <= edgeThreshold) {
+            bestDist = ne.dist;
+            bestSnap = { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' };
         }
     }
 
-    // Also show page snap points
+    // Page snap points
     const pagePts = [
         {x:0,y:0,type:'corner'},{x:state.pageWidth,y:0,type:'corner'},
         {x:0,y:state.pageHeight,type:'corner'},{x:state.pageWidth,y:state.pageHeight,type:'corner'},
@@ -1071,8 +1067,11 @@ function drawSnapIndicators(mousePt) {
     ];
     for (const sp of pagePts) {
         const d = Math.hypot(mousePt.x - sp.x, mousePt.y - sp.y);
-        if (d <= threshold) drawSnapMarker(ns, sp, r, screenScale);
+        if (d < bestDist && d <= threshold) { bestDist = d; bestSnap = sp; }
     }
+
+    // Draw only the single closest snap
+    if (bestSnap) drawSnapMarker(ns, bestSnap, r, screenScale);
 }
 
 function drawSnapMarker(ns, sp, r, sw) {
