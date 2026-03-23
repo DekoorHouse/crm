@@ -182,6 +182,7 @@ function restoreSnapshot(json) {
         obj.element = elem;
         elem.dataset.objectId = obj.id;
         objectsLayer.appendChild(elem);
+        if (obj.isRefArea) applyRefAreaStyle(obj);
         state.objects.push(obj);
     }
     state.nextId = snapshot.nextId;
@@ -2770,6 +2771,7 @@ function editTextObject(obj, e) {
                 saveUndoState();
                 obj.text = txt;
                 refreshElement(obj);
+                fitTextToRefArea(obj);
                 drawSelection();
             } else if (!txt) {
                 deleteObject(obj.id);
@@ -2839,6 +2841,7 @@ function handleTextClick(pt, e) {
                     stroke: 'none',
                     strokeWidth: 0,
                 });
+                fitTextToRefArea(obj);
                 selectObject(obj.id);
                 setTool('select');
             }
@@ -3443,6 +3446,18 @@ function showContextMenu(e, obj) {
         invertOpt.style.display = obj.type === 'image' ? '' : 'none';
     }
 
+    // Reference area — only for closed shapes (rect, ellipse, closed bspline, curvepath)
+    const refAreaOpt = contextMenu.querySelector('[data-ctx="toggle-ref-area"]');
+    if (refAreaOpt) {
+        const canBeRefArea = obj.type === 'rect' || obj.type === 'ellipse' ||
+            (obj.type === 'bspline' && obj.closed) || obj.type === 'curvepath';
+        refAreaOpt.style.display = canBeRefArea ? '' : 'none';
+        if (canBeRefArea) {
+            refAreaOpt.innerHTML = refAreaOpt.querySelector('svg').outerHTML + ' ' +
+                (obj.isRefArea ? 'Quitar \u00e1rea de referencia' : '\u00c1rea de referencia');
+        }
+    }
+
     contextMenu.style.left = e.clientX + 'px';
     contextMenu.style.top = e.clientY + 'px';
     contextMenu.classList.remove('hidden');
@@ -3499,6 +3514,9 @@ function setupContextMenu() {
                     break;
                 case 'invert-colors':
                     invertImageColors(contextTarget);
+                    break;
+                case 'toggle-ref-area':
+                    toggleRefArea(contextTarget);
                     break;
                 case 'bring-to-front':
                     bringToFront();
@@ -5259,6 +5277,75 @@ async function generateNamesFromTemplate(names) {
 
     resetView();
     updatePropsPanel();
+}
+
+// =============================================
+// REFERENCE AREAS
+// =============================================
+
+function toggleRefArea(obj) {
+    if (!obj) return;
+    saveUndoState();
+    obj.isRefArea = !obj.isRefArea;
+    applyRefAreaStyle(obj);
+    drawSelection();
+}
+
+function applyRefAreaStyle(obj) {
+    const elem = obj.element;
+    if (!elem) return;
+    if (obj.isRefArea) {
+        elem.setAttribute('stroke', '#4da6ff');
+        elem.setAttribute('stroke-dasharray', '8 4');
+        elem.setAttribute('stroke-width', Math.max(obj.strokeWidth || 1, 1));
+        elem.setAttribute('fill', 'rgba(77, 166, 255, 0.04)');
+        elem.setAttribute('opacity', '0.7');
+    } else {
+        // Restore original style
+        elem.setAttribute('stroke', obj.stroke || 'none');
+        elem.setAttribute('stroke-dasharray', '');
+        elem.setAttribute('stroke-width', obj.strokeWidth || 0);
+        elem.setAttribute('fill', obj.fill || 'none');
+        elem.removeAttribute('opacity');
+    }
+}
+
+function findRefAreaForText(textObj) {
+    const tb = getObjBounds(textObj);
+    const tcx = tb.x + tb.w / 2, tcy = tb.y + tb.h / 2;
+    for (const obj of state.objects) {
+        if (!obj.isRefArea) continue;
+        const b = getObjBounds(obj);
+        // Check if text center is inside the ref area bounds
+        if (tcx >= b.x && tcx <= b.x + b.w && tcy >= b.y && tcy <= b.y + b.h) {
+            return obj;
+        }
+    }
+    return null;
+}
+
+function fitTextToRefArea(textObj) {
+    const refArea = findRefAreaForText(textObj);
+    if (!refArea) return;
+    const rb = getObjBounds(refArea);
+    // Padding inside the reference area
+    const pad = Math.min(rb.w, rb.h) * 0.05;
+    const maxW = rb.w - pad * 2;
+    const maxH = rb.h - pad * 2;
+    if (maxW <= 0 || maxH <= 0) return;
+
+    // Shrink font until text fits
+    let attempts = 0;
+    while (attempts < 50) {
+        const tb = getObjBounds(textObj);
+        if (tb.w <= maxW && tb.h <= maxH) break;
+        const scaleW = tb.w > maxW ? maxW / tb.w : 1;
+        const scaleH = tb.h > maxH ? maxH / tb.h : 1;
+        const scale = Math.min(scaleW, scaleH);
+        textObj.fontSize = Math.max(4, textObj.fontSize * scale);
+        refreshElement(textObj);
+        attempts++;
+    }
 }
 
 function invertImageColors(obj) {
