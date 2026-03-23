@@ -5480,7 +5480,7 @@ function setupEventListeners() {
             window._pendingSVGCopy = null;
             e.clipboardData.setData('text/plain', svgStr);
             e.clipboardData.setData('text/html', svgStr);
-            showToast('Copiado al portapapeles');
+            showToast('Copiado');
         }
     });
 
@@ -5506,7 +5506,7 @@ function setupEventListeners() {
             const vb = state.viewBox;
             const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
             importSVGText(svgText, center);
-            showToast('Pegado desde portapapeles');
+            showToast('Pegado');
             return;
         }
 
