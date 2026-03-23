@@ -439,11 +439,12 @@ router.post('/simulate-ai', async (req, res) => {
         let aiResult;
 
         if (isEditor) {
-            // Editor: prompt con sistema de acciones y contexto del lienzo
+            // Editor: instrucciones van en systemInstruction, contexto dinámico en contents
             const actionPrompt = getEditorActionPrompt();
             const canvasSection = canvasContext ? `\n\n**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}` : '';
-            const fullPrompt = `**Instrucciones del Usuario:**\n${systemPrompt}\n\n${actionPrompt}${canvasSection}\n\n**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
-            aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
+            const editorSystemPrompt = `${systemPrompt}\n\n${actionPrompt}`;
+            const fullPrompt = `${canvasSection ? `**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}\n\n` : ''}**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
+            aiResult = await generateGeminiResponse(fullPrompt, mediaParts, editorSystemPrompt);
         } else {
             // CRM: cache-first con knowledge base + quick replies fallback
             const dynamicPrompt = `**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
@@ -456,15 +457,16 @@ router.post('/simulate-ai', async (req, res) => {
                     throw new Error('Caché no disponible');
                 }
             } catch (cacheError) {
-                // Fallback: construir prompt completo sin caché
+                // Fallback: construir prompt completo sin caché, usando systemInstruction
                 console.warn(`[SIMULATOR] Caché falló (${cacheError.message}). Usando método sin caché.`);
                 const kbSnapshot = await db.collection('ai_knowledge_base').get();
                 const knowledgeBase = kbSnapshot.docs.map(doc => `P: ${doc.data().topic}\nR: ${doc.data().answer}`).join('\n\n');
                 const qrSnapshot = await db.collection('quick_replies').get();
                 const quickRepliesText = qrSnapshot.docs.filter(doc => doc.data().message).map(doc => `- ${doc.data().shortcut}: ${doc.data().message}`).join('\n');
 
-                const fullPrompt = `**Instrucciones Generales:**\n${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.\n\n**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió multimedia, analízala cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-                aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
+                const fallbackSystem = `${systemPrompt}\n\n**Regla Especial de Mensajes Múltiples:** SOLO usa la etiqueta [SPLIT] si tus instrucciones EXPLÍCITAMENTE dicen enviar algo "en otro mensaje", "seguido de" otro mensaje, o "en dos mensajes separados". Si NO hay una instrucción explícita de separar en varios mensajes, responde TODO en un ÚNICO mensaje. NUNCA dividas una respuesta en múltiples mensajes por tu cuenta.`;
+                const fullPrompt = `**Base de Conocimiento:**\n${knowledgeBase || 'No hay información adicional.'}\n\n**Respuestas Rápidas:**\n${quickRepliesText || 'No hay respuestas rápidas.'}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió multimedia, analízala cuidadosamente. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+                aiResult = await generateGeminiResponse(fullPrompt, mediaParts, fallbackSystem);
             }
         }
 
@@ -516,7 +518,7 @@ router.post('/tts', async (req, res) => {
                 },
                 audioConfig: {
                     audioEncoding: 'MP3',
-                    speakingRate: 1.0,
+                    speakingRate: 1.25,
                     pitch: 0
                 }
             }
