@@ -297,10 +297,12 @@ body {
 
 /* ===== TAB BAR ===== */
 #tab-bar {
-    background: rgba(240, 236, 248, 0.7);
-    border-bottom: 1px solid rgba(230, 224, 240, 0.5);
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
     display: none;
-    min-height: 32px;
 }
 
 #tab-bar.visible {
@@ -309,45 +311,50 @@ body {
 
 #tab-list {
     display: flex;
-    gap: 1px;
-    overflow-x: auto;
-    padding: 4px 8px 0;
-    align-items: flex-end;
-    margin: 0 auto;
+    gap: 2px;
+    padding: 3px;
+    background: rgba(255, 255, 255, 0.85);
+    border: 1px solid rgba(230, 224, 240, 0.6);
+    border-radius: 10px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    backdrop-filter: blur(8px);
 }
 
 .editor-tab {
     display: flex;
     align-items: center;
-    gap: 6px;
-    padding: 5px 10px 5px 12px;
+    gap: 5px;
+    padding: 5px 8px 5px 10px;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-muted);
     background: transparent;
-    border: 1px solid transparent;
-    border-bottom: none;
-    border-radius: 6px 6px 0 0;
+    border: none;
+    border-radius: 7px;
     cursor: pointer;
     white-space: nowrap;
     max-width: 160px;
-    transition: all 0.12s;
+    transition: all 0.15s;
 }
 
 .editor-tab:hover {
-    background: rgba(255,255,255,0.5);
+    background: rgba(124, 92, 240, 0.08);
     color: var(--text);
 }
 
 .editor-tab.active {
-    background: rgba(255,255,255,0.95);
-    color: var(--text);
-    border-color: rgba(230, 224, 240, 0.5);
+    background: var(--primary);
+    color: #fff;
+    box-shadow: 0 1px 4px rgba(124, 92, 240, 0.3);
 }
 
 .editor-tab-name {
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.editor-tab.active .editor-tab-dot {
+    background: #fff;
 }
 
 .editor-tab-dot {
@@ -368,13 +375,13 @@ body {
     height: 16px;
     border: none;
     background: transparent;
-    border-radius: 3px;
+    border-radius: 4px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     color: var(--text-muted);
-    font-size: 14px;
+    font-size: 13px;
     line-height: 1;
     opacity: 0;
     transition: all 0.1s;
@@ -386,29 +393,24 @@ body {
     opacity: 0.6;
 }
 
-.editor-tab-close:hover {
-    opacity: 1 !important;
-    background: rgba(220, 38, 38, 0.1);
-    color: #dc2626;
+.editor-tab.active .editor-tab-close {
+    color: rgba(255,255,255,0.7);
+    opacity: 1;
 }
 
-body.dark #tab-bar {
-    background: rgba(26, 24, 36, 0.7);
-    border-bottom-color: rgba(50, 48, 64, 0.5);
+.editor-tab-close:hover {
+    opacity: 1 !important;
+    background: rgba(220, 38, 38, 0.2);
+    color: #fff;
+}
+
+body.dark #tab-list {
+    background: rgba(30, 28, 40, 0.85);
+    border-color: rgba(50, 48, 64, 0.6);
 }
 
 body.dark .editor-tab:hover {
-    background: rgba(40, 38, 52, 0.5);
-}
-
-body.dark .editor-tab.active {
-    background: rgba(30, 28, 40, 0.95);
-    border-color: rgba(50, 48, 64, 0.5);
-}
-
-body.dark .editor-tab-close:hover {
-    background: rgba(220, 38, 38, 0.2);
-    color: #f87171;
+    background: rgba(124, 92, 240, 0.12);
 }
 
 /* ===== WORKSPACE ===== */

@@ -237,7 +237,7 @@ function closeTab(tabId) {
 function renderTabs() {
     const tabBar = document.getElementById('tab-bar');
     const tabList = document.getElementById('tab-list');
-    tabBar.classList.toggle('visible', editorTabs.length > 1);
+    tabBar.classList.toggle('visible', editorTabs.length >= 1);
     tabList.innerHTML = '';
     for (const tab of editorTabs) {
         const el = document.createElement('div');
@@ -364,6 +364,7 @@ function init() {
     const firstTab = { id: _nextTabId++, name: 'Sin t\u00edtulo', fileId: null, stateSnapshot: null, undoStack: [], redoStack: [], pageWidth: state.pageWidth, pageHeight: state.pageHeight, isDirty: false };
     editorTabs.push(firstTab);
     activeTabId = firstTab.id;
+    renderTabs();
 }
 
 // =============================================
