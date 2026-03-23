@@ -3442,25 +3442,12 @@ function enterPowerClipEdit(pcId) {
     containerOutline.id = 'pc-edit-outline';
     containerOutline.setAttribute('pointer-events', 'none');
     const c = pc.container;
-    let outlineEl;
-    if (c.type === 'ellipse') {
-        outlineEl = document.createElementNS(ns, 'ellipse');
-        outlineEl.setAttribute('cx', c.cx); outlineEl.setAttribute('cy', c.cy);
-        outlineEl.setAttribute('rx', c.rx); outlineEl.setAttribute('ry', c.ry);
-    } else {
-        outlineEl = document.createElementNS(ns, 'rect');
-        outlineEl.setAttribute('x', c.x); outlineEl.setAttribute('y', c.y);
-        outlineEl.setAttribute('width', c.width); outlineEl.setAttribute('height', c.height);
-    }
+    // Use buildClipShape to get the exact outline of the container
+    const outlineEl = buildClipShape(c, ns);
     outlineEl.setAttribute('fill', 'none');
     outlineEl.setAttribute('stroke', 'rgba(124, 92, 240, 0.55)');
     const screenScale = _cachedScreenScale;
     outlineEl.setAttribute('stroke-width', 2.5 * screenScale);
-    if (c.rotation) {
-        const rcx = c.type === 'ellipse' ? c.cx : c.x + c.width/2;
-        const rcy = c.type === 'ellipse' ? c.cy : c.y + c.height/2;
-        outlineEl.setAttribute('transform', `rotate(${c.rotation} ${rcx} ${rcy})`);
-    }
     containerOutline.appendChild(outlineEl);
     // Outline will be appended AFTER content objects (see below)
 
