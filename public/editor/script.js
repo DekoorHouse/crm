@@ -555,7 +555,17 @@ function buildSVGElement(obj) {
             pat.appendChild(pl2);
             defs.appendChild(pat);
             elem.appendChild(defs);
-            // Draw the container shape (visible border)
+            // Clipped content group (rendered BEHIND the container border)
+            const contentGroup = document.createElementNS(ns, 'g');
+            contentGroup.setAttribute('clip-path', `url(#${clipId})`);
+            for (const content of obj.contents) {
+                const ce = buildSVGElement(content);
+                content.element = ce;
+                ce.dataset.objectId = obj.id;
+                contentGroup.appendChild(ce);
+            }
+            elem.appendChild(contentGroup);
+            // Draw the container shape (visible border, on top of contents)
             const containerElem = buildSVGElement(obj.container);
             obj.container.element = containerElem;
             containerElem.dataset.objectId = obj.id;
@@ -568,16 +578,6 @@ function buildSVGElement(obj) {
                 hatch.setAttribute('pointer-events', 'none');
                 elem.appendChild(hatch);
             }
-            // Clipped content group
-            const contentGroup = document.createElementNS(ns, 'g');
-            contentGroup.setAttribute('clip-path', `url(#${clipId})`);
-            for (const content of obj.contents) {
-                const ce = buildSVGElement(content);
-                content.element = ce;
-                ce.dataset.objectId = obj.id;
-                contentGroup.appendChild(ce);
-            }
-            elem.appendChild(contentGroup);
             break;
         }
     }
