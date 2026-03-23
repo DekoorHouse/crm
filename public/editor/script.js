@@ -3781,6 +3781,28 @@ function setupFilesSidebar() {
         updateFileNameDisplay();
     });
 
+    // Tabs
+    const tabs = sidebar.querySelectorAll('.sidebar-tab');
+    tabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            tabs.forEach(t => t.classList.remove('active'));
+            tab.classList.add('active');
+            const tabName = tab.dataset.tab;
+            document.getElementById('sidebar-tab-files').style.display = tabName === 'files' ? '' : 'none';
+            document.getElementById('sidebar-tab-templates').style.display = tabName === 'templates' ? '' : 'none';
+            if (tabName === 'templates') refreshSidebarTemplates();
+        });
+    });
+
+    // Save as template button
+    document.getElementById('sidebar-save-template-btn').addEventListener('click', () => {
+        if (!window.firebaseReady) { alert('Firebase no est\u00e1 listo.'); return; }
+        if (state.objects.length === 0) { alert('No hay objetos para guardar.'); return; }
+        const name = prompt('Nombre de la plantilla:');
+        if (!name || !name.trim()) return;
+        doSaveTemplate(name.trim());
+    });
+
     // Load files when Firebase is ready
     waitForFirebase(() => refreshSidebarFiles());
 }
@@ -3858,6 +3880,94 @@ function createSidebarFileItem(file) {
             const list = document.getElementById('sidebar-file-list');
             if (list.children.length === 0) {
                 list.innerHTML = '<div class="sidebar-list-empty">Sin archivos guardados</div>';
+            }
+        } catch (err) {
+            alert('Error al eliminar: ' + err.message);
+        }
+    });
+
+    item.appendChild(icon);
+    item.appendChild(info);
+    item.appendChild(delBtn);
+    return item;
+}
+
+// =============================================
+// TEMPLATES SIDEBAR
+// =============================================
+
+async function doSaveTemplate(name) {
+    try {
+        const stateJson = getStateForSave();
+        await window.fbSaveTemplate(name, stateJson, state.pageWidth, state.pageHeight);
+        refreshSidebarTemplates();
+    } catch (err) {
+        console.error('Error guardando plantilla:', err);
+        alert('Error al guardar plantilla: ' + err.message);
+    }
+}
+
+async function refreshSidebarTemplates() {
+    if (!window.firebaseReady) return;
+    const list = document.getElementById('sidebar-template-list');
+    try {
+        const templates = await window.fbListTemplates();
+        if (templates.length === 0) {
+            list.innerHTML = '<div class="sidebar-list-empty">Sin plantillas</div>';
+            return;
+        }
+        list.innerHTML = '';
+        for (const tpl of templates) {
+            list.appendChild(createSidebarTemplateItem(tpl));
+        }
+    } catch (err) {
+        console.error('Error cargando plantillas:', err);
+        list.innerHTML = '<div class="sidebar-list-empty">Error al cargar</div>';
+    }
+}
+
+function createSidebarTemplateItem(tpl) {
+    const item = document.createElement('div');
+    item.className = 'sidebar-file-item';
+
+    const dateStr = tpl.updatedAt
+        ? new Date(tpl.updatedAt.seconds * 1000).toLocaleString('es-MX', {
+            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+          })
+        : '';
+
+    const icon = document.createElement('div');
+    icon.className = 'sidebar-file-icon';
+    icon.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M3 7h14M7 3v14"/></svg>';
+
+    const info = document.createElement('div');
+    info.className = 'sidebar-file-info';
+    info.innerHTML =
+        '<div class="sidebar-file-name">' + escapeHtml(tpl.name) + '</div>' +
+        '<div class="sidebar-file-date">' + dateStr + '</div>';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'sidebar-file-del';
+    delBtn.title = 'Eliminar';
+    delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5l.5-9"/></svg>';
+
+    info.addEventListener('click', () => {
+        // Load template as new untitled file
+        openFile(tpl);
+        currentFileId = null;
+        currentFileName = null;
+        updateFileNameDisplay();
+    });
+
+    delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('\u00bfEliminar plantilla "' + tpl.name + '"?')) return;
+        try {
+            await window.fbDeleteTemplate(tpl.id);
+            item.remove();
+            const list = document.getElementById('sidebar-template-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<div class="sidebar-list-empty">Sin plantillas</div>';
             }
         } catch (err) {
             alert('Error al eliminar: ' + err.message);

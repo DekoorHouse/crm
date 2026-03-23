@@ -178,23 +178,41 @@
             <!-- Recent Files Sidebar -->
             <div id="files-sidebar" class="files-sidebar">
                 <div class="sidebar-header">
-                    <span class="sidebar-title">Archivos</span>
+                    <div class="sidebar-tabs">
+                        <button class="sidebar-tab active" data-tab="files">Archivos</button>
+                        <button class="sidebar-tab" data-tab="templates">Plantillas</button>
+                    </div>
                     <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Ocultar panel">
                         <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 4l-6 6 6 6"/></svg>
                     </button>
                 </div>
-                <div class="sidebar-actions">
-                    <button id="sidebar-new-btn" class="sidebar-action-btn" title="Nuevo archivo">
-                        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12"/></svg>
-                        Nuevo
-                    </button>
-                    <button id="sidebar-save-btn" class="sidebar-action-btn" title="Guardar">
-                        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
-                        Guardar
-                    </button>
+                <!-- Files Tab -->
+                <div id="sidebar-tab-files" class="sidebar-tab-content">
+                    <div class="sidebar-actions">
+                        <button id="sidebar-new-btn" class="sidebar-action-btn" title="Nuevo archivo">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12"/></svg>
+                            Nuevo
+                        </button>
+                        <button id="sidebar-save-btn" class="sidebar-action-btn" title="Guardar">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar
+                        </button>
+                    </div>
+                    <div id="sidebar-file-list" class="sidebar-file-list">
+                        <div class="sidebar-list-empty">Sin archivos</div>
+                    </div>
                 </div>
-                <div id="sidebar-file-list" class="sidebar-file-list">
-                    <div class="sidebar-list-empty">Sin archivos</div>
+                <!-- Templates Tab -->
+                <div id="sidebar-tab-templates" class="sidebar-tab-content" style="display:none;">
+                    <div class="sidebar-actions">
+                        <button id="sidebar-save-template-btn" class="sidebar-action-btn" title="Guardar como plantilla">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12"/></svg>
+                            Guardar plantilla
+                        </button>
+                    </div>
+                    <div id="sidebar-template-list" class="sidebar-file-list">
+                        <div class="sidebar-list-empty">Sin plantillas</div>
+                    </div>
                 </div>
             </div>
             <div id="canvas-wrapper">
@@ -708,6 +726,24 @@
 
         window.fbDeleteFile = async (docId) => {
             await deleteDoc(doc(db, "editor_files", docId));
+        };
+
+        // Templates
+        window.fbSaveTemplate = async (name, stateJson, pageWidth, pageHeight) => {
+            const docRef = await addDoc(collection(db, "editor_templates"), {
+                name, stateJson, pageWidth, pageHeight,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+            return docRef.id;
+        };
+        window.fbListTemplates = async () => {
+            const q = query(collection(db, "editor_templates"), orderBy("updatedAt", "desc"));
+            const snap = await getDocs(q);
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        };
+        window.fbDeleteTemplate = async (docId) => {
+            await deleteDoc(doc(db, "editor_templates", docId));
         };
     </script>
 </body>

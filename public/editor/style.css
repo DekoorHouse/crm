@@ -1794,16 +1794,45 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 12px 12px 8px;
+    padding: 8px 8px 0;
     border-bottom: 1px solid rgba(230, 224, 240, 0.5);
 }
 
-.sidebar-title {
-    font-size: 12px;
+.sidebar-tabs {
+    display: flex;
+    gap: 0;
+    flex: 1;
+}
+
+.sidebar-tab {
+    flex: 1;
+    padding: 6px 8px 8px;
+    border: none;
+    background: transparent;
+    font-size: 11px;
     font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
+    letter-spacing: 0.3px;
     color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+}
+
+.sidebar-tab:hover {
+    color: var(--text);
+}
+
+.sidebar-tab.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.sidebar-tab-content {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    overflow: hidden;
 }
 
 .sidebar-toggle-btn {
