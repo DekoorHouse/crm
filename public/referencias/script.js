@@ -58,10 +58,14 @@ function loginWithFacebook() {
 
 function handleAuthResult(result) {
     const profile = result.additionalUserInfo ? result.additionalUserInfo.profile : null;
+    const fbData = result.user.providerData.find(p => p.providerId === 'facebook.com');
+    const fbUid = fbData ? fbData.uid : null;
     socialUser = {
-        name: (profile && profile.name) || result.user.displayName,
-        avatar: result.user.photoURL || `https://graph.facebook.com/${result.user.providerData[0].uid}/picture?type=large`,
-        profileUrl: (profile && profile.link) || `https://facebook.com/${result.user.providerData[0].uid}`,
+        name: (profile && profile.name) || (fbData && fbData.displayName) || result.user.displayName,
+        avatar: fbUid
+            ? `https://graph.facebook.com/${fbUid}/picture?width=200&height=200`
+            : (result.user.photoURL || ''),
+        profileUrl: (profile && profile.link) || (fbUid ? `https://facebook.com/${fbUid}` : ''),
         uid: result.user.uid
     };
     showLoggedUser();
@@ -80,10 +84,13 @@ function handleAuthError(err) {
 auth.onAuthStateChanged(user => {
     if (user && !socialUser) {
         const fbData = user.providerData.find(p => p.providerId === 'facebook.com');
+        const fbUid = fbData ? fbData.uid : null;
         socialUser = {
-            name: user.displayName,
-            avatar: user.photoURL || (fbData ? `https://graph.facebook.com/${fbData.uid}/picture?type=large` : ''),
-            profileUrl: fbData ? `https://facebook.com/${fbData.uid}` : '',
+            name: fbData ? fbData.displayName : user.displayName,
+            avatar: fbUid
+                ? `https://graph.facebook.com/${fbUid}/picture?width=200&height=200`
+                : (user.photoURL || ''),
+            profileUrl: fbUid ? `https://facebook.com/${fbUid}` : '',
             uid: user.uid
         };
         showLoggedUser();
