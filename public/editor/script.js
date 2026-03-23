@@ -4020,6 +4020,145 @@ async function exportSVG() {
 }
 
 // =============================================
+// CLIPBOARD COPY / PASTE (SVG interop with CorelDRAW)
+// =============================================
+async function copySelectedAsSVG() {
+    if (state.selectedIds.length === 0) return;
+    const objs = state.selectedIds.map(id => findObject(id)).filter(Boolean);
+    if (objs.length === 0) return;
+
+    // Ensure fonts loaded for text objects
+    const usedFonts = new Set(objs.filter(o => o.type === 'text').map(o => o.fontFamily));
+    for (const fn of usedFonts) {
+        if (!loadedOTFonts[fn]) await loadOTFont(fn);
+    }
+
+    // Compute bounding box of selected objects
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const obj of objs) {
+        const b = getObjBounds(obj);
+        if (b.x < minX) minX = b.x;
+        if (b.y < minY) minY = b.y;
+        if (b.x + b.w > maxX) maxX = b.x + b.w;
+        if (b.y + b.h > maxY) maxY = b.y + b.h;
+    }
+    const bw = maxX - minX, bh = maxY - minY;
+
+    const ns = 'http://www.w3.org/2000/svg';
+    const xlink = 'http://www.w3.org/1999/xlink';
+    const S = 100; // 100 units per mm (CorelDRAW convention)
+
+    const root = document.createElementNS(ns, 'svg');
+    root.setAttribute('xmlns', ns);
+    root.setAttribute('xmlns:xlink', xlink);
+    root.setAttribute('xml:space', 'preserve');
+    root.setAttribute('width', (bw * UNITS.mm.factor) + 'mm');
+    root.setAttribute('height', (bh * UNITS.mm.factor) + 'mm');
+    root.setAttribute('version', '1.1');
+    root.setAttribute('viewBox', `${minX * S} ${minY * S} ${bw * S} ${bh * S}`);
+    root.setAttribute('style', 'shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd');
+
+    // Reuse exportObj from exportSVG — rebuild inline since it uses closure vars
+    let clipCounter = 0;
+
+    function scalePathD(d, s) {
+        return d.replace(/([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?)/g, (m) => {
+            return (parseFloat(m) * s).toFixed(2);
+        });
+    }
+
+    function scaleElement(el, s) {
+        const tag = el.tagName;
+        const attrs = { x: s, y: s, width: s, height: s, cx: s, cy: s, rx: s, ry: s,
+                        x1: s, y1: s, x2: s, y2: s, 'stroke-width': s };
+        for (const [attr, factor] of Object.entries(attrs)) {
+            const v = el.getAttribute(attr);
+            if (v !== null && !isNaN(parseFloat(v))) el.setAttribute(attr, parseFloat(v) * factor);
+        }
+        if (el.hasAttribute('d')) el.setAttribute('d', scalePathD(el.getAttribute('d'), s));
+        if (el.hasAttribute('font-size')) el.setAttribute('font-size', parseFloat(el.getAttribute('font-size')) * s);
+        const t = el.getAttribute('transform');
+        if (t) {
+            const rotMatch = t.match(/rotate\(\s*([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s*\)/);
+            if (rotMatch) el.setAttribute('transform', `rotate(${rotMatch[1]} ${parseFloat(rotMatch[2]) * s} ${parseFloat(rotMatch[3]) * s})`);
+        }
+    }
+
+    function exportObj(obj, parent) {
+        if (obj.type === 'text') {
+            const pathData = textToPath(obj);
+            if (pathData) {
+                const p = document.createElementNS(ns, 'path');
+                p.setAttribute('d', scalePathD(pathData, S));
+                p.setAttribute('fill', obj.fill);
+                p.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
+                p.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth * S);
+                if (obj.rotation) {
+                    const b = getObjBounds(obj);
+                    const cx = (b.x + b.w/2) * S, cy = (b.y + b.h/2) * S;
+                    p.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+                }
+                parent.appendChild(p);
+            }
+            return;
+        }
+        if (obj.type === 'image') {
+            const img = document.createElementNS(ns, 'image');
+            img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
+            img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
+            img.setAttribute('preserveAspectRatio', 'none');
+            img.setAttributeNS(xlink, 'xlink:href', obj.href);
+            img.setAttribute('href', obj.href);
+            if (obj.rotation) {
+                const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
+                img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+            }
+            parent.appendChild(img);
+        } else if (obj.type === 'powerclip') {
+            const g = document.createElementNS(ns, 'g');
+            const clipId = 'clip' + (clipCounter++);
+            const defs = document.createElementNS(ns, 'defs');
+            const cp = document.createElementNS(ns, 'clipPath');
+            cp.setAttribute('id', clipId);
+            const clipShape = buildClipShape(obj.container, ns);
+            scaleElement(clipShape, S);
+            cp.appendChild(clipShape);
+            defs.appendChild(cp);
+            g.appendChild(defs);
+            exportObj(obj.container, g);
+            const cg = document.createElementNS(ns, 'g');
+            cg.setAttribute('style', `clip-path:url(#${clipId})`);
+            for (const c of obj.contents) exportObj(c, cg);
+            g.appendChild(cg);
+            parent.appendChild(g);
+        } else {
+            const clone = obj.element.cloneNode(true);
+            clone.removeAttribute('data-object-id'); clone.removeAttribute('style');
+            scaleElement(clone, S);
+            parent.appendChild(clone);
+        }
+    }
+
+    for (const obj of objs) exportObj(obj, root);
+
+    let svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    svgStr += new XMLSerializer().serializeToString(root);
+    svgStr = svgStr.replace(/ns\d+:href/g, 'xlink:href');
+
+    try {
+        await navigator.clipboard.write([
+            new ClipboardItem({
+                'text/plain': new Blob([svgStr], { type: 'text/plain' }),
+                'text/html': new Blob([svgStr], { type: 'text/html' }),
+            })
+        ]);
+    } catch (e) {
+        // Fallback
+        await navigator.clipboard.writeText(svgStr);
+    }
+}
+
+// =============================================
 // SVG IMPORT
 // =============================================
 function importSVG() {
@@ -5153,6 +5292,7 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'a' && e.ctrlKey) { e.preventDefault(); state.selectedIds = state.objects.map(o => o.id); drawSelection(); updatePropsPanel(); return; }
         if (e.key.toLowerCase() === 'u' && e.ctrlKey) { e.preventDefault(); ungroupSelected(); return; }
         if (e.key.toLowerCase() === 'g' && e.ctrlKey) { e.preventDefault(); groupSelected(); return; }
+        if (e.key.toLowerCase() === 'c' && e.ctrlKey) { e.preventDefault(); copySelectedAsSVG(); return; }
         if (e.key.toLowerCase() === 'd' && e.ctrlKey) { e.preventDefault(); duplicateSelected(); return; }
         if (e.key.toLowerCase() === 'j' && e.ctrlKey) { e.preventDefault(); joinNodes(); return; }
         if (e.key.toLowerCase() === 'i' && e.ctrlKey) { e.preventDefault(); importSVG(); return; }
@@ -5196,10 +5336,31 @@ function setupEventListeners() {
         }
     }, true);
 
-    // Paste images from clipboard
+    // Paste from clipboard: SVG text (from CorelDRAW or this editor) or images
     document.addEventListener('paste', (e) => {
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         const items = e.clipboardData && e.clipboardData.items;
         if (!items) return;
+
+        // Check for SVG text first (text/plain or text/html)
+        for (const item of items) {
+            if (item.type === 'text/plain' || item.type === 'text/html') {
+                item.getAsString((text) => {
+                    const trimmed = text.trim();
+                    if (trimmed.includes('<svg') && trimmed.includes('</svg>')) {
+                        const vb = state.viewBox;
+                        const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
+                        importSVGText(trimmed, center);
+                    }
+                });
+                if (e.clipboardData.getData('text/plain').trim().includes('<svg')) {
+                    e.preventDefault();
+                    return;
+                }
+            }
+        }
+
+        // Fallback: paste images
         for (const item of items) {
             if (item.type.startsWith('image/')) {
                 e.preventDefault();
@@ -5209,11 +5370,9 @@ function setupEventListeners() {
                     const dataUrl = ev.target.result;
                     const img = new Image();
                     img.onload = () => {
-                        // Place image centered on the visible area
                         const vb = state.viewBox;
                         const cx = vb.x + vb.w / 2, cy = vb.y + vb.h / 2;
                         let w = img.naturalWidth, h = img.naturalHeight;
-                        // Scale down if larger than half the page
                         const maxW = state.pageWidth * 0.8, maxH = state.pageHeight * 0.8;
                         if (w > maxW || h > maxH) {
                             const scale = Math.min(maxW / w, maxH / h);
