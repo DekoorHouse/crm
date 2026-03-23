@@ -555,7 +555,13 @@ function buildSVGElement(obj) {
             pat.appendChild(pl2);
             defs.appendChild(pat);
             elem.appendChild(defs);
-            // Clipped content group (rendered BEHIND the container border)
+            // 1) Container FILL (background, behind everything)
+            const fillElem = buildClipShape(obj.container, ns);
+            fillElem.setAttribute('fill', obj.container.fill || 'none');
+            fillElem.setAttribute('stroke', 'none');
+            fillElem.setAttribute('pointer-events', 'none');
+            elem.appendChild(fillElem);
+            // 2) Clipped content group (on top of fill)
             const contentGroup = document.createElementNS(ns, 'g');
             contentGroup.setAttribute('clip-path', `url(#${clipId})`);
             for (const content of obj.contents) {
@@ -565,10 +571,11 @@ function buildSVGElement(obj) {
                 contentGroup.appendChild(ce);
             }
             elem.appendChild(contentGroup);
-            // Draw the container shape (visible border, on top of contents)
+            // 3) Container STROKE only (border, on top of contents)
             const containerElem = buildSVGElement(obj.container);
             obj.container.element = containerElem;
             containerElem.dataset.objectId = obj.id;
+            containerElem.setAttribute('fill', 'none'); // fill already rendered behind
             elem.appendChild(containerElem);
             // If empty, show crosshatch fill clipped to container
             if (obj.contents.length === 0) {
