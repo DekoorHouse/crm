@@ -272,6 +272,7 @@ function serializeObj(obj) {
 }
 
 function saveUndoState() {
+    if (_batchImporting) return; // Skip during batch operations (import, AI actions)
     const snapshot = {
         objects: state.objects.map(serializeObj),
         nextId: state.nextId,
@@ -4601,6 +4602,7 @@ function toggleAIChat() {
 }
 
 function addChatMessage(role, text) {
+    if (!text) return;
     const container = document.getElementById('ai-chat-messages');
     const msg = document.createElement('div');
     msg.className = 'ai-chat-msg ' + (role === 'user' ? 'ai-chat-msg-user' : 'ai-chat-msg-ai');
@@ -4608,6 +4610,226 @@ function addChatMessage(role, text) {
     container.appendChild(msg);
     container.scrollTop = container.scrollHeight;
 }
+
+// --- AI AGENTIC: Canvas context, parser, executor ---
+
+function buildCanvasContext() {
+    const ctx = {
+        unit: state.unit,
+        page: { width_u: toUnit(state.pageWidth), height_u: toUnit(state.pageHeight) },
+        selectedIds: [...state.selectedIds],
+        objects: []
+    };
+    const objs = state.objects.slice(-50);
+    for (const obj of objs) {
+        const o = { id: obj.id, type: obj.type };
+        if (obj.type === 'ellipse') {
+            o.cx_u = toUnit(obj.cx); o.cy_u = toUnit(obj.cy);
+            o.rx_u = toUnit(obj.rx); o.ry_u = toUnit(obj.ry);
+        } else if (obj.type === 'line') {
+            o.x1_u = toUnit(obj.x1); o.y1_u = toUnit(obj.y1);
+            o.x2_u = toUnit(obj.x2); o.y2_u = toUnit(obj.y2);
+        } else {
+            const b = getObjBounds(obj);
+            o.x_u = toUnit(b.x); o.y_u = toUnit(b.y);
+            o.width_u = toUnit(b.w); o.height_u = toUnit(b.h);
+        }
+        o.fill = obj.fill || 'none';
+        o.stroke = obj.stroke || 'none';
+        if (obj.strokeWidth) o.strokeWidth = obj.strokeWidth;
+        if (obj.rotation) o.rotation = obj.rotation;
+        if (obj.type === 'text') {
+            o.text = (obj.text || '').slice(0, 50);
+            o.fontFamily = obj.fontFamily;
+            o.fontSize_u = toUnit(obj.fontSize);
+        }
+        if (obj.type === 'group') o.childCount = (obj.children || []).length;
+        if (obj.type === 'powerclip') o.contentCount = (obj.contents || []).length;
+        ctx.objects.push(o);
+    }
+    if (state.objects.length > 50) ctx.truncated = state.objects.length - 50;
+    return ctx;
+}
+
+function parseAIResponse(responseText) {
+    const parts = [];
+    const regex = /```actions\s*\n([\s\S]*?)```/g;
+    let lastIndex = 0, match;
+    while ((match = regex.exec(responseText)) !== null) {
+        if (match.index > lastIndex) {
+            const txt = responseText.slice(lastIndex, match.index).trim();
+            if (txt) parts.push({ type: 'text', content: txt });
+        }
+        try {
+            const actions = JSON.parse(match[1]);
+            parts.push({ type: 'actions', content: Array.isArray(actions) ? actions : [actions] });
+        } catch (e) {
+            parts.push({ type: 'text', content: '[Error al interpretar acción]' });
+        }
+        lastIndex = match.index + match[0].length;
+    }
+    if (lastIndex < responseText.length) {
+        const txt = responseText.slice(lastIndex).trim();
+        if (txt) parts.push({ type: 'text', content: txt });
+    }
+    return parts;
+}
+
+function resolveTarget(target) {
+    if (target === 'selected') {
+        if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado');
+        return state.selectedIds.map(id => findObject(id)).filter(Boolean);
+    }
+    const obj = findObject(target);
+    if (!obj) throw new Error(`Objeto ID ${target} no encontrado`);
+    return [obj];
+}
+
+function executeSingleAction(action) {
+    const a = action;
+    switch (a.action) {
+        case 'create': {
+            const p = a.props || {};
+            const props = {};
+            // Convert _u values to px
+            for (const [k, v] of Object.entries(p)) {
+                if (k.endsWith('_u')) {
+                    props[k.slice(0, -2)] = fromUnit(v);
+                } else {
+                    props[k] = v;
+                }
+            }
+            // Default position: center of page if not specified
+            if (a.type === 'rect' || a.type === 'text' || a.type === 'image') {
+                if (props.x == null) props.x = (state.pageWidth - (props.width || 0)) / 2;
+                if (props.y == null) props.y = (state.pageHeight - (props.height || 0)) / 2;
+            } else if (a.type === 'ellipse') {
+                if (props.cx == null) props.cx = state.pageWidth / 2;
+                if (props.cy == null) props.cy = state.pageHeight / 2;
+            } else if (a.type === 'line') {
+                if (props.x1 == null) props.x1 = state.pageWidth * 0.3;
+                if (props.y1 == null) props.y1 = state.pageHeight / 2;
+                if (props.x2 == null) props.x2 = state.pageWidth * 0.7;
+                if (props.y2 == null) props.y2 = state.pageHeight / 2;
+            }
+            const obj = createObject(a.type, props);
+            return { id: obj.id };
+        }
+        case 'modify': {
+            const targets = resolveTarget(a.target);
+            const p = a.props || {};
+            for (const obj of targets) {
+                for (const [k, v] of Object.entries(p)) {
+                    if (k.endsWith('_u')) {
+                        obj[k.slice(0, -2)] = fromUnit(v);
+                    } else {
+                        obj[k] = v;
+                    }
+                }
+                refreshElement(obj);
+            }
+            return { id: targets[0]?.id };
+        }
+        case 'move': {
+            const targets = resolveTarget(a.target);
+            const dx = a.dx_u != null ? fromUnit(a.dx_u) : 0;
+            const dy = a.dy_u != null ? fromUnit(a.dy_u) : 0;
+            for (const obj of targets) {
+                offsetObject(obj, dx, dy);
+                refreshElement(obj);
+            }
+            return { id: targets[0]?.id };
+        }
+        case 'moveTo': {
+            const targets = resolveTarget(a.target);
+            for (const obj of targets) {
+                applyPropPosition(obj, a.x_u, a.y_u);
+                refreshElement(obj);
+            }
+            return { id: targets[0]?.id };
+        }
+        case 'resize': {
+            const targets = resolveTarget(a.target);
+            const wPx = a.width_u != null ? fromUnit(a.width_u) : null;
+            const hPx = a.height_u != null ? fromUnit(a.height_u) : null;
+            for (const obj of targets) {
+                if (wPx != null && hPx != null) applyPropSize(obj, wPx, hPx);
+                refreshElement(obj);
+            }
+            return { id: targets[0]?.id };
+        }
+        case 'delete': {
+            const targets = resolveTarget(a.target);
+            for (const obj of targets) {
+                const idx = state.objects.findIndex(o => o.id === obj.id);
+                if (idx !== -1) { obj.element.remove(); state.objects.splice(idx, 1); }
+            }
+            state.selectedIds = state.selectedIds.filter(id => findObject(id));
+            drawSelection();
+            return {};
+        }
+        case 'duplicate': {
+            const targets = resolveTarget(a.target);
+            state.selectedIds = targets.map(o => o.id);
+            drawSelection();
+            duplicateSelected();
+            return { id: state.selectedIds[0] };
+        }
+        case 'order': {
+            const targets = resolveTarget(a.target);
+            state.selectedIds = targets.map(o => o.id);
+            if (a.position === 'front') bringToFront();
+            else if (a.position === 'back') sendToBack();
+            return { id: targets[0]?.id };
+        }
+        case 'flip': {
+            const targets = resolveTarget(a.target);
+            for (const obj of targets) {
+                flipObject(obj, a.direction);
+                refreshElement(obj);
+            }
+            return { id: targets[0]?.id };
+        }
+        case 'select': {
+            const obj = findObject(a.target);
+            if (obj) selectObject(obj.id);
+            return { id: a.target };
+        }
+        default:
+            throw new Error(`Acción desconocida: ${a.action}`);
+    }
+}
+
+function executeAIActions(actions) {
+    if (!actions || actions.length === 0) return;
+
+    saveUndoState();
+    const prevBatch = _batchImporting;
+    _batchImporting = true; // Prevent individual saveUndoState calls inside createObject/etc
+
+    const affectedIds = [];
+    for (const action of actions) {
+        try {
+            const result = executeSingleAction(action);
+            if (result && result.id) affectedIds.push(result.id);
+        } catch (e) {
+            console.error('AI action error:', e, action);
+            showToast('Error: ' + e.message);
+        }
+    }
+
+    _batchImporting = prevBatch;
+
+    // Select affected objects so user sees what changed
+    if (affectedIds.length > 0) {
+        state.selectedIds = affectedIds.filter(id => findObject(id));
+        drawSelection();
+        updatePropsPanel();
+    }
+    markDirty();
+}
+
+// --- AI AGENTIC END ---
 
 async function sendAIMessage() {
     const input = document.getElementById('ai-chat-input');
@@ -4628,27 +4850,41 @@ async function sendAIMessage() {
     document.getElementById('ai-chat-messages').scrollTop = document.getElementById('ai-chat-messages').scrollHeight;
 
     try {
-        // Build history (instructions are handled server-side via source flag)
         const history = _aiChatHistory.slice(-20);
+        const canvasContext = buildCanvasContext();
 
         const res = await fetch('/api/simulate-ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history, source: 'editor' })
+            body: JSON.stringify({ message: text, history, source: 'editor', canvasContext })
         });
         const data = await res.json();
         typing.remove();
 
         if (data.success && data.response) {
-            const response = data.response.replace(/\[SPLIT\]/g, '\n');
-            addChatMessage('ai', response);
-            _aiChatHistory.push({ role: 'model', content: response });
+            const rawResponse = data.response;
+            _aiChatHistory.push({ role: 'model', content: rawResponse });
+
+            // Parse response for text and action blocks
+            const parts = parseAIResponse(rawResponse);
+            let hasActions = false;
+            for (const part of parts) {
+                if (part.type === 'text') {
+                    addChatMessage('ai', part.content);
+                } else if (part.type === 'actions') {
+                    hasActions = true;
+                    executeAIActions(part.content);
+                }
+            }
+            if (hasActions) {
+                addChatMessage('ai', '✅ Acciones ejecutadas.');
+            }
         } else {
             addChatMessage('ai', 'Error: No pude obtener respuesta.');
         }
     } catch (err) {
         typing.remove();
-        addChatMessage('ai', 'Error de conexi\u00f3n: ' + err.message);
+        addChatMessage('ai', 'Error de conexión: ' + err.message);
     }
 }
 

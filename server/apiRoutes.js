@@ -334,10 +334,58 @@ const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
 const PORT = process.env.PORT || 3000;
 
+// --- PROMPT DE ACCIONES PARA EDITOR ---
+function getEditorActionPrompt() {
+    return `**Sistema de Acciones del Editor SVG:**
+Puedes ejecutar acciones en el editor incluyendo un bloque \`\`\`actions en tu respuesta.
+El bloque contiene un array JSON de acciones. Siempre responde con texto explicativo además de las acciones.
+Todos los valores con sufijo _u están en la unidad actual del usuario (indicada en el contexto del lienzo).
+Para colores usa formato hexadecimal (#ff0000) o "none".
+
+**Acciones disponibles:**
+
+1. create - Crear objeto
+   rect: { "action":"create", "type":"rect", "props":{ "x_u":N, "y_u":N, "width_u":N, "height_u":N, "fill":"#hex", "stroke":"#hex", "strokeWidth":N }}
+   ellipse: { "action":"create", "type":"ellipse", "props":{ "cx_u":N, "cy_u":N, "rx_u":N, "ry_u":N, "fill":"#hex", "stroke":"#hex" }}
+   line: { "action":"create", "type":"line", "props":{ "x1_u":N, "y1_u":N, "x2_u":N, "y2_u":N, "stroke":"#hex", "strokeWidth":N }}
+   text: { "action":"create", "type":"text", "props":{ "x_u":N, "y_u":N, "text":"contenido", "fontFamily":"Inter", "fontSize_u":N, "fill":"#hex", "textAlign":"left|center|right" }}
+
+2. modify - Modificar propiedades: { "action":"modify", "target":"selected"|ID, "props":{ "fill", "stroke", "strokeWidth", "rotation", "text", "fontFamily", "fontSize_u", "textAlign" }}
+
+3. move - Mover relativo: { "action":"move", "target":"selected"|ID, "dx_u":N, "dy_u":N }
+
+4. moveTo - Mover a posición: { "action":"moveTo", "target":"selected"|ID, "x_u":N, "y_u":N }
+
+5. resize - Cambiar tamaño: { "action":"resize", "target":"selected"|ID, "width_u":N, "height_u":N }
+
+6. delete - Eliminar: { "action":"delete", "target":"selected"|ID }
+
+7. duplicate - Duplicar: { "action":"duplicate", "target":"selected"|ID }
+
+8. order - Orden Z: { "action":"order", "target":"selected"|ID, "position":"front"|"back" }
+
+9. flip - Voltear: { "action":"flip", "target":"selected"|ID, "direction":"horizontal"|"vertical" }
+
+10. select - Seleccionar: { "action":"select", "target":ID }
+
+**Reglas:**
+- "selected" usa el objeto seleccionado. Si no hay selección y el usuario dice "eso", pide que seleccione algo.
+- Para referencias como "el rectángulo rojo", busca en los objetos del lienzo el que coincida.
+- Si no se especifica posición, centra el objeto en la página.
+- Si no se especifica color de fill, usa "none". Si no se especifica stroke, usa "#000000".
+- "círculo" = ellipse con rx_u = ry_u. "cuadrado" = rect con width_u = height_u.
+- Cuando el usuario da un tamaño como "50mm" para un círculo, ese es el DIÁMETRO, así que rx_u = ry_u = 25.
+- Si el usuario no pide una acción (solo pregunta algo), responde solo con texto, sin bloque actions.
+
+**Colores comunes:** rojo=#ff0000, azul=#0000ff, verde=#00ff00, amarillo=#ffff00, naranja=#ff8000, morado=#800080, rosa=#ff69b4, negro=#000000, blanco=#ffffff, gris=#808080, celeste=#00bfff, marrón=#8B4513
+
+**Fuentes disponibles:** Inter, Montserrat, Playfair Display, Roboto, Open Sans, Lato, Oswald, Raleway, Merriweather, Nunito, Poppins, Dancing Script, Pacifico, Lobster, Bebas Neue, Caveat, Abril Fatface, Righteous, Permanent Marker, Satisfy, Great Vibes, Rows of Sunflowers`;
+}
+
 // --- ENDPOINT SIMULADOR IA ---
 router.post('/simulate-ai', async (req, res) => {
     try {
-        const { message, mediaBase64, mediaMimeType, history, source } = req.body;
+        const { message, mediaBase64, mediaMimeType, history, source, canvasContext } = req.body;
         const isEditor = (source === 'editor');
 
         if (!message) {
@@ -391,8 +439,10 @@ router.post('/simulate-ai', async (req, res) => {
         let aiResult;
 
         if (isEditor) {
-            // Editor: prompt simple, sin caché, sin knowledge base / quick replies
-            const fullPrompt = `**Instrucciones:**\n${systemPrompt}\n\n**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al último mensaje del usuario de manera concisa y útil.`;
+            // Editor: prompt con sistema de acciones y contexto del lienzo
+            const actionPrompt = getEditorActionPrompt();
+            const canvasSection = canvasContext ? `\n\n**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}` : '';
+            const fullPrompt = `**Instrucciones del Usuario:**\n${systemPrompt}\n\n${actionPrompt}${canvasSection}\n\n**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
             aiResult = await generateGeminiResponse(fullPrompt, mediaParts);
         } else {
             // CRM: cache-first con knowledge base + quick replies fallback
