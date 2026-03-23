@@ -1538,34 +1538,9 @@ function drawNodeEdit() {
                     const cp1x = seg.pts[0].x * sx + tx, cp1y = seg.pts[0].y * sy + ty;
                     const cp2x = seg.pts[1].x * sx + tx, cp2y = seg.pts[1].y * sy + ty;
                     const epx = seg.pts[2].x * sx + tx, epy = seg.pts[2].y * sy + ty;
-                    const l1 = document.createElementNS(ns, 'line');
-                    l1.setAttribute('x1', lastX); l1.setAttribute('y1', lastY);
-                    l1.setAttribute('x2', cp1x); l1.setAttribute('y2', cp1y);
-                    l1.setAttribute('stroke', '#b8aed0'); l1.setAttribute('stroke-width', sw * 0.5);
-                    l1.setAttribute('pointer-events', 'none');
-                    selectionLayer.appendChild(l1);
-                    const l2 = document.createElementNS(ns, 'line');
-                    l2.setAttribute('x1', cp2x); l2.setAttribute('y1', cp2y);
-                    l2.setAttribute('x2', epx); l2.setAttribute('y2', epy);
-                    l2.setAttribute('stroke', '#b8aed0'); l2.setAttribute('stroke-width', sw * 0.5);
-                    l2.setAttribute('pointer-events', 'none');
-                    selectionLayer.appendChild(l2);
                     lastX = epx; lastY = epy;
                 } else if (seg.cmd === 'Q' && seg.pts.length === 2) {
-                    const cpx = seg.pts[0].x * sx + tx, cpy = seg.pts[0].y * sy + ty;
                     const epx = seg.pts[1].x * sx + tx, epy = seg.pts[1].y * sy + ty;
-                    const l1 = document.createElementNS(ns, 'line');
-                    l1.setAttribute('x1', lastX); l1.setAttribute('y1', lastY);
-                    l1.setAttribute('x2', cpx); l1.setAttribute('y2', cpy);
-                    l1.setAttribute('stroke', '#b8aed0'); l1.setAttribute('stroke-width', sw * 0.5);
-                    l1.setAttribute('pointer-events', 'none');
-                    selectionLayer.appendChild(l1);
-                    const l2 = document.createElementNS(ns, 'line');
-                    l2.setAttribute('x1', cpx); l2.setAttribute('y1', cpy);
-                    l2.setAttribute('x2', epx); l2.setAttribute('y2', epy);
-                    l2.setAttribute('stroke', '#b8aed0'); l2.setAttribute('stroke-width', sw * 0.5);
-                    l2.setAttribute('pointer-events', 'none');
-                    selectionLayer.appendChild(l2);
                     lastX = epx; lastY = epy;
                 } else if (seg.cmd === 'L' && seg.pts.length > 0) {
                     lastX = seg.pts[seg.pts.length - 1].x * sx + tx;
