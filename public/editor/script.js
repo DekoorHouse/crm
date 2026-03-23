@@ -1718,13 +1718,15 @@ function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
 // TOOL HANDLERS
 // =============================================
 function handleMouseDown(e) {
-    // SVG placement mode: click to place imported SVG
+    // SVG placement mode: click to place imported SVG (with snap)
     if (state.pendingSVGImport && e.button === 0 && !state.spaceHeld) {
         e.preventDefault();
         e.stopPropagation();
         const cb = state.pendingSVGImport;
         state.pendingSVGImport = null;
-        cb(screenToSVG(e.clientX, e.clientY));
+        const raw = screenToSVG(e.clientX, e.clientY);
+        const snap = calcSnapAdjustmentForPoint(raw.x, raw.y, -1);
+        cb({ x: raw.x + (snap.dx || 0), y: raw.y + (snap.dy || 0) });
         return;
     }
     if (e.button === 1 || (e.button === 0 && state.spaceHeld)) {
