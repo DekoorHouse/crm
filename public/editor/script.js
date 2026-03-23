@@ -4379,6 +4379,45 @@ async function generateNamesFromTemplate(names) {
     updatePropsPanel();
 }
 
+function flipObject(obj, direction) {
+    const b = getObjBounds(obj);
+    const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+    switch (obj.type) {
+        case 'image':
+            if (direction === 'horizontal') obj.flipX = !obj.flipX;
+            else obj.flipY = !obj.flipY;
+            break;
+        case 'rect': case 'curvepath':
+            // For shapes, mirror by reflecting position across center
+            // (rect is symmetric so only rotation changes)
+            if (obj.rotation) obj.rotation = direction === 'horizontal' ? -obj.rotation : -obj.rotation;
+            break;
+        case 'ellipse':
+            if (obj.rotation) obj.rotation = -obj.rotation;
+            break;
+        case 'line':
+            if (direction === 'horizontal') {
+                obj.x1 = 2 * cx - obj.x1; obj.x2 = 2 * cx - obj.x2;
+            } else {
+                obj.y1 = 2 * cy - obj.y1; obj.y2 = 2 * cy - obj.y2;
+            }
+            break;
+        case 'bspline':
+            obj.points = obj.points.map(p => direction === 'horizontal'
+                ? { x: 2 * cx - p.x, y: p.y }
+                : { x: p.x, y: 2 * cy - p.y });
+            break;
+        case 'powerclip':
+            flipObject(obj.container, direction);
+            for (const c of obj.contents) flipObject(c, direction);
+            rebuildPowerClipElement(obj);
+            break;
+        case 'group':
+            for (const c of obj.children) flipObject(c, direction);
+            break;
+    }
+}
+
 function offsetObject(obj, dx, dy) {
     switch (obj.type) {
         case 'rect': case 'image': case 'text': case 'curvepath':
@@ -4581,6 +4620,30 @@ function setupPropsPanel() {
         const obj = findObject(primaryId()); if (!obj) return;
         obj.rotation = parseFloat(propRot.value) || 0;
         refreshElement(obj); drawSelection();
+    });
+
+    document.getElementById('flip-h-btn').addEventListener('click', () => {
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (!obj) continue;
+            saveUndoState();
+            flipObject(obj, 'horizontal');
+            refreshElement(obj);
+            if (obj.type !== 'curvepath') applyRotation(obj);
+        }
+        drawSelection();
+    });
+
+    document.getElementById('flip-v-btn').addEventListener('click', () => {
+        for (const id of state.selectedIds) {
+            const obj = findObject(id);
+            if (!obj) continue;
+            saveUndoState();
+            flipObject(obj, 'vertical');
+            refreshElement(obj);
+            if (obj.type !== 'curvepath') applyRotation(obj);
+        }
+        drawSelection();
     });
 
     document.getElementById('unit-select').addEventListener('change', (e) => {

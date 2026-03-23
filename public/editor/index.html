@@ -189,21 +189,10 @@
 
             <!-- Properties Panel -->
             <div id="props-panel" class="hidden">
-                <div class="props-title">Propiedades</div>
-                <div class="props-row">
-                    <div class="props-field">
-                        <label>X</label>
-                        <input type="number" id="prop-x" step="any">
-                    </div>
-                    <div class="props-field">
-                        <label>Y</label>
-                        <input type="number" id="prop-y" step="any">
-                    </div>
-                </div>
-                <div class="props-sep"></div>
+                <div class="props-title">PROPIEDADES</div>
                 <div class="props-row props-size-row">
                     <div class="props-field">
-                        <label>An</label>
+                        <label>AN</label>
                         <input type="number" id="prop-w" step="any" min="0.1">
                     </div>
                     <button id="lock-aspect" class="lock-btn active" title="Bloquear proporci&oacute;n">
@@ -211,18 +200,29 @@
                         <svg class="icon-unlocked" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
                     </button>
                     <div class="props-field">
-                        <label>Al</label>
+                        <label>AL</label>
                         <input type="number" id="prop-h" step="any" min="0.1">
                     </div>
                 </div>
                 <div class="props-sep"></div>
                 <div class="props-row">
                     <div class="props-field">
-                        <label>Rot&deg;</label>
+                        <label>ROT&deg;</label>
                         <input type="number" id="prop-rotation" step="1" value="0">
                     </div>
                 </div>
+                <div class="props-sep"></div>
+                <div class="props-row" style="gap:6px;">
+                    <button id="flip-h-btn" class="flip-btn" title="Reflejar horizontalmente">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><polyline points="16 7 20 12 16 17"/><polyline points="8 7 4 12 8 17"/></svg>
+                    </button>
+                    <button id="flip-v-btn" class="flip-btn" title="Reflejar verticalmente">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><polyline points="7 8 12 4 17 8"/><polyline points="7 16 12 20 17 16"/></svg>
+                    </button>
+                </div>
                 <div class="props-unit" id="props-unit-label">px</div>
+                <input type="hidden" id="prop-x" value="0">
+                <input type="hidden" id="prop-y" value="0">
             </div>
 
             <!-- SVG Canvas -->

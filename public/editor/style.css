@@ -514,6 +514,30 @@ body.dark .header-select {
 .lock-btn:not(.active) .icon-unlocked { display: flex; }
 .lock-btn:not(.active) .icon-locked   { display: none; }
 
+.flip-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    border: 1px solid var(--border);
+    background: var(--surface-hover);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.flip-btn:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.flip-btn:active {
+    transform: scale(0.93);
+}
+
 .props-unit {
     font-size: 10px;
     font-weight: 500;
