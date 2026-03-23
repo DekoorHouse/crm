@@ -106,6 +106,19 @@
                         </div>
                     </div>
                 </div>
+                <div class="menu-group">
+                    <div class="menu-trigger" data-menu="ai">IA</div>
+                    <div class="menu-dropdown" id="menu-ai">
+                        <div class="menu-option" data-action="ai-instructions">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h12v12H4z" rx="2"/><path d="M7 8h6M7 11h4"/></svg>
+                            Instrucciones de IA...
+                        </div>
+                        <div class="menu-option" data-action="ai-toggle-chat">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h14v10H8l-3 3v-3H3z" rx="1"/></svg>
+                            Abrir chat de IA
+                        </div>
+                    </div>
+                </div>
                 <div class="header-divider"></div>
                 <span id="current-file-name" class="file-name-indicator" style="display:none;"></span>
             </div>
@@ -691,6 +704,47 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
             </div>
+        </div>
+    </div>
+
+    <!-- AI Instructions Modal -->
+    <div id="ai-instructions-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Instrucciones de IA</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Instrucciones para el asistente de IA del editor</label>
+                    <textarea id="ai-instructions-text" rows="8" placeholder="Ej: Eres un asistente de dise&ntilde;o gr&aacute;fico. Ayuda al usuario con el editor..."></textarea>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="save">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Chat Bubble -->
+    <button id="ai-chat-bubble" class="ai-chat-bubble" title="Chat de IA">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/><path d="M8 9h2M14 9h0M8 13h8" stroke-width="1.5"/></svg>
+    </button>
+
+    <!-- AI Chat Panel -->
+    <div id="ai-chat-panel" class="ai-chat-panel hidden">
+        <div class="ai-chat-header">
+            <span class="ai-chat-title">Asistente IA</span>
+            <button id="ai-chat-close" class="ai-chat-close">&times;</button>
+        </div>
+        <div id="ai-chat-messages" class="ai-chat-messages"></div>
+        <div class="ai-chat-input-area">
+            <textarea id="ai-chat-input" placeholder="Escribe un mensaje..." rows="1"></textarea>
+            <button id="ai-chat-send" class="ai-chat-send-btn">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M2.5 17.5L18.5 10 2.5 2.5v6l10 1.5-10 1.5z"/></svg>
+            </button>
         </div>
     </div>
 

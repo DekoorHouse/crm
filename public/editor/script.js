@@ -3813,6 +3813,8 @@ function handleMenuAction(action) {
         case 'import-names': showImportNamesModal(); break;
         case 'bmp-converter': showBmpConverterModal(); break;
         case 'bg-removal': showBgRemovalModal(); break;
+        case 'ai-instructions': showAIInstructionsModal(); break;
+        case 'ai-toggle-chat': toggleAIChat(); break;
     }
 }
 
@@ -4564,6 +4566,121 @@ function createSidebarTemplateItem(tpl) {
     item.appendChild(info);
     item.appendChild(delBtn);
     return item;
+}
+
+// =============================================
+// AI CHAT
+// =============================================
+
+let _aiChatHistory = [];
+let _aiInstructions = localStorage.getItem('dekoor-ai-instructions') || 'Eres un asistente de dise\u00f1o gr\u00e1fico integrado en un editor SVG. Ayuda al usuario con sus dise\u00f1os, da sugerencias creativas y responde preguntas sobre el editor.';
+
+function showAIInstructionsModal() {
+    const modal = document.getElementById('ai-instructions-modal');
+    document.getElementById('ai-instructions-text').value = _aiInstructions;
+    modal.classList.remove('hidden');
+}
+
+function setupAIChat() {
+    // Instructions modal
+    const instrModal = document.getElementById('ai-instructions-modal');
+    instrModal.querySelectorAll('[data-action="cancel"]').forEach(btn => {
+        btn.addEventListener('click', () => instrModal.classList.add('hidden'));
+    });
+    instrModal.querySelector('.modal-overlay').addEventListener('click', () => instrModal.classList.add('hidden'));
+    instrModal.querySelector('[data-action="save"]').addEventListener('click', () => {
+        _aiInstructions = document.getElementById('ai-instructions-text').value.trim();
+        localStorage.setItem('dekoor-ai-instructions', _aiInstructions);
+        instrModal.classList.add('hidden');
+        showToast('Instrucciones guardadas');
+    });
+
+    // Chat bubble
+    document.getElementById('ai-chat-bubble').addEventListener('click', toggleAIChat);
+    document.getElementById('ai-chat-close').addEventListener('click', () => {
+        document.getElementById('ai-chat-panel').classList.add('hidden');
+        document.getElementById('ai-chat-bubble').classList.remove('hidden');
+    });
+
+    // Chat input
+    const chatInput = document.getElementById('ai-chat-input');
+    const sendBtn = document.getElementById('ai-chat-send');
+    sendBtn.addEventListener('click', sendAIMessage);
+    chatInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendAIMessage(); }
+        e.stopPropagation(); // prevent editor shortcuts
+    });
+    chatInput.addEventListener('input', () => {
+        chatInput.style.height = 'auto';
+        chatInput.style.height = Math.min(chatInput.scrollHeight, 100) + 'px';
+    });
+}
+
+function toggleAIChat() {
+    const panel = document.getElementById('ai-chat-panel');
+    const bubble = document.getElementById('ai-chat-bubble');
+    const isHidden = panel.classList.contains('hidden');
+    panel.classList.toggle('hidden');
+    bubble.classList.toggle('hidden', !panel.classList.contains('hidden'));
+    if (isHidden) {
+        document.getElementById('ai-chat-input').focus();
+    }
+}
+
+function addChatMessage(role, text) {
+    const container = document.getElementById('ai-chat-messages');
+    const msg = document.createElement('div');
+    msg.className = 'ai-chat-msg ' + (role === 'user' ? 'ai-chat-msg-user' : 'ai-chat-msg-ai');
+    msg.textContent = text;
+    container.appendChild(msg);
+    container.scrollTop = container.scrollHeight;
+}
+
+async function sendAIMessage() {
+    const input = document.getElementById('ai-chat-input');
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.style.height = 'auto';
+    addChatMessage('user', text);
+
+    _aiChatHistory.push({ role: 'user', content: text });
+
+    // Show typing indicator
+    const typing = document.createElement('div');
+    typing.className = 'ai-chat-msg ai-chat-msg-ai ai-chat-typing';
+    typing.textContent = 'Escribiendo...';
+    document.getElementById('ai-chat-messages').appendChild(typing);
+    document.getElementById('ai-chat-messages').scrollTop = document.getElementById('ai-chat-messages').scrollHeight;
+
+    try {
+        // Build history with system instruction
+        const history = [
+            { role: 'user', content: _aiInstructions },
+            { role: 'model', content: 'Entendido. Estoy listo para ayudarte con el editor.' },
+            ..._aiChatHistory.slice(-20) // last 20 messages
+        ];
+
+        const res = await fetch('/api/simulate-ai', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: text, history })
+        });
+        const data = await res.json();
+        typing.remove();
+
+        if (data.success && data.response) {
+            const response = data.response.replace(/\[SPLIT\]/g, '\n');
+            addChatMessage('ai', response);
+            _aiChatHistory.push({ role: 'model', content: response });
+        } else {
+            addChatMessage('ai', 'Error: No pude obtener respuesta.');
+        }
+    } catch (err) {
+        typing.remove();
+        addChatMessage('ai', 'Error de conexi\u00f3n: ' + err.message);
+    }
 }
 
 // =============================================
@@ -6492,6 +6609,7 @@ function setupEventListeners() {
     setupBgRemovalModal();
     setupFileModals();
     setupFilesSidebar();
+    setupAIChat();
 }
 
 function setTool(tool) {
