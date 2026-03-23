@@ -48,6 +48,10 @@ app.get('/autopost', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'autopost', 'index.html'));
 });
 
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'panel.html'));
+});
+
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

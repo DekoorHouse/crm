@@ -47,8 +47,8 @@
             </div>
 
             <div class="input-group">
-                <label for="employee-id">ID de Empleado</label>
-                <input type="text" id="employee-id" placeholder="Ingresa tu ID o Nombre" autocomplete="off">
+                <label for="employee-id">Nombre del Empleado</label>
+                <input type="text" id="employee-id" placeholder="Ingresa tu nombre" autocomplete="off">
             </div>
 
             <div class="button-grid">
@@ -65,126 +65,17 @@
                     <span>RECIENTES</span>
                     <span id="clear-history" style="cursor: pointer; font-size: 0.7rem;">LIMPIAR</span>
                 </div>
-                <ul id="history-list" class="history-list">
-                    <!-- Registros aparecerán aquí -->
-                </ul>
+                <ul id="history-list" class="history-list"></ul>
             </div>
 
             <div class="admin-access" style="display: flex; justify-content: center; gap: 20px;">
-                <button id="open-admin" class="link-btn">Panel Administrativo</button>
+                <a href="/panel" class="link-btn">Panel Administrativo</a>
                 <button id="logout-btn" class="link-btn" style="color: var(--danger);">Cerrar Sesión</button>
             </div>
         </div>
     </div>
 
-    <!-- Panel Administrativo Overlay -->
-    <div id="admin-panel" class="admin-overlay">
-        <div class="admin-modal">
-            <div class="admin-header">
-                <h2>Panel Administrativo</h2>
-                <button id="close-admin" class="close-btn">&times;</button>
-            </div>
-
-            <div class="admin-tabs">
-                <button class="tab-btn active" data-tab="tab-records">Asistencia</button>
-                <button class="tab-btn" data-tab="tab-employees">Empleados</button>
-                <button class="tab-btn" data-tab="tab-resumen">Resumen</button>
-            </div>
-
-            <div id="tab-records" class="tab-content active">
-                <div class="admin-actions">
-                    <button id="export-csv" class="btn-small">Descargar Excel (CSV)</button>
-                    <button id="clear-all-logs" class="btn-small btn-danger">Borrar Todo</button>
-                </div>
-
-                <div class="table-container">
-                    <table id="admin-table">
-                        <thead>
-                            <tr>
-                                <th>Empleado</th>
-                                <th>Fecha</th>
-                                <th>Entradas / Salidas</th>
-                                <th>Total Horas</th>
-                                <th>Pago ($70/hr)</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody id="admin-logs-body">
-                            <!-- Logs here -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="tab-employees" class="tab-content">
-                <div class="add-employee-form">
-                    <input type="text" id="new-emp-name" placeholder="Nombre completo">
-                    <input type="text" id="new-emp-id" placeholder="ID (ej: 101)">
-                    <input type="tel" id="new-emp-phone" placeholder="WhatsApp (ej: +526141234567)" style="flex: 1.5;">
-                    <button id="add-employee-btn" class="btn-in" style="padding: 10px;">Añadir</button>
-                </div>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Nombre</th>
-                                <th>WhatsApp</th>
-                                <th>Acción</th>
-                            </tr>
-                        </thead>
-                        <tbody id="admin-employees-body">
-                            <!-- Employees here -->
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <div id="tab-resumen" class="tab-content">
-                <div class="admin-actions" style="align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px;">
-                    <div style="display: flex; gap: 6px;">
-                        <button class="btn-small period-btn active" data-period="semanal">Semanal</button>
-                        <button class="btn-small period-btn" data-period="mensual">Mensual</button>
-                        <button class="btn-small period-btn" data-period="anual">Anual</button>
-                    </div>
-                    <button id="send-whatsapp-btn" class="btn-small" style="background: linear-gradient(135deg, #25D366, #128C7E); color: white; border: none; display: flex; align-items: center; gap: 5px;">
-                        📲 Enviar por WhatsApp
-                    </button>
-                </div>
-                <span id="resumen-period-label" style="font-size: 0.78rem; color: var(--text-muted); display: block; margin-bottom: 8px;"></span>
-                <div class="table-container">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Empleado</th>
-                                <th>Días</th>
-                                <th>Total Horas</th>
-                                <th>Pago ($70/hr)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="resumen-body"></tbody>
-                    </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Login Admin Overlay -->
-    <div id="admin-login" class="network-overlay">
-        <div class="network-modal">
-            <h3>Acceso Restringido</h3>
-            <p style="font-size: 0.8rem; margin-bottom: 15px; color: var(--text-muted);">Ingresa el PIN de administrador</p>
-            <input type="password" id="admin-pin" placeholder="PIN" autocomplete="off" style="text-align: center; margin-bottom: 20px;">
-            <div style="display: flex; gap: 10px; justify-content: center;">
-                <button id="login-btn" class="btn-in" style="padding: 10px 20px;">Entrar</button>
-                <button id="cancel-login" class="btn-out" style="padding: 10px 20px; background: #475569;">Cancelar</button>
-            </div>
-        </div>
-    </div>
-
-    <div id="notification" class="notification">
-        Registro exitoso
-    </div>
+    <div id="notification" class="notification">Registro exitoso</div>
 
     <div id="network-blocked" class="network-overlay">
         <div class="network-modal">
@@ -194,27 +85,10 @@
         </div>
     </div>
 
-    <!-- Modal de Edición de Registro -->
-    <div id="edit-log-modal" class="admin-overlay">
-        <div class="admin-modal" style="max-width:480px; height:auto; max-height:85vh;">
-            <div class="admin-header">
-                <h2 id="edit-log-title">Editar Registros</h2>
-                <button id="close-edit-log" class="close-btn">&times;</button>
-            </div>
-            <div id="edit-log-entries" style="overflow-y:auto; flex:1; padding-right:4px;"></div>
-            <div style="display:flex; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--glass-border);">
-                <button id="add-log-in" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:10px;">+ ENTRADA</button>
-                <button id="add-log-out" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none; border-radius:10px;">+ SALIDA</button>
-            </div>
-            <button id="save-edit-log" class="btn-in" style="width:100%; margin-top:10px; padding:14px; font-size:1rem;">Guardar Cambios</button>
-        </div>
-    </div>
-
     <!-- Firebase SDK -->
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
 
     <script src="app.js"></script>
 </body>
