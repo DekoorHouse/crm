@@ -117,12 +117,19 @@ document.getElementById('next-week').addEventListener('click', () => {
 let groupedDataCache = [];
 let groupedDataMap = {};
 
+function resolveLogName(log) {
+    // Si el name del log coincide con un ID de empleado, usar el nombre real
+    const emp = employeesCache.find(e => e.id === log.name);
+    return emp ? emp.name : log.name;
+}
+
 function getGroupedData() {
     const sortedLogs = [...logsCache].reverse();
     const groups = {};
     sortedLogs.forEach(log => {
-        const key = `${log.name.toLowerCase()}-${log.date}`;
-        if (!groups[key]) groups[key] = { id: log.id, name: log.name, date: log.date, events: [] };
+        const resolved = resolveLogName(log);
+        const key = `${resolved.toLowerCase()}-${log.date}`;
+        if (!groups[key]) groups[key] = { id: log.id, name: resolved, date: log.date, events: [] };
         groups[key].events.push(log);
     });
     return Object.values(groups).map(group => {
@@ -187,8 +194,17 @@ function renderAdminLogs() {
 
     // Empleados: registrados + cualquiera que aparezca en logs
     const empMap = {};
-    employeesCache.forEach(e => { empMap[e.name.toLowerCase()] = { name: e.name }; });
-    logsCache.forEach(l => { if (!empMap[l.name.toLowerCase()]) empMap[l.name.toLowerCase()] = { name: l.name }; });
+    // Mapa de id -> nombre para resolver logs con ID en vez de nombre
+    const idToName = {};
+    employeesCache.forEach(e => {
+        empMap[e.name.toLowerCase()] = { name: e.name };
+        if (e.id) idToName[e.id] = e.name;
+    });
+    logsCache.forEach(l => {
+        // Si el name del log coincide con un ID de empleado, usar el nombre real
+        const resolvedName = idToName[l.name] || l.name;
+        if (!empMap[resolvedName.toLowerCase()]) empMap[resolvedName.toLowerCase()] = { name: resolvedName };
+    });
     const employees = Object.values(empMap).sort((a, b) => a.name.localeCompare(b.name));
 
     if (!employees.length) {
@@ -606,8 +622,9 @@ function getResumenData(period) {
 
     const dayGroups = {};
     filtered.forEach(log => {
-        const key = `${log.name.toLowerCase()}-${log.date}`;
-        if (!dayGroups[key]) dayGroups[key] = { name: log.name, events: [] };
+        const resolved = resolveLogName(log);
+        const key = `${resolved.toLowerCase()}-${log.date}`;
+        if (!dayGroups[key]) dayGroups[key] = { name: resolved, events: [] };
         dayGroups[key].events.push(log);
     });
 
