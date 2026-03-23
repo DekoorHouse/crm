@@ -1318,27 +1318,29 @@ function extractPathPoints(cmds) {
 // NODE EDITING MODE
 // =============================================
 function getCurvepathTransform(obj) {
-    // Try to get the actual transform from the rendered element (most accurate)
+    // Read the actual transform from the rendered SVG element
     const elem = obj.element;
     if (elem) {
-        try {
-            const ctm = elem.getCTM();
-            const svgCTM = svg.getCTM();
-            if (ctm && svgCTM) {
-                const inv = svgCTM.inverse();
-                const rel = inv.multiply(ctm);
-                return { sx: rel.a, sy: rel.d, tx: rel.e, ty: rel.f };
+        const t = elem.getAttribute('transform');
+        if (t) {
+            // Parse translate(tx, ty) scale(sx, sy) format
+            const translateMatch = t.match(/translate\(\s*([^,\s]+)[,\s]+([^)]+)\)/);
+            const scaleMatch = t.match(/scale\(\s*([^,\s]+)[,\s]+([^)]+)\)/);
+            if (translateMatch && scaleMatch) {
+                return {
+                    sx: parseFloat(scaleMatch[1]),
+                    sy: parseFloat(scaleMatch[2]),
+                    tx: parseFloat(translateMatch[1]),
+                    ty: parseFloat(translateMatch[2]),
+                };
             }
-        } catch(e) {}
+        }
     }
     // Fallback to stored bounds
     const orig = obj._origBounds;
     if (!orig || orig.w === 0 || orig.h === 0) return null;
-    return {
-        sx: obj.width / orig.w, sy: obj.height / orig.h,
-        tx: obj.x - orig.x * (obj.width / orig.w),
-        ty: obj.y - orig.y * (obj.height / orig.h),
-    };
+    const sx = obj.width / orig.w, sy = obj.height / orig.h;
+    return { sx, sy, tx: obj.x - orig.x * sx, ty: obj.y - orig.y * sy };
 }
 
 function getEditableNodes(obj) {
