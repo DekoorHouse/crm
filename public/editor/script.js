@@ -1315,6 +1315,30 @@ function extractPathPoints(cmds) {
 // =============================================
 // NODE EDITING MODE
 // =============================================
+function getCurvepathTransform(obj) {
+    // Try to get the actual transform from the rendered element (most accurate)
+    const elem = obj.element;
+    if (elem) {
+        try {
+            const ctm = elem.getCTM();
+            const svgCTM = svg.getCTM();
+            if (ctm && svgCTM) {
+                const inv = svgCTM.inverse();
+                const rel = inv.multiply(ctm);
+                return { sx: rel.a, sy: rel.d, tx: rel.e, ty: rel.f };
+            }
+        } catch(e) {}
+    }
+    // Fallback to stored bounds
+    const orig = obj._origBounds;
+    if (!orig || orig.w === 0 || orig.h === 0) return null;
+    return {
+        sx: obj.width / orig.w, sy: obj.height / orig.h,
+        tx: obj.x - orig.x * (obj.width / orig.w),
+        ty: obj.y - orig.y * (obj.height / orig.h),
+    };
+}
+
 function getEditableNodes(obj) {
     const nodes = [];
     switch (obj.type) {
@@ -1343,15 +1367,12 @@ function getEditableNodes(obj) {
             if (!obj.d) break;
             const cmds = parseSVGPath(obj.d);
             const pathPts = extractPathPoints(cmds);
-            const orig = obj._origBounds;
-            if (!orig || orig.w === 0 || orig.h === 0) break;
-            const sx = obj.width / orig.w, sy = obj.height / orig.h;
-            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+            const t = getCurvepathTransform(obj);
+            if (!t) break;
             for (let i = 0; i < pathPts.length; i++) {
                 const pp = pathPts[i];
-                // Transform from path-local to world coords
-                const wx = pp.x * sx + tx;
-                const wy = pp.y * sy + ty;
+                const wx = pp.x * t.sx + t.tx;
+                const wy = pp.y * t.sy + t.ty;
                 nodes.push({ x: wx, y: wy, idx: i, nodeType: 'pathpoint', segIdx: pp.segIdx, ptIdx: pp.ptIdx });
             }
             break;
@@ -1402,12 +1423,13 @@ function drawNodeEdit() {
     }
 
     // For curvepath: draw control lines for cubic bezier segments
-    if (obj.type === 'curvepath' && obj.d) {
-        const cmds = parseSVGPath(obj.d);
-        const orig = obj._origBounds;
-        if (orig && orig.w !== 0 && orig.h !== 0) {
-            const sx = obj.width / orig.w, sy = obj.height / orig.h;
-            const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
+    // (also handles PowerClip containers via delegation below)
+    const cpObj = (obj.type === 'powerclip') ? obj.container : (obj.type === 'curvepath' ? obj : null);
+    if (cpObj && cpObj.d) {
+        const cmds = parseSVGPath(cpObj.d);
+        const t = getCurvepathTransform(cpObj);
+        if (t) {
+            const sx = t.sx, sy = t.sy, tx = t.tx, ty = t.ty;
             let lastX = 0, lastY = 0;
             for (const seg of cmds) {
                 if (seg.cmd === 'M' && seg.pts.length > 0) {
