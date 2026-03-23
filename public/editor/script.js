@@ -603,6 +603,7 @@ function refreshElement(obj) {
         elem.setAttribute('stroke-width', obj.strokeWidth);
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
+    if (obj.isRefArea) applyRefAreaStyle(obj);
 }
 
 function deleteObject(id) {
