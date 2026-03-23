@@ -1828,6 +1828,12 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
     border-bottom-color: var(--primary);
 }
 
+.sidebar-tab.drag-over {
+    background: rgba(124, 92, 240, 0.12);
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
 .sidebar-tab-content {
     display: flex;
     flex-direction: column;

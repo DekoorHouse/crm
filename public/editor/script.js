@@ -3812,6 +3812,73 @@ function setupFilesSidebar() {
         });
     });
 
+    // Drag file to templates tab
+    const templatesTab = sidebar.querySelector('[data-tab="templates"]');
+    const templatesPanel = document.getElementById('sidebar-tab-templates');
+
+    templatesTab.addEventListener('dragover', (e) => {
+        if (e.dataTransfer.types.includes('application/x-editor-file')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            templatesTab.classList.add('drag-over');
+        }
+    });
+    templatesTab.addEventListener('dragleave', () => templatesTab.classList.remove('drag-over'));
+    templatesTab.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        templatesTab.classList.remove('drag-over');
+        const data = e.dataTransfer.getData('application/x-editor-file');
+        if (!data) return;
+        const file = JSON.parse(data);
+        try {
+            await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight);
+            await window.fbDeleteFile(file.id);
+            if (currentFileId === file.id) {
+                currentFileId = null;
+                currentFileName = null;
+                updateFileNameDisplay();
+            }
+            refreshSidebarFiles();
+            // Switch to templates tab
+            tabs.forEach(t => t.classList.remove('active'));
+            templatesTab.classList.add('active');
+            document.getElementById('sidebar-tab-files').style.display = 'none';
+            templatesPanel.style.display = '';
+            refreshSidebarTemplates();
+            showToast('Movido a plantillas');
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    });
+
+    // Also allow drop on templates panel itself
+    templatesPanel.addEventListener('dragover', (e) => {
+        if (e.dataTransfer.types.includes('application/x-editor-file')) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+    });
+    templatesPanel.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        const data = e.dataTransfer.getData('application/x-editor-file');
+        if (!data) return;
+        const file = JSON.parse(data);
+        try {
+            await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight);
+            await window.fbDeleteFile(file.id);
+            if (currentFileId === file.id) {
+                currentFileId = null;
+                currentFileName = null;
+                updateFileNameDisplay();
+            }
+            refreshSidebarFiles();
+            refreshSidebarTemplates();
+            showToast('Movido a plantillas');
+        } catch (err) {
+            alert('Error: ' + err.message);
+        }
+    });
+
     // Save as template button
     document.getElementById('sidebar-save-template-btn').addEventListener('click', () => {
         if (!window.firebaseReady) { alert('Firebase no est\u00e1 listo.'); return; }
@@ -3855,6 +3922,11 @@ function createSidebarFileItem(file) {
     const item = document.createElement('div');
     item.className = 'sidebar-file-item' + (currentFileId === file.id ? ' active' : '');
     item.dataset.fileId = file.id;
+    item.draggable = true;
+    item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('application/x-editor-file', JSON.stringify({ id: file.id, name: file.name, stateJson: file.stateJson, pageWidth: file.pageWidth, pageHeight: file.pageHeight }));
+        e.dataTransfer.effectAllowed = 'move';
+    });
 
     const dateStr = file.updatedAt
         ? new Date(file.updatedAt.seconds * 1000).toLocaleString('es-MX', {
