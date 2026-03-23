@@ -1760,6 +1760,103 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
     background: rgba(20, 18, 28, 0.6);
 }
 
+/* ===== FILE NAME INDICATOR ===== */
+.file-name-indicator {
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* ===== OPEN FILES MODAL ===== */
+.open-files-modal-content {
+    min-width: 500px;
+    max-width: 600px;
+}
+
+.file-list {
+    max-height: 400px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.file-list-loading,
+.file-list-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--text-muted);
+    font-size: 13px;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.file-item:hover {
+    background: var(--surface-hover);
+}
+
+.file-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.file-item-name {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.file-item-date {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+}
+
+.file-item-delete {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    transition: all 0.15s;
+    flex-shrink: 0;
+    opacity: 0;
+}
+
+.file-item:hover .file-item-delete {
+    opacity: 1;
+}
+
+.file-item-delete:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+body.dark .file-item-delete:hover {
+    background: rgba(220, 38, 38, 0.2);
+    color: #f87171;
+}
+
 /* Responsive */
 @media (max-width: 600px) {
     .bg-modal-content {
@@ -1767,5 +1864,9 @@ body.dark .bg-preview-container:not(.bg-checkerboard) {
     }
     .bg-source-row {
         flex-wrap: wrap;
+    }
+    .open-files-modal-content {
+        min-width: auto;
+        width: 95vw;
     }
 }

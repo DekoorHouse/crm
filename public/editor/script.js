@@ -129,6 +129,12 @@ const undoStack = [];
 const redoStack = [];
 const MAX_UNDO = 50;
 
+// =============================================
+// FILE MANAGEMENT STATE
+// =============================================
+let currentFileId = null;
+let currentFileName = null;
+
 function serializeObj(obj) {
     const copy = {};
     for (const k of Object.keys(obj)) {
@@ -3507,6 +3513,9 @@ function handleMenuAction(action) {
     switch (action) {
         case 'import-svg':  importSVG(); break;
         case 'export-svg':  exportSVG(); break;
+        case 'save-file':   saveFile(); break;
+        case 'save-file-as': saveFileAs(); break;
+        case 'open-file':   showOpenFileModal(); break;
         case 'clear-all':   clearAll(); break;
         case 'page-size':   showPageSizeModal(); break;
         case 'fit-page':    resetView(); break;
@@ -3517,6 +3526,203 @@ function handleMenuAction(action) {
         case 'bmp-converter': showBmpConverterModal(); break;
         case 'bg-removal': showBgRemovalModal(); break;
     }
+}
+
+// =============================================
+// FILE SAVE / OPEN (Firebase)
+// =============================================
+
+function getStateForSave() {
+    return JSON.stringify({
+        objects: state.objects.map(serializeObj),
+        nextId: state.nextId,
+    });
+}
+
+function updateFileNameDisplay() {
+    const el = document.getElementById('current-file-name');
+    if (currentFileName) {
+        el.textContent = currentFileName;
+        el.style.display = '';
+        document.title = currentFileName + ' \u2014 Dekoor Editor';
+    } else {
+        el.style.display = 'none';
+        document.title = 'Editor - Dekoor';
+    }
+}
+
+function saveFile() {
+    if (!window.firebaseReady) { alert('Firebase no est\u00e1 listo. Espera un momento.'); return; }
+    if (currentFileId) {
+        doSaveUpdate();
+    } else {
+        saveFileAs();
+    }
+}
+
+function saveFileAs() {
+    if (!window.firebaseReady) { alert('Firebase no est\u00e1 listo. Espera un momento.'); return; }
+    const input = document.getElementById('save-file-name');
+    input.value = currentFileName || '';
+    document.getElementById('save-file-modal').classList.remove('hidden');
+    setTimeout(() => { input.focus(); input.select(); }, 50);
+}
+
+async function doSaveNew(name) {
+    try {
+        const stateJson = getStateForSave();
+        const docId = await window.fbSaveNewFile(name, stateJson, state.pageWidth, state.pageHeight);
+        currentFileId = docId;
+        currentFileName = name;
+        updateFileNameDisplay();
+    } catch (err) {
+        console.error('Error guardando archivo:', err);
+        alert('Error al guardar: ' + err.message);
+    }
+}
+
+async function doSaveUpdate() {
+    try {
+        const stateJson = getStateForSave();
+        await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight);
+    } catch (err) {
+        console.error('Error actualizando archivo:', err);
+        alert('Error al guardar: ' + err.message);
+    }
+}
+
+function showOpenFileModal() {
+    if (!window.firebaseReady) { alert('Firebase no est\u00e1 listo. Espera un momento.'); return; }
+    const modal = document.getElementById('open-file-modal');
+    const list = document.getElementById('open-file-list');
+    list.innerHTML = '<div class="file-list-loading">Cargando archivos...</div>';
+    modal.classList.remove('hidden');
+    loadFileList();
+}
+
+function hideOpenFileModal() {
+    document.getElementById('open-file-modal').classList.add('hidden');
+}
+
+function hideSaveFileModal() {
+    document.getElementById('save-file-modal').classList.add('hidden');
+}
+
+async function loadFileList() {
+    const list = document.getElementById('open-file-list');
+    try {
+        const files = await window.fbListFiles();
+        if (files.length === 0) {
+            list.innerHTML = '<div class="file-list-empty">No hay archivos guardados.</div>';
+            return;
+        }
+        list.innerHTML = '';
+        for (const file of files) {
+            const item = document.createElement('div');
+            item.className = 'file-item';
+
+            const dateStr = file.updatedAt
+                ? new Date(file.updatedAt.seconds * 1000).toLocaleString('es-MX', {
+                    day: '2-digit', month: 'short', year: 'numeric',
+                    hour: '2-digit', minute: '2-digit'
+                  })
+                : '';
+
+            const nameSpan = document.createElement('div');
+            nameSpan.className = 'file-item-info';
+            nameSpan.innerHTML =
+                '<div class="file-item-name">' + escapeHtml(file.name) + '</div>' +
+                '<div class="file-item-date">' + dateStr + '</div>';
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'file-item-delete';
+            delBtn.title = 'Eliminar';
+            delBtn.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5">' +
+                '<path d="M4 5h12M7 5V4a1 1 0 011-1h4a1 1 0 011 1v1M9 8v6M11 8v6"/>' +
+                '<path d="M5 5l1 11a1 1 0 001 1h6a1 1 0 001-1l1-11"/></svg>';
+
+            nameSpan.addEventListener('click', () => {
+                openFile(file);
+                hideOpenFileModal();
+            });
+
+            delBtn.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                if (!confirm('\u00bfEliminar "' + file.name + '"?')) return;
+                try {
+                    await window.fbDeleteFile(file.id);
+                    item.remove();
+                    if (currentFileId === file.id) {
+                        currentFileId = null;
+                        currentFileName = null;
+                        updateFileNameDisplay();
+                    }
+                    if (list.children.length === 0) {
+                        list.innerHTML = '<div class="file-list-empty">No hay archivos guardados.</div>';
+                    }
+                } catch (err) {
+                    alert('Error al eliminar: ' + err.message);
+                }
+            });
+
+            item.appendChild(nameSpan);
+            item.appendChild(delBtn);
+            list.appendChild(item);
+        }
+    } catch (err) {
+        console.error('Error cargando archivos:', err);
+        list.innerHTML = '<div class="file-list-empty">Error al cargar archivos.</div>';
+    }
+}
+
+function openFile(file) {
+    const snapshotData = JSON.parse(file.stateJson);
+    snapshotData.selectedIds = [];
+    restoreSnapshot(JSON.stringify(snapshotData));
+
+    if (file.pageWidth) state.pageWidth = file.pageWidth;
+    if (file.pageHeight) state.pageHeight = file.pageHeight;
+    updatePage();
+    resetView();
+
+    currentFileId = file.id;
+    currentFileName = file.name;
+    updateFileNameDisplay();
+
+    undoStack.length = 0;
+    redoStack.length = 0;
+}
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function setupFileModals() {
+    const saveModal = document.getElementById('save-file-modal');
+    saveModal.querySelectorAll('[data-action="cancel"]').forEach(btn => {
+        btn.addEventListener('click', hideSaveFileModal);
+    });
+    saveModal.querySelector('.modal-overlay').addEventListener('click', hideSaveFileModal);
+    saveModal.querySelector('[data-action="save"]').addEventListener('click', async () => {
+        const name = document.getElementById('save-file-name').value.trim();
+        if (!name) return;
+        hideSaveFileModal();
+        await doSaveNew(name);
+    });
+    document.getElementById('save-file-name').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            saveModal.querySelector('[data-action="save"]').click();
+        }
+    });
+
+    const openModal = document.getElementById('open-file-modal');
+    openModal.querySelectorAll('[data-action="cancel"]').forEach(btn => {
+        btn.addEventListener('click', hideOpenFileModal);
+    });
+    openModal.querySelector('.modal-overlay').addEventListener('click', hideOpenFileModal);
 }
 
 // =============================================
@@ -4767,6 +4973,8 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'j' && e.ctrlKey) { e.preventDefault(); joinNodes(); return; }
         if (e.key.toLowerCase() === 'i' && e.ctrlKey) { e.preventDefault(); importSVG(); return; }
         if (e.key.toLowerCase() === 'e' && e.ctrlKey) { e.preventDefault(); exportSVG(); return; }
+        if (e.key.toLowerCase() === 's' && e.ctrlKey) { e.preventDefault(); saveFile(); return; }
+        if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); showOpenFileModal(); return; }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
@@ -4927,6 +5135,7 @@ function setupEventListeners() {
     setupImportNamesModal();
     setupBmpConverterModal();
     setupBgRemovalModal();
+    setupFileModals();
 }
 
 function setTool(tool) {

@@ -43,6 +43,19 @@
                             Exportar SVG <span class="menu-shortcut">Ctrl+E</span>
                         </div>
                         <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="save-file">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar <span class="menu-shortcut">Ctrl+S</span>
+                        </div>
+                        <div class="menu-option" data-action="save-file-as">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar como...
+                        </div>
+                        <div class="menu-option" data-action="open-file">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1"/><path d="M3 7h14l-1.5 8H4.5L3 7z"/></svg>
+                            Abrir... <span class="menu-shortcut">Ctrl+O</span>
+                        </div>
+                        <div class="menu-separator"></div>
                         <div class="menu-option" data-action="import-names">
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h14v14H3z"/><path d="M7 8h6M7 11h4"/></svg>
                             Importar nombres
@@ -93,6 +106,8 @@
                         </div>
                     </div>
                 </div>
+                <div class="header-divider"></div>
+                <span id="current-file-name" class="file-name-indicator" style="display:none;"></span>
             </div>
             <div class="header-right">
                 <button id="theme-toggle" class="theme-btn" title="Cambiar tema">
@@ -577,6 +592,92 @@
         </div>
     </div>
 
+    <!-- Save File Modal -->
+    <div id="save-file-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Guardar archivo</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nombre del archivo</label>
+                    <input type="text" id="save-file-name" placeholder="Mi dise&ntilde;o" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="save">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open File Modal -->
+    <div id="open-file-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content open-files-modal-content">
+            <div class="modal-header">
+                <h3>Abrir archivo</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="open-file-list" class="file-list">
+                    <div class="file-list-loading">Cargando archivos...</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
     <script src="script.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, serverTimestamp, query, orderBy }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+            authDomain: "pedidos-con-gemini.firebaseapp.com",
+            projectId: "pedidos-con-gemini",
+            storageBucket: "pedidos-con-gemini.appspot.com",
+            messagingSenderId: "300825194175",
+            appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+        };
+
+        const app = initializeApp(firebaseConfig, 'editor');
+        const db = getFirestore(app);
+
+        window.firebaseReady = true;
+
+        window.fbSaveNewFile = async (name, stateJson, pageWidth, pageHeight) => {
+            const docRef = await addDoc(collection(db, "editor_files"), {
+                name, stateJson, pageWidth, pageHeight,
+                createdAt: serverTimestamp(),
+                updatedAt: serverTimestamp()
+            });
+            return docRef.id;
+        };
+
+        window.fbUpdateFile = async (docId, name, stateJson, pageWidth, pageHeight) => {
+            await updateDoc(doc(db, "editor_files", docId), {
+                name, stateJson, pageWidth, pageHeight,
+                updatedAt: serverTimestamp()
+            });
+        };
+
+        window.fbListFiles = async () => {
+            const q = query(collection(db, "editor_files"), orderBy("updatedAt", "desc"));
+            const snap = await getDocs(q);
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        };
+
+        window.fbDeleteFile = async (docId) => {
+            await deleteDoc(doc(db, "editor_files", docId));
+        };
+    </script>
 </body>
 </html>
