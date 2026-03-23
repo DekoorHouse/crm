@@ -2,7 +2,7 @@ const express = require('express');
 const axios = require('axios');
 // SE ACTUALIZÓ LA IMPORTACIÓN PARA INCLUIR sendConversionEvent
 const { db, admin, bucket } = require('./config');
-const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendConversionEvent } = require('./services');
+const { handleWholesaleMessage, checkCoverage, triggerAutoReplyAI, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendConversionEvent } = require('./services');
 
 const router = express.Router();
 
@@ -267,31 +267,54 @@ function isWithinBusinessHours() {
  */
 async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     try {
-        // Use the shared send function
-        const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
+        // Detect channel
+        const contactDoc = await contactRef.get();
+        const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
 
-        // Save the sent message to Firestore
-        await contactRef.collection('messages').add({
-            from: PHONE_NUMBER_ID, // Mark as sent from the business
-            status: 'sent',
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: sentMessageData.id,
-            text: sentMessageData.textForDb,
-            fileUrl: sentMessageData.fileUrlForDb, // Save URL if media was sent
-            fileType: sentMessageData.fileTypeForDb, // Save type if media was sent
-            isAutoReply: true // Mark as automatic
-        });
+        if (channel === 'messenger') {
+            // --- Messenger send ---
+            const psid = contactDoc.data().psid;
+            const sentData = await sendMessengerMessage(psid, { text, fileUrl, fileType });
 
-        // Update the contact's last message preview
-        await contactRef.update({
-            lastMessage: sentMessageData.textForDb,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-            // Do not reset unreadCount here, user hasn't seen it yet
-        });
-        console.log(`[AUTO] Mensaje automático enviado a ${contactRef.id}.`);
+            for (const msg of sentData.messages) {
+                const messageToSave = {
+                    from: 'page', status: 'sent',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: msg.id, text: msg.textForDb, isAutoReply: true
+                };
+                if (msg.fileUrlForDb) messageToSave.fileUrl = msg.fileUrlForDb;
+                if (msg.fileTypeForDb) messageToSave.fileType = msg.fileTypeForDb;
+                await contactRef.collection('messages').add(messageToSave);
+            }
+
+            await contactRef.update({
+                lastMessage: sentData.lastTextForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[AUTO] Mensaje automático (Messenger) enviado a ${contactRef.id}.`);
+        } else {
+            // --- WhatsApp send (original logic) ---
+            const sentMessageData = await sendAdvancedWhatsAppMessage(contactRef.id, { text, fileUrl, fileType });
+
+            await contactRef.collection('messages').add({
+                from: PHONE_NUMBER_ID,
+                status: 'sent',
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                id: sentMessageData.id,
+                text: sentMessageData.textForDb,
+                fileUrl: sentMessageData.fileUrlForDb,
+                fileType: sentMessageData.fileTypeForDb,
+                isAutoReply: true
+            });
+
+            await contactRef.update({
+                lastMessage: sentMessageData.textForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+            console.log(`[AUTO] Mensaje automático (WhatsApp) enviado a ${contactRef.id}.`);
+        }
     } catch (error) {
         console.error(`❌ Fallo al enviar mensaje automático a ${contactRef.id}:`, error.message);
-        // Optionally, save a failed message attempt to Firestore for tracking
     }
 }
 

@@ -10,6 +10,10 @@ const express = require('express');
 const PORT = process.env.PORT || 3000;
 
 // --- MONTAJE DE RUTAS ---
+// Messenger ANTES de WhatsApp porque '/webhook' capturaría '/webhook/messenger'
+const { router: messengerRouter } = require('./messengerHandler');
+app.use('/webhook/messenger', messengerRouter);
+
 app.use('/webhook', whatsappRouter);
 
 // Endpoint para servir variables de entorno al frontend de forma segura

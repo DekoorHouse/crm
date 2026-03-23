@@ -6,6 +6,7 @@ const { db, admin } = require('./config');
 const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
+const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -221,6 +222,86 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
         console.error(`❌ Error al enviar mensaje avanzado de WhatsApp a ${to}:`, error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
         throw error;
     }
+}
+
+/**
+ * Envía un mensaje de texto o multimedia a través de la API de Messenger.
+ * Messenger no soporta captions en adjuntos, así que si hay texto + media,
+ * se envían como mensajes separados.
+ * @param {string} psid El Page-Scoped User ID del destinatario.
+ * @param {object} options { text, fileUrl, fileType }
+ * @returns {Promise<{messages: Array<{id, textForDb, fileUrlForDb, fileTypeForDb}>, lastTextForDb: string}>}
+ */
+async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
+    const url = `https://graph.facebook.com/v19.0/me/messages`;
+    const params = { access_token: FB_PAGE_ACCESS_TOKEN };
+    const sentMessages = [];
+
+    // Send media first if present
+    if (fileUrl && fileType) {
+        const attachmentType = fileType.startsWith('image/') ? 'image' :
+                               fileType.startsWith('video/') ? 'video' :
+                               fileType.startsWith('audio/') ? 'audio' : 'file';
+
+        const mediaPayload = {
+            recipient: { id: psid },
+            message: {
+                attachment: {
+                    type: attachmentType,
+                    payload: { url: fileUrl, is_reusable: true }
+                }
+            }
+        };
+
+        try {
+            console.log(`[MESSENGER SEND] Enviando ${attachmentType} a ${psid}`);
+            const response = await axios.post(url, mediaPayload, { params });
+            const fallbackTexts = { image: '📷 Imagen', video: '🎥 Video', audio: '🎵 Audio', file: '📄 Documento' };
+            sentMessages.push({
+                id: response.data.message_id,
+                textForDb: fallbackTexts[attachmentType] || 'Archivo adjunto',
+                fileUrlForDb: fileUrl,
+                fileTypeForDb: fileType
+            });
+        } catch (error) {
+            console.error(`❌ [MESSENGER SEND] Error al enviar media a ${psid}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            throw error;
+        }
+
+        // Small delay between media and text
+        if (text) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+        }
+    }
+
+    // Send text if present
+    if (text) {
+        const textPayload = {
+            recipient: { id: psid },
+            message: { text: text }
+        };
+
+        try {
+            console.log(`[MESSENGER SEND] Enviando texto a ${psid}`);
+            const response = await axios.post(url, textPayload, { params });
+            sentMessages.push({
+                id: response.data.message_id,
+                textForDb: text,
+                fileUrlForDb: null,
+                fileTypeForDb: null
+            });
+        } catch (error) {
+            console.error(`❌ [MESSENGER SEND] Error al enviar texto a ${psid}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            throw error;
+        }
+    }
+
+    if (sentMessages.length === 0) {
+        throw new Error("Se requiere texto o un archivo para enviar un mensaje de Messenger.");
+    }
+
+    const lastMessage = sentMessages[sentMessages.length - 1];
+    return { messages: sentMessages, lastTextForDb: lastMessage.textForDb };
 }
 
 // =================================================================
@@ -814,6 +895,7 @@ module.exports = {
     getShippingQuote,
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,
+    sendMessengerMessage,
     invalidateGeminiCache,
     getMetaSpend
 };

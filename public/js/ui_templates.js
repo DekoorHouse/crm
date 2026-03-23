@@ -730,6 +730,7 @@ const ContactItemTemplate = (contact, isSelected) => {
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
                 <h3 class="font-semibold text-sm truncate">
+                    <i class="${contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
                     ${contact.name || 'Desconocido'}
                     ${contact.botActive ? '<i class="fas fa-robot text-green-500 ml-1 text-[10px]" title="IA Activa"></i>' : ''}
                 </h3>
@@ -1049,7 +1050,7 @@ const AdReferralBannerTemplate = (adReferral) => {
 };
 
 const ChatWindowTemplate = (contact) => {
-    const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fab fa-whatsapp-square text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
+    const emptyChat = `<div class="flex-1 flex flex-col items-center justify-center text-gray-500 bg-opacity-50 bg-white"><i class="fas fa-comments text-8xl mb-4 text-gray-300"></i><h2 class="text-xl font-semibold">Selecciona un chat para empezar</h2><p>Mantén tu CRM conectado y organizado.</p></div>`;
     if (!contact) { return emptyChat; }
 
     // --- Department Color Logic for Header ---
@@ -1080,7 +1081,7 @@ const ChatWindowTemplate = (contact) => {
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
              <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*" multiple>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
-             <button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>
+             ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
              <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>
              <textarea id="message-input" placeholder="${placeholderText}" class="flex-1 !mb-0" rows="1"></textarea>
              <button type="submit" class="btn btn-primary rounded-full w-12 h-12 p-0"><i class="fas fa-paper-plane text-lg"></i></button>
@@ -1148,10 +1149,15 @@ const ChatWindowTemplate = (contact) => {
             <button id="chat-back-btn" onclick="closeChatOnMobile()" class="hidden"><i class="fas fa-arrow-left"></i></button>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
-                <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">${contact.name}</h2>
+                <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">
+                    <i class="${contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1"></i>${contact.name}
+                </h2>
                 <div class="flex items-center text-xs text-gray-500">
-                    <span>+${contact.id}</span>
-                    <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>
+                    ${contact.channel === 'messenger'
+                        ? '<span>Facebook Messenger</span>'
+                        : `<span>+${contact.id}</span>
+                           <button onclick="event.stopPropagation(); copyToClipboard('${contact.id}', this)" class="ml-2 text-gray-400 hover:text-primary transition-colors focus:outline-none" title="Copiar número"><i class="far fa-copy"></i></button>`
+                    }
                 </div>
                 <div id="contact-status-wrapper" class="mt-1.5"></div>
             </div>

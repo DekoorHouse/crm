@@ -435,14 +435,19 @@ async function handleSelectContact(contactId) {
             // Guardar estado previo para detectar cambios y decidir qué renderizar
             const wasExpired = state.isSessionExpired;
 
-            // Recalcular el estado de la sesión cada vez que llegan mensajes
-            // El usuario envía un mensaje, así que buscamos el último en orden cronológico inverso
-            const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
-            if (lastUserMessage && lastUserMessage.timestamp) {
-                const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
-                state.isSessionExpired = hoursDiff > 24;
+            // Messenger no tiene ventana de 24h, nunca expira
+            const selectedContact = state.contacts.find(c => c.id === contactId);
+            if (selectedContact && selectedContact.channel === 'messenger') {
+                state.isSessionExpired = false;
             } else {
-                state.isSessionExpired = true; // Si no hay mensajes del usuario, la sesión está expirada (necesita plantilla)
+                // Recalcular el estado de la sesión cada vez que llegan mensajes
+                const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
+                if (lastUserMessage && lastUserMessage.timestamp) {
+                    const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
+                    state.isSessionExpired = hoursDiff > 24;
+                } else {
+                    state.isSessionExpired = true;
+                }
             }
 
             if (state.activeTab === 'chat') {
@@ -608,12 +613,17 @@ function loadMoreMessages() {
             }
             
             const wasExpired = state.isSessionExpired;
-            const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
-            if (lastUserMessage && lastUserMessage.timestamp) {
-                const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
-                state.isSessionExpired = hoursDiff > 24;
+            const selectedContactPag = state.contacts.find(c => c.id === contactId);
+            if (selectedContactPag && selectedContactPag.channel === 'messenger') {
+                state.isSessionExpired = false;
             } else {
-                state.isSessionExpired = true;
+                const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);
+                if (lastUserMessage && lastUserMessage.timestamp) {
+                    const hoursDiff = (new Date().getTime() - (lastUserMessage.timestamp.seconds * 1000)) / 3600000;
+                    state.isSessionExpired = hoursDiff > 24;
+                } else {
+                    state.isSessionExpired = true;
+                }
             }
 
             // Si al cargar más mensajes descubrimos que la sesión cambió de estado (poco probable pero posible), re-renderizamos
