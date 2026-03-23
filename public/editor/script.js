@@ -2122,21 +2122,13 @@ function handleSelectDown(pt, e) {
     const obj = objectAtPoint(pt);
     if (obj) {
         selectObject(obj.id, e.shiftKey);
-        // If selected a text linked to a ref area, or a ref area with texts, select them together
+        // If selected a text linked to a ref area, select the ref area instead
         if (!e.shiftKey) {
             const sel = findObject(state.selectedIds[0]);
-            if (sel) {
-                if (sel.type === 'text') {
-                    // Text linked to ref area → select the ref area + all its texts
-                    const ra = findRefAreaForText(sel);
-                    if (ra) {
-                        const ids = [ra.id, ...(ra.refTextIds || [])];
-                        state.selectedIds = [...new Set(ids)];
-                    }
-                } else if (sel.isRefArea && sel.refTextIds && sel.refTextIds.length > 0) {
-                    // Ref area → also select its linked texts
-                    const ids = [sel.id, ...sel.refTextIds];
-                    state.selectedIds = [...new Set(ids)];
+            if (sel && sel.type === 'text') {
+                const ra = findRefAreaForText(sel);
+                if (ra) {
+                    state.selectedIds = [ra.id];
                 }
             }
         }
