@@ -6637,6 +6637,10 @@ function setupEventListeners() {
         const obj = objectAtPoint(pt);
         if (obj && obj.type === 'text') {
             editTextObject(obj, e);
+        } else if (obj && obj.isRefArea && obj.refTextIds && obj.refTextIds.length > 0) {
+            // Double-click on ref area -> edit its linked text
+            const textObj = findObject(obj.refTextIds[0]);
+            if (textObj) editTextObject(textObj, e);
         } else if (obj && obj.type === 'powerclip' && obj.id !== pcEditingId) {
             // Skip if already editing this powerclip
             const screenScale = _cachedScreenScale;
