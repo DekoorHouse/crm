@@ -5730,6 +5730,13 @@ function setupEventListeners() {
     svg.addEventListener('mousedown', handleMouseDown);
     svg.addEventListener('mousemove', handleMouseMove);
     svg.addEventListener('mouseup', handleMouseUp);
+    window.addEventListener('mouseup', (e) => {
+        // Catch mouseup outside the SVG canvas (e.g. marquee dragged off-screen)
+        if (e.target === svg || svg.contains(e.target)) return; // handled by svg listener
+        if (state.isMarquee || state.isDragging || state.isResizing || state.isPanning) {
+            handleMouseUp(e);
+        }
+    });
     svg.addEventListener('wheel', handleWheel, {passive:false});
     svg.addEventListener('contextmenu', (e) => {
         e.preventDefault();
