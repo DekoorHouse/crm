@@ -2,9 +2,9 @@ const FormData = require('form-data');
 const axios = require('axios');
 const { bucket } = require('../config');
 
-async function publishPhotoToPage(imageBuffer, caption) {
-    const pageId = process.env.FB_PAGE_ID;
-    const pageToken = process.env.FB_PAGE_ACCESS_TOKEN;
+async function publishPhotoToPage(imageBuffer, caption, pageConfig) {
+    const pageId = pageConfig?.fbPageId || process.env.FB_PAGE_ID;
+    const pageToken = pageConfig?.accessToken || process.env.FB_PAGE_ACCESS_TOKEN;
 
     if (!pageId || !pageToken) {
         throw new Error('FB_PAGE_ID o FB_PAGE_ACCESS_TOKEN no configurados.');
@@ -28,9 +28,9 @@ async function publishPhotoToPage(imageBuffer, caption) {
     return postId;
 }
 
-async function publishPhotoToInstagram(imageBuffer, caption, mimeType) {
-    const pageId = process.env.FB_PAGE_ID;
-    const pageToken = process.env.FB_PAGE_ACCESS_TOKEN;
+async function publishPhotoToInstagram(imageBuffer, caption, mimeType, pageConfig) {
+    const pageId = pageConfig?.fbPageId || process.env.FB_PAGE_ID;
+    const pageToken = pageConfig?.accessToken || process.env.FB_PAGE_ACCESS_TOKEN;
 
     if (!pageId || !pageToken) {
         throw new Error('FB_PAGE_ID o FB_PAGE_ACCESS_TOKEN no configurados.');
@@ -95,8 +95,8 @@ async function publishPhotoToInstagram(imageBuffer, caption, mimeType) {
     }
 }
 
-async function verifyPageToken() {
-    const pageToken = process.env.FB_PAGE_ACCESS_TOKEN;
+async function verifyPageToken(pageConfig) {
+    const pageToken = pageConfig?.accessToken || process.env.FB_PAGE_ACCESS_TOKEN;
     if (!pageToken) return { valid: false, error: 'Token no configurado' };
 
     try {

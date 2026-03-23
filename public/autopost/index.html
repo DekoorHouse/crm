@@ -34,9 +34,9 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'Plus Jakarta Sans', sans-serif; background: var(--bg-main); color: var(--text-primary); min-height: 100vh; padding: 24px; }
     .container { max-width: 900px; margin: 0 auto; }
-    header { margin-bottom: 32px; }
-    header h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
-    header p { color: var(--text-secondary); font-size: 0.9rem; }
+    header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; }
+    header div h1 { font-size: 1.75rem; font-weight: 800; letter-spacing: -0.03em; background: linear-gradient(135deg, var(--primary), var(--accent)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+    header div p { color: var(--text-secondary); font-size: 0.9rem; }
     .card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: var(--radius-lg); padding: 24px; margin-bottom: 20px; box-shadow: var(--shadow-md); }
     .card-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
     .card-title i { color: var(--primary); }
@@ -87,9 +87,16 @@
     .photo-item .photo-delete { position: absolute; top: 4px; right: 4px; width: 24px; height: 24px; border-radius: 50%; background: var(--danger); color: white; border: none; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; opacity: 0; transition: opacity 0.2s; }
     .photo-item:hover .photo-delete { opacity: 1; }
 
+    /* Page selector */
+    .page-selector { display: flex; gap: 8px; align-items: center; }
+    .page-selector select { padding: 8px 16px; border-radius: var(--radius-md); border: 2px solid var(--border-color); font-family: inherit; font-size: 0.9rem; font-weight: 600; background: var(--bg-card); color: var(--text-primary); cursor: pointer; outline: none; transition: border-color 0.2s; }
+    .page-selector select:focus { border-color: var(--primary); }
+    .page-selector .page-icon { width: 36px; height: 36px; border-radius: 50%; background: var(--primary); color: white; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; }
+
     @media (max-width: 600px) {
       body { padding: 16px; }
       header h1 { font-size: 1.3rem; }
+      header { flex-direction: column; align-items: flex-start; }
       .actions { flex-direction: column; }
       .btn { justify-content: center; }
       .photo-grid { grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); }
@@ -99,8 +106,16 @@
 <body>
   <div class="container">
     <header>
-      <h1><i class="fas fa-robot"></i> AutoPost</h1>
-      <p>Sube fotos → IA genera el copy → Publica en Facebook</p>
+      <div>
+        <h1><i class="fas fa-robot"></i> AutoPost</h1>
+        <p>Sube fotos → IA genera el copy → Publica en Facebook</p>
+      </div>
+      <div class="page-selector">
+        <div class="page-icon"><i class="fab fa-facebook-f"></i></div>
+        <select id="pageSelect" onchange="switchPage()">
+          <option value="">Cargando paginas...</option>
+        </select>
+      </div>
     </header>
 
     <!-- Estado -->
@@ -176,9 +191,19 @@
   <script>
     const API = window.API_BASE_URL || '';
     let queuedFilenames = new Set();
+    let currentPageId = '';
+
+    function pageQuery() {
+      return currentPageId ? `page=${currentPageId}` : '';
+    }
+
+    function appendPage(path) {
+      const sep = path.includes('?') ? '&' : '?';
+      return currentPageId ? `${path}${sep}page=${currentPageId}` : path;
+    }
 
     async function api(path, options = {}) {
-      const res = await fetch(`${API}/api/autopost${path}`, options);
+      const res = await fetch(`${API}/api/autopost${appendPage(path)}`, options);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
       return data;
@@ -195,6 +220,39 @@
     function setLoading(btn, loading) {
       if (loading) { btn.disabled = true; btn._html = btn.innerHTML; btn.innerHTML = '<span class="spinner"></span> Procesando...'; }
       else { btn.disabled = false; btn.innerHTML = btn._html; }
+    }
+
+    // --- Paginas ---
+    async function loadPages() {
+      try {
+        const data = await fetch(`${API}/api/autopost/pages`).then(r => r.json());
+        const select = document.getElementById('pageSelect');
+
+        if (!data.pages?.length) {
+          select.innerHTML = '<option value="">Sin paginas configuradas</option>';
+          return;
+        }
+
+        select.innerHTML = data.pages.map(p =>
+          `<option value="${p.id}" ${p.id === currentPageId ? 'selected' : ''}>${p.name}</option>`
+        ).join('');
+
+        // Si no hay pagina seleccionada, usar la primera
+        if (!currentPageId && data.pages.length) {
+          currentPageId = data.pages[0].id;
+          select.value = currentPageId;
+        }
+      } catch (e) {
+        console.error('Error cargando paginas:', e);
+      }
+    }
+
+    function switchPage() {
+      currentPageId = document.getElementById('pageSelect').value;
+      // Recargar todo con la nueva pagina
+      loadStatus();
+      loadLog();
+      document.getElementById('previewArea').style.display = 'none';
     }
 
     // --- Estado ---
@@ -253,7 +311,8 @@
 
       try {
         toast('Subiendo fotos...');
-        const res = await fetch(`${API}/api/autopost/photos/upload`, { method: 'POST', body: form });
+        const url = `${API}/api/autopost/photos/upload${currentPageId ? '?page=' + currentPageId : ''}`;
+        const res = await fetch(url, { method: 'POST', body: form });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         toast(`${data.count} foto(s) subida(s)!`);
@@ -300,12 +359,13 @@
 
     // --- Publicar ---
     async function triggerPost() {
-      if (!confirm('Publicar ahora en Facebook?')) return;
+      const pageName = document.getElementById('pageSelect').selectedOptions[0]?.text || 'Facebook';
+      if (!confirm(`Publicar ahora en ${pageName}?`)) return;
       const btn = document.getElementById('btnPublish');
       setLoading(btn, true);
       try {
         const data = await api('/trigger', { method: 'POST' });
-        if (data.status === 'success') { toast('Publicado en Facebook!'); loadLog(); loadPhotos(); }
+        if (data.status === 'success') { toast(`Publicado en ${pageName}!`); loadLog(); loadPhotos(); }
         else toast(`Error: ${data.error || 'Fallo'}`, 'error');
       } catch (e) {
         toast('Error: ' + e.message, 'error');
@@ -369,8 +429,12 @@
     }
 
     // --- Init ---
-    loadStatus();
-    loadLog();
+    async function init() {
+      await loadPages();
+      loadStatus();
+      loadLog();
+    }
+    init();
   </script>
 </body>
 </html>

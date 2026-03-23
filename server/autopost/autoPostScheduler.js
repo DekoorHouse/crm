@@ -3,70 +3,74 @@ const { db } = require('../config');
 const { fetchAvailablePhotos, listPhotoIds, pickUnpostedPhoto, downloadPhoto, deletePhoto } = require('./photoService');
 const { generateCaption } = require('./captionService');
 const { publishPhotoToPage, publishPhotoToInstagram } = require('./facebookPostService');
+const { getEnabledPages } = require('./pageService');
 
 let scheduledTask = null;
 
-async function executeAutoPost() {
-    console.log('[AUTOPOST] Iniciando proceso de auto-publicacion...');
+async function executeAutoPost(pageConfig) {
+    const pageName = pageConfig?.name || 'default';
+    console.log(`[AUTOPOST][${pageName}] Iniciando proceso de auto-publicacion...`);
 
     const logEntry = {
         startedAt: new Date(),
-        status: 'in_progress'
+        status: 'in_progress',
+        pageName,
+        pageId: pageConfig?.fbPageId || process.env.FB_PAGE_ID
     };
 
     try {
         // 1. Obtener fotos disponibles en Firebase Storage
-        console.log('[AUTOPOST] Buscando fotos en Firebase Storage (autopost/)...');
-        const photos = await fetchAvailablePhotos();
-        console.log(`[AUTOPOST] Se encontraron ${photos.length} fotos.`);
+        console.log(`[AUTOPOST][${pageName}] Buscando fotos...`);
+        const photos = await fetchAvailablePhotos(pageConfig);
+        console.log(`[AUTOPOST][${pageName}] Se encontraron ${photos.length} fotos.`);
 
         if (!photos.length) {
             logEntry.status = 'skipped';
-            logEntry.error = 'No hay fotos en la carpeta autopost/.';
+            logEntry.error = `No hay fotos en la carpeta para ${pageName}.`;
             await saveLog(logEntry);
-            console.log('[AUTOPOST] No hay fotos. Proceso omitido.');
+            console.log(`[AUTOPOST][${pageName}] No hay fotos. Proceso omitido.`);
             return logEntry;
         }
 
         // 2. Seleccionar foto no publicada
-        const photo = await pickUnpostedPhoto(photos);
+        const photo = await pickUnpostedPhoto(photos, pageConfig);
         if (!photo) {
             logEntry.status = 'skipped';
             logEntry.error = 'Todas las fotos ya fueron publicadas.';
             await saveLog(logEntry);
-            console.log('[AUTOPOST] Todas las fotos ya fueron publicadas. Proceso omitido.');
+            console.log(`[AUTOPOST][${pageName}] Todas las fotos ya fueron publicadas. Proceso omitido.`);
             return logEntry;
         }
 
         logEntry.photoId = photo.id;
         logEntry.photoFilename = photo.filename;
-        console.log(`[AUTOPOST] Foto seleccionada: ${photo.filename}`);
+        console.log(`[AUTOPOST][${pageName}] Foto seleccionada: ${photo.filename}`);
 
         // 3. Descargar la imagen
-        console.log('[AUTOPOST] Descargando imagen...');
+        console.log(`[AUTOPOST][${pageName}] Descargando imagen...`);
         const imageBuffer = await downloadPhoto(photo.id);
         const mimeType = photo.mimeType || 'image/jpeg';
 
         // 4. Generar caption con Gemini
-        console.log('[AUTOPOST] Generando caption con IA...');
-        const caption = await generateCaption(imageBuffer, mimeType);
+        console.log(`[AUTOPOST][${pageName}] Generando caption con IA...`);
+        const caption = await generateCaption(imageBuffer, mimeType, pageConfig);
         logEntry.caption = caption;
-        console.log(`[AUTOPOST] Caption generado: "${caption}"`);
+        console.log(`[AUTOPOST][${pageName}] Caption generado: "${caption}"`);
 
         // 5. Publicar en Facebook
-        console.log('[AUTOPOST] Publicando en Facebook...');
-        const fbPostId = await publishPhotoToPage(imageBuffer, caption);
+        console.log(`[AUTOPOST][${pageName}] Publicando en Facebook...`);
+        const fbPostId = await publishPhotoToPage(imageBuffer, caption, pageConfig);
         logEntry.fbPostId = fbPostId;
-        console.log(`[AUTOPOST] Facebook OK! Post ID: ${fbPostId}`);
+        console.log(`[AUTOPOST][${pageName}] Facebook OK! Post ID: ${fbPostId}`);
 
         // 6. Publicar en Instagram
         try {
-            console.log('[AUTOPOST] Publicando en Instagram...');
-            const igMediaId = await publishPhotoToInstagram(imageBuffer, caption, mimeType);
+            console.log(`[AUTOPOST][${pageName}] Publicando en Instagram...`);
+            const igMediaId = await publishPhotoToInstagram(imageBuffer, caption, mimeType, pageConfig);
             logEntry.igMediaId = igMediaId;
-            console.log(`[AUTOPOST] Instagram OK! Media ID: ${igMediaId}`);
+            console.log(`[AUTOPOST][${pageName}] Instagram OK! Media ID: ${igMediaId}`);
         } catch (igError) {
-            console.error(`[AUTOPOST] Error en Instagram (FB si se publico): ${igError.message}`);
+            console.error(`[AUTOPOST][${pageName}] Error en Instagram (FB si se publico): ${igError.message}`);
             logEntry.igError = igError.message;
         }
 
@@ -77,9 +81,9 @@ async function executeAutoPost() {
         // Eliminar foto de Storage despues de publicar
         try {
             await deletePhoto(photo.id);
-            console.log(`[AUTOPOST] Foto eliminada de Storage: ${photo.filename}`);
+            console.log(`[AUTOPOST][${pageName}] Foto eliminada de Storage: ${photo.filename}`);
         } catch (delErr) {
-            console.error(`[AUTOPOST] Error eliminando foto: ${delErr.message}`);
+            console.error(`[AUTOPOST][${pageName}] Error eliminando foto: ${delErr.message}`);
         }
 
         return logEntry;
@@ -89,21 +93,47 @@ async function executeAutoPost() {
         logEntry.error = error.message;
         logEntry.completedAt = new Date();
         await saveLog(logEntry);
-        console.error(`[AUTOPOST] Error: ${error.message}`);
+        console.error(`[AUTOPOST][${pageName}] Error: ${error.message}`);
         return logEntry;
     }
 }
 
-async function previewNextPost() {
-    const photos = await fetchAvailablePhotos();
-    const photo = await pickUnpostedPhoto(photos);
+async function executeAutoPostAllPages() {
+    console.log('[AUTOPOST] Ejecutando para todas las paginas habilitadas...');
+    const pages = await getEnabledPages();
+
+    if (!pages.length) {
+        // Fallback: usar env vars (compatibilidad hacia atras)
+        if (process.env.FB_PAGE_ID && process.env.FB_PAGE_ACCESS_TOKEN) {
+            console.log('[AUTOPOST] No hay paginas en Firestore, usando env vars...');
+            return await executeAutoPost(null);
+        }
+        console.log('[AUTOPOST] No hay paginas habilitadas.');
+        return [];
+    }
+
+    const results = [];
+    for (const page of pages) {
+        try {
+            const result = await executeAutoPost(page);
+            results.push(result);
+        } catch (err) {
+            console.error(`[AUTOPOST] Error con pagina ${page.name}: ${err.message}`);
+        }
+    }
+    return results;
+}
+
+async function previewNextPost(pageConfig) {
+    const photos = await fetchAvailablePhotos(pageConfig);
+    const photo = await pickUnpostedPhoto(photos, pageConfig);
 
     if (!photo) {
-        return { message: 'No hay fotos disponibles para publicar. Sube fotos a la carpeta autopost/ en Firebase Storage.' };
+        return { message: 'No hay fotos disponibles para publicar. Sube fotos a la carpeta correspondiente.' };
     }
 
     const imageBuffer = await downloadPhoto(photo.id);
-    const caption = await generateCaption(imageBuffer, photo.mimeType || 'image/jpeg');
+    const caption = await generateCaption(imageBuffer, photo.mimeType || 'image/jpeg', pageConfig);
 
     const base64Image = imageBuffer.toString('base64');
 
@@ -123,12 +153,12 @@ async function saveLog(entry) {
     }
 }
 
-async function getLog(limit = 20) {
-    const snapshot = await db.collection('auto_post_log')
-        .orderBy('startedAt', 'desc')
-        .limit(limit)
-        .get();
-
+async function getLog(limit = 20, pageId) {
+    let query = db.collection('auto_post_log').orderBy('startedAt', 'desc');
+    if (pageId) {
+        query = query.where('pageId', '==', pageId);
+    }
+    const snapshot = await query.limit(limit).get();
     return snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 }
 
@@ -149,7 +179,7 @@ function startScheduler() {
 
     scheduledTask = cron.schedule(cronExpression, async () => {
         console.log(`[AUTOPOST] Cron disparado: ${new Date().toISOString()}`);
-        await executeAutoPost();
+        await executeAutoPostAllPages();
     }, {
         timezone: 'America/Mexico_City'
     });
@@ -174,18 +204,19 @@ function getSchedulerStatus() {
     };
 }
 
-async function getUpcomingQueue() {
+async function getUpcomingQueue(pageConfig) {
     const enabled = process.env.AUTOPOST_ENABLED === 'true';
     if (!enabled) return [];
 
-    const photos = await fetchAvailablePhotos();
+    const photos = await fetchAvailablePhotos(pageConfig);
     if (!photos.length) return [];
 
     // Obtener IDs ya publicados
-    const logSnapshot = await db.collection('auto_post_log')
-        .where('status', '==', 'success')
-        .select('photoId')
-        .get();
+    let query = db.collection('auto_post_log').where('status', '==', 'success');
+    if (pageConfig?.fbPageId) {
+        query = query.where('pageId', '==', pageConfig.fbPageId);
+    }
+    const logSnapshot = await query.select('photoId').get();
     const postedIds = new Set(logSnapshot.docs.map(d => d.data().photoId));
     const unposted = photos.filter(p => !postedIds.has(p.id));
 
@@ -229,6 +260,7 @@ async function getUpcomingQueue() {
 
 module.exports = {
     executeAutoPost,
+    executeAutoPostAllPages,
     previewNextPost,
     getLog,
     getUpcomingQueue,

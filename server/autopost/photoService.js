@@ -1,16 +1,21 @@
 const { db, bucket } = require('../config');
 
-const STORAGE_FOLDER = 'autopost';
+const DEFAULT_STORAGE_FOLDER = 'autopost';
+
+function getStorageFolder(pageConfig) {
+    if (pageConfig?.storageFolder) return `autopost/${pageConfig.storageFolder}`;
+    return DEFAULT_STORAGE_FOLDER;
+}
 
 // Filtrar archivos de imagen validos (excluye thumbnails auto-generados)
-function filterOriginalPhotos(files) {
+function filterOriginalPhotos(files, folder) {
     return files.filter(file => {
         const name = file.name.toLowerCase();
         const isImage = name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.png') || name.endsWith('.webp');
-        const isFolder = file.name === `${STORAGE_FOLDER}/`;
+        const isFolder = file.name === `${folder}/`;
 
-        // Solo archivos directamente en autopost/, no subdirectorios (ej: autopost/thumbs/)
-        const relativePath = file.name.slice(STORAGE_FOLDER.length + 1);
+        // Solo archivos directamente en la carpeta, no subdirectorios
+        const relativePath = file.name.slice(folder.length + 1);
         const isDirectChild = relativePath.length > 0 && !relativePath.includes('/');
 
         // Excluir thumbnails auto-generados (ej: _200x200, thumb_, etc.)
@@ -20,9 +25,10 @@ function filterOriginalPhotos(files) {
     });
 }
 
-async function fetchAvailablePhotos() {
-    const [files] = await bucket.getFiles({ prefix: `${STORAGE_FOLDER}/` });
-    const photos = filterOriginalPhotos(files);
+async function fetchAvailablePhotos(pageConfig) {
+    const folder = getStorageFolder(pageConfig);
+    const [files] = await bucket.getFiles({ prefix: `${folder}/` });
+    const photos = filterOriginalPhotos(files, folder);
 
     // Generar URLs firmadas para thumbnails
     const result = [];
@@ -44,14 +50,15 @@ async function fetchAvailablePhotos() {
     return result;
 }
 
-async function pickUnpostedPhoto(photos) {
+async function pickUnpostedPhoto(photos, pageConfig) {
     if (!photos.length) return null;
 
-    // Obtener IDs ya publicados
-    const logSnapshot = await db.collection('auto_post_log')
-        .where('status', '==', 'success')
-        .select('photoId')
-        .get();
+    // Obtener IDs ya publicados (filtrar por página si aplica)
+    let query = db.collection('auto_post_log').where('status', '==', 'success');
+    if (pageConfig?.fbPageId) {
+        query = query.where('pageId', '==', pageConfig.fbPageId);
+    }
+    const logSnapshot = await query.select('photoId').get();
 
     const postedIds = new Set(logSnapshot.docs.map(d => d.data().photoId));
 
@@ -72,16 +79,18 @@ async function getPhotoPublicUrl(fileId) {
 }
 
 // Listar solo IDs/filenames sin generar URLs (rapido, para cola)
-async function listPhotoIds() {
-    const [files] = await bucket.getFiles({ prefix: `${STORAGE_FOLDER}/` });
-    return filterOriginalPhotos(files).map(file => ({
+async function listPhotoIds(pageConfig) {
+    const folder = getStorageFolder(pageConfig);
+    const [files] = await bucket.getFiles({ prefix: `${folder}/` });
+    return filterOriginalPhotos(files, folder).map(file => ({
         id: file.name,
         filename: file.name.split('/').pop()
     }));
 }
 
-async function uploadPhoto(buffer, filename, mimeType) {
-    const filePath = `${STORAGE_FOLDER}/${filename}`;
+async function uploadPhoto(buffer, filename, mimeType, pageConfig) {
+    const folder = getStorageFolder(pageConfig);
+    const filePath = `${folder}/${filename}`;
     const file = bucket.file(filePath);
 
     await file.save(buffer, {
