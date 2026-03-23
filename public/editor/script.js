@@ -3575,6 +3575,7 @@ async function doSaveNew(name) {
         currentFileId = docId;
         currentFileName = name;
         updateFileNameDisplay();
+        refreshSidebarFiles();
     } catch (err) {
         console.error('Error guardando archivo:', err);
         alert('Error al guardar: ' + err.message);
@@ -3585,6 +3586,7 @@ async function doSaveUpdate() {
     try {
         const stateJson = getStateForSave();
         await window.fbUpdateFile(currentFileId, currentFileName, stateJson, state.pageWidth, state.pageHeight);
+        refreshSidebarFiles();
     } catch (err) {
         console.error('Error actualizando archivo:', err);
         alert('Error al guardar: ' + err.message);
@@ -3691,6 +3693,11 @@ function openFile(file) {
 
     undoStack.length = 0;
     redoStack.length = 0;
+
+    // Update sidebar active state
+    document.querySelectorAll('.sidebar-file-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.fileId === file.id);
+    });
 }
 
 function escapeHtml(str) {
@@ -3723,6 +3730,135 @@ function setupFileModals() {
         btn.addEventListener('click', hideOpenFileModal);
     });
     openModal.querySelector('.modal-overlay').addEventListener('click', hideOpenFileModal);
+}
+
+// =============================================
+// FILES SIDEBAR
+// =============================================
+
+function setupFilesSidebar() {
+    const sidebar = document.getElementById('files-sidebar');
+    const toggleBtn = document.getElementById('sidebar-toggle');
+    const openBtn = document.getElementById('sidebar-open-btn');
+    const saveBtn = document.getElementById('sidebar-save-btn');
+    const newBtn = document.getElementById('sidebar-new-btn');
+
+    // Restore collapsed state from localStorage
+    const collapsed = localStorage.getItem('dekoor-sidebar-collapsed') === 'true';
+    if (collapsed) {
+        sidebar.classList.add('collapsed');
+        openBtn.classList.add('visible');
+    }
+
+    toggleBtn.addEventListener('click', () => {
+        sidebar.classList.add('collapsed');
+        openBtn.classList.add('visible');
+        localStorage.setItem('dekoor-sidebar-collapsed', 'true');
+    });
+
+    openBtn.addEventListener('click', () => {
+        sidebar.classList.remove('collapsed');
+        openBtn.classList.remove('visible');
+        localStorage.setItem('dekoor-sidebar-collapsed', 'false');
+        refreshSidebarFiles();
+    });
+
+    saveBtn.addEventListener('click', () => saveFile());
+    newBtn.addEventListener('click', () => {
+        if (state.objects.length > 0 && !confirm('\u00bfDescartar el dise\u00f1o actual?')) return;
+        clearAll();
+        currentFileId = null;
+        currentFileName = null;
+        updateFileNameDisplay();
+    });
+
+    // Load files when Firebase is ready
+    waitForFirebase(() => refreshSidebarFiles());
+}
+
+function waitForFirebase(cb) {
+    if (window.firebaseReady) { cb(); return; }
+    const interval = setInterval(() => {
+        if (window.firebaseReady) { clearInterval(interval); cb(); }
+    }, 200);
+}
+
+async function refreshSidebarFiles() {
+    if (!window.firebaseReady) return;
+    const list = document.getElementById('sidebar-file-list');
+    try {
+        const files = await window.fbListFiles();
+        if (files.length === 0) {
+            list.innerHTML = '<div class="sidebar-list-empty">Sin archivos guardados</div>';
+            return;
+        }
+        list.innerHTML = '';
+        for (const file of files) {
+            list.appendChild(createSidebarFileItem(file));
+        }
+    } catch (err) {
+        console.error('Error cargando sidebar:', err);
+        list.innerHTML = '<div class="sidebar-list-empty">Error al cargar</div>';
+    }
+}
+
+function createSidebarFileItem(file) {
+    const item = document.createElement('div');
+    item.className = 'sidebar-file-item' + (currentFileId === file.id ? ' active' : '');
+    item.dataset.fileId = file.id;
+
+    const dateStr = file.updatedAt
+        ? new Date(file.updatedAt.seconds * 1000).toLocaleString('es-MX', {
+            day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit'
+          })
+        : '';
+
+    const icon = document.createElement('div');
+    icon.className = 'sidebar-file-icon';
+    icon.innerHTML = '<svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h8l4 4v10H4z"/><path d="M12 3v4h4"/></svg>';
+
+    const info = document.createElement('div');
+    info.className = 'sidebar-file-info';
+    info.innerHTML =
+        '<div class="sidebar-file-name">' + escapeHtml(file.name) + '</div>' +
+        '<div class="sidebar-file-date">' + dateStr + '</div>';
+
+    const delBtn = document.createElement('button');
+    delBtn.className = 'sidebar-file-del';
+    delBtn.title = 'Eliminar';
+    delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5l.5-9"/></svg>';
+
+    info.addEventListener('click', () => {
+        openFile(file);
+        // Update active state
+        document.querySelectorAll('.sidebar-file-item').forEach(el => el.classList.remove('active'));
+        item.classList.add('active');
+    });
+
+    delBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('\u00bfEliminar "' + file.name + '"?')) return;
+        try {
+            await window.fbDeleteFile(file.id);
+            item.remove();
+            if (currentFileId === file.id) {
+                currentFileId = null;
+                currentFileName = null;
+                updateFileNameDisplay();
+            }
+            const list = document.getElementById('sidebar-file-list');
+            if (list.children.length === 0) {
+                list.innerHTML = '<div class="sidebar-list-empty">Sin archivos guardados</div>';
+            }
+        } catch (err) {
+            alert('Error al eliminar: ' + err.message);
+        }
+    });
+
+    item.appendChild(icon);
+    item.appendChild(info);
+    item.appendChild(delBtn);
+    return item;
 }
 
 // =============================================
@@ -5136,6 +5272,7 @@ function setupEventListeners() {
     setupBmpConverterModal();
     setupBgRemovalModal();
     setupFileModals();
+    setupFilesSidebar();
 }
 
 function setTool(tool) {
