@@ -4766,6 +4766,10 @@ function executeSingleAction(action) {
                     }
                 }
                 refreshElement(obj);
+                // Re-fit text to reference area if text was changed
+                if (obj.type === 'text' && p.text != null) {
+                    fitTextToRefArea(obj).then(() => { refreshElement(obj); drawSelection(); });
+                }
             }
             return { id: targets[0]?.id };
         }
