@@ -4349,7 +4349,7 @@ function setupFilesSidebar() {
     });
 
     // Load files when Firebase is ready
-    waitForFirebase(() => refreshSidebarFiles());
+    waitForFirebase(() => { refreshSidebarFiles(); loadAIInstructions(); });
 }
 
 function waitForFirebase(cb) {
@@ -4573,10 +4573,25 @@ function createSidebarTemplateItem(tpl) {
 // =============================================
 
 let _aiChatHistory = [];
-let _aiInstructions = localStorage.getItem('dekoor-ai-instructions') || 'Eres un asistente de dise\u00f1o gr\u00e1fico integrado en un editor SVG. Ayuda al usuario con sus dise\u00f1os, da sugerencias creativas y responde preguntas sobre el editor.';
+let _aiInstructions = 'Eres un asistente de dise\u00f1o gr\u00e1fico integrado en un editor SVG. Ayuda al usuario con sus dise\u00f1os, da sugerencias creativas y responde preguntas sobre el editor.';
+let _aiInstructionsLoaded = false;
+
+async function loadAIInstructions() {
+    if (_aiInstructionsLoaded) return;
+    try {
+        if (window.fbGetAIInstructions) {
+            const instr = await window.fbGetAIInstructions();
+            if (instr) _aiInstructions = instr;
+            _aiInstructionsLoaded = true;
+        }
+    } catch (e) { console.error('Error cargando instrucciones AI:', e); }
+}
 
 function showAIInstructionsModal() {
     const modal = document.getElementById('ai-instructions-modal');
+    loadAIInstructions().then(() => {
+        document.getElementById('ai-instructions-text').value = _aiInstructions;
+    });
     document.getElementById('ai-instructions-text').value = _aiInstructions;
     modal.classList.remove('hidden');
 }
@@ -4588,11 +4603,15 @@ function setupAIChat() {
         btn.addEventListener('click', () => instrModal.classList.add('hidden'));
     });
     instrModal.querySelector('.modal-overlay').addEventListener('click', () => instrModal.classList.add('hidden'));
-    instrModal.querySelector('[data-action="save"]').addEventListener('click', () => {
+    instrModal.querySelector('[data-action="save"]').addEventListener('click', async () => {
         _aiInstructions = document.getElementById('ai-instructions-text').value.trim();
-        localStorage.setItem('dekoor-ai-instructions', _aiInstructions);
         instrModal.classList.add('hidden');
-        showToast('Instrucciones guardadas');
+        try {
+            if (window.fbSaveAIInstructions) await window.fbSaveAIInstructions(_aiInstructions);
+            showToast('Instrucciones guardadas');
+        } catch (e) {
+            alert('Error al guardar: ' + e.message);
+        }
     });
 
     // Chat bubble
