@@ -4083,7 +4083,8 @@ function createSidebarFileItem(file) {
     delBtn.title = 'Eliminar';
     delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5l.5-9"/></svg>';
 
-    info.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        if (e.target.closest('.sidebar-file-del')) return;
         openFile(file);
         document.querySelectorAll('.sidebar-file-item').forEach(el => el.classList.remove('active'));
         item.classList.add('active');
@@ -4184,7 +4185,8 @@ function createSidebarTemplateItem(tpl) {
     delBtn.title = 'Eliminar';
     delBtn.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4l.5 9h5l.5-9"/></svg>';
 
-    info.addEventListener('click', () => {
+    item.addEventListener('click', (e) => {
+        if (e.target.closest('.sidebar-file-del')) return;
         openFile(tpl);
         currentFileId = null;
         currentFileName = null;
