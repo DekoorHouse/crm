@@ -2931,8 +2931,10 @@ function editTextObject(obj, e) {
                 saveUndoState();
                 obj.text = txt;
                 refreshElement(obj);
-                fitTextToRefArea(obj);
-                drawSelection();
+                fitTextToRefArea(obj).then(() => {
+                    refreshElement(obj);
+                    drawSelection();
+                });
             } else if (!txt) {
                 deleteObject(obj.id);
             }
