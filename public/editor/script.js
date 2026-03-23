@@ -4633,18 +4633,91 @@ function importSVGText(svgText, directPlacePt) {
                 return result.trim();
             }
 
+            // Transform all path coordinates through a full affine matrix, preserving curve commands
+            function applyMatrixToPath(d, m) {
+                const flipSweep = (m[0]*m[3] - m[1]*m[2]) < 0;
+                const re = /([MLCQAZTSHVmlcqatzshv])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+\-]?\d+)?)/g;
+                const tokens = [];
+                let tok;
+                while ((tok = re.exec(d)) !== null) tokens.push(tok[0]);
+                const argCounts = { M:2,L:2,H:1,V:1,C:6,Q:4,S:4,T:2,A:7,Z:0, m:2,l:2,h:1,v:1,c:6,q:4,s:4,t:2,a:7,z:0 };
+                let result = '', i = 0;
+                // Track current point for H/V conversion
+                let curX = 0, curY = 0, startX = 0, startY = 0;
+                while (i < tokens.length) {
+                    const cmd = tokens[i++];
+                    if (!/^[MLCQAZTSHVmlcqatzshv]$/.test(cmd)) continue;
+                    const cnt = argCounts[cmd] ?? 0;
+                    if (cnt === 0) { result += cmd + ' '; if (cmd === 'Z' || cmd === 'z') { curX = startX; curY = startY; } continue; }
+                    while (i < tokens.length && (/^-/.test(tokens[i][0]) || /\d|\./.test(tokens[i][0]))) {
+                        const nums = [];
+                        for (let j = 0; j < cnt && i < tokens.length; j++) nums.push(parseFloat(tokens[i++]));
+                        if (nums.length < cnt) break;
+                        const f = (n) => +n.toFixed(4);
+                        const tp = (x, y) => ({ x: m[0]*x + m[2]*y + m[4], y: m[1]*x + m[3]*y + m[5] });
+                        const td = (x, y) => ({ x: m[0]*x + m[2]*y, y: m[1]*x + m[3]*y }); // delta (no translate)
+                        if (cmd === 'M') { const p = tp(nums[0], nums[1]); result += `M${f(p.x)},${f(p.y)} `; curX = nums[0]; curY = nums[1]; startX = curX; startY = curY; }
+                        else if (cmd === 'L') { const p = tp(nums[0], nums[1]); result += `L${f(p.x)},${f(p.y)} `; curX = nums[0]; curY = nums[1]; }
+                        else if (cmd === 'm') { const p = td(nums[0], nums[1]); result += `m${f(p.x)},${f(p.y)} `; curX += nums[0]; curY += nums[1]; startX = curX; startY = curY; }
+                        else if (cmd === 'l') { const p = td(nums[0], nums[1]); result += `l${f(p.x)},${f(p.y)} `; curX += nums[0]; curY += nums[1]; }
+                        else if (cmd === 'H') { const p = tp(nums[0], curY); result += `L${f(p.x)},${f(p.y)} `; curX = nums[0]; }
+                        else if (cmd === 'h') { const p = td(nums[0], 0); result += `l${f(p.x)},${f(p.y)} `; curX += nums[0]; }
+                        else if (cmd === 'V') { const p = tp(curX, nums[0]); result += `L${f(p.x)},${f(p.y)} `; curY = nums[0]; }
+                        else if (cmd === 'v') { const p = td(0, nums[0]); result += `l${f(p.x)},${f(p.y)} `; curY += nums[0]; }
+                        else if (cmd === 'C') {
+                            const p1 = tp(nums[0],nums[1]), p2 = tp(nums[2],nums[3]), p3 = tp(nums[4],nums[5]);
+                            result += `C${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} ${f(p3.x)},${f(p3.y)} `;
+                            curX = nums[4]; curY = nums[5];
+                        } else if (cmd === 'c') {
+                            const p1 = td(nums[0],nums[1]), p2 = td(nums[2],nums[3]), p3 = td(nums[4],nums[5]);
+                            result += `c${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} ${f(p3.x)},${f(p3.y)} `;
+                            curX += nums[4]; curY += nums[5];
+                        } else if (cmd === 'Q') {
+                            const p1 = tp(nums[0],nums[1]), p2 = tp(nums[2],nums[3]);
+                            result += `Q${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} `;
+                            curX = nums[2]; curY = nums[3];
+                        } else if (cmd === 'q') {
+                            const p1 = td(nums[0],nums[1]), p2 = td(nums[2],nums[3]);
+                            result += `q${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} `;
+                            curX += nums[2]; curY += nums[3];
+                        } else if (cmd === 'S') {
+                            const p1 = tp(nums[0],nums[1]), p2 = tp(nums[2],nums[3]);
+                            result += `S${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} `;
+                            curX = nums[2]; curY = nums[3];
+                        } else if (cmd === 's') {
+                            const p1 = td(nums[0],nums[1]), p2 = td(nums[2],nums[3]);
+                            result += `s${f(p1.x)},${f(p1.y)} ${f(p2.x)},${f(p2.y)} `;
+                            curX += nums[2]; curY += nums[3];
+                        } else if (cmd === 'T') { const p = tp(nums[0],nums[1]); result += `T${f(p.x)},${f(p.y)} `; curX = nums[0]; curY = nums[1]; }
+                        else if (cmd === 't') { const p = td(nums[0],nums[1]); result += `t${f(p.x)},${f(p.y)} `; curX += nums[0]; curY += nums[1]; }
+                        else if (cmd === 'A') {
+                            // Arc: transform radii by matrix scale, rotate x-axis-rotation, transform endpoint
+                            const rx = nums[0], ry = nums[1], rot = nums[2], largeArc = nums[3], sweep = nums[4];
+                            const ep = tp(nums[5], nums[6]);
+                            const sx = Math.hypot(m[0], m[1]), sy = Math.hypot(m[2], m[3]);
+                            result += `A${f(rx*sx)},${f(ry*sy)} ${f(rot)} ${largeArc} ${flipSweep ? 1-sweep : sweep} ${f(ep.x)},${f(ep.y)} `;
+                            curX = nums[5]; curY = nums[6];
+                        } else if (cmd === 'a') {
+                            const ep = td(nums[5], nums[6]);
+                            const sx = Math.hypot(m[0], m[1]), sy = Math.hypot(m[2], m[3]);
+                            result += `a${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2])} ${nums[3]} ${flipSweep ? 1-nums[4] : nums[4]} ${f(ep.x)},${f(ep.y)} `;
+                            curX += nums[5]; curY += nums[6];
+                        }
+                    }
+                }
+                return result.trim();
+            }
+
             function importPath(d, sty, ctm) {
                 const ns = 'http://www.w3.org/2000/svg';
                 let newD = null;
                 let scale = Math.max(Math.abs(ctm[0]), Math.abs(ctm[1]), Math.abs(ctm[2]), Math.abs(ctm[3]));
 
-                // For pure scale+translate (no rotation/shear), transform directly — preserves sub-paths
-                if (Math.abs(ctm[1]) < 1e-9 && Math.abs(ctm[2]) < 1e-9) {
-                    try { newD = applyScaleTranslateToPath(d, ctm[0], ctm[3], ctm[4], ctm[5]); } catch(e) { newD = null; }
-                }
+                // Transform path coordinates through the full affine matrix, preserving all curve commands
+                try { newD = applyMatrixToPath(d, ctm); } catch(e) { newD = null; }
 
                 if (!newD) {
-                    // Fall back to sampling for transforms with rotation/shear
+                    // Last resort: sampling (loses curve structure)
                     const tempSvg = document.createElementNS(ns, 'svg');
                     tempSvg.style.cssText = 'position:absolute;left:-9999px;width:1px;height:1px;overflow:hidden';
                     tempSvg.setAttribute('viewBox', '0 0 100000 100000');
