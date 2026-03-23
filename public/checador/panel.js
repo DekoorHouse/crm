@@ -438,19 +438,40 @@ async function deleteEmployee(docId) {
     await db.collection('checador_employees').doc(docId).delete();
 }
 
+async function updateEmployee(docId, field, value) {
+    await db.collection('checador_employees').doc(docId).update({ [field]: value });
+    showNotification('Empleado actualizado');
+}
+
 function renderAdminEmployees() {
     const tbody = document.getElementById('admin-employees-body');
     tbody.innerHTML = '';
     employeesCache.forEach(emp => {
         const tr = document.createElement('tr');
-        const phoneDisplay = emp.phone
-            ? `<span style="color:var(--success); font-size:0.82rem;">${emp.phone}</span>`
-            : `<span style="color:var(--text-muted); font-size:0.8rem;">Sin número</span>`;
         tr.innerHTML = `
-            <td>${emp.name}</td>
-            <td>${phoneDisplay}</td>
+            <td><input type="text" value="${emp.name}" data-doc="${emp._docId}" data-field="name"
+                style="background:transparent; border:1px solid transparent; color:white; padding:6px 8px; border-radius:6px; width:100%; font-size:0.9rem;"
+                onfocus="this.style.borderColor='var(--primary)'; this.style.background='rgba(255,255,255,0.08)'"
+                onblur="this.style.borderColor='transparent'; this.style.background='transparent'"></td>
+            <td><input type="tel" value="${emp.phone || ''}" data-doc="${emp._docId}" data-field="phone" placeholder="Sin número"
+                style="background:transparent; border:1px solid transparent; color:var(--success); padding:6px 8px; border-radius:6px; width:100%; font-size:0.82rem;"
+                onfocus="this.style.borderColor='var(--primary)'; this.style.background='rgba(255,255,255,0.08)'"
+                onblur="this.style.borderColor='transparent'; this.style.background='transparent'"></td>
             <td><button class="btn-small btn-danger" onclick="deleteEmployee('${emp._docId}')">Eliminar</button></td>
         `;
+        // Guardar al presionar Enter o al perder foco si cambió el valor
+        tr.querySelectorAll('input').forEach(input => {
+            const original = input.value;
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+            });
+            input.addEventListener('blur', () => {
+                const newVal = input.value.trim();
+                if (newVal !== original && (input.dataset.field !== 'name' || newVal)) {
+                    updateEmployee(input.dataset.doc, input.dataset.field, newVal);
+                }
+            });
+        });
         tbody.appendChild(tr);
     });
 }
