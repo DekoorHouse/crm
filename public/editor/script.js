@@ -154,7 +154,10 @@ function saveUndoState() {
         nextId: state.nextId,
         selectedIds: [...state.selectedIds],
     };
-    undoStack.push(JSON.stringify(snapshot));
+    const json = JSON.stringify(snapshot);
+    // Skip if identical to the last saved state
+    if (undoStack.length > 0 && undoStack[undoStack.length - 1] === json) return;
+    undoStack.push(json);
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack.length = 0; // clear redo on new action
 }
