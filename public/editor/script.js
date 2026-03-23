@@ -5450,25 +5450,26 @@ function setupEventListeners() {
     // Paste from clipboard: SVG text (from CorelDRAW or this editor) or images
     document.addEventListener('paste', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-        const items = e.clipboardData && e.clipboardData.items;
-        if (!items) return;
+        const cbd = e.clipboardData;
+        if (!cbd) return;
 
-        // Check for SVG text first (text/plain or text/html)
-        for (const item of items) {
-            if (item.type === 'text/plain' || item.type === 'text/html') {
-                item.getAsString((text) => {
-                    const trimmed = text.trim();
-                    if (trimmed.includes('<svg') && trimmed.includes('</svg>')) {
-                        const vb = state.viewBox;
-                        const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
-                        importSVGText(trimmed, center);
-                    }
-                });
-                if (e.clipboardData.getData('text/plain').trim().includes('<svg')) {
-                    e.preventDefault();
-                    return;
-                }
+        // Check for SVG in text/html and text/plain synchronously
+        // CorelDRAW puts SVG inside text/html (sometimes wrapped in HTML fragments)
+        let svgText = null;
+        for (const type of ['text/html', 'text/plain']) {
+            const data = cbd.getData(type);
+            if (data && data.includes('<svg') && data.includes('</svg>')) {
+                // Extract SVG from possible HTML wrapper (CorelDRAW: <!--StartFragment--><svg...>...)
+                const svgMatch = data.match(/<svg[\s\S]*<\/svg>/i);
+                if (svgMatch) { svgText = svgMatch[0]; break; }
             }
+        }
+        if (svgText) {
+            e.preventDefault();
+            const vb = state.viewBox;
+            const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
+            importSVGText(svgText, center);
+            return;
         }
 
         // Fallback: paste images
