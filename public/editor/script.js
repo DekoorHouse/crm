@@ -5718,6 +5718,8 @@ function setupEventListeners() {
         }
 
         // Fallback: paste images
+        const items = cbd.items;
+        if (!items) return;
         for (const item of items) {
             if (item.type.startsWith('image/')) {
                 e.preventDefault();
