@@ -8188,4 +8188,5 @@ function setupBmpConverterModal() {
 // =============================================
 // START
 // =============================================
-document.addEventListener('DOMContentLoaded', () => { initTheme(); init(); preloadFonts(); });
+document.addEventListener('DOMContentLoaded', () => { initTheme(); });
+// init() and preloadFonts() are called from auth listener after login (see index.html)

@@ -818,10 +818,16 @@
         });
 
         // --- AUTH: State listener ---
+        let _editorInitialized = false;
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 document.getElementById('editor-login').style.display = 'none';
                 document.getElementById('app').style.display = '';
+                // Initialize editor only after app is visible (first login)
+                if (!_editorInitialized) {
+                    _editorInitialized = true;
+                    requestAnimationFrame(() => { init(); preloadFonts(); });
+                }
             } else {
                 document.getElementById('editor-login').style.display = '';
                 document.getElementById('app').style.display = 'none';
