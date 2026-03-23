@@ -261,7 +261,7 @@ function updatePage() {
 
 function resetView() {
     const margin = 60;
-    const ws = document.getElementById('workspace');
+    const ws = document.getElementById('canvas-wrapper') || document.getElementById('workspace');
     const rect = ws.getBoundingClientRect();
     if (rect.width === 0 || rect.height === 0) return;
     const wsAspect = rect.width / rect.height;
@@ -3372,11 +3372,13 @@ function showContextMenu(e, obj) {
     // Convert to bitmap — only for image objects
     const bmpOpt = contextMenu.querySelector('[data-ctx="convert-to-bitmap"]');
     if (bmpOpt) {
-        if (obj.type === 'image') {
-            bmpOpt.style.display = '';
-        } else {
-            bmpOpt.style.display = 'none';
-        }
+        bmpOpt.style.display = obj.type === 'image' ? '' : 'none';
+    }
+
+    // Invert colors — only for image objects
+    const invertOpt = contextMenu.querySelector('[data-ctx="invert-colors"]');
+    if (invertOpt) {
+        invertOpt.style.display = obj.type === 'image' ? '' : 'none';
     }
 
     contextMenu.style.left = e.clientX + 'px';
@@ -3433,6 +3435,9 @@ function setupContextMenu() {
                 case 'convert-to-bitmap':
                     showBmpConverterModal(contextTarget);
                     break;
+                case 'invert-colors':
+                    invertImageColors(contextTarget);
+                    break;
                 case 'bring-to-front':
                     bringToFront();
                     break;
@@ -3472,7 +3477,7 @@ function buildColorPalette() {
             document.querySelector('#fill-swatch .swatch-inner').style.background = color === 'none' ? noFillBg : color;
             for (const id of state.selectedIds) {
                 const obj = findObject(id);
-                if (obj && obj.type !== 'line' && obj.type !== 'bspline') { obj.fill = color; refreshElement(obj); }
+                if (obj && obj.type !== 'line' && !(obj.type === 'bspline' && !obj.closed)) { obj.fill = color; obj.element.setAttribute('fill', color); refreshElement(obj); }
             }
         } else if (e.button === 2) {
             state.strokeColor = color;
@@ -4022,8 +4027,16 @@ function importSVG() {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (ev) => {
+            importSVGText(ev.target.result);
+        };
+        reader.readAsText(file);
+    });
+    input.click();
+}
+
+function importSVGText(svgText, directPlacePt) {
             const parser = new DOMParser();
-            const doc = parser.parseFromString(ev.target.result, 'image/svg+xml');
+            const doc = parser.parseFromString(svgText, 'image/svg+xml');
             const svgRoot = doc.documentElement;
             if (svgRoot.tagName !== 'svg') return;
 
@@ -4454,10 +4467,7 @@ function importSVG() {
                 state.objects.push(pcObj);
             }
 
-            // Enter placement mode: custom cursor, click to set top-left position
-            showPlacementCursor();
-            state.pendingSVGImport = (pt) => {
-                hidePlacementCursor();
+            function doPlace(pt) {
                 saveUndoState();
                 _batchImporting = true;
                 // First pass: import at origin to measure content bounds
@@ -4492,11 +4502,19 @@ function importSVG() {
                 _batchImporting = false;
                 drawSelection();
                 setTool('select');
-            };
-        };
-        reader.readAsText(file);
-    });
-    input.click();
+            }
+
+            if (directPlacePt) {
+                // Direct placement (e.g. drag-and-drop)
+                doPlace(directPlacePt);
+            } else {
+                // Interactive placement mode: click to place
+                showPlacementCursor();
+                state.pendingSVGImport = (pt) => {
+                    hidePlacementCursor();
+                    doPlace(pt);
+                };
+            }
 }
 
 // =============================================
@@ -4719,6 +4737,32 @@ async function generateNamesFromTemplate(names) {
 
     resetView();
     updatePropsPanel();
+}
+
+function invertImageColors(obj) {
+    if (!obj || obj.type !== 'image') return;
+    saveUndoState();
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const d = imageData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            d[i] = 255 - d[i];       // R
+            d[i + 1] = 255 - d[i + 1]; // G
+            d[i + 2] = 255 - d[i + 2]; // B
+            // Alpha unchanged
+        }
+        ctx.putImageData(imageData, 0, 0);
+        obj.href = canvas.toDataURL('image/png');
+        obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', obj.href);
+    };
+    img.src = obj.href;
 }
 
 function flipObject(obj, direction) {
@@ -5111,6 +5155,19 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'e' && e.ctrlKey) { e.preventDefault(); exportSVG(); return; }
         if (e.key.toLowerCase() === 's' && e.ctrlKey) { e.preventDefault(); saveFile(); return; }
         if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); showOpenFileModal(); return; }
+        if (e.key === 'P' && e.shiftKey && !e.ctrlKey) {
+            e.preventDefault();
+            for (const id of state.selectedIds) {
+                const obj = findObject(id);
+                if (!obj) continue;
+                saveUndoState();
+                flipObject(obj, 'horizontal');
+                refreshElement(obj);
+                if (obj.type !== 'curvepath') applyRotation(obj);
+            }
+            drawSelection();
+            return;
+        }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
@@ -5203,42 +5260,18 @@ function setupEventListeners() {
         const dropPt = screenToSVG(e.clientX, e.clientY);
         for (const file of files) {
             if (!file.type.startsWith('image/') && !file.name.toLowerCase().endsWith('.svg')) continue;
-            const reader = new FileReader();
-            reader.onload = (ev) => {
-                const dataUrl = ev.target.result;
-                const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-                if (isSVG) {
-                    // Embed SVG as image; use intrinsic size or fallback
-                    const img = new Image();
-                    img.onload = () => {
-                        let w = img.naturalWidth || state.pageWidth * 0.5;
-                        let h = img.naturalHeight || state.pageHeight * 0.5;
-                        const maxW = state.pageWidth * 0.8, maxH = state.pageHeight * 0.8;
-                        if (w > maxW || h > maxH) {
-                            const scale = Math.min(maxW / w, maxH / h);
-                            w *= scale; h *= scale;
-                        }
-                        const obj = createObject('image', {
-                            x: dropPt.x - w / 2, y: dropPt.y - h / 2,
-                            width: w, height: h,
-                            href: dataUrl,
-                        });
-                        selectObject(obj.id);
-                        setTool('select');
-                    };
-                    img.onerror = () => {
-                        // SVG with no intrinsic size — use page fractions
-                        const w = state.pageWidth * 0.5, h = state.pageHeight * 0.5;
-                        const obj = createObject('image', {
-                            x: dropPt.x - w / 2, y: dropPt.y - h / 2,
-                            width: w, height: h,
-                            href: dataUrl,
-                        });
-                        selectObject(obj.id);
-                        setTool('select');
-                    };
-                    img.src = dataUrl;
-                } else {
+            const isSVG = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+            if (isSVG) {
+                // Import SVG as vector objects (same as File > Import SVG)
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    importSVGText(ev.target.result, dropPt);
+                };
+                reader.readAsText(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const dataUrl = ev.target.result;
                     const img = new Image();
                     img.onload = () => {
                         let w = img.naturalWidth, h = img.naturalHeight;
@@ -5256,9 +5289,9 @@ function setupEventListeners() {
                         setTool('select');
                     };
                     img.src = dataUrl;
-                }
-            };
-            reader.readAsDataURL(file);
+                };
+                reader.readAsDataURL(file);
+            }
         }
     });
 
