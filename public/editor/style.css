@@ -295,6 +295,121 @@ body {
     border-radius: 4px;
 }
 
+/* ===== TAB BAR ===== */
+#tab-bar {
+    background: rgba(240, 236, 248, 0.7);
+    border-bottom: 1px solid rgba(230, 224, 240, 0.5);
+    display: none;
+    min-height: 32px;
+}
+
+#tab-bar.visible {
+    display: flex;
+}
+
+#tab-list {
+    display: flex;
+    gap: 1px;
+    overflow-x: auto;
+    padding: 4px 8px 0;
+    align-items: flex-end;
+}
+
+.editor-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px 5px 12px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer;
+    white-space: nowrap;
+    max-width: 160px;
+    transition: all 0.12s;
+}
+
+.editor-tab:hover {
+    background: rgba(255,255,255,0.5);
+    color: var(--text);
+}
+
+.editor-tab.active {
+    background: rgba(255,255,255,0.95);
+    color: var(--text);
+    border-color: rgba(230, 224, 240, 0.5);
+}
+
+.editor-tab-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.editor-tab-dot {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--primary);
+    flex-shrink: 0;
+    display: none;
+}
+
+.editor-tab.dirty .editor-tab-dot {
+    display: block;
+}
+
+.editor-tab-close {
+    width: 16px;
+    height: 16px;
+    border: none;
+    background: transparent;
+    border-radius: 3px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 14px;
+    line-height: 1;
+    opacity: 0;
+    transition: all 0.1s;
+    flex-shrink: 0;
+    padding: 0;
+}
+
+.editor-tab:hover .editor-tab-close {
+    opacity: 0.6;
+}
+
+.editor-tab-close:hover {
+    opacity: 1 !important;
+    background: rgba(220, 38, 38, 0.1);
+    color: #dc2626;
+}
+
+body.dark #tab-bar {
+    background: rgba(26, 24, 36, 0.7);
+    border-bottom-color: rgba(50, 48, 64, 0.5);
+}
+
+body.dark .editor-tab:hover {
+    background: rgba(40, 38, 52, 0.5);
+}
+
+body.dark .editor-tab.active {
+    background: rgba(30, 28, 40, 0.95);
+    border-color: rgba(50, 48, 64, 0.5);
+}
+
+body.dark .editor-tab-close:hover {
+    background: rgba(220, 38, 38, 0.2);
+    color: #f87171;
+}
+
 /* ===== WORKSPACE ===== */
 #workspace {
     flex: 1;

@@ -138,6 +138,120 @@ let _autoSaveTimer = null;
 let _isDirty = false;
 let _isSaving = false;
 
+// =============================================
+// TAB SYSTEM
+// =============================================
+const editorTabs = []; // { id, name, fileId, stateSnapshot, undoStack, redoStack, pageWidth, pageHeight, isDirty }
+let activeTabId = null;
+let _nextTabId = 1;
+
+function createTab(name, fileId) {
+    const tab = {
+        id: _nextTabId++,
+        name: name || 'Sin t\u00edtulo',
+        fileId: fileId || null,
+        stateSnapshot: null,
+        undoStack: [],
+        redoStack: [],
+        pageWidth: state.pageWidth,
+        pageHeight: state.pageHeight,
+        isDirty: false,
+    };
+    editorTabs.push(tab);
+    renderTabs();
+    switchToTab(tab.id);
+    return tab;
+}
+
+function saveCurrentTabState() {
+    const tab = editorTabs.find(t => t.id === activeTabId);
+    if (!tab) return;
+    tab.stateSnapshot = JSON.stringify({
+        objects: state.objects.map(serializeObj),
+        nextId: state.nextId,
+        selectedIds: [],
+    });
+    tab.undoStack = [...undoStack];
+    tab.redoStack = [...redoStack];
+    tab.pageWidth = state.pageWidth;
+    tab.pageHeight = state.pageHeight;
+    tab.fileId = currentFileId;
+    tab.name = currentFileName || tab.name;
+    tab.isDirty = _isDirty;
+}
+
+function switchToTab(tabId) {
+    if (activeTabId === tabId) return;
+    // Save current tab state
+    if (activeTabId) saveCurrentTabState();
+    const tab = editorTabs.find(t => t.id === tabId);
+    if (!tab) return;
+    activeTabId = tabId;
+
+    // Restore tab state
+    if (tab.stateSnapshot) {
+        restoreSnapshot(tab.stateSnapshot);
+    } else {
+        // New empty tab
+        objectsLayer.innerHTML = '';
+        selectionLayer.innerHTML = '';
+        state.objects = [];
+        state.selectedIds = [];
+        state.nextId = 1;
+    }
+    state.pageWidth = tab.pageWidth;
+    state.pageHeight = tab.pageHeight;
+    undoStack.length = 0; undoStack.push(...tab.undoStack);
+    redoStack.length = 0; redoStack.push(...tab.redoStack);
+    currentFileId = tab.fileId;
+    currentFileName = tab.fileId ? tab.name : null;
+    _isDirty = tab.isDirty;
+    if (_autoSaveTimer) { clearTimeout(_autoSaveTimer); _autoSaveTimer = null; }
+
+    updatePage();
+    resetView();
+    updateFileNameDisplay();
+    drawSelection();
+    updatePropsPanel();
+    renderTabs();
+}
+
+function closeTab(tabId) {
+    const idx = editorTabs.findIndex(t => t.id === tabId);
+    if (idx === -1) return;
+    const tab = editorTabs[idx];
+    if (tab.isDirty && !confirm('\u00bfCerrar "' + tab.name + '" sin guardar?')) return;
+    editorTabs.splice(idx, 1);
+    if (editorTabs.length === 0) {
+        createTab();
+        return;
+    }
+    if (activeTabId === tabId) {
+        const newIdx = Math.min(idx, editorTabs.length - 1);
+        activeTabId = null; // force switch
+        switchToTab(editorTabs[newIdx].id);
+    }
+    renderTabs();
+}
+
+function renderTabs() {
+    const tabBar = document.getElementById('tab-bar');
+    const tabList = document.getElementById('tab-list');
+    tabBar.classList.toggle('visible', editorTabs.length > 1);
+    tabList.innerHTML = '';
+    for (const tab of editorTabs) {
+        const el = document.createElement('div');
+        el.className = 'editor-tab' + (tab.id === activeTabId ? ' active' : '') + (tab.isDirty ? ' dirty' : '');
+        el.innerHTML =
+            '<span class="editor-tab-dot"></span>' +
+            '<span class="editor-tab-name">' + escapeHtml(tab.name) + '</span>' +
+            '<button class="editor-tab-close" title="Cerrar">\u00d7</button>';
+        el.querySelector('.editor-tab-name').addEventListener('click', () => switchToTab(tab.id));
+        el.querySelector('.editor-tab-close').addEventListener('click', (e) => { e.stopPropagation(); closeTab(tab.id); });
+        tabList.appendChild(el);
+    }
+}
+
 function serializeObj(obj) {
     const copy = {};
     for (const k of Object.keys(obj)) {
@@ -245,6 +359,11 @@ function init() {
     buildColorPalette();
     setupEventListeners();
     updateStatusBar();
+
+    // Initialize first tab
+    const firstTab = { id: _nextTabId++, name: 'Sin t\u00edtulo', fileId: null, stateSnapshot: null, undoStack: [], redoStack: [], pageWidth: state.pageWidth, pageHeight: state.pageHeight, isDirty: false };
+    editorTabs.push(firstTab);
+    activeTabId = firstTab.id;
 }
 
 // =============================================
@@ -3737,8 +3856,10 @@ function generateThumbnail() {
 }
 
 function markDirty() {
-    if (!currentFileId) return; // only auto-save if file already has a name
     _isDirty = true;
+    const tab = editorTabs.find(t => t.id === activeTabId);
+    if (tab) { tab.isDirty = true; renderTabs(); }
+    if (!currentFileId) return; // only auto-save if file already has a name
     updateSaveIndicator('dirty');
     if (_autoSaveTimer) clearTimeout(_autoSaveTimer);
     _autoSaveTimer = setTimeout(autoSave, 10000); // 10 seconds debounce
@@ -3861,7 +3982,10 @@ async function doSaveNew(name) {
         currentFileName = name;
         _isDirty = false;
         if (_autoSaveTimer) { clearTimeout(_autoSaveTimer); _autoSaveTimer = null; }
+        const tab = editorTabs.find(t => t.id === activeTabId);
+        if (tab) { tab.fileId = docId; tab.name = name; tab.isDirty = false; }
         updateFileNameDisplay();
+        renderTabs();
         refreshSidebarFiles();
     } catch (err) {
         console.error('Error guardando archivo:', err);
@@ -3970,6 +4094,17 @@ async function loadFileList() {
 }
 
 function openFile(file) {
+    // Check if this file is already open in a tab
+    const existingTab = editorTabs.find(t => t.fileId === file.id);
+    if (existingTab) {
+        switchToTab(existingTab.id);
+        return;
+    }
+
+    // If current tab is empty and unsaved, reuse it
+    const curTab = editorTabs.find(t => t.id === activeTabId);
+    const reuseCurrentTab = curTab && !curTab.fileId && state.objects.length === 0;
+
     const snapshotData = JSON.parse(file.stateJson);
     snapshotData.selectedIds = [];
     restoreSnapshot(JSON.stringify(snapshotData));
@@ -3981,10 +4116,34 @@ function openFile(file) {
 
     currentFileId = file.id;
     currentFileName = file.name;
+    _isDirty = false;
     updateFileNameDisplay();
 
     undoStack.length = 0;
     redoStack.length = 0;
+
+    if (reuseCurrentTab) {
+        curTab.fileId = file.id;
+        curTab.name = file.name;
+        renderTabs();
+    } else if (!existingTab) {
+        // Save current tab, create new one with the loaded state
+        if (activeTabId) saveCurrentTabState();
+        const tab = {
+            id: _nextTabId++,
+            name: file.name,
+            fileId: file.id,
+            stateSnapshot: null,
+            undoStack: [],
+            redoStack: [],
+            pageWidth: state.pageWidth,
+            pageHeight: state.pageHeight,
+            isDirty: false,
+        };
+        editorTabs.push(tab);
+        activeTabId = tab.id;
+        renderTabs();
+    }
 
     // Update sidebar active state
     document.querySelectorAll('.sidebar-file-item').forEach(el => {
@@ -4105,11 +4264,7 @@ function setupFilesSidebar() {
 
     saveBtn.addEventListener('click', () => saveFile());
     newBtn.addEventListener('click', () => {
-        if (state.objects.length > 0 && !confirm('\u00bfDescartar el dise\u00f1o actual?')) return;
-        clearAll();
-        currentFileId = null;
-        currentFileName = null;
-        updateFileNameDisplay();
+        createTab();
     });
 
     // Tabs
