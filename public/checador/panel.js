@@ -438,8 +438,25 @@ async function deleteEmployee(docId) {
     await db.collection('checador_employees').doc(docId).delete();
 }
 
-async function updateEmployee(docId, field, value) {
+async function updateEmployee(docId, field, value, oldName) {
     await db.collection('checador_employees').doc(docId).update({ [field]: value });
+
+    // Si cambió el nombre, actualizar todos los logs históricos de ese empleado
+    if (field === 'name' && oldName) {
+        const snap = await db.collection('checador_logs').where('name', '==', oldName).get();
+        if (!snap.empty) {
+            const batch = db.batch();
+            snap.docs.forEach(doc => batch.update(doc.ref, { name: value }));
+            await batch.commit();
+        }
+        // También buscar por logs donde el id coincide con el nombre viejo (registros legacy)
+        const snap2 = await db.collection('checador_logs').where('id', '==', oldName).get();
+        if (!snap2.empty) {
+            const batch2 = db.batch();
+            snap2.docs.forEach(doc => batch2.update(doc.ref, { name: value }));
+            await batch2.commit();
+        }
+    }
     showNotification('Empleado actualizado');
 }
 
@@ -468,7 +485,7 @@ function renderAdminEmployees() {
             input.addEventListener('blur', () => {
                 const newVal = input.value.trim();
                 if (newVal !== original && (input.dataset.field !== 'name' || newVal)) {
-                    updateEmployee(input.dataset.doc, input.dataset.field, newVal);
+                    updateEmployee(input.dataset.doc, input.dataset.field, newVal, input.dataset.field === 'name' ? original : null);
                 }
             });
         });
