@@ -3722,14 +3722,24 @@ function buildColorPalette() {
             document.querySelector('#fill-swatch .swatch-inner').style.background = color === 'none' ? noFillBg : color;
             for (const id of state.selectedIds) {
                 const obj = findObject(id);
-                if (obj && obj.type !== 'line' && !(obj.type === 'bspline' && !obj.closed)) { obj.fill = color; obj.element.setAttribute('fill', color); refreshElement(obj); }
+                if (!obj) continue;
+                if (obj.type === 'powerclip' && obj.container) {
+                    obj.container.fill = color; refreshElement(obj);
+                } else if (obj.type !== 'line' && !(obj.type === 'bspline' && !obj.closed)) {
+                    obj.fill = color; refreshElement(obj);
+                }
             }
         } else if (e.button === 2) {
             state.strokeColor = color;
             document.querySelector('#stroke-swatch .swatch-inner').style.background = color === 'none' ? noFillBg : color;
             for (const id of state.selectedIds) {
                 const obj = findObject(id);
-                if (obj) { obj.stroke = color; refreshElement(obj); }
+                if (!obj) continue;
+                if (obj.type === 'powerclip' && obj.container) {
+                    obj.container.stroke = color; refreshElement(obj);
+                } else {
+                    obj.stroke = color; refreshElement(obj);
+                }
             }
             drawSelection();
         }
