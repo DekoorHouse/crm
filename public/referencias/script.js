@@ -10,13 +10,12 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storage = firebase.storage();
-const auth = firebase.auth();
 const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- Estado ---
-let socialUser = null; // { name, avatar, profileUrl, source: 'facebook'|'instagram' }
 let selectedRating = 0;
-let selectedPhoto = null; // File object
+let selectedPhoto = null;
+let selectedSocial = 'facebook';
 
 // --- Dark mode ---
 function toggleDarkMode() {
@@ -39,83 +38,24 @@ function toggleForm() {
     }
 }
 
-// --- Login con Facebook ---
-function loginWithFacebook() {
-    const provider = new firebase.auth.FacebookAuthProvider();
-    provider.addScope('public_profile');
+// --- Selector de red social ---
+function selectSocial(type) {
+    selectedSocial = type;
+    const tabFb = document.getElementById('tabFb');
+    const tabIg = document.getElementById('tabIg');
+    const input = document.getElementById('refProfileUrl');
+    const hint = document.getElementById('profileHint');
 
-    auth.signInWithPopup(provider)
-        .then(result => {
-            const profile = result.additionalUserInfo.profile;
-            socialUser = {
-                name: profile.name || result.user.displayName,
-                avatar: result.user.photoURL || `https://graph.facebook.com/${profile.id}/picture?type=large`,
-                profileUrl: profile.link || `https://facebook.com/${profile.id}`,
-                source: 'facebook',
-                uid: result.user.uid
-            };
-            showLoggedUser();
-        })
-        .catch(err => {
-            console.error('Error Facebook login:', err);
-            if (err.code === 'auth/account-exists-with-different-credential') {
-                alert('Ya tienes una cuenta con ese correo usando otro método. Intenta con la otra red social.');
-            } else if (err.code !== 'auth/popup-closed-by-user') {
-                alert('No se pudo iniciar sesión con Facebook. Intenta de nuevo.');
-            }
-        });
-}
+    tabFb.className = 'social-tab' + (type === 'facebook' ? ' active-fb' : '');
+    tabIg.className = 'social-tab' + (type === 'instagram' ? ' active-ig' : '');
 
-// --- Login con Instagram (via Facebook provider, ya que IG usa Facebook Login) ---
-function loginWithInstagram() {
-    // Instagram usa Facebook Login como backend
-    // Abrimos Facebook pero indicamos source como instagram para el perfil
-    const provider = new firebase.auth.FacebookAuthProvider();
-    provider.addScope('public_profile');
-
-    auth.signInWithPopup(provider)
-        .then(result => {
-            const profile = result.additionalUserInfo.profile;
-            socialUser = {
-                name: profile.name || result.user.displayName,
-                avatar: result.user.photoURL || `https://graph.facebook.com/${profile.id}/picture?type=large`,
-                profileUrl: profile.link || `https://facebook.com/${profile.id}`,
-                source: 'instagram',
-                uid: result.user.uid
-            };
-            showLoggedUser();
-        })
-        .catch(err => {
-            console.error('Error Instagram login:', err);
-            if (err.code !== 'auth/popup-closed-by-user') {
-                alert('No se pudo iniciar sesión. Intenta de nuevo.');
-            }
-        });
-}
-
-function showLoggedUser() {
-    document.getElementById('socialLoginSection').classList.add('hidden');
-    document.getElementById('loggedUserBar').classList.remove('hidden');
-    document.getElementById('refForm').classList.remove('hidden');
-
-    document.getElementById('loggedAvatar').src = socialUser.avatar;
-    document.getElementById('loggedName').textContent = socialUser.name;
-    document.getElementById('loggedSource').innerHTML = socialUser.source === 'facebook'
-        ? '<i class="fab fa-facebook" style="color:#1877F2"></i> Facebook'
-        : '<i class="fab fa-instagram" style="color:#E4405F"></i> Instagram';
-}
-
-function logoutSocial() {
-    auth.signOut();
-    socialUser = null;
-    selectedRating = 0;
-    selectedPhoto = null;
-    document.getElementById('socialLoginSection').classList.remove('hidden');
-    document.getElementById('loggedUserBar').classList.add('hidden');
-    document.getElementById('refForm').classList.add('hidden');
-    document.getElementById('refForm').reset();
-    updateStarsUI();
-    resetPhotoUpload();
+    if (type === 'facebook') {
+        input.placeholder = 'https://facebook.com/tu.perfil';
+        hint.textContent = 'Pega el link de tu perfil de Facebook para verificar tu identidad';
+    } else {
+        input.placeholder = 'https://instagram.com/tu_usuario';
+        hint.textContent = 'Pega el link de tu perfil de Instagram para verificar tu identidad';
+    }
 }
 
 // --- Estrellas ---
@@ -127,8 +67,7 @@ document.getElementById('ratingStars').addEventListener('click', (e) => {
 });
 document.getElementById('ratingStars').addEventListener('mouseover', (e) => {
     if (e.target.tagName === 'I') {
-        const hoverVal = parseInt(e.target.dataset.val);
-        highlightStars(hoverVal);
+        highlightStars(parseInt(e.target.dataset.val));
     }
 });
 document.getElementById('ratingStars').addEventListener('mouseout', () => {
@@ -174,18 +113,24 @@ function resetPhotoUpload() {
 async function submitReferencia(event) {
     event.preventDefault();
 
-    if (!socialUser) {
-        alert('Primero inicia sesión con Facebook o Instagram.');
-        return;
-    }
-    if (selectedRating === 0) {
-        alert('Selecciona una calificación de estrellas.');
-        return;
-    }
-
+    const nombre = document.getElementById('refNombre').value.trim();
+    const profileUrl = document.getElementById('refProfileUrl').value.trim();
     const texto = document.getElementById('refTexto').value.trim();
-    if (!texto) {
-        alert('Escribe tu opinión.');
+
+    if (!nombre) { alert('Escribe tu nombre.'); return; }
+    if (!profileUrl) { alert('Pega el link de tu perfil.'); return; }
+    if (selectedRating === 0) { alert('Selecciona una calificación de estrellas.'); return; }
+    if (!texto) { alert('Escribe tu opinión.'); return; }
+
+    // Validar que el URL sea de facebook o instagram
+    const isFbUrl = profileUrl.includes('facebook.com') || profileUrl.includes('fb.com');
+    const isIgUrl = profileUrl.includes('instagram.com');
+    if (selectedSocial === 'facebook' && !isFbUrl) {
+        alert('El link no parece ser un perfil de Facebook válido.');
+        return;
+    }
+    if (selectedSocial === 'instagram' && !isIgUrl) {
+        alert('El link no parece ser un perfil de Instagram válido.');
         return;
     }
 
@@ -196,7 +141,6 @@ async function submitReferencia(event) {
     try {
         let photoUrl = '';
 
-        // Subir foto si hay
         if (selectedPhoto) {
             const ext = selectedPhoto.name.split('.').pop();
             const fileName = `referencias/${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
@@ -205,18 +149,15 @@ async function submitReferencia(event) {
             photoUrl = await ref.getDownloadURL();
         }
 
-        // Guardar en Firestore
         await db.collection('referencias').add({
-            nombre: socialUser.name,
-            avatar: socialUser.avatar,
-            profileUrl: socialUser.profileUrl,
-            source: socialUser.source,
-            uid: socialUser.uid,
+            nombre: nombre,
+            profileUrl: profileUrl,
+            source: selectedSocial,
             rating: selectedRating,
             texto: texto,
             foto: photoUrl,
             fecha: firebase.firestore.FieldValue.serverTimestamp(),
-            aprobado: true // auto-aprobado, cambiar a false si quieres moderación
+            aprobado: true
         });
 
         // Reset
@@ -225,6 +166,7 @@ async function submitReferencia(event) {
         document.getElementById('refForm').reset();
         updateStarsUI();
         resetPhotoUpload();
+        selectSocial('facebook');
         toggleForm();
         alert('¡Gracias por tu referencia! Ya está publicada.');
 
@@ -277,25 +219,30 @@ function renderReferencias(refs) {
             `<i class="fas fa-star ${i < ref.rating ? '' : 'empty'}"></i>`
         ).join('');
 
+        const initial = ref.nombre ? ref.nombre[0].toUpperCase() : '?';
         const sourceIcon = ref.source === 'facebook'
-            ? '<i class="fab fa-facebook verified" title="Verificado con Facebook"></i>'
-            : '<i class="fab fa-instagram verified" style="color:#E4405F" title="Verificado con Instagram"></i>';
+            ? '<i class="fab fa-facebook verified" style="color:#1877F2" title="Perfil de Facebook"></i>'
+            : '<i class="fab fa-instagram verified" style="color:#E4405F" title="Perfil de Instagram"></i>';
 
         const photoHtml = ref.foto
             ? `<img src="${ref.foto}" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox('${ref.foto}')" loading="lazy">`
             : '';
 
-        const profileLink = ref.profileUrl
-            ? `<a href="${ref.profileUrl}" target="_blank" rel="noopener">${escapeHtml(ref.nombre)}</a>`
+        const nameHtml = ref.profileUrl
+            ? `<a href="${escapeHtml(ref.profileUrl)}" target="_blank" rel="noopener">${escapeHtml(ref.nombre)}</a>`
             : escapeHtml(ref.nombre);
+
+        // Avatar: initial letter circle
+        const avatarHtml = ref.avatar
+            ? `<img src="${ref.avatar}" alt="${escapeHtml(ref.nombre)}" onerror="this.parentElement.innerHTML='${initial}'">`
+            : initial;
 
         return `
             <div class="ref-card">
                 <div class="ref-card-header">
-                    <img src="${ref.avatar}" alt="${escapeHtml(ref.nombre)}" loading="lazy"
-                         onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><circle cx=%2250%22 cy=%2250%22 r=%2250%22 fill=%22%2381B29A%22/><text x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2240%22 fill=%22white%22>${ref.nombre ? ref.nombre[0].toUpperCase() : 'U'}</text></svg>'">
+                    <div class="ref-avatar">${avatarHtml}</div>
                     <div class="ref-author">
-                        <div class="ref-author-name">${profileLink} ${sourceIcon}</div>
+                        <div class="ref-author-name">${nameHtml} ${sourceIcon}</div>
                         <div class="ref-date">${fechaStr}</div>
                     </div>
                 </div>
