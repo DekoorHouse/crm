@@ -4692,7 +4692,16 @@ function resolveTarget(target) {
 
 function executeSingleAction(action) {
     const a = action;
-    switch (a.action) {
+    // Normalize action aliases the AI might use
+    const actionName = (a.action || '').replace(/^add_shape|add|create_shape|insert$/, 'create')
+        .replace(/^change|update|set$/, 'modify')
+        .replace(/^move_to|position$/, 'moveTo')
+        .replace(/^remove|erase$/, 'delete')
+        .replace(/^copy|clone$/, 'duplicate')
+        .replace(/^reorder|z_order$/, 'order')
+        .replace(/^mirror$/, 'flip');
+
+    switch (actionName) {
         case 'create': {
             const p = a.props || {};
             const props = {};
@@ -4801,7 +4810,7 @@ function executeSingleAction(action) {
             return { id: a.target };
         }
         default:
-            throw new Error(`Acción desconocida: ${a.action}`);
+            throw new Error(`Acción desconocida: ${a.action} (normalizada: ${actionName})`);
     }
 }
 
