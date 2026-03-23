@@ -4095,16 +4095,41 @@ async function loadFileList() {
 
 function openFile(file) {
     // Check if this file is already open in a tab
-    const existingTab = editorTabs.find(t => t.fileId === file.id);
-    if (existingTab) {
-        switchToTab(existingTab.id);
-        return;
+    if (file.id) {
+        const existingTab = editorTabs.find(t => t.fileId === file.id);
+        if (existingTab) {
+            switchToTab(existingTab.id);
+            return;
+        }
     }
 
-    // If current tab is empty and unsaved, reuse it
+    // Determine if we reuse current tab or create a new one
     const curTab = editorTabs.find(t => t.id === activeTabId);
-    const reuseCurrentTab = curTab && !curTab.fileId && state.objects.length === 0;
+    const reuseCurrentTab = curTab && !curTab.fileId && !curTab.isDirty && state.objects.length === 0;
 
+    if (!reuseCurrentTab && curTab) {
+        // Save current tab and create new one
+        saveCurrentTabState();
+        const tab = {
+            id: _nextTabId++,
+            name: file.name || 'Sin t\u00edtulo',
+            fileId: file.id || null,
+            stateSnapshot: null,
+            undoStack: [],
+            redoStack: [],
+            pageWidth: file.pageWidth || state.pageWidth,
+            pageHeight: file.pageHeight || state.pageHeight,
+            isDirty: false,
+        };
+        editorTabs.push(tab);
+        activeTabId = tab.id;
+    } else if (curTab) {
+        curTab.fileId = file.id || null;
+        curTab.name = file.name || 'Sin t\u00edtulo';
+        curTab.isDirty = false;
+    }
+
+    // Load the file content
     const snapshotData = JSON.parse(file.stateJson);
     snapshotData.selectedIds = [];
     restoreSnapshot(JSON.stringify(snapshotData));
@@ -4114,41 +4139,14 @@ function openFile(file) {
     updatePage();
     resetView();
 
-    currentFileId = file.id;
-    currentFileName = file.name;
+    currentFileId = file.id || null;
+    currentFileName = file.name || null;
     _isDirty = false;
     updateFileNameDisplay();
 
     undoStack.length = 0;
     redoStack.length = 0;
-
-    if (reuseCurrentTab) {
-        curTab.fileId = file.id;
-        curTab.name = file.name;
-        renderTabs();
-    } else if (!existingTab) {
-        // Save current tab, create new one with the loaded state
-        if (activeTabId) saveCurrentTabState();
-        const tab = {
-            id: _nextTabId++,
-            name: file.name,
-            fileId: file.id,
-            stateSnapshot: null,
-            undoStack: [],
-            redoStack: [],
-            pageWidth: state.pageWidth,
-            pageHeight: state.pageHeight,
-            isDirty: false,
-        };
-        editorTabs.push(tab);
-        activeTabId = tab.id;
-        renderTabs();
-    }
-
-    // Update sidebar active state
-    document.querySelectorAll('.sidebar-file-item').forEach(el => {
-        el.classList.toggle('active', el.dataset.fileId === file.id);
-    });
+    renderTabs();
 }
 
 function showToast(msg) {
