@@ -76,14 +76,19 @@ function handleAuthError(err) {
     }
 }
 
-// Capturar resultado del redirect (para móvil)
-auth.getRedirectResult()
-    .then(result => {
-        if (result.user) {
-            handleAuthResult(result);
-        }
-    })
-    .catch(handleAuthError);
+// Detectar si el usuario ya tiene sesión activa (redirect o sesión previa)
+auth.onAuthStateChanged(user => {
+    if (user && !socialUser) {
+        const fbData = user.providerData.find(p => p.providerId === 'facebook.com');
+        socialUser = {
+            name: user.displayName,
+            avatar: user.photoURL || (fbData ? `https://graph.facebook.com/${fbData.uid}/picture?type=large` : ''),
+            profileUrl: fbData ? `https://facebook.com/${fbData.uid}` : '',
+            uid: user.uid
+        };
+        showLoggedUser();
+    }
+});
 
 function showLoggedUser() {
     // Abrir el formulario si estaba cerrado (ej. regresando de redirect en móvil)
