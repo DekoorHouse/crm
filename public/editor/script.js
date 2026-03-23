@@ -483,6 +483,10 @@ function buildClipShape(container, ns) {
             shape.setAttribute('cx', container.cx); shape.setAttribute('cy', container.cy);
             shape.setAttribute('rx', container.rx); shape.setAttribute('ry', container.ry);
             break;
+        case 'bspline':
+            shape = document.createElementNS(ns, 'path');
+            shape.setAttribute('d', bsplineToPath(container.points, container.closed));
+            break;
         case 'curvepath':
             shape = document.createElementNS(ns, 'path');
             shape.setAttribute('d', container.d);
@@ -3060,7 +3064,7 @@ function sendToBack() {
 
 function makePowerClip(objId) {
     const obj = findObject(objId);
-    if (!obj || obj.type === 'powerclip' || obj.type === 'line' || obj.type === 'bspline' || obj.type === 'image') return;
+    if (!obj || obj.type === 'powerclip' || obj.type === 'line' || (obj.type === 'bspline' && !obj.closed) || obj.type === 'image') return;
     saveUndoState();
     const idx = state.objects.findIndex(o => o.id === objId);
     if (idx === -1) return;
@@ -3334,7 +3338,7 @@ function showContextMenu(e, obj) {
     if (obj.type === 'powerclip') {
         makeOpt.classList.add('disabled');
         makeOpt.textContent = '✓ Es PowerClip';
-    } else if (obj.type === 'line' || obj.type === 'bspline' || obj.type === 'image') {
+    } else if (obj.type === 'line' || (obj.type === 'bspline' && !obj.closed) || obj.type === 'image') {
         makeOpt.classList.add('disabled');
         makeOpt.innerHTML = contextMenu.querySelector('[data-ctx="make-powerclip"]').innerHTML;
     } else {
