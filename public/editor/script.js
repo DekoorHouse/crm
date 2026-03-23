@@ -298,8 +298,9 @@ function screenToSVG(clientX, clientY) {
 // =============================================
 // OBJECT MANAGEMENT
 // =============================================
+let _batchImporting = false;
 function createObject(type, props) {
-    saveUndoState();
+    if (!_batchImporting) saveUndoState();
     const obj = {
         id: state.nextId++,
         type,
@@ -4059,6 +4060,7 @@ function importSVG() {
             state.pendingSVGImport = (pt) => {
                 hidePlacementCursor();
                 saveUndoState();
+                _batchImporting = true;
                 // First pass: import at origin to measure content bounds
                 const offsetX0 = -vbX * fitScale;
                 const offsetY0 = -vbY * fitScale;
@@ -4088,6 +4090,7 @@ function importSVG() {
                 for (const child of svgRoot.children) {
                     importElement(child, baseMat);
                 }
+                _batchImporting = false;
                 drawSelection();
                 setTool('select');
             };
