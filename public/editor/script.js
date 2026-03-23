@@ -5155,19 +5155,6 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'e' && e.ctrlKey) { e.preventDefault(); exportSVG(); return; }
         if (e.key.toLowerCase() === 's' && e.ctrlKey) { e.preventDefault(); saveFile(); return; }
         if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); showOpenFileModal(); return; }
-        if (e.key === 'P' && e.shiftKey && !e.ctrlKey) {
-            e.preventDefault();
-            for (const id of state.selectedIds) {
-                const obj = findObject(id);
-                if (!obj) continue;
-                saveUndoState();
-                flipObject(obj, 'horizontal');
-                refreshElement(obj);
-                if (obj.type !== 'curvepath') applyRotation(obj);
-            }
-            drawSelection();
-            return;
-        }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
         switch (e.key.toLowerCase()) {
