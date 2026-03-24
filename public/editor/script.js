@@ -4949,7 +4949,9 @@ function executeSingleAction(action) {
         duplicate: 'duplicate', copy: 'duplicate', clone: 'duplicate',
         order: 'order', reorder: 'order', z_order: 'order', zOrder: 'order',
         flip: 'flip', mirror: 'flip',
-        select: 'select'
+        select: 'select',
+        get_orders: 'get_orders', getOrders: 'get_orders', query_orders: 'get_orders', list_orders: 'get_orders',
+        update_order: 'update_order', updateOrder: 'update_order', modify_order: 'update_order'
     };
     const actionName = ACTION_ALIASES[a.action] || a.action;
 
@@ -5065,6 +5067,38 @@ function executeSingleAction(action) {
             const obj = findObject(a.target);
             if (obj) selectObject(obj.id);
             return { id: a.target };
+        }
+        case 'get_orders': {
+            const dateParam = a.date || 'today';
+            const url = dateParam === 'today' ? '/api/orders/today' : `/api/orders/history?date=${dateParam}`;
+            fetch(url).then(r => r.json()).then(data => {
+                if (data.success && data.orders) {
+                    const lines = data.orders.map(o =>
+                        `#${o.consecutiveOrderNumber || '?'} | ${o.clientName} | ${o.producto || 'N/A'} | $${o.total || 0} | ${o.estatus}`
+                    );
+                    const msg = lines.length > 0
+                        ? `📋 **${lines.length} pedidos:**\n${lines.join('\n')}`
+                        : 'No hay pedidos para esa fecha.';
+                    addChatMessage('ai', msg);
+                }
+            }).catch(e => addChatMessage('ai', 'Error consultando pedidos: ' + e.message));
+            return {};
+        }
+        case 'update_order': {
+            if (!a.orderId) throw new Error('Se requiere orderId para actualizar pedido');
+            const props = a.props || {};
+            fetch(`/api/orders/${a.orderId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(props)
+            }).then(r => r.json()).then(data => {
+                if (data.success) {
+                    addChatMessage('ai', `✅ Pedido actualizado.`);
+                } else {
+                    addChatMessage('ai', `❌ Error: ${data.message}`);
+                }
+            }).catch(e => addChatMessage('ai', 'Error actualizando pedido: ' + e.message));
+            return {};
         }
         default:
             throw new Error(`Acción desconocida: ${a.action} (normalizada: ${actionName})`);

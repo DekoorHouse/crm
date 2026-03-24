@@ -368,6 +368,15 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 
 10. select - Seleccionar: { "action":"select", "target":ID }
 
+**Acciones de Pedidos (CRM):**
+
+11. get_orders - Consultar pedidos: { "action":"get_orders", "date":"today"|"YYYY-MM-DD" }
+    Devuelve la lista de pedidos del día indicado. "today" = hoy.
+
+12. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
+    Campos actualizables: estatus, producto, comentarios, datosProducto, datosPromocion, precio, telefono.
+    Estatus válidos: Sin estatus, Foto enviada, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
+
 **Reglas:**
 - "selected" usa el objeto seleccionado. Si no hay selección y el usuario dice "eso", pide que seleccione algo.
 - Para referencias como "el rectángulo rojo", busca en los objetos del lienzo el que coincida.
@@ -376,6 +385,8 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 - "círculo" = ellipse con rx_u = ry_u. "cuadrado" = rect con width_u = height_u.
 - Cuando el usuario da un tamaño como "50mm" para un círculo, ese es el DIÁMETRO, así que rx_u = ry_u = 25.
 - Si el usuario no pide una acción (solo pregunta algo), responde solo con texto, sin bloque actions.
+- Para pedidos: si el usuario pregunta sobre pedidos, usa get_orders para consultarlos. Si el contexto ya incluye pedidos recientes, puedes responder directamente sin get_orders.
+- Para actualizar un pedido, necesitas el ID del documento (campo "id" del pedido). Si el usuario dice "pedido 1045", busca el que tenga consecutiveOrderNumber 1045.
 
 **Colores comunes:** rojo=#ff0000, azul=#0000ff, verde=#00ff00, amarillo=#ffff00, naranja=#ff8000, morado=#800080, rosa=#ff69b4, negro=#000000, blanco=#ffffff, gris=#808080, celeste=#00bfff, marrón=#8B4513
 
@@ -441,9 +452,34 @@ router.post('/simulate-ai', async (req, res) => {
         if (isEditor) {
             // Editor: instrucciones van en systemInstruction, contexto dinámico en contents
             const actionPrompt = getEditorActionPrompt();
-            const canvasSection = canvasContext ? `\n\n**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}` : '';
+            const canvasSection = canvasContext ? `**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}\n\n` : '';
             const editorSystemPrompt = `${systemPrompt}\n\n${actionPrompt}`;
-            const fullPrompt = `${canvasSection ? `**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}\n\n` : ''}**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
+
+            // Fetch today's orders summary for context
+            let ordersSection = '';
+            try {
+                const todayStart = new Date();
+                todayStart.setHours(0, 0, 0, 0);
+                const snap = await db.collection('pedidos')
+                    .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(todayStart))
+                    .orderBy('createdAt', 'desc').limit(30).get();
+                if (!snap.empty) {
+                    const ordersList = [];
+                    for (const doc of snap.docs) {
+                        const d = doc.data();
+                        let clientName = 'Sin nombre';
+                        const cid = d.contactId || d.telefono;
+                        if (cid) {
+                            const cDoc = await db.collection('contacts_whatsapp').doc(cid).get();
+                            if (cDoc.exists) clientName = cDoc.data().name || clientName;
+                        }
+                        ordersList.push(`#${d.consecutiveOrderNumber || '?'} | ${clientName} | ${d.producto || 'N/A'} | $${d.precio || 0} | ${d.estatus || 'Sin estatus'} | id:${doc.id}`);
+                    }
+                    ordersSection = `**Pedidos de Hoy (${ordersList.length}):**\n${ordersList.join('\n')}\n\n`;
+                }
+            } catch (e) { console.warn('[Editor AI] Error fetching orders:', e.message); }
+
+            const fullPrompt = `${canvasSection}${ordersSection}**Historial de la Conversación:**\n${conversationHistory}\n\n**Tarea:**\nResponde al último mensaje del usuario. Si pide realizar una acción en el editor, incluye el bloque \`\`\`actions correspondiente con el JSON de acciones. Si solo pregunta algo, responde con texto.`;
             aiResult = await generateGeminiResponse(fullPrompt, mediaParts, editorSystemPrompt);
         } else {
             // CRM: cache-first con knowledge base + quick replies fallback
