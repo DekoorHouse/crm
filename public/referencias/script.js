@@ -109,15 +109,20 @@ async function submitReferencia(event) {
             photoUrl = uploadData.url;
         }
 
-        await db.collection('referencias').add({
+        var docRef = await db.collection('referencias').add({
             nombre: nombre,
             ciudad: ciudad,
             rating: selectedRating,
             texto: texto,
             foto: photoUrl,
             fecha: firebase.firestore.FieldValue.serverTimestamp(),
-            aprobado: true
+            aprobado: false
         });
+
+        // Guardar ID en localStorage para que el cliente vea su propia referencia
+        var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
+        misRefs.push(docRef.id);
+        localStorage.setItem('misReferencias', JSON.stringify(misRefs));
 
         selectedRating = 0;
         selectedPhoto = null;
@@ -125,7 +130,7 @@ async function submitReferencia(event) {
         updateStarsUI();
         resetPhotoUpload();
         toggleForm();
-        alert('¡Gracias por tu referencia! Ya está publicada.');
+        alert('¡Gracias por tu referencia! Será revisada y publicada pronto.');
 
     } catch (error) {
         console.error('Error al publicar:', error);
@@ -138,23 +143,27 @@ async function submitReferencia(event) {
 
 // --- Cargar referencias ---
 function loadReferencias() {
+    var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
+
     db.collection('referencias')
         .orderBy('fecha', 'desc')
         .onSnapshot(function(snapshot) {
             var refs = [];
             snapshot.forEach(function(doc) {
                 var data = doc.data();
-                if (data.aprobado !== false) {
-                    data.id = doc.id;
+                data.id = doc.id;
+                // Mostrar si está aprobada O si es del propio cliente
+                if (data.aprobado === true || misRefs.indexOf(doc.id) !== -1) {
+                    data.esMia = misRefs.indexOf(doc.id) !== -1;
                     refs.push(data);
                 }
             });
             renderReferencias(refs);
-            updateStats(refs);
+            updateStats(refs.filter(function(r) { return r.aprobado === true; }));
         }, function(error) {
             console.error('Error cargando referencias:', error);
             document.getElementById('refLoading').innerHTML =
-                '<p style="color:var(--color-danger);">Error al cargar las referencias.</p>';
+                '<p style="color:#ff6b6b;">Error al cargar las referencias.</p>';
         });
 }
 
@@ -190,10 +199,14 @@ function renderReferencias(refs) {
         var nombre = escapeHtml(ref.nombre);
         var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
 
+        var pendingBadge = (ref.esMia && ref.aprobado !== true)
+            ? '<span class="pending-badge"><i class="fas fa-clock"></i> Pendiente de aprobación</span>'
+            : '';
+
         var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
         var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#FF8E41"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
 
-        html += '<div class="ref-card">' +
+        html += '<div class="ref-card' + (ref.esMia && ref.aprobado !== true ? ' ref-card-pending' : '') + '">' +
             '<div class="ref-card-header">' +
                 '<img src="' + fallbackSvg + '" alt="' + nombre + '" loading="lazy">' +
                 '<div class="ref-author">' +
@@ -204,6 +217,7 @@ function renderReferencias(refs) {
             '<div class="ref-card-stars">' + starsHtml + '</div>' +
             '<div class="ref-card-text">' + escapeHtml(ref.texto) + '</div>' +
             photoHtml +
+            pendingBadge +
         '</div>';
     }
     grid.innerHTML = html;

@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moderación de Referencias | Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/referencias/style.css">
+    <style>
+        /* --- Tabs --- */
+        .tabs {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 2rem;
+        }
+
+        .tab-btn {
+            background: var(--glass-background);
+            border: 1px solid var(--glass-border);
+            color: var(--text-gray);
+            padding: 10px 24px;
+            border-radius: 100px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .tab-btn:hover {
+            background: rgba(255, 255, 255, 0.08);
+            transform: none;
+        }
+
+        .tab-btn.active {
+            background: var(--accent-glow);
+            color: var(--primary-color);
+            border-color: rgba(255, 142, 65, 0.3);
+        }
+
+        .tab-count {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 100px;
+            font-size: 0.75rem;
+        }
+
+        .tab-btn.active .tab-count {
+            background: rgba(255, 142, 65, 0.3);
+        }
+
+        /* --- Card Actions --- */
+        .ref-card-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--glass-border);
+        }
+
+        .btn-approve {
+            background: rgba(34, 197, 94, 0.15);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            padding: 8px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: var(--transition);
+        }
+
+        .btn-approve:hover {
+            background: rgba(34, 197, 94, 0.25);
+            transform: none;
+        }
+
+        .btn-reject {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            padding: 8px 20px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            transition: var(--transition);
+        }
+
+        .btn-reject:hover {
+            background: rgba(239, 68, 68, 0.25);
+            transform: none;
+        }
+
+        .ref-card-meta {
+            font-size: 0.75rem;
+            color: var(--text-gray);
+            opacity: 0.6;
+            margin-top: 8px;
+        }
+
+        .status-approved {
+            color: #22c55e;
+            font-weight: 600;
+            font-size: 0.8rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .empty-tab {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-gray);
+            opacity: 0.6;
+        }
+
+        .empty-tab i {
+            font-size: 2rem;
+            margin-bottom: 12px;
+            display: block;
+        }
+
+        @media (max-width: 640px) {
+            .ref-card-actions {
+                flex-direction: column;
+            }
+            .btn-approve, .btn-reject {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div class="bg-gradient"></div>
+
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="Foto ampliada">
+</div>
+
+<div class="container">
+
+    <header>
+        <a href="/">
+            <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
+        </a>
+    </header>
+
+    <section class="hero">
+        <h1>Moderación de Referencias</h1>
+        <p>Aprueba o rechaza las referencias de clientes antes de publicarlas</p>
+    </section>
+
+    <div class="tabs">
+        <button class="tab-btn active" onclick="switchTab('pendientes')">
+            <i class="fas fa-clock"></i> Pendientes <span class="tab-count" id="countPendientes">0</span>
+        </button>
+        <button class="tab-btn" onclick="switchTab('aprobadas')">
+            <i class="fas fa-check-circle"></i> Aprobadas <span class="tab-count" id="countAprobadas">0</span>
+        </button>
+    </div>
+
+    <div id="refGrid" class="ref-grid"></div>
+
+    <div id="refEmpty" class="empty-tab hidden">
+        <i class="fas fa-inbox"></i>
+        <p id="emptyMsg">No hay referencias pendientes</p>
+    </div>
+
+</div>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="/env-config.js"></script>
+
+<script>
+// --- Firebase Init ---
+const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+};
+firebase.initializeApp(firebaseConfig);
+var db = firebase.firestore();
+
+var currentTab = 'pendientes';
+var allRefs = [];
+
+// --- Tabs ---
+function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach(function(btn) { btn.classList.remove('active'); });
+    event.currentTarget.classList.add('active');
+    renderRefs();
+}
+
+// --- Cargar todas las referencias ---
+db.collection('referencias')
+    .orderBy('fecha', 'desc')
+    .onSnapshot(function(snapshot) {
+        allRefs = [];
+        snapshot.forEach(function(doc) {
+            var data = doc.data();
+            data.id = doc.id;
+            allRefs.push(data);
+        });
+        updateCounts();
+        renderRefs();
+    });
+
+function updateCounts() {
+    var pendientes = allRefs.filter(function(r) { return r.aprobado !== true; });
+    var aprobadas = allRefs.filter(function(r) { return r.aprobado === true; });
+    document.getElementById('countPendientes').textContent = pendientes.length;
+    document.getElementById('countAprobadas').textContent = aprobadas.length;
+}
+
+function renderRefs() {
+    var filtered;
+    if (currentTab === 'pendientes') {
+        filtered = allRefs.filter(function(r) { return r.aprobado !== true; });
+    } else {
+        filtered = allRefs.filter(function(r) { return r.aprobado === true; });
+    }
+
+    var grid = document.getElementById('refGrid');
+    var empty = document.getElementById('refEmpty');
+
+    if (filtered.length === 0) {
+        grid.innerHTML = '';
+        empty.classList.remove('hidden');
+        document.getElementById('emptyMsg').textContent =
+            currentTab === 'pendientes' ? 'No hay referencias pendientes' : 'No hay referencias aprobadas';
+        return;
+    }
+    empty.classList.add('hidden');
+
+    var html = '';
+    for (var i = 0; i < filtered.length; i++) {
+        var ref = filtered[i];
+        var fecha = ref.fecha ? ref.fecha.toDate() : new Date();
+        var fechaStr = fecha.toLocaleDateString('es-MX', {
+            year: 'numeric', month: 'long', day: 'numeric',
+            hour: '2-digit', minute: '2-digit'
+        });
+
+        var starsHtml = '';
+        for (var s = 0; s < 5; s++) {
+            starsHtml += '<i class="fas fa-star ' + (s < ref.rating ? '' : 'empty') + '"></i>';
+        }
+
+        var photoHtml = ref.foto
+            ? '<img src="' + ref.foto + '" class="ref-card-photo" alt="Foto" onclick="openLightbox(\'' + ref.foto + '\')" loading="lazy">'
+            : '';
+
+        var nombre = escapeHtml(ref.nombre);
+        var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
+
+        var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
+        var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#FF8E41"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
+
+        var actionsHtml = '';
+        if (currentTab === 'pendientes') {
+            actionsHtml =
+                '<div class="ref-card-actions">' +
+                    '<button class="btn-approve" onclick="aprobar(\'' + ref.id + '\')">' +
+                        '<i class="fas fa-check"></i> Aprobar' +
+                    '</button>' +
+                    '<button class="btn-reject" onclick="rechazar(\'' + ref.id + '\')">' +
+                        '<i class="fas fa-trash"></i> Eliminar' +
+                    '</button>' +
+                '</div>';
+        } else {
+            actionsHtml =
+                '<div class="ref-card-actions">' +
+                    '<span class="status-approved"><i class="fas fa-check-circle"></i> Publicada</span>' +
+                    '<button class="btn-reject" onclick="rechazar(\'' + ref.id + '\')" style="margin-left:auto;">' +
+                        '<i class="fas fa-trash"></i> Eliminar' +
+                    '</button>' +
+                '</div>';
+        }
+
+        html += '<div class="ref-card">' +
+            '<div class="ref-card-header">' +
+                '<img src="' + fallbackSvg + '" alt="' + nombre + '" loading="lazy">' +
+                '<div class="ref-author">' +
+                    '<div class="ref-author-name">' + nombre + '</div>' +
+                    '<div class="ref-date">' + fechaStr + (ciudadHtml ? ' &middot; ' + ciudadHtml : '') + '</div>' +
+                '</div>' +
+            '</div>' +
+            '<div class="ref-card-stars">' + starsHtml + '</div>' +
+            '<div class="ref-card-text">' + escapeHtml(ref.texto) + '</div>' +
+            photoHtml +
+            actionsHtml +
+        '</div>';
+    }
+    grid.innerHTML = html;
+}
+
+// --- Acciones ---
+function aprobar(id) {
+    db.collection('referencias').doc(id).update({ aprobado: true })
+        .then(function() { /* Firestore onSnapshot se encarga */ })
+        .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+function rechazar(id) {
+    if (!confirm('¿Seguro que quieres eliminar esta referencia?')) return;
+    db.collection('referencias').doc(id).delete()
+        .catch(function(err) { alert('Error: ' + err.message); });
+}
+
+// --- Lightbox ---
+function openLightbox(url) {
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightbox').classList.remove('hidden');
+}
+function closeLightbox() {
+    document.getElementById('lightbox').classList.add('hidden');
+    document.getElementById('lightboxImg').src = '';
+}
+
+// --- Utilidades ---
+function escapeHtml(text) {
+    if (!text) return '';
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+
+</body>
+</html>
