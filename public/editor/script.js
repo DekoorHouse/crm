@@ -6597,6 +6597,7 @@ function flipObject(obj, direction) {
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
     switch (obj.type) {
         case 'image':
+        case 'text':
             if (direction === 'horizontal') obj.flipX = !obj.flipX;
             else obj.flipY = !obj.flipY;
             break;
