@@ -6602,6 +6602,45 @@ function invertImageColors(obj) {
     img.src = obj.href;
 }
 
+// Mirror a child object around a given center point (used by group/powerclip flip)
+function mirrorChildAroundCenter(obj, direction, gcx, gcy) {
+    const isH = direction === 'horizontal';
+    switch (obj.type) {
+        case 'rect':
+            if (isH) obj.x = 2 * gcx - obj.x - obj.width;
+            else obj.y = 2 * gcy - obj.y - obj.height;
+            if (obj.rotation) obj.rotation = -obj.rotation;
+            break;
+        case 'image':
+        case 'text':
+        case 'curvepath':
+            if (isH) { obj.x = 2 * gcx - obj.x - obj.width; obj.flipX = !obj.flipX; }
+            else { obj.y = 2 * gcy - obj.y - obj.height; obj.flipY = !obj.flipY; }
+            break;
+        case 'ellipse':
+            if (isH) obj.cx = 2 * gcx - obj.cx;
+            else obj.cy = 2 * gcy - obj.cy;
+            if (obj.rotation) obj.rotation = -obj.rotation;
+            break;
+        case 'line':
+            if (isH) { obj.x1 = 2 * gcx - obj.x1; obj.x2 = 2 * gcx - obj.x2; }
+            else { obj.y1 = 2 * gcy - obj.y1; obj.y2 = 2 * gcy - obj.y2; }
+            break;
+        case 'bspline':
+            obj.points = obj.points.map(p => isH
+                ? { x: 2 * gcx - p.x, y: p.y }
+                : { x: p.x, y: 2 * gcy - p.y });
+            break;
+        case 'group':
+            for (const c of obj.children) mirrorChildAroundCenter(c, direction, gcx, gcy);
+            break;
+        case 'powerclip':
+            mirrorChildAroundCenter(obj.container, direction, gcx, gcy);
+            for (const c of obj.contents) mirrorChildAroundCenter(c, direction, gcx, gcy);
+            break;
+    }
+}
+
 function flipObject(obj, direction) {
     const b = getObjBounds(obj);
     const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
@@ -6634,31 +6673,17 @@ function flipObject(obj, direction) {
                 : { x: p.x, y: 2 * cy - p.y });
             break;
         case 'powerclip': {
-            const pb = getObjBounds(obj.container);
+            const pb = getObjBounds(obj);
             const pcx = pb.x + pb.w / 2, pcy = pb.y + pb.h / 2;
-            flipObject(obj.container, direction);
-            for (const c of obj.contents) {
-                const ccb = getObjBounds(c);
-                const cccx = ccb.x + ccb.w / 2, cccy = ccb.y + ccb.h / 2;
-                if (direction === 'horizontal') offsetObject(c, 2 * (pcx - cccx), 0);
-                else offsetObject(c, 0, 2 * (pcy - cccy));
-                flipObject(c, direction);
-            }
+            mirrorChildAroundCenter(obj.container, direction, pcx, pcy);
+            for (const c of obj.contents) mirrorChildAroundCenter(c, direction, pcx, pcy);
             rebuildPowerClipElement(obj);
             break;
         }
         case 'group': {
             const gb = getObjBounds(obj);
             const gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
-            for (const c of obj.children) {
-                const cb = getObjBounds(c);
-                const ccx = cb.x + cb.w / 2, ccy = cb.y + cb.h / 2;
-                // Mirror child position relative to group center
-                if (direction === 'horizontal') offsetObject(c, 2 * (gcx - ccx), 0);
-                else offsetObject(c, 0, 2 * (gcy - ccy));
-                // Also flip child visually
-                flipObject(c, direction);
-            }
+            for (const c of obj.children) mirrorChildAroundCenter(c, direction, gcx, gcy);
             break;
         }
     }
