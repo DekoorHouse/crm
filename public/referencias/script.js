@@ -40,27 +40,27 @@ function toggleForm() {
 
 // --- Login con Facebook ---
 function loginWithFacebook() {
-    const provider = new firebase.auth.FacebookAuthProvider();
+    var provider = new firebase.auth.FacebookAuthProvider();
     provider.addScope('public_profile');
 
-    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-
-    if (isMobile) {
-        auth.signInWithRedirect(provider);
-    } else {
-        auth.signInWithPopup(provider)
-            .then(function(result) {
-                setSocialUserFromFirebase(result.user);
-            })
-            .catch(function(err) {
-                console.error('Error Facebook login:', err);
-                if (err.code === 'auth/account-exists-with-different-credential') {
-                    alert('Ya existe una cuenta con ese correo electrónico.');
-                } else if (err.code !== 'auth/popup-closed-by-user') {
-                    alert('Error: ' + err.message);
-                }
-            });
-    }
+    // Intentar popup primero, si falla (móvil) usar redirect
+    auth.signInWithPopup(provider)
+        .then(function(result) {
+            setSocialUserFromFirebase(result.user);
+        })
+        .catch(function(err) {
+            console.error('Error Facebook popup:', err);
+            if (err.code === 'auth/popup-blocked' ||
+                err.code === 'auth/popup-closed-by-user' ||
+                err.code === 'auth/cancelled-popup-request') {
+                // Popup bloqueado o cerrado, usar redirect
+                auth.signInWithRedirect(provider);
+            } else if (err.code === 'auth/account-exists-with-different-credential') {
+                alert('Ya existe una cuenta con ese correo electrónico.');
+            } else {
+                alert('Error: ' + err.message);
+            }
+        });
 }
 
 function setSocialUserFromFirebase(user) {
