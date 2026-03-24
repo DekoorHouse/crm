@@ -119,8 +119,8 @@ async function generateDailySnapshot(dateISO) {
 // --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
 router.get('/orders/today', async (req, res) => {
     try {
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
+        const mexicoDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const todayStart = new Date(mexicoDate + 'T00:00:00-06:00');
         const firestoreTodayStart = admin.firestore.Timestamp.fromDate(todayStart);
 
         let query = db.collection('pedidos')
@@ -128,11 +128,7 @@ router.get('/orders/today', async (req, res) => {
 
         const { time } = req.query; // HH:mm
         if (time) {
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const limitDate = new Date(`${year}-${month}-${day}T${time}:59`);
+            const limitDate = new Date(`${mexicoDate}T${time}:59-06:00`);
             query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromDate(limitDate));
         }
 
@@ -158,14 +154,14 @@ router.get('/orders/history', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Se requiere una fecha.' });
         }
 
-        // Crear rango de fecha (desde el inicio hasta el final del día)
-        const start = new Date(date + 'T00:00:00');
-        let end = new Date(date + 'T23:59:59');
+        // Crear rango de fecha en zona horaria de México
+        const start = new Date(date + 'T00:00:00-06:00');
+        let end = new Date(date + 'T23:59:59-06:00');
 
         const firestoreStart = admin.firestore.Timestamp.fromDate(start);
         const { time } = req.query; // HH:mm
         if (time) {
-            end = new Date(date + 'T' + time + ':59');
+            end = new Date(date + 'T' + time + ':59-06:00');
         }
         const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
 
@@ -455,11 +451,11 @@ router.post('/simulate-ai', async (req, res) => {
             const canvasSection = canvasContext ? `**Estado Actual del Lienzo:**\n${JSON.stringify(canvasContext)}\n\n` : '';
             const editorSystemPrompt = `${systemPrompt}\n\n${actionPrompt}`;
 
-            // Fetch today's orders summary for context
+            // Fetch today's orders summary for context (Mexico timezone)
             let ordersSection = '';
             try {
-                const todayStart = new Date();
-                todayStart.setHours(0, 0, 0, 0);
+                const mexicoDate = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+                const todayStart = new Date(mexicoDate + 'T00:00:00-06:00');
                 const snap = await db.collection('pedidos')
                     .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(todayStart))
                     .orderBy('createdAt', 'desc').limit(30).get();
