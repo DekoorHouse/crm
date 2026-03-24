@@ -1375,26 +1375,49 @@ function renderEmojiPicker() {
 async function handleSendTemplate(templateObject) {
     if (!state.selectedContactId) return;
 
-    const templateData = {
-        template: templateObject
+    const currentContactId = state.selectedContactId;
+    const tempId = `temp_${Date.now()}`;
+
+    // Construir texto preview de la plantilla para UI optimista
+    const bodyDef = templateObject.components?.find(c => c.type === 'BODY');
+    const templatePreviewText = bodyDef?.text || `📄 Plantilla: ${templateObject.name}`;
+
+    const pendingMessage = {
+        docId: tempId,
+        from: 'me',
+        status: 'pending',
+        timestamp: { seconds: Math.floor(Date.now() / 1000) },
+        text: templatePreviewText,
     };
 
+    // UI optimista: mostrar mensaje inmediatamente
+    if (state.selectedContactId === currentContactId) {
+        state.messages.push(pendingMessage);
+        appendMessage(pendingMessage);
+    }
+
+    toggleTemplatePicker();
+
     try {
-        const response = await fetch(`${API_BASE_URL}/api/contacts/${state.selectedContactId}/messages`, {
+        const response = await fetch(`${API_BASE_URL}/api/contacts/${currentContactId}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(templateData)
+            body: JSON.stringify({ template: templateObject, tempId })
         });
 
         if (!response.ok) {
             const errorData = await response.json();
             throw new Error(errorData.message || 'Error del servidor al enviar plantilla.');
         }
-        
-        toggleTemplatePicker();
     } catch (error) {
         console.error("Error al enviar la plantilla:", error);
         showError(error.message);
+        // Quitar el mensaje optimista si falló
+        const idx = state.messages.findIndex(m => m.docId === tempId);
+        if (idx > -1) {
+            state.messages.splice(idx, 1);
+            renderMessages();
+        }
     }
 }
 // --- END: Picker Management ---
