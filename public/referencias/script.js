@@ -78,7 +78,30 @@ function setSocialUserFromFirebase(user) {
         name: fbData.displayName || user.displayName || 'Usuario',
         avatar: 'https://graph.facebook.com/' + fbData.uid + '/picture?width=200&height=200',
         profileUrl: 'https://facebook.com/' + fbData.uid,
-        uid: user.uid
+        uid: user.uid,
+        source: 'facebook'
+    };
+    showLoggedUser();
+}
+
+// --- Login con Instagram (manual) ---
+function showInstagramInput() {
+    document.getElementById('igInputSection').classList.remove('hidden');
+}
+
+function loginWithInstagram() {
+    var username = document.getElementById('igUsername').value.trim().replace('@', '');
+    if (!username) {
+        alert('Escribe tu usuario de Instagram.');
+        return;
+    }
+
+    socialUser = {
+        name: '@' + username,
+        avatar: '',
+        profileUrl: 'https://instagram.com/' + username,
+        uid: 'ig_' + username,
+        source: 'instagram'
     };
     showLoggedUser();
 }
@@ -91,7 +114,12 @@ function showLoggedUser() {
 
     document.getElementById('loggedAvatar').src = socialUser.avatar;
     document.getElementById('loggedName').textContent = socialUser.name;
-    document.getElementById('loggedSource').innerHTML = '<i class="fab fa-facebook" style="color:#1877F2"></i> Verificado con Facebook';
+
+    if (socialUser.source === 'instagram') {
+        document.getElementById('loggedSource').innerHTML = '<i class="fab fa-instagram" style="color:#E4405F"></i> Instagram';
+    } else {
+        document.getElementById('loggedSource').innerHTML = '<i class="fab fa-facebook" style="color:#1877F2"></i> Verificado con Facebook';
+    }
 }
 
 function logoutSocial() {
@@ -100,6 +128,7 @@ function logoutSocial() {
     selectedRating = 0;
     selectedPhoto = null;
     document.getElementById('socialLoginSection').classList.remove('hidden');
+    document.getElementById('igInputSection').classList.add('hidden');
     document.getElementById('loggedUserBar').classList.add('hidden');
     document.getElementById('refForm').classList.add('hidden');
     document.getElementById('refForm').reset();
@@ -174,7 +203,7 @@ function resetPhotoUpload() {
 async function submitReferencia(event) {
     event.preventDefault();
 
-    if (!socialUser) { alert('Primero inicia sesión con Facebook.'); return; }
+    if (!socialUser) { alert('Primero inicia sesión con Facebook o Instagram.'); return; }
     if (selectedRating === 0) { alert('Selecciona una calificación.'); return; }
 
     var texto = document.getElementById('refTexto').value.trim();
@@ -199,7 +228,7 @@ async function submitReferencia(event) {
             avatar: socialUser.avatar,
             profileUrl: socialUser.profileUrl,
             uid: socialUser.uid,
-            source: 'facebook',
+            source: socialUser.source || 'facebook',
             rating: selectedRating,
             texto: texto,
             foto: photoUrl,
@@ -280,15 +309,19 @@ function renderReferencias(refs) {
             ? '<a href="' + escapeHtml(ref.profileUrl) + '" target="_blank" rel="noopener">' + nombre + '</a>'
             : nombre;
 
-        var initial = ref.nombre ? ref.nombre[0].toUpperCase() : '?';
+        var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
         var avatarSrc = ref.avatar || '';
         var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
+
+        var sourceIcon = ref.source === 'instagram'
+            ? '<i class="fab fa-instagram verified" style="color:#E4405F" title="Instagram"></i>'
+            : '<i class="fab fa-facebook-square verified" style="color:#1877F2" title="Verificado con Facebook"></i>';
 
         html += '<div class="ref-card">' +
             '<div class="ref-card-header">' +
                 '<img src="' + (avatarSrc || fallbackSvg) + '" alt="' + nombre + '" loading="lazy" onerror="this.src=\'' + fallbackSvg + '\'">' +
                 '<div class="ref-author">' +
-                    '<div class="ref-author-name">' + nameHtml + ' <i class="fab fa-facebook-square verified" style="color:#1877F2" title="Verificado con Facebook"></i></div>' +
+                    '<div class="ref-author-name">' + nameHtml + ' ' + sourceIcon + '</div>' +
                     '<div class="ref-date">' + fechaStr + '</div>' +
                 '</div>' +
             '</div>' +
