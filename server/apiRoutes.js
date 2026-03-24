@@ -13,10 +13,31 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 // --- FIN DE MODIFICACIÓN ---
 
+const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 
 const router = express.Router();
+const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+// --- Subir foto de referencia (público, sin auth) ---
+router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
+        const ext = path.extname(req.file.originalname) || '.jpg';
+        const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + ext;
+        const file = bucket.file(fileName);
+        await file.save(req.file.buffer, {
+            metadata: { contentType: req.file.mimetype },
+            public: true
+        });
+        const url = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;
+        res.json({ url });
+    } catch (error) {
+        console.error('Error subiendo foto de referencia:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // --- Helper para procesar pedidos y adjuntar info de contacto/anuncio ---
 async function processOrdersData(ordersSnapshot) {

@@ -9,7 +9,7 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
-const storageRef = firebase.storage();
+const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- Estado ---
 let socialUser = null;
@@ -194,11 +194,15 @@ async function submitReferencia(event) {
     try {
         var photoUrl = '';
         if (selectedPhoto) {
-            var ext = selectedPhoto.name.split('.').pop();
-            var fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.' + ext;
-            var fileRef = storageRef.ref(fileName);
-            await fileRef.put(selectedPhoto);
-            photoUrl = await fileRef.getDownloadURL();
+            var formData = new FormData();
+            formData.append('foto', selectedPhoto);
+            var uploadRes = await fetch(API_BASE_URL + '/api/referencias/upload', {
+                method: 'POST',
+                body: formData
+            });
+            var uploadData = await uploadRes.json();
+            if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al subir foto');
+            photoUrl = uploadData.url;
         }
 
         await db.collection('referencias').add({
