@@ -5794,6 +5794,13 @@ async function copySelectedAsSVG() {
 
     for (const obj of objs) exportObj(obj, root);
 
+    // Embed editor object data for lossless paste between editor instances
+    const editorMeta = document.createElementNS(ns, 'metadata');
+    editorMeta.setAttribute('id', 'editor-objects');
+    const editorJson = objs.map(o => JSON.parse(JSON.stringify(o, (k, v) => k === 'element' ? undefined : v)));
+    editorMeta.textContent = JSON.stringify(editorJson);
+    root.appendChild(editorMeta);
+
     let svgStr = '<?xml version="1.0" encoding="UTF-8"?>\n';
     svgStr += '<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN" "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">\n';
     svgStr += new XMLSerializer().serializeToString(root);
@@ -7388,6 +7395,57 @@ function setupEventListeners() {
         }
     });
 
+    // Lossless paste: create editor objects directly from JSON data
+    function pasteEditorObjects(objects, placePt) {
+        saveUndoState();
+        // Compute combined bounding box of source objects
+        let minX = Infinity, minY = Infinity;
+        for (const obj of objects) {
+            const b = getObjBounds(obj);
+            if (b.x < minX) minX = b.x;
+            if (b.y < minY) minY = b.y;
+        }
+        const dx = placePt.x - minX, dy = placePt.y - minY;
+        const idMap = {};
+        const newIds = [];
+        for (const obj of objects) {
+            const oldId = obj.id;
+            obj.id = state.nextId++;
+            idMap[oldId] = obj.id;
+            // Assign new IDs to children and track in idMap
+            (function assignIds(o) {
+                if (o.type === 'group' && o.children) {
+                    for (const c of o.children) { idMap[c.id] = state.nextId; c.id = state.nextId++; assignIds(c); }
+                }
+                if (o.type === 'powerclip') {
+                    if (o.container) { idMap[o.container.id] = state.nextId; o.container.id = state.nextId++; assignIds(o.container); }
+                    if (o.contents) { for (const c of o.contents) { idMap[c.id] = state.nextId; c.id = state.nextId++; assignIds(c); } }
+                }
+            })(obj);
+            offsetObject(obj, dx, dy);
+            const elem = buildSVGElement(obj);
+            obj.element = elem;
+            elem.dataset.objectId = obj.id;
+            objectsLayer.appendChild(elem);
+            state.objects.push(obj);
+            newIds.push(obj.id);
+        }
+        // Remap refTextIds to new IDs
+        (function remapRefs(list) {
+            for (const obj of list) {
+                if (obj.isRefArea && obj.refTextIds) {
+                    obj.refTextIds = obj.refTextIds.map(tid => idMap[tid] ?? null).filter(Boolean);
+                }
+                if (obj.type === 'group' && obj.children) remapRefs(obj.children);
+                if (obj.type === 'powerclip' && obj.contents) remapRefs(obj.contents);
+            }
+        })(objects);
+        state.selectedIds = newIds;
+        drawSelection();
+        updatePropsPanel();
+        setTool('select');
+    }
+
     // Paste from clipboard: SVG text (from CorelDRAW or this editor) or images
     document.addEventListener('paste', (e) => {
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -7409,6 +7467,16 @@ function setupEventListeners() {
             e.preventDefault();
             const vb = state.viewBox;
             const center = { x: vb.x + vb.w / 2, y: vb.y + vb.h / 2 };
+            // Check for embedded editor object data (lossless paste)
+            const metaMatch = svgText.match(/<metadata\s+id="editor-objects">([\s\S]*?)<\/metadata>/);
+            if (metaMatch) {
+                try {
+                    const editorData = JSON.parse(metaMatch[1]);
+                    pasteEditorObjects(editorData, center);
+                    showToast('Pegado');
+                    return;
+                } catch(err) { /* fall through to SVG import */ }
+            }
             importSVGText(svgText, center);
             showToast('Pegado');
             return;
