@@ -6620,14 +6620,34 @@ function flipObject(obj, direction) {
                 ? { x: 2 * cx - p.x, y: p.y }
                 : { x: p.x, y: 2 * cy - p.y });
             break;
-        case 'powerclip':
+        case 'powerclip': {
+            const pb = getObjBounds(obj.container);
+            const pcx = pb.x + pb.w / 2, pcy = pb.y + pb.h / 2;
             flipObject(obj.container, direction);
-            for (const c of obj.contents) flipObject(c, direction);
+            for (const c of obj.contents) {
+                const ccb = getObjBounds(c);
+                const cccx = ccb.x + ccb.w / 2, cccy = ccb.y + ccb.h / 2;
+                if (direction === 'horizontal') offsetObject(c, 2 * (pcx - cccx), 0);
+                else offsetObject(c, 0, 2 * (pcy - cccy));
+                flipObject(c, direction);
+            }
             rebuildPowerClipElement(obj);
             break;
-        case 'group':
-            for (const c of obj.children) flipObject(c, direction);
+        }
+        case 'group': {
+            const gb = getObjBounds(obj);
+            const gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
+            for (const c of obj.children) {
+                const cb = getObjBounds(c);
+                const ccx = cb.x + cb.w / 2, ccy = cb.y + cb.h / 2;
+                // Mirror child position relative to group center
+                if (direction === 'horizontal') offsetObject(c, 2 * (gcx - ccx), 0);
+                else offsetObject(c, 0, 2 * (gcy - ccy));
+                // Also flip child visually
+                flipObject(c, direction);
+            }
             break;
+        }
     }
 }
 
