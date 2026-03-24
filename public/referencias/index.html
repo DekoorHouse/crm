@@ -268,23 +268,23 @@
 
         <!-- Login Social -->
         <div id="socialLoginSection" class="social-login-section">
-            <p>Elige cómo verificar tu identidad</p>
-            <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
-                <button class="btn-facebook" onclick="loginWithFacebook()">
-                    <i class="fab fa-facebook"></i> Facebook
-                </button>
-                <button class="btn-instagram" onclick="showInstagramInput()">
-                    <i class="fab fa-instagram"></i> Instagram
-                </button>
-            </div>
-            <!-- Input de Instagram (oculto hasta que den click) -->
-            <div id="igInputSection" class="hidden" style="margin-top:16px;">
-                <div style="display:flex;gap:8px;align-items:center;max-width:360px;margin:0 auto;">
+            <p>Verifica tu identidad con tu red social</p>
+            <!-- Instagram: siempre visible -->
+            <div style="margin-bottom:16px;">
+                <div style="display:flex;gap:8px;align-items:center;max-width:380px;margin:0 auto;">
+                    <button class="btn-instagram" onclick="loginWithInstagram()" style="padding:10px 16px;white-space:nowrap;">
+                        <i class="fab fa-instagram"></i> Instagram
+                    </button>
                     <span style="font-size:1.1rem;color:var(--color-text-light);">@</span>
                     <input type="text" id="igUsername" placeholder="tu_usuario" style="margin-bottom:0;flex:1;">
-                    <button class="btn btn-primary btn-sm" onclick="loginWithInstagram()">Verificar</button>
                 </div>
-                <p style="font-size:0.8rem;color:var(--color-text-light);margin-top:8px;">Escribe tu usuario de Instagram</p>
+            </div>
+            <!-- Facebook: solo desktop -->
+            <div id="fbLoginOption">
+                <p style="font-size:0.8rem;color:var(--color-text-light);margin-bottom:10px;">o verifica con Facebook</p>
+                <button class="btn-facebook" onclick="loginWithFacebook()" style="padding:10px 20px;font-size:0.9rem;">
+                    <i class="fab fa-facebook"></i> Facebook
+                </button>
             </div>
         </div>
 
