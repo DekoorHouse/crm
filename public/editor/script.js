@@ -5189,126 +5189,143 @@ async function speakAIResponse(text) {
 }
 
 let _voiceAudioCtx = null, _voiceAnalyser = null, _voiceStream = null, _voiceAnimId = null;
+let _pendingVoiceMedia = null; // { base64, mimeType }
 
 function startVoiceInput() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { showToast('Tu navegador no soporta reconocimiento de voz'); return; }
-
     const overlay = document.getElementById('ai-voice-overlay');
     const canvas = document.getElementById('ai-voice-canvas');
     const statusEl = document.getElementById('ai-voice-status');
     const ctx = canvas.getContext('2d');
     const micBtn = document.getElementById('ai-mic-btn');
+    const stopBtn = document.getElementById('ai-voice-stop');
 
-    // Show overlay
     overlay.classList.remove('hidden');
     micBtn.classList.add('ai-mic-active');
-    statusEl.textContent = 'Escuchando...';
+    statusEl.textContent = 'Grabando...';
 
-    // Speech recognition
-    const recognition = new SpeechRecognition();
-    recognition.lang = 'es-MX';
-    recognition.interimResults = false;
-    recognition.maxAlternatives = 1;
+    let recorder = null, chunks = [], silenceTimer = null, stopped = false;
 
     function cleanup() {
+        stopped = true;
         cancelAnimationFrame(_voiceAnimId);
+        clearTimeout(silenceTimer);
         overlay.classList.add('hidden');
         micBtn.classList.remove('ai-mic-active');
         if (_voiceStream) { _voiceStream.getTracks().forEach(t => t.stop()); _voiceStream = null; }
-        if (_voiceAudioCtx) { _voiceAudioCtx.close().catch(() => {}); _voiceAudioCtx = null; }
+        if (_voiceAudioCtx && _voiceAudioCtx.state !== 'closed') { _voiceAudioCtx.close().catch(() => {}); }
+        _voiceAudioCtx = null;
         _voiceAnalyser = null;
     }
 
-    recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        statusEl.textContent = transcript;
-        setTimeout(() => {
-            cleanup();
-            document.getElementById('ai-chat-input').value = transcript;
-            _aiRespondWithVoice = true;
-            sendAIMessage();
-        }, 400);
-    };
-    recognition.onerror = (event) => {
-        console.error('Speech recognition error:', event.error);
-        if (event.error !== 'no-speech') showToast('Error de micrófono: ' + event.error);
-        cleanup();
-    };
-    recognition.onend = () => {
-        if (!overlay.classList.contains('hidden')) cleanup();
-    };
+    function stopAndSend() {
+        if (stopped) return;
+        stopped = true;
+        statusEl.textContent = 'Enviando...';
+        if (recorder && recorder.state === 'recording') recorder.stop();
+    }
 
-    // Cancel button
-    const cancelBtn = document.getElementById('ai-voice-cancel');
-    const onCancel = () => { recognition.abort(); cleanup(); cancelBtn.removeEventListener('click', onCancel); };
-    cancelBtn.addEventListener('click', onCancel);
+    // Stop/send button
+    const onStop = () => { stopAndSend(); stopBtn.removeEventListener('click', onStop); };
+    stopBtn.addEventListener('click', onStop);
 
-    recognition.start();
-
-    // Start audio visualization
     navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
         _voiceStream = stream;
+
+        // MediaRecorder for audio capture
+        const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus'
+            : MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+            : MediaRecorder.isTypeSupported('audio/mp4') ? 'audio/mp4' : '';
+        recorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+        recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        recorder.onstop = () => {
+            const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+            const reader = new FileReader();
+            reader.onload = () => {
+                const base64 = reader.result; // data:audio/...;base64,...
+                _pendingVoiceMedia = { base64, mimeType: recorder.mimeType || 'audio/webm' };
+                cleanup();
+                // Open chat if not open
+                const panel = document.getElementById('ai-chat-panel');
+                if (panel.classList.contains('hidden')) toggleAIChat();
+                // Send with a prompt that tells the AI to process the audio
+                document.getElementById('ai-chat-input').value = '[Audio enviado por voz]';
+                _aiRespondWithVoice = true;
+                sendAIMessage();
+            };
+            reader.readAsDataURL(blob);
+        };
+        recorder.start(250); // collect in 250ms chunks
+
+        // Web Audio API for visualization
         _voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
         const source = _voiceAudioCtx.createMediaStreamSource(stream);
         _voiceAnalyser = _voiceAudioCtx.createAnalyser();
         _voiceAnalyser.fftSize = 256;
-        _voiceAnalyser.smoothingTimeConstant = 0.8;
+        _voiceAnalyser.smoothingTimeConstant = 0.4;
         source.connect(_voiceAnalyser);
 
-        const bufLen = _voiceAnalyser.frequencyBinCount;
+        const bufLen = _voiceAnalyser.fftSize;
         const dataArr = new Uint8Array(bufLen);
         const W = canvas.width, H = canvas.height, cx = W / 2, cy = H / 2;
         let phase = 0;
         const smoothVol = { current: 0 };
+        let silentSince = 0;
 
         function drawOrb() {
+            if (stopped) return;
             _voiceAnimId = requestAnimationFrame(drawOrb);
-            _voiceAnalyser.getByteFrequencyData(dataArr);
+            _voiceAnalyser.getByteTimeDomainData(dataArr);
 
-            // Calculate volume (0-1)
-            let sum = 0;
-            for (let i = 0; i < bufLen; i++) sum += dataArr[i];
-            const rawVol = sum / (bufLen * 255);
-            smoothVol.current += (rawVol - smoothVol.current) * 0.15;
+            // Calculate RMS volume (0-1) from time domain data
+            let sumSq = 0;
+            for (let i = 0; i < bufLen; i++) {
+                const v = (dataArr[i] - 128) / 128;
+                sumSq += v * v;
+            }
+            const rms = Math.sqrt(sumSq / bufLen);
+            const rawVol = Math.min(rms * 3, 1); // Amplify ×3
+            smoothVol.current += (rawVol - smoothVol.current) * 0.25;
             const vol = smoothVol.current;
 
-            phase += 0.02;
+            // Auto-stop after 3s of silence
+            if (vol < 0.03 && chunks.length > 0) {
+                if (!silentSince) silentSince = Date.now();
+                else if (Date.now() - silentSince > 3000) { stopAndSend(); return; }
+            } else { silentSince = 0; }
+
+            phase += 0.025;
             ctx.clearRect(0, 0, W, H);
 
             // Outer glow
-            const glowR = 60 + vol * 40;
+            const glowR = 65 + vol * 45;
             const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR + 30);
-            glow.addColorStop(0, `rgba(124, 92, 240, ${0.08 + vol * 0.12})`);
+            glow.addColorStop(0, `rgba(124, 92, 240, ${0.1 + vol * 0.2})`);
             glow.addColorStop(1, 'rgba(124, 92, 240, 0)');
             ctx.fillStyle = glow;
             ctx.fillRect(0, 0, W, H);
 
-            // Draw organic blob with multiple layers
+            // Organic blob layers - amplified wobble
             const layers = [
-                { r: 38 + vol * 28, alpha: 0.12, color: '167, 139, 250', speed: 1.3, points: 6 },
-                { r: 32 + vol * 24, alpha: 0.2, color: '139, 112, 245', speed: 1, points: 5 },
-                { r: 26 + vol * 18, alpha: 0.5, color: '124, 92, 240', speed: 0.7, points: 5 },
-                { r: 20 + vol * 12, alpha: 0.85, color: '110, 80, 230', speed: 0.4, points: 4 },
+                { r: 40 + vol * 35, alpha: 0.1, color: '167, 139, 250', speed: 1.3, points: 6 },
+                { r: 33 + vol * 30, alpha: 0.18, color: '139, 112, 245', speed: 1, points: 5 },
+                { r: 27 + vol * 22, alpha: 0.45, color: '124, 92, 240', speed: 0.7, points: 5 },
+                { r: 20 + vol * 16, alpha: 0.8, color: '110, 80, 230', speed: 0.4, points: 4 },
             ];
 
             for (const layer of layers) {
                 ctx.beginPath();
-                const steps = 120;
+                const steps = 100;
                 for (let i = 0; i <= steps; i++) {
                     const angle = (i / steps) * Math.PI * 2;
-                    // Organic wobble from multiple sin waves
                     let wobble = 0;
                     for (let n = 1; n <= layer.points; n++) {
-                        const freq = n;
-                        const amp = (vol * 8 + 2) / (n * 1.2);
-                        wobble += Math.sin(angle * freq + phase * layer.speed * (n % 2 === 0 ? 1 : -1)) * amp;
+                        const amp = (vol * 24 + 3) / (n * 1.1);
+                        wobble += Math.sin(angle * n + phase * layer.speed * (n % 2 === 0 ? 1 : -1)) * amp;
                     }
                     const r = layer.r + wobble;
                     const x = cx + Math.cos(angle) * r;
                     const y = cy + Math.sin(angle) * r;
-                    if (i === 0) ctx.moveTo(x, y);
-                    else ctx.lineTo(x, y);
+                    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
                 }
                 ctx.closePath();
                 ctx.fillStyle = `rgba(${layer.color}, ${layer.alpha})`;
@@ -5316,41 +5333,19 @@ function startVoiceInput() {
             }
 
             // Center bright spot
-            const bright = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14 + vol * 6);
-            bright.addColorStop(0, `rgba(255, 255, 255, ${0.3 + vol * 0.3})`);
+            const bright = ctx.createRadialGradient(cx, cy, 0, cx, cy, 16 + vol * 10);
+            bright.addColorStop(0, `rgba(255, 255, 255, ${0.25 + vol * 0.4})`);
             bright.addColorStop(1, 'rgba(255, 255, 255, 0)');
             ctx.fillStyle = bright;
             ctx.beginPath();
-            ctx.arc(cx, cy, 14 + vol * 6, 0, Math.PI * 2);
+            ctx.arc(cx, cy, 16 + vol * 10, 0, Math.PI * 2);
             ctx.fill();
         }
         drawOrb();
-    }).catch(() => {
-        // Can't get audio for visualization, still works for recognition
-        // Show idle animation
-        const W = canvas.width, H = canvas.height, cx2 = W / 2, cy2 = H / 2;
-        let p = 0;
-        function idleAnim() {
-            _voiceAnimId = requestAnimationFrame(idleAnim);
-            p += 0.02;
-            ctx.clearRect(0, 0, W, H);
-            const glow = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, 70);
-            glow.addColorStop(0, 'rgba(124, 92, 240, 0.15)');
-            glow.addColorStop(1, 'rgba(124, 92, 240, 0)');
-            ctx.fillStyle = glow;
-            ctx.fillRect(0, 0, W, H);
-            ctx.beginPath();
-            for (let i = 0; i <= 120; i++) {
-                const a = (i / 120) * Math.PI * 2;
-                const r = 30 + Math.sin(a * 3 + p) * 4 + Math.sin(a * 5 - p * 1.3) * 2;
-                const x = cx2 + Math.cos(a) * r, y = cy2 + Math.sin(a) * r;
-                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            }
-            ctx.closePath();
-            ctx.fillStyle = 'rgba(124, 92, 240, 0.5)';
-            ctx.fill();
-        }
-        idleAnim();
+    }).catch(err => {
+        console.error('Microphone error:', err);
+        showToast('No se pudo acceder al micrófono');
+        cleanup();
     });
 }
 
@@ -5389,10 +5384,15 @@ async function sendAIMessage() {
         const res = await fetch('/api/simulate-ai', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: text, history, source: 'editor', canvasContext })
+            body: JSON.stringify({
+                message: text, history, source: 'editor', canvasContext,
+                mediaBase64: _pendingVoiceMedia ? _pendingVoiceMedia.base64 : undefined,
+                mediaMimeType: _pendingVoiceMedia ? _pendingVoiceMedia.mimeType : undefined
+            })
         });
         const data = await res.json();
         typing.remove();
+        _pendingVoiceMedia = null;
         const st = document.getElementById('ai-chat-status');
         st.textContent = 'en linea';
         st.classList.remove('thinking');
