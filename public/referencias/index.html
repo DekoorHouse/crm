@@ -4,195 +4,34 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Referencias de Clientes | Dekoor</title>
+    <meta name="description" content="Opiniones reales de clientes que ya probaron los productos de Dekoor. Lee referencias y comparte tu experiencia.">
     <link rel="icon" href="/favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
-    <link rel="stylesheet" href="/style.css">
-    <style>
-        body {
-            overflow: auto !important;
-            background-color: var(--color-bg);
-            color: var(--color-text);
-            min-height: 100vh;
-        }
-
-        .ref-page { max-width: 900px; margin: 0 auto; padding: 40px 20px 80px; }
-
-        .ref-header { text-align: center; margin-bottom: 48px; }
-        .ref-header h1 { font-size: 2rem; font-weight: 800; margin-bottom: 8px; }
-        .ref-header p { color: var(--color-text-light); font-size: 1.05rem; }
-
-        .ref-cta { text-align: center; margin-bottom: 48px; }
-        .ref-cta .btn {
-            font-size: 1rem;
-            padding: 14px 32px;
-            border-radius: 9999px;
-            box-shadow: 0 4px 16px var(--color-shadow);
-        }
-
-        /* --- FORMULARIO --- */
-        .ref-form-card {
-            background: var(--color-container-bg);
-            border: 1px solid var(--color-border);
-            border-radius: var(--border-radius-lg);
-            padding: 32px;
-            margin-bottom: 48px;
-            box-shadow: 0 4px 20px var(--color-shadow);
-        }
-        .ref-form-card.hidden { display: none !important; }
-        .ref-form-card h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 24px; }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-            margin-bottom: 0;
-        }
-
-        .rating-stars { display: flex; gap: 6px; margin-bottom: 16px; }
-        .rating-stars i {
-            font-size: 1.8rem; color: var(--color-border);
-            cursor: pointer; transition: color 0.15s ease, transform 0.15s ease;
-        }
-        .rating-stars i.active { color: #f59e0b; }
-        .rating-stars i:hover { transform: scale(1.15); }
-
-        .photo-upload-area {
-            border: 2px dashed var(--color-border);
-            border-radius: var(--border-radius-md);
-            padding: 24px; text-align: center;
-            cursor: pointer; transition: all 0.2s ease;
-            margin-bottom: 16px;
-        }
-        .photo-upload-area:hover { border-color: var(--color-primary); background: var(--color-subtle-bg); }
-        .photo-upload-area i.fa-camera { font-size: 2rem; color: var(--color-text-light); margin-bottom: 8px; }
-        .photo-upload-area p { color: var(--color-text-light); font-size: 0.9rem; }
-        .photo-upload-area .preview-img {
-            max-width: 100%; max-height: 200px;
-            border-radius: var(--border-radius-sm); margin-top: 12px;
-        }
-
-        textarea#refTexto { min-height: 100px; resize: vertical; }
-        .form-actions { display: flex; gap: 12px; justify-content: flex-end; }
-
-        /* --- GRID DE REFERENCIAS --- */
-        .ref-grid { display: grid; gap: 24px; }
-
-        .ref-card {
-            background: var(--color-container-bg);
-            border: 1px solid var(--color-border);
-            border-radius: var(--border-radius-lg);
-            padding: 24px;
-            box-shadow: 0 2px 12px var(--color-shadow);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-        }
-        .ref-card:hover { transform: translateY(-2px); box-shadow: 0 6px 24px var(--color-shadow); }
-
-        .ref-card-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-        .ref-card-header img {
-            width: 48px; height: 48px; border-radius: 50%;
-            object-fit: cover; border: 2px solid var(--color-primary);
-        }
-        .ref-card-header .ref-author { flex: 1; }
-        .ref-card-header .ref-author-name {
-            font-weight: 700; font-size: 0.95rem;
-            display: flex; align-items: center; gap: 6px;
-        }
-        .ref-card-header .ref-date { font-size: 0.8rem; color: var(--color-text-light); }
-        .ref-city { color: var(--color-text-light); }
-        .ref-city i { font-size: 0.7rem; margin-right: 2px; }
-
-        .ref-card-stars { margin-bottom: 10px; }
-        .ref-card-stars i { color: #f59e0b; font-size: 0.95rem; }
-        .ref-card-stars i.empty { color: var(--color-border); }
-
-        .ref-card-text { font-size: 0.95rem; line-height: 1.6; margin-bottom: 16px; color: var(--color-text); }
-
-        .ref-card-photo {
-            width: 100%; max-height: 400px; object-fit: cover;
-            border-radius: var(--border-radius-md);
-            cursor: pointer; transition: opacity 0.2s ease;
-        }
-        .ref-card-photo:hover { opacity: 0.92; }
-
-        .ref-empty { text-align: center; padding: 60px 20px; color: var(--color-text-light); }
-        .ref-empty i { font-size: 3rem; margin-bottom: 16px; opacity: 0.4; }
-        .ref-empty p { font-size: 1.05rem; }
-
-        .ref-loading { text-align: center; padding: 40px; color: var(--color-text-light); }
-        .ref-loading .spinner {
-            width: 36px; height: 36px;
-            border: 3px solid var(--color-border);
-            border-top-color: var(--color-primary);
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            margin: 0 auto 12px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .lightbox {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-            display: flex; align-items: center; justify-content: center;
-            z-index: 9999; cursor: pointer; padding: 20px;
-        }
-        .lightbox.hidden { display: none !important; }
-        .lightbox img {
-            max-width: 90vw; max-height: 90vh;
-            border-radius: var(--border-radius-md);
-            box-shadow: 0 8px 40px rgba(0,0,0,0.5);
-        }
-
-        .dark-toggle {
-            position: fixed; top: 16px; right: 16px;
-            background: var(--color-container-bg);
-            border: 1px solid var(--color-border);
-            border-radius: 50%; width: 42px; height: 42px;
-            display: flex; align-items: center; justify-content: center;
-            cursor: pointer; font-size: 1.1rem; color: var(--color-text);
-            box-shadow: 0 2px 8px var(--color-shadow);
-            z-index: 100; transition: all 0.2s ease;
-        }
-        .dark-toggle:hover { transform: scale(1.1); }
-
-        .ref-stats { display: flex; gap: 16px; justify-content: center; margin-bottom: 32px; flex-wrap: wrap; }
-        .ref-stat {
-            background: var(--color-container-bg);
-            border: 1px solid var(--color-border);
-            border-radius: var(--border-radius-md);
-            padding: 16px 24px; text-align: center; min-width: 120px;
-        }
-        .ref-stat .stat-num { font-size: 1.5rem; font-weight: 800; color: var(--color-primary); }
-        .ref-stat .stat-label {
-            font-size: 0.8rem; color: var(--color-text-light);
-            text-transform: uppercase; letter-spacing: 0.05em; margin-top: 4px;
-        }
-
-        @media (max-width: 600px) {
-            .ref-page { padding: 24px 16px 60px; }
-            .ref-header h1 { font-size: 1.5rem; }
-            .ref-form-card { padding: 20px; }
-            .form-row { grid-template-columns: 1fr; }
-        }
-    </style>
+    <link rel="stylesheet" href="/referencias/style.css">
 </head>
 <body>
 
-<button class="dark-toggle" onclick="toggleDarkMode()" title="Cambiar tema">
-    <i class="fas fa-moon"></i>
-</button>
+<div class="bg-gradient"></div>
 
 <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <img id="lightboxImg" src="" alt="Foto ampliada">
 </div>
 
-<div class="ref-page">
+<div class="container">
 
-    <div class="ref-header">
-        <h1><i class="fas fa-star" style="color: #f59e0b;"></i> Lo que dicen nuestros clientes</h1>
+    <header>
+        <a href="/">
+            <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
+        </a>
+    </header>
+
+    <section class="hero">
+        <h1>Lo que dicen nuestros clientes</h1>
         <p>Opiniones reales de personas que ya probaron nuestros productos</p>
-    </div>
+    </section>
 
     <div class="ref-stats">
         <div class="ref-stat">
@@ -221,16 +60,16 @@
         <form id="refForm" onsubmit="submitReferencia(event)">
             <div class="form-row">
                 <div>
-                    <label for="refNombre" style="font-weight:600;margin-bottom:8px;display:block;">Tu nombre</label>
+                    <label for="refNombre">Tu nombre</label>
                     <input type="text" id="refNombre" placeholder="Ej: María López" required>
                 </div>
                 <div>
-                    <label for="refCiudad" style="font-weight:600;margin-bottom:8px;display:block;">Ciudad</label>
+                    <label for="refCiudad">Ciudad</label>
                     <input type="text" id="refCiudad" placeholder="Ej: Guadalajara, Jal." required>
                 </div>
             </div>
 
-            <label style="font-weight:600;margin-bottom:8px;display:block;">Calificación</label>
+            <label>Calificación</label>
             <div class="rating-stars" id="ratingStars">
                 <i class="fas fa-star" data-val="1"></i>
                 <i class="fas fa-star" data-val="2"></i>
@@ -239,10 +78,10 @@
                 <i class="fas fa-star" data-val="5"></i>
             </div>
 
-            <label for="refTexto" style="font-weight:600;margin-bottom:8px;display:block;">Tu opinión</label>
+            <label for="refTexto">Tu opinión</label>
             <textarea id="refTexto" placeholder="Cuéntanos tu experiencia con nuestros productos..." required></textarea>
 
-            <label style="font-weight:600;margin-bottom:8px;display:block;">Foto del producto (opcional)</label>
+            <label>Foto del producto (opcional)</label>
             <div class="photo-upload-area" id="photoUploadArea" onclick="document.getElementById('photoInput').click()">
                 <i class="fas fa-camera"></i>
                 <p>Toca para subir una foto</p>
@@ -268,6 +107,10 @@
     <div id="refEmpty" class="ref-empty hidden">
         <i class="fas fa-comments"></i>
         <p>Aún no hay referencias. ¡Sé el primero en compartir tu opinión!</p>
+    </div>
+
+    <div class="ref-footer">
+        <p>DEKOOR</p>
     </div>
 
 </div>

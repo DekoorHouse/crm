@@ -15,18 +15,6 @@ const API_BASE_URL = window.API_BASE_URL || '';
 let selectedRating = 0;
 let selectedPhoto = null;
 
-// --- Dark mode ---
-function toggleDarkMode() {
-    document.body.classList.toggle('dark-mode');
-    const icon = document.querySelector('.dark-toggle i');
-    icon.className = document.body.classList.contains('dark-mode') ? 'fas fa-sun' : 'fas fa-moon';
-    localStorage.setItem('darkMode', document.body.classList.contains('dark-mode'));
-}
-if (localStorage.getItem('darkMode') === 'true') {
-    document.body.classList.add('dark-mode');
-    document.querySelector('.dark-toggle i').className = 'fas fa-sun';
-}
-
 // --- Toggle formulario ---
 function toggleForm() {
     const card = document.getElementById('refFormCard');
@@ -203,7 +191,7 @@ function renderReferencias(refs) {
         var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
 
         var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
-        var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
+        var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#FF8E41"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
 
         html += '<div class="ref-card">' +
             '<div class="ref-card-header">' +
