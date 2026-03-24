@@ -37,63 +37,68 @@ function toggleForm() {
     }
 }
 
-// --- Selector de red social ---
-var selectedNetwork = 'facebook';
+// --- Facebook Login con SDK ---
+function loginWithFacebook() {
+    var btn = document.getElementById('btnFbLogin');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Conectando...';
 
-function selectNetwork(network) {
-    selectedNetwork = network;
-    var selFb = document.getElementById('selFb');
-    var selIg = document.getElementById('selIg');
-    var label = document.getElementById('socialLabel');
-    var input = document.getElementById('socialInput');
-    var hint = document.getElementById('socialHint');
+    sessionStorage.setItem('fb_login_pending', '1');
 
-    if (network === 'facebook') {
-        selFb.classList.add('active');
-        selFb.style.opacity = '1';
-        selIg.classList.remove('active');
-        selIg.style.opacity = '0.6';
-        label.textContent = 'Tu nombre de Facebook';
-        input.placeholder = 'Tu nombre como aparece en Facebook';
-        hint.textContent = 'Escribe tu nombre real para que otros clientes puedan verificarte';
-    } else {
-        selIg.classList.add('active');
-        selIg.style.opacity = '1';
-        selFb.classList.remove('active');
-        selFb.style.opacity = '0.6';
-        label.textContent = 'Tu usuario de Instagram';
-        input.placeholder = 'tu_usuario';
-        hint.textContent = 'Escribe tu @ de Instagram';
-    }
-    input.value = '';
-    input.focus();
+    FB.login(function(response) {
+        sessionStorage.removeItem('fb_login_pending');
+        if (response.authResponse) {
+            fetchFBUserData();
+        } else {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
+        }
+    }, {scope: 'public_profile'});
 }
 
-function loginWithSocial() {
+function fetchFBUserData() {
+    FB.api('/me', {fields: 'name,picture.width(200).height(200)'}, function(userData) {
+        if (userData && !userData.error) {
+            socialUser = {
+                name: userData.name,
+                avatar: userData.picture && userData.picture.data ? userData.picture.data.url : '',
+                profileUrl: 'https://facebook.com/' + userData.id,
+                uid: 'fb_' + userData.id,
+                source: 'facebook'
+            };
+            showLoggedUser();
+        } else {
+            alert('Error al obtener datos de Facebook. Intenta de nuevo.');
+            var btn = document.getElementById('btnFbLogin');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
+        }
+    });
+}
+
+// --- Instagram (input manual) ---
+function showInstagramInput() {
+    var section = document.getElementById('igInputSection');
+    section.classList.toggle('hidden');
+    if (!section.classList.contains('hidden')) {
+        document.getElementById('socialInput').focus();
+    }
+}
+
+function loginWithInstagram() {
     var value = document.getElementById('socialInput').value.trim();
     if (!value) {
-        alert(selectedNetwork === 'facebook' ? 'Escribe tu nombre de Facebook.' : 'Escribe tu usuario de Instagram.');
+        alert('Escribe tu usuario de Instagram.');
         return;
     }
-
-    if (selectedNetwork === 'instagram') {
-        var username = value.replace('@', '');
-        socialUser = {
-            name: '@' + username,
-            avatar: '',
-            profileUrl: 'https://instagram.com/' + username,
-            uid: 'ig_' + username,
-            source: 'instagram'
-        };
-    } else {
-        socialUser = {
-            name: value,
-            avatar: '',
-            profileUrl: '',
-            uid: 'fb_' + value.toLowerCase().replace(/\s+/g, '.'),
-            source: 'facebook'
-        };
-    }
+    var username = value.replace('@', '');
+    socialUser = {
+        name: '@' + username,
+        avatar: '',
+        profileUrl: 'https://instagram.com/' + username,
+        uid: 'ig_' + username,
+        source: 'instagram'
+    };
     showLoggedUser();
 }
 
@@ -103,7 +108,9 @@ function showLoggedUser() {
     document.getElementById('loggedUserBar').classList.remove('hidden');
     document.getElementById('refForm').classList.remove('hidden');
 
-    document.getElementById('loggedAvatar').src = socialUser.avatar;
+    var initial = socialUser.name ? socialUser.name.replace('@','')[0].toUpperCase() : '?';
+    var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
+    document.getElementById('loggedAvatar').src = socialUser.avatar || fallbackSvg;
     document.getElementById('loggedName').textContent = socialUser.name;
 
     if (socialUser.source === 'instagram') {
@@ -114,6 +121,9 @@ function showLoggedUser() {
 }
 
 function logoutSocial() {
+    if (socialUser && socialUser.source === 'facebook') {
+        try { FB.logout(function(){}); } catch(e) {}
+    }
     socialUser = null;
     selectedRating = 0;
     selectedPhoto = null;
@@ -121,6 +131,12 @@ function logoutSocial() {
     document.getElementById('loggedUserBar').classList.add('hidden');
     document.getElementById('refForm').classList.add('hidden');
     document.getElementById('refForm').reset();
+    document.getElementById('igInputSection').classList.add('hidden');
+    var btn = document.getElementById('btnFbLogin');
+    if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
+    }
     updateStarsUI();
     resetPhotoUpload();
 }

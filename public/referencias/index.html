@@ -272,30 +272,34 @@
         <div id="socialLoginSection" class="social-login-section">
             <p>Verifica tu identidad con tu red social</p>
 
-            <!-- Selector FB / IG -->
-            <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px;">
-                <button class="btn-facebook social-selector active" id="selFb" onclick="selectNetwork('facebook')" style="padding:10px 20px;font-size:0.9rem;">
-                    <i class="fab fa-facebook"></i> Facebook
+            <div style="max-width:400px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
+                <!-- Facebook Login (SDK - usa la app nativa en móvil) -->
+                <button class="btn-facebook" id="btnFbLogin" onclick="loginWithFacebook()" style="width:100%;justify-content:center;font-size:1rem;padding:14px;">
+                    <i class="fab fa-facebook"></i> Continuar con Facebook
                 </button>
-                <button class="btn-instagram social-selector" id="selIg" onclick="selectNetwork('instagram')" style="padding:10px 20px;font-size:0.9rem;opacity:0.6;">
-                    <i class="fab fa-instagram"></i> Instagram
-                </button>
-            </div>
 
-            <!-- Input de nombre/usuario -->
-            <div style="max-width:400px;margin:0 auto;">
-                <label id="socialLabel" style="font-weight:600;margin-bottom:8px;display:block;font-size:0.9rem;">
-                    Tu nombre de Facebook
-                </label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                    <input type="text" id="socialInput" placeholder="Tu nombre como aparece en Facebook" style="margin-bottom:0;flex:1;">
-                    <button class="btn btn-primary" onclick="loginWithSocial()" style="white-space:nowrap;">
-                        <i class="fas fa-check"></i> Listo
-                    </button>
+                <div style="display:flex;align-items:center;gap:12px;color:var(--color-text-light);font-size:0.85rem;">
+                    <div style="flex:1;height:1px;background:var(--color-border);"></div>
+                    <span>o</span>
+                    <div style="flex:1;height:1px;background:var(--color-border);"></div>
                 </div>
-                <p id="socialHint" style="font-size:0.8rem;color:var(--color-text-light);margin-top:6px;">
-                    Escribe tu nombre real para que otros clientes puedan verificarte
-                </p>
+
+                <!-- Instagram (input manual) -->
+                <button class="btn-instagram" onclick="showInstagramInput()" style="width:100%;justify-content:center;font-size:1rem;padding:14px;">
+                    <i class="fab fa-instagram"></i> Continuar con Instagram
+                </button>
+
+                <div id="igInputSection" class="hidden">
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="text" id="socialInput" placeholder="tu_usuario" style="margin-bottom:0;flex:1;">
+                        <button class="btn btn-primary" onclick="loginWithInstagram()" style="white-space:nowrap;">
+                            <i class="fas fa-check"></i> Listo
+                        </button>
+                    </div>
+                    <p style="font-size:0.8rem;color:var(--color-text-light);margin-top:6px;">
+                        Escribe tu @ de Instagram
+                    </p>
+                </div>
             </div>
         </div>
 
@@ -352,6 +356,28 @@
     </div>
 
 </div>
+
+<!-- Facebook SDK -->
+<script>
+    window.fbAsyncInit = function() {
+        FB.init({
+            appId      : '1885720962060829',
+            cookie     : true,
+            xfbml      : false,
+            version    : 'v20.0'
+        });
+        // Manejar retorno de redirect en móvil
+        if (sessionStorage.getItem('fb_login_pending')) {
+            FB.getLoginStatus(function(response) {
+                sessionStorage.removeItem('fb_login_pending');
+                if (response.status === 'connected') {
+                    fetchFBUserData();
+                }
+            });
+        }
+    };
+</script>
+<script async defer crossorigin="anonymous" src="https://connect.facebook.net/es_LA/sdk.js"></script>
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
