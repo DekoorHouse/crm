@@ -5790,21 +5790,28 @@ function importSVGText(svgText, directPlacePt) {
             const mmMatchH = svgH.match(/([\d.]+)\s*mm/i);
             if (mmMatchW) mmW = parseFloat(mmMatchW[1]);
             if (mmMatchH) mmH = parseFloat(mmMatchH[1]);
-            // Compute scale factor (offset will be determined by click position)
-            // For mm-based SVGs (CorelDRAW): map viewBox directly to page at 1:1 mm.
-            // We ignore width/height mm values because CorelDRAW selected-object exports
-            // set a smaller width (bounding box) but keep the full-page viewBox coordinates.
-            let fitScale;
-            if (mmW > 0 && mmH > 0) {
-                fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH);
-            } else {
-                fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
-            }
-
             // Detect CorelDRAW exports: check xmlns:xodm namespace attr or fil0/str0 CSS class pattern
             const isCorelDRAW =
                 svgRoot.getAttribute('xmlns:xodm') !== null ||
                 (Object.keys(cssMap).some(k => /^fil\d+$/.test(k)) && Object.keys(cssMap).some(k => /^str\d+$/.test(k)));
+
+            // Compute scale factor (offset will be determined by click position)
+            let fitScale;
+            if (mmW > 0 && mmH > 0) {
+                if (isCorelDRAW) {
+                    // CorelDRAW selected-object exports keep full-page viewBox coordinates
+                    // even when width/height reflect only the bounding box, so map viewBox
+                    // directly to the editor page at 1:1 mm.
+                    fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH);
+                } else {
+                    // Other mm-based SVGs (e.g. copied from this editor): the viewBox
+                    // matches the declared mm dimensions, so use them to preserve the
+                    // original size instead of stretching to fill the page.
+                    fitScale = Math.min(mmW / contentW, mmH / contentH) / UNITS.mm.factor;
+                }
+            } else {
+                fitScale = Math.min(state.pageWidth / contentW, state.pageHeight / contentH) * 0.9;
+            }
 
             // Helper: resolve fill/stroke/stroke-width from attributes, CSS classes, and style attribute
             function resolveStyle(el) {

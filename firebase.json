@@ -6,6 +6,9 @@
       "ignore": ["node_modules", ".git", "*.log"]
     }
   ],
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
     "public": "public",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"]
