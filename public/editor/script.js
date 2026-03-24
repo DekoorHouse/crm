@@ -2361,6 +2361,9 @@ function handleDragMove(pt) {
             if (state.selectedIds.includes(tid)) continue;
             const tObj = findObject(tid);
             if (!tObj) continue;
+            // Only move this text if this ref area is its primary owner
+            const primaryRA = findRefAreaForText(tObj);
+            if (primaryRA && primaryRA.id !== obj.id) continue;
             if (!state.dragObjProps[tid]) {
                 state.dragObjProps[tid] = snapshotPos(tObj);
             }
@@ -3218,11 +3221,14 @@ function duplicateSelected() {
     saveUndoState();
     const offset = 10; // px offset for the duplicate
     const newIds = [];
+    const idMap = {}; // old id → new id (for remapping refTextIds)
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj) continue;
         const clone = JSON.parse(JSON.stringify(obj, (k, v) => k === 'element' ? undefined : v));
+        const oldId = clone.id;
         clone.id = state.nextId++;
+        idMap[oldId] = clone.id;
         // Assign new ids to children recursively
         assignNewIds(clone);
         offsetObject(clone, offset, offset);
@@ -3232,6 +3238,14 @@ function duplicateSelected() {
         objectsLayer.appendChild(elem);
         state.objects.push(clone);
         newIds.push(clone.id);
+    }
+    // Remap refTextIds: point cloned ref areas to cloned texts (not originals)
+    for (const newId of newIds) {
+        const clone = findObject(newId);
+        if (!clone || !clone.isRefArea || !clone.refTextIds) continue;
+        clone.refTextIds = clone.refTextIds
+            .map(tid => idMap[tid] !== undefined ? idMap[tid] : null)
+            .filter(tid => tid !== null);
     }
     state.selectedIds = newIds;
     drawSelection();
