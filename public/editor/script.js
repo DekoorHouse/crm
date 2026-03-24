@@ -872,16 +872,9 @@ function drawSelection() {
     for (const id of state.selectedIds) {
         const obj = findObject(id);
         if (!obj) continue;
-        // For PowerClips, use rendered getBBox for tight visual selection
-        let b;
-        if (obj.type === 'powerclip' && obj.element && obj.element.getBBox) {
-            try {
-                const bb = obj.element.getBBox();
-                b = { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 };
-            } catch(e) { b = getObjBounds(obj); }
-        } else {
-            b = getObjBounds(obj);
-        }
+        // Use container bounds for PowerClips (getBBox ignores clip-path
+        // and would include invisible overflow content, causing offset frames)
+        const b = getObjBounds(obj);
         // For rotated objects, use the rotated corners for the combined bbox
         const rot = obj.rotation || 0;
         const cx = b.x + b.w/2, cy = b.y + b.h/2;
