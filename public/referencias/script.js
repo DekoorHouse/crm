@@ -10,7 +10,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const storageRef = firebase.storage();
-const auth = firebase.auth();
 
 // --- Estado ---
 let socialUser = null;
@@ -38,68 +37,63 @@ function toggleForm() {
     }
 }
 
-// --- Ocultar Facebook en móvil ---
-var isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-if (isMobile) {
-    var fbOption = document.getElementById('fbLoginOption');
-    if (fbOption) fbOption.style.display = 'none';
-}
+// --- Selector de red social ---
+var selectedNetwork = 'facebook';
 
-// --- Login con Facebook (solo desktop) ---
-function loginWithFacebook() {
-    var provider = new firebase.auth.FacebookAuthProvider();
-    provider.addScope('public_profile');
+function selectNetwork(network) {
+    selectedNetwork = network;
+    var selFb = document.getElementById('selFb');
+    var selIg = document.getElementById('selIg');
+    var label = document.getElementById('socialLabel');
+    var input = document.getElementById('socialInput');
+    var hint = document.getElementById('socialHint');
 
-    auth.signInWithPopup(provider)
-        .then(function(result) {
-            setSocialUserFromFirebase(result.user);
-        })
-        .catch(function(err) {
-            console.error('Error Facebook login:', err);
-            if (err.code === 'auth/account-exists-with-different-credential') {
-                alert('Ya existe una cuenta con ese correo electrónico.');
-            } else if (err.code !== 'auth/popup-closed-by-user') {
-                alert('Error: ' + err.message);
-            }
-        });
-}
-
-function setSocialUserFromFirebase(user) {
-    if (!user) return;
-    var fbData = null;
-    for (var i = 0; i < user.providerData.length; i++) {
-        if (user.providerData[i].providerId === 'facebook.com') {
-            fbData = user.providerData[i];
-            break;
-        }
+    if (network === 'facebook') {
+        selFb.classList.add('active');
+        selFb.style.opacity = '1';
+        selIg.classList.remove('active');
+        selIg.style.opacity = '0.6';
+        label.textContent = 'Tu nombre de Facebook';
+        input.placeholder = 'Tu nombre como aparece en Facebook';
+        hint.textContent = 'Escribe tu nombre real para que otros clientes puedan verificarte';
+    } else {
+        selIg.classList.add('active');
+        selIg.style.opacity = '1';
+        selFb.classList.remove('active');
+        selFb.style.opacity = '0.6';
+        label.textContent = 'Tu usuario de Instagram';
+        input.placeholder = 'tu_usuario';
+        hint.textContent = 'Escribe tu @ de Instagram';
     }
-    if (!fbData) return;
-
-    socialUser = {
-        name: fbData.displayName || user.displayName || 'Usuario',
-        avatar: 'https://graph.facebook.com/' + fbData.uid + '/picture?width=200&height=200',
-        profileUrl: 'https://facebook.com/' + fbData.uid,
-        uid: user.uid,
-        source: 'facebook'
-    };
-    showLoggedUser();
+    input.value = '';
+    input.focus();
 }
 
-// --- Login con Instagram ---
-function loginWithInstagram() {
-    var username = document.getElementById('igUsername').value.trim().replace('@', '');
-    if (!username) {
-        alert('Escribe tu usuario de Instagram.');
+function loginWithSocial() {
+    var value = document.getElementById('socialInput').value.trim();
+    if (!value) {
+        alert(selectedNetwork === 'facebook' ? 'Escribe tu nombre de Facebook.' : 'Escribe tu usuario de Instagram.');
         return;
     }
 
-    socialUser = {
-        name: '@' + username,
-        avatar: '',
-        profileUrl: 'https://instagram.com/' + username,
-        uid: 'ig_' + username,
-        source: 'instagram'
-    };
+    if (selectedNetwork === 'instagram') {
+        var username = value.replace('@', '');
+        socialUser = {
+            name: '@' + username,
+            avatar: '',
+            profileUrl: 'https://instagram.com/' + username,
+            uid: 'ig_' + username,
+            source: 'instagram'
+        };
+    } else {
+        socialUser = {
+            name: value,
+            avatar: '',
+            profileUrl: '',
+            uid: 'fb_' + value.toLowerCase().replace(/\s+/g, '.'),
+            source: 'facebook'
+        };
+    }
     showLoggedUser();
 }
 
@@ -120,7 +114,6 @@ function showLoggedUser() {
 }
 
 function logoutSocial() {
-    auth.signOut();
     socialUser = null;
     selectedRating = 0;
     selectedPhoto = null;
@@ -131,17 +124,6 @@ function logoutSocial() {
     updateStarsUI();
     resetPhotoUpload();
 }
-
-// Detectar sesión activa de Facebook al cargar
-auth.onAuthStateChanged(function(user) {
-    try {
-        if (user && !socialUser) {
-            setSocialUserFromFirebase(user);
-        }
-    } catch (e) {
-        console.error('Error en onAuthStateChanged:', e);
-    }
-});
 
 // --- Estrellas ---
 document.getElementById('ratingStars').addEventListener('click', function(e) {

@@ -73,6 +73,8 @@
         .btn-facebook:hover { background: #166fe5; transform: translateY(-1px); }
         .btn-instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
         .btn-instagram:hover { opacity: 0.9; transform: translateY(-1px); }
+        .social-selector { cursor: pointer; transition: all 0.2s ease; }
+        .social-selector.active { opacity: 1 !important; box-shadow: 0 0 0 3px rgba(255,255,255,0.3), 0 4px 12px rgba(0,0,0,0.2); }
 
         .logged-user {
             display: flex;
@@ -269,22 +271,31 @@
         <!-- Login Social -->
         <div id="socialLoginSection" class="social-login-section">
             <p>Verifica tu identidad con tu red social</p>
-            <!-- Instagram: siempre visible -->
-            <div style="margin-bottom:16px;">
-                <div style="display:flex;gap:8px;align-items:center;max-width:380px;margin:0 auto;">
-                    <button class="btn-instagram" onclick="loginWithInstagram()" style="padding:10px 16px;white-space:nowrap;">
-                        <i class="fab fa-instagram"></i> Instagram
-                    </button>
-                    <span style="font-size:1.1rem;color:var(--color-text-light);">@</span>
-                    <input type="text" id="igUsername" placeholder="tu_usuario" style="margin-bottom:0;flex:1;">
-                </div>
-            </div>
-            <!-- Facebook: solo desktop -->
-            <div id="fbLoginOption">
-                <p style="font-size:0.8rem;color:var(--color-text-light);margin-bottom:10px;">o verifica con Facebook</p>
-                <button class="btn-facebook" onclick="loginWithFacebook()" style="padding:10px 20px;font-size:0.9rem;">
+
+            <!-- Selector FB / IG -->
+            <div style="display:flex;gap:10px;justify-content:center;margin-bottom:16px;">
+                <button class="btn-facebook social-selector active" id="selFb" onclick="selectNetwork('facebook')" style="padding:10px 20px;font-size:0.9rem;">
                     <i class="fab fa-facebook"></i> Facebook
                 </button>
+                <button class="btn-instagram social-selector" id="selIg" onclick="selectNetwork('instagram')" style="padding:10px 20px;font-size:0.9rem;opacity:0.6;">
+                    <i class="fab fa-instagram"></i> Instagram
+                </button>
+            </div>
+
+            <!-- Input de nombre/usuario -->
+            <div style="max-width:400px;margin:0 auto;">
+                <label id="socialLabel" style="font-weight:600;margin-bottom:8px;display:block;font-size:0.9rem;">
+                    Tu nombre de Facebook
+                </label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                    <input type="text" id="socialInput" placeholder="Tu nombre como aparece en Facebook" style="margin-bottom:0;flex:1;">
+                    <button class="btn btn-primary" onclick="loginWithSocial()" style="white-space:nowrap;">
+                        <i class="fas fa-check"></i> Listo
+                    </button>
+                </div>
+                <p id="socialHint" style="font-size:0.8rem;color:var(--color-text-light);margin-top:6px;">
+                    Escribe tu nombre real para que otros clientes puedan verificarte
+                </p>
             </div>
         </div>
 
@@ -346,7 +357,6 @@
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-storage-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="/env-config.js"></script>
 <script src="/referencias/script.js"></script>
 
