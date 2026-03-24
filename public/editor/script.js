@@ -1075,13 +1075,24 @@ function getSnapPoints(obj) {
     const rot = obj.rotation || 0;
     // Center (rotation doesn't move the center)
     pts.push({ x: cx, y: cy, type: 'center' });
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
+    if (obj.type === 'rect' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
         // Corners
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
         for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
         // Edge midpoints
         const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
         for (const e of rawEdges) { const rp = rotatePoint(e.x,e.y,cx,cy,rot); pts.push({...rp,type:'edge'}); }
+    } else if (obj.type === 'group') {
+        // Group bounding box snap points
+        const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
+        for (const c of rawCorners) pts.push({...c, type:'corner'});
+        const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
+        for (const e of rawEdges) pts.push({...e, type:'edge'});
+        // Also add snap points from each child
+        for (const child of obj.children) {
+            const childPts = getSnapPoints(child);
+            pts.push(...childPts);
+        }
     } else if (obj.type === 'ellipse') {
         // Quadrant points (cardinal) rotated
         const rawQ = [{x:obj.cx,y:obj.cy-obj.ry},{x:obj.cx,y:obj.cy+obj.ry},{x:obj.cx-obj.rx,y:obj.cy},{x:obj.cx+obj.rx,y:obj.cy}];
@@ -5213,9 +5224,10 @@ async function sendAIMessage() {
     // Show typing indicator
     const typing = document.createElement('div');
     typing.className = 'ai-chat-msg ai-chat-msg-ai ai-chat-typing';
-    typing.textContent = 'Escribiendo...';
+    typing.innerHTML = '<div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div>';
     document.getElementById('ai-chat-messages').appendChild(typing);
     document.getElementById('ai-chat-messages').scrollTop = document.getElementById('ai-chat-messages').scrollHeight;
+    document.getElementById('ai-chat-status').textContent = 'pensando...';
 
     try {
         const history = _aiChatHistory.slice(-20);
@@ -5228,6 +5240,7 @@ async function sendAIMessage() {
         });
         const data = await res.json();
         typing.remove();
+        document.getElementById('ai-chat-status').textContent = 'en linea';
 
         if (data.success && data.response) {
             const rawResponse = data.response;
@@ -5259,6 +5272,7 @@ async function sendAIMessage() {
         }
     } catch (err) {
         typing.remove();
+        document.getElementById('ai-chat-status').textContent = 'en linea';
         addChatMessage('ai', 'Error de conexión: ' + err.message);
     }
 }
