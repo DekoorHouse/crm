@@ -3263,6 +3263,188 @@ function assignNewIds(obj) {
 }
 
 // =============================================
+// GRID FILL (Llenar cuadrícula)
+// =============================================
+
+// Collect all object IDs that form a "set" (selected objects + their linked ref texts)
+function collectGridSet(selectedIds) {
+    const allIds = new Set(selectedIds);
+    function walkForTexts(o) {
+        if (o.isRefArea && o.refTextIds) {
+            for (const tid of o.refTextIds) if (findObject(tid)) allIds.add(tid);
+        }
+        if (o.type === 'group' && o.children) o.children.forEach(walkForTexts);
+        if (o.type === 'powerclip') {
+            if (o.container) walkForTexts(o.container);
+            if (o.contents) o.contents.forEach(walkForTexts);
+        }
+    }
+    for (const id of selectedIds) {
+        const obj = findObject(id);
+        if (obj) walkForTexts(obj);
+    }
+    return [...allIds];
+}
+
+// Get combined bounding box for a set of object IDs
+function getCombinedBounds(ids) {
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const id of ids) {
+        const obj = findObject(id);
+        if (!obj) continue;
+        const b = getObjBounds(obj);
+        minX = Math.min(minX, b.x);
+        minY = Math.min(minY, b.y);
+        maxX = Math.max(maxX, b.x + b.w);
+        maxY = Math.max(maxY, b.y + b.h);
+    }
+    return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
+}
+
+// Assign new IDs recursively and build old→new map
+function remapAllIds(obj, idMap) {
+    const oldId = obj.id;
+    obj.id = state.nextId++;
+    idMap[oldId] = obj.id;
+    if (obj.type === 'group' && obj.children) {
+        for (const c of obj.children) remapAllIds(c, idMap);
+    }
+    if (obj.type === 'powerclip') {
+        if (obj.container) remapAllIds(obj.container, idMap);
+        if (obj.contents) for (const c of obj.contents) remapAllIds(c, idMap);
+    }
+}
+
+// Remap refTextIds using an old→new ID map
+function remapRefTextIds(obj, idMap) {
+    if (obj.isRefArea && obj.refTextIds) {
+        obj.refTextIds = obj.refTextIds
+            .map(tid => idMap[tid] !== undefined ? idMap[tid] : null)
+            .filter(tid => tid !== null);
+    }
+    if (obj.type === 'group' && obj.children) {
+        for (const c of obj.children) remapRefTextIds(c, idMap);
+    }
+    if (obj.type === 'powerclip') {
+        if (obj.container) remapRefTextIds(obj.container, idMap);
+        if (obj.contents) for (const c of obj.contents) remapRefTextIds(c, idMap);
+    }
+}
+
+function calcGridDimensions(selectedIds, gapPx) {
+    const allIds = collectGridSet(selectedIds);
+    const bounds = getCombinedBounds(allIds);
+    if (bounds.w <= 0 || bounds.h <= 0) return { cols: 0, rows: 0, total: 0 };
+    const cols = Math.max(1, Math.floor((state.pageWidth + gapPx) / (bounds.w + gapPx)));
+    const rows = Math.max(1, Math.floor((state.pageHeight + gapPx) / (bounds.h + gapPx)));
+    return { cols, rows, total: cols * rows };
+}
+
+function gridFillSelected(gapInUnits) {
+    if (state.selectedIds.length === 0) return;
+
+    const gap = fromUnit(gapInUnits);
+    const allIds = collectGridSet(state.selectedIds);
+    const bounds = getCombinedBounds(allIds);
+    if (bounds.w <= 0 || bounds.h <= 0) return;
+
+    const cols = Math.max(1, Math.floor((state.pageWidth + gap) / (bounds.w + gap)));
+    const rows = Math.max(1, Math.floor((state.pageHeight + gap) / (bounds.h + gap)));
+    if (cols * rows <= 1) { showToast('El objeto es muy grande para crear cuadrícula'); return; }
+
+    saveUndoState();
+
+    // Move originals to top-left (0,0)
+    const dxOrig = -bounds.x;
+    const dyOrig = -bounds.y;
+    for (const id of allIds) {
+        const obj = findObject(id);
+        if (obj) { offsetObject(obj, dxOrig, dyOrig); refreshElement(obj); }
+    }
+
+    // Clone for each remaining grid cell
+    for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+            if (r === 0 && c === 0) continue; // Original is here
+            const dx = c * (bounds.w + gap);
+            const dy = r * (bounds.h + gap);
+
+            const idMap = {};
+            const clones = [];
+            for (const id of allIds) {
+                const obj = findObject(id);
+                if (!obj) continue;
+                const clone = JSON.parse(JSON.stringify(obj, (k, v) => k === 'element' ? undefined : v));
+                remapAllIds(clone, idMap);
+                offsetObject(clone, dx, dy);
+                clones.push(clone);
+            }
+            // Remap refTextIds across all clones in this cell
+            for (const clone of clones) remapRefTextIds(clone, idMap);
+            // Add clones to canvas
+            for (const clone of clones) {
+                const elem = buildSVGElement(clone);
+                clone.element = elem;
+                elem.dataset.objectId = clone.id;
+                objectsLayer.appendChild(elem);
+                state.objects.push(clone);
+                refreshElement(clone);
+            }
+        }
+    }
+
+    updateAllRefAreaTexts();
+    selectObject(null);
+    drawSelection();
+    updatePropsPanel();
+    showToast(`${cols} \u00d7 ${rows} = ${cols * rows} copias`);
+}
+
+// --- Grid Fill Modal ---
+function showGridFillModal() {
+    if (state.selectedIds.length === 0) { showToast('Selecciona un objeto primero'); return; }
+    const modal = document.getElementById('grid-fill-modal');
+    const gapInput = document.getElementById('grid-gap');
+    document.getElementById('grid-gap-unit').textContent = state.unit;
+    gapInput.value = 3;
+    updateGridPreview();
+    modal.classList.remove('hidden');
+    gapInput.focus();
+    gapInput.select();
+}
+
+function hideGridFillModal() {
+    document.getElementById('grid-fill-modal').classList.add('hidden');
+}
+
+function updateGridPreview() {
+    const gapVal = parseFloat(document.getElementById('grid-gap').value) || 0;
+    const gap = fromUnit(gapVal);
+    const dim = calcGridDimensions(state.selectedIds, gap);
+    const preview = document.getElementById('grid-preview');
+    if (dim.total <= 1) {
+        preview.textContent = 'El objeto es muy grande para crear cuadrícula';
+    } else {
+        preview.textContent = `${dim.cols} columnas \u00d7 ${dim.rows} filas = ${dim.total} copias`;
+    }
+}
+
+function setupGridFillModal() {
+    const modal = document.getElementById('grid-fill-modal');
+    if (!modal) return;
+    const gapInput = document.getElementById('grid-gap');
+    gapInput.addEventListener('input', updateGridPreview);
+    modal.querySelector('[data-action="cancel"]').addEventListener('click', hideGridFillModal);
+    modal.querySelector('.modal-close').addEventListener('click', hideGridFillModal);
+    modal.querySelector('.modal-overlay').addEventListener('click', hideGridFillModal);
+    modal.querySelector('[data-action="apply"]').addEventListener('click', () => {
+        const gapVal = parseFloat(gapInput.value) || 0;
+        hideGridFillModal();
+        gridFillSelected(gapVal);
+    });
+}
+
+// =============================================
 // Z-ORDER (Bring to Front / Send to Back)
 // =============================================
 function bringToFront() {
@@ -3800,6 +3982,7 @@ function handleMenuAction(action) {
         case 'bg-removal': showBgRemovalModal(); break;
         case 'ai-instructions': showAIInstructionsModal(); break;
         case 'ai-toggle-chat': toggleAIChat(); break;
+        case 'grid-fill': showGridFillModal(); break;
     }
 }
 
@@ -6931,6 +7114,7 @@ function setupEventListeners() {
     setupImportNamesModal();
     setupBmpConverterModal();
     setupBgRemovalModal();
+    setupGridFillModal();
     setupFileModals();
     setupFilesSidebar();
     setupAIChat();

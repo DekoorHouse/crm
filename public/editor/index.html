@@ -126,6 +126,11 @@
                             <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16L10 4L16 16Z"/><circle cx="4" cy="16" r="1.5"/><circle cx="10" cy="4" r="1.5"/><circle cx="16" cy="16" r="1.5"/></svg>
                             Unir nodos &nbsp;<span class="menu-shortcut">Ctrl+J</span>
                         </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="grid-fill">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx=".5"/><rect x="8" y="1" width="5" height="5" rx=".5"/><rect x="15" y="1" width="4" height="5" rx=".5"/><rect x="1" y="8" width="5" height="5" rx=".5"/><rect x="8" y="8" width="5" height="5" rx=".5"/><rect x="15" y="8" width="4" height="5" rx=".5"/><rect x="1" y="15" width="5" height="4" rx=".5"/><rect x="8" y="15" width="5" height="4" rx=".5"/><rect x="15" y="15" width="4" height="4" rx=".5"/></svg>
+                            Llenar cuadrícula...
+                        </div>
                     </div>
                 </div>
                 <div class="menu-group">
@@ -745,6 +750,31 @@
             <div class="modal-actions">
                 <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
                 <button class="btn btn-primary" data-action="save">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Grid Fill Modal -->
+    <div id="grid-fill-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Llenar cuadrícula</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Separación entre elementos</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="grid-gap" step="any" min="0" value="3" style="width:100px;">
+                        <span id="grid-gap-unit">mm</span>
+                    </div>
+                </div>
+                <div id="grid-preview" style="color:var(--text-secondary);font-size:13px;margin-top:4px;"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="apply">Aplicar</button>
             </div>
         </div>
     </div>
