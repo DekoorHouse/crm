@@ -3109,6 +3109,19 @@ function ungroupSelected() {
     const obj = findObject(id);
     if (!obj || obj.type !== 'group') return;
     const children = obj.children;
+
+    // Bake group rotation/flip into children so they keep their visual transform
+    const groupRot = obj.rotation || 0;
+    const groupFlipX = !!obj.flipX;
+    const groupFlipY = !!obj.flipY;
+    if (groupRot !== 0 || groupFlipX || groupFlipY) {
+        const gb = getObjBounds(obj);
+        const gcx = gb.x + gb.w / 2, gcy = gb.y + gb.h / 2;
+        for (const c of children) {
+            _bakeGroupTransform(c, gcx, gcy, groupRot, groupFlipX, groupFlipY);
+        }
+    }
+
     // Remove group
     obj.element.remove();
     const idx = state.objects.findIndex(o => o.id === obj.id);
@@ -3127,6 +3140,87 @@ function ungroupSelected() {
     state.selectedIds = newIds;
     drawSelection();
     updatePropsPanel();
+}
+
+// Bake a group's rotation/flip into a child object so it can live outside the group
+function _bakeGroupTransform(child, gcx, gcy, angle, flipX, flipY) {
+    // Helper: apply flip then rotation to a point
+    function xform(px, py) {
+        if (flipX) px = 2 * gcx - px;
+        if (flipY) py = 2 * gcy - py;
+        if (angle) return rotatePoint(px, py, gcx, gcy, angle);
+        return { x: px, y: py };
+    }
+
+    // For coordinate-defined types, transform each point directly
+    if (child.type === 'line') {
+        const p1 = xform(child.x1, child.y1);
+        const p2 = xform(child.x2, child.y2);
+        child.x1 = p1.x; child.y1 = p1.y;
+        child.x2 = p2.x; child.y2 = p2.y;
+        return;
+    }
+    if (child.type === 'bspline') {
+        for (const p of child.points) {
+            const np = xform(p.x, p.y);
+            p.x = np.x; p.y = np.y;
+        }
+        return;
+    }
+
+    // For center-based types: move center, accumulate rotation, toggle flips
+    const cb = getObjBounds(child);
+    const oldCx = cb.x + cb.w / 2, oldCy = cb.y + cb.h / 2;
+    const newC = xform(oldCx, oldCy);
+    const dx = newC.x - oldCx, dy = newC.y - oldCy;
+
+    // Shift the child's position
+    switch (child.type) {
+        case 'rect': case 'image': case 'curvepath':
+            child.x += dx; child.y += dy; break;
+        case 'ellipse':
+            child.cx += dx; child.cy += dy; break;
+        case 'text':
+            child.x += dx; child.y += dy; break;
+        case 'group':
+            for (const gc of child.children) _shiftObj(gc, dx, dy);
+            break;
+        case 'powerclip':
+            _shiftObj(child.container, dx, dy);
+            for (const ct of (child.contents || [])) _shiftObj(ct, dx, dy);
+            break;
+    }
+
+    // When flipping, a rotation r becomes -r from the mirror's perspective
+    let childRot = child.rotation || 0;
+    if (flipX) childRot = -childRot;
+    if (flipY) childRot = -childRot;
+    child.rotation = (childRot + angle) % 360;
+
+    if (flipX) child.flipX = !child.flipX;
+    if (flipY) child.flipY = !child.flipY;
+}
+
+// Recursively shift an object's position by (dx, dy)
+function _shiftObj(obj, dx, dy) {
+    switch (obj.type) {
+        case 'rect': case 'image': case 'curvepath':
+            obj.x += dx; obj.y += dy; break;
+        case 'ellipse':
+            obj.cx += dx; obj.cy += dy; break;
+        case 'text':
+            obj.x += dx; obj.y += dy; break;
+        case 'line':
+            obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
+        case 'bspline':
+            for (const p of obj.points) { p.x += dx; p.y += dy; } break;
+        case 'group':
+            for (const c of obj.children) _shiftObj(c, dx, dy); break;
+        case 'powerclip':
+            _shiftObj(obj.container, dx, dy);
+            for (const ct of (obj.contents || [])) _shiftObj(ct, dx, dy);
+            break;
+    }
 }
 
 // =============================================
