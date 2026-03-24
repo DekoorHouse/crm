@@ -719,6 +719,20 @@ function deleteObject(id) {
 }
 
 function findObject(id) { return state.objects.find(o => o.id === id); }
+function findObjectDeep(id) {
+    function search(list) {
+        for (const o of list) {
+            if (o.id === id) return o;
+            if (o.type === 'group' && o.children) { const f = search(o.children); if (f) return f; }
+            if (o.type === 'powerclip') {
+                if (o.container && o.container.id === id) return o.container;
+                if (o.contents) { const f = search(o.contents); if (f) return f; }
+            }
+        }
+        return null;
+    }
+    return search(state.objects);
+}
 
 function objectAtPoint(pt) {
     // In powerclip edit mode, only content objects are selectable
@@ -2354,16 +2368,30 @@ function handleDragMove(pt) {
     }
     // Move linked ref area texts along with the ref area
     const finalDx = dx + (snapAdj.dx || 0), finalDy = dy + (snapAdj.dy || 0);
+    // Collect all ref areas to process (including those inside groups)
+    const refAreasToProcess = [];
     for (const id of state.selectedIds) {
         const obj = findObject(id);
-        if (!obj || !obj.isRefArea || !obj.refTextIds) continue;
-        for (const tid of obj.refTextIds) {
+        if (!obj) continue;
+        if (obj.isRefArea && obj.refTextIds) refAreasToProcess.push(obj);
+        if (obj.type === 'group' && obj.children) {
+            (function walkRA(list) {
+                for (const c of list) {
+                    if (c.isRefArea && c.refTextIds) refAreasToProcess.push(c);
+                    if (c.type === 'group' && c.children) walkRA(c.children);
+                    if (c.type === 'powerclip' && c.contents) walkRA(c.contents);
+                }
+            })(obj.children);
+        }
+    }
+    for (const refObj of refAreasToProcess) {
+        for (const tid of refObj.refTextIds) {
             if (state.selectedIds.includes(tid)) continue;
-            const tObj = findObject(tid);
+            const tObj = findObjectDeep(tid);
             if (!tObj) continue;
             // Only move this text if this ref area is its primary owner
             const primaryRA = findRefAreaForText(tObj);
-            if (primaryRA && primaryRA.id !== obj.id) continue;
+            if (primaryRA && primaryRA.id !== refObj.id) continue;
             if (!state.dragObjProps[tid]) {
                 state.dragObjProps[tid] = snapshotPos(tObj);
             }
@@ -4856,7 +4884,15 @@ function buildCanvasContext() {
             o.fontFamily = obj.fontFamily;
             o.fontSize_u = toUnit(obj.fontSize);
         }
-        if (obj.type === 'group') o.childCount = (obj.children || []).length;
+        if (obj.type === 'group') {
+            o.childCount = (obj.children || []).length;
+            o.children = (obj.children || []).map(ch => {
+                const co = { id: ch.id, type: ch.type };
+                if (ch.type === 'text') { co.text = (ch.text || '').slice(0, 50); co.fontFamily = ch.fontFamily; }
+                if (ch.isRefArea) { co.isRefArea = true; co.refTextIds = ch.refTextIds || []; }
+                return co;
+            });
+        }
         if (obj.type === 'powerclip') o.contentCount = (obj.contents || []).length;
         ctx.objects.push(o);
     }
@@ -4891,9 +4927,9 @@ function parseAIResponse(responseText) {
 function resolveTarget(target) {
     if (target === 'selected') {
         if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado');
-        return state.selectedIds.map(id => findObject(id)).filter(Boolean);
+        return state.selectedIds.map(id => findObjectDeep(id) || findObject(id)).filter(Boolean);
     }
-    const obj = findObject(target);
+    const obj = findObjectDeep(target) || findObject(target);
     if (!obj) throw new Error(`Objeto ID ${target} no encontrado`);
     return [obj];
 }
@@ -6306,12 +6342,19 @@ function applyRefAreaStyle(obj) {
 }
 
 function findRefAreaForText(textObj) {
-    // Only return explicitly linked ref areas (via refTextIds)
-    for (const obj of state.objects) {
-        if (!obj.isRefArea || !obj.refTextIds) continue;
-        if (obj.refTextIds.includes(textObj.id)) return obj;
+    // Search explicitly linked ref areas (via refTextIds), including inside groups
+    function search(list) {
+        for (const obj of list) {
+            if (obj.isRefArea && obj.refTextIds && obj.refTextIds.includes(textObj.id)) return obj;
+            if (obj.type === 'group' && obj.children) { const f = search(obj.children); if (f) return f; }
+            if (obj.type === 'powerclip') {
+                if (obj.container && obj.container.isRefArea && obj.container.refTextIds && obj.container.refTextIds.includes(textObj.id)) return obj.container;
+                if (obj.contents) { const f = search(obj.contents); if (f) return f; }
+            }
+        }
+        return null;
     }
-    return null;
+    return search(state.objects);
 }
 
 function addTextToRefArea(textId, refAreaId) {
@@ -6472,15 +6515,20 @@ function enterRefAreaPickMode(textId) {
 function updateRefAreaTexts(refArea) {
     if (!refArea || !refArea.isRefArea || !refArea.refTextIds) return;
     for (const textId of refArea.refTextIds) {
-        const textObj = findObject(textId);
+        const textObj = findObjectDeep(textId);
         if (textObj) fitTextToRefArea(textObj);
     }
 }
 
 function updateAllRefAreaTexts() {
-    for (const obj of state.objects) {
-        if (obj.isRefArea) updateRefAreaTexts(obj);
+    function walk(list) {
+        for (const obj of list) {
+            if (obj.isRefArea) updateRefAreaTexts(obj);
+            if (obj.type === 'group' && obj.children) walk(obj.children);
+            if (obj.type === 'powerclip' && obj.contents) walk(obj.contents);
+        }
     }
+    walk(state.objects);
 }
 
 function invertImageColors(obj) {
@@ -6828,7 +6876,7 @@ function setupEventListeners() {
         if (obj && obj.type === 'text') {
             editTextObject(obj, e);
         } else if (refAreaTarget && refAreaTarget.refTextIds && refAreaTarget.refTextIds.length > 0) {
-            const textObj = findObject(refAreaTarget.refTextIds[0]);
+            const textObj = findObjectDeep(refAreaTarget.refTextIds[0]);
             if (textObj) editTextObject(textObj, e);
         } else if (obj && obj.type === 'powerclip' && obj.id !== pcEditingId) {
             // Skip if already editing this powerclip
