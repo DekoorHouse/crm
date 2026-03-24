@@ -2686,6 +2686,63 @@ body.dark .file-item-delete:hover {
     box-shadow: 0 2px 8px rgba(124, 92, 240, 0.35);
 }
 
+/* AI Voice Overlay */
+.ai-voice-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(10, 8, 20, 0.88);
+    backdrop-filter: blur(24px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: ai-voice-fade-in 0.3s ease;
+}
+.ai-voice-overlay.hidden { display: none; }
+@keyframes ai-voice-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+.ai-voice-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 24px;
+}
+#ai-voice-canvas {
+    border-radius: 50%;
+}
+.ai-voice-status {
+    color: rgba(255,255,255,0.7);
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    animation: ai-voice-status-pulse 2s ease-in-out infinite;
+}
+@keyframes ai-voice-status-pulse {
+    0%, 100% { opacity: 0.7; }
+    50% { opacity: 1; }
+}
+.ai-voice-cancel {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.7);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    margin-top: 16px;
+}
+.ai-voice-cancel:hover {
+    background: rgba(255,60,60,0.15);
+    border-color: rgba(255,60,60,0.4);
+    color: #ff5555;
+}
+
 /* AI Instructions textarea */
 #ai-instructions-text {
     width: 100%;

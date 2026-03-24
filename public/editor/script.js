@@ -5180,32 +5180,170 @@ async function speakAIResponse(text) {
     }
 }
 
+let _voiceAudioCtx = null, _voiceAnalyser = null, _voiceStream = null, _voiceAnimId = null;
+
 function startVoiceInput() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { showToast('Tu navegador no soporta reconocimiento de voz'); return; }
 
+    const overlay = document.getElementById('ai-voice-overlay');
+    const canvas = document.getElementById('ai-voice-canvas');
+    const statusEl = document.getElementById('ai-voice-status');
+    const ctx = canvas.getContext('2d');
+    const micBtn = document.getElementById('ai-mic-btn');
+
+    // Show overlay
+    overlay.classList.remove('hidden');
+    micBtn.classList.add('ai-mic-active');
+    statusEl.textContent = 'Escuchando...';
+
+    // Speech recognition
     const recognition = new SpeechRecognition();
     recognition.lang = 'es-MX';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
 
-    const micBtn = document.getElementById('ai-mic-btn');
-    micBtn.classList.add('ai-mic-active');
+    function cleanup() {
+        cancelAnimationFrame(_voiceAnimId);
+        overlay.classList.add('hidden');
+        micBtn.classList.remove('ai-mic-active');
+        if (_voiceStream) { _voiceStream.getTracks().forEach(t => t.stop()); _voiceStream = null; }
+        if (_voiceAudioCtx) { _voiceAudioCtx.close().catch(() => {}); _voiceAudioCtx = null; }
+        _voiceAnalyser = null;
+    }
 
     recognition.onresult = (event) => {
         const transcript = event.results[0][0].transcript;
-        document.getElementById('ai-chat-input').value = transcript;
-        _aiRespondWithVoice = true;
-        sendAIMessage();
+        statusEl.textContent = transcript;
+        setTimeout(() => {
+            cleanup();
+            document.getElementById('ai-chat-input').value = transcript;
+            _aiRespondWithVoice = true;
+            sendAIMessage();
+        }, 400);
     };
     recognition.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         if (event.error !== 'no-speech') showToast('Error de micrófono: ' + event.error);
-        micBtn.classList.remove('ai-mic-active');
+        cleanup();
     };
-    recognition.onend = () => { micBtn.classList.remove('ai-mic-active'); };
+    recognition.onend = () => {
+        if (!overlay.classList.contains('hidden')) cleanup();
+    };
+
+    // Cancel button
+    const cancelBtn = document.getElementById('ai-voice-cancel');
+    const onCancel = () => { recognition.abort(); cleanup(); cancelBtn.removeEventListener('click', onCancel); };
+    cancelBtn.addEventListener('click', onCancel);
 
     recognition.start();
+
+    // Start audio visualization
+    navigator.mediaDevices.getUserMedia({ audio: true }).then(stream => {
+        _voiceStream = stream;
+        _voiceAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const source = _voiceAudioCtx.createMediaStreamSource(stream);
+        _voiceAnalyser = _voiceAudioCtx.createAnalyser();
+        _voiceAnalyser.fftSize = 256;
+        _voiceAnalyser.smoothingTimeConstant = 0.8;
+        source.connect(_voiceAnalyser);
+
+        const bufLen = _voiceAnalyser.frequencyBinCount;
+        const dataArr = new Uint8Array(bufLen);
+        const W = canvas.width, H = canvas.height, cx = W / 2, cy = H / 2;
+        let phase = 0;
+        const smoothVol = { current: 0 };
+
+        function drawOrb() {
+            _voiceAnimId = requestAnimationFrame(drawOrb);
+            _voiceAnalyser.getByteFrequencyData(dataArr);
+
+            // Calculate volume (0-1)
+            let sum = 0;
+            for (let i = 0; i < bufLen; i++) sum += dataArr[i];
+            const rawVol = sum / (bufLen * 255);
+            smoothVol.current += (rawVol - smoothVol.current) * 0.15;
+            const vol = smoothVol.current;
+
+            phase += 0.02;
+            ctx.clearRect(0, 0, W, H);
+
+            // Outer glow
+            const glowR = 60 + vol * 40;
+            const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowR + 30);
+            glow.addColorStop(0, `rgba(124, 92, 240, ${0.08 + vol * 0.12})`);
+            glow.addColorStop(1, 'rgba(124, 92, 240, 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(0, 0, W, H);
+
+            // Draw organic blob with multiple layers
+            const layers = [
+                { r: 38 + vol * 28, alpha: 0.12, color: '167, 139, 250', speed: 1.3, points: 6 },
+                { r: 32 + vol * 24, alpha: 0.2, color: '139, 112, 245', speed: 1, points: 5 },
+                { r: 26 + vol * 18, alpha: 0.5, color: '124, 92, 240', speed: 0.7, points: 5 },
+                { r: 20 + vol * 12, alpha: 0.85, color: '110, 80, 230', speed: 0.4, points: 4 },
+            ];
+
+            for (const layer of layers) {
+                ctx.beginPath();
+                const steps = 120;
+                for (let i = 0; i <= steps; i++) {
+                    const angle = (i / steps) * Math.PI * 2;
+                    // Organic wobble from multiple sin waves
+                    let wobble = 0;
+                    for (let n = 1; n <= layer.points; n++) {
+                        const freq = n;
+                        const amp = (vol * 8 + 2) / (n * 1.2);
+                        wobble += Math.sin(angle * freq + phase * layer.speed * (n % 2 === 0 ? 1 : -1)) * amp;
+                    }
+                    const r = layer.r + wobble;
+                    const x = cx + Math.cos(angle) * r;
+                    const y = cy + Math.sin(angle) * r;
+                    if (i === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                }
+                ctx.closePath();
+                ctx.fillStyle = `rgba(${layer.color}, ${layer.alpha})`;
+                ctx.fill();
+            }
+
+            // Center bright spot
+            const bright = ctx.createRadialGradient(cx, cy, 0, cx, cy, 14 + vol * 6);
+            bright.addColorStop(0, `rgba(255, 255, 255, ${0.3 + vol * 0.3})`);
+            bright.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.fillStyle = bright;
+            ctx.beginPath();
+            ctx.arc(cx, cy, 14 + vol * 6, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        drawOrb();
+    }).catch(() => {
+        // Can't get audio for visualization, still works for recognition
+        // Show idle animation
+        const W = canvas.width, H = canvas.height, cx2 = W / 2, cy2 = H / 2;
+        let p = 0;
+        function idleAnim() {
+            _voiceAnimId = requestAnimationFrame(idleAnim);
+            p += 0.02;
+            ctx.clearRect(0, 0, W, H);
+            const glow = ctx.createRadialGradient(cx2, cy2, 0, cx2, cy2, 70);
+            glow.addColorStop(0, 'rgba(124, 92, 240, 0.15)');
+            glow.addColorStop(1, 'rgba(124, 92, 240, 0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(0, 0, W, H);
+            ctx.beginPath();
+            for (let i = 0; i <= 120; i++) {
+                const a = (i / 120) * Math.PI * 2;
+                const r = 30 + Math.sin(a * 3 + p) * 4 + Math.sin(a * 5 - p * 1.3) * 2;
+                const x = cx2 + Math.cos(a) * r, y = cy2 + Math.sin(a) * r;
+                if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            ctx.closePath();
+            ctx.fillStyle = 'rgba(124, 92, 240, 0.5)';
+            ctx.fill();
+        }
+        idleAnim();
+    });
 }
 
 // --- AI VOICE END ---
