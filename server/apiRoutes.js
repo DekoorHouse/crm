@@ -458,8 +458,9 @@ router.post('/simulate-ai', async (req, res) => {
                 const todayStart = new Date(mexicoDate + 'T00:00:00-06:00');
                 const snap = await db.collection('pedidos')
                     .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(todayStart))
-                    .orderBy('createdAt', 'desc').limit(30).get();
+                    .orderBy('createdAt', 'desc').get();
                 if (!snap.empty) {
+                    const totalCount = snap.size;
                     const ordersList = [];
                     for (const doc of snap.docs) {
                         const d = doc.data();
@@ -471,7 +472,7 @@ router.post('/simulate-ai', async (req, res) => {
                         }
                         ordersList.push(`#${d.consecutiveOrderNumber || '?'} | ${clientName} | ${d.producto || 'N/A'} | $${d.precio || 0} | ${d.estatus || 'Sin estatus'} | id:${doc.id}`);
                     }
-                    ordersSection = `**Pedidos de Hoy (${ordersList.length}):**\n${ordersList.join('\n')}\n\n`;
+                    ordersSection = `**Pedidos de Hoy (${totalCount} en total):**\n${ordersList.join('\n')}\n\n`;
                 }
             } catch (e) { console.warn('[Editor AI] Error fetching orders:', e.message); }
 
