@@ -7268,6 +7268,134 @@ function setupEventListeners() {
     setupFileModals();
     setupFilesSidebar();
     setupAIChat();
+    setupMobile();
+}
+
+// =============================================
+// MOBILE TOUCH & UI
+// =============================================
+
+let _pinchStartDist = 0, _pinchStartVB = null, _pinchCenter = null;
+let _longPressTimer = null, _touchMoved = false;
+
+function getTouchDist(t) {
+    const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+}
+function getTouchCenter(t) {
+    return { x: (t[0].clientX + t[1].clientX) / 2, y: (t[0].clientY + t[1].clientY) / 2 };
+}
+
+function handleTouchStart(e) {
+    e.preventDefault();
+    if (e.touches.length === 2) {
+        // Pinch zoom start
+        clearTimeout(_longPressTimer);
+        _pinchStartDist = getTouchDist(e.touches);
+        _pinchStartVB = { ...state.viewBox };
+        _pinchCenter = getTouchCenter(e.touches);
+        // Cancel any in-progress single-finger operation
+        if (state.isDragging || state.isDrawing || state.isMarquee) handleMouseUp();
+        return;
+    }
+    if (e.touches.length === 1) {
+        const t = e.touches[0];
+        _touchMoved = false;
+        // Long press → context menu
+        _longPressTimer = setTimeout(() => {
+            if (!_touchMoved) {
+                const pt = screenToSVG(t.clientX, t.clientY);
+                const obj = objectAtPoint(pt);
+                if (obj) {
+                    selectObject(obj.id);
+                    showContextMenu({ clientX: t.clientX, clientY: t.clientY, preventDefault() {} }, obj);
+                }
+            }
+        }, 450);
+        svg.dispatchEvent(new MouseEvent('mousedown', { clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true }));
+    }
+}
+
+function handleTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 2 && _pinchStartDist > 0) {
+        const dist = getTouchDist(e.touches);
+        const factor = _pinchStartDist / dist;
+        const center = screenToSVG(_pinchCenter.x, _pinchCenter.y);
+        const newW = _pinchStartVB.w * factor, newH = _pinchStartVB.h * factor;
+        if (newW < 10 || newW > 50000) return;
+        state.viewBox.x = center.x - (center.x - _pinchStartVB.x) * factor;
+        state.viewBox.y = center.y - (center.y - _pinchStartVB.y) * factor;
+        state.viewBox.w = newW;
+        state.viewBox.h = newH;
+        updateViewBox();
+        if (state.selectedIds.length) drawSelection();
+        return;
+    }
+    if (e.touches.length === 1) {
+        _touchMoved = true;
+        clearTimeout(_longPressTimer);
+        const t = e.touches[0];
+        svg.dispatchEvent(new MouseEvent('mousemove', { clientX: t.clientX, clientY: t.clientY, button: 0, bubbles: true }));
+    }
+}
+
+function handleTouchEnd(e) {
+    e.preventDefault();
+    clearTimeout(_longPressTimer);
+    if (_pinchStartDist > 0 && e.touches.length < 2) {
+        _pinchStartDist = 0;
+        _pinchStartVB = null;
+        return;
+    }
+    const ct = e.changedTouches[0];
+    if (ct) {
+        svg.dispatchEvent(new MouseEvent('mouseup', { clientX: ct.clientX, clientY: ct.clientY, button: 0, bubbles: true }));
+    }
+}
+
+function setupMobile() {
+    // Touch events on canvas
+    svg.addEventListener('touchstart', handleTouchStart, { passive: false });
+    svg.addEventListener('touchmove', handleTouchMove, { passive: false });
+    svg.addEventListener('touchend', handleTouchEnd, { passive: false });
+
+    const isMobile = () => window.innerWidth <= 768;
+
+    // Auto-collapse sidebar on mobile
+    if (isMobile()) {
+        const sidebar = document.getElementById('files-sidebar');
+        sidebar.classList.add('collapsed');
+        sidebar.classList.remove('mobile-open');
+    }
+
+    // Hamburger menu → toggle sidebar overlay
+    const menuBtn = document.getElementById('mobile-menu-btn');
+    const scrim = document.getElementById('sidebar-scrim');
+    const sidebar = document.getElementById('files-sidebar');
+    if (menuBtn) {
+        menuBtn.addEventListener('click', () => {
+            const isOpen = sidebar.classList.contains('mobile-open');
+            sidebar.classList.toggle('mobile-open', !isOpen);
+            sidebar.classList.toggle('collapsed', isOpen);
+            scrim.classList.toggle('visible', !isOpen);
+        });
+    }
+    if (scrim) {
+        scrim.addEventListener('click', () => {
+            sidebar.classList.remove('mobile-open');
+            sidebar.classList.add('collapsed');
+            scrim.classList.remove('visible');
+        });
+    }
+
+    // Palette toggle
+    const paletteBtn = document.getElementById('mobile-palette-toggle');
+    if (paletteBtn) {
+        paletteBtn.addEventListener('click', () => {
+            document.getElementById('color-palette').classList.toggle('mobile-visible');
+        });
+    }
 }
 
 function setTool(tool) {
