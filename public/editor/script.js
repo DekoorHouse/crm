@@ -499,7 +499,7 @@ function buildSVGElement(obj) {
             if (obj.fillRule) elem.setAttribute('fill-rule', obj.fillRule);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
-            // Apply transform for position/scale
+            // Apply transform for position/scale/flip
             if (obj._origBounds) {
                 const orig = obj._origBounds;
                 const sx = obj.width / orig.w, sy = obj.height / orig.h;
@@ -508,6 +508,11 @@ function buildSVGElement(obj) {
                 if (obj.rotation) {
                     const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
                     t = `rotate(${obj.rotation} ${cx} ${cy}) ` + t;
+                }
+                if (obj.flipX || obj.flipY) {
+                    const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
+                    const fsx = obj.flipX ? -1 : 1, fsy = obj.flipY ? -1 : 1;
+                    t = `translate(${cx} ${cy}) scale(${fsx} ${fsy}) translate(${-cx} ${-cy}) ` + t;
                 }
                 elem.setAttribute('transform', t);
             }
@@ -679,8 +684,13 @@ function refreshElement(obj) {
             const ty = obj.y - orig.y * sy;
             let t = `translate(${tx}, ${ty}) scale(${sx}, ${sy})`;
             if (obj.rotation) {
-                const cx = obj.x + obj.width/2, cy = obj.y + obj.height/2;
-                t = `rotate(${obj.rotation} ${cx} ${cy}) ` + t;
+                const cpx = obj.x + obj.width/2, cpy = obj.y + obj.height/2;
+                t = `rotate(${obj.rotation} ${cpx} ${cpy}) ` + t;
+            }
+            if (obj.flipX || obj.flipY) {
+                const cpx = obj.x + obj.width/2, cpy = obj.y + obj.height/2;
+                const fsx = obj.flipX ? -1 : 1, fsy = obj.flipY ? -1 : 1;
+                t = `translate(${cpx} ${cpy}) scale(${fsx} ${fsy}) translate(${-cpx} ${-cpy}) ` + t;
             }
             elem.setAttribute('transform', t);
             elem.setAttribute('fill', obj.fill);
@@ -3248,7 +3258,7 @@ function joinNodes() {
 function duplicateSelected() {
     if (state.selectedIds.length === 0) return;
     saveUndoState();
-    const offset = 10; // px offset for the duplicate
+    const offset = 30; // px offset for the duplicate
     const newIds = [];
     const idMap = {}; // old id → new id (for remapping refTextIds)
     for (const id of state.selectedIds) {
@@ -6601,10 +6611,12 @@ function flipObject(obj, direction) {
             if (direction === 'horizontal') obj.flipX = !obj.flipX;
             else obj.flipY = !obj.flipY;
             break;
-        case 'rect': case 'curvepath':
-            // For shapes, mirror by reflecting position across center
-            // (rect is symmetric so only rotation changes)
-            if (obj.rotation) obj.rotation = direction === 'horizontal' ? -obj.rotation : -obj.rotation;
+        case 'rect':
+            if (obj.rotation) obj.rotation = -obj.rotation;
+            break;
+        case 'curvepath':
+            if (direction === 'horizontal') obj.flipX = !obj.flipX;
+            else obj.flipY = !obj.flipY;
             break;
         case 'ellipse':
             if (obj.rotation) obj.rotation = -obj.rotation;
