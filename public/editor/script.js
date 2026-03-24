@@ -3335,8 +3335,8 @@ function calcGridDimensions(selectedIds, gapPx) {
     const allIds = collectGridSet(selectedIds);
     const bounds = getCombinedBounds(allIds);
     if (bounds.w <= 0 || bounds.h <= 0) return { cols: 0, rows: 0, total: 0 };
-    const cols = Math.max(1, Math.floor((state.pageWidth + gapPx) / (bounds.w + gapPx)));
-    const rows = Math.max(1, Math.floor((state.pageHeight + gapPx) / (bounds.h + gapPx)));
+    const cols = Math.max(2, Math.ceil((state.pageWidth + gapPx) / (bounds.w + gapPx)));
+    const rows = Math.max(2, Math.ceil((state.pageHeight + gapPx) / (bounds.h + gapPx)));
     return { cols, rows, total: cols * rows };
 }
 
@@ -3348,9 +3348,8 @@ function gridFillSelected(gapInUnits) {
     const bounds = getCombinedBounds(allIds);
     if (bounds.w <= 0 || bounds.h <= 0) return;
 
-    const cols = Math.max(1, Math.floor((state.pageWidth + gap) / (bounds.w + gap)));
-    const rows = Math.max(1, Math.floor((state.pageHeight + gap) / (bounds.h + gap)));
-    if (cols * rows <= 1) { showToast('El objeto es muy grande para crear cuadrícula'); return; }
+    const cols = Math.max(2, Math.ceil((state.pageWidth + gap) / (bounds.w + gap)));
+    const rows = Math.max(2, Math.ceil((state.pageHeight + gap) / (bounds.h + gap)));
 
     saveUndoState();
 
@@ -3422,11 +3421,7 @@ function updateGridPreview() {
     const gap = fromUnit(gapVal);
     const dim = calcGridDimensions(state.selectedIds, gap);
     const preview = document.getElementById('grid-preview');
-    if (dim.total <= 1) {
-        preview.textContent = 'El objeto es muy grande para crear cuadrícula';
-    } else {
-        preview.textContent = `${dim.cols} columnas \u00d7 ${dim.rows} filas = ${dim.total} copias`;
-    }
+    preview.textContent = `${dim.cols} columnas \u00d7 ${dim.rows} filas = ${dim.total} copias`;
 }
 
 function setupGridFillModal() {
