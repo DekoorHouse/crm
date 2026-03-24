@@ -4861,6 +4861,14 @@ function toggleAIChat() {
     bubble.classList.toggle('hidden', !panel.classList.contains('hidden'));
     if (isHidden) {
         document.getElementById('ai-chat-input').focus();
+        // Show welcome message if chat is empty
+        const msgs = document.getElementById('ai-chat-messages');
+        if (msgs.children.length === 0) {
+            const welcome = document.createElement('div');
+            welcome.className = 'ai-chat-welcome';
+            welcome.innerHTML = `<div class="ai-chat-welcome-icon"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></svg></div><h4>Hola, soy Andrea</h4><p>Tu asistente de dise\u00f1o. Puedo ayudarte con el editor, consultar pedidos o lo que necesites.</p>`;
+            msgs.appendChild(welcome);
+        }
     }
 }
 
@@ -5360,12 +5368,19 @@ async function sendAIMessage() {
     _aiChatHistory.push({ role: 'user', content: text });
 
     // Show typing indicator
+    // Remove welcome message if present
+    const welcome = document.querySelector('.ai-chat-welcome');
+    if (welcome) welcome.remove();
+
     const typing = document.createElement('div');
     typing.className = 'ai-chat-msg ai-chat-msg-ai ai-chat-typing';
-    typing.innerHTML = '<div class="ai-dot"></div><div class="ai-dot"></div><div class="ai-dot"></div>';
+    typing.innerHTML = '<div class="ai-shimmer-bar"></div><div class="ai-shimmer-bar"></div>';
     document.getElementById('ai-chat-messages').appendChild(typing);
     document.getElementById('ai-chat-messages').scrollTop = document.getElementById('ai-chat-messages').scrollHeight;
-    document.getElementById('ai-chat-status').textContent = 'pensando...';
+    const statusEl = document.getElementById('ai-chat-status');
+    statusEl.textContent = 'pensando...';
+    statusEl.classList.add('thinking');
+    document.querySelector('.ai-avatar').classList.add('thinking');
 
     try {
         const history = _aiChatHistory.slice(-20);
@@ -5378,7 +5393,10 @@ async function sendAIMessage() {
         });
         const data = await res.json();
         typing.remove();
-        document.getElementById('ai-chat-status').textContent = 'en linea';
+        const st = document.getElementById('ai-chat-status');
+        st.textContent = 'en linea';
+        st.classList.remove('thinking');
+        document.querySelector('.ai-avatar').classList.remove('thinking');
 
         if (data.success && data.response) {
             const rawResponse = data.response;
@@ -5410,7 +5428,10 @@ async function sendAIMessage() {
         }
     } catch (err) {
         typing.remove();
-        document.getElementById('ai-chat-status').textContent = 'en linea';
+        const ste = document.getElementById('ai-chat-status');
+        ste.textContent = 'en linea';
+        ste.classList.remove('thinking');
+        document.querySelector('.ai-avatar').classList.remove('thinking');
         addChatMessage('ai', 'Error de conexión: ' + err.message);
     }
 }
