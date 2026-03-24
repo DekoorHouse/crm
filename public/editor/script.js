@@ -527,6 +527,7 @@ function buildSVGElement(obj) {
                 child.element = ce;
                 ce.dataset.objectId = obj.id; // clicks on children → group
                 elem.appendChild(ce);
+                if (child.isRefArea) applyRefAreaStyle(child);
             }
             break;
         case 'powerclip': {
