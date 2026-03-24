@@ -44,62 +44,12 @@
         .ref-form-card.hidden { display: none !important; }
         .ref-form-card h2 { font-size: 1.25rem; font-weight: 700; margin-bottom: 24px; }
 
-        .social-login-section {
-            text-align: center;
-            margin-bottom: 24px;
-            padding-bottom: 24px;
-            border-bottom: 1px solid var(--color-border);
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 0;
         }
-        .social-login-section p {
-            color: var(--color-text-light);
-            margin-bottom: 16px;
-            font-size: 0.95rem;
-        }
-
-        .btn-facebook, .btn-instagram {
-            color: white;
-            padding: 14px 28px;
-            border-radius: var(--border-radius-md);
-            border: none;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 1rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            transition: all 0.2s ease;
-        }
-        .btn-facebook { background: #1877F2; }
-        .btn-facebook:hover { background: #166fe5; transform: translateY(-1px); }
-        .btn-instagram { background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888); }
-        .btn-instagram:hover { opacity: 0.9; transform: translateY(-1px); }
-        .social-selector { cursor: pointer; transition: all 0.2s ease; }
-        .social-selector.active { opacity: 1 !important; box-shadow: 0 0 0 3px rgba(255,255,255,0.3), 0 4px 12px rgba(0,0,0,0.2); }
-
-        .logged-user {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            padding: 12px 16px;
-            background: var(--color-subtle-bg);
-            border-radius: var(--border-radius-md);
-            margin-bottom: 24px;
-        }
-        .logged-user img {
-            width: 44px; height: 44px;
-            border-radius: 50%;
-            object-fit: cover;
-            border: 2px solid var(--color-primary);
-        }
-        .logged-user .user-info { flex: 1; }
-        .logged-user .user-name { font-weight: 700; font-size: 0.95rem; }
-        .logged-user .user-source { font-size: 0.8rem; color: var(--color-text-light); }
-        .logged-user .btn-logout {
-            background: none; border: none;
-            color: var(--color-text-light);
-            cursor: pointer; font-size: 0.85rem; padding: 4px 8px;
-        }
-        .logged-user .btn-logout:hover { color: var(--color-danger); }
 
         .rating-stars { display: flex; gap: 6px; margin-bottom: 16px; }
         .rating-stars i {
@@ -150,10 +100,9 @@
             font-weight: 700; font-size: 0.95rem;
             display: flex; align-items: center; gap: 6px;
         }
-        .ref-card-header .ref-author-name a { color: var(--color-text); text-decoration: none; }
-        .ref-card-header .ref-author-name a:hover { color: var(--color-primary); }
-        .ref-card-header .ref-author-name .verified { color: #1877F2; font-size: 0.85rem; }
         .ref-card-header .ref-date { font-size: 0.8rem; color: var(--color-text-light); }
+        .ref-city { color: var(--color-text-light); }
+        .ref-city i { font-size: 0.7rem; margin-right: 2px; }
 
         .ref-card-stars { margin-bottom: 10px; }
         .ref-card-stars i { color: #f59e0b; font-size: 0.95rem; }
@@ -224,6 +173,7 @@
             .ref-page { padding: 24px 16px 60px; }
             .ref-header h1 { font-size: 1.5rem; }
             .ref-form-card { padding: 20px; }
+            .form-row { grid-template-columns: 1fr; }
         }
     </style>
 </head>
@@ -268,53 +218,18 @@
     <div id="refFormCard" class="ref-form-card hidden">
         <h2><i class="fas fa-edit"></i> Comparte tu experiencia</h2>
 
-        <!-- Login Social -->
-        <div id="socialLoginSection" class="social-login-section">
-            <p>Verifica tu identidad con tu red social</p>
-
-            <div style="max-width:400px;margin:0 auto;display:flex;flex-direction:column;gap:12px;">
-                <!-- Facebook Login (SDK - usa la app nativa en móvil) -->
-                <button class="btn-facebook" id="btnFbLogin" onclick="loginWithFacebook()" style="width:100%;justify-content:center;font-size:1rem;padding:14px;">
-                    <i class="fab fa-facebook"></i> Continuar con Facebook
-                </button>
-
-                <div style="display:flex;align-items:center;gap:12px;color:var(--color-text-light);font-size:0.85rem;">
-                    <div style="flex:1;height:1px;background:var(--color-border);"></div>
-                    <span>o</span>
-                    <div style="flex:1;height:1px;background:var(--color-border);"></div>
+        <form id="refForm" onsubmit="submitReferencia(event)">
+            <div class="form-row">
+                <div>
+                    <label for="refNombre" style="font-weight:600;margin-bottom:8px;display:block;">Tu nombre</label>
+                    <input type="text" id="refNombre" placeholder="Ej: María López" required>
                 </div>
-
-                <!-- Instagram (input manual) -->
-                <button class="btn-instagram" onclick="showInstagramInput()" style="width:100%;justify-content:center;font-size:1rem;padding:14px;">
-                    <i class="fab fa-instagram"></i> Continuar con Instagram
-                </button>
-
-                <div id="igInputSection" class="hidden">
-                    <div style="display:flex;gap:8px;align-items:center;">
-                        <input type="text" id="socialInput" placeholder="tu_usuario" style="margin-bottom:0;flex:1;">
-                        <button class="btn btn-primary" onclick="loginWithInstagram()" style="white-space:nowrap;">
-                            <i class="fas fa-check"></i> Listo
-                        </button>
-                    </div>
-                    <p style="font-size:0.8rem;color:var(--color-text-light);margin-top:6px;">
-                        Escribe tu @ de Instagram
-                    </p>
+                <div>
+                    <label for="refCiudad" style="font-weight:600;margin-bottom:8px;display:block;">Ciudad</label>
+                    <input type="text" id="refCiudad" placeholder="Ej: Guadalajara, Jal." required>
                 </div>
             </div>
-        </div>
 
-        <!-- Usuario logueado -->
-        <div id="loggedUserBar" class="logged-user hidden">
-            <img id="loggedAvatar" src="" alt="Avatar">
-            <div class="user-info">
-                <div class="user-name" id="loggedName"></div>
-                <div class="user-source" id="loggedSource"></div>
-            </div>
-            <button class="btn-logout" onclick="logoutSocial()"><i class="fas fa-times"></i> Cambiar</button>
-        </div>
-
-        <!-- Formulario -->
-        <form id="refForm" class="hidden" onsubmit="submitReferencia(event)">
             <label style="font-weight:600;margin-bottom:8px;display:block;">Calificación</label>
             <div class="rating-stars" id="ratingStars">
                 <i class="fas fa-star" data-val="1"></i>
@@ -356,28 +271,6 @@
     </div>
 
 </div>
-
-<!-- Facebook SDK -->
-<script>
-    window.fbAsyncInit = function() {
-        FB.init({
-            appId      : '1885720962060829',
-            cookie     : true,
-            xfbml      : false,
-            version    : 'v20.0'
-        });
-        // Manejar retorno de redirect en móvil
-        if (sessionStorage.getItem('fb_login_pending')) {
-            FB.getLoginStatus(function(response) {
-                sessionStorage.removeItem('fb_login_pending');
-                if (response.status === 'connected') {
-                    fetchFBUserData();
-                }
-            });
-        }
-    };
-</script>
-<script async defer crossorigin="anonymous" src="https://connect.facebook.net/es_LA/sdk.js"></script>
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>

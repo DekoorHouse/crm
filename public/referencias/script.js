@@ -12,7 +12,6 @@ const db = firebase.firestore();
 const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- Estado ---
-let socialUser = null;
 let selectedRating = 0;
 let selectedPhoto = null;
 
@@ -35,110 +34,6 @@ function toggleForm() {
     if (!card.classList.contains('hidden')) {
         card.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
-}
-
-// --- Facebook Login con SDK ---
-function loginWithFacebook() {
-    var btn = document.getElementById('btnFbLogin');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Conectando...';
-
-    sessionStorage.setItem('fb_login_pending', '1');
-
-    FB.login(function(response) {
-        sessionStorage.removeItem('fb_login_pending');
-        if (response.authResponse) {
-            fetchFBUserData();
-        } else {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
-        }
-    }, {scope: 'public_profile'});
-}
-
-function fetchFBUserData() {
-    FB.api('/me', {fields: 'name,picture.width(200).height(200)'}, function(userData) {
-        if (userData && !userData.error) {
-            socialUser = {
-                name: userData.name,
-                avatar: userData.picture && userData.picture.data ? userData.picture.data.url : '',
-                profileUrl: 'https://facebook.com/' + userData.id,
-                uid: 'fb_' + userData.id,
-                source: 'facebook'
-            };
-            showLoggedUser();
-        } else {
-            alert('Error al obtener datos de Facebook. Intenta de nuevo.');
-            var btn = document.getElementById('btnFbLogin');
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
-        }
-    });
-}
-
-// --- Instagram (input manual) ---
-function showInstagramInput() {
-    var section = document.getElementById('igInputSection');
-    section.classList.toggle('hidden');
-    if (!section.classList.contains('hidden')) {
-        document.getElementById('socialInput').focus();
-    }
-}
-
-function loginWithInstagram() {
-    var value = document.getElementById('socialInput').value.trim();
-    if (!value) {
-        alert('Escribe tu usuario de Instagram.');
-        return;
-    }
-    var username = value.replace('@', '');
-    socialUser = {
-        name: '@' + username,
-        avatar: '',
-        profileUrl: 'https://instagram.com/' + username,
-        uid: 'ig_' + username,
-        source: 'instagram'
-    };
-    showLoggedUser();
-}
-
-function showLoggedUser() {
-    document.getElementById('refFormCard').classList.remove('hidden');
-    document.getElementById('socialLoginSection').classList.add('hidden');
-    document.getElementById('loggedUserBar').classList.remove('hidden');
-    document.getElementById('refForm').classList.remove('hidden');
-
-    var initial = socialUser.name ? socialUser.name.replace('@','')[0].toUpperCase() : '?';
-    var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
-    document.getElementById('loggedAvatar').src = socialUser.avatar || fallbackSvg;
-    document.getElementById('loggedName').textContent = socialUser.name;
-
-    if (socialUser.source === 'instagram') {
-        document.getElementById('loggedSource').innerHTML = '<i class="fab fa-instagram" style="color:#E4405F"></i> Instagram';
-    } else {
-        document.getElementById('loggedSource').innerHTML = '<i class="fab fa-facebook" style="color:#1877F2"></i> Verificado con Facebook';
-    }
-}
-
-function logoutSocial() {
-    if (socialUser && socialUser.source === 'facebook') {
-        try { FB.logout(function(){}); } catch(e) {}
-    }
-    socialUser = null;
-    selectedRating = 0;
-    selectedPhoto = null;
-    document.getElementById('socialLoginSection').classList.remove('hidden');
-    document.getElementById('loggedUserBar').classList.add('hidden');
-    document.getElementById('refForm').classList.add('hidden');
-    document.getElementById('refForm').reset();
-    document.getElementById('igInputSection').classList.add('hidden');
-    var btn = document.getElementById('btnFbLogin');
-    if (btn) {
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fab fa-facebook"></i> Continuar con Facebook';
-    }
-    updateStarsUI();
-    resetPhotoUpload();
 }
 
 // --- Estrellas ---
@@ -197,7 +92,12 @@ function resetPhotoUpload() {
 async function submitReferencia(event) {
     event.preventDefault();
 
-    if (!socialUser) { alert('Primero inicia sesión con Facebook o Instagram.'); return; }
+    var nombre = document.getElementById('refNombre').value.trim();
+    if (!nombre) { alert('Escribe tu nombre.'); return; }
+
+    var ciudad = document.getElementById('refCiudad').value.trim();
+    if (!ciudad) { alert('Escribe tu ciudad.'); return; }
+
     if (selectedRating === 0) { alert('Selecciona una calificación.'); return; }
 
     var texto = document.getElementById('refTexto').value.trim();
@@ -222,11 +122,8 @@ async function submitReferencia(event) {
         }
 
         await db.collection('referencias').add({
-            nombre: socialUser.name,
-            avatar: socialUser.avatar,
-            profileUrl: socialUser.profileUrl,
-            uid: socialUser.uid,
-            source: socialUser.source || 'facebook',
+            nombre: nombre,
+            ciudad: ciudad,
             rating: selectedRating,
             texto: texto,
             foto: photoUrl,
@@ -303,24 +200,17 @@ function renderReferencias(refs) {
             : '';
 
         var nombre = escapeHtml(ref.nombre);
-        var nameHtml = ref.profileUrl
-            ? '<a href="' + escapeHtml(ref.profileUrl) + '" target="_blank" rel="noopener">' + nombre + '</a>'
-            : nombre;
+        var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
 
         var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
-        var avatarSrc = ref.avatar || '';
         var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#81B29A"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
-
-        var sourceIcon = ref.source === 'instagram'
-            ? '<i class="fab fa-instagram verified" style="color:#E4405F" title="Instagram"></i>'
-            : '<i class="fab fa-facebook-square verified" style="color:#1877F2" title="Verificado con Facebook"></i>';
 
         html += '<div class="ref-card">' +
             '<div class="ref-card-header">' +
-                '<img src="' + (avatarSrc || fallbackSvg) + '" alt="' + nombre + '" loading="lazy" onerror="this.src=\'' + fallbackSvg + '\'">' +
+                '<img src="' + fallbackSvg + '" alt="' + nombre + '" loading="lazy">' +
                 '<div class="ref-author">' +
-                    '<div class="ref-author-name">' + nameHtml + ' ' + sourceIcon + '</div>' +
-                    '<div class="ref-date">' + fechaStr + '</div>' +
+                    '<div class="ref-author-name">' + nombre + '</div>' +
+                    '<div class="ref-date">' + fechaStr + (ciudadHtml ? ' &middot; ' + ciudadHtml : '') + '</div>' +
                 '</div>' +
             '</div>' +
             '<div class="ref-card-stars">' + starsHtml + '</div>' +
