@@ -6972,10 +6972,6 @@ function offsetObject(obj, dx, dy) {
             offsetObject(obj.container, dx, dy);
             for (const c of obj.contents) offsetObject(c, dx, dy); break;
     }
-    if (obj._origBounds) {
-        obj._origBounds.x += dx;
-        obj._origBounds.y += dy;
-    }
 }
 
 // =============================================
