@@ -8349,11 +8349,11 @@ function handleVSDeleteUp(pt) {
             for (let i = 0; i < cuts.length - 1; i++) {
                 const sLen = cuts[i], eLen = cuts[i + 1];
                 if (eLen - sLen < 0.5) continue;
-                // Check if ALL sample points in this range are inside the marquee
+                // Check if ANY sample point in this range is inside the marquee
                 const segPts = vsDeleteGetSegmentPolyline(sp, sLen, eLen);
                 if (!segPts || segPts.length < 2) continue;
-                const allInside = segPts.every(p => p.x >= mx && p.x <= mx2 && p.y >= my && p.y <= my2);
-                if (allInside) {
+                const anyInside = segPts.some(p => p.x >= mx && p.x <= mx2 && p.y >= my && p.y <= my2);
+                if (anyInside) {
                     toDelete.push({ objId: sp.objId, startLen: sLen, endLen: eLen });
                 }
             }
