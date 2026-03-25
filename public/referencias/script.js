@@ -199,14 +199,10 @@ function renderReferencias(refs) {
         var nombre = escapeHtml(ref.nombre);
         var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
 
-        var pendingBadge = (ref.esMia && ref.aprobado !== true)
-            ? '<span class="pending-badge"><i class="fas fa-clock"></i> Pendiente de aprobación</span>'
-            : '';
-
         var initial = ref.nombre ? ref.nombre.replace('@','')[0].toUpperCase() : '?';
         var fallbackSvg = "data:image/svg+xml," + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#FF8E41"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">' + initial + '</text></svg>');
 
-        html += '<div class="ref-card' + (ref.esMia && ref.aprobado !== true ? ' ref-card-pending' : '') + '">' +
+        html += '<div class="ref-card">' +
             '<div class="ref-card-header">' +
                 '<img src="' + fallbackSvg + '" alt="' + nombre + '" loading="lazy">' +
                 '<div class="ref-author">' +
@@ -217,7 +213,6 @@ function renderReferencias(refs) {
             '<div class="ref-card-stars">' + starsHtml + '</div>' +
             '<div class="ref-card-text">' + escapeHtml(ref.texto) + '</div>' +
             photoHtml +
-            pendingBadge +
         '</div>';
     }
     grid.innerHTML = html;
