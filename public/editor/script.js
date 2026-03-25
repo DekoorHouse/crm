@@ -5781,9 +5781,21 @@ async function exportSVG() {
         });
     }
 
+    // Clip to page bounds
+    const defs = document.createElementNS(ns, 'defs');
+    const pageClip = document.createElementNS(ns, 'clipPath');
+    pageClip.setAttribute('id', 'pageClip');
+    const clipRect = document.createElementNS(ns, 'rect');
+    clipRect.setAttribute('x', '0'); clipRect.setAttribute('y', '0');
+    clipRect.setAttribute('width', vbW); clipRect.setAttribute('height', vbH);
+    pageClip.appendChild(clipRect);
+    defs.appendChild(pageClip);
+    root.appendChild(defs);
+
     // Layer group (CorelDRAW convention)
     const layerGroup = document.createElementNS(ns, 'g');
     layerGroup.setAttribute('id', 'Capa_x0020_1');
+    layerGroup.setAttribute('clip-path', 'url(#pageClip)');
     const meta = document.createElementNS(ns, 'metadata');
     meta.setAttribute('id', 'CorelCorpID_0Corel-Layer');
     layerGroup.appendChild(meta);
