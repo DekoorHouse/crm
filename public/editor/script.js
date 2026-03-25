@@ -1075,6 +1075,14 @@ function getSnapPoints(obj) {
         // Edge midpoints
         const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
         for (const e of rawEdges) { const rp = rotatePoint(e.x,e.y,cx,cy,rot); pts.push({...rp,type:'edge'}); }
+        // For curvepath: also add path nodes as snap points
+        if (obj.type === 'curvepath') {
+            const nodePts = getEditableNodes(obj);
+            for (const np of nodePts) {
+                const rp = rotatePoint(np.x, np.y, cx, cy, rot);
+                pts.push({...rp, type: 'node'});
+            }
+        }
     } else if (obj.type === 'group') {
         // Group bounding box snap points
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
@@ -1268,6 +1276,16 @@ function drawSnapMarker(ns, sp, r, sw) {
         c.setAttribute('pointer-events', 'none');
         snapLayer.appendChild(c);
         addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, 'cuadrante');
+    } else if (sp.type === 'node') {
+        // Diamond marker for path nodes
+        const s = r * 1.2;
+        const diamond = document.createElementNS(ns, 'polygon');
+        diamond.setAttribute('points', `${sp.x},${sp.y-s} ${sp.x+s},${sp.y} ${sp.x},${sp.y+s} ${sp.x-s},${sp.y}`);
+        diamond.setAttribute('fill', 'none'); diamond.setAttribute('stroke', color);
+        diamond.setAttribute('stroke-width', sw);
+        diamond.setAttribute('pointer-events', 'none');
+        snapLayer.appendChild(diamond);
+        addLabel(sp.x + labelOffset, sp.y + fontSize*0.35, 'nodo');
     } else if (sp.type === 'edge-dynamic') {
         // Square with cross + "borde" label (CorelDRAW style)
         const s = r * 1.3;
