@@ -7937,7 +7937,7 @@ function vsDeleteGetSegmentPolyline(sampledPath, startLen, endLen) {
 function vsDeleteClosestPath(pt, sampled) {
     let bestDist = Infinity, bestObjId = null, bestLen = 0, bestSampled = null;
     const screenScale = _cachedScreenScale;
-    const threshold = 8 * screenScale;
+    const threshold = 25 * screenScale;
     for (const sp of sampled) {
         for (let i = 0; i < sp.samples.length - 1; i++) {
             const a = sp.samples[i], b = sp.samples[i + 1];
