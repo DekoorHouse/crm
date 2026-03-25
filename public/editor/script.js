@@ -2592,10 +2592,13 @@ function handleDragMove(pt) {
         const ns = 'http://www.w3.org/2000/svg';
         const r = 4.5 * screenScale;
         const sw = screenScale;
+        let closest = null, closestDist = showRadius;
         for (const tp of targetPts) {
-            if (Math.hypot(pt.x - tp.x, pt.y - tp.y) < showRadius) {
-                drawSnapMarker(ns, {x: tp.x, y: tp.y, type: tp.type || 'edge'}, r, sw);
-            }
+            const d = Math.hypot(pt.x - tp.x, pt.y - tp.y);
+            if (d < closestDist) { closestDist = d; closest = tp; }
+        }
+        if (closest) {
+            drawSnapMarker(ns, {x: closest.x, y: closest.y, type: closest.type || 'edge'}, r, sw);
         }
     }
     drawSelection();
