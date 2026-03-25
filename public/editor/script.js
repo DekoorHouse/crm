@@ -2173,7 +2173,7 @@ function handleMouseMove(e) {
     // Drag dead zone: require 4px of mouse movement before starting drag
     if (state.dragPending) {
         const dpc = Math.hypot(e.clientX - state.dragPendingStart.cx, e.clientY - state.dragPendingStart.cy);
-        if (dpc >= 4) {
+        if (dpc >= 8) {
             state.dragPending = false;
             state.isDragging = true;
             state.dragStart = { x: state.dragPendingStart.x, y: state.dragPendingStart.y };
