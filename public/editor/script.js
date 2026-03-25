@@ -5665,6 +5665,33 @@ async function exportSVG() {
     for (const fn of usedFonts) {
         if (!loadedOTFonts[fn]) await loadOTFont(fn);
     }
+    // Inline external image URLs as data URIs for portability
+    const imageHrefCache = {};
+    async function resolveHref(href) {
+        if (!href || href.startsWith('data:')) return href;
+        if (imageHrefCache[href]) return imageHrefCache[href];
+        try {
+            const resp = await fetch(href);
+            const blob = await resp.blob();
+            const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+            imageHrefCache[href] = dataUrl;
+            return dataUrl;
+        } catch(e) { return href; }
+    }
+    function collectImages(obj) {
+        const list = [];
+        if (obj.type === 'image' && obj.href) list.push(obj);
+        if (obj.type === 'powerclip') {
+            if (obj.contents) for (const c of obj.contents) list.push(...collectImages(c));
+        }
+        if (obj.type === 'group') {
+            if (obj.children) for (const c of obj.children) list.push(...collectImages(c));
+        }
+        return list;
+    }
+    const allImages = state.objects.flatMap(collectImages);
+    await Promise.all(allImages.map(img => resolveHref(img.href)));
+
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
     // Use 100 user units per mm (CorelDRAW convention for mm-based documents)
@@ -5709,8 +5736,9 @@ async function exportSVG() {
             img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
             img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
             img.setAttribute('preserveAspectRatio', 'none');
-            img.setAttributeNS(xlink, 'xlink:href', obj.href);
-            img.setAttribute('href', obj.href);
+            const _href = (typeof imageHrefCache !== 'undefined' && imageHrefCache[obj.href]) || obj.href;
+            img.setAttributeNS(xlink, 'xlink:href', _href);
+            img.setAttribute('href', _href);
             if (obj.rotation) {
                 const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
@@ -5901,8 +5929,9 @@ async function copySelectedAsSVG() {
             img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
             img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
             img.setAttribute('preserveAspectRatio', 'none');
-            img.setAttributeNS(xlink, 'xlink:href', obj.href);
-            img.setAttribute('href', obj.href);
+            const _href = (typeof imageHrefCache !== 'undefined' && imageHrefCache[obj.href]) || obj.href;
+            img.setAttributeNS(xlink, 'xlink:href', _href);
+            img.setAttribute('href', _href);
             if (obj.rotation) {
                 const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
