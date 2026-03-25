@@ -2170,6 +2170,23 @@ function handleMouseMove(e) {
     }
     if (_vsDeleteDragging) { handleVSDeleteMove(pt); return; }
     if (state.isResizing) { handleResizeMove(pt, e); return; }
+    // Drag dead zone: require 4px of mouse movement before starting drag
+    if (state.dragPending) {
+        const dpc = Math.hypot(e.clientX - state.dragPendingStart.cx, e.clientY - state.dragPendingStart.cy);
+        if (dpc >= 4) {
+            state.dragPending = false;
+            state.isDragging = true;
+            state.dragStart = { x: state.dragPendingStart.x, y: state.dragPendingStart.y };
+            saveUndoState();
+            state.dragObjProps = {};
+            for (const id of state.selectedIds) {
+                const o = findObject(id);
+                if (o) state.dragObjProps[id] = snapshotPos(o);
+            }
+            handleDragMove(pt);
+        }
+        return;
+    }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
     // Non-critical visual feedback: throttle to one per animation frame
@@ -2254,6 +2271,11 @@ function handleMouseUp() {
             if (obj && obj.isRefArea) updateRefAreaTexts(obj);
         }
         drawSelection(); updatePropsPanel(); return;
+    }
+    if (state.dragPending) {
+        state.dragPending = false;
+        state.dragPendingStart = null;
+        return;
     }
     if (state.isDragging) {
         state.isDragging = false;
@@ -2407,15 +2429,9 @@ function handleSelectDown(pt, e) {
                 }
             }
         }
-        state.isDragging = true;
-        state.dragStart = {x:pt.x,y:pt.y};
-        saveUndoState();
-        // Snapshot positions of all selected objects
-        state.dragObjProps = {};
-        for (const id of state.selectedIds) {
-            const o = findObject(id);
-            if (o) state.dragObjProps[id] = snapshotPos(o);
-        }
+        // Don't start drag immediately — wait for mouse to move past threshold
+        state.dragPending = true;
+        state.dragPendingStart = { x: pt.x, y: pt.y, cx: e.clientX, cy: e.clientY };
     } else {
         // Click on empty space -> start marquee selection
         if (!e.shiftKey) selectObject(null);
