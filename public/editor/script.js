@@ -504,6 +504,7 @@ function buildSVGElement(obj) {
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
             elem.setAttribute('stroke-linecap', 'round');
             elem.setAttribute('stroke-linejoin', 'round');
+            elem.setAttribute('vector-effect', 'non-scaling-stroke');
             // Apply transform for position/scale/flip
             if (obj._origBounds) {
                 const orig = obj._origBounds;
@@ -705,6 +706,7 @@ function refreshElement(obj) {
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
             elem.setAttribute('stroke-linecap', 'round');
             elem.setAttribute('stroke-linejoin', 'round');
+            elem.setAttribute('vector-effect', 'non-scaling-stroke');
             return;
         }
         case 'group':
