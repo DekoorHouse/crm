@@ -421,6 +421,15 @@ function updateViewBox() {
         const zoom = Math.round((_cachedSvgRect.width / state.viewBox.w) * 100);
         document.getElementById('status-zoom').textContent = `${zoom}%`;
     }
+    // Compensate stroke-width for viewBox zoom so strokes look constant on screen
+    const scale = _cachedScreenScale;
+    for (const obj of state.objects) {
+        if (!obj.element) continue;
+        if (obj.type === 'group' || obj.type === 'image' || obj.type === 'powerclip' || obj.type === 'text') continue;
+        if (obj.stroke === 'none') continue;
+        const visualSW = obj.strokeWidth * scale;
+        obj.element.setAttribute('stroke-width', visualSW);
+    }
 }
 
 // =============================================
@@ -504,7 +513,7 @@ function buildSVGElement(obj) {
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
             elem.setAttribute('stroke-linecap', 'round');
             elem.setAttribute('stroke-linejoin', 'round');
-            elem.setAttribute('vector-effect', 'non-scaling-stroke');
+
             // Apply transform for position/scale/flip
             if (obj._origBounds) {
                 const orig = obj._origBounds;
@@ -611,7 +620,6 @@ function buildSVGElement(obj) {
         elem.setAttribute('stroke-width', obj.strokeWidth);
         elem.setAttribute('stroke-linecap', 'round');
         elem.setAttribute('stroke-linejoin', 'round');
-        elem.setAttribute('vector-effect', 'non-scaling-stroke');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     elem.style.cursor = 'pointer';
@@ -707,7 +715,7 @@ function refreshElement(obj) {
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
             elem.setAttribute('stroke-linecap', 'round');
             elem.setAttribute('stroke-linejoin', 'round');
-            elem.setAttribute('vector-effect', 'non-scaling-stroke');
+
             return;
         }
         case 'group':
@@ -726,7 +734,6 @@ function refreshElement(obj) {
     if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
         elem.setAttribute('stroke-linecap', 'round');
         elem.setAttribute('stroke-linejoin', 'round');
-        elem.setAttribute('vector-effect', 'non-scaling-stroke');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     if (obj.isRefArea) applyRefAreaStyle(obj);
