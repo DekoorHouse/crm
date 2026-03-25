@@ -4744,7 +4744,7 @@ function setupFilesSidebar() {
     // File → Templates
     setupDropZone(templatesTab, templatesPanel, 'application/x-editor-file', async (file) => {
         try {
-            await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight);
+            await window.fbSaveTemplate(file.name, file.stateJson, file.pageWidth, file.pageHeight, file.thumbnail);
             await window.fbDeleteFile(file.id);
             if (currentFileId === file.id) { currentFileId = null; currentFileName = null; updateFileNameDisplay(); }
             refreshSidebarFiles();
@@ -4760,7 +4760,7 @@ function setupFilesSidebar() {
     // Template → Files
     setupDropZone(filesTab, filesPanel, 'application/x-editor-template', async (tpl) => {
         try {
-            await window.fbSaveNewFile(tpl.name, tpl.stateJson, tpl.pageWidth, tpl.pageHeight);
+            await window.fbSaveNewFile(tpl.name, tpl.stateJson, tpl.pageWidth, tpl.pageHeight, tpl.thumbnail);
             await window.fbDeleteTemplate(tpl.id);
             refreshSidebarTemplates();
             tabs.forEach(t => t.classList.remove('active'));
@@ -4817,7 +4817,7 @@ function createSidebarFileItem(file) {
     item.dataset.fileId = file.id;
     item.draggable = true;
     item.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('application/x-editor-file', JSON.stringify({ id: file.id, name: file.name, stateJson: file.stateJson, pageWidth: file.pageWidth, pageHeight: file.pageHeight }));
+        e.dataTransfer.setData('application/x-editor-file', JSON.stringify({ id: file.id, name: file.name, stateJson: file.stateJson, pageWidth: file.pageWidth, pageHeight: file.pageHeight, thumbnail: file.thumbnail }));
         e.dataTransfer.effectAllowed = 'move';
     });
 
@@ -4932,7 +4932,7 @@ function createSidebarTemplateItem(tpl) {
     item.className = 'sidebar-file-item';
     item.draggable = true;
     item.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('application/x-editor-template', JSON.stringify({ id: tpl.id, name: tpl.name, stateJson: tpl.stateJson, pageWidth: tpl.pageWidth, pageHeight: tpl.pageHeight }));
+        e.dataTransfer.setData('application/x-editor-template', JSON.stringify({ id: tpl.id, name: tpl.name, stateJson: tpl.stateJson, pageWidth: tpl.pageWidth, pageHeight: tpl.pageHeight, thumbnail: tpl.thumbnail }));
         e.dataTransfer.effectAllowed = 'move';
     });
 
