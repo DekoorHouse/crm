@@ -611,6 +611,7 @@ function buildSVGElement(obj) {
         elem.setAttribute('stroke-width', obj.strokeWidth);
         elem.setAttribute('stroke-linecap', 'round');
         elem.setAttribute('stroke-linejoin', 'round');
+        elem.setAttribute('vector-effect', 'non-scaling-stroke');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     elem.style.cursor = 'pointer';
@@ -725,6 +726,7 @@ function refreshElement(obj) {
     if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
         elem.setAttribute('stroke-linecap', 'round');
         elem.setAttribute('stroke-linejoin', 'round');
+        elem.setAttribute('vector-effect', 'non-scaling-stroke');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     if (obj.isRefArea) applyRefAreaStyle(obj);
