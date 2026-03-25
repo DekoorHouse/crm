@@ -1082,11 +1082,19 @@ function getSnapPoints(obj) {
     // Center (rotation doesn't move the center)
     pts.push({ x: cx, y: cy, type: 'center' });
     if (obj.type === 'curvepath') {
-        // Only path nodes — no bounding box corners/edges
+        // For complex paths (vectorized images), use bounding box instead of all nodes
         const nodePts = getEditableNodes(obj);
-        for (const np of nodePts) {
-            const rp = rotatePoint(np.x, np.y, cx, cy, rot);
-            pts.push({...rp, type: 'node'});
+        if (nodePts.length > 50) {
+            // Too many nodes — use corners + edge midpoints like rect
+            const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
+            for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
+            const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
+            for (const e of rawEdges) { const rp = rotatePoint(e.x,e.y,cx,cy,rot); pts.push({...rp,type:'edge'}); }
+        } else {
+            for (const np of nodePts) {
+                const rp = rotatePoint(np.x, np.y, cx, cy, rot);
+                pts.push({...rp, type: 'node'});
+            }
         }
     } else if (obj.type === 'rect' || obj.type === 'image' || obj.type === 'text') {
         // Corners
@@ -1131,6 +1139,23 @@ function nearestEdgePoint(obj, pt) {
     const localPt = rotatePoint(pt.x, pt.y, ccx, ccy, -rot);
 
     if (obj.type === 'curvepath') {
+        // For very complex paths, skip edge sampling and use bounding box
+        const pathLen = (obj.d || '').length;
+        if (pathLen > 20000) {
+            // Use bounding box edges (fast fallback for vectorized images)
+            const edges = [
+                [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}], [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
+                [{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}], [{x:b.x,y:b.y+b.h},{x:b.x,y:b.y}],
+            ];
+            let best = null, bestD = Infinity;
+            for (const [a, b2] of edges) {
+                const p = closestPointOnSeg(localPt, a, b2);
+                const d = Math.hypot(localPt.x - p.x, localPt.y - p.y);
+                if (d < bestD) { bestD = d; best = p; }
+            }
+            const rp = rotatePoint(best.x, best.y, ccx, ccy, rot);
+            return { point: rp, dist: bestD };
+        }
         // Sample the actual path geometry for edge snapping
         const elem = obj.element;
         if (elem && typeof elem.getTotalLength === 'function') {
