@@ -4221,23 +4221,36 @@ function handleMenuAction(action) {
 // FILE SAVE / OPEN (Firebase)
 // =============================================
 
-function generateThumbnail() {
-    return new Promise((resolve) => {
-        try {
-            // Clone the SVG canvas and render only the page area
-            const clone = svg.cloneNode(true);
-            // Remove selection/snap/preview layers from clone
-            for (const id of ['selection-layer', 'snap-layer', 'preview-layer']) {
-                const el = clone.querySelector('#' + id);
-                if (el) el.innerHTML = '';
-            }
-            // Set viewBox to page area
-            clone.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
-            clone.setAttribute('width', '160');
-            clone.setAttribute('height', Math.round(160 * state.pageHeight / state.pageWidth));
-            const svgStr = new XMLSerializer().serializeToString(clone);
-            const blob = new Blob([svgStr], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
+async function generateThumbnail() {
+    try {
+        // Clone the SVG canvas and render only the page area
+        const clone = svg.cloneNode(true);
+        // Remove selection/snap/preview layers from clone
+        for (const id of ['selection-layer', 'snap-layer', 'preview-layer']) {
+            const el = clone.querySelector('#' + id);
+            if (el) el.innerHTML = '';
+        }
+        // Inline external image URLs as data URIs (SVG blobs can't load external resources)
+        const images = clone.querySelectorAll('image');
+        await Promise.all([...images].map(async (img) => {
+            const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+            if (!href || href.startsWith('data:')) return;
+            try {
+                const resp = await fetch(href);
+                const blob = await resp.blob();
+                const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+                img.removeAttribute('href');
+                img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+            } catch(e) { /* skip images that can't be fetched */ }
+        }));
+        // Set viewBox to page area
+        clone.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
+        clone.setAttribute('width', '160');
+        clone.setAttribute('height', Math.round(160 * state.pageHeight / state.pageWidth));
+        const svgStr = new XMLSerializer().serializeToString(clone);
+        const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+        const url = URL.createObjectURL(blob);
+        return await new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
                 const c = document.createElement('canvas');
@@ -4252,8 +4265,8 @@ function generateThumbnail() {
             };
             img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
             img.src = url;
-        } catch (e) { resolve(null); }
-    });
+        });
+    } catch (e) { return null; }
 }
 
 function markDirty() {
