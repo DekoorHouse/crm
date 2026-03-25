@@ -7425,24 +7425,29 @@ function setupPropsPanel() {
                 if (b.x + b.w > maxX) maxX = b.x + b.w; if (b.y + b.h > maxY) maxY = b.y + b.h;
             }
             const gcx = (minX + maxX) / 2, gcy = (minY + maxY) / 2;
-            const angleDiff = newRot; // Apply as absolute rotation around group center
-            for (const id of state.selectedIds) {
-                const obj = findObject(id); if (!obj) continue;
+            const angleDiff = newRot;
+            function rotateObjAround(obj, cx, cy, angle) {
                 const b = getObjBounds(obj);
                 const ocx = b.x + b.w / 2, ocy = b.y + b.h / 2;
-                // Rotate object center around group center
-                const rp = rotatePoint(ocx, ocy, gcx, gcy, angleDiff);
+                const rp = rotatePoint(ocx, ocy, cx, cy, angle);
                 const dx = rp.x - ocx, dy = rp.y - ocy;
-                // Move object
                 switch (obj.type) {
                     case 'rect': case 'image': case 'text': case 'curvepath': obj.x += dx; obj.y += dy; break;
                     case 'ellipse': obj.cx += dx; obj.cy += dy; break;
                     case 'line': obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
                     case 'bspline': for (const p of obj.points) { p.x += dx; p.y += dy; } break;
+                    case 'group': for (const c of obj.children) rotateObjAround(c, cx, cy, angle); break;
+                    case 'powerclip':
+                        rotateObjAround(obj.container, cx, cy, angle);
+                        for (const c of obj.contents) rotateObjAround(c, cx, cy, angle);
+                        break;
                 }
-                // Add rotation to each object
-                obj.rotation = (obj.rotation || 0) + angleDiff;
+                obj.rotation = (obj.rotation || 0) + angle;
                 refreshElement(obj);
+            }
+            for (const id of state.selectedIds) {
+                const obj = findObject(id); if (!obj) continue;
+                rotateObjAround(obj, gcx, gcy, angleDiff);
             }
         }
         drawSelection();
