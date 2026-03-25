@@ -5744,10 +5744,14 @@ async function exportSVG() {
             img.setAttribute('preserveAspectRatio', 'none');
             img.setAttributeNS(xlink, 'xlink:href', obj.href);
             img.setAttribute('href', obj.href);
-            if (obj.rotation) {
-                const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
-                img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+            const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
+            let t = '';
+            if (obj.rotation) t += `rotate(${obj.rotation} ${cx} ${cy}) `;
+            if (obj.flipX || obj.flipY) {
+                const fsx = obj.flipX ? -1 : 1, fsy = obj.flipY ? -1 : 1;
+                t += `translate(${cx} ${cy}) scale(${fsx} ${fsy}) translate(${-cx} ${-cy})`;
             }
+            if (t) img.setAttribute('transform', t.trim());
             parent.appendChild(img);
         } else if (obj.type === 'powerclip') {
             const g = document.createElementNS(ns, 'g');
@@ -5941,10 +5945,14 @@ async function copySelectedAsSVG() {
             img.setAttribute('preserveAspectRatio', 'none');
             img.setAttributeNS(xlink, 'xlink:href', obj.href);
             img.setAttribute('href', obj.href);
-            if (obj.rotation) {
-                const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
-                img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
+            const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
+            let t = '';
+            if (obj.rotation) t += `rotate(${obj.rotation} ${cx} ${cy}) `;
+            if (obj.flipX || obj.flipY) {
+                const fsx = obj.flipX ? -1 : 1, fsy = obj.flipY ? -1 : 1;
+                t += `translate(${cx} ${cy}) scale(${fsx} ${fsy}) translate(${-cx} ${-cy})`;
             }
+            if (t) img.setAttribute('transform', t.trim());
             parent.appendChild(img);
         } else if (obj.type === 'powerclip') {
             const g = document.createElementNS(ns, 'g');
