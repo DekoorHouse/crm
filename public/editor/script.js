@@ -1118,7 +1118,51 @@ function nearestEdgePoint(obj, pt) {
     // Un-rotate the mouse point to work in local space, then rotate result back
     const localPt = rotatePoint(pt.x, pt.y, ccx, ccy, -rot);
 
-    if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
+    if (obj.type === 'curvepath') {
+        // Sample the actual path geometry for edge snapping
+        const elem = obj.element;
+        if (elem && typeof elem.getTotalLength === 'function') {
+            try {
+                const len = elem.getTotalLength();
+                if (len > 0.01) {
+                    const ctm = elem.getCTM();
+                    const svgCTM = svg.getCTM();
+                    if (ctm && svgCTM) {
+                        const inv = svgCTM.inverse();
+                        const rel = inv.multiply(ctm);
+                        const steps = Math.max(80, Math.ceil(len / 2));
+                        const samples = [];
+                        for (let i = 0; i <= steps; i++) {
+                            const p = elem.getPointAtLength((i / steps) * len);
+                            samples.push({ x: rel.a * p.x + rel.c * p.y + rel.e, y: rel.b * p.x + rel.d * p.y + rel.f });
+                        }
+                        let best = null, bestD = Infinity;
+                        for (let i = 0; i < samples.length - 1; i++) {
+                            const p = closestPointOnSeg(pt, samples[i], samples[i+1]);
+                            const d = Math.hypot(pt.x - p.x, pt.y - p.y);
+                            if (d < bestD) { bestD = d; best = p; }
+                        }
+                        if (best) return { point: best, dist: bestD };
+                    }
+                }
+            } catch(e) { /* fall through to bounding box */ }
+        }
+        // Fallback: bounding box edges
+        const edges = [
+            [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
+            [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
+            [{x:b.x+b.w,y:b.y+b.h},{x:b.x,y:b.y+b.h}],
+            [{x:b.x,y:b.y+b.h},{x:b.x,y:b.y}],
+        ];
+        let best2 = null, bestD2 = Infinity;
+        for (const [a, b2] of edges) {
+            const p = closestPointOnSeg(localPt, a, b2);
+            const d = Math.hypot(localPt.x - p.x, localPt.y - p.y);
+            if (d < bestD2) { bestD2 = d; best2 = p; }
+        }
+        const rp2 = rotatePoint(best2.x, best2.y, ccx, ccy, rot);
+        return { point: rp2, dist: bestD2 };
+    } else if (obj.type === 'rect' || obj.type === 'group' || obj.type === 'image' || obj.type === 'text') {
         const edges = [
             [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y}],
             [{x:b.x+b.w,y:b.y},{x:b.x+b.w,y:b.y+b.h}],
