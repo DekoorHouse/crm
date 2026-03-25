@@ -7554,6 +7554,47 @@ function setupEventListeners() {
         if (e.key.toLowerCase() === 'o' && e.ctrlKey) { e.preventDefault(); showOpenFileModal(); return; }
         if (e.key === 'Home' && e.ctrlKey) { e.preventDefault(); bringToFront(); return; }
         if (e.key === 'End' && e.ctrlKey) { e.preventDefault(); sendToBack(); return; }
+        // Arrow keys: nudge selected objects
+        if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+            if (state.selectedIds.length > 0) {
+                e.preventDefault();
+                const nudgeVal = parseFloat(document.getElementById('nudge-distance').value) || 1;
+                const nudgePx = fromUnit(nudgeVal);
+                const multiplier = e.shiftKey ? 10 : 1;
+                let dx = 0, dy = 0;
+                if (e.key === 'ArrowUp') dy = -nudgePx * multiplier;
+                if (e.key === 'ArrowDown') dy = nudgePx * multiplier;
+                if (e.key === 'ArrowLeft') dx = -nudgePx * multiplier;
+                if (e.key === 'ArrowRight') dx = nudgePx * multiplier;
+                saveUndoState();
+                for (const id of state.selectedIds) {
+                    const obj = findObject(id);
+                    if (!obj) continue;
+                    switch (obj.type) {
+                        case 'rect': case 'image': case 'text': case 'curvepath': obj.x += dx; obj.y += dy; break;
+                        case 'ellipse': obj.cx += dx; obj.cy += dy; break;
+                        case 'line': obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
+                        case 'bspline': for (const p of obj.points) { p.x += dx; p.y += dy; } break;
+                        case 'group': case 'powerclip': {
+                            function nudgeChildren(o, ddx, ddy) {
+                                if (o.type === 'group') { for (const c of o.children) nudgeChildren(c, ddx, ddy); }
+                                else if (o.type === 'powerclip') { nudgeChildren(o.container, ddx, ddy); for (const c of o.contents) nudgeChildren(c, ddx, ddy); }
+                                else if (o.type === 'ellipse') { o.cx += ddx; o.cy += ddy; }
+                                else if (o.type === 'line') { o.x1 += ddx; o.y1 += ddy; o.x2 += ddx; o.y2 += ddy; }
+                                else if (o.type === 'bspline') { for (const p of o.points) { p.x += ddx; p.y += ddy; } }
+                                else { o.x += ddx; o.y += ddy; }
+                            }
+                            nudgeChildren(obj, dx, dy);
+                            break;
+                        }
+                    }
+                    refreshElement(obj);
+                }
+                drawSelection();
+                updatePropsPanel();
+            }
+            return;
+        }
         switch (e.key.toLowerCase()) {
             case 'v': setTool('select'); break;
             case 'r': setTool('rect'); break;
