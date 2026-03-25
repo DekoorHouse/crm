@@ -8521,10 +8521,49 @@ function handleVSDeleteUp(pt) {
 // =============================================
 // VECTORIZE IMAGE (Image Trace)
 // =============================================
+
+// Global scale+translate for SVG path data (same logic as importSVGText's local version)
+function scaleTranslatePath(d, sx, sy, tx, ty) {
+    const flipSweep = sx * sy < 0;
+    const re = /([MLCQAZTSHVmlcqatzshv])|(-?(?:\d+\.?\d*|\.\d+)(?:[eE][+\-]?\d+)?)/g;
+    const tokens = []; let m;
+    while ((m = re.exec(d)) !== null) tokens.push(m[0]);
+    const argCounts = { M:2,L:2,H:1,V:1,C:6,Q:4,S:4,T:2,A:7,Z:0, m:2,l:2,h:1,v:1,c:6,q:4,s:4,t:2,a:7,z:0 };
+    let result = '', i = 0;
+    while (i < tokens.length) {
+        const cmd = tokens[i++];
+        if (!/^[MLCQAZTSHVmlcqatzshv]$/.test(cmd)) continue;
+        const cnt = argCounts[cmd] ?? 0;
+        result += cmd;
+        if (cnt === 0) { result += ' '; continue; }
+        while (i < tokens.length && /^-/.test(tokens[i][0]) || (i < tokens.length && /\d|\./.test(tokens[i][0]))) {
+            const nums = [];
+            for (let j = 0; j < cnt && i < tokens.length; j++) nums.push(parseFloat(tokens[i++]));
+            if (nums.length < cnt) break;
+            const f = (n) => +n.toFixed(4);
+            if (cmd === 'M' || cmd === 'L' || cmd === 'T') result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)}`;
+            else if (cmd === 'm' || cmd === 'l' || cmd === 't') result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)}`;
+            else if (cmd === 'H') result += ` ${f(nums[0]*sx+tx)}`;
+            else if (cmd === 'h') result += ` ${f(nums[0]*sx)}`;
+            else if (cmd === 'V') result += ` ${f(nums[0]*sy+ty)}`;
+            else if (cmd === 'v') result += ` ${f(nums[0]*sy)}`;
+            else if (cmd === 'C') result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)} ${f(nums[4]*sx+tx)},${f(nums[5]*sy+ty)}`;
+            else if (cmd === 'c') result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)} ${f(nums[4]*sx)},${f(nums[5]*sy)}`;
+            else if (cmd === 'Q') result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)}`;
+            else if (cmd === 'q') result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)}`;
+            else if (cmd === 'S') result += ` ${f(nums[0]*sx+tx)},${f(nums[1]*sy+ty)} ${f(nums[2]*sx+tx)},${f(nums[3]*sy+ty)}`;
+            else if (cmd === 's') result += ` ${f(nums[0]*sx)},${f(nums[1]*sy)} ${f(nums[2]*sx)},${f(nums[3]*sy)}`;
+            else if (cmd === 'A') result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${flipSweep ? 1-nums[4] : nums[4]} ${f(nums[5]*sx+tx)},${f(nums[6]*sy+ty)}`;
+            else if (cmd === 'a') result += ` ${f(nums[0]*Math.abs(sx))},${f(nums[1]*Math.abs(sy))} ${nums[2]} ${nums[3]} ${flipSweep ? 1-nums[4] : nums[4]} ${f(nums[5]*sx)},${f(nums[6]*sy)}`;
+        }
+    }
+    return result.trim();
+}
+
 const vectState = {
     sourceImage: null, sourceImageData: null, fullImageData: null,
     editorTarget: null, tracedPaths: [], debounceTimer: null,
-    currentMode: 'lineart', isTracing: false,
+    currentMode: 'lineart', isTracing: false, previewZoom: 1,
 };
 
 const VECT_PRESETS = {
@@ -8551,11 +8590,13 @@ function showVectorizeModal(imageObj) {
     document.getElementById('vect-smooth').value = 1; document.getElementById('vect-smooth-val').textContent = '1';
     document.getElementById('vect-despeckle').value = 8; document.getElementById('vect-despeckle-val').textContent = '8';
     document.getElementById('vect-blur').value = 0; document.getElementById('vect-blur-val').textContent = '0';
-    // View toggle
+    // View toggle + zoom reset
+    vectState.previewZoom = 1;
     document.getElementById('vect-view-result').classList.add('active');
     document.getElementById('vect-view-original').classList.remove('active');
     document.getElementById('vect-result-container').style.display = '';
     document.getElementById('vect-orig-container').style.display = 'none';
+    vectApplyZoom();
     // Source row
     const srcRow = document.getElementById('vect-source-row');
     if (imageObj) {
@@ -8717,11 +8758,25 @@ function vectUpdatePreview(w, h) {
         svgEl.appendChild(pathEl);
     }
     container.appendChild(svgEl);
+    vectApplyZoom();
 }
 
 function vectScheduleUpdate() {
     if (vectState.debounceTimer) clearTimeout(vectState.debounceTimer);
     vectState.debounceTimer = setTimeout(vectRunTrace, 300);
+}
+
+function vectApplyZoom() {
+    const z = vectState.previewZoom;
+    const rc = document.getElementById('vect-result-container');
+    const oc = document.getElementById('vect-orig-container');
+    for (const cont of [rc, oc]) {
+        const child = cont.firstElementChild;
+        if (child) {
+            child.style.transform = `scale(${z})`;
+            child.style.transformOrigin = 'center center';
+        }
+    }
 }
 
 function vectUpdateSliderVisibility() {
@@ -8762,7 +8817,7 @@ function vectApplyToCanvas() {
     // For lineart mode, merge all paths into one
     if (vectState.currentMode === 'lineart') {
         const mergedD = finalPaths.map(p => p.d).join(' ');
-        const scaledD = applyScaleTranslateToPath(mergedD, scaleX, scaleY, targetX, targetY);
+        const scaledD = scaleTranslatePath(mergedD, scaleX, scaleY, targetX, targetY);
         const tempPath = document.createElementNS(ns, 'path');
         tempPath.setAttribute('d', scaledD);
         objectsLayer.appendChild(tempPath);
@@ -8777,7 +8832,7 @@ function vectApplyToCanvas() {
         }
     } else {
         for (const p of finalPaths) {
-            const scaledD = applyScaleTranslateToPath(p.d, scaleX, scaleY, targetX, targetY);
+            const scaledD = scaleTranslatePath(p.d, scaleX, scaleY, targetX, targetY);
             const tempPath = document.createElementNS(ns, 'path');
             tempPath.setAttribute('d', scaledD);
             objectsLayer.appendChild(tempPath);
@@ -8852,6 +8907,13 @@ function setupVectorizeModal() {
         document.getElementById('vect-orig-container').style.display = '';
         document.getElementById('vect-result-container').style.display = 'none';
     });
+    // Zoom with mouse wheel on preview
+    document.getElementById('vect-preview-area').addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? 0.9 : 1.1;
+        vectState.previewZoom = Math.max(0.2, Math.min(10, vectState.previewZoom * delta));
+        vectApplyZoom();
+    }, { passive: false });
     // Apply
     document.getElementById('vect-apply-btn').addEventListener('click', vectApplyToCanvas);
 }

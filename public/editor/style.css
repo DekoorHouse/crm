@@ -1971,9 +1971,9 @@ body.dark .bg-checkerboard {
 .vect-view-btn { padding: 4px 12px; font-size: 11px; font-weight: 600; background: none; border: none; color: var(--text-secondary); cursor: pointer; }
 .vect-view-btn.active { background: var(--accent); color: #fff; }
 .vect-info-row { font-size: 11px; color: var(--text-secondary); }
-.vect-preview-area { flex: 1; min-height: 300px; position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: #f5f4f0; }
+.vect-preview-area { flex: 1; min-height: 300px; position: relative; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; background: #f5f4f0; cursor: zoom-in; }
 .vect-result-container, .vect-orig-container { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; overflow: auto; }
-.vect-result-container svg, .vect-orig-container img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.vect-result-container svg, .vect-orig-container img { max-width: 100%; max-height: 100%; object-fit: contain; transition: transform 0.1s ease; }
 .vect-placeholder { display: flex; flex-direction: column; align-items: center; gap: 12px; color: var(--text-secondary); font-size: 13px; opacity: 0.6; }
 .vect-controls { border-top: 1px solid var(--border); padding-top: 10px; }
 .vect-sliders { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px 16px; }
