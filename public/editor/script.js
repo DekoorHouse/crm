@@ -5781,26 +5781,22 @@ async function exportSVG() {
         });
     }
 
-    // Clip to page bounds
-    const defs = document.createElementNS(ns, 'defs');
-    const pageClip = document.createElementNS(ns, 'clipPath');
-    pageClip.setAttribute('id', 'pageClip');
-    const clipRect = document.createElementNS(ns, 'rect');
-    clipRect.setAttribute('x', '0'); clipRect.setAttribute('y', '0');
-    clipRect.setAttribute('width', vbW); clipRect.setAttribute('height', vbH);
-    pageClip.appendChild(clipRect);
-    defs.appendChild(pageClip);
-    root.appendChild(defs);
+    // Filter: only export objects that intersect the page area
+    function objTouchesPage(obj) {
+        const b = getObjBounds(obj);
+        return b.x + b.w > 0 && b.x < state.pageWidth && b.y + b.h > 0 && b.y < state.pageHeight;
+    }
 
     // Layer group (CorelDRAW convention)
     const layerGroup = document.createElementNS(ns, 'g');
     layerGroup.setAttribute('id', 'Capa_x0020_1');
-    layerGroup.setAttribute('clip-path', 'url(#pageClip)');
     const meta = document.createElementNS(ns, 'metadata');
     meta.setAttribute('id', 'CorelCorpID_0Corel-Layer');
     layerGroup.appendChild(meta);
 
-    for (const obj of state.objects) exportObj(obj, layerGroup);
+    for (const obj of state.objects) {
+        if (objTouchesPage(obj)) exportObj(obj, layerGroup);
+    }
     root.appendChild(layerGroup);
 
     let str = '<?xml version="1.0" encoding="UTF-8"?>\n';
