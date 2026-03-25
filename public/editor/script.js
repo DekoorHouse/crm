@@ -7917,6 +7917,40 @@ function vsDeleteFindAllIntersections() {
             }
         }
     }
+    // T-junction detection: check if any endpoint of one path lies on another path
+    const screenScale = _cachedScreenScale;
+    const tJuncThresh = 3 * screenScale;
+    for (let a = 0; a < sampled.length; a++) {
+        for (let b = 0; b < sampled.length; b++) {
+            if (a === b) continue;
+            const sa = sampled[a], sb = sampled[b];
+            // Check endpoints of sa against segments of sb
+            const endpoints = [sa.samples[0], sa.samples[sa.samples.length - 1]];
+            for (const ep of endpoints) {
+                for (let j = 0; j < sb.samples.length - 1; j++) {
+                    const seg1 = sb.samples[j], seg2 = sb.samples[j + 1];
+                    const d = distToSeg(ep, seg1, seg2);
+                    if (d < tJuncThresh) {
+                        // Project endpoint onto segment to get len on sb
+                        const dx = seg2.x - seg1.x, dy = seg2.y - seg1.y, len2 = dx*dx + dy*dy;
+                        const t = len2 > 0 ? Math.max(0, Math.min(1, ((ep.x-seg1.x)*dx + (ep.y-seg1.y)*dy) / len2)) : 0;
+                        const lenOnB = seg1.len + t * (seg2.len - seg1.len);
+                        const isDup = intersections.some(ix =>
+                            Math.hypot(ix.x - ep.x, ix.y - ep.y) < tJuncThresh
+                        );
+                        if (!isDup) {
+                            intersections.push({
+                                x: ep.x, y: ep.y,
+                                objId1: sa.objId, len1: ep.len,
+                                objId2: sb.objId, len2: lenOnB
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+    }
     return { intersections, sampled };
 }
 
