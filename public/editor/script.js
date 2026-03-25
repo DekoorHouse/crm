@@ -4253,10 +4253,21 @@ async function generateThumbnail() {
                 img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
             } catch(e) { /* skip images that can't be fetched */ }
         }));
-        // Set viewBox to page area
-        clone.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
+        // Compute viewBox that encompasses the page AND all objects
+        let vx1 = 0, vy1 = 0, vx2 = state.pageWidth, vy2 = state.pageHeight;
+        for (const obj of state.objects) {
+            const b = getObjBounds(obj);
+            if (b.x < vx1) vx1 = b.x;
+            if (b.y < vy1) vy1 = b.y;
+            if (b.x + b.w > vx2) vx2 = b.x + b.w;
+            if (b.y + b.h > vy2) vy2 = b.y + b.h;
+        }
+        const pad = Math.max(vx2 - vx1, vy2 - vy1) * 0.02;
+        vx1 -= pad; vy1 -= pad; vx2 += pad; vy2 += pad;
+        const vw = vx2 - vx1, vh = vy2 - vy1;
+        clone.setAttribute('viewBox', `${vx1} ${vy1} ${vw} ${vh}`);
         clone.setAttribute('width', '160');
-        clone.setAttribute('height', Math.round(160 * state.pageHeight / state.pageWidth));
+        clone.setAttribute('height', Math.round(160 * vh / vw));
         const svgStr = new XMLSerializer().serializeToString(clone);
         const blob = new Blob([svgStr], { type: 'image/svg+xml' });
         const url = URL.createObjectURL(blob);
@@ -4265,7 +4276,7 @@ async function generateThumbnail() {
             img.onload = () => {
                 const c = document.createElement('canvas');
                 c.width = 160;
-                c.height = Math.round(160 * state.pageHeight / state.pageWidth);
+                c.height = img.naturalHeight || Math.round(160 * vh / vw);
                 const ctx = c.getContext('2d');
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, 0, c.width, c.height);
