@@ -5697,16 +5697,19 @@ async function exportSVG() {
 
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
+    // Convert page dimensions from px to mm (96 DPI)
+    const pageWmm = +(state.pageWidth * 25.4 / 96).toFixed(2);
+    const pageHmm = +(state.pageHeight * 25.4 / 96).toFixed(2);
     // Use 100 user units per mm (CorelDRAW convention for mm-based documents)
-    const S = 100;
-    const vbW = state.pageWidth * S, vbH = state.pageHeight * S;
+    const S = 100 * 25.4 / 96; // px → viewBox units (100 units per mm)
+    const vbW = +(pageWmm * 100).toFixed(0), vbH = +(pageHmm * 100).toFixed(0);
 
     const root = document.createElementNS(ns, 'svg');
     root.setAttribute('xmlns', ns);
     root.setAttribute('xmlns:xlink', xlink);
     root.setAttribute('xml:space', 'preserve');
-    root.setAttribute('width', state.pageWidth + 'mm');
-    root.setAttribute('height', state.pageHeight + 'mm');
+    root.setAttribute('width', pageWmm + 'mm');
+    root.setAttribute('height', pageHmm + 'mm');
     root.setAttribute('version', '1.1');
     root.setAttribute('viewBox', `0 0 ${vbW} ${vbH}`);
     root.setAttribute('style', 'shape-rendering:geometricPrecision; text-rendering:geometricPrecision; image-rendering:optimizeQuality; fill-rule:evenodd; clip-rule:evenodd');
