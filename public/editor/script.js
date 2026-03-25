@@ -2074,7 +2074,7 @@ function handleMouseDown(e) {
         case 'rect': case 'ellipse': case 'line': handleShapeDown(pt); break;
         case 'bspline': handleBSplineClick(pt); break;
         case 'text': handleTextClick(pt, e); break;
-        case 'vsdelete': handleVSDeleteClick(pt); break;
+        case 'vsdelete': handleVSDeleteDown(pt); break;
     }
 }
 
@@ -2112,6 +2112,7 @@ function handleMouseMove(e) {
         state.marqueeEl.setAttribute('height', mh);
         return;
     }
+    if (_vsDeleteDragging) { handleVSDeleteMove(pt); return; }
     if (state.isResizing) { handleResizeMove(pt, e); return; }
     if (state.isDragging) { handleDragMove(pt); return; }
     if (state.isDrawing) { handleDrawMove(pt, e); return; }
@@ -2145,6 +2146,11 @@ function handleMouseMove(e) {
 
 function handleMouseUp() {
     if (state.isPanning) { state.isPanning = false; svg.style.cursor = state.tool === 'select' ? 'default' : 'crosshair'; return; }
+    if (_vsDeleteDragging) {
+        const pt = screenToSVG(event.clientX, event.clientY);
+        handleVSDeleteUp(pt);
+        return;
+    }
     if (state.isMarquee) {
         state.isMarquee = false;
         // Get marquee bounds
@@ -8213,7 +8219,42 @@ let _vsDeleteCacheDirty = true;
 
 function vsDeleteInvalidateCache() { _vsDeleteCacheDirty = true; _vsDeleteCache = null; }
 
+// --- VS Delete marquee state ---
+let _vsDeleteDragging = false;
+let _vsDeleteStart = null;
+let _vsDeleteMarqueeEl = null;
+
+function handleVSDeleteDown(pt) {
+    _vsDeleteDragging = true;
+    _vsDeleteStart = { x: pt.x, y: pt.y };
+    // Create marquee rect
+    const ns = 'http://www.w3.org/2000/svg';
+    const screenScale = _cachedScreenScale;
+    _vsDeleteMarqueeEl = document.createElementNS(ns, 'rect');
+    _vsDeleteMarqueeEl.setAttribute('fill', 'rgba(255, 51, 51, 0.08)');
+    _vsDeleteMarqueeEl.setAttribute('stroke', '#ff3333');
+    _vsDeleteMarqueeEl.setAttribute('stroke-width', screenScale);
+    _vsDeleteMarqueeEl.setAttribute('stroke-dasharray', `${4*screenScale} ${2*screenScale}`);
+    _vsDeleteMarqueeEl.setAttribute('pointer-events', 'none');
+    _vsDeleteMarqueeEl.setAttribute('x', pt.x);
+    _vsDeleteMarqueeEl.setAttribute('y', pt.y);
+    _vsDeleteMarqueeEl.setAttribute('width', 0);
+    _vsDeleteMarqueeEl.setAttribute('height', 0);
+    selectionLayer.appendChild(_vsDeleteMarqueeEl);
+}
+
 function handleVSDeleteMove(pt) {
+    // Update marquee if dragging
+    if (_vsDeleteDragging && _vsDeleteStart && _vsDeleteMarqueeEl) {
+        const sx = _vsDeleteStart.x, sy = _vsDeleteStart.y;
+        _vsDeleteMarqueeEl.setAttribute('x', Math.min(sx, pt.x));
+        _vsDeleteMarqueeEl.setAttribute('y', Math.min(sy, pt.y));
+        _vsDeleteMarqueeEl.setAttribute('width', Math.abs(pt.x - sx));
+        _vsDeleteMarqueeEl.setAttribute('height', Math.abs(pt.y - sy));
+        return; // skip hover preview during drag
+    }
+
+    // Hover preview
     if (_vsDeleteCacheDirty || !_vsDeleteCache) {
         _vsDeleteCache = vsDeleteFindAllIntersections();
         _vsDeleteCacheDirty = false;
@@ -8238,27 +8279,86 @@ function handleVSDeleteMove(pt) {
     }
 }
 
-function handleVSDeleteClick(pt) {
+function handleVSDeleteUp(pt) {
+    if (!_vsDeleteDragging) return;
+    _vsDeleteDragging = false;
+
+    // Remove marquee visual
+    if (_vsDeleteMarqueeEl) { _vsDeleteMarqueeEl.remove(); _vsDeleteMarqueeEl = null; }
+
     if (_vsDeleteCacheDirty || !_vsDeleteCache) {
         _vsDeleteCache = vsDeleteFindAllIntersections();
         _vsDeleteCacheDirty = false;
     }
     const { intersections, sampled } = _vsDeleteCache;
-    const hit = vsDeleteClosestPath(pt, sampled);
-    if (!hit) return;
 
-    const sp = sampled.find(s => s.objId === hit.objId);
-    if (!sp) return;
+    const sx = _vsDeleteStart.x, sy = _vsDeleteStart.y;
+    const mw = Math.abs(pt.x - sx), mh = Math.abs(pt.y - sy);
 
-    const bounds = vsDeleteFindSegmentBounds(hit.objId, hit.len, sp.totalLen, intersections);
-    if (!bounds) return;
-
-    const obj = findObject(hit.objId);
-    if (!obj) return;
-
-    clearVSDeletePreview();
-    vsDeleteExecute(obj, bounds.startLen, bounds.endLen, intersections);
-    vsDeleteInvalidateCache();
+    if (mw < 3 && mh < 3) {
+        // Small drag = click → delete single closest segment
+        const hit = vsDeleteClosestPath(pt, sampled);
+        if (!hit) return;
+        const sp = sampled.find(s => s.objId === hit.objId);
+        if (!sp) return;
+        const bounds = vsDeleteFindSegmentBounds(hit.objId, hit.len, sp.totalLen, intersections);
+        if (!bounds) return;
+        const obj = findObject(hit.objId);
+        if (!obj) return;
+        clearVSDeletePreview();
+        vsDeleteExecute(obj, bounds.startLen, bounds.endLen, intersections);
+        vsDeleteInvalidateCache();
+    } else {
+        // Marquee drag → delete all segments fully inside the rectangle
+        const mx = Math.min(sx, pt.x), my = Math.min(sy, pt.y);
+        const mx2 = mx + mw, my2 = my + mh;
+        // Find all virtual segments, check which are fully inside the marquee
+        const toDelete = []; // [{objId, startLen, endLen}]
+        for (const sp of sampled) {
+            const cuts = [0, sp.totalLen];
+            for (const ix of intersections) {
+                if (ix.objId1 === sp.objId) cuts.push(ix.len1);
+                if (ix.objId2 === sp.objId) cuts.push(ix.len2);
+            }
+            cuts.sort((a, b) => a - b);
+            for (let i = 0; i < cuts.length - 1; i++) {
+                const sLen = cuts[i], eLen = cuts[i + 1];
+                if (eLen - sLen < 0.5) continue;
+                // Check if ALL sample points in this range are inside the marquee
+                const segPts = vsDeleteGetSegmentPolyline(sp, sLen, eLen);
+                if (!segPts || segPts.length < 2) continue;
+                const allInside = segPts.every(p => p.x >= mx && p.x <= mx2 && p.y >= my && p.y <= my2);
+                if (allInside) {
+                    toDelete.push({ objId: sp.objId, startLen: sLen, endLen: eLen });
+                }
+            }
+        }
+        if (toDelete.length === 0) return;
+        clearVSDeletePreview();
+        // Delete segments (process each object, may need multiple passes as objects change)
+        // Group by object and delete from last to first to avoid index shifting
+        const byObj = {};
+        for (const td of toDelete) {
+            if (!byObj[td.objId]) byObj[td.objId] = [];
+            byObj[td.objId].push(td);
+        }
+        for (const objId of Object.keys(byObj)) {
+            const obj = findObject(+objId);
+            if (!obj) continue;
+            // For multiple segments on same object, delete them all at once
+            // by marking all their ranges as deleted
+            const segments = byObj[objId];
+            // Execute deletion for the first segment, then re-process
+            // (simplified: delete one by one, recaching each time)
+            for (const seg of segments) {
+                const currentObj = findObject(+objId);
+                if (!currentObj) break;
+                vsDeleteExecute(currentObj, seg.startLen, seg.endLen, intersections);
+            }
+        }
+        vsDeleteInvalidateCache();
+    }
+    _vsDeleteStart = null;
 }
 
 function setTool(tool) {
@@ -8271,7 +8371,11 @@ function setTool(tool) {
     document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
     document.getElementById('status-tool').textContent = TOOL_NAMES[tool];
     svg.style.cursor = tool === 'select' ? 'default' : tool === 'vsdelete' ? 'crosshair' : 'crosshair';
-    if (tool !== 'vsdelete') clearVSDeletePreview();
+    if (tool !== 'vsdelete') {
+        clearVSDeletePreview();
+        _vsDeleteDragging = false;
+        if (_vsDeleteMarqueeEl) { _vsDeleteMarqueeEl.remove(); _vsDeleteMarqueeEl = null; }
+    }
 }
 
 function updateStatusBar() {
