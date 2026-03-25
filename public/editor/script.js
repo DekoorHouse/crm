@@ -4031,6 +4031,11 @@ function showContextMenu(e, obj) {
         invertOpt.style.display = obj.type === 'image' ? '' : 'none';
     }
 
+    const vectOpt = contextMenu.querySelector('[data-ctx="vectorize-image"]');
+    if (vectOpt) {
+        vectOpt.style.display = obj.type === 'image' ? '' : 'none';
+    }
+
     // Reference area — only for closed shapes (rect, ellipse, closed bspline, curvepath)
     const refAreaOpt = contextMenu.querySelector('[data-ctx="toggle-ref-area"]');
     if (refAreaOpt) {
@@ -4106,6 +4111,9 @@ function setupContextMenu() {
                     break;
                 case 'invert-colors':
                     invertImageColors(contextTarget);
+                    break;
+                case 'vectorize-image':
+                    showVectorizeModal(contextTarget);
                     break;
                 case 'toggle-ref-area':
                     toggleRefArea(contextTarget);
@@ -4224,6 +4232,7 @@ function handleMenuAction(action) {
         case 'ai-instructions': showAIInstructionsModal(); break;
         case 'ai-toggle-chat': toggleAIChat(); break;
         case 'grid-fill': showGridFillModal(); break;
+        case 'vectorize-image': showVectorizeModal(); break;
     }
 }
 
@@ -7769,6 +7778,7 @@ function setupEventListeners() {
     setupImportNamesModal();
     setupBmpConverterModal();
     setupBgRemovalModal();
+    setupVectorizeModal();
     setupGridFillModal();
     setupFileModals();
     setupFilesSidebar();
@@ -8506,6 +8516,344 @@ function handleVSDeleteUp(pt) {
         vsDeleteInvalidateCache();
     }
     _vsDeleteStart = null;
+}
+
+// =============================================
+// VECTORIZE IMAGE (Image Trace)
+// =============================================
+const vectState = {
+    sourceImage: null, sourceImageData: null, fullImageData: null,
+    editorTarget: null, tracedPaths: [], debounceTimer: null,
+    currentMode: 'lineart', isTracing: false,
+};
+
+const VECT_PRESETS = {
+    lineart: { colorsampling: 0, numberofcolors: 2, mincolorratio: 0, colorquantcycles: 1, ltres: 1, qtres: 1, pathomit: 8, blurradius: 0, blurdelta: 20, strokewidth: 0 },
+    detailed: { colorsampling: 2, numberofcolors: 8, mincolorratio: 0.02, colorquantcycles: 3, ltres: 1, qtres: 1, pathomit: 4, blurradius: 0, blurdelta: 20, strokewidth: 0 },
+    color: { colorsampling: 2, numberofcolors: 24, mincolorratio: 0.01, colorquantcycles: 5, ltres: 1, qtres: 1, pathomit: 4, blurradius: 2, blurdelta: 40, strokewidth: 0 },
+};
+
+function showVectorizeModal(imageObj) {
+    document.getElementById('vectorize-modal').classList.remove('hidden');
+    vectState.editorTarget = imageObj || null;
+    vectState.tracedPaths = [];
+    document.getElementById('vect-apply-btn').disabled = true;
+    document.getElementById('vect-info-row').textContent = '';
+    document.getElementById('vect-placeholder').style.display = '';
+    // Reset mode
+    document.querySelectorAll('.vect-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'lineart'));
+    vectState.currentMode = 'lineart';
+    vectUpdateSliderVisibility();
+    // Reset sliders
+    document.getElementById('vect-threshold').value = 128; document.getElementById('vect-threshold-val').textContent = '128';
+    document.getElementById('vect-colors').value = 8; document.getElementById('vect-colors-val').textContent = '8';
+    document.getElementById('vect-detail').value = 1; document.getElementById('vect-detail-val').textContent = '1';
+    document.getElementById('vect-smooth').value = 1; document.getElementById('vect-smooth-val').textContent = '1';
+    document.getElementById('vect-despeckle').value = 8; document.getElementById('vect-despeckle-val').textContent = '8';
+    document.getElementById('vect-blur').value = 0; document.getElementById('vect-blur-val').textContent = '0';
+    // View toggle
+    document.getElementById('vect-view-result').classList.add('active');
+    document.getElementById('vect-view-original').classList.remove('active');
+    document.getElementById('vect-result-container').style.display = '';
+    document.getElementById('vect-orig-container').style.display = 'none';
+    // Source row
+    const srcRow = document.getElementById('vect-source-row');
+    if (imageObj) {
+        srcRow.style.display = 'none';
+        vectLoadImageFromObject(imageObj);
+    } else {
+        srcRow.style.display = '';
+        const sel = primaryId ? findObject(primaryId()) : null;
+        document.getElementById('vect-use-selected').disabled = !(sel && sel.type === 'image');
+    }
+}
+
+function hideVectorizeModal() {
+    document.getElementById('vectorize-modal').classList.add('hidden');
+    vectState.sourceImage = null; vectState.sourceImageData = null; vectState.fullImageData = null;
+    vectState.editorTarget = null; vectState.tracedPaths = [];
+    if (vectState.debounceTimer) clearTimeout(vectState.debounceTimer);
+}
+
+function vectLoadImageFromObject(obj) {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => { vectState.sourceImage = img; vectPrepareImageData(); vectRunTrace(); };
+    img.onerror = () => {
+        // Retry without crossOrigin for data URLs
+        const img2 = new Image();
+        img2.onload = () => { vectState.sourceImage = img2; vectPrepareImageData(); vectRunTrace(); };
+        img2.src = obj.href;
+    };
+    img.src = obj.href;
+}
+
+function vectLoadImageFromFile(file) {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => { vectState.sourceImage = img; vectPrepareImageData(); vectRunTrace(); };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function vectPrepareImageData() {
+    const img = vectState.sourceImage;
+    if (!img) return;
+    // Full resolution
+    const fc = document.createElement('canvas');
+    fc.width = img.naturalWidth; fc.height = img.naturalHeight;
+    fc.getContext('2d').drawImage(img, 0, 0);
+    vectState.fullImageData = fc.getContext('2d').getImageData(0, 0, fc.width, fc.height);
+    // Downscale for preview (max 600px)
+    const maxDim = 600;
+    let pw = img.naturalWidth, ph = img.naturalHeight;
+    if (pw > maxDim || ph > maxDim) {
+        const ratio = Math.min(maxDim / pw, maxDim / ph);
+        pw = Math.round(pw * ratio); ph = Math.round(ph * ratio);
+    }
+    const pc = document.createElement('canvas');
+    pc.width = pw; pc.height = ph;
+    pc.getContext('2d').drawImage(img, 0, 0, pw, ph);
+    vectState.sourceImageData = pc.getContext('2d').getImageData(0, 0, pw, ph);
+    // Show original in orig container
+    const origCont = document.getElementById('vect-orig-container');
+    origCont.innerHTML = '';
+    const origImg = document.createElement('img');
+    origImg.src = img.src;
+    origCont.appendChild(origImg);
+    document.getElementById('vect-placeholder').style.display = 'none';
+}
+
+function vectThresholdImageData(imageData, threshold) {
+    const copy = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+    const d = copy.data;
+    for (let i = 0; i < d.length; i += 4) {
+        const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+        const v = gray < threshold ? 0 : 255;
+        d[i] = d[i+1] = d[i+2] = v;
+        d[i+3] = 255;
+    }
+    return copy;
+}
+
+function vectBuildOptions() {
+    const base = { ...VECT_PRESETS[vectState.currentMode] };
+    base.ltres = parseFloat(document.getElementById('vect-detail').value);
+    base.qtres = parseFloat(document.getElementById('vect-smooth').value);
+    base.pathomit = parseInt(document.getElementById('vect-despeckle').value);
+    base.blurradius = parseInt(document.getElementById('vect-blur').value);
+    if (vectState.currentMode !== 'lineart') {
+        base.numberofcolors = parseInt(document.getElementById('vect-colors').value);
+    }
+    return base;
+}
+
+function vectRunTrace() {
+    if (!vectState.sourceImageData || vectState.isTracing) return;
+    if (typeof ImageTracer === 'undefined') { console.error('ImageTracer not loaded'); return; }
+    vectState.isTracing = true;
+    const options = vectBuildOptions();
+    let imageData = vectState.sourceImageData;
+    if (vectState.currentMode === 'lineart') {
+        imageData = vectThresholdImageData(imageData, parseInt(document.getElementById('vect-threshold').value));
+    }
+    setTimeout(() => {
+        try {
+            const svgStr = ImageTracer.imagedataToSVG(imageData, options);
+            vectState.tracedPaths = vectParseSVGPaths(svgStr, imageData.width, imageData.height);
+            vectUpdatePreview(imageData.width, imageData.height);
+            const info = document.getElementById('vect-info-row');
+            info.textContent = `${vectState.tracedPaths.length} paths`;
+            document.getElementById('vect-apply-btn').disabled = vectState.tracedPaths.length === 0;
+        } catch (e) { console.error('Trace error:', e); }
+        vectState.isTracing = false;
+    }, 10);
+}
+
+function vectParseSVGPaths(svgStr, w, h) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(svgStr, 'image/svg+xml');
+    const paths = doc.querySelectorAll('path');
+    const result = [];
+    for (let i = 0; i < paths.length; i++) {
+        const p = paths[i];
+        const d = p.getAttribute('d');
+        if (!d) continue;
+        let fill = p.getAttribute('fill') || 'none';
+        const opacity = parseFloat(p.getAttribute('opacity') || p.getAttribute('fill-opacity') || '1');
+        // Convert rgb() to hex
+        const rgbMatch = fill.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
+        if (rgbMatch) {
+            fill = '#' + [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v).toString(16).padStart(2, '0')).join('');
+        }
+        // Skip background (first path, very light color or white in lineart)
+        if (i === 0 && vectState.currentMode === 'lineart') {
+            if (fill === '#ffffff' || fill === '#fefefe' || fill === 'white') continue;
+        }
+        // Skip nearly invisible
+        if (opacity < 0.01) continue;
+        result.push({ d, fill });
+    }
+    return result;
+}
+
+function vectUpdatePreview(w, h) {
+    const container = document.getElementById('vect-result-container');
+    container.innerHTML = '';
+    if (vectState.tracedPaths.length === 0) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const svgEl = document.createElementNS(ns, 'svg');
+    svgEl.setAttribute('viewBox', `0 0 ${w} ${h}`);
+    svgEl.setAttribute('width', '100%');
+    svgEl.setAttribute('height', '100%');
+    svgEl.style.maxWidth = '100%'; svgEl.style.maxHeight = '100%';
+    for (const p of vectState.tracedPaths) {
+        const pathEl = document.createElementNS(ns, 'path');
+        pathEl.setAttribute('d', p.d);
+        pathEl.setAttribute('fill', p.fill);
+        pathEl.setAttribute('stroke', 'none');
+        svgEl.appendChild(pathEl);
+    }
+    container.appendChild(svgEl);
+}
+
+function vectScheduleUpdate() {
+    if (vectState.debounceTimer) clearTimeout(vectState.debounceTimer);
+    vectState.debounceTimer = setTimeout(vectRunTrace, 300);
+}
+
+function vectUpdateSliderVisibility() {
+    document.getElementById('vect-threshold-group').style.display = vectState.currentMode === 'lineart' ? '' : 'none';
+    document.getElementById('vect-colors-group').style.display = vectState.currentMode === 'lineart' ? 'none' : '';
+}
+
+function vectApplyToCanvas() {
+    if (vectState.tracedPaths.length === 0) return;
+    // Re-trace at full resolution
+    const fullOpts = vectBuildOptions();
+    let fullData = vectState.fullImageData;
+    if (vectState.currentMode === 'lineart') {
+        fullData = vectThresholdImageData(fullData, parseInt(document.getElementById('vect-threshold').value));
+    }
+    let finalPaths;
+    try {
+        const fullSvg = ImageTracer.imagedataToSVG(fullData, fullOpts);
+        finalPaths = vectParseSVGPaths(fullSvg, fullData.width, fullData.height);
+    } catch(e) {
+        finalPaths = vectState.tracedPaths; // fallback to preview paths
+    }
+    if (finalPaths.length === 0) return;
+
+    saveUndoState();
+    const prevBatch = _batchImporting;
+    _batchImporting = true;
+
+    const imgObj = vectState.editorTarget;
+    const traceW = fullData.width, traceH = fullData.height;
+    const targetX = imgObj ? imgObj.x : 0;
+    const targetY = imgObj ? imgObj.y : 0;
+    const targetW = imgObj ? imgObj.width : traceW;
+    const targetH = imgObj ? imgObj.height : traceH;
+    const scaleX = targetW / traceW, scaleY = targetH / traceH;
+    const ns = 'http://www.w3.org/2000/svg';
+
+    // For lineart mode, merge all paths into one
+    if (vectState.currentMode === 'lineart') {
+        const mergedD = finalPaths.map(p => p.d).join(' ');
+        const scaledD = applyScaleTranslateToPath(mergedD, scaleX, scaleY, targetX, targetY);
+        const tempPath = document.createElementNS(ns, 'path');
+        tempPath.setAttribute('d', scaledD);
+        objectsLayer.appendChild(tempPath);
+        const bb = tempPath.getBBox();
+        objectsLayer.removeChild(tempPath);
+        if (bb.width > 0.01 || bb.height > 0.01) {
+            createObject('curvepath', {
+                d: scaledD, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
+                _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
+                fill: '#000000', stroke: 'none', strokeWidth: 0,
+            });
+        }
+    } else {
+        for (const p of finalPaths) {
+            const scaledD = applyScaleTranslateToPath(p.d, scaleX, scaleY, targetX, targetY);
+            const tempPath = document.createElementNS(ns, 'path');
+            tempPath.setAttribute('d', scaledD);
+            objectsLayer.appendChild(tempPath);
+            const bb = tempPath.getBBox();
+            objectsLayer.removeChild(tempPath);
+            if (bb.width < 0.01 && bb.height < 0.01) continue;
+            createObject('curvepath', {
+                d: scaledD, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
+                _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
+                fill: p.fill, stroke: 'none', strokeWidth: 0,
+            });
+        }
+    }
+
+    // Delete original image if checkbox unchecked
+    if (!document.getElementById('vect-keep-original').checked && imgObj) {
+        deleteObject(imgObj.id);
+    }
+
+    _batchImporting = prevBatch;
+    drawSelection();
+    hideVectorizeModal();
+    markDirty();
+}
+
+function setupVectorizeModal() {
+    const modal = document.getElementById('vectorize-modal');
+    if (!modal) return;
+    // Close
+    modal.querySelector('.modal-close').addEventListener('click', hideVectorizeModal);
+    modal.querySelector('.modal-overlay').addEventListener('click', hideVectorizeModal);
+    modal.querySelectorAll('[data-action="cancel"]').forEach(b => b.addEventListener('click', hideVectorizeModal));
+    // File input
+    document.getElementById('vect-file-input').addEventListener('change', (e) => {
+        if (e.target.files[0]) vectLoadImageFromFile(e.target.files[0]);
+        e.target.value = '';
+    });
+    // Use selected
+    document.getElementById('vect-use-selected').addEventListener('click', () => {
+        const sel = findObject(primaryId());
+        if (sel && sel.type === 'image') { vectState.editorTarget = sel; vectLoadImageFromObject(sel); }
+    });
+    // Mode buttons
+    modal.querySelectorAll('.vect-mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            modal.querySelectorAll('.vect-mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            vectState.currentMode = btn.dataset.mode;
+            vectUpdateSliderVisibility();
+            if (vectState.sourceImageData) vectScheduleUpdate();
+        });
+    });
+    // Sliders
+    const sliders = ['vect-threshold', 'vect-colors', 'vect-detail', 'vect-smooth', 'vect-despeckle', 'vect-blur'];
+    for (const id of sliders) {
+        const el = document.getElementById(id);
+        el.addEventListener('input', () => {
+            document.getElementById(id + '-val').textContent = el.value;
+            if (vectState.sourceImageData) vectScheduleUpdate();
+        });
+    }
+    // View toggle
+    document.getElementById('vect-view-result').addEventListener('click', () => {
+        document.getElementById('vect-view-result').classList.add('active');
+        document.getElementById('vect-view-original').classList.remove('active');
+        document.getElementById('vect-result-container').style.display = '';
+        document.getElementById('vect-orig-container').style.display = 'none';
+    });
+    document.getElementById('vect-view-original').addEventListener('click', () => {
+        document.getElementById('vect-view-original').classList.add('active');
+        document.getElementById('vect-view-result').classList.remove('active');
+        document.getElementById('vect-orig-container').style.display = '';
+        document.getElementById('vect-result-container').style.display = 'none';
+    });
+    // Apply
+    document.getElementById('vect-apply-btn').addEventListener('click', vectApplyToCanvas);
 }
 
 function setTool(tool) {
