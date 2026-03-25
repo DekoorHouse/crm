@@ -2572,17 +2572,11 @@ function handleDragMove(pt) {
         }
     }
     drawSnapGuideLines(snapAdj);
-    // Show snap indicators on nearby target points (even before snap activates)
+    // Show snap indicators only on target points near the mouse cursor
     snapLayer.innerHTML = '';
     {
-        const selPts = [];
-        for (const id of state.selectedIds) {
-            const obj = findObject(id);
-            if (obj) selPts.push(...getSnapPoints(obj));
-        }
         const screenScale = _cachedScreenScale;
-        // Use a larger radius to show indicators as "invitation" before snap activates
-        const showRadius = SNAP_DIST * screenScale * 3;
+        const showRadius = SNAP_DIST * screenScale * 4;
         const targetPts = [];
         for (const obj of state.objects) {
             if (state.selectedIds.includes(obj.id)) continue;
@@ -2598,17 +2592,9 @@ function handleDragMove(pt) {
         const ns = 'http://www.w3.org/2000/svg';
         const r = 4.5 * screenScale;
         const sw = screenScale;
-        const shown = new Set();
-        for (const sp of selPts) {
-            for (const tp of targetPts) {
-                const dist = Math.hypot(sp.x - tp.x, sp.y - tp.y);
-                if (dist < showRadius) {
-                    const key = `${tp.x.toFixed(1)},${tp.y.toFixed(1)}`;
-                    if (!shown.has(key)) {
-                        shown.add(key);
-                        drawSnapMarker(ns, {x: tp.x, y: tp.y, type: tp.type || 'edge'}, r, sw);
-                    }
-                }
+        for (const tp of targetPts) {
+            if (Math.hypot(pt.x - tp.x, pt.y - tp.y) < showRadius) {
+                drawSnapMarker(ns, {x: tp.x, y: tp.y, type: tp.type || 'edge'}, r, sw);
             }
         }
     }
