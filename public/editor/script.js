@@ -5666,31 +5666,34 @@ async function exportSVG() {
         if (!loadedOTFonts[fn]) await loadOTFont(fn);
     }
     // Inline external image URLs as data URIs for portability
-    const imageHrefCache = {};
-    async function resolveHref(href) {
-        if (!href || href.startsWith('data:')) return href;
-        if (imageHrefCache[href]) return imageHrefCache[href];
-        try {
-            const resp = await fetch(href);
-            const blob = await resp.blob();
-            const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
-            imageHrefCache[href] = dataUrl;
-            return dataUrl;
-        } catch(e) { return href; }
-    }
     function collectImages(obj) {
         const list = [];
         if (obj.type === 'image' && obj.href) list.push(obj);
-        if (obj.type === 'powerclip') {
-            if (obj.contents) for (const c of obj.contents) list.push(...collectImages(c));
-        }
-        if (obj.type === 'group') {
-            if (obj.children) for (const c of obj.children) list.push(...collectImages(c));
-        }
+        if (obj.type === 'powerclip' && obj.contents) for (const c of obj.contents) list.push(...collectImages(c));
+        if (obj.type === 'group' && obj.children) for (const c of obj.children) list.push(...collectImages(c));
         return list;
     }
     const allImages = state.objects.flatMap(collectImages);
-    await Promise.all(allImages.map(img => resolveHref(img.href)));
+    const savedHrefs = allImages.map(img => img.href);
+    // Convert external URLs to data URIs by drawing through canvas
+    await Promise.all(allImages.map(img => {
+        if (!img.href || img.href.startsWith('data:')) return Promise.resolve();
+        return new Promise(resolve => {
+            const htmlImg = new Image();
+            htmlImg.crossOrigin = 'anonymous';
+            htmlImg.onload = () => {
+                try {
+                    const c = document.createElement('canvas');
+                    c.width = htmlImg.naturalWidth; c.height = htmlImg.naturalHeight;
+                    c.getContext('2d').drawImage(htmlImg, 0, 0);
+                    img.href = c.toDataURL('image/png');
+                } catch(e) { /* keep original href */ }
+                resolve();
+            };
+            htmlImg.onerror = () => resolve();
+            htmlImg.src = img.href;
+        });
+    }));
 
     const ns = 'http://www.w3.org/2000/svg';
     const xlink = 'http://www.w3.org/1999/xlink';
@@ -5736,9 +5739,8 @@ async function exportSVG() {
             img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
             img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
             img.setAttribute('preserveAspectRatio', 'none');
-            const _href = (typeof imageHrefCache !== 'undefined' && imageHrefCache[obj.href]) || obj.href;
-            img.setAttributeNS(xlink, 'xlink:href', _href);
-            img.setAttribute('href', _href);
+            img.setAttributeNS(xlink, 'xlink:href', obj.href);
+            img.setAttribute('href', obj.href);
             if (obj.rotation) {
                 const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
@@ -5792,13 +5794,15 @@ async function exportSVG() {
         if (el.hasAttribute('font-size')) {
             el.setAttribute('font-size', parseFloat(el.getAttribute('font-size')) * s);
         }
-        // Scale transform if present
+        // Scale transform if present — scale translate coords and rotate centers, keep scale() values
         const t = el.getAttribute('transform');
         if (t) {
-            const rotMatch = t.match(/rotate\(\s*([\d.\-]+)\s+([\d.\-]+)\s+([\d.\-]+)\s*\)/);
-            if (rotMatch) {
-                el.setAttribute('transform', `rotate(${rotMatch[1]} ${parseFloat(rotMatch[2]) * s} ${parseFloat(rotMatch[3]) * s})`);
-            }
+            const scaled = t
+                .replace(/translate\(\s*([\d.\-eE+]+)\s*[,\s]\s*([\d.\-eE+]+)\s*\)/g, (_, x, y) =>
+                    `translate(${parseFloat(x) * s}, ${parseFloat(y) * s})`)
+                .replace(/rotate\(\s*([\d.\-eE+]+)\s+([\d.\-eE+]+)\s+([\d.\-eE+]+)\s*\)/g, (_, a, cx, cy) =>
+                    `rotate(${a} ${parseFloat(cx) * s} ${parseFloat(cy) * s})`);
+            el.setAttribute('transform', scaled);
         }
     }
 
@@ -5834,6 +5838,9 @@ async function exportSVG() {
     str = str.replace(/ns\d+:href/g, 'xlink:href');
     // Add Inkscape metadata for K40 Whisperer compatibility
     str = str.replace('<svg ', '<svg xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" inkscape:version="0.92.4" ');
+    // Restore original image hrefs
+    allImages.forEach((img, i) => { img.href = savedHrefs[i]; });
+
     const blob = new Blob([str], {type:'image/svg+xml'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a'); a.href = url; a.download = 'dibujo.svg';
@@ -5929,9 +5936,8 @@ async function copySelectedAsSVG() {
             img.setAttribute('x', obj.x * S); img.setAttribute('y', obj.y * S);
             img.setAttribute('width', obj.width * S); img.setAttribute('height', obj.height * S);
             img.setAttribute('preserveAspectRatio', 'none');
-            const _href = (typeof imageHrefCache !== 'undefined' && imageHrefCache[obj.href]) || obj.href;
-            img.setAttributeNS(xlink, 'xlink:href', _href);
-            img.setAttribute('href', _href);
+            img.setAttributeNS(xlink, 'xlink:href', obj.href);
+            img.setAttribute('href', obj.href);
             if (obj.rotation) {
                 const cx = (obj.x + obj.width/2) * S, cy = (obj.y + obj.height/2) * S;
                 img.setAttribute('transform', `rotate(${obj.rotation} ${cx} ${cy})`);
