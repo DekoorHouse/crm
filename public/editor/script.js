@@ -8561,43 +8561,33 @@ function scaleTranslatePath(d, sx, sy, tx, ty) {
 }
 
 const vectState = {
-    sourceImage: null, sourceImageData: null, fullImageData: null,
-    editorTarget: null, tracedPaths: [], debounceTimer: null,
+    sourceImage: null, fullCanvas: null, previewCanvas: null,
+    editorTarget: null, tracedSVG: '', tracedPaths: [], debounceTimer: null,
     currentMode: 'lineart', isTracing: false, previewZoom: 1,
-};
-
-const VECT_PRESETS = {
-    lineart: { colorsampling: 0, numberofcolors: 2, mincolorratio: 0, colorquantcycles: 1, ltres: 1, qtres: 1, pathomit: 8, blurradius: 0, blurdelta: 20, strokewidth: 0 },
-    detailed: { colorsampling: 2, numberofcolors: 8, mincolorratio: 0.02, colorquantcycles: 3, ltres: 1, qtres: 1, pathomit: 4, blurradius: 0, blurdelta: 20, strokewidth: 0 },
-    color: { colorsampling: 2, numberofcolors: 24, mincolorratio: 0.01, colorquantcycles: 5, ltres: 1, qtres: 1, pathomit: 4, blurradius: 2, blurdelta: 40, strokewidth: 0 },
 };
 
 function showVectorizeModal(imageObj) {
     document.getElementById('vectorize-modal').classList.remove('hidden');
     vectState.editorTarget = imageObj || null;
-    vectState.tracedPaths = [];
+    vectState.tracedPaths = []; vectState.tracedSVG = '';
     document.getElementById('vect-apply-btn').disabled = true;
     document.getElementById('vect-info-row').textContent = '';
     document.getElementById('vect-placeholder').style.display = '';
-    // Reset mode
     document.querySelectorAll('.vect-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'lineart'));
     vectState.currentMode = 'lineart';
     vectUpdateSliderVisibility();
-    // Reset sliders
     document.getElementById('vect-threshold').value = 128; document.getElementById('vect-threshold-val').textContent = '128';
     document.getElementById('vect-colors').value = 8; document.getElementById('vect-colors-val').textContent = '8';
     document.getElementById('vect-detail').value = 1; document.getElementById('vect-detail-val').textContent = '1';
     document.getElementById('vect-smooth').value = 1; document.getElementById('vect-smooth-val').textContent = '1';
-    document.getElementById('vect-despeckle').value = 8; document.getElementById('vect-despeckle-val').textContent = '8';
+    document.getElementById('vect-despeckle').value = 2; document.getElementById('vect-despeckle-val').textContent = '2';
     document.getElementById('vect-blur').value = 0; document.getElementById('vect-blur-val').textContent = '0';
-    // View toggle + zoom reset
     vectState.previewZoom = 1;
     document.getElementById('vect-view-result').classList.add('active');
     document.getElementById('vect-view-original').classList.remove('active');
     document.getElementById('vect-result-container').style.display = '';
     document.getElementById('vect-orig-container').style.display = 'none';
     vectApplyZoom();
-    // Source row
     const srcRow = document.getElementById('vect-source-row');
     if (imageObj) {
         srcRow.style.display = 'none';
@@ -8611,19 +8601,18 @@ function showVectorizeModal(imageObj) {
 
 function hideVectorizeModal() {
     document.getElementById('vectorize-modal').classList.add('hidden');
-    vectState.sourceImage = null; vectState.sourceImageData = null; vectState.fullImageData = null;
-    vectState.editorTarget = null; vectState.tracedPaths = [];
+    vectState.sourceImage = null; vectState.fullCanvas = null; vectState.previewCanvas = null;
+    vectState.editorTarget = null; vectState.tracedPaths = []; vectState.tracedSVG = '';
     if (vectState.debounceTimer) clearTimeout(vectState.debounceTimer);
 }
 
 function vectLoadImageFromObject(obj) {
     const img = new Image();
     img.crossOrigin = 'anonymous';
-    img.onload = () => { vectState.sourceImage = img; vectPrepareImageData(); vectRunTrace(); };
+    img.onload = () => { vectState.sourceImage = img; vectPrepareCanvases(); vectRunTrace(); };
     img.onerror = () => {
-        // Retry without crossOrigin for data URLs
         const img2 = new Image();
-        img2.onload = () => { vectState.sourceImage = img2; vectPrepareImageData(); vectRunTrace(); };
+        img2.onload = () => { vectState.sourceImage = img2; vectPrepareCanvases(); vectRunTrace(); };
         img2.src = obj.href;
     };
     img.src = obj.href;
@@ -8633,22 +8622,22 @@ function vectLoadImageFromFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const img = new Image();
-        img.onload = () => { vectState.sourceImage = img; vectPrepareImageData(); vectRunTrace(); };
+        img.onload = () => { vectState.sourceImage = img; vectPrepareCanvases(); vectRunTrace(); };
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
 }
 
-function vectPrepareImageData() {
+function vectPrepareCanvases() {
     const img = vectState.sourceImage;
     if (!img) return;
-    // Full resolution
+    // Full resolution canvas
     const fc = document.createElement('canvas');
     fc.width = img.naturalWidth; fc.height = img.naturalHeight;
     fc.getContext('2d').drawImage(img, 0, 0);
-    vectState.fullImageData = fc.getContext('2d').getImageData(0, 0, fc.width, fc.height);
-    // Downscale for preview (max 600px)
-    const maxDim = 600;
+    vectState.fullCanvas = fc;
+    // Downscale for preview (max 800px)
+    const maxDim = 800;
     let pw = img.naturalWidth, ph = img.naturalHeight;
     if (pw > maxDim || ph > maxDim) {
         const ratio = Math.min(maxDim / pw, maxDim / ph);
@@ -8657,8 +8646,8 @@ function vectPrepareImageData() {
     const pc = document.createElement('canvas');
     pc.width = pw; pc.height = ph;
     pc.getContext('2d').drawImage(img, 0, 0, pw, ph);
-    vectState.sourceImageData = pc.getContext('2d').getImageData(0, 0, pw, ph);
-    // Show original in orig container
+    vectState.previewCanvas = pc;
+    // Show original
     const origCont = document.getElementById('vect-orig-container');
     origCont.innerHTML = '';
     const origImg = document.createElement('img');
@@ -8667,74 +8656,143 @@ function vectPrepareImageData() {
     document.getElementById('vect-placeholder').style.display = 'none';
 }
 
-function vectThresholdImageData(imageData, threshold) {
-    const copy = new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
-    const d = copy.data;
-    for (let i = 0; i < d.length; i += 4) {
-        const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
-        const v = gray < threshold ? 0 : 255;
-        d[i] = d[i+1] = d[i+2] = v;
-        d[i+3] = 255;
+// Preprocess canvas: apply threshold (for B/W) or blur, return data URL
+function vectPreprocessCanvas(canvas, mode) {
+    const c = document.createElement('canvas');
+    c.width = canvas.width; c.height = canvas.height;
+    const ctx = c.getContext('2d');
+    // Apply blur if needed
+    const blur = parseInt(document.getElementById('vect-blur').value);
+    if (blur > 0) ctx.filter = `blur(${blur}px)`;
+    ctx.drawImage(canvas, 0, 0);
+    ctx.filter = 'none';
+    if (mode === 'lineart') {
+        const threshold = parseInt(document.getElementById('vect-threshold').value);
+        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+        const d = imgData.data;
+        for (let i = 0; i < d.length; i += 4) {
+            const gray = d[i] * 0.299 + d[i+1] * 0.587 + d[i+2] * 0.114;
+            const v = gray < threshold ? 0 : 255;
+            d[i] = d[i+1] = d[i+2] = v; d[i+3] = 255;
+        }
+        ctx.putImageData(imgData, 0, 0);
+    } else if (mode === 'detailed' || mode === 'color') {
+        // Posterize: reduce colors
+        const nColors = parseInt(document.getElementById('vect-colors').value);
+        const imgData = ctx.getImageData(0, 0, c.width, c.height);
+        const d = imgData.data;
+        const levels = Math.max(2, nColors);
+        const step = 255 / (levels - 1);
+        for (let i = 0; i < d.length; i += 4) {
+            d[i]   = Math.round(Math.round(d[i]   / step) * step);
+            d[i+1] = Math.round(Math.round(d[i+1] / step) * step);
+            d[i+2] = Math.round(Math.round(d[i+2] / step) * step);
+        }
+        ctx.putImageData(imgData, 0, 0);
     }
-    return copy;
-}
-
-function vectBuildOptions() {
-    const base = { ...VECT_PRESETS[vectState.currentMode] };
-    base.ltres = parseFloat(document.getElementById('vect-detail').value);
-    base.qtres = parseFloat(document.getElementById('vect-smooth').value);
-    base.pathomit = parseInt(document.getElementById('vect-despeckle').value);
-    base.blurradius = parseInt(document.getElementById('vect-blur').value);
-    if (vectState.currentMode !== 'lineart') {
-        base.numberofcolors = parseInt(document.getElementById('vect-colors').value);
-    }
-    return base;
+    return c.toDataURL('image/png');
 }
 
 function vectRunTrace() {
-    if (!vectState.sourceImageData || vectState.isTracing) return;
-    if (typeof ImageTracer === 'undefined') { console.error('ImageTracer not loaded'); return; }
+    if (!vectState.previewCanvas || vectState.isTracing) return;
+    if (typeof Potrace === 'undefined') { console.error('Potrace not loaded'); return; }
     vectState.isTracing = true;
-    const options = vectBuildOptions();
-    let imageData = vectState.sourceImageData;
-    if (vectState.currentMode === 'lineart') {
-        imageData = vectThresholdImageData(imageData, parseInt(document.getElementById('vect-threshold').value));
-    }
-    setTimeout(() => {
-        try {
-            const svgStr = ImageTracer.imagedataToSVG(imageData, options);
-            vectState.tracedPaths = vectParseSVGPaths(svgStr, imageData.width, imageData.height);
-            vectUpdatePreview(imageData.width, imageData.height);
-            const info = document.getElementById('vect-info-row');
-            info.textContent = `${vectState.tracedPaths.length} paths`;
+    const mode = vectState.currentMode;
+    const dataUrl = vectPreprocessCanvas(vectState.previewCanvas, mode);
+    const alphamax = parseFloat(document.getElementById('vect-smooth').value);
+    const turdsize = parseInt(document.getElementById('vect-despeckle').value);
+    const opttolerance = parseFloat(document.getElementById('vect-detail').value) * 0.2;
+
+    if (mode === 'lineart') {
+        // Single B/W trace with Potrace
+        Potrace.loadImageFromUrl(dataUrl);
+        Potrace.setParameter({ alphamax, turdsize, optcurve: true, opttolerance });
+        Potrace.process(() => {
+            const svgStr = Potrace.getSVG(1);
+            vectState.tracedSVG = svgStr;
+            vectState.tracedPaths = vectParsePotraceSVG(svgStr);
+            vectUpdatePreview(vectState.previewCanvas.width, vectState.previewCanvas.height);
+            document.getElementById('vect-info-row').textContent = `${vectState.tracedPaths.length} path(s)`;
             document.getElementById('vect-apply-btn').disabled = vectState.tracedPaths.length === 0;
-        } catch (e) { console.error('Trace error:', e); }
-        vectState.isTracing = false;
-    }, 10);
+            vectState.isTracing = false;
+        });
+    } else {
+        // Multi-color: posterize image, extract unique colors, trace each color layer
+        const c = document.createElement('canvas');
+        c.width = vectState.previewCanvas.width; c.height = vectState.previewCanvas.height;
+        const ctx = c.getContext('2d');
+        const img = new Image();
+        img.onload = () => {
+            ctx.drawImage(img, 0, 0);
+            const imgData = ctx.getImageData(0, 0, c.width, c.height);
+            // Find unique colors
+            const colorSet = new Set();
+            const d = imgData.data;
+            for (let i = 0; i < d.length; i += 4) {
+                colorSet.add(`${d[i]},${d[i+1]},${d[i+2]}`);
+            }
+            const colors = [...colorSet].map(s => s.split(',').map(Number));
+            // Skip the most common color (background)
+            const colorCounts = {};
+            for (let i = 0; i < d.length; i += 4) {
+                const key = `${d[i]},${d[i+1]},${d[i+2]}`;
+                colorCounts[key] = (colorCounts[key] || 0) + 1;
+            }
+            const bgColor = Object.entries(colorCounts).sort((a, b) => b[1] - a[1])[0][0];
+
+            const allPaths = [];
+            let pending = colors.length;
+            const checkDone = () => {
+                if (--pending <= 0) {
+                    vectState.tracedPaths = allPaths;
+                    vectUpdatePreview(c.width, c.height);
+                    document.getElementById('vect-info-row').textContent = `${allPaths.length} path(s), ${colors.length} colores`;
+                    document.getElementById('vect-apply-btn').disabled = allPaths.length === 0;
+                    vectState.isTracing = false;
+                }
+            };
+            for (const [r, g, b] of colors) {
+                const key = `${r},${g},${b}`;
+                if (key === bgColor) { checkDone(); continue; }
+                // Create binary mask for this color
+                const mask = document.createElement('canvas');
+                mask.width = c.width; mask.height = c.height;
+                const mctx = mask.getContext('2d');
+                const mData = mctx.createImageData(c.width, c.height);
+                const md = mData.data;
+                for (let i = 0; i < d.length; i += 4) {
+                    const isColor = d[i] === r && d[i+1] === g && d[i+2] === b;
+                    md[i] = md[i+1] = md[i+2] = isColor ? 0 : 255;
+                    md[i+3] = 255;
+                }
+                mctx.putImageData(mData, 0, 0);
+                const maskUrl = mask.toDataURL('image/png');
+                const fill = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+                Potrace.loadImageFromUrl(maskUrl);
+                Potrace.setParameter({ alphamax, turdsize, optcurve: true, opttolerance });
+                Potrace.process(() => {
+                    const svg = Potrace.getSVG(1);
+                    const paths = vectParsePotraceSVG(svg);
+                    for (const p of paths) { p.fill = fill; }
+                    allPaths.push(...paths);
+                    checkDone();
+                });
+            }
+        };
+        img.src = dataUrl;
+    }
 }
 
-function vectParseSVGPaths(svgStr, w, h) {
+function vectParsePotraceSVG(svgStr) {
     const parser = new DOMParser();
     const doc = parser.parseFromString(svgStr, 'image/svg+xml');
     const paths = doc.querySelectorAll('path');
     const result = [];
-    for (let i = 0; i < paths.length; i++) {
-        const p = paths[i];
+    for (const p of paths) {
         const d = p.getAttribute('d');
-        if (!d) continue;
-        let fill = p.getAttribute('fill') || 'none';
-        const opacity = parseFloat(p.getAttribute('opacity') || p.getAttribute('fill-opacity') || '1');
-        // Convert rgb() to hex
-        const rgbMatch = fill.match(/rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)/);
-        if (rgbMatch) {
-            fill = '#' + [rgbMatch[1], rgbMatch[2], rgbMatch[3]].map(v => parseInt(v).toString(16).padStart(2, '0')).join('');
-        }
-        // Skip background (first path, very light color or white in lineart)
-        if (i === 0 && vectState.currentMode === 'lineart') {
-            if (fill === '#ffffff' || fill === '#fefefe' || fill === 'white') continue;
-        }
-        // Skip nearly invisible
-        if (opacity < 0.01) continue;
+        if (!d || d.trim().length < 5) continue;
+        let fill = p.getAttribute('fill') || '#000000';
+        if (fill === 'none' || fill === 'white' || fill === '#ffffff') continue;
         result.push({ d, fill });
     }
     return result;
@@ -8786,27 +8844,16 @@ function vectUpdateSliderVisibility() {
 
 function vectApplyToCanvas() {
     if (vectState.tracedPaths.length === 0) return;
-    // Re-trace at full resolution
-    const fullOpts = vectBuildOptions();
-    let fullData = vectState.fullImageData;
-    if (vectState.currentMode === 'lineart') {
-        fullData = vectThresholdImageData(fullData, parseInt(document.getElementById('vect-threshold').value));
-    }
-    let finalPaths;
-    try {
-        const fullSvg = ImageTracer.imagedataToSVG(fullData, fullOpts);
-        finalPaths = vectParseSVGPaths(fullSvg, fullData.width, fullData.height);
-    } catch(e) {
-        finalPaths = vectState.tracedPaths; // fallback to preview paths
-    }
-    if (finalPaths.length === 0) return;
-
+    // Use the preview trace paths (already good quality from Potrace)
+    // Scale from preview canvas size to editor object size
+    const finalPaths = vectState.tracedPaths;
     saveUndoState();
     const prevBatch = _batchImporting;
     _batchImporting = true;
 
     const imgObj = vectState.editorTarget;
-    const traceW = fullData.width, traceH = fullData.height;
+    const pc = vectState.previewCanvas;
+    const traceW = pc ? pc.width : 1, traceH = pc ? pc.height : 1;
     const targetX = imgObj ? imgObj.x : 0;
     const targetY = imgObj ? imgObj.y : 0;
     const targetW = imgObj ? imgObj.width : traceW;
@@ -8814,44 +8861,32 @@ function vectApplyToCanvas() {
     const scaleX = targetW / traceW, scaleY = targetH / traceH;
     const ns = 'http://www.w3.org/2000/svg';
 
-    // For lineart mode, merge all paths into one
-    if (vectState.currentMode === 'lineart') {
-        const mergedD = finalPaths.map(p => p.d).join(' ');
+    // Merge all same-color paths
+    const byColor = {};
+    for (const p of finalPaths) {
+        if (!byColor[p.fill]) byColor[p.fill] = [];
+        byColor[p.fill].push(p.d);
+    }
+
+    for (const [fill, dArr] of Object.entries(byColor)) {
+        const mergedD = dArr.join(' ');
         const scaledD = scaleTranslatePath(mergedD, scaleX, scaleY, targetX, targetY);
         const tempPath = document.createElementNS(ns, 'path');
         tempPath.setAttribute('d', scaledD);
         objectsLayer.appendChild(tempPath);
         const bb = tempPath.getBBox();
         objectsLayer.removeChild(tempPath);
-        if (bb.width > 0.01 || bb.height > 0.01) {
-            createObject('curvepath', {
-                d: scaledD, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
-                _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
-                fill: '#000000', stroke: 'none', strokeWidth: 0,
-            });
-        }
-    } else {
-        for (const p of finalPaths) {
-            const scaledD = scaleTranslatePath(p.d, scaleX, scaleY, targetX, targetY);
-            const tempPath = document.createElementNS(ns, 'path');
-            tempPath.setAttribute('d', scaledD);
-            objectsLayer.appendChild(tempPath);
-            const bb = tempPath.getBBox();
-            objectsLayer.removeChild(tempPath);
-            if (bb.width < 0.01 && bb.height < 0.01) continue;
-            createObject('curvepath', {
-                d: scaledD, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
-                _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
-                fill: p.fill, stroke: 'none', strokeWidth: 0,
-            });
-        }
+        if (bb.width < 0.01 && bb.height < 0.01) continue;
+        createObject('curvepath', {
+            d: scaledD, x: bb.x, y: bb.y, width: bb.width || 1, height: bb.height || 1,
+            _origBounds: { x: bb.x, y: bb.y, w: bb.width || 1, h: bb.height || 1 },
+            fill, stroke: 'none', strokeWidth: 0,
+        });
     }
 
-    // Delete original image if checkbox unchecked
     if (!document.getElementById('vect-keep-original').checked && imgObj) {
         deleteObject(imgObj.id);
     }
-
     _batchImporting = prevBatch;
     drawSelection();
     hideVectorizeModal();
