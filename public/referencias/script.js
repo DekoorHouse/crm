@@ -130,7 +130,7 @@ async function submitReferencia(event) {
         updateStarsUI();
         resetPhotoUpload();
         toggleForm();
-        alert('¡Gracias por tu referencia! Será revisada y publicada pronto.');
+        showModal('¡Gracias por tu comentario!');
 
     } catch (error) {
         console.error('Error al publicar:', error);
@@ -244,6 +244,15 @@ function openLightbox(url) {
 function closeLightbox() {
     document.getElementById('lightbox').classList.add('hidden');
     document.getElementById('lightboxImg').src = '';
+}
+
+// --- Modal ---
+function showModal(msg) {
+    document.getElementById('modalMsg').textContent = msg;
+    document.getElementById('customModal').classList.remove('hidden');
+}
+function closeModal() {
+    document.getElementById('customModal').classList.add('hidden');
 }
 
 // --- Utilidades ---
