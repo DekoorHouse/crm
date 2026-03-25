@@ -7427,6 +7427,17 @@ function setupPropsPanel() {
             const gcx = (minX + maxX) / 2, gcy = (minY + maxY) / 2;
             const angleDiff = newRot;
             function rotateObjAround(obj, cx, cy, angle) {
+                if (obj.type === 'group') {
+                    for (const c of obj.children) rotateObjAround(c, cx, cy, angle);
+                    refreshElement(obj);
+                    return;
+                }
+                if (obj.type === 'powerclip') {
+                    rotateObjAround(obj.container, cx, cy, angle);
+                    for (const c of obj.contents) rotateObjAround(c, cx, cy, angle);
+                    refreshElement(obj);
+                    return;
+                }
                 const b = getObjBounds(obj);
                 const ocx = b.x + b.w / 2, ocy = b.y + b.h / 2;
                 const rp = rotatePoint(ocx, ocy, cx, cy, angle);
@@ -7436,11 +7447,6 @@ function setupPropsPanel() {
                     case 'ellipse': obj.cx += dx; obj.cy += dy; break;
                     case 'line': obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
                     case 'bspline': for (const p of obj.points) { p.x += dx; p.y += dy; } break;
-                    case 'group': for (const c of obj.children) rotateObjAround(c, cx, cy, angle); break;
-                    case 'powerclip':
-                        rotateObjAround(obj.container, cx, cy, angle);
-                        for (const c of obj.contents) rotateObjAround(c, cx, cy, angle);
-                        break;
                 }
                 obj.rotation = (obj.rotation || 0) + angle;
                 refreshElement(obj);
