@@ -1010,7 +1010,7 @@ function getObjBounds(obj) {
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
-            return { x, y, w: Math.abs(obj.x2-obj.x1)||1, h: Math.abs(obj.y2-obj.y1)||1 };
+            return { x, y, w: Math.abs(obj.x2-obj.x1), h: Math.abs(obj.y2-obj.y1) };
         }
         case 'bspline': {
             if (!obj.points.length) return {x:0,y:0,w:0,h:0};
