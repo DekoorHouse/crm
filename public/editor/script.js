@@ -1939,7 +1939,7 @@ function calcSnapAdjustment(selectedIds) {
     }
 
     // First pass: euclidean proximity to discrete points (snap both X+Y together)
-    let bestPointDist = threshold * 1.5;
+    let bestPointDist = threshold * 2.5;
     let pointSnap = null, pointSelPt = null;
     for (const sp of selPts) {
         if (sp.type === 'edge' || sp.type === 'edge-dynamic') continue;
@@ -2047,7 +2047,7 @@ function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
 
     // First pass: check for nearby discrete points (nodes, corners, centers, quadrants, endpoints)
     // These snap both X and Y together (euclidean proximity)
-    let bestPointDist = threshold * 1.5;
+    let bestPointDist = threshold * 2.5;
     let pointSnap = null;
     for (const tp of targetPts) {
         if (tp.type === 'edge' || tp.type === 'edge-dynamic') continue;
