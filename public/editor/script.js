@@ -2121,18 +2121,14 @@ function handleMouseDown(e) {
         svg.style.cursor = 'grabbing';
         return;
     }
-    // Right-click on empty space -> pan
+    // Right-click -> pan (works anywhere, including on top of objects)
     if (e.button === 2) {
-        const pt = screenToSVG(e.clientX, e.clientY);
-        const obj = objectAtPoint(pt);
-        if (!obj) {
-            e.preventDefault();
-            state.isPanning = true;
-            state.rightClickPanning = true;
-            state.panStart = {x:e.clientX,y:e.clientY};
-            state.panViewBoxStart = {...state.viewBox};
-            svg.style.cursor = 'grabbing';
-        }
+        e.preventDefault();
+        state.isPanning = true;
+        state.rightClickPanning = true;
+        state.panStart = {x:e.clientX,y:e.clientY};
+        state.panViewBoxStart = {...state.viewBox};
+        svg.style.cursor = 'grabbing';
         return;
     }
     if (e.button !== 0) return;
