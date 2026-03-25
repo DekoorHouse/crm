@@ -8799,14 +8799,16 @@ function vectRunTrace() {
                 document.getElementById('vect-info-row').textContent = `Trazando color ${qi}/${colorQueue.length}...`;
                 Potrace.loadImageFromUrl(maskUrl);
                 Potrace.setParameter({ alphamax, turdsize, optcurve: true, opttolerance });
-                Potrace.process(() => {
-                    const svg = Potrace.getSVG(1);
-                    const paths = vectParsePotraceSVG(svg);
-                    for (const p of paths) { p.fill = fill; }
-                    allPaths.push(...paths);
-                    // Process next color sequentially
-                    setTimeout(traceNext, 0);
-                });
+                // loadImageFromUrl is async (internal Image load). Wait for it to finish.
+                setTimeout(() => {
+                    Potrace.process(() => {
+                        const svg = Potrace.getSVG(1);
+                        const paths = vectParsePotraceSVG(svg);
+                        for (const p of paths) { p.fill = fill; }
+                        allPaths.push(...paths);
+                        setTimeout(traceNext, 0);
+                    });
+                }, 100);
             };
             traceNext();
         };
