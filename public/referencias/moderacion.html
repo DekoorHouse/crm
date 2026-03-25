@@ -266,9 +266,17 @@ function renderRefs() {
             starsHtml += '<i class="fas fa-star ' + (s < ref.rating ? '' : 'empty') + '"></i>';
         }
 
-        var photoHtml = ref.foto
-            ? '<img src="' + ref.foto + '" class="ref-card-photo" alt="Foto" onclick="openLightbox(\'' + ref.foto + '\')" loading="lazy">'
-            : '';
+        var photoHtml = '';
+        var refFotos = ref.fotos || (ref.foto ? [ref.foto] : []);
+        if (refFotos.length === 1) {
+            photoHtml = '<img src="' + refFotos[0] + '" class="ref-card-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">';
+        } else if (refFotos.length > 1) {
+            photoHtml = '<div class="ref-photos-grid ref-photos-' + Math.min(refFotos.length, 5) + '">';
+            for (var f = 0; f < refFotos.length; f++) {
+                photoHtml += '<img src="' + refFotos[f] + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">';
+            }
+            photoHtml += '</div>';
+        }
 
         var nombre = escapeHtml(ref.nombre);
         var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';

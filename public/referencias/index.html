@@ -91,11 +91,12 @@
             <label for="refTexto">Tu opinión</label>
             <textarea id="refTexto" placeholder="Cuéntanos tu experiencia con nuestros productos..." required></textarea>
 
-            <label>Foto del producto (opcional)</label>
+            <label>Fotos del producto (opcional, máx. 5)</label>
             <div class="photo-upload-area" id="photoUploadArea" onclick="document.getElementById('photoInput').click()">
                 <i class="fas fa-camera"></i>
-                <p>Toca para subir una foto</p>
-                <input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)">
+                <p>Toca para subir fotos</p>
+                <p style="font-size:0.8rem;color:var(--text-gray);margin-top:4px;">Máximo 5 fotos</p>
+                <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">
             </div>
 
             <div class="form-actions">

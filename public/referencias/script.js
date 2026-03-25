@@ -13,7 +13,7 @@ const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- Estado ---
 let selectedRating = 0;
-let selectedPhoto = null;
+let selectedPhotos = [];
 
 // --- Toggle formulario ---
 function toggleForm() {
@@ -53,27 +53,63 @@ function highlightStars(val) {
     }
 }
 
-// --- Foto ---
-function previewPhoto(input) {
-    if (input.files && input.files[0]) {
-        selectedPhoto = input.files[0];
-        var reader = new FileReader();
-        reader.onload = function(e) {
-            var area = document.getElementById('photoUploadArea');
-            area.innerHTML =
-                '<img src="' + e.target.result + '" class="preview-img" alt="Preview">' +
-                '<p style="margin-top:8px;color:var(--color-text-light);font-size:0.85rem;">Toca para cambiar</p>' +
-                '<input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)">';
-        };
-        reader.readAsDataURL(input.files[0]);
+// --- Fotos (máximo 5) ---
+function addPhotos(input) {
+    if (!input.files) return;
+    var remaining = 5 - selectedPhotos.length;
+    var files = Array.from(input.files).slice(0, remaining);
+    for (var i = 0; i < files.length; i++) {
+        selectedPhotos.push(files[i]);
+    }
+    renderPhotoPreview();
+}
+
+function removePhoto(index) {
+    selectedPhotos.splice(index, 1);
+    renderPhotoPreview();
+}
+
+function renderPhotoPreview() {
+    var area = document.getElementById('photoUploadArea');
+    if (selectedPhotos.length === 0) {
+        resetPhotoUpload();
+        return;
+    }
+    var html = '<div class="photo-preview-grid">';
+    for (var i = 0; i < selectedPhotos.length; i++) {
+        html += '<div class="photo-preview-item" id="photoPreview' + i + '">' +
+            '<button type="button" class="photo-remove-btn" onclick="removePhoto(' + i + ')">&times;</button>' +
+        '</div>';
+    }
+    if (selectedPhotos.length < 5) {
+        html += '<div class="photo-add-btn" onclick="document.getElementById(\'photoInput\').click()">' +
+            '<i class="fas fa-plus"></i>' +
+        '</div>';
+    }
+    html += '</div>' +
+        '<input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">' +
+        '<p style="margin-top:8px;color:var(--text-gray);font-size:0.8rem;">' + selectedPhotos.length + '/5 fotos</p>';
+    area.innerHTML = html;
+    // Cargar previews
+    for (var j = 0; j < selectedPhotos.length; j++) {
+        (function(idx) {
+            var reader = new FileReader();
+            reader.onload = function(e) {
+                var el = document.getElementById('photoPreview' + idx);
+                if (el) el.style.backgroundImage = 'url(' + e.target.result + ')';
+            };
+            reader.readAsDataURL(selectedPhotos[idx]);
+        })(j);
     }
 }
 
 function resetPhotoUpload() {
+    selectedPhotos = [];
     document.getElementById('photoUploadArea').innerHTML =
         '<i class="fas fa-camera"></i>' +
-        '<p>Toca para subir una foto</p>' +
-        '<input type="file" id="photoInput" accept="image/*" style="display:none" onchange="previewPhoto(this)">';
+        '<p>Toca para subir fotos</p>' +
+        '<p style="font-size:0.8rem;color:var(--text-gray);margin-top:4px;">Máximo 5 fotos</p>' +
+        '<input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">';
 }
 
 // --- Subir referencia ---
@@ -96,17 +132,17 @@ async function submitReferencia(event) {
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Publicando...';
 
     try {
-        var photoUrl = '';
-        if (selectedPhoto) {
+        var fotos = [];
+        for (var p = 0; p < selectedPhotos.length; p++) {
             var formData = new FormData();
-            formData.append('foto', selectedPhoto);
+            formData.append('foto', selectedPhotos[p]);
             var uploadRes = await fetch(API_BASE_URL + '/api/referencias/upload', {
                 method: 'POST',
                 body: formData
             });
             var uploadData = await uploadRes.json();
             if (!uploadRes.ok) throw new Error(uploadData.error || 'Error al subir foto');
-            photoUrl = uploadData.url;
+            fotos.push(uploadData.url);
         }
 
         var docRef = await db.collection('referencias').add({
@@ -114,7 +150,8 @@ async function submitReferencia(event) {
             ciudad: ciudad,
             rating: selectedRating,
             texto: texto,
-            foto: photoUrl,
+            foto: fotos[0] || '',
+            fotos: fotos,
             fecha: firebase.firestore.FieldValue.serverTimestamp(),
             aprobado: false
         });
@@ -125,7 +162,7 @@ async function submitReferencia(event) {
         localStorage.setItem('misReferencias', JSON.stringify(misRefs));
 
         selectedRating = 0;
-        selectedPhoto = null;
+        selectedPhotos = [];
         document.getElementById('refForm').reset();
         updateStarsUI();
         resetPhotoUpload();
@@ -192,9 +229,17 @@ function renderReferencias(refs) {
             starsHtml += '<i class="fas fa-star ' + (s < ref.rating ? '' : 'empty') + '"></i>';
         }
 
-        var photoHtml = ref.foto
-            ? '<img src="' + ref.foto + '" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox(\'' + ref.foto + '\')" loading="lazy">'
-            : '';
+        var photoHtml = '';
+        var refFotos = ref.fotos || (ref.foto ? [ref.foto] : []);
+        if (refFotos.length === 1) {
+            photoHtml = '<img src="' + refFotos[0] + '" class="ref-card-photo" alt="Foto del producto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">';
+        } else if (refFotos.length > 1) {
+            photoHtml = '<div class="ref-photos-grid ref-photos-' + Math.min(refFotos.length, 5) + '">';
+            for (var f = 0; f < refFotos.length; f++) {
+                photoHtml += '<img src="' + refFotos[f] + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">';
+            }
+            photoHtml += '</div>';
+        }
 
         var nombre = escapeHtml(ref.nombre);
         var ciudadHtml = ref.ciudad ? '<span class="ref-city"><i class="fas fa-map-marker-alt"></i> ' + escapeHtml(ref.ciudad) + '</span>' : '';
