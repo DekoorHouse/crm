@@ -7409,9 +7409,43 @@ function setupPropsPanel() {
 
     propRot.addEventListener('change', () => {
         saveUndoState();
-        const obj = findObject(primaryId()); if (!obj) return;
-        obj.rotation = parseFloat(propRot.value) || 0;
-        refreshElement(obj); drawSelection();
+        const newRot = parseFloat(propRot.value) || 0;
+        if (state.selectedIds.length === 1) {
+            const obj = findObject(primaryId()); if (!obj) return;
+            obj.rotation = newRot;
+            refreshElement(obj);
+        } else if (state.selectedIds.length > 1) {
+            // Rotate all selected objects around the group center
+            // First, compute group center
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const id of state.selectedIds) {
+                const obj = findObject(id); if (!obj) continue;
+                const b = getObjBounds(obj);
+                if (b.x < minX) minX = b.x; if (b.y < minY) minY = b.y;
+                if (b.x + b.w > maxX) maxX = b.x + b.w; if (b.y + b.h > maxY) maxY = b.y + b.h;
+            }
+            const gcx = (minX + maxX) / 2, gcy = (minY + maxY) / 2;
+            const angleDiff = newRot; // Apply as absolute rotation around group center
+            for (const id of state.selectedIds) {
+                const obj = findObject(id); if (!obj) continue;
+                const b = getObjBounds(obj);
+                const ocx = b.x + b.w / 2, ocy = b.y + b.h / 2;
+                // Rotate object center around group center
+                const rp = rotatePoint(ocx, ocy, gcx, gcy, angleDiff);
+                const dx = rp.x - ocx, dy = rp.y - ocy;
+                // Move object
+                switch (obj.type) {
+                    case 'rect': case 'image': case 'text': case 'curvepath': obj.x += dx; obj.y += dy; break;
+                    case 'ellipse': obj.cx += dx; obj.cy += dy; break;
+                    case 'line': obj.x1 += dx; obj.y1 += dy; obj.x2 += dx; obj.y2 += dy; break;
+                    case 'bspline': for (const p of obj.points) { p.x += dx; p.y += dy; } break;
+                }
+                // Add rotation to each object
+                obj.rotation = (obj.rotation || 0) + angleDiff;
+                refreshElement(obj);
+            }
+        }
+        drawSelection();
     });
 
     document.getElementById('flip-h-btn').addEventListener('click', () => {
