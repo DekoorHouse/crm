@@ -1068,21 +1068,20 @@ function getSnapPoints(obj) {
     const rot = obj.rotation || 0;
     // Center (rotation doesn't move the center)
     pts.push({ x: cx, y: cy, type: 'center' });
-    if (obj.type === 'rect' || obj.type === 'image' || obj.type === 'text' || obj.type === 'curvepath') {
+    if (obj.type === 'curvepath') {
+        // Only path nodes — no bounding box corners/edges
+        const nodePts = getEditableNodes(obj);
+        for (const np of nodePts) {
+            const rp = rotatePoint(np.x, np.y, cx, cy, rot);
+            pts.push({...rp, type: 'node'});
+        }
+    } else if (obj.type === 'rect' || obj.type === 'image' || obj.type === 'text') {
         // Corners
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
         for (const c of rawCorners) { const rp = rotatePoint(c.x,c.y,cx,cy,rot); pts.push({...rp,type:'corner'}); }
         // Edge midpoints
         const rawEdges = [{x:b.x+b.w/2,y:b.y},{x:b.x+b.w/2,y:b.y+b.h},{x:b.x,y:b.y+b.h/2},{x:b.x+b.w,y:b.y+b.h/2}];
         for (const e of rawEdges) { const rp = rotatePoint(e.x,e.y,cx,cy,rot); pts.push({...rp,type:'edge'}); }
-        // For curvepath: also add path nodes as snap points
-        if (obj.type === 'curvepath') {
-            const nodePts = getEditableNodes(obj);
-            for (const np of nodePts) {
-                const rp = rotatePoint(np.x, np.y, cx, cy, rot);
-                pts.push({...rp, type: 'node'});
-            }
-        }
     } else if (obj.type === 'group') {
         // Group bounding box snap points
         const rawCorners = [{x:b.x,y:b.y},{x:b.x+b.w,y:b.y},{x:b.x,y:b.y+b.h},{x:b.x+b.w,y:b.y+b.h}];
