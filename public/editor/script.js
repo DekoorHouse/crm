@@ -44,6 +44,7 @@ const TOOL_NAMES = {
     line:    'Línea',
     bspline: 'B-Spline',
     text:    'Texto',
+    vsdelete: 'Eliminar Segmento Virtual',
 };
 
 const FONT_BASE = 'https://raw.githubusercontent.com/google/fonts/main/';
@@ -285,6 +286,7 @@ function saveUndoState() {
     if (undoStack.length > MAX_UNDO) undoStack.shift();
     redoStack.length = 0; // clear redo on new action
     markDirty();
+    if (typeof vsDeleteInvalidateCache === 'function') vsDeleteInvalidateCache();
 }
 
 function restoreSnapshot(json) {
@@ -308,6 +310,7 @@ function restoreSnapshot(json) {
     state.selectedIds = snapshot.selectedIds;
     drawSelection();
     updatePropsPanel();
+    if (typeof vsDeleteInvalidateCache === 'function') vsDeleteInvalidateCache();
 }
 
 function undo() {
@@ -2071,6 +2074,7 @@ function handleMouseDown(e) {
         case 'rect': case 'ellipse': case 'line': handleShapeDown(pt); break;
         case 'bspline': handleBSplineClick(pt); break;
         case 'text': handleTextClick(pt, e); break;
+        case 'vsdelete': handleVSDeleteClick(pt); break;
     }
 }
 
@@ -2115,6 +2119,10 @@ function handleMouseMove(e) {
     if (_moveRafId) return;
     _moveRafId = requestAnimationFrame(() => {
         _moveRafId = null;
+        if (state.tool === 'vsdelete') {
+            handleVSDeleteMove(pt);
+            return;
+        }
         if (state.tool === 'bspline' && state.bsplinePoints.length > 0) updateBSplinePreview(pt);
         drawSnapIndicators(pt);
         if (state.pendingSVGImport) {
@@ -7425,6 +7433,7 @@ function setupEventListeners() {
             case 'l': setTool('line'); break;
             case 'b': setTool('bspline'); break;
             case 't': setTool('text'); break;
+            case 'x': setTool('vsdelete'); break;
             case 'enter':
                 if (state.tool === 'bspline' && state.bsplinePoints.length >= 2) {
                     const obj = createObject('bspline', { points: [...state.bsplinePoints] });
@@ -7800,6 +7809,430 @@ function setupMobile() {
     }
 }
 
+// =============================================
+// VIRTUAL SEGMENT DELETE TOOL
+// =============================================
+
+// Sample a path-like object into world-coordinate polyline
+// Returns [{x, y, len}] where len is the local path length parameter
+function vsDeleteSamplePath(obj) {
+    if (obj.type === 'curvepath') {
+        const elem = obj.element;
+        if (!elem || typeof elem.getTotalLength !== 'function') return null;
+        try {
+            const totalLen = elem.getTotalLength();
+            if (totalLen < 0.01) return null;
+            const ctm = elem.getCTM();
+            const svgCTM = svg.getCTM();
+            if (!ctm || !svgCTM) return null;
+            const rel = svgCTM.inverse().multiply(ctm);
+            const steps = Math.min(300, Math.max(80, Math.ceil(totalLen / 2)));
+            const samples = [];
+            for (let i = 0; i <= steps; i++) {
+                const l = (i / steps) * totalLen;
+                const p = elem.getPointAtLength(l);
+                samples.push({
+                    x: rel.a * p.x + rel.c * p.y + rel.e,
+                    y: rel.b * p.x + rel.d * p.y + rel.f,
+                    len: l
+                });
+            }
+            return { objId: obj.id, samples, totalLen };
+        } catch(e) { return null; }
+    } else if (obj.type === 'line') {
+        return {
+            objId: obj.id,
+            samples: [
+                { x: obj.x1, y: obj.y1, len: 0 },
+                { x: obj.x2, y: obj.y2, len: Math.hypot(obj.x2-obj.x1, obj.y2-obj.y1) }
+            ],
+            totalLen: Math.hypot(obj.x2-obj.x1, obj.y2-obj.y1)
+        };
+    }
+    return null;
+}
+
+// Line segment intersection: returns {x,y,t1,t2} or null
+function vsSegSegIntersect(a1, a2, b1, b2) {
+    const d1x = a2.x - a1.x, d1y = a2.y - a1.y;
+    const d2x = b2.x - b1.x, d2y = b2.y - b1.y;
+    const cross = d1x * d2y - d1y * d2x;
+    if (Math.abs(cross) < 1e-10) return null;
+    const t = ((b1.x - a1.x) * d2y - (b1.y - a1.y) * d2x) / cross;
+    const u = ((b1.x - a1.x) * d1y - (b1.y - a1.y) * d1x) / cross;
+    if (t > 0.001 && t < 0.999 && u > 0.001 && u < 0.999) {
+        return { x: a1.x + t * d1x, y: a1.y + t * d1y, t1: t, t2: u };
+    }
+    return null;
+}
+
+// Find all intersections between all path objects
+function vsDeleteFindAllIntersections() {
+    const pathObjs = state.objects.filter(o => o.type === 'curvepath' || o.type === 'line');
+    const sampled = [];
+    for (const obj of pathObjs) {
+        const s = vsDeleteSamplePath(obj);
+        if (s) sampled.push(s);
+    }
+    const intersections = []; // [{x,y, objId1, len1, objId2, len2}]
+    for (let a = 0; a < sampled.length; a++) {
+        for (let b = a; b < sampled.length; b++) {
+            const sa = sampled[a], sb = sampled[b];
+            const isSelf = (a === b);
+            for (let i = 0; i < sa.samples.length - 1; i++) {
+                const jStart = isSelf ? i + 2 : 0; // skip adjacent for self-intersection
+                for (let j = jStart; j < sb.samples.length - 1; j++) {
+                    const hit = vsSegSegIntersect(sa.samples[i], sa.samples[i+1], sb.samples[j], sb.samples[j+1]);
+                    if (hit) {
+                        const len1 = sa.samples[i].len + hit.t1 * (sa.samples[i+1].len - sa.samples[i].len);
+                        const len2 = sb.samples[j].len + hit.t2 * (sb.samples[j+1].len - sb.samples[j].len);
+                        // Avoid duplicate intersections (very close points)
+                        const isDup = intersections.some(ix =>
+                            Math.hypot(ix.x - hit.x, ix.y - hit.y) < 0.5
+                        );
+                        if (!isDup) {
+                            intersections.push({ x: hit.x, y: hit.y, objId1: sa.objId, len1, objId2: sb.objId, len2 });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return { intersections, sampled };
+}
+
+// For a given object and a click length-parameter, find the virtual segment bounds
+// Returns { startLen, endLen } — the intersection/endpoint lengths that bracket the click
+function vsDeleteFindSegmentBounds(objId, clickLen, totalLen, intersections) {
+    // Gather all intersection lengths for this object
+    const cuts = [0, totalLen]; // endpoints
+    for (const ix of intersections) {
+        if (ix.objId1 === objId) cuts.push(ix.len1);
+        if (ix.objId2 === objId) cuts.push(ix.len2);
+    }
+    cuts.sort((a, b) => a - b);
+    // Find which segment contains the click
+    for (let i = 0; i < cuts.length - 1; i++) {
+        if (clickLen >= cuts[i] && clickLen <= cuts[i + 1]) {
+            return { startLen: cuts[i], endLen: cuts[i + 1] };
+        }
+    }
+    return null;
+}
+
+// Get world-space polyline for a virtual segment (for highlighting)
+function vsDeleteGetSegmentPolyline(sampledPath, startLen, endLen) {
+    const pts = [];
+    for (const s of sampledPath.samples) {
+        if (s.len >= startLen && s.len <= endLen) {
+            pts.push({ x: s.x, y: s.y });
+        }
+    }
+    // Ensure we include interpolated start/end points
+    if (pts.length > 0) return pts;
+    return null;
+}
+
+// Find closest path and length parameter for a world point
+function vsDeleteClosestPath(pt, sampled) {
+    let bestDist = Infinity, bestObjId = null, bestLen = 0, bestSampled = null;
+    const screenScale = _cachedScreenScale;
+    const threshold = 8 * screenScale;
+    for (const sp of sampled) {
+        for (let i = 0; i < sp.samples.length - 1; i++) {
+            const a = sp.samples[i], b = sp.samples[i + 1];
+            const d = distToSeg(pt, a, b);
+            if (d < bestDist && d < threshold) {
+                bestDist = d;
+                bestObjId = sp.objId;
+                bestSampled = sp;
+                // Project pt onto segment to get length param
+                const dx = b.x - a.x, dy = b.y - a.y, len2 = dx*dx + dy*dy;
+                let t = len2 > 0 ? Math.max(0, Math.min(1, ((pt.x-a.x)*dx + (pt.y-a.y)*dy) / len2)) : 0;
+                bestLen = a.len + t * (b.len - a.len);
+            }
+        }
+    }
+    return bestObjId ? { objId: bestObjId, len: bestLen, dist: bestDist, sampled: bestSampled } : null;
+}
+
+// --- De Casteljau cubic bezier split ---
+function lerpPt(a, b, t) { return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t }; }
+
+function splitCubicAt(p0, p1, p2, p3, t) {
+    const a = lerpPt(p0, p1, t), b = lerpPt(p1, p2, t), c = lerpPt(p2, p3, t);
+    const d = lerpPt(a, b, t), e = lerpPt(b, c, t);
+    const f = lerpPt(d, e, t);
+    return {
+        left:  { p0, p1: a, p2: d, p3: f },
+        right: { p0: f, p1: e, p2: c, p3 }
+    };
+}
+
+// Build a cumulative length table for parsed path commands using the SVG element
+function vsDeleteBuildLenTable(obj) {
+    const elem = obj.element;
+    if (!elem || typeof elem.getTotalLength !== 'function') return null;
+    const totalLen = elem.getTotalLength();
+    const cmds = parseSVGPath(obj.d);
+    if (cmds.length === 0) return null;
+
+    // Walk through commands, tracking current point to compute segment lengths
+    // We use getPointAtLength to find where each segment boundary falls
+    const table = []; // [{segIdx, startLen, endLen}]
+    let curX = 0, curY = 0;
+    const ctm = elem.getCTM();
+    const svgCTM = svg.getCTM();
+    if (!ctm || !svgCTM) return null;
+    const rel = svgCTM.inverse().multiply(ctm);
+    // Inverse transform: world -> local
+    const det = rel.a * rel.d - rel.b * rel.c;
+    if (Math.abs(det) < 1e-10) return null;
+
+    // Walk segments by checking which length corresponds to each endpoint
+    let accLen = 0;
+    for (let si = 0; si < cmds.length; si++) {
+        const seg = cmds[si];
+        if (seg.cmd === 'M') {
+            curX = seg.pts[0].x; curY = seg.pts[0].y;
+            table.push({ segIdx: si, startLen: accLen, endLen: accLen });
+            continue;
+        }
+        if (seg.cmd === 'Z') {
+            table.push({ segIdx: si, startLen: accLen, endLen: accLen });
+            continue;
+        }
+        // Find the endpoint of this segment in world coords
+        const endPt = seg.pts[seg.pts.length - 1];
+        const wx = rel.a * endPt.x + rel.c * endPt.y + rel.e;
+        const wy = rel.b * endPt.x + rel.d * endPt.y + rel.f;
+        // Binary search for the length that reaches this world point
+        let lo = accLen, hi = totalLen, bestL = accLen;
+        for (let iter = 0; iter < 40; iter++) {
+            const mid = (lo + hi) / 2;
+            const mp = elem.getPointAtLength(mid);
+            const mwx = rel.a * mp.x + rel.c * mp.y + rel.e;
+            const mwy = rel.b * mp.x + rel.d * mp.y + rel.f;
+            const dist = Math.hypot(mwx - wx, mwy - wy);
+            if (dist < 0.3) { bestL = mid; break; }
+            // Check if we overshot by comparing with a slightly further point
+            const mp2 = elem.getPointAtLength(Math.min(mid + 0.5, totalLen));
+            const mwx2 = rel.a * mp2.x + rel.c * mp2.y + rel.e;
+            const mwy2 = rel.b * mp2.x + rel.d * mp2.y + rel.f;
+            if (Math.hypot(mwx2 - wx, mwy2 - wy) < dist) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+            bestL = mid;
+        }
+        const segStartLen = accLen;
+        accLen = bestL;
+        table.push({ segIdx: si, startLen: segStartLen, endLen: accLen });
+        curX = endPt.x; curY = endPt.y;
+    }
+    return { cmds, table, totalLen };
+}
+
+// Delete a virtual segment from a curvepath, splitting at startLen and endLen
+function vsDeleteExecute(obj, startLen, endLen, allIntersections) {
+    if (obj.type === 'line') {
+        // For simple lines, just delete the whole object
+        saveUndoState();
+        state.objects = state.objects.filter(o => o.id !== obj.id);
+        if (obj.element) obj.element.remove();
+        state.selectedIds = []; drawSelection(); updatePropsPanel();
+        return;
+    }
+    if (obj.type !== 'curvepath') return;
+
+    saveUndoState();
+    const elem = obj.element;
+    if (!elem || typeof elem.getTotalLength !== 'function') return;
+    const totalLen = elem.getTotalLength();
+    const ctm = elem.getCTM();
+    const svgCTM = svg.getCTM();
+    if (!ctm || !svgCTM) return;
+    const rel = svgCTM.inverse().multiply(ctm);
+
+    // Gather all cut points (intersection lengths) on this object, sorted
+    const cuts = [];
+    for (const ix of allIntersections) {
+        if (ix.objId1 === obj.id) cuts.push(ix.len1);
+        if (ix.objId2 === obj.id) cuts.push(ix.len2);
+    }
+    cuts.push(0, totalLen);
+    cuts.sort((a, b) => a - b);
+
+    // Build sub-paths: each contiguous range NOT in [startLen, endLen]
+    // A segment [cuts[i], cuts[i+1]] is kept if it doesn't overlap with [startLen, endLen]
+    const keptRanges = [];
+    for (let i = 0; i < cuts.length - 1; i++) {
+        const s = cuts[i], e = cuts[i + 1];
+        const mid = (s + e) / 2;
+        if (mid < startLen || mid > endLen) {
+            keptRanges.push({ s, e });
+        }
+    }
+
+    // Merge adjacent kept ranges
+    const merged = [];
+    for (const r of keptRanges) {
+        if (merged.length > 0 && Math.abs(merged[merged.length-1].e - r.s) < 0.5) {
+            merged[merged.length-1].e = r.e;
+        } else {
+            merged.push({ ...r });
+        }
+    }
+
+    if (merged.length === 0) {
+        // Delete entire object
+        state.objects = state.objects.filter(o => o.id !== obj.id);
+        if (obj.element) obj.element.remove();
+        state.selectedIds = []; drawSelection(); updatePropsPanel();
+        return;
+    }
+
+    // Sample each kept range and create new curvepath objects
+    const ns = 'http://www.w3.org/2000/svg';
+    const newObjects = [];
+    for (const range of merged) {
+        const rangeLen = range.e - range.s;
+        if (rangeLen < 0.5) continue;
+        const steps = Math.max(20, Math.ceil(rangeLen / 2));
+        const pts = [];
+        for (let i = 0; i <= steps; i++) {
+            const l = range.s + (i / steps) * rangeLen;
+            const p = elem.getPointAtLength(l);
+            const wx = rel.a * p.x + rel.c * p.y + rel.e;
+            const wy = rel.b * p.x + rel.d * p.y + rel.f;
+            pts.push({ x: wx, y: wy });
+        }
+        if (pts.length < 2) continue;
+
+        // Build a polyline path d-string from world points
+        let d = `M ${pts[0].x.toFixed(2)} ${pts[0].y.toFixed(2)}`;
+        for (let i = 1; i < pts.length; i++) {
+            d += ` L ${pts[i].x.toFixed(2)} ${pts[i].y.toFixed(2)}`;
+        }
+
+        // Compute bounds
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const p of pts) {
+            if (p.x < minX) minX = p.x; if (p.y < minY) minY = p.y;
+            if (p.x > maxX) maxX = p.x; if (p.y > maxY) maxY = p.y;
+        }
+        const bw = maxX - minX || 1, bh = maxY - minY || 1;
+
+        const newObj = {
+            id: state.nextId++,
+            type: 'curvepath',
+            d: d,
+            x: minX, y: minY,
+            width: bw, height: bh,
+            _origBounds: { x: minX, y: minY, w: bw, h: bh },
+            fill: obj.fill,
+            stroke: obj.stroke,
+            strokeWidth: obj.strokeWidth,
+            rotation: 0,
+        };
+        newObjects.push(newObj);
+    }
+
+    // Remove original object
+    state.objects = state.objects.filter(o => o.id !== obj.id);
+    if (obj.element) obj.element.remove();
+
+    // Add new objects
+    for (const newObj of newObjects) {
+        const el = buildSVGElement(newObj);
+        newObj.element = el;
+        el.dataset.objectId = newObj.id;
+        objectsLayer.appendChild(el);
+        state.objects.push(newObj);
+    }
+
+    deselectAll();
+}
+
+// --- VS Delete preview/highlight ---
+let _vsDeletePreviewEl = null;
+
+function clearVSDeletePreview() {
+    if (_vsDeletePreviewEl) { _vsDeletePreviewEl.remove(); _vsDeletePreviewEl = null; }
+}
+
+function drawVSDeletePreview(pts) {
+    clearVSDeletePreview();
+    if (!pts || pts.length < 2) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const path = document.createElementNS(ns, 'polyline');
+    const pointsStr = pts.map(p => `${p.x},${p.y}`).join(' ');
+    path.setAttribute('points', pointsStr);
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', '#ff3333');
+    path.setAttribute('stroke-width', 3 * _cachedScreenScale);
+    path.setAttribute('stroke-dasharray', `${6 * _cachedScreenScale} ${4 * _cachedScreenScale}`);
+    path.setAttribute('pointer-events', 'none');
+    // Add to snap layer (above objects and selection)
+    snapLayer.appendChild(path);
+    _vsDeletePreviewEl = path;
+}
+
+// Cached intersection data (recomputed on mouse idle)
+let _vsDeleteCache = null;
+let _vsDeleteCacheDirty = true;
+
+function vsDeleteInvalidateCache() { _vsDeleteCacheDirty = true; _vsDeleteCache = null; }
+
+function handleVSDeleteMove(pt) {
+    if (_vsDeleteCacheDirty || !_vsDeleteCache) {
+        _vsDeleteCache = vsDeleteFindAllIntersections();
+        _vsDeleteCacheDirty = false;
+    }
+    const { intersections, sampled } = _vsDeleteCache;
+    const hit = vsDeleteClosestPath(pt, sampled);
+    if (!hit) { clearVSDeletePreview(); svg.style.cursor = 'crosshair'; return; }
+
+    const sp = sampled.find(s => s.objId === hit.objId);
+    if (!sp) { clearVSDeletePreview(); return; }
+
+    const bounds = vsDeleteFindSegmentBounds(hit.objId, hit.len, sp.totalLen, intersections);
+    if (!bounds) { clearVSDeletePreview(); return; }
+
+    const polyline = vsDeleteGetSegmentPolyline(sp, bounds.startLen, bounds.endLen);
+    if (polyline && polyline.length >= 2) {
+        drawVSDeletePreview(polyline);
+        svg.style.cursor = 'pointer';
+    } else {
+        clearVSDeletePreview();
+        svg.style.cursor = 'crosshair';
+    }
+}
+
+function handleVSDeleteClick(pt) {
+    if (_vsDeleteCacheDirty || !_vsDeleteCache) {
+        _vsDeleteCache = vsDeleteFindAllIntersections();
+        _vsDeleteCacheDirty = false;
+    }
+    const { intersections, sampled } = _vsDeleteCache;
+    const hit = vsDeleteClosestPath(pt, sampled);
+    if (!hit) return;
+
+    const sp = sampled.find(s => s.objId === hit.objId);
+    if (!sp) return;
+
+    const bounds = vsDeleteFindSegmentBounds(hit.objId, hit.len, sp.totalLen, intersections);
+    if (!bounds) return;
+
+    const obj = findObject(hit.objId);
+    if (!obj) return;
+
+    clearVSDeletePreview();
+    vsDeleteExecute(obj, bounds.startLen, bounds.endLen, intersections);
+    vsDeleteInvalidateCache();
+}
+
 function setTool(tool) {
     if (state.nodeEditId) exitNodeEdit();
     if (state.tool === 'bspline' && tool !== 'bspline') {
@@ -7809,7 +8242,8 @@ function setTool(tool) {
     state.tool = tool;
     document.querySelectorAll('.tool-btn').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
     document.getElementById('status-tool').textContent = TOOL_NAMES[tool];
-    svg.style.cursor = tool === 'select' ? 'default' : 'crosshair';
+    svg.style.cursor = tool === 'select' ? 'default' : tool === 'vsdelete' ? 'crosshair' : 'crosshair';
+    if (tool !== 'vsdelete') clearVSDeletePreview();
 }
 
 function updateStatusBar() {
