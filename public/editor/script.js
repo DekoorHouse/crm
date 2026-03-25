@@ -502,6 +502,8 @@ function buildSVGElement(obj) {
             if (obj.fillRule) elem.setAttribute('fill-rule', obj.fillRule);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            elem.setAttribute('stroke-linecap', 'round');
+            elem.setAttribute('stroke-linejoin', 'round');
             // Apply transform for position/scale/flip
             if (obj._origBounds) {
                 const orig = obj._origBounds;
@@ -606,6 +608,8 @@ function buildSVGElement(obj) {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
+        elem.setAttribute('stroke-linecap', 'round');
+        elem.setAttribute('stroke-linejoin', 'round');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     elem.style.cursor = 'pointer';
@@ -699,6 +703,8 @@ function refreshElement(obj) {
             elem.setAttribute('fill', obj.fill);
             elem.setAttribute('stroke', obj.stroke === 'none' ? 'none' : obj.stroke);
             elem.setAttribute('stroke-width', obj.stroke === 'none' ? 0 : obj.strokeWidth);
+            elem.setAttribute('stroke-linecap', 'round');
+            elem.setAttribute('stroke-linejoin', 'round');
             return;
         }
         case 'group':
@@ -713,6 +719,10 @@ function refreshElement(obj) {
         elem.setAttribute('fill', obj.fill);
         elem.setAttribute('stroke', obj.stroke);
         elem.setAttribute('stroke-width', obj.strokeWidth);
+    }
+    if (obj.type !== 'group' && obj.type !== 'image' && obj.type !== 'powerclip' && obj.type !== 'text' && obj.type !== 'curvepath') {
+        elem.setAttribute('stroke-linecap', 'round');
+        elem.setAttribute('stroke-linejoin', 'round');
     }
     if (obj.type !== 'curvepath') applyRotation(obj, elem);
     if (obj.isRefArea) applyRefAreaStyle(obj);
