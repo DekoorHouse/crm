@@ -8037,10 +8037,38 @@ function vsDeleteBuildLenTable(obj) {
 // Delete a virtual segment from a curvepath, splitting at startLen and endLen
 function vsDeleteExecute(obj, startLen, endLen, allIntersections) {
     if (obj.type === 'line') {
-        // For simple lines, just delete the whole object
         saveUndoState();
+        const lineLen = Math.hypot(obj.x2 - obj.x1, obj.y2 - obj.y1);
+        if (lineLen < 0.01) return;
+        // Gather intersection lengths on this line
+        const cuts = [0, lineLen];
+        for (const ix of allIntersections) {
+            if (ix.objId1 === obj.id) cuts.push(ix.len1);
+            if (ix.objId2 === obj.id) cuts.push(ix.len2);
+        }
+        cuts.sort((a, b) => a - b);
+        // Build kept ranges (segments NOT in [startLen, endLen])
+        const keptRanges = [];
+        for (let i = 0; i < cuts.length - 1; i++) {
+            const s = cuts[i], e = cuts[i + 1];
+            const mid = (s + e) / 2;
+            if (mid < startLen || mid > endLen) keptRanges.push({ s, e });
+        }
+        // Remove original line
         state.objects = state.objects.filter(o => o.id !== obj.id);
         if (obj.element) obj.element.remove();
+        // Create new line objects for kept segments
+        const dx = (obj.x2 - obj.x1) / lineLen, dy = (obj.y2 - obj.y1) / lineLen;
+        for (const range of keptRanges) {
+            if (range.e - range.s < 0.5) continue;
+            const nx1 = obj.x1 + dx * range.s, ny1 = obj.y1 + dy * range.s;
+            const nx2 = obj.x1 + dx * range.e, ny2 = obj.y1 + dy * range.e;
+            const newLine = createObject('line', {
+                x1: nx1, y1: ny1, x2: nx2, y2: ny2,
+                stroke: obj.stroke, strokeWidth: obj.strokeWidth
+            });
+            selectObject(newLine.id);
+        }
         state.selectedIds = []; drawSelection(); updatePropsPanel();
         return;
     }
