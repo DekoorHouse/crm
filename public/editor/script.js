@@ -7928,15 +7928,40 @@ function vsDeleteFindSegmentBounds(objId, clickLen, totalLen, intersections) {
 
 // Get world-space polyline for a virtual segment (for highlighting)
 function vsDeleteGetSegmentPolyline(sampledPath, startLen, endLen) {
+    const samples = sampledPath.samples;
+    if (samples.length < 2) return null;
     const pts = [];
-    for (const s of sampledPath.samples) {
-        if (s.len >= startLen && s.len <= endLen) {
+    // Interpolate start point
+    for (let i = 0; i < samples.length - 1; i++) {
+        if (samples[i].len <= startLen && samples[i + 1].len >= startLen) {
+            const segLen = samples[i + 1].len - samples[i].len;
+            const t = segLen > 0 ? (startLen - samples[i].len) / segLen : 0;
+            pts.push({
+                x: samples[i].x + t * (samples[i + 1].x - samples[i].x),
+                y: samples[i].y + t * (samples[i + 1].y - samples[i].y)
+            });
+            break;
+        }
+    }
+    // Add all samples strictly between start and end
+    for (const s of samples) {
+        if (s.len > startLen && s.len < endLen) {
             pts.push({ x: s.x, y: s.y });
         }
     }
-    // Ensure we include interpolated start/end points
-    if (pts.length > 0) return pts;
-    return null;
+    // Interpolate end point
+    for (let i = 0; i < samples.length - 1; i++) {
+        if (samples[i].len <= endLen && samples[i + 1].len >= endLen) {
+            const segLen = samples[i + 1].len - samples[i].len;
+            const t = segLen > 0 ? (endLen - samples[i].len) / segLen : 0;
+            pts.push({
+                x: samples[i].x + t * (samples[i + 1].x - samples[i].x),
+                y: samples[i].y + t * (samples[i + 1].y - samples[i].y)
+            });
+            break;
+        }
+    }
+    return pts.length >= 2 ? pts : null;
 }
 
 // Find closest path and length parameter for a world point
