@@ -1129,7 +1129,7 @@ function nearestEdgePoint(obj, pt) {
                     if (ctm && svgCTM) {
                         const inv = svgCTM.inverse();
                         const rel = inv.multiply(ctm);
-                        const steps = Math.max(80, Math.ceil(len / 2));
+                        const steps = Math.min(120, Math.max(60, Math.ceil(len / 4)));
                         const samples = [];
                         for (let i = 0; i <= steps; i++) {
                             const p = elem.getPointAtLength((i / steps) * len);
@@ -1235,17 +1235,19 @@ function drawSnapIndicators(mousePt) {
         if (mousePt.x < b.x - margin || mousePt.x > b.x + b.w + margin ||
             mousePt.y < b.y - margin || mousePt.y > b.y + b.h + margin) continue;
 
-        // Fixed snap points (center, corners, quadrants, edges, endpoints)
+        // Fixed snap points (center, corners, quadrants, edges, endpoints, nodes)
         for (const sp of getSnapPoints(obj)) {
             const d = Math.hypot(mousePt.x - sp.x, mousePt.y - sp.y);
             if (d < bestDist && d <= threshold) { bestDist = d; bestSnap = sp; }
         }
 
-        // Dynamic nearest-edge point
-        const ne = nearestEdgePoint(obj, mousePt);
-        if (ne && ne.dist < bestDist && ne.dist <= edgeThreshold) {
-            bestDist = ne.dist;
-            bestSnap = { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' };
+        // Dynamic nearest-edge point (skip if a fixed node snap already won)
+        if (!bestSnap || bestSnap.type !== 'node') {
+            const ne = nearestEdgePoint(obj, mousePt);
+            if (ne && ne.dist < bestDist && ne.dist <= edgeThreshold) {
+                bestDist = ne.dist;
+                bestSnap = { x: ne.point.x, y: ne.point.y, type: 'edge-dynamic' };
+            }
         }
     }
 
