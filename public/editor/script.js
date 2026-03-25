@@ -1982,6 +1982,28 @@ function calcSnapAdjustmentForPoint(px, py, excludeObjId) {
         targetPts.push(...getSnapPoints(obj));
     }
 
+    // First pass: check for nearby discrete points (nodes, corners, centers, quadrants, endpoints)
+    // These snap both X and Y together (euclidean proximity)
+    let bestPointDist = threshold * 1.5;
+    let pointSnap = null;
+    for (const tp of targetPts) {
+        if (tp.type === 'edge' || tp.type === 'edge-dynamic') continue;
+        const dist = Math.hypot(px - tp.x, py - tp.y);
+        if (dist < bestPointDist) {
+            bestPointDist = dist;
+            pointSnap = tp;
+        }
+    }
+    if (pointSnap) {
+        const off = 20 * screenScale;
+        return {
+            dx: pointSnap.x - px, dy: pointSnap.y - py,
+            snapLineX: { x: pointSnap.x, y1: Math.min(py, pointSnap.y) - off, y2: Math.max(py, pointSnap.y) + off },
+            snapLineY: { y: pointSnap.y, x1: Math.min(px, pointSnap.x) - off, x2: Math.max(px, pointSnap.x) + off }
+        };
+    }
+
+    // Second pass: independent axis snap (for alignment guides)
     let bestDx = null, bestDy = null;
     let bestDistX = threshold, bestDistY = threshold;
     let snapLineX = null, snapLineY = null;
