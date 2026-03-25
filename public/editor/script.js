@@ -8597,7 +8597,9 @@ function showVectorizeModal(imageObj) {
     vectState.tracedPaths = []; vectState.tracedSVG = '';
     document.getElementById('vect-apply-btn').disabled = true;
     document.getElementById('vect-info-row').textContent = '';
-    document.getElementById('vect-placeholder').style.display = '';
+    // Clear previous preview content
+    document.getElementById('vect-result-container').innerHTML = '<div class="vect-placeholder" id="vect-placeholder"><svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M8 40C16 4 24 36 32 8"/><rect x="6" y="6" width="36" height="36" rx="4" stroke-dasharray="3 2"/></svg><span>Sube o selecciona una imagen para vectorizar</span></div>';
+    document.getElementById('vect-orig-container').innerHTML = '';
     document.querySelectorAll('.vect-mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === 'lineart'));
     vectState.currentMode = 'lineart';
     vectUpdateSliderVisibility();
