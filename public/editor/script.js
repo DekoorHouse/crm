@@ -8767,20 +8767,21 @@ function vectRunTrace() {
             }
             const bgColor = Object.entries(colorCounts).sort((a, b) => b[1] - a[1])[0][0];
 
+            // Build queue of colors to trace (skip background)
+            const colorQueue = colors.filter(([r,g,b]) => `${r},${g},${b}` !== bgColor);
             const allPaths = [];
-            let pending = colors.length;
-            const checkDone = () => {
-                if (--pending <= 0) {
+            let qi = 0;
+            const traceNext = () => {
+                if (qi >= colorQueue.length) {
+                    // All done
                     vectState.tracedPaths = allPaths;
                     vectUpdatePreview(c.width, c.height);
-                    document.getElementById('vect-info-row').textContent = `${allPaths.length} path(s), ${colors.length} colores`;
+                    document.getElementById('vect-info-row').textContent = `${allPaths.length} path(s), ${colorQueue.length} colores`;
                     document.getElementById('vect-apply-btn').disabled = allPaths.length === 0;
                     vectState.isTracing = false;
+                    return;
                 }
-            };
-            for (const [r, g, b] of colors) {
-                const key = `${r},${g},${b}`;
-                if (key === bgColor) { checkDone(); continue; }
+                const [r, g, b] = colorQueue[qi++];
                 // Create binary mask for this color
                 const mask = document.createElement('canvas');
                 mask.width = c.width; mask.height = c.height;
@@ -8795,6 +8796,7 @@ function vectRunTrace() {
                 mctx.putImageData(mData, 0, 0);
                 const maskUrl = mask.toDataURL('image/png');
                 const fill = '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('');
+                document.getElementById('vect-info-row').textContent = `Trazando color ${qi}/${colorQueue.length}...`;
                 Potrace.loadImageFromUrl(maskUrl);
                 Potrace.setParameter({ alphamax, turdsize, optcurve: true, opttolerance });
                 Potrace.process(() => {
@@ -8802,9 +8804,11 @@ function vectRunTrace() {
                     const paths = vectParsePotraceSVG(svg);
                     for (const p of paths) { p.fill = fill; }
                     allPaths.push(...paths);
-                    checkDone();
+                    // Process next color sequentially
+                    setTimeout(traceNext, 0);
                 });
-            }
+            };
+            traceNext();
         };
         img.src = dataUrl;
     }
