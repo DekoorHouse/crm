@@ -1936,7 +1936,30 @@ function calcSnapAdjustment(selectedIds) {
         targetPts.push(...getSnapPoints(obj));
     }
 
-    // Find closest snap in X and Y independently
+    // First pass: euclidean proximity to discrete points (snap both X+Y together)
+    let bestPointDist = threshold * 1.5;
+    let pointSnap = null, pointSelPt = null;
+    for (const sp of selPts) {
+        if (sp.type === 'edge' || sp.type === 'edge-dynamic') continue;
+        for (const tp of targetPts) {
+            if (tp.type === 'edge' || tp.type === 'edge-dynamic') continue;
+            const dist = Math.hypot(sp.x - tp.x, sp.y - tp.y);
+            if (dist < bestPointDist) {
+                bestPointDist = dist;
+                pointSnap = tp; pointSelPt = sp;
+            }
+        }
+    }
+    if (pointSnap && pointSelPt) {
+        const off = 20 * screenScale;
+        return {
+            dx: pointSnap.x - pointSelPt.x, dy: pointSnap.y - pointSelPt.y,
+            snapLineX: { x: pointSnap.x, y1: Math.min(pointSelPt.y, pointSnap.y) - off, y2: Math.max(pointSelPt.y, pointSnap.y) + off },
+            snapLineY: { y: pointSnap.y, x1: Math.min(pointSelPt.x, pointSnap.x) - off, x2: Math.max(pointSelPt.x, pointSnap.x) + off }
+        };
+    }
+
+    // Second pass: independent axis alignment
     let bestDx = null, bestDy = null;
     let bestDistX = threshold, bestDistY = threshold;
     let snapLineX = null, snapLineY = null;
