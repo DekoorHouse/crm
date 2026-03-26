@@ -349,6 +349,72 @@ router.post('/orders/recurring/scan', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/kpi/monthly (KPIs del mes actual: revenue, ticket, pedidos pagados) ---
+router.get('/kpi/monthly', async (req, res) => {
+    try {
+        // Primer día del mes actual en hora México
+        const now = new Date();
+        const mexicoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+        const firstDay = new Date(mexicoDate.getFullYear(), mexicoDate.getMonth(), 1);
+        const firestoreStart = admin.firestore.Timestamp.fromDate(firstDay);
+
+        const ordersSnap = await db.collection('pedidos')
+            .where('createdAt', '>=', firestoreStart)
+            .get();
+
+        let totalRevenue = 0;
+        let paidCount = 0;
+        let totalCount = 0;
+        let cancelledCount = 0;
+        const ticketDistribution = { single: 0, double: 0, triple: 0, other: 0 };
+
+        ordersSnap.docs.forEach(doc => {
+            const data = doc.data();
+            totalCount++;
+            const isPaid = data.estatus === 'Pagado' || data.estatus === 'Fabricar';
+            const isCancelled = data.estatus === 'Cancelado';
+
+            if (isCancelled) cancelledCount++;
+            if (!isPaid) return;
+
+            paidCount++;
+            const precio = data.precio || 0;
+            totalRevenue += precio;
+
+            // Clasificar por rango de ticket
+            if (precio <= 700) ticketDistribution.single++;
+            else if (precio <= 1400) ticketDistribution.double++;
+            else if (precio <= 2100) ticketDistribution.triple++;
+            else ticketDistribution.other++;
+        });
+
+        const avgTicket = paidCount > 0 ? Math.round(totalRevenue / paidCount) : 0;
+        const daysElapsed = mexicoDate.getDate();
+        const daysInMonth = new Date(mexicoDate.getFullYear(), mexicoDate.getMonth() + 1, 0).getDate();
+        const projectedRevenue = daysElapsed > 0 ? Math.round((totalRevenue / daysElapsed) * daysInMonth) : 0;
+        const projectedOrders = daysElapsed > 0 ? Math.round((paidCount / daysElapsed) * daysInMonth) : 0;
+
+        res.status(200).json({
+            success: true,
+            month: `${mexicoDate.getFullYear()}-${String(mexicoDate.getMonth() + 1).padStart(2, '0')}`,
+            daysElapsed,
+            daysInMonth,
+            revenue: totalRevenue,
+            projectedRevenue,
+            paidOrders: paidCount,
+            projectedOrders,
+            totalOrders: totalCount,
+            cancelledOrders: cancelledCount,
+            avgTicket,
+            conversionRate: totalCount > 0 ? ((paidCount / totalCount) * 100).toFixed(1) : 0,
+            ticketDistribution
+        });
+    } catch (error) {
+        console.error('Error fetching monthly KPIs:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener KPIs mensuales.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
 router.get('/kpi/daily', async (req, res) => {
     try {

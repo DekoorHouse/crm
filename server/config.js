@@ -37,8 +37,8 @@ const allowedOrigins = [
 
 app.use(cors({
     origin: function (origin, callback) {
-        // Permitir peticiones sin origen (como aplicaciones móviles o curl)
-        if (!origin) return callback(null, true);
+        // Permitir peticiones sin origen (apps móviles, curl, archivos file://)
+        if (!origin || origin === 'null') return callback(null, true);
         if (allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.onrender.com')) {
             callback(null, true);
         } else {
