@@ -1,5 +1,5 @@
 import { db } from './firebase.js';
-import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state.js';
 import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils.js';
 import { showModal } from './ui-manager.js';
@@ -255,10 +255,18 @@ export async function saveExpense(expenseData, originalCategory) {
             }
         }
         
-        if (expenseData.id) {
-            await updateDoc(doc(db, "expenses", expenseData.id), expenseData);
+        const dataToSave = { ...expenseData };
+        if (dataToSave.splits === null && dataToSave.id) {
+            dataToSave.splits = deleteField();
+        }
+
+        if (dataToSave.id) {
+            await updateDoc(doc(db, "expenses", dataToSave.id), dataToSave);
         } else {
-            await addDoc(collection(db, "expenses"), expenseData);
+            if (dataToSave.splits && typeof dataToSave.splits === 'object' && dataToSave.splits._methodName) {
+                delete dataToSave.splits;
+            }
+            await addDoc(collection(db, "expenses"), dataToSave);
         }
         showModal({ show: false });
     } catch(error) {

@@ -228,6 +228,9 @@ export function initEventListeners() {
         const expenseId = row.dataset.id;
         const expense = state.expenses.find(exp => exp.id === expenseId);
 
+        if (e.target.closest('.split-btn') && expense) {
+            ui.openSplitModal(expense);
+        }
         if (e.target.closest('.edit-btn') && expense) {
             ui.openExpenseModal(expense);
         }

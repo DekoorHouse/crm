@@ -1,5 +1,5 @@
 import { elements, state, charts } from './state.js';
-import { formatCurrency } from './utils.js';
+import { formatCurrency, getExpenseParts } from './utils.js';
 
 /**
  * @file Módulo de gestión de gráficas.
@@ -22,9 +22,11 @@ export function updateAllCharts(getFilteredExpenses) {
     expenses.forEach(expense => {
         const charge = parseFloat(expense.charge) || 0;
         if (charge > 0) {
-            const category = expense.category || 'SinCategorizar';
-            if (!categories[category]) categories[category] = 0;
-            categories[category] += charge;
+            const parts = getExpenseParts(expense);
+            parts.forEach(p => {
+                if (!categories[p.category]) categories[p.category] = 0;
+                categories[p.category] += p.amount;
+            });
         }
     });
     
@@ -131,16 +133,18 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
         const charge = parseFloat(exp.charge) || 0;
         if (charge > 0) {
             const isOperational = exp.type === 'operativo' || !exp.type;
-            if (drawCategories.includes(exp.category)) {
-                ownerDraw += charge;
-            } 
-            else if (isOperational || exp.sub_type === 'pago_intereses') {
-                if (cogsCategories.includes(exp.category)) {
-                    cogs += charge;
-                } else {
-                    operatingExpenses += charge;
+            const parts = getExpenseParts(exp);
+            parts.forEach(p => {
+                if (drawCategories.includes(p.category)) {
+                    ownerDraw += p.amount;
+                } else if (isOperational || exp.sub_type === 'pago_intereses') {
+                    if (cogsCategories.includes(p.category)) {
+                        cogs += p.amount;
+                    } else {
+                        operatingExpenses += p.amount;
+                    }
                 }
-            }
+            });
         }
     });
     

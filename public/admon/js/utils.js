@@ -16,6 +16,21 @@ export function getAllCategories() {
 }
 
 /**
+ * Devuelve las partes de categoría/monto de un gasto.
+ * Si tiene splits, devuelve los splits. Si no, devuelve el cargo original con su categoría.
+ */
+export function getExpenseParts(expense) {
+    if (expense.splits && expense.splits.length > 0) {
+        return expense.splits.map(s => ({ category: s.category, amount: s.amount }));
+    }
+    const charge = parseFloat(expense.charge) || 0;
+    if (charge > 0) {
+        return [{ category: expense.category || 'SinCategorizar', amount: charge }];
+    }
+    return [];
+}
+
+/**
  * Formatea un número como una cadena de moneda en formato MXN.
  */
 export function formatCurrency(amount) {
@@ -324,6 +339,9 @@ export function getFilteredExpenses(includeFinancial = false) {
             const charge = parseFloat(expense.charge) || 0;
             if (charge <= 0) return false;
 
+            if (expense.splits && expense.splits.length > 0) {
+                return expense.splits.some(s => s.category === categoryFilter);
+            }
             const expenseCategory = expense.category || 'SinCategorizar';
             return expenseCategory === categoryFilter;
         }

@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts } from './utils.js';
 import * as services from './services.js';
 
 /**
@@ -115,7 +115,9 @@ export function renderTable(expenses) {
         }
         
         let categoryHtml;
-        if (displayCategory === 'SinCategorizar') {
+        if (expense.splits && expense.splits.length > 0) {
+            categoryHtml = expense.splits.map(s => `<div style="font-size:12px;">${s.category}: ${formatCurrency(s.amount)}</div>`).join('');
+        } else if (displayCategory === 'SinCategorizar') {
             const allCategories = getAllCategories();
             const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
             categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option></select>`;
@@ -150,6 +152,7 @@ export function renderTable(expenses) {
             <td>${categoryHtml}</td>
             <td>${subcategoryHtml}</td>
             <td class="btn-group">
+                ${charge > 0 ? '<button class="btn btn-outline btn-sm split-btn" title="Dividir gasto"><i class="fas fa-cut"></i></button>' : ''}
                 <button class="btn btn-outline btn-sm edit-btn"><i class="fas fa-pencil-alt"></i></button>
                 <button class="btn btn-outline btn-sm delete-btn" style="color:var(--danger);"><i class="fas fa-trash"></i></button>
             </td>
@@ -181,15 +184,17 @@ export function updateSummary(getFilteredExpenses) {
     const summaryData = filteredOperationalExpenses.reduce((acc, exp) => {
         const charge = parseFloat(exp.charge) || 0;
         const credit = parseFloat(exp.credit) || 0;
-        const category = exp.category || 'SinCategorizar';
-        
+
         if (credit > 0) {
             acc.TotalIngresos += credit;
         }
         if (charge > 0) {
             acc.TotalCargos += charge;
-            if (!acc[category]) acc[category] = 0;
-            acc[category] += charge;
+            const parts = getExpenseParts(exp);
+            parts.forEach(p => {
+                if (!acc[p.category]) acc[p.category] = 0;
+                acc[p.category] += p.amount;
+            });
         }
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
@@ -244,18 +249,23 @@ export function createSummaryCard(title, amount, isClickable) {
 }
   
 export function showCategoryDetailsModal(category, getFilteredExpenses) {
-    const categoryExpenses = getFilteredExpenses().filter(e => (e.category || 'SinCategorizar') === category && (parseFloat(e.charge) || 0) > 0);
+    const allExpenses = getFilteredExpenses().filter(e => (parseFloat(e.charge) || 0) > 0);
     let total = 0;
-    const rows = categoryExpenses.map(e => {
-        const charge = parseFloat(e.charge) || 0;
-        total += charge;
-        return `<tr> <td>${e.date}</td> <td>${e.concept}</td> <td style="text-align: right;">${formatCurrency(charge)}</td> </tr>`;
-    }).join('');
+    const rows = [];
+    allExpenses.forEach(e => {
+        const parts = getExpenseParts(e);
+        parts.forEach(p => {
+            if (p.category === category) {
+                total += p.amount;
+                rows.push(`<tr> <td>${e.date}</td> <td>${e.concept}</td> <td style="text-align: right;">${formatCurrency(p.amount)}</td> </tr>`);
+            }
+        });
+    });
     const tableHtml = `
         <div class="table-container">
             <table>
                 <thead> <tr> <th>Fecha</th> <th>Concepto</th> <th style="text-align: right;">Cargo</th> </tr> </thead>
-                <tbody>${rows}</tbody>
+                <tbody>${rows.join('')}</tbody>
                 <tfoot> <tr> <td colspan="2">Total</td> <td style="text-align: right;">${formatCurrency(total)}</td> </tr> </tfoot>
             </table>
         </div>`;
@@ -329,6 +339,108 @@ export function showPromptModal({ title, placeholder = '', confirmText = 'Acepta
     });
 }
   
+export function openSplitModal(expense) {
+    const total = parseFloat(expense.charge) || 0;
+    const existingSplits = expense.splits && expense.splits.length > 0 ? expense.splits : [{ amount: total, category: expense.category || 'SinCategorizar' }];
+    const categories = getAllCategories();
+
+    const renderSplitRows = (splits) => {
+        return splits.map((s, i) => {
+            const catOptions = categories.map(cat => `<option value="${cat}" ${s.category === cat ? 'selected' : ''}>${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
+            return `<div class="split-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                <input type="number" step="0.01" class="modal-input split-amount" value="${s.amount}" style="width:120px;" placeholder="$0.00">
+                <select class="modal-input split-category">${catOptions}</select>
+                ${splits.length > 1 ? `<button type="button" class="btn btn-sm remove-split-btn" style="color:var(--danger);padding:4px 8px;"><i class="fas fa-times"></i></button>` : ''}
+            </div>`;
+        }).join('');
+    };
+
+    showModal({
+        title: `Dividir: ${formatCurrency(total)}`,
+        body: `<div style="margin-bottom:12px;font-size:13px;color:var(--text-secondary);">${expense.concept}</div>
+               <div id="splits-container">${renderSplitRows(existingSplits)}</div>
+               <div style="margin-top:8px;display:flex;justify-content:space-between;align-items:center;">
+                   <button type="button" id="add-split-btn" class="btn btn-outline btn-sm"><i class="fas fa-plus"></i> Agregar parte</button>
+                   <div id="split-remaining" style="font-weight:600;"></div>
+               </div>`,
+        confirmText: 'Guardar División',
+        onConfirm: () => {
+            const rows = document.querySelectorAll('.split-row');
+            const splits = [];
+            rows.forEach(row => {
+                const amount = parseFloat(row.querySelector('.split-amount').value) || 0;
+                const category = row.querySelector('.split-category').value;
+                if (amount > 0 && category) splits.push({ amount, category });
+            });
+            const sumSplits = splits.reduce((s, p) => s + p.amount, 0);
+            if (Math.abs(sumSplits - total) > 0.02) {
+                showToast(`La suma (${formatCurrency(sumSplits)}) no coincide con el total (${formatCurrency(total)})`, 'warning');
+                return;
+            }
+            if (splits.length < 2) {
+                // Si queda una sola parte, quitar splits y restaurar categoría normal
+                services.saveExpense({ ...expense, splits: null, category: splits[0]?.category || expense.category }, expense.category);
+            } else {
+                services.saveExpense({ ...expense, splits }, expense.category);
+            }
+        },
+        onModalOpen: () => {
+            const container = document.getElementById('splits-container');
+            const remainingEl = document.getElementById('split-remaining');
+
+            const updateRemaining = () => {
+                const amounts = [...container.querySelectorAll('.split-amount')].map(i => parseFloat(i.value) || 0);
+                const sum = amounts.reduce((a, b) => a + b, 0);
+                const diff = total - sum;
+                remainingEl.textContent = `Restante: ${formatCurrency(diff)}`;
+                remainingEl.style.color = Math.abs(diff) < 0.02 ? 'var(--success)' : 'var(--danger)';
+            };
+
+            container.addEventListener('input', updateRemaining);
+
+            container.addEventListener('click', (e) => {
+                if (e.target.closest('.remove-split-btn')) {
+                    e.target.closest('.split-row').remove();
+                    updateRemaining();
+                }
+            });
+
+            document.getElementById('add-split-btn').addEventListener('click', () => {
+                const catOptions = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
+                container.insertAdjacentHTML('beforeend', `<div class="split-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
+                    <input type="number" step="0.01" class="modal-input split-amount" value="" style="width:120px;" placeholder="$0.00">
+                    <select class="modal-input split-category">${catOptions}</select>
+                    <button type="button" class="btn btn-sm remove-split-btn" style="color:var(--danger);padding:4px 8px;"><i class="fas fa-times"></i></button>
+                </div>`);
+                updateRemaining();
+            });
+
+            // Handle new category from split dropdowns
+            container.addEventListener('change', async (e) => {
+                if (e.target.classList.contains('split-category') && e.target.value === '__add_new_category__') {
+                    const newName = await showPromptModal({ title: 'Nueva categoría', placeholder: 'Nombre', confirmText: 'Crear' });
+                    if (newName && newName.trim()) {
+                        const trimmed = newName.trim();
+                        await services.saveNewCategory(trimmed);
+                        // Add to all split category selects
+                        container.querySelectorAll('.split-category').forEach(sel => {
+                            const opt = document.createElement('option');
+                            opt.value = trimmed;
+                            opt.textContent = trimmed;
+                            sel.insertBefore(opt, sel.querySelector('option[disabled]'));
+                        });
+                        e.target.value = trimmed;
+                    } else {
+                        e.target.value = 'SinCategorizar';
+                    }
+                }
+            });
+
+            updateRemaining();
+        }
+    });
+}
+
 export function openExpenseModal(expense = {}) {
     const isEditing = !!expense.id;
     const title = isEditing ? 'Editar Movimiento' : 'Agregar Movimiento Operativo';
