@@ -1271,13 +1271,12 @@ const NewOrderModalTemplate = () => `
                          <div class="form-item">
                              <label for="pedidoProductoSelect">Producto (*):</label>
                              <select id="pedidoProductoSelect" required>
-                                <option value="Modelo 7">Modelo 7</option>
-                                <option value="Portallaves">Portallaves</option>
-                                <option value="Calendario">Calendario</option>
-                                <option value="Placa de perro">Placa de perro</option>
-                                <option value="Otro">Otro</option>
+                                <option value="Spiderman">Spiderman</option>
+                                <option value="Rex">Rex</option>
+                                <option value="Guerreras">Guerreras</option>
+                                <option value="Muerto">Muerto</option>
+                                <option value="Especial">Especial</option>
                              </select>
-                             <input type="text" id="pedidoProductoOtro" style="display: none;" placeholder="Nombre del producto">
                          </div>
                          <div class="form-item">
                              <label for="pedidoTelefono">Teléfono (*):</label>
@@ -1445,13 +1444,12 @@ const OrderEditModalTemplate = (order) => `
                          <div class="form-item">
                              <label for="edit-order-product-select">Producto (*):</label>
                              <select id="edit-order-product-select" required>
-                                <option value="Modelo 7">Modelo 7</option>
-                                <option value="Portallaves">Portallaves</option>
-                                <option value="Calendario">Calendario</option>
-                                <option value="Placa de perro">Placa de perro</option>
-                                <option value="Otro">Otro</option>
+                                <option value="Spiderman">Spiderman</option>
+                                <option value="Rex">Rex</option>
+                                <option value="Guerreras">Guerreras</option>
+                                <option value="Muerto">Muerto</option>
+                                <option value="Especial">Especial</option>
                              </select>
-                             <input type="text" id="edit-order-product-other" style="display: none;" placeholder="Nombre del producto">
                          </div>
                          <div class="form-item">
                              <label for="edit-order-phone">Teléfono (*):</label>

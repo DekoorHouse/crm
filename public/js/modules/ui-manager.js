@@ -1498,18 +1498,6 @@ function abrirModalPedido(contactData = null) {
     // Configura listeners para el modal recin creado
     document.getElementById('formularioNuevoPedido').addEventListener('submit', handleSaveOrder);
 
-    // Lgica para mostrar/ocultar input "Otro producto"
-    const productSelect = document.getElementById('pedidoProductoSelect');
-    const productOtherInput = document.getElementById('pedidoProductoOtro');
-    if(productSelect && productOtherInput) {
-        productSelect.addEventListener('change', () => {
-            const isOther = productSelect.value === 'Otro';
-            productOtherInput.style.display = isOther ? 'block' : 'none';
-            productOtherInput.required = isOther;
-            if(isOther) productOtherInput.focus();
-        });
-    }
-
     // Configura drag & drop y vista previa para fotos del pedido
     const orderPhotoContainer = document.getElementById('fileInputContainerProducto');
     const orderPhotoInput = document.getElementById('pedidoFotoFile');

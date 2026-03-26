@@ -195,13 +195,6 @@ async function handleSaveOrder(event) {
 
     // --- 1. Recolectar datos del formulario ---
     let productoFinal = document.getElementById('pedidoProductoSelect').value;
-    if (productoFinal === 'Otro') { // Si eligió "Otro"
-        productoFinal = document.getElementById('pedidoProductoOtro').value.trim();
-        if (!productoFinal) { // Validar que no esté vacío
-            errorMessageEl.textContent = 'El nombre del producto (Otro) es obligatorio.';
-            return;
-        }
-    }
     const telefono = document.getElementById('pedidoTelefono').value.trim();
     if (!telefono) { // Validar teléfono
         errorMessageEl.textContent = 'El número de teléfono es obligatorio.';
@@ -297,13 +290,6 @@ async function handleUpdateExistingOrder(event, orderId) {
 
     // Recolecta datos del formulario (similar a handleSaveOrder)
     let productoFinal = document.getElementById('edit-order-product-select').value;
-    if (productoFinal === 'Otro') {
-        productoFinal = document.getElementById('edit-order-product-other').value.trim();
-        if (!productoFinal) {
-            errorMessageEl.textContent = 'El nombre del producto (Otro) es obligatorio.';
-            return;
-        }
-    }
 
     // Objeto con los datos a actualizar
     const updateData = {

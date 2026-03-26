@@ -54,7 +54,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Form inputs for pedido
     const pedidoProductoSelect = document.getElementById('pedidoProductoSelect');
-    const pedidoProductoOtroInput = document.getElementById('pedidoProductoOtro');
     const pedidoTelefonoInput = document.getElementById('pedidoTelefono');
     const pedidoPrecioInput = document.getElementById('pedidoPrecio');
     const pedidoComentariosInput = document.getElementById('pedidoComentarios');
@@ -487,24 +486,12 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInputContainerPromocion.style.pointerEvents = 'auto';
         fileInputContainerPromocion.style.opacity = '1';
         
-        pedidoProductoOtroInput.style.display = 'none';
-        pedidoProductoOtroInput.required = false;
-
         if (pedidoData) { // EDIT MODE
             modalTitle.innerHTML = '<i class="fas fa-edit"></i> Editar Pedido';
             btnGuardarPedido.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
             editingPedidoId = pedidoData.id;
 
-            const producto = pedidoData.producto || '';
-            const esOpcionPredeterminada = Array.from(pedidoProductoSelect.options).some(opt => opt.value === producto);
-            if (esOpcionPredeterminada) {
-                pedidoProductoSelect.value = producto;
-            } else {
-                pedidoProductoSelect.value = 'Otro';
-                pedidoProductoOtroInput.value = producto;
-                pedidoProductoOtroInput.style.display = 'block';
-                pedidoProductoOtroInput.required = true;
-            }
+            pedidoProductoSelect.value = pedidoData.producto || '';
 
             pedidoTelefonoInput.value = pedidoData.telefono || '';
             pedidoPrecioInput.value = pedidoData.precio || '';
@@ -524,7 +511,7 @@ document.addEventListener('DOMContentLoaded', () => {
             modalTitle.innerHTML = '<i class="fas fa-pencil-alt"></i> Registrar Nuevo Pedido';
             btnGuardarPedido.innerHTML = '<i class="fas fa-save"></i> Guardar Pedido';
             pedidoPrecioInput.value = '275';
-            pedidoProductoSelect.value = 'Modelo 7';
+            pedidoProductoSelect.value = 'Spiderman';
         }
 
         renderOrderPhotoPreviews();
@@ -1297,13 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(mensajeErrorPedido) mensajeErrorPedido.textContent = '';
 
         let productoFinal = pedidoProductoSelect.value;
-        if (productoFinal === 'Otro') {
-            productoFinal = pedidoProductoOtroInput.value.trim();
-            if (!productoFinal) {
-                if(mensajeErrorPedido) mensajeErrorPedido.textContent = '¡El nombre del producto (Otro) es obligatorio!';
-                pedidoProductoOtroInput.focus(); return;
-            }
-        } else if (!productoFinal) {
+        if (!productoFinal) {
                 if(mensajeErrorPedido) mensajeErrorPedido.textContent = '¡Debes seleccionar un producto!';
                 pedidoProductoSelect.focus(); return;
         }
@@ -1633,18 +1614,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     applySavedTheme();
 
-    if (pedidoProductoSelect) {
-        pedidoProductoSelect.addEventListener('change', () => {
-            const esOtro = pedidoProductoSelect.value === 'Otro';
-            pedidoProductoOtroInput.style.display = esOtro ? 'block' : 'none';
-            pedidoProductoOtroInput.required = esOtro;
-            if (esOtro) {
-                pedidoProductoOtroInput.value = '';
-                pedidoProductoOtroInput.focus();
-            }
-        });
-    }
-    
     setupDragAndDrop(fileInputContainerProducto, pedidoFotoFileInput, orderPhotosManager, renderOrderPhotoPreviews);
     setupDragAndDrop(fileInputContainerPromocion, pedidoFotoPromocionFileInput, promoPhotosManager, renderPromoPhotoPreviews);
     setupPasteListener(fileInputContainerProducto, orderPhotosManager, renderOrderPhotoPreviews);
