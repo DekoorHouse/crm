@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const API = window.API_BASE_URL || '';
     let ws = null;
     let jogStep = 1;
+    let opMode = 'cut'; // 'cut' or 'raster'
 
     // --- DOM refs ---
     const connStatus = document.getElementById('conn-status');
@@ -164,6 +165,26 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Mode toggle ---
+    document.querySelectorAll('.mode-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            opMode = btn.dataset.mode;
+            const rasterParams = document.querySelectorAll('.raster-param');
+            rasterParams.forEach(el => {
+                el.classList.toggle('hidden', opMode !== 'raster');
+            });
+            // Adjust default speed for mode
+            const speedInput = document.getElementById('param-speed');
+            if (opMode === 'raster' && parseFloat(speedInput.value) < 50) {
+                speedInput.value = 150;
+            } else if (opMode === 'cut' && parseFloat(speedInput.value) > 50) {
+                speedInput.value = 10;
+            }
+        });
+    });
+
     // --- Material presets ---
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -176,7 +197,19 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Job controls ---
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
-        sendCommand(`speed ${speed}`);
+        if (opMode === 'raster') {
+            const dpi = document.getElementById('param-dpi').value;
+            const overscan = document.getElementById('param-overscan').value;
+            const bidir = document.getElementById('param-bidir').checked;
+            // Configure raster operation parameters
+            sendCommand(`operation* speed ${speed}`);
+            sendCommand(`operation* dpi ${dpi}`);
+            if (!bidir) {
+                sendCommand(`operation* op-property-set raster_swing False`);
+            }
+        } else {
+            sendCommand(`operation* speed ${speed}`);
+        }
         sendCommand(`plan copy preprocess validate blob spool`);
     });
 

@@ -67,12 +67,41 @@
                 </div>
             </section>
 
-            <!-- Speed -->
+            <!-- Operation mode -->
             <section class="section">
-                <h3><i class="fas fa-sliders-h"></i> Velocidad</h3>
-                <div class="param-group">
-                    <label>Velocidad (mm/s)</label>
-                    <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
+                <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
+                <div class="mode-toggle">
+                    <button class="mode-btn active" data-mode="cut" id="mode-cut">
+                        <i class="fas fa-cut"></i> Corte
+                    </button>
+                    <button class="mode-btn" data-mode="raster" id="mode-raster">
+                        <i class="fas fa-image"></i> Grabado Raster
+                    </button>
+                </div>
+                <div class="param-row">
+                    <div class="param-group">
+                        <label>Velocidad (mm/s)</label>
+                        <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
+                    </div>
+                    <div class="param-group raster-param hidden" id="dpi-group">
+                        <label>DPI</label>
+                        <input type="number" id="param-dpi" value="333" min="50" max="1000" step="1">
+                    </div>
+                </div>
+                <div class="raster-options raster-param hidden" id="raster-options">
+                    <div class="param-row">
+                        <div class="param-group">
+                            <label>Overscan (mm)</label>
+                            <input type="number" id="param-overscan" value="1" min="0" max="50" step="0.5">
+                        </div>
+                        <div class="param-group checkbox-group">
+                            <label>Bidireccional</label>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="param-bidir" checked>
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
                 </div>
                 <p class="param-hint">La potencia se controla con la perilla de la máquina</p>
             </section>
