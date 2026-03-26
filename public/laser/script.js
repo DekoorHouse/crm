@@ -240,14 +240,8 @@ document.addEventListener('DOMContentLoaded', () => {
             sendCommand(`operation3 speed ${speed}`);
         }
 
-        // Stop any running job, reconnect, clear queue, then start new
-        sendCommand('estop');
-        setTimeout(() => {
-            sendCommand('usb_connect');
-            sendCommand('start');
-            sendCommand('spool clear');
-            sendCommand('plan copy preprocess validate blob spool');
-        }, 600);
+        sendCommand('spool clear');
+        sendCommand('plan copy preprocess validate blob spool');
         sbJob.textContent = 'Ejecutando...';
         document.getElementById('progress-section').classList.remove('hidden');
         startProgressPolling();
