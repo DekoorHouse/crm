@@ -5415,8 +5415,20 @@ function executeSingleAction(action) {
             if (srcBounds.w < 0.01 || srcBounds.h < 0.01) throw new Error('El objeto source tiene tamaño cero');
             if (tgtBounds.w < 0.01 || tgtBounds.h < 0.01) throw new Error('El objeto target tiene tamaño cero');
 
-            // Escala uniforme para mantener proporción
-            const scaleFactor = Math.min(tgtBounds.w / srcBounds.w, tgtBounds.h / srcBounds.h);
+            // Para grupos, usar el hijo más grande como referencia de escala
+            // (el bbox del grupo puede estar inflado por texto/elementos que sobresalen)
+            let refBounds = srcBounds;
+            if (srcObj.type === 'group' && srcObj.children && srcObj.children.length > 1) {
+                let maxArea = 0;
+                for (const child of srcObj.children) {
+                    const cb = getObjBounds(child);
+                    const area = cb.w * cb.h;
+                    if (area > maxArea) { maxArea = area; refBounds = cb; }
+                }
+            }
+
+            // Escala uniforme basada en la forma principal, no el bbox completo
+            const scaleFactor = Math.min(tgtBounds.w / refBounds.w, tgtBounds.h / refBounds.h);
             applyPropSize(srcObj, srcBounds.w * scaleFactor, srcBounds.h * scaleFactor);
 
             // Re-leer bounds después del resize y centrar
