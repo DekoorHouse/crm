@@ -398,12 +398,16 @@ router.get('/expenses/summary', async (req, res) => {
                 percent: totalCharges > 0 ? ((amount / totalCharges) * 100).toFixed(1) : 0
             }));
 
+        // Mismo ajuste que usa el gestor de gastos (charts.js INCOME_ADJUSTMENT)
+        const INCOME_ADJUSTMENT = 19183.22;
+        const adjustedCredits = Math.max(0, totalCredits - INCOME_ADJUSTMENT);
+
         res.status(200).json({
             success: true,
             month: `${year}-${month}`,
             totalCharges: Math.round(totalCharges * 100) / 100,
-            totalCredits: Math.round(totalCredits * 100) / 100,
-            operatingProfit: Math.round((totalCredits - totalCharges) * 100) / 100,
+            totalCredits: Math.round(adjustedCredits * 100) / 100,
+            operatingProfit: Math.round((adjustedCredits - totalCharges) * 100) / 100,
             categories: sorted
         });
     } catch (error) {
