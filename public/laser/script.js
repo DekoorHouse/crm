@@ -4,6 +4,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let jogStep = 1;
     let opMode = 'cut'; // 'cut' or 'raster'
 
+    // Workspace dimensions (mm)
+    const BED_W = 400;
+    const BED_H = 400;
+    const CANVAS_PX = 500; // canvas pixel size
+
+    const previewCanvas = document.getElementById('preview-canvas');
+    const previewCtx = previewCanvas.getContext('2d');
+    const previewContainer = document.getElementById('preview-container');
+    const previewInfo = document.getElementById('preview-info');
+    let previewImage = null; // loaded image/svg for preview
+
     // --- DOM refs ---
     const connStatus = document.getElementById('conn-status');
     const statusDot = connStatus.querySelector('.status-dot');
@@ -139,9 +150,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnClearFile.addEventListener('click', () => {
         loadedFile.classList.add('hidden');
         uploadArea.classList.remove('hidden');
+        clearPreview();
     });
 
     async function uploadFile(file) {
+        loadPreview(file);
         logConsole(`Subiendo: ${file.name}...`, 'cmd');
         const formData = new FormData();
         formData.append('file', file);
@@ -250,6 +263,120 @@ document.addEventListener('DOMContentLoaded', () => {
             jogStep = parseInt(btn.dataset.step, 10);
         });
     });
+
+    // --- Preview ---
+    function initPreview() {
+        const ratio = window.devicePixelRatio || 1;
+        previewCanvas.width = CANVAS_PX * ratio;
+        previewCanvas.height = CANVAS_PX * ratio;
+        previewCanvas.style.width = CANVAS_PX + 'px';
+        previewCanvas.style.height = CANVAS_PX + 'px';
+        previewCtx.scale(ratio, ratio);
+        drawBed();
+    }
+
+    function drawBed() {
+        const ctx = previewCtx;
+        const scale = CANVAS_PX / BED_W;
+        ctx.clearRect(0, 0, CANVAS_PX, CANVAS_PX);
+
+        // Background
+        ctx.fillStyle = '#0d1117';
+        ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
+
+        // Grid (every 50mm)
+        ctx.strokeStyle = '#1a2030';
+        ctx.lineWidth = 1;
+        for (let i = 0; i <= BED_W; i += 50) {
+            const px = i * scale;
+            ctx.beginPath();
+            ctx.moveTo(px, 0);
+            ctx.lineTo(px, CANVAS_PX);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, px);
+            ctx.lineTo(CANVAS_PX, px);
+            ctx.stroke();
+        }
+
+        // Grid labels (every 100mm)
+        ctx.fillStyle = '#3a4050';
+        ctx.font = '10px sans-serif';
+        for (let i = 0; i <= BED_W; i += 100) {
+            if (i === 0) continue;
+            const px = i * scale;
+            ctx.fillText(i + '', px + 2, 12);
+            ctx.fillText(i + '', 2, px + 12);
+        }
+
+        // Border
+        ctx.strokeStyle = '#2a3040';
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(0, 0, CANVAS_PX, CANVAS_PX);
+
+        // Origin marker
+        ctx.fillStyle = '#4a9eff';
+        ctx.beginPath();
+        ctx.arc(0, 0, 4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Draw loaded image if any
+        if (previewImage) {
+            const img = previewImage;
+            const imgW = img.naturalWidth || img.width;
+            const imgH = img.naturalHeight || img.height;
+
+            // Fit image to bed, maintaining aspect ratio
+            let drawW, drawH;
+            const imgAspect = imgW / imgH;
+            const maxPx = BED_W * 0.8 * scale; // 80% of bed
+            if (imgAspect > 1) {
+                drawW = maxPx;
+                drawH = maxPx / imgAspect;
+            } else {
+                drawH = maxPx;
+                drawW = maxPx * imgAspect;
+            }
+
+            // Center on bed
+            const x = (CANVAS_PX - drawW) / 2;
+            const y = (CANVAS_PX - drawH) / 2;
+
+            ctx.drawImage(img, x, y, drawW, drawH);
+
+            // Bounding box
+            ctx.strokeStyle = '#4a9eff';
+            ctx.lineWidth = 1;
+            ctx.setLineDash([4, 4]);
+            ctx.strokeRect(x, y, drawW, drawH);
+            ctx.setLineDash([]);
+
+            // Size info
+            const realW = (drawW / scale).toFixed(1);
+            const realH = (drawH / scale).toFixed(1);
+            previewInfo.textContent = `${realW} x ${realH} mm`;
+        }
+    }
+
+    function loadPreview(file) {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => {
+            previewImage = img;
+            previewContainer.classList.remove('hidden');
+            initPreview();
+        };
+        img.onerror = () => {
+            // For SVG that may fail as img, try as object
+            previewContainer.classList.add('hidden');
+        };
+        img.src = url;
+    }
+
+    function clearPreview() {
+        previewImage = null;
+        previewContainer.classList.add('hidden');
+    }
 
     // --- Init ---
     connectWS();
