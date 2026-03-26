@@ -50,13 +50,10 @@ class MeerK40tBridge extends EventEmitter {
         });
 
         this.socket.on('error', (err) => {
-            if (err.code === 'ECONNREFUSED') {
-                // MeerK40t not running — silent retry
-                this.connected = false;
-            } else {
+            this.connected = false;
+            if (err.code !== 'ECONNREFUSED') {
                 console.error('[laser-bridge] Error TCP:', err.message);
             }
-            this.emit('error', err.message);
         });
     }
 
@@ -89,10 +86,20 @@ class MeerK40tBridge extends EventEmitter {
     }
 }
 
-// Singleton instance
+// Singleton instance — only active when MEERK40T_ENABLED=true or running locally
 const bridge = new MeerK40tBridge(
     process.env.MEERK40T_HOST || '127.0.0.1',
     parseInt(process.env.MEERK40T_PORT || '2323', 10)
 );
+
+// Override connect() to no-op in production unless explicitly enabled
+const originalConnect = bridge.connect.bind(bridge);
+bridge.connect = function() {
+    if (process.env.RENDER && !process.env.MEERK40T_ENABLED) {
+        console.log('[laser-bridge] Deshabilitado en producción (set MEERK40T_ENABLED=true para activar)');
+        return;
+    }
+    originalConnect();
+};
 
 module.exports = bridge;
