@@ -24,6 +24,9 @@ export const state = {
     ads: [],
     adsPaging: null,
 
+    // Filters
+    campaignStatusFilter: '',
+
     // Navigation
     currentView: 'dashboard',
     currentTab: 'dashboard',
@@ -92,7 +95,7 @@ export function cacheElements() {
     elements.campaignsEmpty = document.getElementById('campaigns-empty');
     elements.campaignsLoading = document.getElementById('campaigns-loading');
     elements.campaignsLoadMore = document.getElementById('campaigns-load-more');
-    elements.campaignsStatusFilter = document.getElementById('campaigns-status-filter');
+    elements.campaignsStatusDropdown = document.getElementById('campaigns-status-dropdown');
     elements.createCampaignBtn = document.getElementById('create-campaign-btn');
 
     // Ad Sets

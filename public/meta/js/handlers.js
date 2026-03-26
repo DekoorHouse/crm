@@ -3,6 +3,35 @@ import * as api from './api.js';
 import * as ui from './ui.js';
 import * as charts from './charts.js';
 
+// ========== CUSTOM DROPDOWN ==========
+
+function initCustomDropdown(el, onChange) {
+    if (!el) return;
+    const trigger = el.querySelector('.dropdown-trigger');
+    const menu = el.querySelector('.dropdown-menu');
+    const labelEl = el.querySelector('.dropdown-label');
+
+    trigger.addEventListener('click', (e) => {
+        e.stopPropagation();
+        // Close all other dropdowns
+        document.querySelectorAll('.custom-dropdown.open').forEach(d => { if (d !== el) d.classList.remove('open'); });
+        el.classList.toggle('open');
+    });
+
+    menu.querySelectorAll('.dropdown-item').forEach(item => {
+        item.addEventListener('click', () => {
+            menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+            item.classList.add('active');
+            labelEl.textContent = item.textContent.trim();
+            el.classList.remove('open');
+            if (onChange) onChange(item.dataset.value, item.textContent.trim());
+        });
+    });
+
+    // Close on outside click
+    document.addEventListener('click', () => el.classList.remove('open'));
+}
+
 // ========== NAVIGATION ==========
 
 export function navigateTo(view) {
@@ -116,7 +145,7 @@ export async function loadDashboard() {
 export async function loadCampaigns(append = false) {
     if (!state.selectedAccountId) return;
     const { dateFrom, dateTo } = getDateRange();
-    const status = elements.campaignsStatusFilter?.value || '';
+    const status = state.campaignStatusFilter || '';
 
     ui.setLoading('campaigns', true);
     try {
@@ -650,8 +679,11 @@ export function initEventListeners() {
         else if (state.currentView === 'creatives') loadCreatives();
     });
 
-    // Campaign status filter
-    elements.campaignsStatusFilter.addEventListener('change', () => loadCampaigns());
+    // Custom dropdown - campaign status filter
+    initCustomDropdown(elements.campaignsStatusDropdown, (value, label) => {
+        state.campaignStatusFilter = value;
+        loadCampaigns();
+    });
 
     // Create buttons
     elements.createCampaignBtn.addEventListener('click', () => showCampaignForm());
