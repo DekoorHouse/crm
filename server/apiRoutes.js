@@ -21,14 +21,19 @@ const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // --- Subir foto de referencia (público, sin auth) ---
+const sharp = require('sharp');
+
 router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) => {
     try {
         if (!req.file) return res.status(400).json({ error: 'No se envió archivo' });
-        const ext = path.extname(req.file.originalname) || '.jpg';
-        const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + ext;
+        const webpBuffer = await sharp(req.file.buffer)
+            .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
+        const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.webp';
         const file = bucket.file(fileName);
-        await file.save(req.file.buffer, {
-            metadata: { contentType: req.file.mimetype },
+        await file.save(webpBuffer, {
+            metadata: { contentType: 'image/webp' },
             public: true
         });
         const url = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;

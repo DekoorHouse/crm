@@ -14,6 +14,12 @@ const API_BASE_URL = window.API_BASE_URL || '';
 // --- Estado ---
 let selectedRating = 0;
 let selectedPhotos = [];
+var PAGE_SIZE = 6;
+var allRefs = [];
+var lastDoc = null;
+var loadingMore = false;
+var hasMore = true;
+var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
 
 // --- Toggle formulario ---
 function toggleForm() {
@@ -90,7 +96,6 @@ function renderPhotoPreview() {
         '<input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">' +
         '<p style="margin-top:8px;color:var(--text-gray);font-size:0.8rem;">' + selectedPhotos.length + '/5 fotos</p>';
     area.innerHTML = html;
-    // Cargar previews
     for (var j = 0; j < selectedPhotos.length; j++) {
         (function(idx) {
             var reader = new FileReader();
@@ -156,8 +161,6 @@ async function submitReferencia(event) {
             aprobado: false
         });
 
-        // Guardar ID en localStorage para que el cliente vea su propia referencia
-        var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
         misRefs.push(docRef.id);
         localStorage.setItem('misReferencias', JSON.stringify(misRefs));
 
@@ -169,6 +172,13 @@ async function submitReferencia(event) {
         toggleForm();
         showModal('¡Gracias por tu comentario!');
 
+        // Recargar para mostrar la nueva referencia del cliente
+        allRefs = [];
+        lastDoc = null;
+        hasMore = true;
+        document.getElementById('refGrid').innerHTML = '';
+        loadReferencias();
+
     } catch (error) {
         console.error('Error al publicar:', error);
         alert('Error: ' + error.message);
@@ -178,38 +188,100 @@ async function submitReferencia(event) {
     }
 }
 
-// --- Cargar referencias ---
+// --- Cargar referencias con paginación ---
 function loadReferencias() {
-    var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
+    if (loadingMore || !hasMore) return;
+    loadingMore = true;
 
-    db.collection('referencias')
-        .orderBy('fecha', 'desc')
-        .onSnapshot(function(snapshot) {
-            var refs = [];
-            snapshot.forEach(function(doc) {
+    var loadMoreEl = document.getElementById('loadMore');
+    if (loadMoreEl) loadMoreEl.classList.remove('hidden');
+
+    var query = db.collection('referencias')
+        .orderBy('fecha', 'desc');
+
+    if (lastDoc) {
+        query = query.startAfter(lastDoc);
+    }
+
+    query.limit(PAGE_SIZE).get().then(function(snapshot) {
+        // Ocultar loading inicial
+        document.getElementById('refLoading').classList.add('hidden');
+
+        if (snapshot.empty && allRefs.length === 0) {
+            document.getElementById('refEmpty').classList.remove('hidden');
+            hasMore = false;
+            loadingMore = false;
+            if (loadMoreEl) loadMoreEl.classList.add('hidden');
+            // Aún así cargar las propias del cliente
+            loadMisRefs();
+            return;
+        }
+
+        snapshot.forEach(function(doc) {
+            var data = doc.data();
+            data.id = doc.id;
+            data._doc = doc;
+            // Solo agregar si es aprobada o es del propio cliente
+            if (data.aprobado === true || misRefs.indexOf(doc.id) !== -1) {
+                // Evitar duplicados
+                if (!allRefs.some(function(r) { return r.id === data.id; })) {
+                    allRefs.push(data);
+                }
+            }
+        });
+
+        if (snapshot.docs.length > 0) {
+            lastDoc = snapshot.docs[snapshot.docs.length - 1];
+        }
+
+        if (snapshot.docs.length < PAGE_SIZE) {
+            hasMore = false;
+        }
+
+        renderReferencias(allRefs);
+        updateStats(allRefs.filter(function(r) { return r.aprobado === true; }));
+
+        loadingMore = false;
+        if (loadMoreEl) loadMoreEl.classList.add('hidden');
+
+    }).catch(function(error) {
+        console.error('Error cargando referencias:', error);
+        document.getElementById('refLoading').innerHTML =
+            '<p style="color:#ff6b6b;">Error al cargar las referencias.</p>';
+        loadingMore = false;
+    });
+}
+
+// Cargar referencias propias que no estén en la lista
+function loadMisRefs() {
+    if (misRefs.length === 0) return;
+    misRefs.forEach(function(refId) {
+        if (allRefs.some(function(r) { return r.id === refId; })) return;
+        db.collection('referencias').doc(refId).get().then(function(doc) {
+            if (doc.exists) {
                 var data = doc.data();
                 data.id = doc.id;
-                // Mostrar si está aprobada O si es del propio cliente
-                if (data.aprobado === true || misRefs.indexOf(doc.id) !== -1) {
-                    data.esMia = misRefs.indexOf(doc.id) !== -1;
-                    refs.push(data);
-                }
-            });
-            renderReferencias(refs);
-            updateStats(refs.filter(function(r) { return r.aprobado === true; }));
-        }, function(error) {
-            console.error('Error cargando referencias:', error);
-            document.getElementById('refLoading').innerHTML =
-                '<p style="color:#ff6b6b;">Error al cargar las referencias.</p>';
+                allRefs.unshift(data);
+                renderReferencias(allRefs);
+            }
         });
+    });
 }
+
+// --- Scroll infinito ---
+window.addEventListener('scroll', function() {
+    if (loadingMore || !hasMore) return;
+    var scrollY = window.scrollY || window.pageYOffset;
+    var windowH = window.innerHeight;
+    var docH = document.documentElement.scrollHeight;
+    if (scrollY + windowH >= docH - 400) {
+        loadReferencias();
+    }
+});
 
 function renderReferencias(refs) {
     var grid = document.getElementById('refGrid');
-    var loading = document.getElementById('refLoading');
     var empty = document.getElementById('refEmpty');
-
-    loading.classList.add('hidden');
 
     if (refs.length === 0) {
         grid.innerHTML = '';
