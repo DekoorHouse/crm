@@ -2104,6 +2104,11 @@ function handleMouseDown(e) {
         cb({ x: raw.x + (snap.dx || 0), y: raw.y + (snap.dy || 0) });
         return;
     }
+    // Crop tool intercept
+    if (cropState.active && e.button === 0 && !state.spaceHeld) {
+        const pt = screenToSVG(e.clientX, e.clientY);
+        if (handleCropMouseDown(pt)) return;
+    }
     if (e.button === 1 || (e.button === 0 && state.spaceHeld)) {
         e.preventDefault();
         state.isPanning = true;
@@ -2146,6 +2151,9 @@ function handleMouseMove(e) {
         state.viewBox.x = state.panViewBoxStart.x - dx*scale;
         state.viewBox.y = state.panViewBoxStart.y - dy*scale;
         updateViewBox(); return;
+    }
+    if (cropState.active && cropState.startPt) {
+        handleCropMouseMove(pt); return;
     }
     if (state.nodeEditDragging) {
         const obj = findObject(state.nodeEditId);
@@ -2222,6 +2230,10 @@ function handleMouseUp() {
     if (_vsDeleteDragging) {
         const pt = screenToSVG(event.clientX, event.clientY);
         handleVSDeleteUp(pt);
+        return;
+    }
+    if (cropState.active && cropState.startPt) {
+        handleCropMouseUp();
         return;
     }
     if (state.isMarquee) {
@@ -4085,6 +4097,10 @@ function showContextMenu(e, obj) {
     if (vectOpt) {
         vectOpt.style.display = obj.type === 'image' ? '' : 'none';
     }
+    const cropOpt = contextMenu.querySelector('[data-ctx="crop-image"]');
+    if (cropOpt) {
+        cropOpt.style.display = obj.type === 'image' ? '' : 'none';
+    }
 
     // Reference area — only for closed shapes (rect, ellipse, closed bspline, curvepath)
     const refAreaOpt = contextMenu.querySelector('[data-ctx="toggle-ref-area"]');
@@ -4164,6 +4180,9 @@ function setupContextMenu() {
                     break;
                 case 'vectorize-image':
                     showVectorizeModal(contextTarget);
+                    break;
+                case 'crop-image':
+                    startCrop(contextTarget);
                     break;
                 case 'toggle-ref-area':
                     toggleRefArea(contextTarget);
@@ -7696,6 +7715,7 @@ function setupEventListeners() {
                 for (const id of [...state.selectedIds]) deleteObject(id);
                 updatePropsPanel(); break;
             case 'escape':
+                if (cropState.active) { cancelCrop(); break; }
                 if (state.pendingSVGImport) { state.pendingSVGImport = null; hidePlacementCursor(); }
                 else if (pcEditingId) { exitPowerClipEdit(); }
                 else if (state.nodeEditId) { exitNodeEdit(); }
@@ -9102,7 +9122,180 @@ function setupVectorizeModal() {
     document.getElementById('vect-apply-btn').addEventListener('click', vectApplyToCanvas);
 }
 
+// =============================================
+// IMAGE CROP TOOL
+// =============================================
+const cropState = {
+    active: false, imageObj: null,
+    startPt: null, cropRect: null, // {x, y, w, h} in SVG coords
+    overlayEls: [], confirmBar: null,
+};
+
+function startCrop(imageObj) {
+    if (!imageObj || imageObj.type !== 'image') return;
+    cropState.active = true;
+    cropState.imageObj = imageObj;
+    cropState.cropRect = null;
+    cropState.startPt = null;
+    // Deselect and switch to crop mode
+    state.selectedIds = [imageObj.id];
+    drawSelection();
+    svg.style.cursor = 'crosshair';
+    // Show confirm bar
+    if (!cropState.confirmBar) {
+        const bar = document.createElement('div');
+        bar.className = 'crop-confirm-bar';
+        bar.innerHTML = '<button class="crop-cancel">Cancelar (Esc)</button><button class="crop-apply">Recortar</button>';
+        bar.querySelector('.crop-cancel').addEventListener('click', cancelCrop);
+        bar.querySelector('.crop-apply').addEventListener('click', applyCrop);
+        document.body.appendChild(bar);
+        cropState.confirmBar = bar;
+    }
+    cropState.confirmBar.style.display = 'flex';
+    cropState.confirmBar.querySelector('.crop-apply').disabled = true;
+}
+
+function cancelCrop() {
+    cropState.active = false;
+    cropState.imageObj = null;
+    cropState.cropRect = null;
+    cropState.startPt = null;
+    clearCropOverlay();
+    if (cropState.confirmBar) cropState.confirmBar.style.display = 'none';
+    svg.style.cursor = 'default';
+    drawSelection();
+}
+
+function clearCropOverlay() {
+    for (const el of cropState.overlayEls) el.remove();
+    cropState.overlayEls = [];
+}
+
+function drawCropOverlay() {
+    clearCropOverlay();
+    const cr = cropState.cropRect;
+    const img = cropState.imageObj;
+    if (!cr || !img) return;
+    const ns = 'http://www.w3.org/2000/svg';
+    const sw = _cachedScreenScale;
+    // Dark overlay on the 4 sides outside the crop rect (within image bounds)
+    const ix = img.x, iy = img.y, iw = img.width, ih = img.height;
+    const regions = [
+        { x: ix, y: iy, w: iw, h: cr.y - iy }, // top
+        { x: ix, y: cr.y + cr.h, w: iw, h: (iy + ih) - (cr.y + cr.h) }, // bottom
+        { x: ix, y: cr.y, w: cr.x - ix, h: cr.h }, // left
+        { x: cr.x + cr.w, y: cr.y, w: (ix + iw) - (cr.x + cr.w), h: cr.h }, // right
+    ];
+    for (const r of regions) {
+        if (r.w <= 0 || r.h <= 0) continue;
+        const rect = document.createElementNS(ns, 'rect');
+        rect.setAttribute('x', r.x); rect.setAttribute('y', r.y);
+        rect.setAttribute('width', r.w); rect.setAttribute('height', r.h);
+        rect.setAttribute('fill', 'rgba(0,0,0,0.5)');
+        rect.setAttribute('pointer-events', 'none');
+        rect.classList.add('crop-overlay-dark');
+        previewLayer.appendChild(rect);
+        cropState.overlayEls.push(rect);
+    }
+    // Crop rect border
+    const border = document.createElementNS(ns, 'rect');
+    border.setAttribute('x', cr.x); border.setAttribute('y', cr.y);
+    border.setAttribute('width', cr.w); border.setAttribute('height', cr.h);
+    border.setAttribute('fill', 'none');
+    border.setAttribute('stroke', '#fff');
+    border.setAttribute('stroke-width', sw * 1.5);
+    border.setAttribute('stroke-dasharray', `${sw * 4} ${sw * 2}`);
+    border.setAttribute('pointer-events', 'none');
+    previewLayer.appendChild(border);
+    cropState.overlayEls.push(border);
+}
+
+function handleCropMouseDown(pt) {
+    if (!cropState.active || !cropState.imageObj) return false;
+    const img = cropState.imageObj;
+    // Only start crop if clicking within the image bounds
+    if (pt.x < img.x || pt.x > img.x + img.width || pt.y < img.y || pt.y > img.y + img.height) return false;
+    cropState.startPt = { x: pt.x, y: pt.y };
+    return true;
+}
+
+function handleCropMouseMove(pt) {
+    if (!cropState.active || !cropState.startPt || !cropState.imageObj) return;
+    const img = cropState.imageObj;
+    const sx = cropState.startPt.x, sy = cropState.startPt.y;
+    // Clamp to image bounds
+    const cx = Math.max(img.x, Math.min(img.x + img.width, pt.x));
+    const cy = Math.max(img.y, Math.min(img.y + img.height, pt.y));
+    cropState.cropRect = {
+        x: Math.min(sx, cx), y: Math.min(sy, cy),
+        w: Math.abs(cx - sx), h: Math.abs(cy - sy),
+    };
+    drawCropOverlay();
+    cropState.confirmBar.querySelector('.crop-apply').disabled = cropState.cropRect.w < 2 || cropState.cropRect.h < 2;
+}
+
+function handleCropMouseUp() {
+    if (!cropState.active) return;
+    cropState.startPt = null; // stop dragging but keep rect
+}
+
+function applyCrop() {
+    const cr = cropState.cropRect;
+    const obj = cropState.imageObj;
+    if (!cr || !obj || cr.w < 2 || cr.h < 2) return;
+
+    saveUndoState();
+
+    // Load image and crop via canvas
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+        // Map crop rect from editor coords to image pixel coords
+        const pixelW = img.naturalWidth, pixelH = img.naturalHeight;
+        const scaleX = pixelW / obj.width, scaleY = pixelH / obj.height;
+        const srcX = (cr.x - obj.x) * scaleX;
+        const srcY = (cr.y - obj.y) * scaleY;
+        const srcW = cr.w * scaleX;
+        const srcH = cr.h * scaleY;
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.round(srcW);
+        canvas.height = Math.round(srcH);
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, Math.round(srcX), Math.round(srcY), Math.round(srcW), Math.round(srcH), 0, 0, canvas.width, canvas.height);
+
+        // Update object
+        obj.href = canvas.toDataURL('image/png');
+        obj.x = cr.x;
+        obj.y = cr.y;
+        obj.width = cr.w;
+        obj.height = cr.h;
+
+        // Update SVG element
+        const elem = obj.element;
+        if (elem) {
+            elem.setAttribute('x', obj.x);
+            elem.setAttribute('y', obj.y);
+            elem.setAttribute('width', obj.width);
+            elem.setAttribute('height', obj.height);
+            elem.setAttributeNS('http://www.w3.org/1999/xlink', 'href', obj.href);
+        }
+
+        cancelCrop();
+        selectObject(obj.id);
+        markDirty();
+    };
+    img.onerror = () => {
+        // Retry without crossOrigin
+        const img2 = new Image();
+        img2.onload = img.onload.bind({ ...img, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight });
+        img2.src = obj.href;
+    };
+    img.src = obj.href;
+}
+
 function setTool(tool) {
+    if (cropState.active) cancelCrop();
     if (state.nodeEditId) exitNodeEdit();
     if (state.tool === 'bspline' && tool !== 'bspline') {
         if (state.bsplinePoints.length >= 2) { const obj = createObject('bspline',{points:[...state.bsplinePoints]}); selectObject(obj.id); }
