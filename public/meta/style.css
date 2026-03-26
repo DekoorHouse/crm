@@ -757,6 +757,7 @@ td.metric { font-variant-numeric: tabular-nums; font-weight: 500; white-space: n
     font-size: 0.8rem;
     transition: 0.15s;
     border-radius: 8px !important;
+    cursor: pointer;
 }
 .litepicker .container__days .day-item:hover {
     color: white !important;
@@ -798,6 +799,7 @@ td.metric { font-variant-numeric: tabular-nums; font-weight: 500; white-space: n
     transition: 0.2s;
     border: none !important;
     background: transparent !important;
+    cursor: pointer;
 }
 .litepicker .container__predefined-ranges button:hover {
     background: rgba(59,130,246,.1) !important;
