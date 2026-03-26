@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cursor Preview - Meta Ads</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #080d18;
+            background-image:
+                radial-gradient(ellipse at 0% 50%, rgba(29,78,216,0.18) 0%, transparent 50%),
+                radial-gradient(ellipse at 100% 0%, rgba(56,189,248,0.07) 0%, transparent 40%);
+            color: #edf2f7;
+            min-height: 100vh;
+            padding: 40px;
+        }
+        h1 { font-size: 1.4rem; font-weight: 800; margin-bottom: 8px; }
+        h1 i { color: #60a5fa; }
+        p.sub { color: #5a7190; font-size: 0.85rem; margin-bottom: 32px; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+        }
+        .card {
+            background: rgba(15,25,50,0.55);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(59,130,246,0.08);
+            border-radius: 14px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, #2563eb, #38bdf8, #2563eb);
+            background-size: 200% 100%;
+            animation: gb 4s linear infinite;
+            opacity: 0.3;
+        }
+        .card:hover { border-color: rgba(59,130,246,0.2); }
+        .card:hover::before { opacity: 0.8; }
+        @keyframes gb { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+
+        .card h3 { font-size: 0.9rem; font-weight: 700; margin-bottom: 4px; color: #93c5fd; }
+        .card .num { font-size: 0.65rem; color: #5a7190; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px; }
+        .card .desc { font-size: 0.75rem; color: #a0b3cc; line-height: 1.5; margin-top: 8px; }
+        .card .preview-area {
+            width: 100%;
+            flex: 1;
+            min-height: 80px;
+            border-radius: 10px;
+            background: rgba(0,0,0,0.3);
+            border: 1px dashed rgba(59,130,246,0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #5a7190;
+            font-size: 0.7rem;
+            font-weight: 500;
+            margin-top: 12px;
+        }
+
+        /* ===== CURSOR 1: Blue Dot ===== */
+        .card[data-cursor="1"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Ccircle cx='10' cy='10' r='8' fill='%233b82f6' opacity='0.9'/%3E%3Ccircle cx='10' cy='10' r='3' fill='white'/%3E%3C/svg%3E") 10 10, auto;
+        }
+
+        /* ===== CURSOR 2: Glow Ring ===== */
+        .card[data-cursor="2"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='14' cy='14' r='11' fill='none' stroke='%2360a5fa' stroke-width='2' opacity='0.8'/%3E%3Ccircle cx='14' cy='14' r='3' fill='%2360a5fa'/%3E%3C/svg%3E") 14 14, auto;
+        }
+
+        /* ===== CURSOR 3: Crosshair Minimal ===== */
+        .card[data-cursor="3"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cline x1='12' y1='4' x2='12' y2='9' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round'/%3E%3Cline x1='12' y1='15' x2='12' y2='20' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round'/%3E%3Cline x1='4' y1='12' x2='9' y2='12' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round'/%3E%3Cline x1='15' y1='12' x2='20' y2='12' stroke='%2338bdf8' stroke-width='1.5' stroke-linecap='round'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%2338bdf8'/%3E%3C/svg%3E") 12 12, auto;
+        }
+
+        /* ===== CURSOR 4: Diamond ===== */
+        .card[data-cursor="4"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20'%3E%3Crect x='4' y='4' width='12' height='12' rx='2' fill='%232563eb' opacity='0.85' transform='rotate(45 10 10)'/%3E%3Crect x='7' y='7' width='6' height='6' rx='1' fill='white' opacity='0.6' transform='rotate(45 10 10)'/%3E%3C/svg%3E") 10 10, auto;
+        }
+
+        /* ===== CURSOR 5: Arrow Modern ===== */
+        .card[data-cursor="5"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpath d='M4 2 L4 20 L9 15 L14 22 L17 20 L12 13 L18 12 Z' fill='%233b82f6' stroke='%23080d18' stroke-width='1.5' stroke-linejoin='round'/%3E%3C/svg%3E") 4 2, auto;
+        }
+
+        /* ===== CURSOR 6: Neon Pointer ===== */
+        .card[data-cursor="6"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cdefs%3E%3Cfilter id='g'%3E%3CfeGaussianBlur stdDeviation='1'/%3E%3C/filter%3E%3C/defs%3E%3Cpath d='M5 2 L5 19 L9.5 14.5 L14 21 L16.5 19.5 L12 13 L17.5 12 Z' fill='%2338bdf8' filter='url(%23g)' opacity='0.5'/%3E%3Cpath d='M5 2 L5 19 L9.5 14.5 L14 21 L16.5 19.5 L12 13 L17.5 12 Z' fill='%2338bdf8' stroke='white' stroke-width='0.5'/%3E%3C/svg%3E") 5 2, auto;
+        }
+
+        /* ===== CURSOR 7: Dual Ring ===== */
+        .card[data-cursor="7"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='28'%3E%3Ccircle cx='14' cy='14' r='12' fill='none' stroke='%233b82f6' stroke-width='1' opacity='0.4'/%3E%3Ccircle cx='14' cy='14' r='7' fill='none' stroke='%2360a5fa' stroke-width='1.5' opacity='0.8'/%3E%3Ccircle cx='14' cy='14' r='2' fill='%2393c5fd'/%3E%3C/svg%3E") 14 14, auto;
+        }
+
+        /* ===== CURSOR 8: Triangle ===== */
+        .card[data-cursor="8"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='24'%3E%3Cpath d='M3 1 L20 12 L3 23 Z' fill='%232563eb' stroke='%2393c5fd' stroke-width='1' stroke-linejoin='round' opacity='0.9'/%3E%3C/svg%3E") 3 12, auto;
+        }
+
+        /* ===== CURSOR 9: Gradient Dot + Tail ===== */
+        .card[data-cursor="9"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cdefs%3E%3ClinearGradient id='lg' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%232563eb'/%3E%3Cstop offset='100%25' stop-color='%2338bdf8'/%3E%3C/linearGradient%3E%3C/defs%3E%3Ccircle cx='6' cy='6' r='5' fill='url(%23lg)'/%3E%3Cline x1='6' y1='6' x2='20' y2='20' stroke='%2360a5fa' stroke-width='1.5' stroke-linecap='round' opacity='0.5'/%3E%3C/svg%3E") 6 6, auto;
+        }
+
+        /* ===== CURSOR 10: Hexagon ===== */
+        .card[data-cursor="10"] .preview-area {
+            cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Cpolygon points='12,2 21,7 21,17 12,22 3,17 3,7' fill='%231d4ed8' stroke='%2360a5fa' stroke-width='1.2' opacity='0.85'/%3E%3Cpolygon points='12,7 16,9.5 16,14.5 12,17 8,14.5 8,9.5' fill='%2338bdf8' opacity='0.5'/%3E%3C/svg%3E") 12 12, auto;
+        }
+
+        .pick-btn {
+            margin-top: 12px;
+            padding: 8px 18px;
+            background: linear-gradient(140deg, #2563eb, #3b82f6);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.78rem;
+            font-weight: 600;
+            cursor: pointer;
+            box-shadow: 0 3px 12px rgba(37,99,235,0.3);
+            transition: 0.2s;
+        }
+        .pick-btn:hover { box-shadow: 0 5px 20px rgba(37,99,235,0.5); transform: translateY(-1px); }
+
+        .selected-msg {
+            position: fixed;
+            bottom: 24px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10,16,30,0.95);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(59,130,246,0.2);
+            border-radius: 12px;
+            padding: 14px 28px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: #93c5fd;
+            display: none;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+    <h1><i class="fab fa-meta"></i> Cursor Preview</h1>
+    <p class="sub">Mueve el mouse sobre cada zona gris para probar el cursor. Haz click en "Elegir" para seleccionar.</p>
+
+    <div class="grid">
+        <div class="card" data-cursor="1">
+            <div class="num">Opcion 1</div>
+            <h3>Blue Dot</h3>
+            <div class="desc">Punto azul con centro blanco. Minimalista y limpio.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(1)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="2">
+            <div class="num">Opcion 2</div>
+            <h3>Glow Ring</h3>
+            <div class="desc">Anillo azul con punto central. Estilo radar/scanner.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(2)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="3">
+            <div class="num">Opcion 3</div>
+            <h3>Crosshair</h3>
+            <div class="desc">Cruz minimalista cyan. Precision y tecnologia.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(3)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="4">
+            <div class="num">Opcion 4</div>
+            <h3>Diamond</h3>
+            <div class="desc">Rombo azul con brillo interior. Elegante y unico.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(4)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="5">
+            <div class="num">Opcion 5</div>
+            <h3>Arrow Modern</h3>
+            <div class="desc">Flecha clasica en azul solido con borde oscuro. Familiar pero en tema.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(5)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="6">
+            <div class="num">Opcion 6</div>
+            <h3>Neon Pointer</h3>
+            <div class="desc">Flecha cyan con efecto glow/neon. El mas llamativo.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(6)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="7">
+            <div class="num">Opcion 7</div>
+            <h3>Dual Ring</h3>
+            <div class="desc">Doble anillo concentrico con punto. Estilo HUD futurista.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(7)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="8">
+            <div class="num">Opcion 8</div>
+            <h3>Triangle</h3>
+            <div class="desc">Triangulo lateral azul con borde claro. Tipo play/direccion.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(8)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="9">
+            <div class="num">Opcion 9</div>
+            <h3>Dot + Tail</h3>
+            <div class="desc">Punto gradiente con linea diagonal. Estilo cometa/trazo.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(9)">Elegir</button>
+        </div>
+
+        <div class="card" data-cursor="10">
+            <div class="num">Opcion 10</div>
+            <h3>Hexagon</h3>
+            <div class="desc">Hexagono azul oscuro con nucleo cyan. Estilo sci-fi.</div>
+            <div class="preview-area">Mueve el mouse aqui</div>
+            <button class="pick-btn" onclick="pick(10)">Elegir</button>
+        </div>
+    </div>
+
+    <div class="selected-msg" id="msg"></div>
+
+    <script>
+        function pick(n) {
+            const msg = document.getElementById('msg');
+            msg.textContent = `Cursor #${n} seleccionado. Dile a Claude que aplique la opcion ${n}.`;
+            msg.style.display = 'block';
+            setTimeout(() => { msg.style.display = 'none'; }, 4000);
+        }
+    </script>
+</body>
+</html>
