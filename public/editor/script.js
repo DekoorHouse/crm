@@ -5386,6 +5386,16 @@ function executeSingleAction(action) {
             state.selectedIds = targets.map(o => o.id);
             drawSelection();
             duplicateSelected();
+            // Apply optional AI offset (in user units)
+            if (a.dx_u != null || a.dy_u != null) {
+                const dx = a.dx_u != null ? fromUnit(a.dx_u) : 0;
+                const dy = a.dy_u != null ? fromUnit(a.dy_u) : 0;
+                // Undo the default 30px offset, apply custom one
+                for (const newId of state.selectedIds) {
+                    const obj = findObject(newId);
+                    if (obj) { offsetObject(obj, dx - 30, dy - 30); refreshElement(obj); }
+                }
+            }
             return { id: state.selectedIds[0] };
         }
         case 'order': {
