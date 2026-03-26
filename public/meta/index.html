@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meta Ads Manager | Dekoor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/plugins/ranges.js"></script>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ========== LOGIN ========== -->
+    <div id="login-view" class="login-container" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center;">
+        <div class="login-card" style="padding: 48px; border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); max-width: 440px; width: 100%;">
+            <h1 style="font-size: 28px; font-weight: 800; margin-bottom: 8px;">
+                <i class="fab fa-meta" style="color: var(--primary);"></i> Meta Ads Manager
+            </h1>
+            <p style="color: var(--text-secondary); margin-bottom: 32px;">Ingresa tus credenciales para continuar.</p>
+            <form id="login-form">
+                <div style="margin-bottom: 20px;">
+                    <label style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em;">Correo</label>
+                    <input type="email" id="login-email" required placeholder="admin@tienda.com" class="modal-input" style="width: 100%; margin-top: 6px;">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label style="font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-secondary); letter-spacing: 0.05em;">Contrasena</label>
+                    <input type="password" id="login-password" required placeholder="********" class="modal-input" style="width: 100%; margin-top: 6px;">
+                </div>
+                <div id="login-error-message" style="color: var(--danger); margin-top: 12px; min-height: 1.2em; font-size: 13px;"></div>
+                <button type="submit" id="login-button" class="btn" style="width: 100%; margin-top: 24px;">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== MAIN APP ========== -->
+    <div class="container" style="display: none;">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div style="display: flex; align-items: center; gap: 16px; flex: 1; min-width: 0;">
+                <h1 class="app-title"><i class="fab fa-meta"></i> Meta Ads</h1>
+                <select id="account-selector" class="account-select">
+                    <option value="">Cargando cuentas...</option>
+                </select>
+            </div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <input type="text" id="date-range-picker" placeholder="Seleccionar fechas..." readonly class="date-input">
+                <button id="settings-btn" class="btn btn-outline btn-sm" title="Configuracion"><i class="fas fa-cog"></i></button>
+                <button id="theme-toggle" class="btn btn-outline btn-sm" title="Cambiar Tema"><i class="fas fa-moon"></i></button>
+                <button id="logout-btn" class="btn btn-outline btn-sm">Salir <i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Breadcrumb -->
+        <div id="breadcrumb" class="breadcrumb"></div>
+
+        <!-- Tabs -->
+        <div class="tabs">
+            <div class="tab active" data-tab="dashboard"><i class="fas fa-chart-line"></i> Dashboard</div>
+            <div class="tab" data-tab="campaigns"><i class="fas fa-bullhorn"></i> Campanas</div>
+            <div class="tab" data-tab="creatives"><i class="fas fa-palette"></i> Creativos</div>
+        </div>
+
+        <!-- ========== DASHBOARD TAB ========== -->
+        <div class="tab-content active" id="dashboard-tab">
+            <div id="kpi-grid" class="kpi-grid">
+                <div class="kpi-card"><div class="kpi-title">Gasto Total</div><div class="kpi-value" id="kpi-spend">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">Impresiones</div><div class="kpi-value" id="kpi-impressions">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">Clicks</div><div class="kpi-value" id="kpi-clicks">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">CTR</div><div class="kpi-value" id="kpi-ctr">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">CPC</div><div class="kpi-value" id="kpi-cpc">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">CPM</div><div class="kpi-value" id="kpi-cpm">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">Alcance</div><div class="kpi-value" id="kpi-reach">--</div></div>
+                <div class="kpi-card"><div class="kpi-title">Conversiones</div><div class="kpi-value" id="kpi-conversions">--</div></div>
+            </div>
+
+            <div class="chart-grid">
+                <div class="chart-container">
+                    <h3 class="section-title">Gasto y Conversiones por Dia</h3>
+                    <canvas id="spend-conversions-chart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <h3 class="section-title">Gasto por Campana</h3>
+                    <canvas id="spend-by-campaign-chart"></canvas>
+                </div>
+            </div>
+
+            <div class="breakdown-grid">
+                <div class="breakdown-card">
+                    <h3 class="section-title">Por Edad</h3>
+                    <div class="table-container"><table id="breakdown-age-table"><thead><tr><th>Edad</th><th>Gasto</th><th>Clicks</th><th>CTR</th></tr></thead><tbody></tbody></table></div>
+                </div>
+                <div class="breakdown-card">
+                    <h3 class="section-title">Por Genero</h3>
+                    <div class="table-container"><table id="breakdown-gender-table"><thead><tr><th>Genero</th><th>Gasto</th><th>Clicks</th><th>CTR</th></tr></thead><tbody></tbody></table></div>
+                </div>
+                <div class="breakdown-card">
+                    <h3 class="section-title">Por Plataforma</h3>
+                    <div class="table-container"><table id="breakdown-platform-table"><thead><tr><th>Plataforma</th><th>Gasto</th><th>Clicks</th><th>CTR</th></tr></thead><tbody></tbody></table></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========== CAMPAIGNS TAB ========== -->
+        <div class="tab-content" id="campaigns-tab">
+            <!-- Campaigns list view -->
+            <div id="campaigns-view">
+                <div class="view-header">
+                    <h2 class="section-title">Campanas</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <select id="campaigns-status-filter" class="filter-select">
+                            <option value="">Todos los estados</option>
+                            <option value="ACTIVE">Activas</option>
+                            <option value="PAUSED">Pausadas</option>
+                        </select>
+                        <button id="create-campaign-btn" class="btn"><i class="fas fa-plus"></i> Nueva Campana</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="campaigns-table">
+                        <thead>
+                            <tr>
+                                <th>Campana</th>
+                                <th>Estado</th>
+                                <th>Objetivo</th>
+                                <th>Presupuesto</th>
+                                <th>Gasto</th>
+                                <th>Impresiones</th>
+                                <th>Clicks</th>
+                                <th>CTR</th>
+                                <th>CPC</th>
+                                <th>Conversiones</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="campaigns-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="campaigns-empty" class="empty-state" style="display: none;">
+                    <i class="fas fa-bullhorn"></i>
+                    <p>No se encontraron campanas.</p>
+                </div>
+                <div id="campaigns-loading" class="loading-state"><i class="fas fa-spinner fa-spin"></i> Cargando campanas...</div>
+                <button id="campaigns-load-more" class="btn btn-outline" style="display: none; margin: 24px auto;">Cargar mas</button>
+            </div>
+
+            <!-- Ad Sets view (drill-down) -->
+            <div id="adsets-view" style="display: none;">
+                <div class="view-header">
+                    <h2 class="section-title">Conjuntos de Anuncios</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="create-adset-btn" class="btn"><i class="fas fa-plus"></i> Nuevo Conjunto</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="adsets-table">
+                        <thead>
+                            <tr>
+                                <th>Conjunto</th>
+                                <th>Estado</th>
+                                <th>Presupuesto</th>
+                                <th>Segmentacion</th>
+                                <th>Gasto</th>
+                                <th>Impresiones</th>
+                                <th>Clicks</th>
+                                <th>CTR</th>
+                                <th>CPC</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="adsets-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="adsets-empty" class="empty-state" style="display: none;">
+                    <i class="fas fa-layer-group"></i>
+                    <p>No se encontraron conjuntos de anuncios.</p>
+                </div>
+                <div id="adsets-loading" class="loading-state"><i class="fas fa-spinner fa-spin"></i> Cargando conjuntos...</div>
+                <button id="adsets-load-more" class="btn btn-outline" style="display: none; margin: 24px auto;">Cargar mas</button>
+            </div>
+
+            <!-- Ads view (drill-down) -->
+            <div id="ads-view" style="display: none;">
+                <div class="view-header">
+                    <h2 class="section-title">Anuncios</h2>
+                    <div style="display: flex; gap: 8px;">
+                        <button id="create-ad-btn" class="btn"><i class="fas fa-plus"></i> Nuevo Anuncio</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table id="ads-table">
+                        <thead>
+                            <tr>
+                                <th>Anuncio</th>
+                                <th>Estado</th>
+                                <th>Creativo</th>
+                                <th>Gasto</th>
+                                <th>Impresiones</th>
+                                <th>Clicks</th>
+                                <th>CTR</th>
+                                <th>CPC</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="ads-table-body"></tbody>
+                    </table>
+                </div>
+                <div id="ads-empty" class="empty-state" style="display: none;">
+                    <i class="fas fa-ad"></i>
+                    <p>No se encontraron anuncios.</p>
+                </div>
+                <div id="ads-loading" class="loading-state"><i class="fas fa-spinner fa-spin"></i> Cargando anuncios...</div>
+                <button id="ads-load-more" class="btn btn-outline" style="display: none; margin: 24px auto;">Cargar mas</button>
+            </div>
+        </div>
+
+        <!-- ========== CREATIVES TAB ========== -->
+        <div class="tab-content" id="creatives-tab">
+            <div class="view-header">
+                <h2 class="section-title">Biblioteca de Creativos</h2>
+                <div style="display: flex; gap: 8px;">
+                    <button id="upload-creative-btn" class="btn"><i class="fas fa-upload"></i> Subir Imagen</button>
+                    <button id="create-creative-btn" class="btn btn-outline"><i class="fas fa-plus"></i> Crear Creativo</button>
+                </div>
+            </div>
+            <div id="creatives-grid" class="creatives-grid"></div>
+            <div id="creatives-empty" class="empty-state" style="display: none;">
+                <i class="fas fa-palette"></i>
+                <p>Tu biblioteca de creativos esta vacia. Sube imagenes para comenzar.</p>
+            </div>
+            <div id="creatives-loading" class="loading-state"><i class="fas fa-spinner fa-spin"></i> Cargando creativos...</div>
+            <button id="creatives-load-more" class="btn btn-outline" style="display: none; margin: 24px auto;">Cargar mas</button>
+        </div>
+    </div>
+
+    <!-- ========== MODALS ========== -->
+
+    <!-- Generic Modal -->
+    <div id="modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 class="modal-header" id="modal-title"></h3>
+            <div class="modal-body" id="modal-body"></div>
+            <div class="modal-footer">
+                <button id="modal-cancel-btn" class="btn btn-outline">Cancelar</button>
+                <button id="modal-confirm-btn" class="btn">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Modal -->
+    <div id="settings-modal" class="modal-overlay">
+        <div class="modal-content">
+            <h3 class="modal-header"><i class="fas fa-cog"></i> Configuracion de Token</h3>
+            <div class="modal-body">
+                <p style="color: var(--text-secondary); font-size: 13px; margin-bottom: 16px;">
+                    Ingresa un Access Token con permisos <strong>ads_management</strong>, <strong>ads_read</strong> y <strong>business_management</strong>.
+                    Generalo en <a href="https://developers.facebook.com/tools/explorer/" target="_blank" style="color: var(--primary);">Graph API Explorer</a>.
+                </p>
+                <label class="form-label">Access Token Global</label>
+                <input type="password" id="settings-token-input" class="modal-input" placeholder="Pega tu access token aqui...">
+            </div>
+            <div class="modal-footer">
+                <button id="settings-cancel-btn" class="btn btn-outline">Cancelar</button>
+                <button id="settings-save-btn" class="btn">Guardar Token</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toast-container"></div>
+
+    <!-- Hidden file input for image upload -->
+    <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
+
+    <script src="/env-config.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
