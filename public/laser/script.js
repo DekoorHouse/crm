@@ -240,7 +240,9 @@ document.addEventListener('DOMContentLoaded', () => {
             sendCommand('usb_connect');
             sendCommand('start');
         }, 500);
+        jobRunning = false;
         sbJob.textContent = 'Detenido';
+        document.getElementById('progress-fill').classList.remove('indeterminate');
         document.getElementById('progress-fill').style.width = '0%';
         document.getElementById('progress-text').textContent = 'Detenido';
         document.getElementById('progress-pct').textContent = '';
@@ -251,34 +253,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================== Progress Polling =====================
     let progressInterval = null;
 
-    function parseProgress(text) {
-        // Match: LaserJob(filename: current/total)
-        const match = text.match(/LaserJob\(.*?:\s*(\d+)\/(\d+)\)/);
-        if (match) {
-            const current = parseInt(match[1], 10);
-            const total = parseInt(match[2], 10);
-            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
-            document.getElementById('progress-fill').style.width = pct + '%';
-            document.getElementById('progress-text').textContent = `Ejecutando... ${current}/${total}`;
-            document.getElementById('progress-pct').textContent = pct + '%';
-            sbJob.textContent = `Ejecutando ${pct}%`;
+    let jobRunning = false;
 
-            if (current >= total && total > 0) {
-                // Job finished
-                stopProgressPolling();
-                sbJob.textContent = 'Completado';
-                document.getElementById('progress-text').textContent = 'Completado';
-                document.getElementById('progress-pct').textContent = '100%';
-                document.getElementById('progress-fill').style.width = '100%';
+    function parseProgress(text) {
+        // Job is active if we see LaserJob in spool output
+        if (text.match(/LaserJob\(/)) {
+            if (!jobRunning) {
+                jobRunning = true;
+                document.getElementById('progress-fill').classList.add('indeterminate');
+                document.getElementById('progress-text').textContent = 'Cortando...';
+                document.getElementById('progress-pct').textContent = '';
+                sbJob.textContent = 'Cortando...';
             }
         }
 
-        // Empty spooler = job done
-        if (text.includes('Spooler on device') && text.includes('0/')) {
-            // Still running
-        } else if (text.match(/Spoolers:\s*$/) || text.includes('No spooled')) {
-            stopProgressPolling();
-            sbJob.textContent = 'Idle';
+        // Empty spooler = job finished (spool output with no LaserJob lines)
+        if (text.includes('Spooler on device') && !text.includes('LaserJob')) {
+            if (jobRunning) {
+                jobRunning = false;
+                stopProgressPolling();
+                document.getElementById('progress-fill').classList.remove('indeterminate');
+                document.getElementById('progress-fill').style.width = '100%';
+                document.getElementById('progress-text').textContent = 'Completado';
+                document.getElementById('progress-pct').textContent = '';
+                sbJob.textContent = 'Completado';
+            }
         }
     }
 

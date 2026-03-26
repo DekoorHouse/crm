@@ -2,6 +2,7 @@
 @keyframes breathe{0%,100%{opacity:.5}50%{opacity:1}}
 @keyframes gradient-border{0%{background-position:0% 50%}100%{background-position:200% 50%}}
 @keyframes float-up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+@keyframes indeterminate{0%{left:-40%;width:40%}50%{left:20%;width:60%}100%{left:100%;width:40%}}
 
 :root {
     --bg: #080d18;
@@ -194,12 +195,17 @@ body {
     background:linear-gradient(90deg, transparent, var(--blue-400), transparent);
     opacity:.3;
 }
-.progress-track { height:6px; background:rgba(0,0,0,.4); border-radius:4px; overflow:hidden; margin-bottom:8px; }
+.progress-track { height:6px; background:rgba(0,0,0,.4); border-radius:4px; overflow:hidden; margin-bottom:8px; position:relative; }
 .progress-fill {
-    height:100%; width:65%;
+    height:100%; width:0%;
     background:linear-gradient(90deg, var(--blue-700), var(--blue-400), var(--sky));
     background-size:200% 100%; animation:shimmer 2s linear infinite;
     border-radius:4px; box-shadow:0 0 10px rgba(59,130,246,.2);
+    transition:width .3s;
+}
+.progress-fill.indeterminate {
+    width:40%; position:relative;
+    animation:indeterminate 1.8s ease-in-out infinite, shimmer 2s linear infinite;
 }
 .progress-info { display:flex; justify-content:space-between; font-size:.72rem; color:var(--text-2); font-weight:500; }
 
