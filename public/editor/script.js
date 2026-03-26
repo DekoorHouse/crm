@@ -1022,24 +1022,7 @@ function drawSelection() {
 
 function getObjBounds(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
-        case 'curvepath': {
-            // Use actual rendered path bounds (getBBox) mapped to page space
-            if (obj.element && obj._origBounds) {
-                try {
-                    const bb = obj.element.getBBox();
-                    if (bb.width > 0.01 && bb.height > 0.01) {
-                        const orig = obj._origBounds;
-                        const sx = obj.width / orig.w;
-                        const sy = obj.height / orig.h;
-                        const tx = obj.x - orig.x * sx;
-                        const ty = obj.y - orig.y * sy;
-                        return { x: bb.x * sx + tx, y: bb.y * sy + ty, w: bb.width * sx, h: bb.height * sy };
-                    }
-                } catch(e) {}
-            }
-            return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
-        }
+        case 'rect': case 'image': case 'curvepath': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
@@ -1056,11 +1039,14 @@ function getObjBounds(obj) {
             let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
             for (const c of obj.children) {
                 const b = getObjBounds(c);
+                console.log('[GroupBounds] child', c.id, c.type, c.type==='text'?c.text:'', JSON.stringify(b));
                 if(b.x<x1)x1=b.x; if(b.y<y1)y1=b.y;
                 if(b.x+b.w>x2)x2=b.x+b.w; if(b.y+b.h>y2)y2=b.y+b.h;
             }
             if(!isFinite(x1)) return {x:0,y:0,w:0,h:0};
-            return {x:x1,y:y1,w:x2-x1,h:y2-y1};
+            const result = {x:x1,y:y1,w:x2-x1,h:y2-y1};
+            console.log('[GroupBounds] TOTAL', JSON.stringify(result));
+            return result;
         }
         case 'text': {
             // Use cached bounds or measure from SVG element
