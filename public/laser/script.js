@@ -240,6 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sendCommand(`operation3 speed ${speed}`);
         }
 
+        sendCommand('spool clear');
         sendCommand('plan copy preprocess validate blob spool');
         sbJob.textContent = 'Ejecutando...';
         document.getElementById('progress-section').classList.remove('hidden');
