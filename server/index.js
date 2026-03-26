@@ -60,6 +60,10 @@ app.get('/checador/panel', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'panel.html'));
 });
 
+app.get('/envios', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'envios', 'index.html'));
+});
+
 app.get('/referencias', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'referencias', 'index.html'));
 });

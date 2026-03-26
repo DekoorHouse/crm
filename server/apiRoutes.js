@@ -3829,6 +3829,27 @@ router.post('/snapshots/daily', async (req, res) => {
 });
 
 // --- DATOS PARA ENVÍO ---
+router.get('/datos-envio', async (req, res) => {
+    try {
+        const snapshot = await db.collection('datos_envio').orderBy('createdAt', 'desc').get();
+        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json({ success: true, data });
+    } catch (error) {
+        console.error('Error obteniendo datos de envío:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener los datos.', error: error.message });
+    }
+});
+
+router.delete('/datos-envio/:id', async (req, res) => {
+    try {
+        await db.collection('datos_envio').doc(req.params.id).delete();
+        res.json({ success: true, message: 'Registro eliminado.' });
+    } catch (error) {
+        console.error('Error eliminando dato de envío:', error);
+        res.status(500).json({ success: false, message: 'Error al eliminar.', error: error.message });
+    }
+});
+
 router.post('/datos-envio', async (req, res) => {
     try {
         const { numeroPedido, nombreCompleto, telefono, direccion, numInterior, colonia, estado, ciudad, codigoPostal, referencia } = req.body;
