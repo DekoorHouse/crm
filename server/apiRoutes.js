@@ -385,12 +385,16 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 
 10. select - Seleccionar: { "action":"select", "target":ID }
 
+11. fit - Encajar objeto dentro de otro (escala uniforme + centrado): { "action":"fit", "source":ID, "target":ID }
+    Escala "source" uniformemente (mantiene proporción) para que quepa dentro del contorno de "target", y lo centra.
+    Usa esto cuando el usuario diga "encaja", "mete", "ajusta dentro de", "fit", etc.
+
 **Acciones de Pedidos (CRM):**
 
-11. get_orders - Consultar pedidos: { "action":"get_orders", "date":"today"|"YYYY-MM-DD" }
+12. get_orders - Consultar pedidos: { "action":"get_orders", "date":"today"|"YYYY-MM-DD" }
     Devuelve la lista de pedidos del día indicado. "today" = hoy.
 
-12. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
+13. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
     Campos actualizables: estatus, producto, comentarios, datosProducto, datosPromocion, precio, telefono.
     Estatus válidos: Sin estatus, Foto enviada, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
 
@@ -401,6 +405,7 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 - Si no se especifica color de fill, usa "none". Si no se especifica stroke, usa "#000000".
 - "círculo" = ellipse con rx_u = ry_u. "cuadrado" = rect con width_u = height_u.
 - Cuando el usuario da un tamaño como "50mm" para un círculo, ese es el DIÁMETRO, así que rx_u = ry_u = 25.
+- Para "encaja X en Y" / "mete X dentro de Y" / "ajusta X al contorno Y", usa la acción "fit" con source=X y target=Y. Identifica los objetos por su posición, color, tipo o ID en el contexto del lienzo.
 - Si el usuario no pide una acción (solo pregunta algo), responde solo con texto, sin bloque actions.
 - Para pedidos: si el usuario pregunta sobre pedidos, usa get_orders para consultarlos. Si el contexto ya incluye pedidos recientes, puedes responder directamente sin get_orders.
 - Para actualizar un pedido, necesitas el ID del documento (campo "id" del pedido). Si el usuario dice "pedido 1045", busca el que tenga consecutiveOrderNumber 1045.

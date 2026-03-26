@@ -5289,6 +5289,7 @@ function executeSingleAction(action) {
         order: 'order', reorder: 'order', z_order: 'order', zOrder: 'order',
         flip: 'flip', mirror: 'flip',
         select: 'select',
+        fit: 'fit', fitInto: 'fit', fit_into: 'fit', encajar: 'fit',
         get_orders: 'get_orders', getOrders: 'get_orders', query_orders: 'get_orders', list_orders: 'get_orders',
         update_order: 'update_order', updateOrder: 'update_order', modify_order: 'update_order'
     };
@@ -5401,6 +5402,32 @@ function executeSingleAction(action) {
                 refreshElement(obj);
             }
             return { id: targets[0]?.id };
+        }
+        case 'fit': {
+            const srcObj = findObjectDeep(a.source) || findObject(a.source);
+            if (!srcObj) throw new Error(`Objeto source ID ${a.source} no encontrado`);
+            const tgtObj = findObjectDeep(a.target) || findObject(a.target);
+            if (!tgtObj) throw new Error(`Objeto target ID ${a.target} no encontrado`);
+
+            const srcBounds = getObjBounds(srcObj);
+            const tgtBounds = getObjBounds(tgtObj);
+
+            if (srcBounds.w < 0.01 || srcBounds.h < 0.01) throw new Error('El objeto source tiene tamaño cero');
+            if (tgtBounds.w < 0.01 || tgtBounds.h < 0.01) throw new Error('El objeto target tiene tamaño cero');
+
+            // Escala uniforme para mantener proporción
+            const scaleFactor = Math.min(tgtBounds.w / srcBounds.w, tgtBounds.h / srcBounds.h);
+            applyPropSize(srcObj, srcBounds.w * scaleFactor, srcBounds.h * scaleFactor);
+
+            // Re-leer bounds después del resize y centrar
+            const newBounds = getObjBounds(srcObj);
+            const dx = (tgtBounds.x + tgtBounds.w / 2) - (newBounds.x + newBounds.w / 2);
+            const dy = (tgtBounds.y + tgtBounds.h / 2) - (newBounds.y + newBounds.h / 2);
+            offsetObject(srcObj, dx, dy);
+
+            refreshElement(srcObj);
+            console.log('[AI Fit]', a.source, 'into', a.target, 'scale:', scaleFactor.toFixed(3));
+            return { id: srcObj.id };
         }
         case 'select': {
             const obj = findObject(a.target);
