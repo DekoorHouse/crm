@@ -3,399 +3,149 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Laser Controller - Dekoor</title>
+    <title>Laser Control - Dekoor</title>
     <link rel="icon" href="/favicon.png" type="image/png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="stylesheet" href="/laser/style.css">
-    <style>
-        /* Dual panel layout */
-        .dual-workspace {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 4px;
-            height: calc(100vh - 48px);
-            overflow: hidden;
-        }
-        .machine-panel {
-            display: grid;
-            grid-template-rows: auto 1fr auto;
-            overflow: hidden;
-            border: 1px solid rgba(88,166,255,0.15);
-            border-radius: 4px;
-            background: var(--bg-primary);
-        }
-        .machine-panel .panel-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 4px 10px;
-            background: rgba(88,166,255,0.06);
-            border-bottom: 1px solid rgba(88,166,255,0.15);
-            font-size: 12px;
-            font-weight: 600;
-            gap: 8px;
-        }
-        .machine-panel .panel-header .machine-title {
-            color: #58a6ff;
-            font-size: 13px;
-        }
-        .machine-panel .panel-header .machine-status-dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: #f85149;
-            display: inline-block;
-        }
-        .machine-panel .panel-header .machine-status-dot.connected {
-            background: #3fb950;
-        }
-        .machine-panel .panel-body {
-            display: grid;
-            grid-template-columns: 200px 1fr;
-            overflow: hidden;
-        }
-        .machine-panel .panel-controls {
-            overflow-y: auto;
-            padding: 6px;
-            font-size: 11px;
-            border-right: 1px solid rgba(88,166,255,0.1);
-        }
-        .machine-panel .panel-controls .panel-section {
-            margin-bottom: 8px;
-            padding: 6px;
-        }
-        .machine-panel .panel-controls h3 {
-            font-size: 11px;
-            margin-bottom: 4px;
-        }
-        .machine-panel .panel-controls .setting-group {
-            margin-bottom: 4px;
-        }
-        .machine-panel .panel-controls .setting-group label {
-            font-size: 10px;
-        }
-        .machine-panel .canvas-wrapper {
-            position: relative;
-            overflow: hidden;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        .machine-panel canvas {
-            cursor: crosshair;
-        }
-        .machine-panel .panel-footer {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 2px;
-            padding: 4px 6px;
-            border-top: 1px solid rgba(88,166,255,0.15);
-            background: rgba(22,27,34,0.6);
-            font-size: 10px;
-            max-height: 120px;
-        }
-        .machine-panel .ctrl-row {
-            display: flex;
-            gap: 3px;
-            flex-wrap: wrap;
-            align-items: center;
-        }
-        .machine-panel .ctrl-row button {
-            padding: 3px 8px;
-            font-size: 10px;
-            border-radius: 3px;
-            border: 1px solid rgba(88,166,255,0.3);
-            background: rgba(88,166,255,0.08);
-            color: #c9d1d9;
-            cursor: pointer;
-        }
-        .machine-panel .ctrl-row button:hover { background: rgba(88,166,255,0.2); }
-        .machine-panel .ctrl-row button.start { border-color: #3fb950; color: #3fb950; }
-        .machine-panel .ctrl-row button.stop { border-color: #f85149; color: #f85149; }
-        .machine-panel .ctrl-row button.estop {
-            background: #f85149; color: #fff; border-color: #f85149; font-weight: 700;
-        }
-        .machine-panel .mini-console {
-            overflow-y: auto;
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 9px;
-            color: #8b949e;
-            max-height: 110px;
-            line-height: 1.3;
-            padding: 2px 4px;
-        }
-        .machine-panel .mini-console .log { margin: 1px 0; }
-        .machine-panel .mini-console .log.success { color: #3fb950; }
-        .machine-panel .mini-console .log.error { color: #f85149; }
-        .machine-panel .mini-console .log.warning { color: #d29922; }
-
-        .machine-panel .jog-mini {
-            display: grid;
-            grid-template-columns: repeat(3, 24px);
-            grid-template-rows: repeat(3, 24px);
-            gap: 2px;
-            justify-content: center;
-        }
-        .machine-panel .jog-mini button {
-            padding: 0; width: 24px; height: 24px;
-            font-size: 9px; text-align: center;
-            border-radius: 3px;
-            border: 1px solid rgba(88,166,255,0.3);
-            background: rgba(88,166,255,0.08);
-            color: #c9d1d9; cursor: pointer;
-        }
-        .machine-panel .jog-mini button:hover { background: rgba(88,166,255,0.2); }
-        .machine-panel .jog-mini button.home-btn { background: rgba(88,166,255,0.15); }
-
-        .machine-panel .pos-display {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 10px;
-            color: #58a6ff;
-            text-align: center;
-            padding: 2px 0;
-        }
-        .machine-panel .step-row {
-            display: flex; gap: 2px; justify-content: center; margin-top: 2px;
-        }
-        .machine-panel .step-row button {
-            padding: 1px 6px; font-size: 9px; border-radius: 2px;
-            border: 1px solid rgba(88,166,255,0.2); background: none; color: #8b949e; cursor: pointer;
-        }
-        .machine-panel .step-row button.active { background: rgba(88,166,255,0.2); color: #58a6ff; border-color: #58a6ff; }
-
-        .machine-panel .progress-bar {
-            height: 3px; background: rgba(88,166,255,0.1); border-radius: 2px; overflow: hidden;
-            margin-top: 3px;
-        }
-        .machine-panel .progress-bar .fill { height: 100%; background: #58a6ff; width: 0%; transition: width 0.3s; }
-    </style>
 </head>
 <body>
 
-<!-- Header -->
-<header>
-    <div class="header-left">
-        <img src="/favicon.png" alt="Dekoor" class="logo">
-        <span class="app-title"><i class="fas fa-crosshairs"></i> Laser Dual</span>
-    </div>
-    <div class="header-center"></div>
-    <div class="header-right">
-        <span style="color:#8b949e;font-size:12px">Área: 400×400mm</span>
-        <button id="restartServerBtn" style="margin-left:12px;background:none;border:1px solid #f85149;color:#f85149;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px" title="Reiniciar servidor láser"><i class="fas fa-redo"></i> Reiniciar</button>
-    </div>
-</header>
-
-<!-- Dual workspace -->
-<div class="dual-workspace" id="dualWorkspace"></div>
-
-<!-- Template for each machine panel -->
-<template id="machinePanelTemplate">
-    <div class="machine-panel" data-machine="__ID__">
-        <div class="panel-header">
-            <span class="machine-title"><i class="fas fa-crosshairs"></i> Láser __NUM__</span>
-            <span class="machine-status-dot" data-ref="statusDot"></span>
-            <button data-ref="connectBtn" style="padding:2px 10px;font-size:10px;border-radius:3px;border:1px solid #3fb950;background:none;color:#3fb950;cursor:pointer">Conectar</button>
-        </div>
-        <div class="panel-body">
-            <div class="panel-controls">
-                <!-- File -->
-                <div class="panel-section">
-                    <h3><i class="fas fa-file-image"></i> Diseño</h3>
-                    <div data-ref="dropZone" style="border:1px dashed rgba(88,166,255,0.3);border-radius:4px;padding:8px;text-align:center;cursor:pointer;font-size:10px;color:#8b949e">
-                        <i class="fas fa-cloud-upload-alt"></i> Arrastra archivo
-                        <input type="file" data-ref="fileInput" accept=".svg,.png,.jpg,.jpeg,.bmp" hidden>
-                    </div>
-                    <div data-ref="fileInfo" style="display:none;font-size:10px;padding:4px;color:#c9d1d9">
-                        <i class="fas fa-file-alt"></i> <span data-ref="fileName"></span>
-                        <span data-ref="bmpBadge" style="display:none;background:#3fb950;color:#0d1117;font-size:8px;font-weight:700;padding:1px 4px;border-radius:3px;margin-left:4px;vertical-align:middle">BMP</span>
-                        <button data-ref="removeFileBtn" style="background:none;border:none;color:#f85149;cursor:pointer;font-size:10px"><i class="fas fa-times"></i></button>
-                    </div>
-                </div>
-                <!-- Params -->
-                <div class="panel-section">
-                    <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
-                    <div class="setting-group">
-                        <label>Modo</label>
-                        <div style="display:flex;gap:2px">
-                            <button data-ref="modeEngrave" class="mode-btn active" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.3);border-radius:3px;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer">Grabar</button>
-                            <button data-ref="modeCut" class="mode-btn" style="flex:1;padding:2px;font-size:9px;border:1px solid rgba(88,166,255,0.1);border-radius:3px;background:none;color:#8b949e;cursor:pointer">Cortar</button>
-                        </div>
-                    </div>
-                    <div class="setting-group">
-                        <label style="display:flex;justify-content:space-between;align-items:center">Velocidad <span><input data-ref="speedInput" type="number" min="1" max="600" value="10" style="width:50px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;text-align:right;font-size:10px;padding:1px 3px;border-radius:3px"> mm/s</span></label>
-                        <input type="range" class="param-slider" data-ref="speedSlider" min="1" max="600" value="10">
-                    </div>
-                    <div class="setting-group">
-                        <label style="display:flex;justify-content:space-between;align-items:center">Interlineado <span><input data-ref="lineSpacingInput" type="number" min="0.050" max="0.250" step="0.025" value="0.100" style="width:50px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;text-align:right;font-size:10px;padding:1px 3px;border-radius:3px"> mm</span></label>
-                        <input type="range" class="param-slider" data-ref="lineSpacingSlider" min="2" max="10" value="4">
-                    </div>
-                    <div class="setting-group">
-                        <label style="display:flex;justify-content:space-between;align-items:center">Pasadas <span><input data-ref="passesInput" type="number" min="1" max="10" value="1" style="width:35px;background:#0d1117;border:1px solid #30363d;color:#c9d1d9;text-align:right;font-size:10px;padding:1px 3px;border-radius:3px">x</span></label>
-                        <input type="range" class="param-slider" data-ref="passesSlider" min="1" max="10" value="1">
-                    </div>
-                </div>
-                <!-- Jog -->
-                <div class="panel-section">
-                    <h3><i class="fas fa-crosshairs"></i> Posición</h3>
-                    <div class="pos-display" data-ref="posDisplay">X: 0.0  Y: 0.0</div>
-                    <div class="jog-mini">
-                        <button data-jog="-1,-1"><i class="fas fa-arrow-up" style="transform:rotate(-45deg);font-size:8px"></i></button>
-                        <button data-jog="0,-1"><i class="fas fa-arrow-up" style="font-size:8px"></i></button>
-                        <button data-jog="1,-1"><i class="fas fa-arrow-up" style="transform:rotate(45deg);font-size:8px"></i></button>
-                        <button data-jog="-1,0"><i class="fas fa-arrow-left" style="font-size:8px"></i></button>
-                        <button data-jog="home" class="home-btn"><i class="fas fa-home" style="font-size:8px"></i></button>
-                        <button data-jog="1,0"><i class="fas fa-arrow-right" style="font-size:8px"></i></button>
-                        <button data-jog="-1,1"><i class="fas fa-arrow-down" style="transform:rotate(45deg);font-size:8px"></i></button>
-                        <button data-jog="0,1"><i class="fas fa-arrow-down" style="font-size:8px"></i></button>
-                        <button data-jog="1,1"><i class="fas fa-arrow-down" style="transform:rotate(-45deg);font-size:8px"></i></button>
-                    </div>
-                    <div class="step-row">
-                        <button data-step="1" class="active">1</button>
-                        <button data-step="5">5</button>
-                        <button data-step="10">10</button>
-                    </div>
-                </div>
-            </div>
-            <div class="canvas-wrapper" data-ref="canvasWrapper">
-                <canvas data-ref="canvas"></canvas>
-            </div>
-        </div>
-        <div class="panel-footer">
-            <div>
-                <div class="ctrl-row">
-                    <button data-ref="frameBtn">Frame</button>
-                    <button data-ref="previewBtn" style="border-color:#d29922;color:#d29922">Vista previa</button>
-                    <button data-ref="simBtn" style="border-color:#f0883e;color:#f0883e"><i class="fas fa-play-circle"></i> Simular</button>
-                    <button data-ref="startBtn" class="start">Iniciar</button>
-                    <button data-ref="pauseBtn">Pausa</button>
-                    <button data-ref="stopBtn" class="stop">Stop</button>
-                    <button data-ref="unlockBtn" style="border-color:#8b949e;color:#8b949e;font-size:9px"><i class="fas fa-unlock"></i> Desbloquear</button>
-                </div>
-                <div class="progress-bar"><div class="fill" data-ref="progressFill"></div></div>
-            </div>
-            <div class="mini-console" data-ref="console">
-                <div class="log">Listo.</div>
-            </div>
+<div class="main-container">
+    <!-- Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-bolt"></i> Laser Control</h1>
+        <div class="connection-status" id="conn-status">
+            <span class="status-dot disconnected"></span>
+            <span class="status-text">Desconectado</span>
         </div>
     </div>
-</template>
 
-<!-- BMP Preview Modal -->
-<div id="bmpPreviewModal" style="display:none;position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,0.85);">
-    <div style="position:absolute;inset:20px;background:#161b22;border:1px solid rgba(88,166,255,0.2);border-radius:8px;display:grid;grid-template-columns:1fr 210px;overflow:hidden;">
-        <div id="bmpModalPreviewArea" style="overflow:auto;display:flex;align-items:center;justify-content:center;background:#0d1117;position:relative;">
-            <canvas id="bmpModalCanvas"></canvas>
-            <div id="bmpModalLoading" style="position:absolute;color:#8b949e;font-size:12px;">Procesando...</div>
+    <div class="layout">
+        <!-- Left panel: Controls -->
+        <div class="panel controls-panel">
+            <!-- File upload -->
+            <section class="section">
+                <h3><i class="fas fa-file-import"></i> Archivo</h3>
+                <div class="upload-area" id="upload-area">
+                    <input type="file" id="file-input" accept=".svg,.png,.bmp,.jpg,.jpeg,.dxf" hidden>
+                    <i class="fas fa-cloud-upload-alt upload-icon"></i>
+                    <p>Arrastra un archivo o haz clic</p>
+                    <span class="upload-hint">SVG, PNG, BMP, JPG, DXF</span>
+                </div>
+                <div class="loaded-file hidden" id="loaded-file">
+                    <i class="fas fa-file-image"></i>
+                    <span id="loaded-filename"></span>
+                    <button class="btn-icon" id="btn-clear-file" title="Quitar"><i class="fas fa-times"></i></button>
+                </div>
+            </section>
+
+            <!-- Material presets -->
+            <section class="section">
+                <h3><i class="fas fa-layer-group"></i> Material</h3>
+                <div class="presets-grid">
+                    <button class="preset-btn" data-speed="10" data-power="800">
+                        <i class="fas fa-tree"></i> Madera 3mm
+                    </button>
+                    <button class="preset-btn" data-speed="8" data-power="900">
+                        <i class="fas fa-square"></i> MDF 3mm
+                    </button>
+                    <button class="preset-btn" data-speed="6" data-power="1000">
+                        <i class="fas fa-gem"></i> Acrílico 3mm
+                    </button>
+                    <button class="preset-btn" data-speed="15" data-power="600">
+                        <i class="fas fa-scroll"></i> Cuero
+                    </button>
+                    <button class="preset-btn" data-speed="25" data-power="400">
+                        <i class="fas fa-note-sticky"></i> Papel
+                    </button>
+                    <button class="preset-btn" data-speed="12" data-power="700">
+                        <i class="fas fa-eraser"></i> Goma
+                    </button>
+                </div>
+            </section>
+
+            <!-- Speed / Power -->
+            <section class="section">
+                <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
+                <div class="param-row">
+                    <div class="param-group">
+                        <label>Velocidad (mm/s)</label>
+                        <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
+                    </div>
+                    <div class="param-group">
+                        <label>Potencia (PPI)</label>
+                        <input type="number" id="param-power" value="800" min="0" max="1000" step="10">
+                    </div>
+                </div>
+            </section>
+
+            <!-- Job controls -->
+            <section class="section">
+                <h3><i class="fas fa-play-circle"></i> Trabajo</h3>
+                <div class="job-buttons">
+                    <button class="btn btn-primary btn-lg" id="btn-start">
+                        <i class="fas fa-play"></i> Iniciar
+                    </button>
+                    <button class="btn btn-warning" id="btn-pause">
+                        <i class="fas fa-pause"></i> Pausa
+                    </button>
+                    <button class="btn btn-danger" id="btn-stop">
+                        <i class="fas fa-stop"></i> Detener
+                    </button>
+                </div>
+                <button class="btn btn-outline btn-full" id="btn-frame">
+                    <i class="fas fa-vector-square"></i> Trazar Marco
+                </button>
+            </section>
         </div>
-        <div style="padding:12px;overflow-y:auto;border-left:1px solid rgba(88,166,255,0.1);font-size:11px;">
-            <h3 style="font-size:13px;margin:0 0 12px;color:#58a6ff;">Configuración BMP</h3>
-            <div style="margin-bottom:8px;">
-                <label style="font-size:10px;color:#8b949e;">Algoritmo</label>
-                <select id="bmpModalAlgo" style="width:100%;padding:4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.3);border-radius:3px;color:#c9d1d9;margin-top:2px;">
-                    <option value="atkinson" selected>Atkinson</option>
-                    <option value="floyd-steinberg">Floyd-Steinberg</option>
-                    <option value="stucki">Stucki</option>
-                    <option value="jarvis">Jarvis</option>
-                    <option value="sierra">Sierra</option>
-                    <option value="sierra-lite">Sierra Lite</option>
-                    <option value="burkes">Burkes</option>
-                    <option value="halftone">Halftone</option>
-                    <option value="bayer4">Bayer 4×4</option>
-                    <option value="bayer8">Bayer 8×8</option>
-                    <option value="threshold">Umbral</option>
-                </select>
-            </div>
-            <div style="margin-bottom:8px;">
-                <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">DPI <input type="number" id="bmpModalDpiNum" value="1000" min="150" max="1500" step="50" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
-                <input type="range" id="bmpModalDpi" min="150" max="1500" value="1000" step="50" class="param-slider" style="width:100%;">
-            </div>
-            <div style="margin-bottom:8px;">
-                <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">Brillo <input type="number" id="bmpModalBrightNum" value="0" min="-100" max="100" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
-                <input type="range" id="bmpModalBright" min="-100" max="100" value="0" class="param-slider" style="width:100%;">
-            </div>
-            <div style="margin-bottom:8px;">
-                <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">Contraste <input type="number" id="bmpModalContrastNum" value="0" min="-100" max="100" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
-                <input type="range" id="bmpModalContrast" min="-100" max="100" value="0" class="param-slider" style="width:100%;">
-            </div>
-            <div style="margin-bottom:8px;">
-                <label style="font-size:10px;color:#8b949e;display:flex;justify-content:space-between;align-items:center;">Gamma <input type="number" id="bmpModalGammaNum" value="1.0" min="0.5" max="3.0" step="0.1" style="width:50px;padding:1px 4px;font-size:10px;background:#0d1117;border:1px solid rgba(88,166,255,0.2);border-radius:2px;color:#c9d1d9;text-align:right;"></label>
-                <input type="range" id="bmpModalGamma" min="0.5" max="3.0" value="1.0" step="0.1" class="param-slider" style="width:100%;">
-            </div>
-            <div style="display:flex;flex-direction:column;gap:4px;margin:8px 0;">
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="bmpModalClahe" style="accent-color:#58a6ff;cursor:pointer;">
-                    <label for="bmpModalClahe" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">CLAHE (ecualización adaptativa)</label>
+
+        <!-- Right panel: Position + Console -->
+        <div class="panel right-panel">
+            <!-- Position controls -->
+            <section class="section">
+                <h3><i class="fas fa-arrows-alt"></i> Posición</h3>
+                <div class="jog-grid">
+                    <div></div>
+                    <button class="jog-btn" data-dir="up" title="Arriba"><i class="fas fa-arrow-up"></i></button>
+                    <div></div>
+                    <button class="jog-btn" data-dir="left" title="Izquierda"><i class="fas fa-arrow-left"></i></button>
+                    <button class="jog-btn jog-home" id="btn-home" title="Home"><i class="fas fa-home"></i></button>
+                    <button class="jog-btn" data-dir="right" title="Derecha"><i class="fas fa-arrow-right"></i></button>
+                    <div></div>
+                    <button class="jog-btn" data-dir="down" title="Abajo"><i class="fas fa-arrow-down"></i></button>
+                    <div></div>
                 </div>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="bmpModalUnsharp" style="accent-color:#58a6ff;cursor:pointer;">
-                    <label for="bmpModalUnsharp" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Unsharp Mask (nitidez)</label>
+                <div class="jog-step-row">
+                    <label>Paso (mm):</label>
+                    <div class="step-buttons">
+                        <button class="step-btn active" data-step="1">1</button>
+                        <button class="step-btn" data-step="5">5</button>
+                        <button class="step-btn" data-step="10">10</button>
+                        <button class="step-btn" data-step="50">50</button>
+                    </div>
                 </div>
-                <div style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="bmpModalInvert" style="accent-color:#58a6ff;cursor:pointer;">
-                    <label for="bmpModalInvert" style="font-size:10px;cursor:pointer;margin:0;color:#c9d1d9;">Invertir colores (acrílico)</label>
+                <button class="btn btn-outline btn-full" id="btn-unlock">
+                    <i class="fas fa-lock-open"></i> Desbloquear motores
+                </button>
+            </section>
+
+            <!-- Console -->
+            <section class="section console-section">
+                <h3><i class="fas fa-terminal"></i> Consola</h3>
+                <div class="console-output" id="console-output"></div>
+                <div class="console-input-row">
+                    <input type="text" id="console-input" placeholder="Escribe un comando..." autocomplete="off">
+                    <button class="btn btn-primary" id="btn-send-cmd"><i class="fas fa-paper-plane"></i></button>
                 </div>
-            </div>
-            <div id="bmpModalInfo" style="font-size:9px;color:#8b949e;margin:8px 0;padding:6px;background:rgba(0,0,0,0.3);border-radius:3px;"></div>
-            <div style="display:flex;gap:6px;margin-top:12px;">
-                <button id="bmpModalCancel" style="flex:1;padding:6px;font-size:11px;border-radius:4px;border:1px solid rgba(88,166,255,0.3);background:none;color:#c9d1d9;cursor:pointer;">Cancelar</button>
-                <button id="bmpModalFinish" style="flex:1;padding:6px;font-size:11px;border-radius:4px;border:1px solid #58a6ff;background:rgba(88,166,255,0.15);color:#58a6ff;cursor:pointer;font-weight:600;">Finalizar</button>
-            </div>
+            </section>
         </div>
     </div>
 </div>
 
-<!-- Laser Simulation Preview Modal -->
-<div id="laserSimModal" style="display:none;position:fixed;inset:0;z-index:1100;background:rgba(0,0,0,0.92);">
-    <div style="position:absolute;inset:16px;background:#161b22;border:1px solid rgba(88,166,255,0.2);border-radius:8px;display:grid;grid-template-columns:1fr 180px;overflow:hidden;">
-        <!-- Canvas area -->
-        <div id="simCanvasArea" style="overflow:hidden;display:flex;align-items:center;justify-content:center;background:#0d1117;position:relative;">
-            <canvas id="simCanvas"></canvas>
-            <!-- Overlay info -->
-            <div id="simOverlay" style="position:absolute;top:8px;left:8px;font-size:10px;color:#8b949e;font-family:'JetBrains Mono',monospace;pointer-events:none;">
-                <div id="simPosLabel">X: 0.0  Y: 0.0</div>
-            </div>
-        </div>
-        <!-- Controls panel -->
-        <div style="padding:10px;overflow-y:auto;border-left:1px solid rgba(88,166,255,0.1);font-size:11px;display:flex;flex-direction:column;gap:8px;">
-            <h3 style="font-size:13px;margin:0;color:#d29922;"><i class="fas fa-play-circle"></i> Simulación</h3>
-            <!-- Progress -->
-            <div>
-                <div style="display:flex;justify-content:space-between;font-size:9px;color:#8b949e;margin-bottom:3px;">
-                    <span id="simProgressLabel">0%</span>
-                    <span id="simTimeLabel">--:--</span>
-                </div>
-                <div style="height:4px;background:rgba(88,166,255,0.1);border-radius:2px;overflow:hidden;">
-                    <div id="simProgressBar" style="height:100%;width:0%;background:linear-gradient(90deg,#d29922,#f0883e);transition:width 0.1s;"></div>
-                </div>
-            </div>
-            <!-- Playback controls -->
-            <div style="display:flex;gap:4px;justify-content:center;">
-                <button id="simRestartBtn" style="padding:4px 8px;font-size:10px;border-radius:3px;border:1px solid rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);color:#c9d1d9;cursor:pointer;" title="Reiniciar"><i class="fas fa-undo"></i></button>
-                <button id="simPlayBtn" style="padding:4px 12px;font-size:10px;border-radius:3px;border:1px solid #3fb950;background:rgba(63,185,80,0.15);color:#3fb950;cursor:pointer;font-weight:600;" title="Play/Pause"><i class="fas fa-play"></i></button>
-                <button id="simStepBtn" style="padding:4px 8px;font-size:10px;border-radius:3px;border:1px solid rgba(88,166,255,0.3);background:rgba(88,166,255,0.08);color:#c9d1d9;cursor:pointer;" title="Paso"><i class="fas fa-step-forward"></i></button>
-            </div>
-            <!-- Speed -->
-            <div>
-                <label style="font-size:9px;color:#8b949e;display:flex;justify-content:space-between;">Velocidad <span id="simSpeedLabel" style="color:#58a6ff;">1×</span></label>
-                <input type="range" id="simSpeedSlider" min="1" max="50" value="5" class="param-slider" style="width:100%;">
-            </div>
-            <!-- Info -->
-            <div id="simInfoBox" style="font-size:9px;color:#8b949e;padding:6px;background:rgba(0,0,0,0.3);border-radius:3px;line-height:1.5;"></div>
-            <!-- Legend -->
-            <div style="font-size:9px;color:#8b949e;line-height:1.6;">
-                <div><span style="display:inline-block;width:10px;height:2px;background:#00d4ff;vertical-align:middle;margin-right:4px;box-shadow:0 0 4px #00d4ff;"></span> Grabado/Corte</div>
-                <div><span style="display:inline-block;width:10px;height:2px;background:#58a6ff;vertical-align:middle;margin-right:4px;border-top:1px dashed #58a6ff;"></span> Movimiento</div>
-                <div><span style="display:inline-block;width:8px;height:8px;background:#00d4ff;border-radius:50%;vertical-align:middle;margin-right:4px;box-shadow:0 0 6px #00d4ff;"></span> Cabezal láser</div>
-            </div>
-            <!-- Close button -->
-            <div style="margin-top:auto;">
-                <button id="simCloseBtn" style="width:100%;padding:6px;font-size:11px;border-radius:4px;border:1px solid rgba(88,166,255,0.3);background:none;color:#c9d1d9;cursor:pointer;">Cerrar</button>
-            </div>
-        </div>
-    </div>
-</div>
-
-<script src="/laser/dual.js"></script>
+<script src="/env-config.js"></script>
+<script src="/laser/script.js"></script>
 </body>
 </html>
