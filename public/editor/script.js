@@ -7273,18 +7273,44 @@ function removeTextFromRefArea(textId) {
     })(state.objects);
 }
 
+function _pointInPoly(x, y, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x, yi = polygon[i].y;
+        const xj = polygon[j].x, yj = polygon[j].y;
+        if (((yi > y) !== (yj > y)) && (x < (xj - xi) * (y - yi) / (yj - yi) + xi))
+            inside = !inside;
+    }
+    return inside;
+}
+
+function _rectFitsInShape(cx, cy, hw, hh, refArea, samples) {
+    // Check 4 corners + 4 edge midpoints (8 points)
+    const pts = [
+        [cx - hw, cy - hh], [cx + hw, cy - hh],
+        [cx - hw, cy + hh], [cx + hw, cy + hh],
+        [cx, cy - hh], [cx, cy + hh],
+        [cx - hw, cy], [cx + hw, cy]
+    ];
+    if (refArea.type === 'ellipse') {
+        const a = refArea.rx, b = refArea.ry, ecx = refArea.cx, ecy = refArea.cy;
+        for (const [px, py] of pts) {
+            if (((px - ecx) / a) ** 2 + ((py - ecy) / b) ** 2 > 1) return false;
+        }
+        return true;
+    }
+    // bspline / polygon
+    for (const [px, py] of pts) {
+        if (!_pointInPoly(px, py, samples)) return false;
+    }
+    return true;
+}
+
 async function fitTextToRefArea(textObj) {
     const refArea = findRefAreaForText(textObj);
     if (!refArea) return;
     const rb = getObjBounds(refArea);
-    // For non-rectangular ref areas, shrink target to inscribed rectangle
-    // so text doesn't overflow the actual curved shape
-    let padFactor = 1;
-    if (refArea.type === 'ellipse') padFactor = 0.707; // 1/√2 — inscribed rect of ellipse
-    else if (refArea.type === 'bspline') padFactor = 0.80;
-    const targetW = rb.w * padFactor;
-    const targetH = rb.h * padFactor;
-    if (targetW <= 0 || targetH <= 0) return;
+    if (rb.w <= 0 || rb.h <= 0) return;
 
     const fontName = textObj.fontFamily || 'Inter';
     const fontDef = FONTS.find(f => f.name === fontName) || FONTS[0];
@@ -7326,8 +7352,31 @@ async function fitTextToRefArea(textObj) {
 
     if (relW < 0.1 || relH < 0.1) return;
 
-    // Scale to fill the area
-    const scale = Math.min(targetW / relW, targetH / relH);
+    const cx = rb.x + rb.w / 2, cy = rb.y + rb.h / 2;
+    let scale;
+
+    if (refArea.type === 'ellipse') {
+        // Exact: max scale so centered text rect corners touch ellipse
+        const a = refArea.rx, b = refArea.ry;
+        scale = 1 / Math.sqrt((relW / (2 * a)) ** 2 + (relH / (2 * b)) ** 2);
+    } else if (refArea.type === 'bspline' && refArea.closed) {
+        // Binary search: max scale so centered text rect fits inside bspline
+        const samples = sampleBSplineAll(refArea.points, 200, true);
+        let lo = 0, hi = Math.min(rb.w / relW, rb.h / relH);
+        for (let iter = 0; iter < 30; iter++) {
+            const mid = (lo + hi) / 2;
+            if (_rectFitsInShape(cx, cy, relW * mid / 2, relH * mid / 2, refArea, samples)) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        scale = lo;
+    } else {
+        // Rect, curvepath: bounding box = shape
+        scale = Math.min(rb.w / relW, rb.h / relH);
+    }
+
     const finalFontSize = Math.max(4, refSize * scale);
 
     // At final size, the bbox and offsets scale linearly
@@ -7338,8 +7387,8 @@ async function fitTextToRefArea(textObj) {
 
     // Center the tight glyph bbox in the ref area
     textObj.fontSize = finalFontSize;
-    textObj.x = rb.x + (targetW - fW) / 2 - fOffX;
-    textObj.y = rb.y + (targetH - fH) / 2 - fOffY;
+    textObj.x = cx - fW / 2 - fOffX;
+    textObj.y = cy - fH / 2 - fOffY;
     textObj.textAlign = 'left'; // use left align for precise positioning
     refreshElement(textObj);
 }
