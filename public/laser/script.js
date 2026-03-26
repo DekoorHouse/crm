@@ -219,25 +219,13 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
 
+        // Enable all operations and set speed
+        sendCommand('operation* enable');
+        sendCommand(`operation* speed ${speed}`);
+
         if (opMode === 'raster') {
             const dpi = dpiInput.value;
-            // Disable cut/engrave (indices 2,3), keep raster/image (0,1)
-            sendCommand('operation2 disable');
-            sendCommand('operation3 disable');
-            sendCommand('operation0 enable');
-            sendCommand('operation1 enable');
-            sendCommand(`operation0 speed ${speed}`);
-            sendCommand(`operation1 speed ${speed}`);
-            sendCommand(`operation0 dpi ${dpi}`);
-            sendCommand(`operation1 dpi ${dpi}`);
-        } else {
-            // Disable raster/image (indices 0,1), keep cut/engrave (2,3)
-            sendCommand('operation0 disable');
-            sendCommand('operation1 disable');
-            sendCommand('operation2 enable');
-            sendCommand('operation3 enable');
-            sendCommand(`operation2 speed ${speed}`);
-            sendCommand(`operation3 speed ${speed}`);
+            sendCommand(`operation* dpi ${dpi}`);
         }
 
         sendCommand('spool clear');
