@@ -524,18 +524,50 @@ function confirmRemoveDuplicates() {
     });
 }
 
-function handleFilterChange(e) { 
+async function handleFilterChange(e) {
+    if (e.target.value === '__add_new_category__') {
+        const newCategoryName = await ui.showPromptModal({
+            title: 'Nueva categoría de gasto',
+            placeholder: 'Nombre de la categoría',
+            confirmText: 'Crear'
+        });
+        if (newCategoryName && newCategoryName.trim() !== '') {
+            await services.saveNewCategory(newCategoryName.trim());
+            ui.showToast(`Categoría "${newCategoryName.trim()}" creada`, 'success');
+        }
+        e.target.value = state.categoryFilter || 'all';
+        return;
+    }
     state.categoryFilter = e.target.value;
     window.app.renderData(); // CORREGIDO: usar window.app
     window.app.renderSummary(); // CORREGIDO: usar window.app
     window.app.renderAllCharts(); // CORREGIDO: usar window.app
 }
 
-function handleCategoryChange(e) {
+async function handleCategoryChange(e) {
     const select = e.target;
     const expenseId = select.dataset.expenseId;
     const newCategory = select.value;
     const expense = state.expenses.find(exp => exp.id === expenseId);
+
+    if (newCategory === '__add_new_category__') {
+        const newCategoryName = await ui.showPromptModal({
+            title: 'Nueva categoría de gasto',
+            placeholder: 'Nombre de la categoría',
+            confirmText: 'Crear'
+        });
+        if (newCategoryName && newCategoryName.trim() !== '') {
+            const trimmedName = newCategoryName.trim();
+            await services.saveNewCategory(trimmedName);
+            if (expense) {
+                services.saveExpense({...expense, category: trimmedName, subcategory: ''}, expense.category);
+            }
+        } else {
+            select.value = expense ? (expense.category || 'SinCategorizar') : 'SinCategorizar';
+        }
+        return;
+    }
+
     if(expense) {
         // When category changes, reset subcategory
         services.saveExpense({...expense, category: newCategory, subcategory: ''}, expense.category);

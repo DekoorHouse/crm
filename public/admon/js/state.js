@@ -15,7 +15,8 @@ export const elements = {};
 export const state = {
   expenses: [],
   manualCategories: new Map(),
-  subcategories: {}, 
+  subcategories: {},
+  customCategories: [],
   
   dateFilter: { 
     start: firstDayOfMonth, 

@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories } from './utils.js';
 import * as services from './services.js';
 
 /**
@@ -116,9 +116,9 @@ export function renderTable(expenses) {
         
         let categoryHtml;
         if (displayCategory === 'SinCategorizar') {
-            const allCategories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'SinCategorizar'].filter(Boolean))].sort();
+            const allCategories = getAllCategories();
             const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
-            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}</select>`;
+            categoryHtml = `<select class="category-dropdown" data-expense-id="${expense.id}">${categoryOptions}<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option></select>`;
         } else {
             categoryHtml = displayCategory;
         }
@@ -336,8 +336,8 @@ export function openExpenseModal(expense = {}) {
 
     const isFinancial = expense.type === 'financiero';
 
-    const categories = [...new Set([...state.expenses.map(e => e.category), 'Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'SinCategorizar', 'Gastos Financieros'].filter(Boolean))].sort();
-    const categoryOptions = categories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('');
+    const categories = getAllCategories();
+    const categoryOptions = categories.map(cat => `<option value="${cat}" ${expense.category === cat ? 'selected' : ''}>${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
 
     const channels = ['WhatsApp', 'Instagram', 'Facebook', 'Grupo de Clientes', 'Grupo de Referencias', 'Otro'];
     const channelOptions = channels.map(c => `<option value="${c}" ${expense.channel === c ? 'selected' : ''}>${c}</option>`).join('');
@@ -460,7 +460,30 @@ export function openExpenseModal(expense = {}) {
             };
             
             creditInput.addEventListener('input', toggleFieldVisibility);
-            categorySelect.addEventListener('change', populateSubcategories);
+            categorySelect.addEventListener('change', async () => {
+                if (categorySelect.value === '__add_new_category__') {
+                    const newCategoryName = await showPromptModal({
+                        title: 'Nueva categoría de gasto',
+                        placeholder: 'Nombre de la categoría',
+                        confirmText: 'Crear'
+                    });
+                    if (newCategoryName && newCategoryName.trim() !== '') {
+                        const trimmedName = newCategoryName.trim();
+                        await services.saveNewCategory(trimmedName);
+                        if (!state.customCategories.includes(trimmedName)) {
+                            state.customCategories.push(trimmedName);
+                            state.customCategories.sort();
+                        }
+                        const cats = getAllCategories();
+                        const opts = cats.map(cat => `<option value="${cat}" ${trimmedName === cat ? 'selected' : ''}>${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
+                        categorySelect.innerHTML = opts;
+                        categorySelect.value = trimmedName;
+                    } else {
+                        categorySelect.value = expense.category || 'SinCategorizar';
+                    }
+                }
+                populateSubcategories();
+            });
 
             subcategorySelect.addEventListener('change', async (e) => {
                 if (e.target.value === '__add_new__') {
@@ -530,10 +553,7 @@ export function renderMonthFilter() {
 }
 
 export function populateCategoryFilter() {
-    const categories = [...new Set(state.expenses
-        .filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses') 
-        .map(e => e.category).filter(Boolean))];
-    categories.sort();
+    const categories = getAllCategories().filter(c => c !== 'SinCategorizar');
     const currentCategory = elements.categoryFilter.value;
     elements.categoryFilter.innerHTML = `<option value="all">Todas las categorías</option>`;
     categories.forEach(cat => {
@@ -542,6 +562,14 @@ export function populateCategoryFilter() {
         option.textContent = cat;
         elements.categoryFilter.appendChild(option);
     });
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '──────────';
+    elements.categoryFilter.appendChild(separator);
+    const addNew = document.createElement('option');
+    addNew.value = '__add_new_category__';
+    addNew.textContent = '+ Nueva categoría...';
+    elements.categoryFilter.appendChild(addNew);
     elements.categoryFilter.value = currentCategory;
 }
 

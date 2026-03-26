@@ -44,6 +44,7 @@ function initializeAppUI() {
 
     services.listenForExpenses(onDataChange);
     services.listenForManualCategories(onDataChange);
+    services.listenForCustomCategories(onDataChange);
     services.listenForSubcategories(onDataChange);
     services.listenForSueldos(onDataChange);
     services.listenForKpis(onDataChange);

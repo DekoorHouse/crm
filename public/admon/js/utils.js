@@ -5,6 +5,16 @@ import { state } from './state.js';
  * @description Contiene funciones puras y reutilizables para tareas comunes.
  */
 
+const DEFAULT_CATEGORIES = ['Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'Ganancia', 'SinCategorizar'];
+
+export function getAllCategories() {
+    return [...new Set([
+        ...DEFAULT_CATEGORIES,
+        ...state.customCategories,
+        ...state.expenses.map(e => e.category).filter(Boolean)
+    ])].sort();
+}
+
 /**
  * Formatea un número como una cadena de moneda en formato MXN.
  */

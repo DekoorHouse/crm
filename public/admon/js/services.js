@@ -31,6 +31,23 @@ export function listenForManualCategories(onDataChange) {
     }, (error) => console.error("Manual Categories Listener Error:", error));
 }
 
+export function listenForCustomCategories(onDataChange) {
+    return onSnapshot(collection(db, "custom_categories"), (snapshot) => {
+        state.customCategories = snapshot.docs.map(doc => doc.data().name).filter(Boolean).sort();
+        onDataChange();
+    }, (error) => console.error("Custom Categories Listener Error:", error));
+}
+
+export async function saveNewCategory(categoryName) {
+    try {
+        const categoryId = categoryName.toLowerCase().replace(/\s+/g, '_');
+        const docRef = doc(db, "custom_categories", categoryId);
+        await setDoc(docRef, { name: categoryName });
+    } catch (error) {
+        console.error("Error saving new category:", error);
+    }
+}
+
 export function listenForSubcategories(onDataChange) {
     return onSnapshot(collection(db, "subcategories"), (snapshot) => {
         state.subcategories = {};
