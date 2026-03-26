@@ -7819,6 +7819,17 @@ function setupEventListeners() {
         } else if (refAreaTarget && refAreaTarget.refTextIds && refAreaTarget.refTextIds.length > 0) {
             const textObj = findObjectDeep(refAreaTarget.refTextIds[0]);
             if (textObj) editTextObject(textObj, e);
+        } else if (obj && obj.type === 'group') {
+            // Double-click on group: find text child at click point for inline editing
+            let textChild = null;
+            (function findText(g) {
+                if (textChild) return;
+                for (const c of (g.children || [])) {
+                    if (c.type === 'text' && hitTest(c, pt)) { textChild = c; return; }
+                    if (c.type === 'group') findText(c);
+                }
+            })(obj);
+            if (textChild) editTextObject(textChild, e);
         } else if (obj && obj.type === 'powerclip' && obj.id !== pcEditingId) {
             // Skip if already editing this powerclip
             const screenScale = _cachedScreenScale;
