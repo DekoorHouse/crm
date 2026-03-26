@@ -218,13 +218,24 @@ document.addEventListener('DOMContentLoaded', () => {
     // ===================== Job Controls =====================
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
+
+        // Disable all operations first, then enable only the ones we want
+        sendCommand('operation* disable');
+
         if (opMode === 'raster') {
             const dpi = dpiInput.value;
+            // Enable only raster/image operations
+            sendCommand('operation* filter -t raster enable');
+            sendCommand('operation* filter -t image enable');
             sendCommand(`operation* speed ${speed}`);
             sendCommand(`operation* dpi ${dpi}`);
         } else {
+            // Enable only cut/engrave operations
+            sendCommand('operation* filter -t cut enable');
+            sendCommand('operation* filter -t engrave enable');
             sendCommand(`operation* speed ${speed}`);
         }
+
         sendCommand('plan copy preprocess validate blob spool');
         sbJob.textContent = 'Ejecutando...';
         document.getElementById('progress-section').classList.remove('hidden');
