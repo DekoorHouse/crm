@@ -5438,18 +5438,13 @@ function executeSingleAction(action) {
             if (srcBounds.w < 0.01 || srcBounds.h < 0.01) throw new Error('El objeto source tiene tamaño cero');
             if (tgtBounds.w < 0.01 || tgtBounds.h < 0.01) throw new Error('El objeto target tiene tamaño cero');
 
-            // Escala uniforme basada en el ancho del grupo completo
-            const scaleFactor = tgtBounds.w / srcBounds.w;
-            applyPropSize(srcObj, srcBounds.w * scaleFactor, srcBounds.h * scaleFactor);
-
-            // Re-leer bounds después del resize y centrar
-            const newBounds = getObjBounds(srcObj);
-            const dx = (tgtBounds.x + tgtBounds.w / 2) - (newBounds.x + newBounds.w / 2);
-            const dy = (tgtBounds.y + tgtBounds.h / 2) - (newBounds.y + newBounds.h / 2);
+            // Centrar source en target (sin escala por defecto)
+            const dx = (tgtBounds.x + tgtBounds.w / 2) - (srcBounds.x + srcBounds.w / 2);
+            const dy = (tgtBounds.y + tgtBounds.h / 2) - (srcBounds.y + srcBounds.h / 2);
             offsetObject(srcObj, dx, dy);
 
             refreshElement(srcObj);
-            console.log('[AI Fit]', a.source, 'into', a.target, 'scale:', scaleFactor.toFixed(3));
+            console.log('[AI Fit]', a.source, 'into', a.target);
             return { id: srcObj.id };
         }
         case 'fill_names': {
@@ -5597,14 +5592,12 @@ function executeSingleAction(action) {
                 objectsLayer.appendChild(el);
                 state.objects.push(clone);
 
-                // Fit into slot using pre-computed source reference (stable scale)
+                // Position clone centered in slot (no scaling — source already matches)
                 const slot = fillSlots[i];
                 const slotB = getObjBounds(slot);
-                const sf = slotB.w / srcBounds.w;
-                applyPropSize(clone, srcBounds.w * sf, srcBounds.h * sf);
-                const nb = getObjBounds(clone);
-                offsetObject(clone, (slotB.x + slotB.w / 2) - (nb.x + nb.w / 2),
-                                    (slotB.y + slotB.h / 2) - (nb.y + nb.h / 2));
+                const cb = getObjBounds(clone);
+                offsetObject(clone, (slotB.x + slotB.w / 2) - (cb.x + cb.w / 2),
+                                    (slotB.y + slotB.h / 2) - (cb.y + cb.h / 2));
                 refreshElement(clone);
 
                 // Re-fit text to ref areas with new name (async, fire-and-forget)
