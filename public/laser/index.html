@@ -46,40 +46,35 @@
             <section class="section">
                 <h3><i class="fas fa-layer-group"></i> Material</h3>
                 <div class="presets-grid">
-                    <button class="preset-btn" data-speed="10" data-power="800">
+                    <button class="preset-btn" data-speed="10">
                         <i class="fas fa-tree"></i> Madera 3mm
                     </button>
-                    <button class="preset-btn" data-speed="8" data-power="900">
+                    <button class="preset-btn" data-speed="8">
                         <i class="fas fa-square"></i> MDF 3mm
                     </button>
-                    <button class="preset-btn" data-speed="6" data-power="1000">
+                    <button class="preset-btn" data-speed="6">
                         <i class="fas fa-gem"></i> Acrílico 3mm
                     </button>
-                    <button class="preset-btn" data-speed="15" data-power="600">
+                    <button class="preset-btn" data-speed="15">
                         <i class="fas fa-scroll"></i> Cuero
                     </button>
-                    <button class="preset-btn" data-speed="25" data-power="400">
+                    <button class="preset-btn" data-speed="25">
                         <i class="fas fa-note-sticky"></i> Papel
                     </button>
-                    <button class="preset-btn" data-speed="12" data-power="700">
+                    <button class="preset-btn" data-speed="12">
                         <i class="fas fa-eraser"></i> Goma
                     </button>
                 </div>
             </section>
 
-            <!-- Speed / Power -->
+            <!-- Speed -->
             <section class="section">
-                <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
-                <div class="param-row">
-                    <div class="param-group">
-                        <label>Velocidad (mm/s)</label>
-                        <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
-                    </div>
-                    <div class="param-group">
-                        <label>Potencia (PPI)</label>
-                        <input type="number" id="param-power" value="800" min="0" max="1000" step="10">
-                    </div>
+                <h3><i class="fas fa-sliders-h"></i> Velocidad</h3>
+                <div class="param-group">
+                    <label>Velocidad (mm/s)</label>
+                    <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
                 </div>
+                <p class="param-hint">La potencia se controla con la perilla de la máquina</p>
             </section>
 
             <!-- Job controls -->

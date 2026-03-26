@@ -170,14 +170,13 @@ document.addEventListener('DOMContentLoaded', () => {
             document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             document.getElementById('param-speed').value = btn.dataset.speed;
-            document.getElementById('param-power').value = btn.dataset.power;
         });
     });
 
     // --- Job controls ---
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
-        const power = document.getElementById('param-power').value;
+        sendCommand(`speed ${speed}`);
         sendCommand(`plan copy preprocess validate blob spool`);
     });
 

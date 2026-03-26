@@ -247,6 +247,13 @@ body {
     border-color: var(--color-primary);
 }
 
+.param-hint {
+    font-size: 0.75rem;
+    color: var(--color-text-dim);
+    margin-top: 8px;
+    opacity: 0.7;
+}
+
 /* Buttons */
 .btn {
     display: inline-flex;
