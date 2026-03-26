@@ -81,6 +81,32 @@ body {
     box-shadow: 0 0 6px var(--color-success);
 }
 
+/* Init bar */
+.init-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: 12px 20px;
+    margin-bottom: 20px;
+}
+
+.init-bar.connected {
+    background: rgba(76, 175, 80, 0.1);
+    border-color: var(--color-success);
+}
+
+.init-bar.connected #btn-init {
+    background: var(--color-success);
+}
+
+.init-hint {
+    font-size: 0.8rem;
+    color: var(--color-text-dim);
+}
+
 .layout {
     display: grid;
     grid-template-columns: 1fr 1fr;

@@ -387,6 +387,24 @@ document.addEventListener('DOMContentLoaded', () => {
         previewContainer.classList.add('hidden');
     }
 
+    // --- Machine init ---
+    const btnInit = document.getElementById('btn-init');
+    const initBar = document.getElementById('init-bar');
+    let machineReady = false;
+
+    btnInit.addEventListener('click', () => {
+        sendCommand('usb_connect');
+        sendCommand('start');
+        logConsole('Inicializando máquina...', 'cmd');
+        setTimeout(() => {
+            sendCommand('home');
+            machineReady = true;
+            initBar.classList.add('connected');
+            btnInit.innerHTML = '<i class="fas fa-check"></i> Máquina Conectada';
+            document.querySelector('.init-hint').textContent = 'USB conectado y listo para operar';
+        }, 1500);
+    });
+
     // --- Init ---
     connectWS();
     logConsole('Esperando conexión con MeerK40t...', 'cmd');
