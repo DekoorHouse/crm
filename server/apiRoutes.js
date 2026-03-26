@@ -451,32 +451,37 @@ router.get('/expenses/summary', async (req, res) => {
             const charge = parseFloat(data.charge) || 0;
             const credit = parseFloat(data.credit) || 0;
             const isOperational = data.type === 'operativo' || !data.type;
-            const cat = data.category || 'SinCategorizar';
 
             // Créditos (ingresos) — mismo filtro que el gestor
             if (credit > 0 && isOperational) {
                 totalCredits += credit;
             }
 
-            // Cargos (gastos)
+            // Cargos (gastos) — usar splits si existen (igual que getExpenseParts en utils.js)
             if (charge > 0) {
-                // Para la gráfica de distribución: incluir todos los operativos
-                if (isOperational || data.sub_type === 'pago_intereses') {
-                    if (!categories[cat]) categories[cat] = 0;
-                    categories[cat] += charge;
-                    totalCharges += charge;
-                }
+                const parts = (data.splits && data.splits.length > 0)
+                    ? data.splits.map(s => ({ category: s.category, amount: s.amount }))
+                    : [{ category: data.category || 'SinCategorizar', amount: charge }];
 
-                // Para utilidad operativa: misma lógica que charts.js línea 130-144
-                if (drawCategories.includes(cat)) {
-                    ownerDraw += charge;
-                } else if (isOperational || data.sub_type === 'pago_intereses') {
-                    if (cogsCategories.includes(cat)) {
-                        cogs += charge;
-                    } else {
-                        operatingExpenses += charge;
+                parts.forEach(p => {
+                    // Para la gráfica de distribución
+                    if (isOperational || data.sub_type === 'pago_intereses') {
+                        if (!categories[p.category]) categories[p.category] = 0;
+                        categories[p.category] += p.amount;
+                        totalCharges += p.amount;
                     }
-                }
+
+                    // Para utilidad operativa: misma lógica que charts.js
+                    if (drawCategories.includes(p.category)) {
+                        ownerDraw += p.amount;
+                    } else if (isOperational || data.sub_type === 'pago_intereses') {
+                        if (cogsCategories.includes(p.category)) {
+                            cogs += p.amount;
+                        } else {
+                            operatingExpenses += p.amount;
+                        }
+                    }
+                });
             }
         });
 
