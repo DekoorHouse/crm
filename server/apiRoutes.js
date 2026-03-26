@@ -47,7 +47,6 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
 // --- Mapa de entregas (datos de Google Sheets) ---
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };
-const geocodeCache = {};
 
 function parseCSV(text) {
     const lines = [];
@@ -81,24 +80,6 @@ function parseCSV(text) {
     });
 }
 
-async function geocodeCity(city, state) {
-    const key = (city + ', ' + state + ', Mexico').toLowerCase();
-    if (geocodeCache[key]) return geocodeCache[key];
-    try {
-        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
-            params: { q: city + ', ' + state + ', Mexico', format: 'json', limit: 1 },
-            headers: { 'User-Agent': 'DekoorCRM/1.0' },
-            timeout: 5000
-        });
-        if (res.data && res.data.length > 0) {
-            const coords = { lat: parseFloat(res.data[0].lat), lng: parseFloat(res.data[0].lon) };
-            geocodeCache[key] = coords;
-            return coords;
-        }
-    } catch (e) { /* silenciar errores de geocoding */ }
-    return null;
-}
-
 router.get('/referencias/mapa', async (req, res) => {
     try {
         // Cache de 2 horas
@@ -106,7 +87,7 @@ router.get('/referencias/mapa', async (req, res) => {
             return res.json(mapaCache.data);
         }
 
-        const csvRes = await axios.get(SHEET_CSV_URL, { timeout: 10000 });
+        const csvRes = await axios.get(SHEET_CSV_URL, { timeout: 15000 });
         const rows = parseCSV(csvRes.data);
         if (rows.length < 2) return res.json([]);
 
@@ -122,21 +103,7 @@ router.get('/referencias/mapa', async (req, res) => {
             groups[key].count++;
         }
 
-        // Geocodificar cada ciudad única
-        const results = [];
-        const entries = Object.values(groups);
-        for (let i = 0; i < entries.length; i++) {
-            const g = entries[i];
-            const coords = await geocodeCity(g.ciudad, g.estado);
-            if (coords) {
-                results.push({ ciudad: g.ciudad, estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
-            }
-            // Rate limit: 1 req/sec para Nominatim (solo si no está en cache)
-            if (!geocodeCache[(g.ciudad + ', ' + g.estado + ', Mexico').toLowerCase()] && i < entries.length - 1) {
-                await new Promise(r => setTimeout(r, 1100));
-            }
-        }
-
+        const results = Object.values(groups);
         mapaCache = { data: results, timestamp: Date.now() };
         res.json(results);
     } catch (error) {

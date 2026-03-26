@@ -376,6 +376,34 @@ function escapeHtml(text) {
 }
 
 // --- Mapa de entregas ---
+function getGeoCache() {
+    try { return JSON.parse(localStorage.getItem('geoCache') || '{}'); } catch(e) { return {}; }
+}
+function setGeoCache(cache) {
+    localStorage.setItem('geoCache', JSON.stringify(cache));
+}
+
+function geocodeCity(city, state, callback) {
+    var cache = getGeoCache();
+    var key = (city + ', ' + state).toLowerCase();
+    if (cache[key]) return callback(cache[key]);
+
+    var q = encodeURIComponent(city + ', ' + state + ', Mexico');
+    fetch('https://nominatim.openstreetmap.org/search?q=' + q + '&format=json&limit=1', {
+        headers: { 'User-Agent': 'DekoorCRM/1.0' }
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+        if (data && data.length > 0) {
+            var coords = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+            cache[key] = coords;
+            setGeoCache(cache);
+            callback(coords);
+        }
+    })
+    .catch(function() {});
+}
+
 function loadMapa() {
     var map = L.map('deliveryMap', {
         scrollWheelZoom: false,
@@ -393,33 +421,54 @@ function loadMapa() {
 
             var totalEntregas = 0;
             var totalCiudades = data.length;
-
-            data.forEach(function(item) {
-                totalEntregas += item.count;
-                var size = Math.min(Math.max(item.count * 2 + 24, 26), 48);
-                var icon = L.divIcon({
-                    className: '',
-                    html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;">' + item.count + '</div>',
-                    iconSize: [size, size],
-                    iconAnchor: [size / 2, size / 2]
-                });
-
-                L.marker([item.lat, item.lng], { icon: icon })
-                    .addTo(map)
-                    .bindPopup(
-                        '<div class="popup-city">' + item.ciudad + '</div>' +
-                        '<div>' + item.estado + '</div>' +
-                        '<div class="popup-count">' + item.count + ' entrega' + (item.count > 1 ? 's' : '') + '</div>'
-                    );
-            });
+            data.forEach(function(item) { totalEntregas += item.count; });
 
             document.getElementById('mapStats').innerHTML =
                 '<div class="map-stat-pill"><strong>' + totalEntregas + '</strong> entregas</div>' +
                 '<div class="map-stat-pill"><strong>' + totalCiudades + '</strong> ciudades</div>';
+
+            // Geocodificar progresivamente con delay para respetar rate limit
+            var queue = data.slice();
+            var delay = 0;
+            var cache = getGeoCache();
+
+            queue.forEach(function(item) {
+                var key = (item.ciudad + ', ' + item.estado).toLowerCase();
+                var cached = cache[key];
+
+                if (cached) {
+                    addMarker(map, cached.lat, cached.lng, item);
+                } else {
+                    delay += 1100;
+                    setTimeout(function() {
+                        geocodeCity(item.ciudad, item.estado, function(coords) {
+                            addMarker(map, coords.lat, coords.lng, item);
+                        });
+                    }, delay);
+                }
+            });
         })
         .catch(function(err) {
             console.error('Error cargando mapa:', err);
         });
+}
+
+function addMarker(map, lat, lng, item) {
+    var size = Math.min(Math.max(item.count * 2 + 24, 26), 48);
+    var icon = L.divIcon({
+        className: '',
+        html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;">' + item.count + '</div>',
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2]
+    });
+
+    L.marker([lat, lng], { icon: icon })
+        .addTo(map)
+        .bindPopup(
+            '<div class="popup-city">' + item.ciudad + '</div>' +
+            '<div>' + item.estado + '</div>' +
+            '<div class="popup-count">' + item.count + ' entrega' + (item.count > 1 ? 's' : '') + '</div>'
+        );
 }
 
 // --- Init ---
