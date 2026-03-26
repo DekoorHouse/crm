@@ -45,6 +45,7 @@ const TOOL_NAMES = {
     bspline: 'B-Spline',
     text:    'Texto',
     vsdelete: 'Eliminar Segmento Virtual',
+    crop: 'Recortar imagen',
 };
 
 const FONT_BASE = 'https://raw.githubusercontent.com/google/fonts/main/';
@@ -2105,9 +2106,15 @@ function handleMouseDown(e) {
         return;
     }
     // Crop tool intercept
-    if (cropState.active && e.button === 0 && !state.spaceHeld) {
-        const pt = screenToSVG(e.clientX, e.clientY);
-        if (handleCropMouseDown(pt)) return;
+    if (e.button === 0 && !state.spaceHeld) {
+        if (cropState.active) {
+            const pt = screenToSVG(e.clientX, e.clientY);
+            if (handleCropMouseDown(pt)) return;
+        } else if (state.tool === 'crop') {
+            const pt = screenToSVG(e.clientX, e.clientY);
+            const obj = objectAtPoint(pt);
+            if (obj && obj.type === 'image') { startCrop(obj); return; }
+        }
     }
     if (e.button === 1 || (e.button === 0 && state.spaceHeld)) {
         e.preventDefault();
@@ -2117,11 +2124,12 @@ function handleMouseDown(e) {
         svg.style.cursor = 'grabbing';
         return;
     }
-    // Right-click -> pan (works anywhere, including on top of objects)
+    // Right-click -> pan (works anywhere, but only if mouse moves)
     if (e.button === 2) {
         e.preventDefault();
         state.isPanning = true;
-        state.rightClickPanning = true;
+        state.rightClickPanning = false;
+        state._rightClickStart = { x: e.clientX, y: e.clientY };
         state.panStart = {x:e.clientX,y:e.clientY};
         state.panViewBoxStart = {...state.viewBox};
         svg.style.cursor = 'grabbing';
@@ -2147,6 +2155,10 @@ function handleMouseMove(e) {
     // Critical interactive operations: run immediately (no throttle)
     if (state.isPanning) {
         const dx = e.clientX - state.panStart.x, dy = e.clientY - state.panStart.y;
+        // Mark as actually panning (moved) so context menu won't show
+        if (state._rightClickStart && Math.hypot(e.clientX - state._rightClickStart.x, e.clientY - state._rightClickStart.y) > 3) {
+            state.rightClickPanning = true;
+        }
         const scale = _cachedScreenScale;
         state.viewBox.x = state.panViewBoxStart.x - dx*scale;
         state.viewBox.y = state.panViewBoxStart.y - dy*scale;
@@ -7697,6 +7709,7 @@ function setupEventListeners() {
             case 'b': setTool('bspline'); break;
             case 't': setTool('text'); break;
             case 'x': setTool('vsdelete'); break;
+            case 'c': if (!e.ctrlKey) setTool('crop'); break;
             case 'enter':
                 if (state.tool === 'bspline' && state.bsplinePoints.length >= 2) {
                     const obj = createObject('bspline', { points: [...state.bsplinePoints] });
