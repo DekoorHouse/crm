@@ -1022,31 +1022,7 @@ function drawSelection() {
 
 function getObjBounds(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
-        case 'curvepath': {
-            // Use getBoundingClientRect for actual VISUAL bounds (excludes invisible
-            // moveTo subpaths that inflate getBBox), converted to SVG coordinates
-            if (obj.element && obj.element.ownerSVGElement) {
-                try {
-                    const rect = obj.element.getBoundingClientRect();
-                    if (rect.width > 0.5 && rect.height > 0.5) {
-                        const svgEl = obj.element.ownerSVGElement;
-                        const svgRect = svgEl.getBoundingClientRect();
-                        if (svgRect.width > 0) {
-                            const vb = state.viewBox;
-                            const sx = vb.w / svgRect.width, sy = vb.h / svgRect.height;
-                            return {
-                                x: vb.x + (rect.left - svgRect.left) * sx,
-                                y: vb.y + (rect.top - svgRect.top) * sy,
-                                w: rect.width * sx,
-                                h: rect.height * sy
-                            };
-                        }
-                    }
-                } catch(e) {}
-            }
-            return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
-        }
+        case 'rect': case 'image': case 'curvepath': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
@@ -1062,7 +1038,27 @@ function getObjBounds(obj) {
         case 'group': {
             let x1=Infinity,y1=Infinity,x2=-Infinity,y2=-Infinity;
             for (const c of obj.children) {
-                const b = getObjBounds(c);
+                // For curvepaths inside groups, use visual bounds (getBoundingClientRect)
+                // to exclude invisible subpaths that inflate stored width/height
+                let b;
+                if (c.type === 'curvepath' && c.element && c.element.ownerSVGElement) {
+                    try {
+                        const rect = c.element.getBoundingClientRect();
+                        const svgEl = c.element.ownerSVGElement;
+                        const svgRect = svgEl.getBoundingClientRect();
+                        if (rect.width > 0.5 && svgRect.width > 0) {
+                            const vb = state.viewBox;
+                            const scx = vb.w / svgRect.width, scy = vb.h / svgRect.height;
+                            b = {
+                                x: vb.x + (rect.left - svgRect.left) * scx,
+                                y: vb.y + (rect.top - svgRect.top) * scy,
+                                w: rect.width * scx,
+                                h: rect.height * scy
+                            };
+                        }
+                    } catch(e) {}
+                }
+                if (!b) b = getObjBounds(c);
                 if(b.x<x1)x1=b.x; if(b.y<y1)y1=b.y;
                 if(b.x+b.w>x2)x2=b.x+b.w; if(b.y+b.h>y2)y2=b.y+b.h;
             }
