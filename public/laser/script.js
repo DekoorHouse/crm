@@ -195,13 +195,25 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- Job controls ---
+    // --- DPI <-> Step sync ---
+    const dpiInput = document.getElementById('param-dpi');
+    const stepInput = document.getElementById('param-step');
+
+    dpiInput.addEventListener('input', () => {
+        const dpi = parseFloat(dpiInput.value);
+        if (dpi > 0) stepInput.value = (25.4 / dpi).toFixed(3);
+    });
+
+    stepInput.addEventListener('input', () => {
+        const step = parseFloat(stepInput.value);
+        if (step > 0) dpiInput.value = Math.round(25.4 / step);
+    });
+
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
         if (opMode === 'raster') {
-            const dpi = document.getElementById('param-dpi').value;
-            const overscan = document.getElementById('param-overscan').value;
+            const dpi = dpiInput.value;
             const bidir = document.getElementById('param-bidir').checked;
-            // Configure raster operation parameters
             sendCommand(`operation* speed ${speed}`);
             sendCommand(`operation* dpi ${dpi}`);
             if (!bidir) {
