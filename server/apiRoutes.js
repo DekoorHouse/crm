@@ -404,9 +404,34 @@ router.get('/expenses/summary', async (req, res) => {
 
         // Calcular utilidad igual que el gestor de gastos:
         // Alex y Chris son retiros de dueños, no gastos operativos
+        // Replicar exactamente la lógica del gestor (charts.js updateFinancialHealthDashboard):
+        // cogs = Material + Sueldos
+        // operatingExpenses = todo lo demás que sea operativo (type=operativo o sin type), EXCEPTO Alex/Chris
+        // ownerDraw = Alex + Chris
+        // operatingProfit = revenue - cogs - operatingExpenses (sin Alex/Chris)
         const drawCategories = ['Alex', 'Chris'];
-        const ownerDraw = sorted.filter(c => drawCategories.includes(c.category)).reduce((s, c) => s + c.amount, 0);
-        const businessCosts = totalCharges - ownerDraw;
+        const cogsCategories = ['Material', 'Sueldos'];
+        let cogs = 0, operatingExpenses = 0, ownerDraw = 0;
+
+        expSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const charge = parseFloat(data.charge) || 0;
+            if (charge <= 0) return;
+            const isOperational = data.type === 'operativo' || !data.type;
+            const cat = data.category || 'SinCategorizar';
+
+            if (drawCategories.includes(cat)) {
+                ownerDraw += charge;
+            } else if (isOperational || data.sub_type === 'pago_intereses') {
+                if (cogsCategories.includes(cat)) {
+                    cogs += charge;
+                } else {
+                    operatingExpenses += charge;
+                }
+            }
+        });
+
+        const businessCosts = cogs + operatingExpenses;
         const operatingProfit = adjustedCredits - businessCosts;
         const netProfit = operatingProfit - ownerDraw;
 
@@ -419,6 +444,7 @@ router.get('/expenses/summary', async (req, res) => {
             netProfit: Math.round(netProfit * 100) / 100,
             ownerDraw: Math.round(ownerDraw * 100) / 100,
             businessCosts: Math.round(businessCosts * 100) / 100,
+            cogs: Math.round(cogs * 100) / 100,
             categories: sorted
         });
     } catch (error) {
