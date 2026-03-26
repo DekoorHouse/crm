@@ -173,9 +173,8 @@ export function renderBreakdownTable(tbodyEl, data) {
 
 // ========== STATUS TOGGLE ==========
 
-function statusToggle(status, effectiveStatus) {
-    const display = effectiveStatus || status;
-    const isActive = display === 'ACTIVE';
+function statusToggle(status) {
+    const isActive = status === 'ACTIVE';
     const checked = isActive ? 'checked' : '';
     return `<label class="toggle-switch" title="${isActive ? 'Activo - click para pausar' : 'Pausado - click para activar'}">
         <input type="checkbox" ${checked} data-status="${status}">
@@ -219,7 +218,7 @@ export function renderCampaignsTable(campaigns, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="name-cell" data-id="${c.id}" data-action="drill-campaign">${c.name}</td>
-            <td data-id="${c.id}" data-action="toggle-campaign">${statusToggle(c.status, c.effective_status?.[0] || c.effective_status)}</td>
+            <td data-id="${c.id}" data-action="toggle-campaign">${statusToggle(c.status)}</td>
             <td>${objectiveBadge(c.objective)}</td>
             <td class="metric">${budget}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
@@ -263,7 +262,7 @@ export function renderAdSetsTable(adsets, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="name-cell" data-id="${a.id}" data-action="drill-adset">${a.name}</td>
-            <td data-id="${a.id}" data-action="toggle-adset">${statusToggle(a.status, a.effective_status?.[0] || a.effective_status)}</td>
+            <td data-id="${a.id}" data-action="toggle-adset">${statusToggle(a.status)}</td>
             <td class="metric">${budget}</td>
             <td style="max-width:180px; font-size:12px; color: var(--text-secondary);" title="${targeting}">${targeting}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
@@ -322,7 +321,7 @@ export function renderAdsTable(ads, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="font-weight:600;">${ad.name}</td>
-            <td data-id="${ad.id}" data-action="toggle-ad">${statusToggle(ad.status, ad.effective_status?.[0] || ad.effective_status)}</td>
+            <td data-id="${ad.id}" data-action="toggle-ad">${statusToggle(ad.status)}</td>
             <td>${thumbHtml}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
             <td class="metric">${formatNumber(ins.impressions)}</td>
