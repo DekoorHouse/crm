@@ -1024,16 +1024,24 @@ function getObjBounds(obj) {
     switch (obj.type) {
         case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
         case 'curvepath': {
-            // Compute actual visual bounds from rendered path (not stored width/height
-            // which may include whitespace from original SVG import)
-            if (obj.element && obj._origBounds) {
+            // Use getBoundingClientRect for actual VISUAL bounds (excludes invisible
+            // moveTo subpaths that inflate getBBox), converted to SVG coordinates
+            if (obj.element && obj.element.ownerSVGElement) {
                 try {
-                    const bb = obj.element.getBBox();
-                    if (bb.width > 0.01 && bb.height > 0.01) {
-                        const orig = obj._origBounds;
-                        const sx = obj.width / orig.w, sy = obj.height / orig.h;
-                        const tx = obj.x - orig.x * sx, ty = obj.y - orig.y * sy;
-                        return { x: bb.x * sx + tx, y: bb.y * sy + ty, w: bb.width * sx, h: bb.height * sy };
+                    const rect = obj.element.getBoundingClientRect();
+                    if (rect.width > 0.5 && rect.height > 0.5) {
+                        const svgEl = obj.element.ownerSVGElement;
+                        const svgRect = svgEl.getBoundingClientRect();
+                        if (svgRect.width > 0) {
+                            const vb = state.viewBox;
+                            const sx = vb.w / svgRect.width, sy = vb.h / svgRect.height;
+                            return {
+                                x: vb.x + (rect.left - svgRect.left) * sx,
+                                y: vb.y + (rect.top - svgRect.top) * sy,
+                                w: rect.width * sx,
+                                h: rect.height * sy
+                            };
+                        }
                     }
                 } catch(e) {}
             }
