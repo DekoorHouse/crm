@@ -383,6 +383,8 @@ router.get('/expenses/summary', async (req, res) => {
 
             if (charge > 0) {
                 const cat = data.category || 'SinCategorizar';
+                // Excluir "SinCategorizar" — son movimientos de meses anteriores que aparecen en el estado de cuenta
+                if (cat === 'SinCategorizar') return;
                 if (!categories[cat]) categories[cat] = 0;
                 categories[cat] += charge;
                 totalCharges += charge;
