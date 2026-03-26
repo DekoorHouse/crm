@@ -391,12 +391,18 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
     "source" puede ser "selected" (útil tras duplicate, donde la selección es la copia nueva).
     Usa esto cuando el usuario diga "encaja", "mete", "ajusta dentro de", "fit", etc.
 
+12. fill_names - Llenar plantilla con lista de nombres: { "action":"fill_names", "source":"selected"|ID, "names":["nombre1","nombre2",...], "slots":[ID1,ID2,...] }
+    Para cada nombre: duplica "source", cambia el texto, y lo encaja en el siguiente contorno/slot.
+    "slots" es opcional: si se omite, auto-detecta contornos vacíos (shapes con stroke y sin fill).
+    Si hay más nombres que slots, duplica los contornos automáticamente debajo y sigue llenando.
+    Usa esto cuando el usuario dé una lista de nombres para producción/corte.
+
 **Acciones de Pedidos (CRM):**
 
-12. get_orders - Consultar pedidos: { "action":"get_orders", "date":"today"|"YYYY-MM-DD" }
+13. get_orders - Consultar pedidos: { "action":"get_orders", "date":"today"|"YYYY-MM-DD" }
     Devuelve la lista de pedidos del día indicado. "today" = hoy.
 
-13. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
+14. update_order - Actualizar pedido: { "action":"update_order", "orderId":"DOCUMENT_ID", "props":{ "estatus":"Pagado", "comentarios":"...", "producto":"..." }}
     Campos actualizables: estatus, producto, comentarios, datosProducto, datosPromocion, precio, telefono.
     Estatus válidos: Sin estatus, Foto enviada, Esperando pago, Pagado, Diseñado, Fabricar, Corregir, Corregido, Mns Amenazador, Cancelado.
 
@@ -408,7 +414,8 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 - "círculo" = ellipse con rx_u = ry_u. "cuadrado" = rect con width_u = height_u.
 - Cuando el usuario da un tamaño como "50mm" para un círculo, ese es el DIÁMETRO, así que rx_u = ry_u = 25.
 - Para "encaja X en Y" / "mete X dentro de Y" / "ajusta X al contorno Y", usa la acción "fit" con source=X y target=Y. Identifica los objetos por su posición, color, tipo o ID en el contexto del lienzo.
-- Al duplicar un diseño, si hay un contorno/plantilla vacío visible en el lienzo, usa "fit" después del "duplicate" para encajar la copia en ese contorno. Tras duplicate la selección cambia a la copia, así que usa "selected" como source en fit. Ejemplo: [{"action":"duplicate","target":"selected"},{"action":"fit","source":"selected","target":ID_DEL_CONTORNO}]
+- Al duplicar un diseño, si hay un contorno/plantilla vacío visible en el lienzo, usa "fit" después del "duplicate" para encajar la copia en ese contorno. Tras duplicate la selección cambia a la copia, así que usa "selected" como source en fit.
+- Cuando el usuario dé una lista de nombres (ej: "llena con: Ana, Pedro, Luis"), usa "fill_names" con el diseño base y los nombres. No uses múltiples duplicate+fit manuales; fill_names lo hace todo automáticamente.
 - Si el usuario no pide una acción (solo pregunta algo), responde solo con texto, sin bloque actions.
 - Para pedidos: si el usuario pregunta sobre pedidos, usa get_orders para consultarlos. Si el contexto ya incluye pedidos recientes, puedes responder directamente sin get_orders.
 - Para actualizar un pedido, necesitas el ID del documento (campo "id" del pedido). Si el usuario dice "pedido 1045", busca el que tenga consecutiveOrderNumber 1045.

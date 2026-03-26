@@ -5295,6 +5295,7 @@ function executeSingleAction(action) {
         flip: 'flip', mirror: 'flip',
         select: 'select',
         fit: 'fit', fitInto: 'fit', fit_into: 'fit', encajar: 'fit',
+        fill_names: 'fill_names', fillNames: 'fill_names', fill_template: 'fill_names', llenar: 'fill_names',
         get_orders: 'get_orders', getOrders: 'get_orders', query_orders: 'get_orders', list_orders: 'get_orders',
         update_order: 'update_order', updateOrder: 'update_order', modify_order: 'update_order'
     };
@@ -5462,6 +5463,118 @@ function executeSingleAction(action) {
             refreshElement(srcObj);
             console.log('[AI Fit]', a.source, 'into', a.target, 'scale:', scaleFactor.toFixed(3));
             return { id: srcObj.id };
+        }
+        case 'fill_names': {
+            // Resolve source design
+            let fillSrc;
+            if (a.source === 'selected') {
+                if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado');
+                fillSrc = findObjectDeep(state.selectedIds[0]) || findObject(state.selectedIds[0]);
+            } else {
+                fillSrc = findObjectDeep(a.source) || findObject(a.source);
+            }
+            if (!fillSrc) throw new Error('Diseño source no encontrado');
+            if (!a.names || !a.names.length) throw new Error('No se proporcionaron nombres');
+
+            // Resolve or auto-detect slots (contour shapes with stroke, no fill)
+            let fillSlots = [];
+            if (a.slots && a.slots.length) {
+                for (const sid of a.slots) {
+                    const s = findObjectDeep(sid) || findObject(sid);
+                    if (s) fillSlots.push(s);
+                }
+            } else {
+                const sb = getObjBounds(fillSrc);
+                const minArea = sb.w * sb.h * 0.25;
+                for (const obj of state.objects) {
+                    if (obj.id === fillSrc.id) continue;
+                    if (obj.type === 'group' || obj.type === 'powerclip') continue;
+                    const f = obj.fill || 'none';
+                    if ((f === 'none' || f === 'transparent') && obj.stroke && obj.stroke !== 'none') {
+                        const ob = getObjBounds(obj);
+                        if (ob.w * ob.h >= minArea) fillSlots.push(obj);
+                    }
+                }
+            }
+            if (fillSlots.length === 0) throw new Error('No se encontraron contornos/plantillas');
+
+            // Remember original slots for template duplication
+            const origCount = fillSlots.length;
+            const origData = fillSlots.map(s =>
+                JSON.parse(JSON.stringify(s, (k, v) => k === 'element' ? undefined : v))
+            );
+            let tmplMinY = Infinity, tmplMaxY = -Infinity;
+            for (const s of fillSlots) {
+                const b = getObjBounds(s);
+                tmplMinY = Math.min(tmplMinY, b.y);
+                tmplMaxY = Math.max(tmplMaxY, b.y + b.h);
+            }
+            const tmplH = tmplMaxY - tmplMinY;
+            const tmplGap = tmplH * 0.15;
+
+            const filledIds = [];
+            for (let i = 0; i < a.names.length; i++) {
+                // Duplicate template slots when needed
+                if (i >= fillSlots.length && i % origCount === 0) {
+                    const page = Math.floor(i / origCount);
+                    const offY = page * (tmplH + tmplGap);
+                    for (const td of origData) {
+                        const sc = JSON.parse(JSON.stringify(td));
+                        sc.id = state.nextId++;
+                        offsetObject(sc, 0, offY);
+                        const el = buildSVGElement(sc);
+                        sc.element = el;
+                        el.dataset.objectId = sc.id;
+                        objectsLayer.appendChild(el);
+                        state.objects.push(sc);
+                        fillSlots.push(sc);
+                    }
+                }
+
+                // Clone source design
+                const clone = JSON.parse(JSON.stringify(fillSrc, (k, v) => k === 'element' ? undefined : v));
+                clone.id = state.nextId++;
+                assignNewIds(clone);
+
+                // Update first text child with new name
+                (function setName(o) {
+                    if (o.type === 'text') { o.text = a.names[i]; return true; }
+                    if (o.children) for (const c of o.children) { if (setName(c)) return true; }
+                    if (o.contents) for (const c of o.contents) { if (setName(c)) return true; }
+                    if (o.container) return setName(o.container);
+                    return false;
+                })(clone);
+
+                // Build and add to DOM
+                const el = buildSVGElement(clone);
+                clone.element = el;
+                el.dataset.objectId = clone.id;
+                objectsLayer.appendChild(el);
+                state.objects.push(clone);
+
+                // Fit into slot (same logic as 'fit')
+                const slot = fillSlots[i];
+                const cb = getObjBounds(clone);
+                const slotB = getObjBounds(slot);
+                let ref = cb;
+                if (clone.type === 'group' && clone.children && clone.children.length > 1) {
+                    let mx = 0;
+                    for (const ch of clone.children) {
+                        const chb = getObjBounds(ch);
+                        if (chb.w * chb.h > mx) { mx = chb.w * chb.h; ref = chb; }
+                    }
+                }
+                const sf = Math.min(slotB.w / ref.w, slotB.h / ref.h);
+                applyPropSize(clone, cb.w * sf, cb.h * sf);
+                const nb = getObjBounds(clone);
+                offsetObject(clone, (slotB.x + slotB.w / 2) - (nb.x + nb.w / 2),
+                                    (slotB.y + slotB.h / 2) - (nb.y + nb.h / 2));
+                refreshElement(clone);
+                filledIds.push(clone.id);
+            }
+
+            console.log('[AI fill_names]', a.names.length, 'designs placed in', fillSlots.length, 'slots');
+            return { id: filledIds[0] };
         }
         case 'select': {
             const obj = findObject(a.target);
