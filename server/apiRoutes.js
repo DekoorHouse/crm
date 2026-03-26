@@ -269,21 +269,22 @@ router.post('/orders/recurring/scan', async (req, res) => {
             .orderBy('createdAt', 'desc')
             .get();
 
-        // Agrupar por teléfono
+        // Agrupar por teléfono — SOLO contar pedidos pagados (Pagado o Fabricar)
         const clientOrders = {};
         ordersSnap.docs.forEach(doc => {
             const data = doc.data();
             const phone = data.contactId || data.telefono;
             if (!phone) return;
 
+            // Solo contar pedidos que realmente se pagaron
+            const isPaid = data.estatus === 'Pagado' || data.estatus === 'Fabricar';
+            if (!isPaid) return;
+
             if (!clientOrders[phone]) {
-                clientOrders[phone] = { orderCount: 0, totalSpent: 0, paidOrders: 0, products: [], lastOrderDate: null };
+                clientOrders[phone] = { orderCount: 0, totalSpent: 0, products: [], lastOrderDate: null };
             }
             clientOrders[phone].orderCount++;
             clientOrders[phone].totalSpent += data.precio || 0;
-            if (data.estatus === 'Pagado' || data.estatus === 'Fabricar') {
-                clientOrders[phone].paidOrders++;
-            }
             if (data.producto && !clientOrders[phone].products.includes(data.producto)) {
                 clientOrders[phone].products.push(data.producto);
             }
@@ -293,7 +294,7 @@ router.post('/orders/recurring/scan', async (req, res) => {
             }
         });
 
-        // Guardar solo recurrentes (2+ pedidos) en colección recurring_customers
+        // Guardar solo recurrentes (2+ pedidos PAGADOS) en colección recurring_customers
         const batch = db.batch();
         let savedCount = 0;
 
@@ -310,9 +311,8 @@ router.post('/orders/recurring/scan', async (req, res) => {
             const ref = db.collection('recurring_customers').doc(phone);
             batch.set(ref, {
                 name,
-                orderCount: data.orderCount,
+                orderCount: data.orderCount, // Solo pedidos pagados
                 totalSpent: data.totalSpent,
-                paidOrders: data.paidOrders,
                 products: data.products,
                 lastOrderDate: data.lastOrderDate,
                 detectedAt: admin.firestore.FieldValue.serverTimestamp()
@@ -2540,7 +2540,7 @@ router.post('/orders', async (req, res) => {
         });
 
         // --- Detección automática de cliente recurrente ---
-        // Buscar si este teléfono ya tiene otros pedidos anteriores
+        // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
         const phone = contactId || telefono;
         if (phone) {
             try {
@@ -2548,17 +2548,21 @@ router.post('/orders', async (req, res) => {
                     .where('contactId', '==', phone)
                     .get();
 
-                // Si tiene 2+ pedidos (el actual + anteriores), es recurrente
-                if (previousOrders.size >= 2) {
+                // Filtrar solo pedidos pagados (Pagado o Fabricar)
+                const paidDocs = previousOrders.docs.filter(doc => {
+                    const est = doc.data().estatus;
+                    return est === 'Pagado' || est === 'Fabricar';
+                });
+
+                // Si tiene 2+ pedidos PAGADOS, es recurrente
+                if (paidDocs.length >= 2) {
                     let totalSpent = 0;
-                    let paidOrders = 0;
                     const products = [];
                     let lastOrderDate = null;
 
-                    previousOrders.docs.forEach(doc => {
+                    paidDocs.forEach(doc => {
                         const d = doc.data();
                         totalSpent += d.precio || 0;
-                        if (d.estatus === 'Pagado' || d.estatus === 'Fabricar') paidOrders++;
                         if (d.producto && !products.includes(d.producto)) products.push(d.producto);
                         const oDate = d.createdAt ? d.createdAt.toDate() : null;
                         if (oDate && (!lastOrderDate || oDate > lastOrderDate)) lastOrderDate = oDate;
@@ -2571,15 +2575,14 @@ router.post('/orders', async (req, res) => {
                     // Guardar/actualizar en recurring_customers
                     await db.collection('recurring_customers').doc(phone).set({
                         name,
-                        orderCount: previousOrders.size,
+                        orderCount: paidDocs.length,
                         totalSpent,
-                        paidOrders,
                         products,
                         lastOrderDate,
                         detectedAt: admin.firestore.FieldValue.serverTimestamp()
                     }, { merge: true });
 
-                    console.log(`[RECURRENTE] Cliente ${name} (${phone}) detectado con ${previousOrders.size} pedidos, total: $${totalSpent}`);
+                    console.log(`[RECURRENTE] Cliente ${name} (${phone}) detectado con ${paidDocs.length} pedidos pagados, total: $${totalSpent}`);
                 }
             } catch (recErr) {
                 console.error('Error al detectar recurrente:', recErr);
@@ -2671,6 +2674,57 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
                 console.error('[META EVENT] Error al enviar evento Purchase por Fabricar:', metaError.message);
                 if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
                 // No fallar el request principal
+            }
+        }
+
+        // --- Detección de recurrente al confirmar pago ---
+        if (isConfirming && !wasConfirmed) {
+            const phone = orderData.contactId || orderData.telefono;
+            if (phone) {
+                try {
+                    const allOrders = await db.collection('pedidos')
+                        .where('contactId', '==', phone)
+                        .get();
+
+                    const paidDocs = allOrders.docs.filter(doc => {
+                        const est = doc.data().estatus;
+                        // Incluir el pedido actual que acaba de cambiar a Pagado/Fabricar
+                        return est === 'Pagado' || est === 'Fabricar' || (doc.id === orderId && isConfirming);
+                    });
+
+                    if (paidDocs.length >= 2) {
+                        let totalSpent = 0;
+                        const products = [];
+                        let lastOrderDate = null;
+
+                        paidDocs.forEach(doc => {
+                            const d = doc.data();
+                            totalSpent += d.precio || 0;
+                            if (d.producto && !products.includes(d.producto)) products.push(d.producto);
+                            const oDate = d.createdAt ? d.createdAt.toDate() : null;
+                            if (oDate && (!lastOrderDate || oDate > lastOrderDate)) lastOrderDate = oDate;
+                        });
+
+                        let name = 'Sin nombre';
+                        try {
+                            const cDoc = await db.collection('contacts_whatsapp').doc(phone).get();
+                            if (cDoc.exists) name = cDoc.data().name || name;
+                        } catch (e) {}
+
+                        await db.collection('recurring_customers').doc(phone).set({
+                            name,
+                            orderCount: paidDocs.length,
+                            totalSpent,
+                            products,
+                            lastOrderDate,
+                            detectedAt: admin.firestore.FieldValue.serverTimestamp()
+                        }, { merge: true });
+
+                        console.log(`[RECURRENTE] Cliente ${name} (${phone}) detectado al confirmar pago: ${paidDocs.length} pedidos pagados, $${totalSpent}`);
+                    }
+                } catch (recErr) {
+                    console.error('Error al detectar recurrente en cambio de estatus:', recErr);
+                }
             }
         }
 
