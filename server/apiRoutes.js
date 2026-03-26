@@ -2376,51 +2376,15 @@ router.post('/orders', async (req, res) => {
         // Añadir el nuevo pedido a la colección 'pedidos'
         const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
 
-        // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO COMPRADOR
+        // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
+        // El evento Purchase a Meta se envía cuando el estatus cambie a "Fabricar" (corona zafiro)
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
-            lastOrderDate: nuevoPedido.createdAt, // Usar el mismo timestamp
-            purchaseStatus: 'completed', // <-- NUEVO: Marcar como comprador para el ícono de corona
-            purchaseValue: parseFloat(precio) || 0, // Opcional: guardar valor
-            purchaseDate: admin.firestore.FieldValue.serverTimestamp() // Opcional: guardar fecha de compra
+            lastOrderDate: nuevoPedido.createdAt,
+            purchaseStatus: 'registered', // Corona plateada — se cambiará a 'completed' (zafiro) al cambiar a Fabricar
+            purchaseValue: parseFloat(precio) || 0,
+            purchaseDate: admin.firestore.FieldValue.serverTimestamp()
         });
-
-        // --- INICIO: Enviar evento Purchase a Meta ---
-        try {
-            console.log(`[META EVENT] Iniciando envío de evento Purchase para pedido DH${newOrderNumber}, contactId: ${contactId}`);
-            // Obtener datos actualizados del contacto para el evento
-            const contactDoc = await contactRef.get();
-            if (!contactDoc.exists) {
-                console.warn(`[META EVENT] No se encontró el documento del contacto ${contactId}. No se enviará evento Purchase.`);
-            } else {
-                const contactData = contactDoc.data();
-
-                // Verificar si tiene wa_id (necesario para Meta)
-                if (!contactData.wa_id) {
-                    console.warn(`[META EVENT] El contacto ${contactId} no tiene wa_id. No se puede enviar evento Purchase a Meta.`);
-                } else {
-                    const eventInfo = {
-                        wa_id: contactData.wa_id,
-                        profile: { name: contactData.name }
-                    };
-
-                    const customData = {
-                        value: parseFloat(precio) || 0,
-                        currency: 'MXN'
-                    };
-
-                    console.log(`[META EVENT] Datos: wa_id=${contactData.wa_id}, adReferral=${JSON.stringify(contactData.adReferral || {})}, valor=${precio}`);
-                    // Enviar evento
-                    await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
-                    console.log(`[META EVENT] Evento Purchase enviado por pedido DH${newOrderNumber} valor $${precio}`);
-                }
-            }
-        } catch (metaError) {
-            console.error('[META EVENT] Error al enviar evento Purchase automático:', metaError.message);
-            if (metaError.response) console.error('[META EVENT] Respuesta de Meta:', JSON.stringify(metaError.response.data));
-            // No fallar el request principal si falla el evento
-        }
-        // --- FIN: Enviar evento Purchase a Meta ---
 
         // Devolver éxito y el número de pedido generado
         res.status(201).json({
@@ -2432,6 +2396,92 @@ router.post('/orders', async (req, res) => {
     } catch (error) {
         console.error('Error al registrar el nuevo pedido:', error);
         res.status(500).json({ success: false, message: 'Error del servidor al registrar el pedido.' });
+    }
+});
+
+
+// --- Endpoint POST /api/orders/:orderId/change-status (Cambiar estatus + Meta al pasar a Fabricar) ---
+router.post('/orders/:orderId/change-status', async (req, res) => {
+    const { orderId } = req.params;
+    const { newStatus } = req.body;
+
+    if (!orderId || !newStatus) {
+        return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: orderId y newStatus.' });
+    }
+
+    try {
+        const orderRef = db.collection('pedidos').doc(orderId);
+        const orderDoc = await orderRef.get();
+
+        if (!orderDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Pedido no encontrado.' });
+        }
+
+        const orderData = orderDoc.data();
+        const oldStatus = (orderData.estatus || 'Sin estatus').toLowerCase();
+        const updatePayload = { estatus: newStatus };
+
+        // Registrar confirmedAt cuando el pedido se confirma por primera vez
+        const isConfirming = newStatus.toLowerCase().includes('fabricar') || newStatus.toLowerCase().includes('pagado');
+        const wasConfirmed = oldStatus.includes('fabricar') || oldStatus.includes('pagado');
+        if (isConfirming && !wasConfirmed && !orderData.confirmedAt) {
+            updatePayload.confirmedAt = admin.firestore.FieldValue.serverTimestamp();
+        }
+
+        // Actualizar el pedido en Firestore
+        await orderRef.update(updatePayload);
+
+        let metaEventSent = false;
+
+        // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro + evento Purchase a Meta
+        if (newStatus === 'Fabricar' && !oldStatus.includes('fabricar') && orderData.contactId) {
+            try {
+                const contactRef = db.collection('contacts_whatsapp').doc(orderData.contactId);
+                const contactDoc = await contactRef.get();
+
+                if (contactDoc.exists) {
+                    const contactData = contactDoc.data();
+
+                    // Actualizar purchaseStatus del contacto a 'completed' (corona zafiro)
+                    await contactRef.update({
+                        purchaseStatus: 'completed',
+                        purchaseDate: admin.firestore.FieldValue.serverTimestamp()
+                    });
+
+                    // Enviar evento Purchase a Meta CAPI
+                    if (contactData.wa_id) {
+                        const eventInfo = {
+                            wa_id: contactData.wa_id,
+                            profile: { name: contactData.name }
+                        };
+                        const customData = {
+                            value: parseFloat(orderData.precio) || 0,
+                            currency: 'MXN'
+                        };
+                        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
+                        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+                        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${orderData.precio}`);
+                        metaEventSent = true;
+                    } else {
+                        console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió evento Purchase.`);
+                    }
+                }
+            } catch (metaError) {
+                console.error('[META EVENT] Error al enviar evento Purchase por Fabricar:', metaError.message);
+                if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+                // No fallar el request principal
+            }
+        }
+
+        res.status(200).json({
+            success: true,
+            message: 'Estatus actualizado.',
+            metaEventSent
+        });
+
+    } catch (error) {
+        console.error(`Error al cambiar estatus del pedido ${orderId}:`, error);
+        res.status(500).json({ success: false, message: 'Error del servidor al cambiar estatus.' });
     }
 });
 

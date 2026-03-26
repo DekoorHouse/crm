@@ -1978,40 +1978,76 @@ function closeTagModal() {
 
 /**
  * Maneja el cambio de estatus de un pedido desde la barra lateral de detalles.
+ * Usa el endpoint del servidor para que al cambiar a "Fabricar" se envíe el evento Purchase a Meta
+ * y se actualice la corona del contacto a zafiro.
  * @param {string} orderId - El ID del documento del pedido en Firestore.
  * @param {string} newStatus - El nuevo valor del estatus.
+ * @param {HTMLElement} [selectEl] - El <select> que disparó el cambio (para animación).
  */
-async function handleOrderStatusChange(orderId, newStatus) {
+async function handleOrderStatusChange(orderId, newStatus, selectEl) {
     if (!orderId || !newStatus) {
         console.error("Falta el ID del pedido o el nuevo estatus.");
         showError("Error interno: no se pudo identificar el pedido o el estatus.", 'error');
         return;
     }
 
-    const originalStatus = state.selectedContactOrders.find(o => o.id === orderId)?.estatus;
-
     try {
-        const orderRef = db.collection('pedidos').doc(orderId);
-        const updatePayload = { estatus: newStatus };
+        const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/change-status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ newStatus })
+        });
+        const result = await response.json();
 
-        // Registrar confirmedAt cuando el pedido se confirma por primera vez
-        const isConfirming = newStatus.toLowerCase().includes('fabricar') || newStatus.toLowerCase().includes('pagado');
-        const wasConfirmed = originalStatus && (originalStatus.toLowerCase().includes('fabricar') || originalStatus.toLowerCase().includes('pagado'));
-        if (isConfirming && !wasConfirmed) {
-            updatePayload.confirmedAt = firebase.firestore.FieldValue.serverTimestamp();
+        if (!response.ok) {
+            throw new Error(result.message || 'Error del servidor.');
         }
 
-        await orderRef.update(updatePayload);
+        showError('Estatus del pedido actualizado.', 'success');
 
-        showError(`Estatus del pedido actualizado.`, 'success');
+        // Animación de gema zafiro al cambiar a Fabricar
+        if (newStatus === 'Fabricar' && selectEl) {
+            const rect = selectEl.getBoundingClientRect();
+            playGemPlacementAnimationCRM(rect.left + rect.width / 2, rect.top + rect.height / 2);
+        }
 
     } catch (error) {
         console.error("Error al actualizar el estatus del pedido: ", error);
         showError("Error al guardar el cambio. Revisa la consola.", 'error');
-
-        // Si falla, la UI se revertirá automáticamente gracias al listener de Firestore,
-        // que traerá el valor antiguo de la base de datos.
     }
+}
+
+/** Animación: gema zafiro cae y se coloca con destellos (CRM sidebar) */
+function playGemPlacementAnimationCRM(x, y) {
+    const container = document.createElement('div');
+    container.className = 'gem-anim-container';
+    container.style.left = x + 'px';
+    container.style.top = y + 'px';
+
+    const gem = document.createElement('div');
+    gem.className = 'gem-anim-gem';
+    gem.innerHTML = '<i class="fas fa-gem"></i>';
+    container.appendChild(gem);
+
+    const glow = document.createElement('div');
+    glow.className = 'gem-anim-glow';
+    container.appendChild(glow);
+
+    const sparkles = document.createElement('div');
+    sparkles.className = 'gem-anim-sparkles';
+    for (let i = 0; i < 8; i++) {
+        const s = document.createElement('span');
+        const angle = (360 / 8) * i;
+        const dist = 30 + Math.random() * 25;
+        s.style.setProperty('--sx', Math.cos(angle * Math.PI / 180) * dist + 'px');
+        s.style.setProperty('--sy', Math.sin(angle * Math.PI / 180) * dist + 'px');
+        s.style.animationDelay = (0.55 + Math.random() * 0.2) + 's';
+        sparkles.appendChild(s);
+    }
+    container.appendChild(sparkles);
+
+    document.body.appendChild(container);
+    setTimeout(() => container.remove(), 2200);
 }
 
 

@@ -1159,8 +1159,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 infoBar.style.backgroundColor = 'var(--color-text-light)';
                 infoBar.style.color = 'white';
             });
-            item.addEventListener('click', () => {
-                actualizarEstatusPedido(pedidoId, option.value);
+            item.addEventListener('click', (clickEvent) => {
+                const menuRect = activeCircularMenu.getBoundingClientRect();
+                const animX = menuRect.left + menuRect.width / 2;
+                const animY = menuRect.top + menuRect.height / 2;
+                actualizarEstatusPedido(pedidoId, option.value, animX, animY);
                 cerrarMenuEstatus();
             });
             menu.appendChild(item);
@@ -1202,13 +1205,62 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function cerrarMenuEstatusOnEsc(event) { if (event.key === "Escape") cerrarMenuEstatus(); }
 
-    async function actualizarEstatusPedido(pedidoId, nuevoEstatus) {
+    async function actualizarEstatusPedido(pedidoId, nuevoEstatus, animX, animY) {
         if (!auth.currentUser) return;
-        const pedidoRef = doc(db, "pedidos", pedidoId);
-        try { await updateDoc(pedidoRef, { estatus: nuevoEstatus }); }
-        catch (error) {
+        try {
+            const response = await fetch(`/api/orders/${pedidoId}/change-status`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ newStatus: nuevoEstatus })
+            });
+            const result = await response.json();
+            if (!response.ok) {
+                console.error("Error del servidor al actualizar estatus:", result.message);
+                return;
+            }
+            // Animación de gema zafiro al cambiar a Fabricar
+            if (nuevoEstatus === 'Fabricar' && animX && animY) {
+                playGemPlacementAnimation(animX, animY);
+            }
+        } catch (error) {
             console.error("Error al actualizar estatus: ", error);
         }
+    }
+
+    /** Animación: gema zafiro cae y se coloca con destellos */
+    function playGemPlacementAnimation(x, y) {
+        const container = document.createElement('div');
+        container.className = 'gem-anim-container';
+        container.style.left = x + 'px';
+        container.style.top = y + 'px';
+
+        // Gema principal
+        const gem = document.createElement('div');
+        gem.className = 'gem-anim-gem';
+        gem.innerHTML = '<i class="fas fa-gem"></i>';
+        container.appendChild(gem);
+
+        // Anillo de resplandor
+        const glow = document.createElement('div');
+        glow.className = 'gem-anim-glow';
+        container.appendChild(glow);
+
+        // Destellos / sparkles
+        const sparkles = document.createElement('div');
+        sparkles.className = 'gem-anim-sparkles';
+        for (let i = 0; i < 8; i++) {
+            const s = document.createElement('span');
+            const angle = (360 / 8) * i;
+            const dist = 30 + Math.random() * 25;
+            s.style.setProperty('--sx', Math.cos(angle * Math.PI / 180) * dist + 'px');
+            s.style.setProperty('--sy', Math.sin(angle * Math.PI / 180) * dist + 'px');
+            s.style.animationDelay = (0.55 + Math.random() * 0.2) + 's';
+            sparkles.appendChild(s);
+        }
+        container.appendChild(sparkles);
+
+        document.body.appendChild(container);
+        setTimeout(() => container.remove(), 2200);
     }
     
     async function actualizarVerificacionTelefono(pedidoId, isChecked) {
