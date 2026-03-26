@@ -7285,7 +7285,6 @@ function _pointInPoly(x, y, polygon) {
 }
 
 function _rectFitsInShape(cx, cy, hw, hh, refArea, samples) {
-    // Check 4 corners + 4 edge midpoints (8 points)
     const pts = [
         [cx - hw, cy - hh], [cx + hw, cy - hh],
         [cx - hw, cy + hh], [cx + hw, cy + hh],
@@ -7299,9 +7298,56 @@ function _rectFitsInShape(cx, cy, hw, hh, refArea, samples) {
         }
         return true;
     }
-    // bspline / polygon
     for (const [px, py] of pts) {
         if (!_pointInPoly(px, py, samples)) return false;
+    }
+    return true;
+}
+
+/** Sample actual glyph outline points from an opentype.js path */
+function _sampleGlyphPoints(otPath, step = 3) {
+    const pts = [];
+    let cx = 0, cy = 0;
+    for (const cmd of otPath.commands) {
+        if (cmd.type === 'M') { cx = cmd.x; cy = cmd.y; pts.push([cx, cy]); }
+        else if (cmd.type === 'L') {
+            cx = cmd.x; cy = cmd.y; pts.push([cx, cy]);
+        } else if (cmd.type === 'Q') {
+            // Quadratic bezier: sample points along the curve
+            const x0 = cx, y0 = cy;
+            for (let t = 1 / step; t <= 1; t += 1 / step) {
+                const u = 1 - t;
+                const px = u * u * x0 + 2 * u * t * cmd.x1 + t * t * cmd.x;
+                const py = u * u * y0 + 2 * u * t * cmd.y1 + t * t * cmd.y;
+                pts.push([px, py]);
+            }
+            cx = cmd.x; cy = cmd.y;
+        } else if (cmd.type === 'C') {
+            // Cubic bezier
+            const x0 = cx, y0 = cy;
+            for (let t = 1 / step; t <= 1; t += 1 / step) {
+                const u = 1 - t;
+                const px = u*u*u*x0 + 3*u*u*t*cmd.x1 + 3*u*t*t*cmd.x2 + t*t*t*cmd.x;
+                const py = u*u*u*y0 + 3*u*u*t*cmd.y1 + 3*u*t*t*cmd.y2 + t*t*t*cmd.y;
+                pts.push([px, py]);
+            }
+            cx = cmd.x; cy = cmd.y;
+        }
+    }
+    return pts;
+}
+
+/** Check if all glyph outline points (scaled and translated) fit inside the shape */
+function _glyphFitsInShape(glyphPts, scale, offX, offY, cx, cy, refArea, shapeSamples) {
+    for (const [gx, gy] of glyphPts) {
+        const px = gx * scale + offX;
+        const py = gy * scale + offY;
+        if (refArea.type === 'ellipse') {
+            const a = refArea.rx, b = refArea.ry;
+            if (((px - refArea.cx) / a) ** 2 + ((py - refArea.cy) / b) ** 2 > 1) return false;
+        } else {
+            if (!_pointInPoly(px, py, shapeSamples)) return false;
+        }
     }
     return true;
 }
@@ -7355,12 +7401,36 @@ async function fitTextToRefArea(textObj) {
     const cx = rb.x + rb.w / 2, cy = rb.y + rb.h / 2;
     let scale;
 
-    if (refArea.type === 'ellipse') {
-        // Exact: max scale so centered text rect corners touch ellipse
+    // Try glyph-based fitting (uses actual letter outlines instead of bounding rect)
+    const useGlyphFit = otFont && (refArea.type === 'ellipse' || (refArea.type === 'bspline' && refArea.closed));
+
+    if (useGlyphFit) {
+        // Sample the actual glyph outline points at refSize
+        const glyphPath = otFont.getPath(text, 0, 0, refSize);
+        const glyphPts = _sampleGlyphPoints(glyphPath, 4);
+
+        // We need to translate glyph points so they're centered in the ref area at each scale
+        // At scale s: final glyph point = (gx * s + offX, gy * s + offY)
+        // where offX/offY center the glyph bbox in the ref area
+        const shapeSamples = refArea.type === 'bspline' ? sampleBSplineAll(refArea.points, 200, true) : null;
+
+        let lo = 0, hi = Math.min(rb.w / relW, rb.h / relH) * 1.5; // allow extra room since glyphs are smaller than rect
+        for (let iter = 0; iter < 40; iter++) {
+            const mid = (lo + hi) / 2;
+            // At this scale, compute the offset to center the glyph bbox
+            const offX = cx - (relW * mid) / 2 - relX * mid;
+            const offY = cy - (relH * mid) / 2 - relY * mid;
+            if (_glyphFitsInShape(glyphPts, mid, offX, offY, cx, cy, refArea, shapeSamples)) {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        scale = lo;
+    } else if (refArea.type === 'ellipse') {
         const a = refArea.rx, b = refArea.ry;
         scale = 1 / Math.sqrt((relW / (2 * a)) ** 2 + (relH / (2 * b)) ** 2);
     } else if (refArea.type === 'bspline' && refArea.closed) {
-        // Binary search: max scale so centered text rect fits inside bspline
         const samples = sampleBSplineAll(refArea.points, 200, true);
         let lo = 0, hi = Math.min(rb.w / relW, rb.h / relH);
         for (let iter = 0; iter < 30; iter++) {
@@ -7373,7 +7443,6 @@ async function fitTextToRefArea(textObj) {
         }
         scale = lo;
     } else {
-        // Rect, curvepath: bounding box = shape
         scale = Math.min(rb.w / relW, rb.h / relH);
     }
 
