@@ -2650,6 +2650,8 @@ body.dark .file-item-delete:hover {
     flex-direction: column;
     gap: 10px;
     scroll-behavior: smooth;
+    user-select: text;
+    -webkit-user-select: text;
 }
 
 .ai-chat-msg {
