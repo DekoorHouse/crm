@@ -786,7 +786,7 @@ function objectAtPoint(pt) {
     return best;
 }
 
-function hitTest(obj, pt) {
+function hitTest(obj, pt, forceInterior) {
     const m = Math.max(state.viewBox.w, state.viewBox.h) * 0.006;
     if (obj.type === 'group') {
         for (let i = obj.children.length - 1; i >= 0; i--) {
@@ -795,17 +795,27 @@ function hitTest(obj, pt) {
         return false;
     }
     if (obj.type === 'powerclip') {
-        return hitTest(obj.container, pt);
+        return hitTest(obj.container, pt, true); // powerclip interior always clickable
     }
+    // For stroke-only shapes (no fill), only hit on the stroke itself
+    const _fill = obj.fill || 'none';
+    const _hasFill = forceInterior || (_fill !== 'none' && _fill !== 'transparent');
     switch (obj.type) {
         case 'text': {
             const tb = getObjBounds(obj);
             return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
-        case 'rect': case 'image':
-            return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
-                   pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+        case 'rect': case 'image': {
+            const inOuter = pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
+                            pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+            if (!inOuter) return false;
+            if (_hasFill || obj.type === 'image') return true;
+            // Stroke-only rect: only hit on border
+            const sw = (obj.strokeWidth || 1) + m;
+            return pt.x <= obj.x + sw || pt.x >= obj.x + obj.width - sw ||
+                   pt.y <= obj.y + sw || pt.y >= obj.y + obj.height - sw;
+        }
         case 'curvepath': {
             // Use visual bounds (getBoundingClientRect) instead of inflated stored bounds
             if (obj.element && obj.element.ownerSVGElement) {
@@ -828,16 +838,23 @@ function hitTest(obj, pt) {
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         }
         case 'ellipse': {
-            const dx = (pt.x - obj.cx) / (obj.rx + m), dy = (pt.y - obj.cy) / (obj.ry + m);
-            return dx * dx + dy * dy <= 1;
+            const outerDx = (pt.x - obj.cx) / (obj.rx + m), outerDy = (pt.y - obj.cy) / (obj.ry + m);
+            if (outerDx * outerDx + outerDy * outerDy > 1) return false;
+            if (_hasFill) return true;
+            // Stroke-only ellipse: only hit on stroke ring
+            const sw = (obj.strokeWidth || 1) + m;
+            const innerRx = Math.max(1, obj.rx - sw);
+            const innerRy = Math.max(1, obj.ry - sw);
+            const innerDx = (pt.x - obj.cx) / innerRx, innerDy = (pt.y - obj.cy) / innerRy;
+            return innerDx * innerDx + innerDy * innerDy > 1;
         }
         case 'line':
             return distToSeg(pt, {x:obj.x1,y:obj.y1}, {x:obj.x2,y:obj.y2}) <= m + obj.strokeWidth;
         case 'bspline': {
             if (obj.points.length < 2) return false;
             const samples = sampleBSplineAll(obj.points, 80, obj.closed);
-            // If closed, use point-in-polygon test (selectable by clicking inside)
-            if (obj.closed) {
+            // If closed and has fill, use point-in-polygon test (selectable by clicking inside)
+            if (obj.closed && _hasFill) {
                 let inside = false;
                 for (let i = 0, j = samples.length - 1; i < samples.length; j = i++) {
                     const xi = samples[i].x, yi = samples[i].y;
