@@ -219,13 +219,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const speed = document.getElementById('param-speed').value;
         if (opMode === 'raster') {
             const dpi = dpiInput.value;
-            sendCommand(`operation* filter -t raster speed ${speed}`);
-            sendCommand(`operation* filter -t raster dpi ${dpi}`);
-            sendCommand(`operation* filter -t image speed ${speed}`);
-            sendCommand(`operation* filter -t image dpi ${dpi}`);
+            sendCommand(`operation* speed ${speed}`);
+            sendCommand(`operation* dpi ${dpi}`);
         } else {
-            sendCommand(`operation* filter -t cut speed ${speed}`);
-            sendCommand(`operation* filter -t engrave speed ${speed}`);
+            sendCommand(`operation* speed ${speed}`);
         }
         sendCommand('plan copy preprocess validate blob spool');
         sbJob.textContent = 'Ejecutando...';
