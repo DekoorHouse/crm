@@ -370,25 +370,49 @@ router.get('/expenses/summary', async (req, res) => {
             .where('date', '<=', endDate)
             .get();
 
+        // Un solo recorrido — replica EXACTAMENTE la lógica del gestor (charts.js)
+        const INCOME_ADJUSTMENT = 19183.22;
+        const drawCategories = ['Alex', 'Chris'];
+        const cogsCategories = ['Material', 'Sueldos'];
         const categories = {};
-        let totalCharges = 0;
-        let totalCredits = 0;
+        let totalCharges = 0, totalCredits = 0;
+        let cogs = 0, operatingExpenses = 0, ownerDraw = 0;
 
         expSnap.docs.forEach(doc => {
             const data = doc.data();
-            if (data.type && data.type !== 'operativo' && data.sub_type !== 'pago_intereses') return;
-
             const charge = parseFloat(data.charge) || 0;
             const credit = parseFloat(data.credit) || 0;
+            const isOperational = data.type === 'operativo' || !data.type;
+            const cat = data.category || 'SinCategorizar';
 
-            if (charge > 0) {
-                const cat = data.category || 'SinCategorizar';
-                if (!categories[cat]) categories[cat] = 0;
-                categories[cat] += charge;
-                totalCharges += charge;
+            // Créditos (ingresos) — mismo filtro que el gestor
+            if (credit > 0 && isOperational) {
+                totalCredits += credit;
             }
-            totalCredits += credit;
+
+            // Cargos (gastos)
+            if (charge > 0) {
+                // Para la gráfica de distribución: incluir todos los operativos
+                if (isOperational || data.sub_type === 'pago_intereses') {
+                    if (!categories[cat]) categories[cat] = 0;
+                    categories[cat] += charge;
+                    totalCharges += charge;
+                }
+
+                // Para utilidad operativa: misma lógica que charts.js línea 130-144
+                if (drawCategories.includes(cat)) {
+                    ownerDraw += charge;
+                } else if (isOperational || data.sub_type === 'pago_intereses') {
+                    if (cogsCategories.includes(cat)) {
+                        cogs += charge;
+                    } else {
+                        operatingExpenses += charge;
+                    }
+                }
+            }
         });
+
+        const adjustedCredits = Math.max(0, totalCredits - INCOME_ADJUSTMENT);
 
         const sorted = Object.entries(categories)
             .sort(([,a], [,b]) => b - a)
@@ -397,39 +421,6 @@ router.get('/expenses/summary', async (req, res) => {
                 amount: Math.round(amount * 100) / 100,
                 percent: totalCharges > 0 ? ((amount / totalCharges) * 100).toFixed(1) : 0
             }));
-
-        // Mismo ajuste que usa el gestor de gastos (charts.js INCOME_ADJUSTMENT)
-        const INCOME_ADJUSTMENT = 19183.22;
-        const adjustedCredits = Math.max(0, totalCredits - INCOME_ADJUSTMENT);
-
-        // Calcular utilidad igual que el gestor de gastos:
-        // Alex y Chris son retiros de dueños, no gastos operativos
-        // Replicar exactamente la lógica del gestor (charts.js updateFinancialHealthDashboard):
-        // cogs = Material + Sueldos
-        // operatingExpenses = todo lo demás que sea operativo (type=operativo o sin type), EXCEPTO Alex/Chris
-        // ownerDraw = Alex + Chris
-        // operatingProfit = revenue - cogs - operatingExpenses (sin Alex/Chris)
-        const drawCategories = ['Alex', 'Chris'];
-        const cogsCategories = ['Material', 'Sueldos'];
-        let cogs = 0, operatingExpenses = 0, ownerDraw = 0;
-
-        expSnap.docs.forEach(doc => {
-            const data = doc.data();
-            const charge = parseFloat(data.charge) || 0;
-            if (charge <= 0) return;
-            const isOperational = data.type === 'operativo' || !data.type;
-            const cat = data.category || 'SinCategorizar';
-
-            if (drawCategories.includes(cat)) {
-                ownerDraw += charge;
-            } else if (isOperational || data.sub_type === 'pago_intereses') {
-                if (cogsCategories.includes(cat)) {
-                    cogs += charge;
-                } else {
-                    operatingExpenses += charge;
-                }
-            }
-        });
 
         const businessCosts = cogs + operatingExpenses;
         const operatingProfit = adjustedCredits - businessCosts;
