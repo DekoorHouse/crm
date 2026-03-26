@@ -63,7 +63,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function updateStatus(connected) {
-        connDot.className = connected ? 'dot connected' : 'dot';
+        connDot.className = connected ? 'dot on' : 'dot';
         connText.textContent = connected ? 'Conectado' : 'Desconectado';
         sbUsb.textContent = connected ? 'Conectado' : 'Desconectado';
     }
@@ -114,6 +114,7 @@ document.addEventListener('DOMContentLoaded', () => {
             sendCommand('home');
             btnInit.innerHTML = '<i class="fas fa-check"></i> Conectada';
             btnInit.classList.add('active');
+            btnInit.classList.remove('tag-btn');
         }, 1500);
     });
 
