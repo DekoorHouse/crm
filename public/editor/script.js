@@ -5450,8 +5450,8 @@ function executeSingleAction(action) {
                 }
             }
 
-            // Escala uniforme: Math.max para llenar/coincidir con el contorno (no quedar chico)
-            const scaleFactor = Math.max(tgtBounds.w / refBounds.w, tgtBounds.h / refBounds.h);
+            // Escala uniforme basada en el ancho (dimensión de corte)
+            const scaleFactor = tgtBounds.w / refBounds.w;
             applyPropSize(srcObj, srcBounds.w * scaleFactor, srcBounds.h * scaleFactor);
 
             // Re-leer bounds después del resize y centrar
@@ -5620,7 +5620,7 @@ function executeSingleAction(action) {
                 // Fit into slot using pre-computed source reference (stable scale)
                 const slot = fillSlots[i];
                 const slotB = getObjBounds(slot);
-                const sf = Math.max(slotB.w / srcRef.w, slotB.h / srcRef.h);
+                const sf = slotB.w / srcRef.w;
                 applyPropSize(clone, srcBounds.w * sf, srcBounds.h * sf);
                 const nb = getObjBounds(clone);
                 offsetObject(clone, (slotB.x + slotB.w / 2) - (nb.x + nb.w / 2),
