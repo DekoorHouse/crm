@@ -1022,7 +1022,24 @@ function drawSelection() {
 
 function getObjBounds(obj) {
     switch (obj.type) {
-        case 'rect': case 'image': case 'curvepath': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
+        case 'rect': case 'image': return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
+        case 'curvepath': {
+            // Use actual rendered path bounds (getBBox) mapped to page space
+            if (obj.element && obj._origBounds) {
+                try {
+                    const bb = obj.element.getBBox();
+                    if (bb.width > 0.01 && bb.height > 0.01) {
+                        const orig = obj._origBounds;
+                        const sx = obj.width / orig.w;
+                        const sy = obj.height / orig.h;
+                        const tx = obj.x - orig.x * sx;
+                        const ty = obj.y - orig.y * sy;
+                        return { x: bb.x * sx + tx, y: bb.y * sy + ty, w: bb.width * sx, h: bb.height * sy };
+                    }
+                } catch(e) {}
+            }
+            return { x: obj.x, y: obj.y, w: obj.width, h: obj.height };
+        }
         case 'ellipse': return { x: obj.cx - obj.rx, y: obj.cy - obj.ry, w: obj.rx*2, h: obj.ry*2 };
         case 'line': {
             const x = Math.min(obj.x1, obj.x2), y = Math.min(obj.y1, obj.y2);
