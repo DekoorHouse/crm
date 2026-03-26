@@ -2,23 +2,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const API = window.API_BASE_URL || '';
     let ws = null;
     let jogStep = 1;
-    let opMode = 'cut'; // 'cut' or 'raster'
+    let opMode = 'cut';
 
-    // Workspace dimensions (mm)
-    const BED_W = 400;
-    const BED_H = 400;
-    const CANVAS_PX = 500; // canvas pixel size
-
-    const previewCanvas = document.getElementById('preview-canvas');
-    const previewCtx = previewCanvas.getContext('2d');
-    const previewContainer = document.getElementById('preview-container');
+    // Workspace
+    const BED_W = 400, BED_H = 400;
+    const canvas = document.getElementById('preview-canvas');
+    const ctx = canvas.getContext('2d');
     const previewInfo = document.getElementById('preview-info');
-    let previewImage = null; // loaded image/svg for preview
+    let previewImage = null;
+    let canvasPx = 500;
 
-    // --- DOM refs ---
-    const connStatus = document.getElementById('conn-status');
-    const statusDot = connStatus.querySelector('.status-dot');
-    const statusText = connStatus.querySelector('.status-text');
+    // DOM refs
+    const connDot = document.getElementById('conn-dot');
+    const connText = document.getElementById('conn-text');
+    const btnInit = document.getElementById('btn-init');
     const uploadArea = document.getElementById('upload-area');
     const fileInput = document.getElementById('file-input');
     const loadedFile = document.getElementById('loaded-file');
@@ -33,8 +30,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnFrame = document.getElementById('btn-frame');
     const btnHome = document.getElementById('btn-home');
     const btnUnlock = document.getElementById('btn-unlock');
+    const sbUsb = document.getElementById('sb-usb');
+    const sbFile = document.getElementById('sb-file');
+    const sbJob = document.getElementById('sb-job');
 
-    // --- WebSocket connection ---
+    // ===================== WebSocket =====================
     function connectWS() {
         const proto = location.protocol === 'https:' ? 'wss' : 'ws';
         ws = new WebSocket(`${proto}://${location.host}/ws/laser`);
@@ -59,22 +59,16 @@ document.addEventListener('DOMContentLoaded', () => {
             setTimeout(connectWS, 3000);
         };
 
-        ws.onerror = () => {
-            // onclose will fire after this
-        };
+        ws.onerror = () => {};
     }
 
     function updateStatus(connected) {
-        if (connected) {
-            statusDot.className = 'status-dot connected';
-            statusText.textContent = 'Conectado';
-        } else {
-            statusDot.className = 'status-dot disconnected';
-            statusText.textContent = 'Desconectado';
-        }
+        connDot.className = connected ? 'dot connected' : 'dot';
+        connText.textContent = connected ? 'Conectado' : 'Desconectado';
+        sbUsb.textContent = connected ? 'Conectado' : 'Desconectado';
     }
 
-    // --- Console ---
+    // ===================== Console =====================
     function logConsole(text, type = '') {
         const div = document.createElement('div');
         if (type) div.className = `line-${type}`;
@@ -86,11 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
     function sendCommand(cmd) {
         if (!cmd) return;
         logConsole(`>> ${cmd}`, 'cmd');
-
         if (ws && ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'command', cmd }));
         } else {
-            // Fallback to HTTP
             fetch(`${API}/api/laser/command`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -105,39 +97,39 @@ document.addEventListener('DOMContentLoaded', () => {
     consoleInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             const cmd = consoleInput.value.trim();
-            if (cmd) {
-                sendCommand(cmd);
-                consoleInput.value = '';
-            }
+            if (cmd) { sendCommand(cmd); consoleInput.value = ''; }
         }
     });
-
     btnSendCmd.addEventListener('click', () => {
         const cmd = consoleInput.value.trim();
-        if (cmd) {
-            sendCommand(cmd);
-            consoleInput.value = '';
-        }
+        if (cmd) { sendCommand(cmd); consoleInput.value = ''; }
     });
 
-    // --- File upload ---
+    // ===================== Machine Init =====================
+    btnInit.addEventListener('click', () => {
+        sendCommand('usb_connect');
+        sendCommand('start');
+        logConsole('Inicializando maquina...', 'cmd');
+        setTimeout(() => {
+            sendCommand('home');
+            btnInit.innerHTML = '<i class="fas fa-check"></i> Conectada';
+            btnInit.classList.add('active');
+        }, 1500);
+    });
+
+    // ===================== File Upload =====================
     uploadArea.addEventListener('click', () => fileInput.click());
 
     uploadArea.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadArea.classList.add('dragover');
     });
-
-    uploadArea.addEventListener('dragleave', () => {
-        uploadArea.classList.remove('dragover');
-    });
+    uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
 
     uploadArea.addEventListener('drop', (e) => {
         e.preventDefault();
         uploadArea.classList.remove('dragover');
-        if (e.dataTransfer.files.length) {
-            uploadFile(e.dataTransfer.files[0]);
-        }
+        if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
     });
 
     fileInput.addEventListener('change', () => {
@@ -151,6 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadedFile.classList.add('hidden');
         uploadArea.classList.remove('hidden');
         clearPreview();
+        sbFile.textContent = 'Sin archivo';
     });
 
     async function uploadFile(file) {
@@ -170,8 +163,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadedFile.classList.remove('hidden');
                 uploadArea.classList.add('hidden');
                 logConsole(`Archivo cargado: ${data.filename}`, 'ok');
-                // Reposition elements to origin (0,0) to avoid out-of-bounds
                 sendCommand('element* position 0 0');
+                sbFile.textContent = data.filename;
             } else {
                 logConsole(data.message, 'err');
             }
@@ -180,17 +173,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- Mode toggle ---
+    // ===================== Mode Toggle =====================
     document.querySelectorAll('.mode-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             opMode = btn.dataset.mode;
-            const rasterParams = document.querySelectorAll('.raster-param');
-            rasterParams.forEach(el => {
+            document.querySelectorAll('.raster-param').forEach(el => {
                 el.classList.toggle('hidden', opMode !== 'raster');
             });
-            // Adjust default speed for mode
             const speedInput = document.getElementById('param-speed');
             if (opMode === 'raster' && parseFloat(speedInput.value) < 50) {
                 speedInput.value = 150;
@@ -200,7 +191,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- Material presets ---
+    // ===================== Material Presets =====================
     document.querySelectorAll('.preset-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
@@ -209,8 +200,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- Job controls ---
-    // --- DPI <-> Step sync ---
+    // ===================== DPI <-> Step Sync =====================
     const dpiInput = document.getElementById('param-dpi');
     const stepInput = document.getElementById('param-step');
 
@@ -218,55 +208,51 @@ document.addEventListener('DOMContentLoaded', () => {
         const dpi = parseFloat(dpiInput.value);
         if (dpi > 0) stepInput.value = (25.4 / dpi).toFixed(3);
     });
-
     stepInput.addEventListener('input', () => {
         const step = parseFloat(stepInput.value);
         if (step > 0) dpiInput.value = Math.round(25.4 / step);
     });
 
+    // ===================== Job Controls =====================
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
         if (opMode === 'raster') {
             const dpi = dpiInput.value;
-            const bidir = document.getElementById('param-bidir').checked;
-            // Set raster/image operations
             sendCommand(`operation* filter -t raster speed ${speed}`);
             sendCommand(`operation* filter -t raster dpi ${dpi}`);
             sendCommand(`operation* filter -t image speed ${speed}`);
             sendCommand(`operation* filter -t image dpi ${dpi}`);
         } else {
-            // Set only cut/engrave operations
             sendCommand(`operation* filter -t cut speed ${speed}`);
             sendCommand(`operation* filter -t engrave speed ${speed}`);
         }
-        sendCommand(`plan copy preprocess validate blob spool`);
+        sendCommand('plan copy preprocess validate blob spool');
+        sbJob.textContent = 'Ejecutando...';
     });
 
     btnPause.addEventListener('click', () => sendCommand('pause'));
+
     btnStop.addEventListener('click', () => {
         sendCommand('estop');
-        // Reconnect USB and restart pipe after abort
         setTimeout(() => {
             sendCommand('usb_connect');
             sendCommand('start');
         }, 500);
+        sbJob.textContent = 'Detenido';
     });
+
     btnFrame.addEventListener('click', () => sendCommand('trace'));
 
-    // --- Position controls ---
+    // ===================== Position Controls =====================
     btnHome.addEventListener('click', () => sendCommand('home'));
     btnUnlock.addEventListener('click', () => sendCommand('unlock'));
 
-    // Jog buttons
-    const jogDirections = { up: 'up', down: 'down', left: 'left', right: 'right' };
     document.querySelectorAll('.jog-btn[data-dir]').forEach(btn => {
         btn.addEventListener('click', () => {
-            const dir = btn.dataset.dir;
-            sendCommand(`${dir} ${jogStep}mm`);
+            sendCommand(`${btn.dataset.dir} ${jogStep}mm`);
         });
     });
 
-    // Step size buttons
     document.querySelectorAll('.step-btn').forEach(btn => {
         btn.addEventListener('click', () => {
             document.querySelectorAll('.step-btn').forEach(b => b.classList.remove('active'));
@@ -275,46 +261,42 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // --- Preview ---
+    // ===================== Preview Canvas =====================
     function initPreview() {
+        const wrap = document.querySelector('.canvas-wrap');
+        const size = Math.min(wrap.clientWidth, wrap.clientHeight) - 4;
+        canvasPx = Math.max(size, 200);
+
         const ratio = window.devicePixelRatio || 1;
-        previewCanvas.width = CANVAS_PX * ratio;
-        previewCanvas.height = CANVAS_PX * ratio;
-        previewCanvas.style.width = CANVAS_PX + 'px';
-        previewCanvas.style.height = CANVAS_PX + 'px';
-        previewCtx.scale(ratio, ratio);
+        canvas.width = canvasPx * ratio;
+        canvas.height = canvasPx * ratio;
+        canvas.style.width = canvasPx + 'px';
+        canvas.style.height = canvasPx + 'px';
+        ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
         drawBed();
     }
 
     function drawBed() {
-        const ctx = previewCtx;
-        const scale = CANVAS_PX / BED_W;
-        ctx.clearRect(0, 0, CANVAS_PX, CANVAS_PX);
+        const scale = canvasPx / BED_W;
+        ctx.clearRect(0, 0, canvasPx, canvasPx);
 
         // Background
         ctx.fillStyle = '#0d1117';
-        ctx.fillRect(0, 0, CANVAS_PX, CANVAS_PX);
+        ctx.fillRect(0, 0, canvasPx, canvasPx);
 
-        // Grid (every 50mm)
+        // Grid 50mm
         ctx.strokeStyle = '#1a2030';
         ctx.lineWidth = 1;
         for (let i = 0; i <= BED_W; i += 50) {
             const px = i * scale;
-            ctx.beginPath();
-            ctx.moveTo(px, 0);
-            ctx.lineTo(px, CANVAS_PX);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(0, px);
-            ctx.lineTo(CANVAS_PX, px);
-            ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(px, 0); ctx.lineTo(px, canvasPx); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(0, px); ctx.lineTo(canvasPx, px); ctx.stroke();
         }
 
-        // Grid labels (every 100mm)
-        ctx.fillStyle = '#3a4050';
+        // Labels 100mm
+        ctx.fillStyle = '#2a3545';
         ctx.font = '10px sans-serif';
-        for (let i = 0; i <= BED_W; i += 100) {
-            if (i === 0) continue;
+        for (let i = 100; i <= BED_W; i += 100) {
             const px = i * scale;
             ctx.fillText(i + '', px + 2, 12);
             ctx.fillText(i + '', 2, px + 12);
@@ -323,50 +305,38 @@ document.addEventListener('DOMContentLoaded', () => {
         // Border
         ctx.strokeStyle = '#2a3040';
         ctx.lineWidth = 1.5;
-        ctx.strokeRect(0, 0, CANVAS_PX, CANVAS_PX);
+        ctx.strokeRect(0, 0, canvasPx, canvasPx);
 
-        // Origin marker
-        ctx.fillStyle = '#4a9eff';
+        // Origin
+        ctx.fillStyle = '#3b82f6';
         ctx.beginPath();
         ctx.arc(0, 0, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // Draw loaded image if any
+        // Design
         if (previewImage) {
             const img = previewImage;
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
-
-            // Scale image to real mm on the bed
             const imgAspect = imgW / imgH;
-            // Assume SVG viewBox maps to ~320mm wide (K40 bed), scale proportionally
+
             let realW = Math.min(BED_W * 0.8, BED_W);
             let realH = realW / imgAspect;
-            if (realH > BED_H) {
-                realH = BED_H;
-                realW = realH * imgAspect;
-            }
+            if (realH > BED_H) { realH = BED_H; realW = realH * imgAspect; }
 
             const drawW = realW * scale;
             const drawH = realH * scale;
 
-            // Position at origin (0,0) — top-left corner
-            const x = 0;
-            const y = 0;
-
-            ctx.drawImage(img, x, y, drawW, drawH);
+            ctx.drawImage(img, 0, 0, drawW, drawH);
 
             // Bounding box
-            ctx.strokeStyle = '#4a9eff';
+            ctx.strokeStyle = '#3b82f6';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 4]);
-            ctx.strokeRect(x, y, drawW, drawH);
+            ctx.strokeRect(0, 0, drawW, drawH);
             ctx.setLineDash([]);
 
-            // Size info
-            const sizeW = (drawW / scale).toFixed(1);
-            const sizeH = (drawH / scale).toFixed(1);
-            previewInfo.textContent = `${sizeW} x ${sizeH} mm`;
+            previewInfo.textContent = `${realW.toFixed(1)} x ${realH.toFixed(1)} mm`;
         }
     }
 
@@ -375,40 +345,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const img = new Image();
         img.onload = () => {
             previewImage = img;
-            previewContainer.classList.remove('hidden');
             initPreview();
         };
-        img.onerror = () => {
-            // For SVG that may fail as img, try as object
-            previewContainer.classList.add('hidden');
-        };
+        img.onerror = () => {};
         img.src = url;
     }
 
     function clearPreview() {
         previewImage = null;
-        previewContainer.classList.add('hidden');
+        previewInfo.textContent = '';
+        initPreview();
     }
 
-    // --- Machine init ---
-    const btnInit = document.getElementById('btn-init');
-    const initBar = document.getElementById('init-bar');
-    let machineReady = false;
+    // ===================== Resize =====================
+    window.addEventListener('resize', () => initPreview());
 
-    btnInit.addEventListener('click', () => {
-        sendCommand('usb_connect');
-        sendCommand('start');
-        logConsole('Inicializando máquina...', 'cmd');
-        setTimeout(() => {
-            sendCommand('home');
-            machineReady = true;
-            initBar.classList.add('connected');
-            btnInit.innerHTML = '<i class="fas fa-check"></i> Máquina Conectada';
-            document.querySelector('.init-hint').textContent = 'USB conectado y listo para operar';
-        }, 1500);
-    });
-
-    // --- Init ---
+    // ===================== Init =====================
     connectWS();
-    logConsole('Esperando conexión con MeerK40t...', 'cmd');
+    logConsole('Esperando conexion con MeerK40t...', 'cmd');
+    initPreview();
 });

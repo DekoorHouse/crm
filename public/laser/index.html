@@ -13,173 +13,158 @@
 </head>
 <body>
 
-<div class="main-container">
-    <!-- Header -->
-    <div class="page-header">
-        <h1><i class="fas fa-bolt"></i> Laser Control</h1>
-        <div class="connection-status" id="conn-status">
-            <span class="status-dot disconnected"></span>
-            <span class="status-text">Desconectado</span>
+<!-- Header -->
+<div class="header">
+    <h1><i class="fas fa-bolt"></i> Dekoor Laser</h1>
+    <div class="header-right">
+        <div class="pill" id="conn-pill">
+            <span class="dot" id="conn-dot"></span>
+            <span id="conn-text">Desconectado</span>
         </div>
-    </div>
-
-    <!-- Init bar -->
-    <div class="init-bar" id="init-bar">
-        <button class="btn btn-primary btn-lg" id="btn-init">
-            <i class="fas fa-plug"></i> Conectar Máquina
+        <button class="pill pill-btn" id="btn-init" title="Conectar maquina USB">
+            <i class="fas fa-plug"></i> Conectar
         </button>
-        <span class="init-hint">Conecta el USB e inicia la comunicación con el láser</span>
     </div>
+</div>
 
-    <div class="layout">
-        <!-- Left panel: Controls -->
-        <div class="panel controls-panel">
-            <!-- File upload -->
-            <section class="section">
-                <h3><i class="fas fa-file-import"></i> Archivo</h3>
-                <div class="upload-area" id="upload-area">
-                    <input type="file" id="file-input" accept=".svg,.png,.bmp,.jpg,.jpeg,.dxf" hidden>
-                    <i class="fas fa-cloud-upload-alt upload-icon"></i>
-                    <p>Arrastra un archivo o haz clic</p>
-                    <span class="upload-hint">SVG, PNG, BMP, JPG, DXF</span>
-                </div>
-                <div class="loaded-file hidden" id="loaded-file">
-                    <i class="fas fa-file-image"></i>
-                    <span id="loaded-filename"></span>
-                    <button class="btn-icon" id="btn-clear-file" title="Quitar"><i class="fas fa-times"></i></button>
-                </div>
-                <!-- Preview -->
-                <div class="preview-container hidden" id="preview-container">
-                    <canvas id="preview-canvas"></canvas>
-                    <div class="preview-info" id="preview-info"></div>
-                </div>
-            </section>
+<!-- 3-column layout -->
+<div class="layout">
+    <!-- Left: Config -->
+    <div class="col-left">
+        <!-- File -->
+        <div class="section">
+            <h3><i class="fas fa-file-import"></i> Archivo</h3>
+            <div class="upload-zone" id="upload-area">
+                <input type="file" id="file-input" accept=".svg,.png,.bmp,.jpg,.jpeg,.dxf" hidden>
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p>Arrastra o haz clic</p>
+            </div>
+            <div class="file-chip hidden" id="loaded-file">
+                <i class="fas fa-file-image"></i>
+                <span class="name" id="loaded-filename"></span>
+                <i class="fas fa-times x" id="btn-clear-file"></i>
+            </div>
+        </div>
 
-            <!-- Material presets -->
-            <section class="section">
-                <h3><i class="fas fa-layer-group"></i> Material</h3>
-                <div class="presets-grid">
-                    <button class="preset-btn" data-speed="10">
-                        <i class="fas fa-tree"></i> Madera 3mm
-                    </button>
-                    <button class="preset-btn" data-speed="8">
-                        <i class="fas fa-square"></i> MDF 3mm
-                    </button>
-                    <button class="preset-btn" data-speed="6">
-                        <i class="fas fa-gem"></i> Acrílico 3mm
-                    </button>
-                    <button class="preset-btn" data-speed="15">
-                        <i class="fas fa-scroll"></i> Cuero
-                    </button>
-                    <button class="preset-btn" data-speed="25">
-                        <i class="fas fa-note-sticky"></i> Papel
-                    </button>
-                    <button class="preset-btn" data-speed="12">
-                        <i class="fas fa-eraser"></i> Goma
-                    </button>
-                </div>
-            </section>
+        <!-- Mode -->
+        <div class="section">
+            <h3><i class="fas fa-sliders-h"></i> Modo</h3>
+            <div class="mode-toggle">
+                <button class="mode-btn active" data-mode="cut"><i class="fas fa-cut"></i> Corte</button>
+                <button class="mode-btn" data-mode="raster"><i class="fas fa-image"></i> Raster</button>
+            </div>
+        </div>
 
-            <!-- Operation mode -->
-            <section class="section">
-                <h3><i class="fas fa-sliders-h"></i> Parámetros</h3>
-                <div class="mode-toggle">
-                    <button class="mode-btn active" data-mode="cut" id="mode-cut">
-                        <i class="fas fa-cut"></i> Corte
-                    </button>
-                    <button class="mode-btn" data-mode="raster" id="mode-raster">
-                        <i class="fas fa-image"></i> Grabado Raster
-                    </button>
-                </div>
+        <!-- Material -->
+        <div class="section">
+            <h3><i class="fas fa-layer-group"></i> Material</h3>
+            <div class="mat-grid">
+                <div class="mat-btn preset-btn" data-speed="10">Madera 3mm</div>
+                <div class="mat-btn preset-btn" data-speed="8">MDF 3mm</div>
+                <div class="mat-btn preset-btn" data-speed="6">Acrilico</div>
+                <div class="mat-btn preset-btn" data-speed="15">Cuero</div>
+                <div class="mat-btn preset-btn" data-speed="25">Papel</div>
+                <div class="mat-btn preset-btn" data-speed="12">Goma</div>
+            </div>
+        </div>
+
+        <!-- Params -->
+        <div class="section">
+            <h3><i class="fas fa-tachometer-alt"></i> Parametros</h3>
+            <div class="param-input">
+                <label>Velocidad (mm/s)</label>
+                <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
+            </div>
+            <div class="raster-params raster-param hidden">
                 <div class="param-row">
-                    <div class="param-group">
-                        <label>Velocidad (mm/s)</label>
-                        <input type="number" id="param-speed" value="10" min="1" max="500" step="1">
-                    </div>
-                    <div class="param-group raster-param hidden" id="dpi-group">
+                    <div class="param-input">
                         <label>DPI</label>
                         <input type="number" id="param-dpi" value="333" min="50" max="1000" step="1">
                     </div>
-                </div>
-                <div class="raster-options raster-param hidden" id="raster-options">
-                    <div class="param-row">
-                        <div class="param-group">
-                            <label>Interlineado (mm)</label>
-                            <input type="number" id="param-step" value="0.076" min="0.01" max="1" step="0.001">
-                        </div>
-                        <div class="param-group checkbox-group">
-                            <label>Bidireccional</label>
-                            <label class="toggle-switch">
-                                <input type="checkbox" id="param-bidir" checked>
-                                <span class="toggle-slider"></span>
-                            </label>
-                        </div>
+                    <div class="param-input">
+                        <label>Interlineado (mm)</label>
+                        <input type="number" id="param-step" value="0.076" min="0.01" max="1" step="0.001">
                     </div>
                 </div>
-                <p class="param-hint">La potencia se controla con la perilla de la máquina</p>
-            </section>
-
-            <!-- Job controls -->
-            <section class="section">
-                <h3><i class="fas fa-play-circle"></i> Trabajo</h3>
-                <div class="job-buttons">
-                    <button class="btn btn-primary btn-lg" id="btn-start">
-                        <i class="fas fa-play"></i> Iniciar
-                    </button>
-                    <button class="btn btn-warning" id="btn-pause">
-                        <i class="fas fa-pause"></i> Pausa
-                    </button>
-                    <button class="btn btn-danger" id="btn-stop">
-                        <i class="fas fa-stop"></i> Detener
-                    </button>
+                <div class="check-row">
+                    <input type="checkbox" id="param-bidir" checked> Bidireccional
                 </div>
-                <button class="btn btn-outline btn-full" id="btn-frame">
-                    <i class="fas fa-vector-square"></i> Trazar Marco
-                </button>
-            </section>
-        </div>
-
-        <!-- Right panel: Position + Console -->
-        <div class="panel right-panel">
-            <!-- Position controls -->
-            <section class="section">
-                <h3><i class="fas fa-arrows-alt"></i> Posición</h3>
-                <div class="jog-grid">
-                    <div></div>
-                    <button class="jog-btn" data-dir="up" title="Arriba"><i class="fas fa-arrow-up"></i></button>
-                    <div></div>
-                    <button class="jog-btn" data-dir="left" title="Izquierda"><i class="fas fa-arrow-left"></i></button>
-                    <button class="jog-btn jog-home" id="btn-home" title="Home"><i class="fas fa-home"></i></button>
-                    <button class="jog-btn" data-dir="right" title="Derecha"><i class="fas fa-arrow-right"></i></button>
-                    <div></div>
-                    <button class="jog-btn" data-dir="down" title="Abajo"><i class="fas fa-arrow-down"></i></button>
-                    <div></div>
-                </div>
-                <div class="jog-step-row">
-                    <label>Paso (mm):</label>
-                    <div class="step-buttons">
-                        <button class="step-btn active" data-step="1">1</button>
-                        <button class="step-btn" data-step="5">5</button>
-                        <button class="step-btn" data-step="10">10</button>
-                        <button class="step-btn" data-step="50">50</button>
-                    </div>
-                </div>
-                <button class="btn btn-outline btn-full" id="btn-unlock">
-                    <i class="fas fa-lock-open"></i> Desbloquear motores
-                </button>
-            </section>
-
-            <!-- Console -->
-            <section class="section console-section">
-                <h3><i class="fas fa-terminal"></i> Consola</h3>
-                <div class="console-output" id="console-output"></div>
-                <div class="console-input-row">
-                    <input type="text" id="console-input" placeholder="Escribe un comando..." autocomplete="off">
-                    <button class="btn btn-primary" id="btn-send-cmd"><i class="fas fa-paper-plane"></i></button>
-                </div>
-            </section>
+            </div>
+            <p class="param-hint">Potencia: perilla de la maquina</p>
         </div>
     </div>
+
+    <!-- Center: Canvas + Progress -->
+    <div class="col-center">
+        <div class="canvas-wrap">
+            <canvas id="preview-canvas"></canvas>
+            <span class="canvas-info" id="preview-info"></span>
+        </div>
+        <div class="progress-section hidden" id="progress-section">
+            <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+            <div class="progress-info">
+                <span id="progress-text">Listo</span>
+                <span id="progress-pct"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right: Position + Job + Console -->
+    <div class="col-right">
+        <!-- Position -->
+        <div class="section">
+            <h3><i class="fas fa-arrows-alt"></i> Posicion</h3>
+            <div class="jog-grid">
+                <div></div>
+                <button class="jog-btn" data-dir="up"><i class="fas fa-arrow-up"></i></button>
+                <div></div>
+                <button class="jog-btn" data-dir="left"><i class="fas fa-arrow-left"></i></button>
+                <button class="jog-btn home" id="btn-home"><i class="fas fa-home"></i></button>
+                <button class="jog-btn" data-dir="right"><i class="fas fa-arrow-right"></i></button>
+                <div></div>
+                <button class="jog-btn" data-dir="down"><i class="fas fa-arrow-down"></i></button>
+                <div></div>
+            </div>
+            <div class="step-row">
+                <label>Paso:</label>
+                <button class="step-btn active" data-step="1">1</button>
+                <button class="step-btn" data-step="5">5</button>
+                <button class="step-btn" data-step="10">10</button>
+                <button class="step-btn" data-step="50">50</button>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-unlock"><i class="fas fa-lock-open"></i> Desbloquear</button>
+        </div>
+
+        <!-- Job -->
+        <div class="section">
+            <h3><i class="fas fa-play-circle"></i> Trabajo</h3>
+            <button class="btn btn-start" id="btn-start"><i class="fas fa-play"></i> Iniciar</button>
+            <div class="btn-row">
+                <button class="btn btn-pause" id="btn-pause"><i class="fas fa-pause"></i> Pausa</button>
+                <button class="btn btn-stop" id="btn-stop"><i class="fas fa-stop"></i> Stop</button>
+            </div>
+            <button class="btn btn-outline btn-sm" id="btn-frame"><i class="fas fa-vector-square"></i> Trazar Marco</button>
+        </div>
+
+        <!-- Console -->
+        <div class="section console-section">
+            <h3><i class="fas fa-terminal"></i> Consola</h3>
+            <div class="console-output" id="console-output"></div>
+            <div class="console-input-row">
+                <input type="text" id="console-input" placeholder="Comando..." autocomplete="off">
+                <button id="btn-send-cmd"><i class="fas fa-paper-plane"></i></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Status bar -->
+<div class="status-bar">
+    <span><i class="fas fa-usb"></i> <span id="sb-usb">Desconectado</span></span>
+    <div class="sep"></div>
+    <span><i class="fas fa-file"></i> <span id="sb-file">Sin archivo</span></span>
+    <div class="sep"></div>
+    <span><i class="fas fa-circle-info"></i> <span id="sb-job">Idle</span></span>
 </div>
 
 <script src="/env-config.js"></script>
