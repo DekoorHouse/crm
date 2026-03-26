@@ -5507,6 +5507,28 @@ function executeSingleAction(action) {
                 }
             }
 
+            // Sort slots by proximity to first extra (registration mark)
+            if (extraObjs.length > 0) {
+                const mark = getObjBounds(extraObjs[0]);
+                const mCX = mark.x + mark.w / 2, mCY = mark.y + mark.h / 2;
+                fillSlots.sort((sa, sb) => {
+                    const ab = getObjBounds(sa), bb = getObjBounds(sb);
+                    return Math.hypot(ab.x + ab.w/2 - mCX, ab.y + ab.h/2 - mCY)
+                         - Math.hypot(bb.x + bb.w/2 - mCX, bb.y + bb.h/2 - mCY);
+                });
+            }
+
+            // Pre-compute scale reference from ORIGINAL source (stable, not affected by text changes)
+            const srcBounds = getObjBounds(fillSrc);
+            let srcRef = srcBounds;
+            if (fillSrc.type === 'group' && fillSrc.children && fillSrc.children.length > 1) {
+                let mx = 0;
+                for (const ch of fillSrc.children) {
+                    const chb = getObjBounds(ch);
+                    if (chb.w * chb.h > mx) { mx = chb.w * chb.h; srcRef = chb; }
+                }
+            }
+
             // Remember original slots + extras for template duplication
             const origCount = fillSlots.length;
             const allTmplObjs = [...fillSlots, ...extraObjs];
@@ -5557,10 +5579,27 @@ function executeSingleAction(action) {
                     }
                 }
 
-                // Clone source design
+                // Clone source design with ID mapping
                 const clone = JSON.parse(JSON.stringify(fillSrc, (k, v) => k === 'element' ? undefined : v));
+                const idMap = {};
+                const oldTopId = clone.id;
                 clone.id = state.nextId++;
-                assignNewIds(clone);
+                idMap[oldTopId] = clone.id;
+                (function mapIds(o) {
+                    if (o.children) for (const c of o.children) { const old = c.id; c.id = state.nextId++; idMap[old] = c.id; mapIds(c); }
+                    if (o.type === 'powerclip') {
+                        if (o.container) { const old = o.container.id; o.container.id = state.nextId++; idMap[old] = o.container.id; mapIds(o.container); }
+                        if (o.contents) for (const c of o.contents) { const old = c.id; c.id = state.nextId++; idMap[old] = c.id; mapIds(c); }
+                    }
+                })(clone);
+
+                // Remap refTextIds to cloned IDs
+                (function remapRefs(o) {
+                    if (o.isRefArea && o.refTextIds) o.refTextIds = o.refTextIds.map(tid => idMap[tid] ?? tid);
+                    if (o.children) o.children.forEach(remapRefs);
+                    if (o.contents) o.contents.forEach(remapRefs);
+                    if (o.container) remapRefs(o.container);
+                })(clone);
 
                 // Update first text child with new name
                 (function setName(o) {
@@ -5578,24 +5617,23 @@ function executeSingleAction(action) {
                 objectsLayer.appendChild(el);
                 state.objects.push(clone);
 
-                // Fit into slot (same logic as 'fit')
+                // Fit into slot using pre-computed source reference (stable scale)
                 const slot = fillSlots[i];
-                const cb = getObjBounds(clone);
                 const slotB = getObjBounds(slot);
-                let ref = cb;
-                if (clone.type === 'group' && clone.children && clone.children.length > 1) {
-                    let mx = 0;
-                    for (const ch of clone.children) {
-                        const chb = getObjBounds(ch);
-                        if (chb.w * chb.h > mx) { mx = chb.w * chb.h; ref = chb; }
-                    }
-                }
-                const sf = Math.min(slotB.w / ref.w, slotB.h / ref.h);
-                applyPropSize(clone, cb.w * sf, cb.h * sf);
+                const sf = Math.min(slotB.w / srcRef.w, slotB.h / srcRef.h);
+                applyPropSize(clone, srcBounds.w * sf, srcBounds.h * sf);
                 const nb = getObjBounds(clone);
                 offsetObject(clone, (slotB.x + slotB.w / 2) - (nb.x + nb.w / 2),
                                     (slotB.y + slotB.h / 2) - (nb.y + nb.h / 2));
                 refreshElement(clone);
+
+                // Re-fit text to ref areas with new name (async, fire-and-forget)
+                (function triggerFit(o) {
+                    if (o.type === 'text') fitTextToRefArea(o).then(() => refreshElement(o));
+                    if (o.children) o.children.forEach(triggerFit);
+                    if (o.contents) o.contents.forEach(triggerFit);
+                })(clone);
+
                 filledIds.push(clone.id);
             }
 
