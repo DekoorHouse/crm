@@ -553,7 +553,7 @@ export function renderMonthFilter() {
 }
 
 export function populateCategoryFilter() {
-    const categories = getAllCategories().filter(c => c !== 'SinCategorizar');
+    const categories = getAllCategories();
     const currentCategory = elements.categoryFilter.value;
     elements.categoryFilter.innerHTML = `<option value="all">Todas las categorías</option>`;
     categories.forEach(cat => {
