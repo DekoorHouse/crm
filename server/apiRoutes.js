@@ -200,10 +200,64 @@ router.get('/orders/history', async (req, res) => {
     }
 });
 
-// --- Endpoint GET /api/orders/recurring (Clientes recurrentes - mismo teléfono 2+ pedidos) ---
+// --- Endpoint GET /api/orders/recurring (Lee clientes recurrentes desde Firestore) ---
 router.get('/orders/recurring', async (req, res) => {
     try {
-        const { months } = req.query; // Cuántos meses atrás revisar (default 3)
+        const recurringSnap = await db.collection('recurring_customers')
+            .orderBy('totalSpent', 'desc')
+            .limit(50)
+            .get();
+
+        const clients = recurringSnap.docs.map(doc => ({ phone: doc.id, ...doc.data() }));
+        const totalRecurring = clients.length;
+
+        // Si no hay datos guardados, sugerir ejecutar el scan inicial
+        if (totalRecurring === 0) {
+            return res.status(200).json({
+                success: true,
+                needsScan: true,
+                message: 'No hay datos de recurrentes. Ejecuta POST /api/orders/recurring/scan para el escaneo inicial.',
+                stats: { totalClients: 0, totalRecurring: 0, recurringRate: 0, totalRevenueRecurring: 0, totalOrders: 0, recurringOrders: 0, recurringOrdersRate: 0, avgOrdersPerRecurring: 0, avgSpentPerRecurring: 0 },
+                clients: []
+            });
+        }
+
+        // Calcular estadísticas desde los datos guardados
+        const totalRevenueRecurring = clients.reduce((sum, c) => sum + (c.totalSpent || 0), 0);
+        const totalOrdersRecurring = clients.reduce((sum, c) => sum + (c.orderCount || 0), 0);
+        const avgSpent = totalRecurring > 0 ? Math.round(totalRevenueRecurring / totalRecurring) : 0;
+        const avgOrders = totalRecurring > 0 ? (totalOrdersRecurring / totalRecurring).toFixed(1) : 0;
+
+        // Obtener total de clientes únicos para calcular tasa
+        const statsDoc = await db.collection('recurring_customers').doc('__stats__').get();
+        const stats = statsDoc.exists ? statsDoc.data() : {};
+
+        res.status(200).json({
+            success: true,
+            stats: {
+                totalClients: stats.totalClients || 0,
+                totalRecurring,
+                recurringRate: stats.totalClients > 0 ? ((totalRecurring / stats.totalClients) * 100).toFixed(1) : 0,
+                totalRevenueRecurring,
+                totalOrders: stats.totalOrders || 0,
+                recurringOrders: totalOrdersRecurring,
+                recurringOrdersRate: stats.totalOrders > 0 ? ((totalOrdersRecurring / stats.totalOrders) * 100).toFixed(1) : 0,
+                avgOrdersPerRecurring: avgOrders,
+                avgSpentPerRecurring: avgSpent,
+                lastScan: stats.lastScan || null
+            },
+            clients
+        });
+    } catch (error) {
+        console.error('Error fetching recurring customers:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener clientes recurrentes.', error: error.message });
+    }
+});
+
+// --- Endpoint POST /api/orders/recurring/scan (Escaneo inicial único — guarda recurrentes en Firestore) ---
+router.post('/orders/recurring/scan', async (req, res) => {
+    try {
+        const { months } = req.query;
         const lookback = parseInt(months) || 3;
 
         const startDate = new Date();
@@ -215,7 +269,7 @@ router.get('/orders/recurring', async (req, res) => {
             .orderBy('createdAt', 'desc')
             .get();
 
-        // Agrupar pedidos por teléfono/contactId
+        // Agrupar por teléfono
         const clientOrders = {};
         ordersSnap.docs.forEach(doc => {
             const data = doc.data();
@@ -223,67 +277,75 @@ router.get('/orders/recurring', async (req, res) => {
             if (!phone) return;
 
             if (!clientOrders[phone]) {
-                clientOrders[phone] = {
-                    phone,
-                    orders: [],
-                    totalSpent: 0,
-                    paidOrders: 0
-                };
+                clientOrders[phone] = { orderCount: 0, totalSpent: 0, paidOrders: 0, products: [], lastOrderDate: null };
             }
-            clientOrders[phone].orders.push({
-                id: doc.id,
-                precio: data.precio || 0,
-                producto: data.producto,
-                estatus: data.estatus,
-                createdAt: data.createdAt ? data.createdAt.toDate() : null
-            });
+            clientOrders[phone].orderCount++;
             clientOrders[phone].totalSpent += data.precio || 0;
             if (data.estatus === 'Pagado' || data.estatus === 'Fabricar') {
                 clientOrders[phone].paidOrders++;
             }
+            if (data.producto && !clientOrders[phone].products.includes(data.producto)) {
+                clientOrders[phone].products.push(data.producto);
+            }
+            const orderDate = data.createdAt ? data.createdAt.toDate() : null;
+            if (orderDate && (!clientOrders[phone].lastOrderDate || orderDate > clientOrders[phone].lastOrderDate)) {
+                clientOrders[phone].lastOrderDate = orderDate;
+            }
         });
 
-        // Filtrar solo recurrentes (2+ pedidos)
-        const recurring = Object.values(clientOrders).filter(c => c.orders.length >= 2);
+        // Guardar solo recurrentes (2+ pedidos) en colección recurring_customers
+        const batch = db.batch();
+        let savedCount = 0;
 
-        // Obtener nombres de contactos recurrentes
-        for (const client of recurring) {
+        for (const [phone, data] of Object.entries(clientOrders)) {
+            if (data.orderCount < 2) continue;
+
+            // Obtener nombre del contacto
+            let name = 'Sin nombre';
             try {
-                const contactDoc = await db.collection('contacts_whatsapp').doc(client.phone).get();
-                client.name = contactDoc.exists ? (contactDoc.data().name || 'Sin nombre') : 'Sin nombre';
-            } catch (e) {
-                client.name = 'Sin nombre';
+                const contactDoc = await db.collection('contacts_whatsapp').doc(phone).get();
+                if (contactDoc.exists) name = contactDoc.data().name || name;
+            } catch (e) {}
+
+            const ref = db.collection('recurring_customers').doc(phone);
+            batch.set(ref, {
+                name,
+                orderCount: data.orderCount,
+                totalSpent: data.totalSpent,
+                paidOrders: data.paidOrders,
+                products: data.products,
+                lastOrderDate: data.lastOrderDate,
+                detectedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+            savedCount++;
+
+            // Firestore batch limit es 500
+            if (savedCount % 400 === 0) {
+                await batch.commit();
             }
         }
 
-        // Ordenar por total gastado (mejores clientes primero)
-        recurring.sort((a, b) => b.totalSpent - a.totalSpent);
+        // Guardar estadísticas generales
+        const statsRef = db.collection('recurring_customers').doc('__stats__');
+        batch.set(statsRef, {
+            totalClients: Object.keys(clientOrders).length,
+            totalOrders: ordersSnap.size,
+            totalRecurring: savedCount,
+            lastScan: admin.firestore.FieldValue.serverTimestamp(),
+            monthsScanned: lookback
+        });
 
-        // Estadísticas generales
-        const totalClients = Object.keys(clientOrders).length;
-        const totalRecurring = recurring.length;
-        const totalRevenueRecurring = recurring.reduce((sum, c) => sum + c.totalSpent, 0);
-        const totalOrders = ordersSnap.size;
-        const recurringOrders = recurring.reduce((sum, c) => sum + c.orders.length, 0);
+        await batch.commit();
 
         res.status(200).json({
             success: true,
-            stats: {
-                totalClients,
-                totalRecurring,
-                recurringRate: totalClients > 0 ? ((totalRecurring / totalClients) * 100).toFixed(1) : 0,
-                totalRevenueRecurring,
-                totalOrders,
-                recurringOrders,
-                recurringOrdersRate: totalOrders > 0 ? ((recurringOrders / totalOrders) * 100).toFixed(1) : 0,
-                avgOrdersPerRecurring: totalRecurring > 0 ? (recurringOrders / totalRecurring).toFixed(1) : 0,
-                avgSpentPerRecurring: totalRecurring > 0 ? Math.round(totalRevenueRecurring / totalRecurring) : 0
-            },
-            clients: recurring.slice(0, 50) // Top 50 recurrentes
+            message: `Escaneo completado. ${savedCount} clientes recurrentes guardados de ${Object.keys(clientOrders).length} clientes únicos.`,
+            totalClients: Object.keys(clientOrders).length,
+            totalRecurring: savedCount
         });
     } catch (error) {
-        console.error('Error fetching recurring customers:', error);
-        res.status(500).json({ success: false, message: 'Error al obtener clientes recurrentes.', error: error.message });
+        console.error('Error scanning recurring customers:', error);
+        res.status(500).json({ success: false, message: 'Error al escanear clientes recurrentes.', error: error.message });
     }
 });
 
@@ -2476,6 +2538,54 @@ router.post('/orders', async (req, res) => {
             purchaseValue: parseFloat(precio) || 0,
             purchaseDate: admin.firestore.FieldValue.serverTimestamp()
         });
+
+        // --- Detección automática de cliente recurrente ---
+        // Buscar si este teléfono ya tiene otros pedidos anteriores
+        const phone = contactId || telefono;
+        if (phone) {
+            try {
+                const previousOrders = await db.collection('pedidos')
+                    .where('contactId', '==', phone)
+                    .get();
+
+                // Si tiene 2+ pedidos (el actual + anteriores), es recurrente
+                if (previousOrders.size >= 2) {
+                    let totalSpent = 0;
+                    let paidOrders = 0;
+                    const products = [];
+                    let lastOrderDate = null;
+
+                    previousOrders.docs.forEach(doc => {
+                        const d = doc.data();
+                        totalSpent += d.precio || 0;
+                        if (d.estatus === 'Pagado' || d.estatus === 'Fabricar') paidOrders++;
+                        if (d.producto && !products.includes(d.producto)) products.push(d.producto);
+                        const oDate = d.createdAt ? d.createdAt.toDate() : null;
+                        if (oDate && (!lastOrderDate || oDate > lastOrderDate)) lastOrderDate = oDate;
+                    });
+
+                    // Obtener nombre
+                    const contactData = (await contactRef.get()).data();
+                    const name = contactData?.name || 'Sin nombre';
+
+                    // Guardar/actualizar en recurring_customers
+                    await db.collection('recurring_customers').doc(phone).set({
+                        name,
+                        orderCount: previousOrders.size,
+                        totalSpent,
+                        paidOrders,
+                        products,
+                        lastOrderDate,
+                        detectedAt: admin.firestore.FieldValue.serverTimestamp()
+                    }, { merge: true });
+
+                    console.log(`[RECURRENTE] Cliente ${name} (${phone}) detectado con ${previousOrders.size} pedidos, total: $${totalSpent}`);
+                }
+            } catch (recErr) {
+                console.error('Error al detectar recurrente:', recErr);
+                // No bloquear la creación del pedido por este error
+            }
+        }
 
         // Devolver éxito y el número de pedido generado
         res.status(201).json({
