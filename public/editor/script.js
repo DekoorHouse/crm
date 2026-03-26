@@ -7324,10 +7324,9 @@ function updatePropsPanel() {
     document.getElementById('prop-h').value = toUnit(rb.h);
     document.getElementById('prop-rotation').value = Math.round(obj.rotation || 0);
     document.getElementById('props-unit-label').textContent = state.unit;
-    // Update stroke width from selected object
-    if (obj.strokeWidth != null) {
+    // Update stroke width display from selected object (don't change global default)
+    if (obj.strokeWidth != null && obj.type !== 'image' && obj.type !== 'group' && obj.type !== 'powerclip') {
         document.getElementById('stroke-width').value = obj.strokeWidth;
-        state.strokeWidth = obj.strokeWidth;
     }
     // Update text alignment buttons
     if (obj.type === 'text') {
