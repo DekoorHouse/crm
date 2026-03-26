@@ -52,6 +52,8 @@ router.post('/upload', upload.single('file'), (req, res) => {
     // Convert to absolute path with forward slashes for MeerK40t
     const absPath = path.resolve(newPath).replace(/\\/g, '/');
 
+    // Clear previous elements before loading new file
+    bridge.send('clear_all');
     const sent = bridge.send(`load ${absPath}`);
     if (!sent) {
         fs.unlinkSync(newPath);
