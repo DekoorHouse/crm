@@ -7398,35 +7398,41 @@ async function fitTextToRefArea(textObj) {
 
     if (relW < 0.1 || relH < 0.1) return;
 
-    const cx = rb.x + rb.w / 2, cy = rb.y + rb.h / 2;
+    const cx = rb.x + rb.w / 2;
+    let cy = rb.y + rb.h / 2;
     let scale;
 
     // Try glyph-based fitting (uses actual letter outlines instead of bounding rect)
     const useGlyphFit = otFont && (refArea.type === 'ellipse' || (refArea.type === 'bspline' && refArea.closed));
 
     if (useGlyphFit) {
-        // Sample the actual glyph outline points at refSize
         const glyphPath = otFont.getPath(text, 0, 0, refSize);
         const glyphPts = _sampleGlyphPoints(glyphPath, 4);
-
-        // We need to translate glyph points so they're centered in the ref area at each scale
-        // At scale s: final glyph point = (gx * s + offX, gy * s + offY)
-        // where offX/offY center the glyph bbox in the ref area
         const shapeSamples = refArea.type === 'bspline' ? sampleBSplineAll(refArea.points, 200, true) : null;
 
-        let lo = 0, hi = Math.min(rb.w / relW, rb.h / relH) * 1.5; // allow extra room since glyphs are smaller than rect
-        for (let iter = 0; iter < 40; iter++) {
-            const mid = (lo + hi) / 2;
-            // At this scale, compute the offset to center the glyph bbox
-            const offX = cx - (relW * mid) / 2 - relX * mid;
-            const offY = cy - (relH * mid) / 2 - relY * mid;
-            if (_glyphFitsInShape(glyphPts, mid, offX, offY, cx, cy, refArea, shapeSamples)) {
-                lo = mid;
-            } else {
-                hi = mid;
+        // Find the best Y position by scanning vertical offsets, then maximize scale
+        // This lets the text shift up/down to find the widest horizontal slice of the shape
+        let bestScale = 0, bestCy = cy;
+        const scanRange = rb.h * 0.3; // scan +/- 30% of height from center
+        const scanSteps = 9;
+        for (let si = 0; si <= scanSteps; si++) {
+            const tryCy = cy + scanRange * (si / scanSteps * 2 - 1);
+            let lo = 0, hi = Math.min(rb.w / relW, rb.h / relH) * 1.5;
+            for (let iter = 0; iter < 35; iter++) {
+                const mid = (lo + hi) / 2;
+                const offX = cx - (relW * mid) / 2 - relX * mid;
+                const offY = tryCy - (relH * mid) / 2 - relY * mid;
+                if (_glyphFitsInShape(glyphPts, mid, offX, offY, cx, tryCy, refArea, shapeSamples)) {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
             }
+            if (lo > bestScale) { bestScale = lo; bestCy = tryCy; }
         }
-        scale = lo;
+        scale = bestScale;
+        // Override cy with the best vertical position found
+        cy = bestCy;
     } else if (refArea.type === 'ellipse') {
         const a = refArea.rx, b = refArea.ry;
         scale = 1 / Math.sqrt((relW / (2 * a)) ** 2 + (relH / (2 * b)) ** 2);
