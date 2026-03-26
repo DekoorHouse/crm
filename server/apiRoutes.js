@@ -402,12 +402,23 @@ router.get('/expenses/summary', async (req, res) => {
         const INCOME_ADJUSTMENT = 19183.22;
         const adjustedCredits = Math.max(0, totalCredits - INCOME_ADJUSTMENT);
 
+        // Calcular utilidad igual que el gestor de gastos:
+        // Alex y Chris son retiros de dueños, no gastos operativos
+        const drawCategories = ['Alex', 'Chris'];
+        const ownerDraw = sorted.filter(c => drawCategories.includes(c.category)).reduce((s, c) => s + c.amount, 0);
+        const businessCosts = totalCharges - ownerDraw;
+        const operatingProfit = adjustedCredits - businessCosts;
+        const netProfit = operatingProfit - ownerDraw;
+
         res.status(200).json({
             success: true,
             month: `${year}-${month}`,
             totalCharges: Math.round(totalCharges * 100) / 100,
             totalCredits: Math.round(adjustedCredits * 100) / 100,
-            operatingProfit: Math.round((adjustedCredits - totalCharges) * 100) / 100,
+            operatingProfit: Math.round(operatingProfit * 100) / 100,
+            netProfit: Math.round(netProfit * 100) / 100,
+            ownerDraw: Math.round(ownerDraw * 100) / 100,
+            businessCosts: Math.round(businessCosts * 100) / 100,
             categories: sorted
         });
     } catch (error) {
