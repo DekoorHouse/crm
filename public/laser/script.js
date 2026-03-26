@@ -245,8 +245,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnPause.addEventListener('click', () => sendCommand('pause'));
     btnStop.addEventListener('click', () => {
         sendCommand('estop');
-        // Restart pipe to controller after abort
-        setTimeout(() => sendCommand('start'), 500);
+        // Reconnect USB and restart pipe after abort
+        setTimeout(() => {
+            sendCommand('usb_connect');
+            sendCommand('start');
+        }, 500);
     });
     btnFrame.addEventListener('click', () => sendCommand('trace'));
 
