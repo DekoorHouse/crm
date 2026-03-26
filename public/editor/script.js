@@ -807,33 +807,23 @@ function hitTest(obj, pt) {
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         case 'curvepath': {
-            // Use SVG native hit testing for accurate detection on visible path
-            if (obj.element) {
+            // Use visual bounds (getBoundingClientRect) instead of inflated stored bounds
+            if (obj.element && obj.element.ownerSVGElement) {
                 try {
+                    const rect = obj.element.getBoundingClientRect();
                     const svgEl = obj.element.ownerSVGElement;
-                    const svgPt = svgEl.createSVGPoint();
-                    // Convert page coords to element local coords via inverse CTM
-                    const ctm = obj.element.getCTM();
-                    if (ctm) {
-                        const inv = ctm.inverse();
-                        svgPt.x = pt.x; svgPt.y = pt.y;
-                        const local = svgPt.matrixTransform(inv);
-                        const fill = obj.fill && obj.fill !== 'none';
-                        const sw = (obj.strokeWidth || 0) + m;
-                        if (fill && obj.element.isPointInFill(local)) return true;
-                        if (obj.element.isPointInStroke) {
-                            // Temporarily widen stroke for easier clicking
-                            const origSW = obj.element.getAttribute('stroke-width');
-                            obj.element.setAttribute('stroke-width', sw);
-                            const hit = obj.element.isPointInStroke(local);
-                            obj.element.setAttribute('stroke-width', origSW);
-                            if (hit) return true;
-                        }
-                        return false;
+                    const svgRect = svgEl.getBoundingClientRect();
+                    if (rect.width > 0.5 && svgRect.width > 0) {
+                        const vb = state.viewBox;
+                        const scx = vb.w / svgRect.width, scy = vb.h / svgRect.height;
+                        const bx = vb.x + (rect.left - svgRect.left) * scx;
+                        const by = vb.y + (rect.top - svgRect.top) * scy;
+                        const bw = rect.width * scx, bh = rect.height * scy;
+                        return pt.x >= bx - m && pt.x <= bx + bw + m &&
+                               pt.y >= by - m && pt.y <= by + bh + m;
                     }
                 } catch(e) {}
             }
-            // Fallback to bbox
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
         }
