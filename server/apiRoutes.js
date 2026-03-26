@@ -229,7 +229,7 @@ router.get('/orders/recurring', async (req, res) => {
         const avgOrders = totalRecurring > 0 ? (totalOrdersRecurring / totalRecurring).toFixed(1) : 0;
 
         // Obtener total de clientes únicos para calcular tasa
-        const statsDoc = await db.collection('recurring_customers').doc('__stats__').get();
+        const statsDoc = await db.collection('recurring_customers').doc('_stats').get();
         const stats = statsDoc.exists ? statsDoc.data() : {};
 
         res.status(200).json({
@@ -326,7 +326,7 @@ router.post('/orders/recurring/scan', async (req, res) => {
         }
 
         // Guardar estadísticas generales
-        const statsRef = db.collection('recurring_customers').doc('__stats__');
+        const statsRef = db.collection('recurring_customers').doc('_stats');
         batch.set(statsRef, {
             totalClients: Object.keys(clientOrders).length,
             totalOrders: ordersSnap.size,
