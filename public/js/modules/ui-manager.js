@@ -1991,6 +1991,12 @@ async function handleOrderStatusChange(orderId, newStatus, selectEl) {
         return;
     }
 
+    // Animación inmediata al cambiar a Fabricar (antes del API call)
+    if (newStatus === 'Fabricar' && selectEl) {
+        const rect = selectEl.getBoundingClientRect();
+        playGemPlacementAnimationCRM(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
+
     try {
         const response = await fetch(`${API_BASE_URL}/api/orders/${orderId}/change-status`, {
             method: 'POST',
@@ -2004,12 +2010,6 @@ async function handleOrderStatusChange(orderId, newStatus, selectEl) {
         }
 
         showError('Estatus del pedido actualizado.', 'success');
-
-        // Animación de gema zafiro al cambiar a Fabricar
-        if (newStatus === 'Fabricar' && selectEl) {
-            const rect = selectEl.getBoundingClientRect();
-            playGemPlacementAnimationCRM(rect.left + rect.width / 2, rect.top + rect.height / 2);
-        }
 
     } catch (error) {
         console.error("Error al actualizar el estatus del pedido: ", error);

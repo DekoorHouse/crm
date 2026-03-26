@@ -1207,6 +1207,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function actualizarEstatusPedido(pedidoId, nuevoEstatus, animX, animY) {
         if (!auth.currentUser) return;
+        // Animación inmediata al cambiar a Fabricar (antes del API call)
+        if (nuevoEstatus === 'Fabricar' && animX && animY) {
+            playGemPlacementAnimation(animX, animY);
+        }
         try {
             const response = await fetch(`/api/orders/${pedidoId}/change-status`, {
                 method: 'POST',
@@ -1216,11 +1220,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
             if (!response.ok) {
                 console.error("Error del servidor al actualizar estatus:", result.message);
-                return;
-            }
-            // Animación de gema zafiro al cambiar a Fabricar
-            if (nuevoEstatus === 'Fabricar' && animX && animY) {
-                playGemPlacementAnimation(animX, animY);
             }
         } catch (error) {
             console.error("Error al actualizar estatus: ", error);

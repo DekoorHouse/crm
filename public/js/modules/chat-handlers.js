@@ -495,6 +495,8 @@ async function handleSelectContact(contactId) {
             } else {
                 state.contacts.unshift(updatedContact);
             }
+            // Re-renderizar la lista para reflejar cambios (ej. corona plateada→zafiro)
+            handleSearchContacts();
             // Si el timer cambió o se activó, actualizarlo en la UI
             if (window.checkAiTimer) window.checkAiTimer();
         }
