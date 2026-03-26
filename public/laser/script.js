@@ -381,11 +381,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const img = previewImage;
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
-            const imgAspect = imgW / imgH;
 
-            let realW = Math.min(BED_W * 0.8, BED_W);
-            let realH = realW / imgAspect;
-            if (realH > BED_H) { realH = BED_H; realW = realH * imgAspect; }
+            // Use the image pixel dimensions directly, scaled to bed mm
+            // SVGs from the editor typically use px where 1px ≈ 0.2646mm (96dpi)
+            // But we just preserve the aspect ratio and fit to bed
+            const pxToMm = BED_W / Math.max(imgW, imgH);
+            const realW = imgW * pxToMm;
+            const realH = imgH * pxToMm;
 
             const drawW = realW * scale;
             const drawH = realH * scale;
