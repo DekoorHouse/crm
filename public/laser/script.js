@@ -330,21 +330,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const imgW = img.naturalWidth || img.width;
             const imgH = img.naturalHeight || img.height;
 
-            // Fit image to bed, maintaining aspect ratio
-            let drawW, drawH;
+            // Scale image to real mm on the bed
             const imgAspect = imgW / imgH;
-            const maxPx = BED_W * 0.8 * scale; // 80% of bed
-            if (imgAspect > 1) {
-                drawW = maxPx;
-                drawH = maxPx / imgAspect;
-            } else {
-                drawH = maxPx;
-                drawW = maxPx * imgAspect;
+            // Assume SVG viewBox maps to ~320mm wide (K40 bed), scale proportionally
+            let realW = Math.min(BED_W * 0.8, BED_W);
+            let realH = realW / imgAspect;
+            if (realH > BED_H) {
+                realH = BED_H;
+                realW = realH * imgAspect;
             }
 
-            // Center on bed
-            const x = (CANVAS_PX - drawW) / 2;
-            const y = (CANVAS_PX - drawH) / 2;
+            const drawW = realW * scale;
+            const drawH = realH * scale;
+
+            // Position at origin (0,0) — top-left corner
+            const x = 0;
+            const y = 0;
 
             ctx.drawImage(img, x, y, drawW, drawH);
 
