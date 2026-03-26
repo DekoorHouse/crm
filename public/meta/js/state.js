@@ -58,7 +58,6 @@ export function cacheElements() {
     // Top bar
     elements.accountSelector = document.getElementById('account-selector');
     elements.dateRangePicker = document.getElementById('date-range-picker');
-    elements.themeToggle = document.getElementById('theme-toggle');
     elements.settingsBtn = document.getElementById('settings-btn');
 
     // Breadcrumb

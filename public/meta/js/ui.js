@@ -42,23 +42,10 @@ function extractInsightData(item) {
     };
 }
 
-// ========== DARK MODE ==========
+// ========== THEME (always dark) ==========
 
 export function initDarkMode() {
-    const btn = elements.themeToggle;
-    const isDark = localStorage.getItem('metaDarkMode') === 'true';
-    if (isDark) {
-        document.body.classList.add('dark-mode');
-        if (btn) btn.innerHTML = '<i class="fas fa-sun"></i>';
-    }
-    if (btn) {
-        btn.addEventListener('click', () => {
-            document.body.classList.toggle('dark-mode');
-            const isNowDark = document.body.classList.contains('dark-mode');
-            localStorage.setItem('metaDarkMode', isNowDark);
-            btn.innerHTML = isNowDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
-        });
-    }
+    // Theme is always dark - glassmorphism design
 }
 
 // ========== TOAST ==========

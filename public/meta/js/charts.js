@@ -2,13 +2,12 @@ let spendConversionsChart = null;
 let spendByCampaignChart = null;
 
 function getChartColors() {
-    const isDark = document.body.classList.contains('dark-mode');
     return {
-        textColor: isDark ? '#b0b3b8' : '#65676b',
-        gridColor: isDark ? 'rgba(58,59,60,0.4)' : 'rgba(226,232,240,0.6)',
-        spendColor: '#1877f2',
-        conversionsColor: '#42b72a',
-        barColors: ['#1877f2', '#42b72a', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316']
+        textColor: '#a0b3cc',
+        gridColor: 'rgba(59,130,246,0.06)',
+        spendColor: '#3b82f6',
+        conversionsColor: '#34d399',
+        barColors: ['#3b82f6', '#34d399', '#fbbf24', '#fb7185', '#8b5cf6', '#ec4899', '#38bdf8', '#f97316']
     };
 }
 
