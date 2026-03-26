@@ -357,9 +357,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.setLineDash([]);
 
             // Size info
-            const realW = (drawW / scale).toFixed(1);
-            const realH = (drawH / scale).toFixed(1);
-            previewInfo.textContent = `${realW} x ${realH} mm`;
+            const sizeW = (drawW / scale).toFixed(1);
+            const sizeH = (drawH / scale).toFixed(1);
+            previewInfo.textContent = `${sizeW} x ${sizeH} mm`;
         }
     }
 
