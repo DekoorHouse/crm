@@ -44,7 +44,7 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
-// --- Mapa de entregas (datos de Google Sheets) ---
+// --- Mapa de entregas (Google Sheets + geocoding con cache en Firestore) ---
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };
 
@@ -54,21 +54,13 @@ function parseCSV(text) {
     let inQuotes = false;
     for (let i = 0; i < text.length; i++) {
         const ch = text[i];
-        if (ch === '"') {
-            inQuotes = !inQuotes;
-        } else if (ch === '\n' && !inQuotes) {
-            lines.push(current);
-            current = '';
-        } else {
-            current += ch;
-        }
+        if (ch === '"') { inQuotes = !inQuotes; }
+        else if (ch === '\n' && !inQuotes) { lines.push(current); current = ''; }
+        else { current += ch; }
     }
     if (current) lines.push(current);
-
     return lines.map(line => {
-        const cols = [];
-        let col = '';
-        let q = false;
+        const cols = []; let col = ''; let q = false;
         for (let i = 0; i < line.length; i++) {
             const c = line[i];
             if (c === '"') { q = !q; }
@@ -80,18 +72,32 @@ function parseCSV(text) {
     });
 }
 
+async function geocodeCity(city, state) {
+    try {
+        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: { q: city + ', ' + state + ', Mexico', format: 'json', limit: 1 },
+            headers: { 'User-Agent': 'DekoorCRM/1.0' },
+            timeout: 5000
+        });
+        if (res.data && res.data.length > 0) {
+            return { lat: parseFloat(res.data[0].lat), lng: parseFloat(res.data[0].lon) };
+        }
+    } catch (e) { /* silenciar */ }
+    return null;
+}
+
 router.get('/referencias/mapa', async (req, res) => {
     try {
-        // Cache de 2 horas
+        // Cache en memoria 2h
         if (mapaCache.data && Date.now() - mapaCache.timestamp < 2 * 60 * 60 * 1000) {
             return res.json(mapaCache.data);
         }
 
+        // Leer CSV y agrupar
         const csvRes = await axios.get(SHEET_CSV_URL, { timeout: 15000 });
         const rows = parseCSV(csvRes.data);
         if (rows.length < 2) return res.json([]);
 
-        // Agrupar por ciudad + estado (columnas L=11, N=13)
         const groups = {};
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
@@ -103,9 +109,43 @@ router.get('/referencias/mapa', async (req, res) => {
             groups[key].count++;
         }
 
-        const results = Object.values(groups);
-        mapaCache = { data: results, timestamp: Date.now() };
+        // Leer geocache de Firestore
+        const cacheDoc = await db.collection('config').doc('geocache').get();
+        const geoCache = cacheDoc.exists ? cacheDoc.data() : {};
+
+        const results = [];
+        const pending = [];
+
+        for (const g of Object.values(groups)) {
+            const key = (g.ciudad + '_' + g.estado).toLowerCase().replace(/[^a-z0-9_]/g, '_');
+            if (geoCache[key]) {
+                results.push({ ciudad: g.ciudad, estado: g.estado, count: g.count, lat: geoCache[key].lat, lng: geoCache[key].lng });
+            } else {
+                pending.push({ ...g, key });
+            }
+        }
+
+        // Responder con lo que ya tenemos
         res.json(results);
+
+        // Geocodificar pendientes en background y guardar en Firestore
+        if (pending.length > 0) {
+            (async () => {
+                let updated = false;
+                for (let i = 0; i < pending.length; i++) {
+                    const e = pending[i];
+                    const coords = await geocodeCity(e.ciudad, e.estado);
+                    if (coords) { geoCache[e.key] = coords; updated = true; }
+                    if (i < pending.length - 1) await new Promise(r => setTimeout(r, 1100));
+                }
+                if (updated) {
+                    await db.collection('config').doc('geocache').set(geoCache);
+                    mapaCache = { data: null, timestamp: 0 };
+                }
+            })().catch(err => console.error('Geocoding bg error:', err));
+        } else {
+            mapaCache = { data: results, timestamp: Date.now() };
+        }
     } catch (error) {
         console.error('Error generando mapa:', error);
         res.status(500).json({ error: error.message });

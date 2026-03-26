@@ -170,6 +170,19 @@ header {
     font-weight: 700;
 }
 
+/* Leaflet cluster override */
+.marker-cluster-small,
+.marker-cluster-medium,
+.marker-cluster-large {
+    background: transparent !important;
+}
+
+.marker-cluster-small div,
+.marker-cluster-medium div,
+.marker-cluster-large div {
+    background: transparent !important;
+}
+
 /* Leaflet custom marker */
 .delivery-marker {
     background: var(--primary-color);
