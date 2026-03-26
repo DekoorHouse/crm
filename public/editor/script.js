@@ -3595,8 +3595,8 @@ function duplicateSelected() {
         const oldId = clone.id;
         clone.id = state.nextId++;
         idMap[oldId] = clone.id;
-        // Assign new ids to children recursively
-        assignNewIds(clone);
+        // Assign new ids to children recursively (populate idMap for ref area remapping)
+        assignNewIds(clone, idMap);
         offsetObject(clone, offset, offset);
         const elem = buildSVGElement(clone);
         clone.element = elem;
@@ -3605,26 +3605,23 @@ function duplicateSelected() {
         state.objects.push(clone);
         newIds.push(clone.id);
     }
-    // Remap refTextIds: point cloned ref areas to cloned texts (not originals)
+    // Remap refTextIds: point cloned ref areas to cloned texts (including inside groups)
     for (const newId of newIds) {
         const clone = findObject(newId);
-        if (!clone || !clone.isRefArea || !clone.refTextIds) continue;
-        clone.refTextIds = clone.refTextIds
-            .map(tid => idMap[tid] !== undefined ? idMap[tid] : null)
-            .filter(tid => tid !== null);
+        if (clone) remapRefTextIds(clone, idMap);
     }
     state.selectedIds = newIds;
     drawSelection();
     updatePropsPanel();
 }
 
-function assignNewIds(obj) {
+function assignNewIds(obj, idMap) {
     if (obj.type === 'group' && obj.children) {
-        for (const c of obj.children) { c.id = state.nextId++; assignNewIds(c); }
+        for (const c of obj.children) { const old = c.id; c.id = state.nextId++; if (idMap) idMap[old] = c.id; assignNewIds(c, idMap); }
     }
     if (obj.type === 'powerclip') {
-        if (obj.container) { obj.container.id = state.nextId++; assignNewIds(obj.container); }
-        if (obj.contents) { for (const c of obj.contents) { c.id = state.nextId++; assignNewIds(c); } }
+        if (obj.container) { const old = obj.container.id; obj.container.id = state.nextId++; if (idMap) idMap[old] = obj.container.id; assignNewIds(obj.container, idMap); }
+        if (obj.contents) { for (const c of obj.contents) { const old = c.id; c.id = state.nextId++; if (idMap) idMap[old] = c.id; assignNewIds(c, idMap); } }
     }
 }
 
@@ -5611,7 +5608,7 @@ function executeSingleAction(action) {
 
                 // Remap refTextIds to cloned IDs
                 (function remapRefs(o) {
-                    if (o.isRefArea && o.refTextIds) o.refTextIds = o.refTextIds.map(tid => idMap[tid] ?? tid);
+                    if (o.isRefArea && o.refTextIds) o.refTextIds = o.refTextIds.map(tid => idMap[tid] ?? null).filter(Boolean);
                     if (o.children) o.children.forEach(remapRefs);
                     if (o.contents) o.contents.forEach(remapRefs);
                     if (o.container) remapRefs(o.container);
@@ -7212,12 +7209,21 @@ function addTextToRefArea(textId, refAreaId) {
     if (textObj.type !== 'text') return;
     saveUndoState();
 
-    // Remove from any other ref area
-    for (const obj of state.objects) {
-        if (obj.isRefArea && obj.refTextIds) {
-            obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+    // Remove from ALL ref areas (including inside groups/powerclips)
+    (function removeFromAll(list) {
+        for (const obj of list) {
+            if (obj.isRefArea && obj.refTextIds) {
+                obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+            }
+            if (obj.type === 'group' && obj.children) removeFromAll(obj.children);
+            if (obj.type === 'powerclip') {
+                if (obj.container && obj.container.isRefArea && obj.container.refTextIds) {
+                    obj.container.refTextIds = obj.container.refTextIds.filter(id => id !== textId);
+                }
+                if (obj.contents) removeFromAll(obj.contents);
+            }
         }
-    }
+    })(state.objects);
 
     if (!refArea.refTextIds) refArea.refTextIds = [];
     if (!refArea.refTextIds.includes(textId)) refArea.refTextIds.push(textId);
@@ -7230,11 +7236,20 @@ function addTextToRefArea(textId, refAreaId) {
 }
 
 function removeTextFromRefArea(textId) {
-    for (const obj of state.objects) {
-        if (obj.isRefArea && obj.refTextIds) {
-            obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+    (function removeFromAll(list) {
+        for (const obj of list) {
+            if (obj.isRefArea && obj.refTextIds) {
+                obj.refTextIds = obj.refTextIds.filter(id => id !== textId);
+            }
+            if (obj.type === 'group' && obj.children) removeFromAll(obj.children);
+            if (obj.type === 'powerclip') {
+                if (obj.container && obj.container.isRefArea && obj.container.refTextIds) {
+                    obj.container.refTextIds = obj.container.refTextIds.filter(id => id !== textId);
+                }
+                if (obj.contents) removeFromAll(obj.contents);
+            }
         }
-    }
+    })(state.objects);
 }
 
 async function fitTextToRefArea(textObj) {
