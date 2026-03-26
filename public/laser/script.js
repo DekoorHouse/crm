@@ -170,6 +170,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadedFile.classList.remove('hidden');
                 uploadArea.classList.add('hidden');
                 logConsole(`Archivo cargado: ${data.filename}`, 'ok');
+                // Reposition elements to origin (0,0) to avoid out-of-bounds
+                sendCommand('element* position 0 0');
             } else {
                 logConsole(data.message, 'err');
             }
