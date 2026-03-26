@@ -5498,13 +5498,26 @@ function executeSingleAction(action) {
             }
             if (fillSlots.length === 0) throw new Error('No se encontraron contornos/plantillas');
 
-            // Remember original slots for template duplication
+            // Resolve extra template objects (marks, decorations that duplicate with slots)
+            let extraObjs = [];
+            if (a.extras && a.extras.length) {
+                for (const eid of a.extras) {
+                    const e = findObjectDeep(eid) || findObject(eid);
+                    if (e) extraObjs.push(e);
+                }
+            }
+
+            // Remember original slots + extras for template duplication
             const origCount = fillSlots.length;
-            const origData = fillSlots.map(s =>
+            const allTmplObjs = [...fillSlots, ...extraObjs];
+            const origSlotData = fillSlots.map(s =>
+                JSON.parse(JSON.stringify(s, (k, v) => k === 'element' ? undefined : v))
+            );
+            const origExtraData = extraObjs.map(s =>
                 JSON.parse(JSON.stringify(s, (k, v) => k === 'element' ? undefined : v))
             );
             let tmplMinY = Infinity, tmplMaxY = -Infinity;
-            for (const s of fillSlots) {
+            for (const s of allTmplObjs) {
                 const b = getObjBounds(s);
                 tmplMinY = Math.min(tmplMinY, b.y);
                 tmplMaxY = Math.max(tmplMaxY, b.y + b.h);
@@ -5514,11 +5527,12 @@ function executeSingleAction(action) {
 
             const filledIds = [];
             for (let i = 0; i < a.names.length; i++) {
-                // Duplicate template slots when needed
+                // Duplicate template (slots + extras) when needed
                 if (i >= fillSlots.length && i % origCount === 0) {
                     const page = Math.floor(i / origCount);
                     const offY = page * (tmplH + tmplGap);
-                    for (const td of origData) {
+                    // Duplicate slots
+                    for (const td of origSlotData) {
                         const sc = JSON.parse(JSON.stringify(td));
                         sc.id = state.nextId++;
                         offsetObject(sc, 0, offY);
@@ -5528,6 +5542,18 @@ function executeSingleAction(action) {
                         objectsLayer.appendChild(el);
                         state.objects.push(sc);
                         fillSlots.push(sc);
+                    }
+                    // Duplicate extras (marks, decorations)
+                    for (const td of origExtraData) {
+                        const sc = JSON.parse(JSON.stringify(td));
+                        sc.id = state.nextId++;
+                        assignNewIds(sc);
+                        offsetObject(sc, 0, offY);
+                        const el = buildSVGElement(sc);
+                        sc.element = el;
+                        el.dataset.objectId = sc.id;
+                        objectsLayer.appendChild(el);
+                        state.objects.push(sc);
                     }
                 }
 

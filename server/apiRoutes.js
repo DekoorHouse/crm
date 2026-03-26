@@ -391,10 +391,11 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
     "source" puede ser "selected" (útil tras duplicate, donde la selección es la copia nueva).
     Usa esto cuando el usuario diga "encaja", "mete", "ajusta dentro de", "fit", etc.
 
-12. fill_names - Llenar plantilla con lista de nombres: { "action":"fill_names", "source":"selected"|ID, "names":["nombre1","nombre2",...], "slots":[ID1,ID2,...] }
+12. fill_names - Llenar plantilla con lista de nombres: { "action":"fill_names", "source":"selected"|ID, "names":["nombre1","nombre2",...], "slots":[ID1,ID2,...], "extras":[ID,...] }
     Para cada nombre: duplica "source", cambia el texto, y lo encaja en el siguiente contorno/slot.
     "slots" es opcional: si se omite, auto-detecta contornos vacíos (shapes con stroke y sin fill).
-    Si hay más nombres que slots, duplica los contornos automáticamente debajo y sigue llenando.
+    "extras" es opcional: IDs de objetos adicionales de la plantilla (marcas de corte, rectángulos de registro, etc.) que se duplican junto con los slots al crear nuevas páginas, pero donde NO se colocan diseños.
+    Si hay más nombres que slots, duplica slots+extras automáticamente debajo y sigue llenando.
     Usa esto cuando el usuario dé una lista de nombres para producción/corte.
 
 **Acciones de Pedidos (CRM):**
