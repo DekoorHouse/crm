@@ -349,6 +349,64 @@ router.post('/orders/recurring/scan', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/summary (Resumen de gastos por categoría del mes) ---
+router.get('/expenses/summary', async (req, res) => {
+    try {
+        const now = new Date();
+        const mexicoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+        const year = mexicoDate.getFullYear();
+        const month = String(mexicoDate.getMonth() + 1).padStart(2, '0');
+
+        const startDate = `${year}-${month}-01`;
+        const endDate = `${year}-${month}-31`;
+
+        const expSnap = await db.collection('expenses')
+            .where('date', '>=', startDate)
+            .where('date', '<=', endDate)
+            .get();
+
+        const categories = {};
+        let totalCharges = 0;
+        let totalCredits = 0;
+
+        expSnap.docs.forEach(doc => {
+            const data = doc.data();
+            if (data.type && data.type !== 'operativo' && data.sub_type !== 'pago_intereses') return;
+
+            const charge = parseFloat(data.charge) || 0;
+            const credit = parseFloat(data.credit) || 0;
+
+            if (charge > 0) {
+                const cat = data.category || 'SinCategorizar';
+                if (!categories[cat]) categories[cat] = 0;
+                categories[cat] += charge;
+                totalCharges += charge;
+            }
+            totalCredits += credit;
+        });
+
+        const sorted = Object.entries(categories)
+            .sort(([,a], [,b]) => b - a)
+            .map(([category, amount]) => ({
+                category,
+                amount: Math.round(amount * 100) / 100,
+                percent: totalCharges > 0 ? ((amount / totalCharges) * 100).toFixed(1) : 0
+            }));
+
+        res.status(200).json({
+            success: true,
+            month: `${year}-${month}`,
+            totalCharges: Math.round(totalCharges * 100) / 100,
+            totalCredits: Math.round(totalCredits * 100) / 100,
+            operatingProfit: Math.round((totalCredits - totalCharges) * 100) / 100,
+            categories: sorted
+        });
+    } catch (error) {
+        console.error('Error fetching expenses summary:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener resumen de gastos.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/monthly (KPIs del mes actual: revenue, ticket, pedidos pagados) ---
 router.get('/kpi/monthly', async (req, res) => {
     try {
