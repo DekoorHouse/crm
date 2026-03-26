@@ -3539,7 +3539,12 @@ function joinNodes() {
 function duplicateSelected() {
     if (state.selectedIds.length === 0) return;
     saveUndoState();
-    const offset = 30; // px offset for the duplicate
+    // Offset proporcional: al menos 30px o 20% del ancho del objeto más grande
+    let offset = 30;
+    for (const id of state.selectedIds) {
+        const obj = findObject(id);
+        if (obj) { const b = getObjBounds(obj); offset = Math.max(offset, Math.min(b.w, b.h) * 0.2); }
+    }
     const newIds = [];
     const idMap = {}; // old id → new id (for remapping refTextIds)
     for (const id of state.selectedIds) {
