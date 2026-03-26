@@ -5414,7 +5414,14 @@ function executeSingleAction(action) {
             return { id: targets[0]?.id };
         }
         case 'fit': {
-            const srcObj = findObjectDeep(a.source) || findObject(a.source);
+            // Support "selected" for source (useful after duplicate, where selection = new clone)
+            let srcObj;
+            if (a.source === 'selected') {
+                if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado para source');
+                srcObj = findObjectDeep(state.selectedIds[0]) || findObject(state.selectedIds[0]);
+            } else {
+                srcObj = findObjectDeep(a.source) || findObject(a.source);
+            }
             if (!srcObj) throw new Error(`Objeto source ID ${a.source} no encontrado`);
             const tgtObj = findObjectDeep(a.target) || findObject(a.target);
             if (!tgtObj) throw new Error(`Objeto target ID ${a.target} no encontrado`);

@@ -386,8 +386,9 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 
 10. select - Seleccionar: { "action":"select", "target":ID }
 
-11. fit - Encajar objeto dentro de otro (escala uniforme + centrado): { "action":"fit", "source":ID, "target":ID }
+11. fit - Encajar objeto dentro de otro (escala uniforme + centrado): { "action":"fit", "source":"selected"|ID, "target":ID }
     Escala "source" uniformemente (mantiene proporción) para que quepa dentro del contorno de "target", y lo centra.
+    "source" puede ser "selected" (útil tras duplicate, donde la selección es la copia nueva).
     Usa esto cuando el usuario diga "encaja", "mete", "ajusta dentro de", "fit", etc.
 
 **Acciones de Pedidos (CRM):**
@@ -407,7 +408,7 @@ Para colores usa formato hexadecimal (#ff0000) o "none".
 - "círculo" = ellipse con rx_u = ry_u. "cuadrado" = rect con width_u = height_u.
 - Cuando el usuario da un tamaño como "50mm" para un círculo, ese es el DIÁMETRO, así que rx_u = ry_u = 25.
 - Para "encaja X en Y" / "mete X dentro de Y" / "ajusta X al contorno Y", usa la acción "fit" con source=X y target=Y. Identifica los objetos por su posición, color, tipo o ID en el contexto del lienzo.
-- Al duplicar un diseño, si hay un contorno/plantilla vacío visible en el lienzo, usa "fit" después del "duplicate" para encajar la copia en ese contorno. Siempre separa la copia del original.
+- Al duplicar un diseño, si hay un contorno/plantilla vacío visible en el lienzo, usa "fit" después del "duplicate" para encajar la copia en ese contorno. Tras duplicate la selección cambia a la copia, así que usa "selected" como source en fit. Ejemplo: [{"action":"duplicate","target":"selected"},{"action":"fit","source":"selected","target":ID_DEL_CONTORNO}]
 - Si el usuario no pide una acción (solo pregunta algo), responde solo con texto, sin bloque actions.
 - Para pedidos: si el usuario pregunta sobre pedidos, usa get_orders para consultarlos. Si el contexto ya incluye pedidos recientes, puedes responder directamente sin get_orders.
 - Para actualizar un pedido, necesitas el ID del documento (campo "id" del pedido). Si el usuario dice "pedido 1045", busca el que tenga consecutiveOrderNumber 1045.
