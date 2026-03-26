@@ -184,16 +184,16 @@ export function renderBreakdownTable(tbodyEl, data) {
     `).join('');
 }
 
-// ========== STATUS BADGE ==========
+// ========== STATUS TOGGLE ==========
 
-function statusBadge(status, effectiveStatus) {
+function statusToggle(status, effectiveStatus) {
     const display = effectiveStatus || status;
     const isActive = display === 'ACTIVE';
-    const isPaused = display === 'PAUSED';
-    const cls = isActive ? 'active' : isPaused ? 'paused' : 'other';
-    const icon = isActive ? 'fa-circle' : isPaused ? 'fa-pause-circle' : 'fa-circle';
-    const label = isActive ? 'Activo' : isPaused ? 'Pausado' : display;
-    return `<span class="status-badge ${cls}" data-status="${status}" title="Click para cambiar"><i class="fas ${icon}" style="font-size:8px;"></i> ${label}</span>`;
+    const checked = isActive ? 'checked' : '';
+    return `<label class="toggle-switch" title="${isActive ? 'Activo - click para pausar' : 'Pausado - click para activar'}">
+        <input type="checkbox" ${checked} data-status="${status}">
+        <span class="toggle-slider"></span>
+    </label>`;
 }
 
 function objectiveBadge(objective) {
@@ -232,7 +232,7 @@ export function renderCampaignsTable(campaigns, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="name-cell" data-id="${c.id}" data-action="drill-campaign">${c.name}</td>
-            <td data-id="${c.id}" data-action="toggle-campaign">${statusBadge(c.status, c.effective_status?.[0] || c.effective_status)}</td>
+            <td data-id="${c.id}" data-action="toggle-campaign">${statusToggle(c.status, c.effective_status?.[0] || c.effective_status)}</td>
             <td>${objectiveBadge(c.objective)}</td>
             <td class="metric">${budget}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
@@ -276,7 +276,7 @@ export function renderAdSetsTable(adsets, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="name-cell" data-id="${a.id}" data-action="drill-adset">${a.name}</td>
-            <td data-id="${a.id}" data-action="toggle-adset">${statusBadge(a.status, a.effective_status?.[0] || a.effective_status)}</td>
+            <td data-id="${a.id}" data-action="toggle-adset">${statusToggle(a.status, a.effective_status?.[0] || a.effective_status)}</td>
             <td class="metric">${budget}</td>
             <td style="max-width:180px; font-size:12px; color: var(--text-secondary);" title="${targeting}">${targeting}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
@@ -335,7 +335,7 @@ export function renderAdsTable(ads, append = false) {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td style="font-weight:600;">${ad.name}</td>
-            <td data-id="${ad.id}" data-action="toggle-ad">${statusBadge(ad.status, ad.effective_status?.[0] || ad.effective_status)}</td>
+            <td data-id="${ad.id}" data-action="toggle-ad">${statusToggle(ad.status, ad.effective_status?.[0] || ad.effective_status)}</td>
             <td>${thumbHtml}</td>
             <td class="metric">${formatCurrency(ins.spend)}</td>
             <td class="metric">${formatNumber(ins.impressions)}</td>

@@ -687,6 +687,21 @@ export function initEventListeners() {
         }
     });
 
+    // Toggle switch handler (change event on checkboxes inside toggle-switch)
+    document.addEventListener('change', (e) => {
+        const toggle = e.target.closest('.toggle-switch input');
+        if (!toggle) return;
+        const td = toggle.closest('[data-action]');
+        if (!td) return;
+        const action = td.dataset.action;
+        const id = td.dataset.id;
+        // Prevent default - we'll update after API call
+        e.preventDefault();
+        if (action === 'toggle-campaign') handleToggleCampaignStatus(id);
+        else if (action === 'toggle-adset') handleToggleAdSetStatus(id);
+        else if (action === 'toggle-ad') handleToggleAdStatus(id);
+    });
+
     // Table click delegation (campaigns, adsets, ads)
     document.addEventListener('click', (e) => {
         const target = e.target.closest('[data-action]');
@@ -701,7 +716,6 @@ export function initEventListeners() {
                 if (campaign) { state.selectedCampaign = campaign; navigateTo('adsets'); }
                 break;
             }
-            case 'toggle-campaign': handleToggleCampaignStatus(id); break;
             case 'edit-campaign': {
                 const c = state.campaigns.find(c => c.id === id);
                 if (c) showCampaignForm(c);
@@ -715,7 +729,6 @@ export function initEventListeners() {
                 if (adset) { state.selectedAdSet = adset; navigateTo('ads'); }
                 break;
             }
-            case 'toggle-adset': handleToggleAdSetStatus(id); break;
             case 'edit-adset': {
                 const a = state.adSets.find(a => a.id === id);
                 if (a) showAdSetForm(a);
@@ -724,7 +737,6 @@ export function initEventListeners() {
             case 'delete-adset': handleDeleteAdSet(id); break;
 
             // Ads
-            case 'toggle-ad': handleToggleAdStatus(id); break;
             case 'edit-ad': {
                 const ad = state.ads.find(a => a.id === id);
                 if (ad) showAdForm(ad);
