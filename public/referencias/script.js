@@ -394,33 +394,14 @@ function loadMapa() {
     fetch(API_BASE_URL + '/api/referencias/mapa')
         .then(function(res) { return res.json(); })
         .then(function(data) {
-            if (!data || !data.length) return;
-
-            var totalEntregas = 0;
-            data.forEach(function(item) { totalEntregas += item.count; });
+            if (!data || !data.estados) return;
 
             document.getElementById('mapStats').innerHTML =
-                '<div class="map-stat-pill"><strong>' + totalEntregas + '</strong> entregas</div>' +
-                '<div class="map-stat-pill"><strong>' + data.length + '</strong> ciudades</div>';
+                '<div class="map-stat-pill"><strong>' + data.totalEntregas + '</strong> entregas</div>' +
+                '<div class="map-stat-pill"><strong>' + data.totalEstados + '</strong> estados</div>';
 
-            var cluster = L.markerClusterGroup({
-                maxClusterRadius: 50,
-                iconCreateFunction: function(c) {
-                    var total = 0;
-                    c.getAllChildMarkers().forEach(function(m) { total += m.options.deliveryCount || 1; });
-                    var size = Math.min(Math.max(total / 2 + 30, 36), 60);
-                    return L.divIcon({
-                        className: '',
-                        html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;font-size:0.85rem;">' + total + '</div>',
-                        iconSize: [size, size],
-                        iconAnchor: [size / 2, size / 2]
-                    });
-                }
-            });
-
-            data.forEach(function(item) {
-                if (!item.lat || !item.lng) return;
-                var size = Math.min(Math.max(item.count * 2 + 24, 26), 48);
+            data.estados.forEach(function(item) {
+                var size = Math.min(Math.max(Math.sqrt(item.count) * 8 + 20, 28), 60);
                 var icon = L.divIcon({
                     className: '',
                     html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;">' + item.count + '</div>',
@@ -428,16 +409,13 @@ function loadMapa() {
                     iconAnchor: [size / 2, size / 2]
                 });
 
-                var marker = L.marker([item.lat, item.lng], { icon: icon, deliveryCount: item.count })
+                L.marker([item.lat, item.lng], { icon: icon })
+                    .addTo(map)
                     .bindPopup(
-                        '<div class="popup-city">' + item.ciudad + '</div>' +
-                        '<div>' + item.estado + '</div>' +
+                        '<div class="popup-city">' + item.estado + '</div>' +
                         '<div class="popup-count">' + item.count + ' entrega' + (item.count > 1 ? 's' : '') + '</div>'
                     );
-                cluster.addLayer(marker);
             });
-
-            map.addLayer(cluster);
         })
         .catch(function(err) {
             console.error('Error cargando mapa:', err);

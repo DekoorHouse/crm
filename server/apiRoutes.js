@@ -44,9 +44,31 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
-// --- Mapa de entregas (Google Sheets + geocoding con cache en Firestore) ---
+// --- Mapa de entregas (Google Sheets, agrupado por estado) ---
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };
+
+// Coordenadas de estados mexicanos (centroides)
+const ESTADO_COORDS = {
+    'aguascalientes': {lat:21.88,lng:-102.29},'baja california': {lat:30.84,lng:-115.28},
+    'baja california sur': {lat:25.04,lng:-111.66},'campeche': {lat:19.83,lng:-90.53},
+    'chiapas': {lat:16.75,lng:-93.12},'chihuahua': {lat:28.63,lng:-106.09},
+    'ciudad de mexico': {lat:19.43,lng:-99.13},'cdmx': {lat:19.43,lng:-99.13},
+    'coahuila': {lat:25.42,lng:-100.99},'coahuila de zaragoza': {lat:25.42,lng:-100.99},
+    'colima': {lat:19.24,lng:-103.72},'durango': {lat:24.02,lng:-104.67},
+    'guanajuato': {lat:21.02,lng:-101.26},'guerrero': {lat:17.44,lng:-99.55},
+    'hidalgo': {lat:20.09,lng:-98.76},'jalisco': {lat:20.66,lng:-103.35},
+    'mexico': {lat:19.29,lng:-99.65},'estado de mexico': {lat:19.29,lng:-99.65},
+    'michoacan': {lat:19.57,lng:-101.71},'michoacan de ocampo': {lat:19.57,lng:-101.71},
+    'morelos': {lat:18.68,lng:-99.10},'nayarit': {lat:21.75,lng:-104.85},
+    'nuevo leon': {lat:25.67,lng:-100.31},'oaxaca': {lat:17.07,lng:-96.73},
+    'puebla': {lat:19.04,lng:-98.21},'queretaro': {lat:20.59,lng:-100.39},
+    'quintana roo': {lat:19.18,lng:-88.48},'san luis potosi': {lat:22.15,lng:-100.98},
+    'sinaloa': {lat:24.81,lng:-107.39},'sonora': {lat:29.07,lng:-110.96},
+    'tabasco': {lat:17.99,lng:-92.93},'tamaulipas': {lat:24.27,lng:-98.84},
+    'tlaxcala': {lat:19.32,lng:-98.24},'veracruz': {lat:19.17,lng:-96.13},
+    'yucatan': {lat:20.97,lng:-89.62},'zacatecas': {lat:22.77,lng:-102.58}
+};
 
 function parseCSV(text) {
     const lines = [];
@@ -72,20 +94,6 @@ function parseCSV(text) {
     });
 }
 
-async function geocodeCity(city, state) {
-    try {
-        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
-            params: { q: city + ', ' + state + ', Mexico', format: 'json', limit: 1 },
-            headers: { 'User-Agent': 'DekoorCRM/1.0' },
-            timeout: 5000
-        });
-        if (res.data && res.data.length > 0) {
-            return { lat: parseFloat(res.data[0].lat), lng: parseFloat(res.data[0].lon) };
-        }
-    } catch (e) { /* silenciar */ }
-    return null;
-}
-
 router.get('/referencias/mapa', async (req, res) => {
     try {
         // Cache en memoria 2h
@@ -93,59 +101,40 @@ router.get('/referencias/mapa', async (req, res) => {
             return res.json(mapaCache.data);
         }
 
-        // Leer CSV y agrupar
         const csvRes = await axios.get(SHEET_CSV_URL, { timeout: 15000 });
         const rows = parseCSV(csvRes.data);
         if (rows.length < 2) return res.json([]);
 
+        // Agrupar por estado (columna N=13)
         const groups = {};
+        let totalEntregas = 0;
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            const ciudad = (row[11] || '').trim();
             const estado = (row[13] || '').trim();
-            if (!ciudad) continue;
-            const key = ciudad + '|' + estado;
-            if (!groups[key]) groups[key] = { ciudad, estado, count: 0 };
+            if (!estado) continue;
+            const key = estado.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z ]/g, '').trim();
+            if (!groups[key]) groups[key] = { estado, count: 0 };
             groups[key].count++;
+            totalEntregas++;
         }
 
-        // Leer geocache de Firestore
-        const cacheDoc = await db.collection('config').doc('geocache').get();
-        const geoCache = cacheDoc.exists ? cacheDoc.data() : {};
-
+        // Resolver coordenadas con tabla estática
         const results = [];
-        const pending = [];
-
         for (const g of Object.values(groups)) {
-            const key = (g.ciudad + '_' + g.estado).toLowerCase().replace(/[^a-z0-9_]/g, '_');
-            if (geoCache[key]) {
-                results.push({ ciudad: g.ciudad, estado: g.estado, count: g.count, lat: geoCache[key].lat, lng: geoCache[key].lng });
-            } else {
-                pending.push({ ...g, key });
+            const key = g.estado.toLowerCase()
+                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+                .replace(/[^a-z ]/g, '').trim();
+            const coords = ESTADO_COORDS[key];
+            if (coords) {
+                results.push({ estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
             }
         }
 
-        // Responder con lo que ya tenemos
-        res.json(results);
-
-        // Geocodificar pendientes en background y guardar en Firestore
-        if (pending.length > 0) {
-            (async () => {
-                let updated = false;
-                for (let i = 0; i < pending.length; i++) {
-                    const e = pending[i];
-                    const coords = await geocodeCity(e.ciudad, e.estado);
-                    if (coords) { geoCache[e.key] = coords; updated = true; }
-                    if (i < pending.length - 1) await new Promise(r => setTimeout(r, 1100));
-                }
-                if (updated) {
-                    await db.collection('config').doc('geocache').set(geoCache);
-                    mapaCache = { data: null, timestamp: 0 };
-                }
-            })().catch(err => console.error('Geocoding bg error:', err));
-        } else {
-            mapaCache = { data: results, timestamp: Date.now() };
-        }
+        const response = { estados: results, totalEntregas, totalEstados: results.length };
+        mapaCache = { data: response, timestamp: Date.now() };
+        res.json(response);
     } catch (error) {
         console.error('Error generando mapa:', error);
         res.status(500).json({ error: error.message });
