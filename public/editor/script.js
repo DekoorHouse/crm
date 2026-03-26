@@ -803,9 +803,40 @@ function hitTest(obj, pt) {
             return pt.x >= tb.x - m && pt.x <= tb.x + tb.w + m &&
                    pt.y >= tb.y - m && pt.y <= tb.y + tb.h + m;
         }
-        case 'rect': case 'image': case 'curvepath':
+        case 'rect': case 'image':
             return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
                    pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+        case 'curvepath': {
+            // Use SVG native hit testing for accurate detection on visible path
+            if (obj.element) {
+                try {
+                    const svgEl = obj.element.ownerSVGElement;
+                    const svgPt = svgEl.createSVGPoint();
+                    // Convert page coords to element local coords via inverse CTM
+                    const ctm = obj.element.getCTM();
+                    if (ctm) {
+                        const inv = ctm.inverse();
+                        svgPt.x = pt.x; svgPt.y = pt.y;
+                        const local = svgPt.matrixTransform(inv);
+                        const fill = obj.fill && obj.fill !== 'none';
+                        const sw = (obj.strokeWidth || 0) + m;
+                        if (fill && obj.element.isPointInFill(local)) return true;
+                        if (obj.element.isPointInStroke) {
+                            // Temporarily widen stroke for easier clicking
+                            const origSW = obj.element.getAttribute('stroke-width');
+                            obj.element.setAttribute('stroke-width', sw);
+                            const hit = obj.element.isPointInStroke(local);
+                            obj.element.setAttribute('stroke-width', origSW);
+                            if (hit) return true;
+                        }
+                        return false;
+                    }
+                } catch(e) {}
+            }
+            // Fallback to bbox
+            return pt.x >= obj.x - m && pt.x <= obj.x + obj.width + m &&
+                   pt.y >= obj.y - m && pt.y <= obj.y + obj.height + m;
+        }
         case 'ellipse': {
             const dx = (pt.x - obj.cx) / (obj.rx + m), dy = (pt.y - obj.cy) / (obj.ry + m);
             return dx * dx + dy * dy <= 1;
