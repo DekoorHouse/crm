@@ -200,6 +200,93 @@ router.get('/orders/history', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/orders/recurring (Clientes recurrentes - mismo teléfono 2+ pedidos) ---
+router.get('/orders/recurring', async (req, res) => {
+    try {
+        const { months } = req.query; // Cuántos meses atrás revisar (default 3)
+        const lookback = parseInt(months) || 3;
+
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - lookback);
+        const firestoreStart = admin.firestore.Timestamp.fromDate(startDate);
+
+        const ordersSnap = await db.collection('pedidos')
+            .where('createdAt', '>=', firestoreStart)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        // Agrupar pedidos por teléfono/contactId
+        const clientOrders = {};
+        ordersSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const phone = data.contactId || data.telefono;
+            if (!phone) return;
+
+            if (!clientOrders[phone]) {
+                clientOrders[phone] = {
+                    phone,
+                    orders: [],
+                    totalSpent: 0,
+                    paidOrders: 0
+                };
+            }
+            clientOrders[phone].orders.push({
+                id: doc.id,
+                precio: data.precio || 0,
+                producto: data.producto,
+                estatus: data.estatus,
+                createdAt: data.createdAt ? data.createdAt.toDate() : null
+            });
+            clientOrders[phone].totalSpent += data.precio || 0;
+            if (data.estatus === 'Pagado' || data.estatus === 'Fabricar') {
+                clientOrders[phone].paidOrders++;
+            }
+        });
+
+        // Filtrar solo recurrentes (2+ pedidos)
+        const recurring = Object.values(clientOrders).filter(c => c.orders.length >= 2);
+
+        // Obtener nombres de contactos recurrentes
+        for (const client of recurring) {
+            try {
+                const contactDoc = await db.collection('contacts_whatsapp').doc(client.phone).get();
+                client.name = contactDoc.exists ? (contactDoc.data().name || 'Sin nombre') : 'Sin nombre';
+            } catch (e) {
+                client.name = 'Sin nombre';
+            }
+        }
+
+        // Ordenar por total gastado (mejores clientes primero)
+        recurring.sort((a, b) => b.totalSpent - a.totalSpent);
+
+        // Estadísticas generales
+        const totalClients = Object.keys(clientOrders).length;
+        const totalRecurring = recurring.length;
+        const totalRevenueRecurring = recurring.reduce((sum, c) => sum + c.totalSpent, 0);
+        const totalOrders = ordersSnap.size;
+        const recurringOrders = recurring.reduce((sum, c) => sum + c.orders.length, 0);
+
+        res.status(200).json({
+            success: true,
+            stats: {
+                totalClients,
+                totalRecurring,
+                recurringRate: totalClients > 0 ? ((totalRecurring / totalClients) * 100).toFixed(1) : 0,
+                totalRevenueRecurring,
+                totalOrders,
+                recurringOrders,
+                recurringOrdersRate: totalOrders > 0 ? ((recurringOrders / totalOrders) * 100).toFixed(1) : 0,
+                avgOrdersPerRecurring: totalRecurring > 0 ? (recurringOrders / totalRecurring).toFixed(1) : 0,
+                avgSpentPerRecurring: totalRecurring > 0 ? Math.round(totalRevenueRecurring / totalRecurring) : 0
+            },
+            clients: recurring.slice(0, 50) // Top 50 recurrentes
+        });
+    } catch (error) {
+        console.error('Error fetching recurring customers:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener clientes recurrentes.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
 router.get('/kpi/daily', async (req, res) => {
     try {
