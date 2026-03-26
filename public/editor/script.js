@@ -5486,16 +5486,44 @@ function executeSingleAction(action) {
             return { id: srcObj.id };
         }
         case 'fill_names': {
-            // Resolve source design
-            let fillSrc;
-            if (a.source === 'selected') {
-                if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado');
-                fillSrc = findObjectDeep(state.selectedIds[0]) || findObject(state.selectedIds[0]);
+            // Support two formats:
+            // 1. Single source: { source: ID, names: ["a","b"] }
+            // 2. Multi source:  { assignments: [{name:"a", source: ID1}, {name:"b", source: ID2}] }
+            let fillAssignments; // [{name, sourceObj}]
+
+            if (a.assignments && a.assignments.length) {
+                const sourceCache = {};
+                fillAssignments = [];
+                for (const entry of a.assignments) {
+                    const srcId = entry.source;
+                    const cacheKey = String(srcId);
+                    if (!sourceCache[cacheKey]) {
+                        const src = (srcId === 'selected')
+                            ? (state.selectedIds.length > 0 ? findObjectDeep(state.selectedIds[0]) || findObject(state.selectedIds[0]) : null)
+                            : findObjectDeep(srcId) || findObject(srcId);
+                        if (!src) throw new Error(`Diseño source ${srcId} no encontrado`);
+                        sourceCache[cacheKey] = src;
+                    }
+                    fillAssignments.push({ name: entry.name, sourceObj: sourceCache[cacheKey] });
+                }
             } else {
-                fillSrc = findObjectDeep(a.source) || findObject(a.source);
+                let fillSrc;
+                if (a.source === 'selected') {
+                    if (state.selectedIds.length === 0) throw new Error('No hay objeto seleccionado');
+                    fillSrc = findObjectDeep(state.selectedIds[0]) || findObject(state.selectedIds[0]);
+                } else {
+                    fillSrc = findObjectDeep(a.source) || findObject(a.source);
+                }
+                if (!fillSrc) throw new Error('Diseño source no encontrado');
+                if (!a.names || !a.names.length) throw new Error('No se proporcionaron nombres');
+                fillAssignments = a.names.map(name => ({ name, sourceObj: fillSrc }));
             }
-            if (!fillSrc) throw new Error('Diseño source no encontrado');
-            if (!a.names || !a.names.length) throw new Error('No se proporcionaron nombres');
+
+            if (!fillAssignments.length) throw new Error('No se proporcionaron nombres');
+
+            // Collect all source IDs to exclude from slot detection
+            const sourceIds = new Set(fillAssignments.map(fa => fa.sourceObj.id));
+            const anySrc = fillAssignments[0].sourceObj;
 
             // Resolve or auto-detect slots (contour shapes with stroke, no fill)
             let fillSlots = [];
@@ -5505,10 +5533,10 @@ function executeSingleAction(action) {
                     if (s) fillSlots.push(s);
                 }
             } else {
-                const sb = getObjBounds(fillSrc);
+                const sb = getObjBounds(anySrc);
                 const minArea = sb.w * sb.h * 0.25;
                 for (const obj of state.objects) {
-                    if (obj.id === fillSrc.id) continue;
+                    if (sourceIds.has(obj.id)) continue;
                     if (obj.type === 'group' || obj.type === 'powerclip') continue;
                     const f = obj.fill || 'none';
                     if ((f === 'none' || f === 'transparent') && obj.stroke && obj.stroke !== 'none') {
@@ -5539,9 +5567,6 @@ function executeSingleAction(action) {
                 });
             }
 
-            // Pre-compute scale reference from ORIGINAL source (stable, not affected by text changes)
-            const srcBounds = getObjBounds(fillSrc);
-
             // Remember original slots + extras for template duplication
             const origCount = fillSlots.length;
             const allTmplObjs = [...fillSlots, ...extraObjs];
@@ -5561,7 +5586,7 @@ function executeSingleAction(action) {
             const tmplGap = tmplH * 0.15;
 
             const filledIds = [];
-            for (let i = 0; i < a.names.length; i++) {
+            for (let i = 0; i < fillAssignments.length; i++) {
                 // Duplicate template (slots + extras) when needed
                 if (i >= fillSlots.length && i % origCount === 0) {
                     const page = Math.floor(i / origCount);
@@ -5592,8 +5617,9 @@ function executeSingleAction(action) {
                     }
                 }
 
-                // Clone source design with ID mapping
-                const clone = JSON.parse(JSON.stringify(fillSrc, (k, v) => k === 'element' ? undefined : v));
+                // Clone the specific source for this assignment
+                const curSource = fillAssignments[i].sourceObj;
+                const clone = JSON.parse(JSON.stringify(curSource, (k, v) => k === 'element' ? undefined : v));
                 const idMap = {};
                 const oldTopId = clone.id;
                 clone.id = state.nextId++;
@@ -5615,8 +5641,9 @@ function executeSingleAction(action) {
                 })(clone);
 
                 // Update first text child with new name
+                const curName = fillAssignments[i].name;
                 (function setName(o) {
-                    if (o.type === 'text') { o.text = a.names[i]; return true; }
+                    if (o.type === 'text') { o.text = curName; return true; }
                     if (o.children) for (const c of o.children) { if (setName(c)) return true; }
                     if (o.contents) for (const c of o.contents) { if (setName(c)) return true; }
                     if (o.container) return setName(o.container);
@@ -5648,7 +5675,7 @@ function executeSingleAction(action) {
                 filledIds.push(clone.id);
             }
 
-            console.log('[AI fill_names]', a.names.length, 'designs placed in', fillSlots.length, 'slots');
+            console.log('[AI fill_names]', fillAssignments.length, 'designs placed in', fillSlots.length, 'slots');
             return { id: filledIds[0] };
         }
         case 'select': {
