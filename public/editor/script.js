@@ -7277,8 +7277,13 @@ async function fitTextToRefArea(textObj) {
     const refArea = findRefAreaForText(textObj);
     if (!refArea) return;
     const rb = getObjBounds(refArea);
-    const targetW = rb.w;
-    const targetH = rb.h;
+    // For non-rectangular ref areas, shrink target to inscribed rectangle
+    // so text doesn't overflow the actual curved shape
+    let padFactor = 1;
+    if (refArea.type === 'ellipse') padFactor = 0.707; // 1/√2 — inscribed rect of ellipse
+    else if (refArea.type === 'bspline') padFactor = 0.80;
+    const targetW = rb.w * padFactor;
+    const targetH = rb.h * padFactor;
     if (targetW <= 0 || targetH <= 0) return;
 
     const fontName = textObj.fontFamily || 'Inter';
