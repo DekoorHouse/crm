@@ -44,6 +44,107 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
+// --- Mapa de entregas (datos de Google Sheets) ---
+const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
+let mapaCache = { data: null, timestamp: 0 };
+const geocodeCache = {};
+
+function parseCSV(text) {
+    const lines = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < text.length; i++) {
+        const ch = text[i];
+        if (ch === '"') {
+            inQuotes = !inQuotes;
+        } else if (ch === '\n' && !inQuotes) {
+            lines.push(current);
+            current = '';
+        } else {
+            current += ch;
+        }
+    }
+    if (current) lines.push(current);
+
+    return lines.map(line => {
+        const cols = [];
+        let col = '';
+        let q = false;
+        for (let i = 0; i < line.length; i++) {
+            const c = line[i];
+            if (c === '"') { q = !q; }
+            else if (c === ',' && !q) { cols.push(col.trim()); col = ''; }
+            else if (c !== '\r') { col += c; }
+        }
+        cols.push(col.trim());
+        return cols;
+    });
+}
+
+async function geocodeCity(city, state) {
+    const key = (city + ', ' + state + ', Mexico').toLowerCase();
+    if (geocodeCache[key]) return geocodeCache[key];
+    try {
+        const res = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: { q: city + ', ' + state + ', Mexico', format: 'json', limit: 1 },
+            headers: { 'User-Agent': 'DekoorCRM/1.0' },
+            timeout: 5000
+        });
+        if (res.data && res.data.length > 0) {
+            const coords = { lat: parseFloat(res.data[0].lat), lng: parseFloat(res.data[0].lon) };
+            geocodeCache[key] = coords;
+            return coords;
+        }
+    } catch (e) { /* silenciar errores de geocoding */ }
+    return null;
+}
+
+router.get('/referencias/mapa', async (req, res) => {
+    try {
+        // Cache de 2 horas
+        if (mapaCache.data && Date.now() - mapaCache.timestamp < 2 * 60 * 60 * 1000) {
+            return res.json(mapaCache.data);
+        }
+
+        const csvRes = await axios.get(SHEET_CSV_URL, { timeout: 10000 });
+        const rows = parseCSV(csvRes.data);
+        if (rows.length < 2) return res.json([]);
+
+        // Agrupar por ciudad + estado (columnas L=11, N=13)
+        const groups = {};
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            const ciudad = (row[11] || '').trim();
+            const estado = (row[13] || '').trim();
+            if (!ciudad) continue;
+            const key = ciudad + '|' + estado;
+            if (!groups[key]) groups[key] = { ciudad, estado, count: 0 };
+            groups[key].count++;
+        }
+
+        // Geocodificar cada ciudad única
+        const results = [];
+        const entries = Object.values(groups);
+        for (let i = 0; i < entries.length; i++) {
+            const g = entries[i];
+            const coords = await geocodeCity(g.ciudad, g.estado);
+            if (coords) {
+                results.push({ ciudad: g.ciudad, estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
+            }
+            // Rate limit: 1 req/sec para Nominatim (solo si no está en cache)
+            if (!geocodeCache[(g.ciudad + ', ' + g.estado + ', Mexico').toLowerCase()] && i < entries.length - 1) {
+                await new Promise(r => setTimeout(r, 1100));
+            }
+        }
+
+        mapaCache = { data: results, timestamp: Date.now() };
+        res.json(results);
+    } catch (error) {
+        console.error('Error generando mapa:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Helper para procesar pedidos y adjuntar info de contacto/anuncio ---
 async function processOrdersData(ordersSnapshot) {
     const orders = [];

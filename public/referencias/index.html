@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="/referencias/style.css">
 </head>
 <body>
@@ -56,6 +57,14 @@
             <div class="stat-num" id="stat5">0</div>
             <div class="stat-label"><i class="fas fa-star" style="color:#f59e0b;font-size:0.75rem;"></i> 5 estrellas</div>
         </div>
+    </div>
+
+    <!-- Mapa de entregas -->
+    <div class="map-section">
+        <h2 class="map-title"><i class="fas fa-map-marked-alt"></i> Nuestras entregas</h2>
+        <p class="map-subtitle">Hemos llegado a todo México</p>
+        <div id="deliveryMap" class="delivery-map"></div>
+        <div id="mapStats" class="map-stats"></div>
     </div>
 
     <div class="ref-cta">
@@ -129,6 +138,9 @@
     </div>
 
 </div>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>

@@ -375,5 +375,53 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+// --- Mapa de entregas ---
+function loadMapa() {
+    var map = L.map('deliveryMap', {
+        scrollWheelZoom: false,
+        attributionControl: false
+    }).setView([23.6345, -102.5528], 5);
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 18
+    }).addTo(map);
+
+    fetch(API_BASE_URL + '/api/referencias/mapa')
+        .then(function(res) { return res.json(); })
+        .then(function(data) {
+            if (!data || !data.length) return;
+
+            var totalEntregas = 0;
+            var totalCiudades = data.length;
+
+            data.forEach(function(item) {
+                totalEntregas += item.count;
+                var size = Math.min(Math.max(item.count * 2 + 24, 26), 48);
+                var icon = L.divIcon({
+                    className: '',
+                    html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;">' + item.count + '</div>',
+                    iconSize: [size, size],
+                    iconAnchor: [size / 2, size / 2]
+                });
+
+                L.marker([item.lat, item.lng], { icon: icon })
+                    .addTo(map)
+                    .bindPopup(
+                        '<div class="popup-city">' + item.ciudad + '</div>' +
+                        '<div>' + item.estado + '</div>' +
+                        '<div class="popup-count">' + item.count + ' entrega' + (item.count > 1 ? 's' : '') + '</div>'
+                    );
+            });
+
+            document.getElementById('mapStats').innerHTML =
+                '<div class="map-stat-pill"><strong>' + totalEntregas + '</strong> entregas</div>' +
+                '<div class="map-stat-pill"><strong>' + totalCiudades + '</strong> ciudades</div>';
+        })
+        .catch(function(err) {
+            console.error('Error cargando mapa:', err);
+        });
+}
+
 // --- Init ---
 loadReferencias();
+loadMapa();
