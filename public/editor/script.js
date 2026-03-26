@@ -773,17 +773,11 @@ function objectAtPoint(pt) {
         }
         return null;
     }
-    // Find all objects at point, prefer the smallest one (so small objects
-    // aren't hidden behind large PowerClips or overlapping shapes)
-    let best = null, bestArea = Infinity;
+    // Return topmost object at point (respects z-order: front objects are selected first)
     for (let i = state.objects.length - 1; i >= 0; i--) {
-        if (hitTest(state.objects[i], pt)) {
-            const b = getObjBounds(state.objects[i]);
-            const area = b.w * b.h;
-            if (area < bestArea) { best = state.objects[i]; bestArea = area; }
-        }
+        if (hitTest(state.objects[i], pt)) return state.objects[i];
     }
-    return best;
+    return null;
 }
 
 function hitTest(obj, pt, forceInterior) {
