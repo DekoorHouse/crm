@@ -209,6 +209,11 @@ body, .login-card, .btn, .tab, .kpi-card, th, td, input, select, .modal-content,
     border-radius: var(--radius-lg);
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow-sm);
+    position: relative;
+    height: 380px;
+}
+.chart-container canvas {
+    max-height: 320px;
 }
 .section-title {
     font-size: 15px;

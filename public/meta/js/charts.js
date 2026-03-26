@@ -15,7 +15,7 @@ function getChartColors() {
 function baseOptions(colors) {
     return {
         responsive: true,
-        maintainAspectRatio: false,
+        maintainAspectRatio: true,
         plugins: {
             legend: { labels: { color: colors.textColor, font: { family: 'Inter', size: 12 } } }
         },
