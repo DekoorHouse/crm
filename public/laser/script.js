@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = JSON.parse(e.data);
             if (data.type === 'output') {
                 logConsole(data.text);
+                parseProgress(data.text);
             } else if (data.type === 'status') {
                 updateStatus(data.connected);
             }
@@ -226,20 +227,74 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         sendCommand('plan copy preprocess validate blob spool');
         sbJob.textContent = 'Ejecutando...';
+        document.getElementById('progress-section').classList.remove('hidden');
+        startProgressPolling();
     });
 
     btnPause.addEventListener('click', () => sendCommand('pause'));
 
     btnStop.addEventListener('click', () => {
         sendCommand('estop');
+        stopProgressPolling();
         setTimeout(() => {
             sendCommand('usb_connect');
             sendCommand('start');
         }, 500);
         sbJob.textContent = 'Detenido';
+        document.getElementById('progress-fill').style.width = '0%';
+        document.getElementById('progress-text').textContent = 'Detenido';
+        document.getElementById('progress-pct').textContent = '';
     });
 
     btnFrame.addEventListener('click', () => sendCommand('trace'));
+
+    // ===================== Progress Polling =====================
+    let progressInterval = null;
+
+    function parseProgress(text) {
+        // Match: LaserJob(filename: current/total)
+        const match = text.match(/LaserJob\(.*?:\s*(\d+)\/(\d+)\)/);
+        if (match) {
+            const current = parseInt(match[1], 10);
+            const total = parseInt(match[2], 10);
+            const pct = total > 0 ? Math.round((current / total) * 100) : 0;
+            document.getElementById('progress-fill').style.width = pct + '%';
+            document.getElementById('progress-text').textContent = `Ejecutando... ${current}/${total}`;
+            document.getElementById('progress-pct').textContent = pct + '%';
+            sbJob.textContent = `Ejecutando ${pct}%`;
+
+            if (current >= total && total > 0) {
+                // Job finished
+                stopProgressPolling();
+                sbJob.textContent = 'Completado';
+                document.getElementById('progress-text').textContent = 'Completado';
+                document.getElementById('progress-pct').textContent = '100%';
+                document.getElementById('progress-fill').style.width = '100%';
+            }
+        }
+
+        // Empty spooler = job done
+        if (text.includes('Spooler on device') && text.includes('0/')) {
+            // Still running
+        } else if (text.match(/Spoolers:\s*$/) || text.includes('No spooled')) {
+            stopProgressPolling();
+            sbJob.textContent = 'Idle';
+        }
+    }
+
+    function startProgressPolling() {
+        stopProgressPolling();
+        progressInterval = setInterval(() => {
+            sendCommand('spool');
+        }, 2000);
+    }
+
+    function stopProgressPolling() {
+        if (progressInterval) {
+            clearInterval(progressInterval);
+            progressInterval = null;
+        }
+    }
 
     // ===================== Position Controls =====================
     btnHome.addEventListener('click', () => sendCommand('home'));
