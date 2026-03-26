@@ -9259,49 +9259,42 @@ function applyCrop() {
 
     saveUndoState();
 
-    // Load image and crop via canvas
-    const img = new Image();
-    img.crossOrigin = 'anonymous';
-    img.onload = () => {
-        // Map crop rect from editor coords to image pixel coords
+    function doCrop(img) {
         const pixelW = img.naturalWidth, pixelH = img.naturalHeight;
         const scaleX = pixelW / obj.width, scaleY = pixelH / obj.height;
-        const srcX = (cr.x - obj.x) * scaleX;
-        const srcY = (cr.y - obj.y) * scaleY;
-        const srcW = cr.w * scaleX;
-        const srcH = cr.h * scaleY;
+        const srcX = Math.round((cr.x - obj.x) * scaleX);
+        const srcY = Math.round((cr.y - obj.y) * scaleY);
+        const srcW = Math.round(cr.w * scaleX);
+        const srcH = Math.round(cr.h * scaleY);
 
         const canvas = document.createElement('canvas');
-        canvas.width = Math.round(srcW);
-        canvas.height = Math.round(srcH);
+        canvas.width = srcW; canvas.height = srcH;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, Math.round(srcX), Math.round(srcY), Math.round(srcW), Math.round(srcH), 0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, srcW, srcH);
 
-        // Update object
-        obj.href = canvas.toDataURL('image/png');
-        obj.x = cr.x;
-        obj.y = cr.y;
-        obj.width = cr.w;
-        obj.height = cr.h;
-
-        // Update SVG element
-        const elem = obj.element;
-        if (elem) {
-            elem.setAttribute('x', obj.x);
-            elem.setAttribute('y', obj.y);
-            elem.setAttribute('width', obj.width);
-            elem.setAttribute('height', obj.height);
-            elem.setAttributeNS('http://www.w3.org/1999/xlink', 'href', obj.href);
+        try {
+            obj.href = canvas.toDataURL('image/png');
+        } catch(e) {
+            // Tainted canvas fallback: ignore CORS, just update position
         }
-
+        obj.x = cr.x; obj.y = cr.y;
+        obj.width = cr.w; obj.height = cr.h;
+        refreshElement(obj);
+        if (obj.element) {
+            obj.element.setAttributeNS('http://www.w3.org/1999/xlink', 'href', obj.href);
+        }
         cancelCrop();
         selectObject(obj.id);
         markDirty();
-    };
+    }
+
+    // Try with crossOrigin first, fallback without
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => doCrop(img);
     img.onerror = () => {
-        // Retry without crossOrigin
         const img2 = new Image();
-        img2.onload = img.onload.bind({ ...img, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight });
+        img2.onload = () => doCrop(img2);
         img2.src = obj.href;
     };
     img.src = obj.href;
