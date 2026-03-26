@@ -227,13 +227,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (opMode === 'raster') {
             const dpi = dpiInput.value;
             const bidir = document.getElementById('param-bidir').checked;
-            sendCommand(`operation* speed ${speed}`);
-            sendCommand(`operation* dpi ${dpi}`);
-            if (!bidir) {
-                sendCommand(`operation* op-property-set raster_swing False`);
-            }
+            // Set raster/image operations
+            sendCommand(`operation* filter -t raster speed ${speed}`);
+            sendCommand(`operation* filter -t raster dpi ${dpi}`);
+            sendCommand(`operation* filter -t image speed ${speed}`);
+            sendCommand(`operation* filter -t image dpi ${dpi}`);
         } else {
-            sendCommand(`operation* speed ${speed}`);
+            // Set only cut/engrave operations
+            sendCommand(`operation* filter -t cut speed ${speed}`);
+            sendCommand(`operation* filter -t engrave speed ${speed}`);
         }
         sendCommand(`plan copy preprocess validate blob spool`);
     });
