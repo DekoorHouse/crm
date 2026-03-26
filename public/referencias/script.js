@@ -21,6 +21,11 @@ var loadingMore = false;
 var hasMore = true;
 var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
 
+// --- Menú hamburguesa ---
+function toggleMenu() {
+    document.getElementById('navMenu').classList.toggle('hidden');
+}
+
 // --- Toggle formulario ---
 function toggleForm() {
     const card = document.getElementById('refFormCard');

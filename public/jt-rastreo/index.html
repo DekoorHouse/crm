@@ -10,6 +10,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <link rel="stylesheet" href="/jt-rastreo/style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
@@ -22,7 +23,19 @@
             <div class="logo">
                 <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
             </div>
+            <button class="hamburger-btn" onclick="toggleMenu()" aria-label="Menú">
+                <i class="fas fa-bars"></i>
+            </button>
         </header>
+
+        <div id="navMenu" class="nav-menu hidden">
+            <div class="nav-menu-overlay" onclick="toggleMenu()"></div>
+            <nav class="nav-menu-panel">
+                <button class="nav-close" onclick="toggleMenu()">&times;</button>
+                <a href="/jt-rastreo" class="nav-link active"><i class="fas fa-truck"></i> Rastreo de pedido</a>
+                <a href="/referencias" class="nav-link"><i class="fas fa-star"></i> Referencias</a>
+            </nav>
+        </div>
 
         <main>
             <section class="hero">
@@ -90,5 +103,10 @@
     </div>
 
     <script src="/jt-rastreo/script.js"></script>
+    <script>
+    function toggleMenu() {
+        document.getElementById('navMenu').classList.toggle('hidden');
+    }
+    </script>
 </body>
 </html>

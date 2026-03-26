@@ -39,7 +39,19 @@
         <a href="/">
             <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
         </a>
+        <button class="hamburger-btn" onclick="toggleMenu()" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
     </header>
+
+    <div id="navMenu" class="nav-menu hidden">
+        <div class="nav-menu-overlay" onclick="toggleMenu()"></div>
+        <nav class="nav-menu-panel">
+            <button class="nav-close" onclick="toggleMenu()">&times;</button>
+            <a href="/referencias" class="nav-link active"><i class="fas fa-star"></i> Referencias</a>
+            <a href="/jt-rastreo" class="nav-link"><i class="fas fa-truck"></i> Rastreo de pedido</a>
+        </nav>
+    </div>
 
     <section class="hero">
         <h1>Lo que dicen nuestros clientes</h1>
