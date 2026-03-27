@@ -106,6 +106,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cmd) { sendCommand(cmd); consoleInput.value = ''; }
     });
 
+    // ===================== Restart Server =====================
+    document.getElementById('btn-restart').addEventListener('click', () => {
+        if (!confirm('¿Reiniciar el servidor?')) return;
+        logConsole('Reiniciando servidor...', 'cmd');
+        fetch(`${API}/api/laser/restart`, { method: 'POST' }).catch(() => {});
+        // Server will die and restart via bat loop, WS will auto-reconnect
+    });
+
     // ===================== Machine Init =====================
     btnInit.addEventListener('click', () => {
         sendCommand('usb_connect');

@@ -70,4 +70,10 @@ router.post('/upload', upload.single('file'), (req, res) => {
     });
 });
 
+// POST /api/laser/restart — Restart the server (process exits, bat loop restarts it)
+router.post('/restart', (req, res) => {
+    res.json({ success: true, message: 'Reiniciando servidor...' });
+    setTimeout(() => process.exit(0), 500);
+});
+
 module.exports = { router, bridge };
