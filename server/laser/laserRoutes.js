@@ -15,6 +15,9 @@ if (!fs.existsSync(uploadDir)) {
 
 const upload = multer({ dest: uploadDir });
 
+// Track the current loaded file path for atomic start
+let currentFilePath = null;
+
 // POST /api/laser/command — Send a console command to MeerK40t
 router.post('/command', (req, res) => {
     const { cmd } = req.body;
@@ -62,12 +65,41 @@ router.post('/upload', upload.single('file'), (req, res) => {
         return res.json({ success: false, message: 'No hay conexión con MeerK40t' });
     }
 
+    currentFilePath = absPath;
+
     res.json({
         success: true,
         message: 'Archivo cargado en MeerK40t',
         filename: req.file.originalname,
         path: absPath
     });
+});
+
+// POST /api/laser/start — Atomic clear + load + configure + execute via pipe
+router.post('/start', (req, res) => {
+    if (!currentFilePath) {
+        return res.json({ success: false, message: 'No hay archivo cargado' });
+    }
+
+    const { speed, mode, dpi } = req.body;
+    if (!speed) {
+        return res.json({ success: false, message: 'Falta velocidad' });
+    }
+
+    // Build piped command for atomic sequential execution in MeerK40t
+    let cmd = `spool clear | element* delete | operation* delete | load ${currentFilePath} | element* position 0 0 | operation* enable | operation* speed ${speed}`;
+    if (mode === 'raster' && dpi) {
+        cmd += ` | operation* dpi ${dpi}`;
+    }
+    cmd += ' | plan copy preprocess validate blob spool';
+
+    // Start the device pipe first
+    bridge.send('start');
+    const sent = bridge.send(cmd);
+    if (!sent) {
+        return res.json({ success: false, message: 'No hay conexión con MeerK40t' });
+    }
+    res.json({ success: true });
 });
 
 // POST /api/laser/restart — Restart the server (process exits, bat loop restarts it)

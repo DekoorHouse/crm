@@ -156,6 +156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         uploadArea.classList.remove('hidden');
         clearPreview();
         sbFile.textContent = 'Sin archivo';
+        sendCommand('element* delete | operation* delete');
     });
 
     async function uploadFile(file) {
@@ -226,27 +227,31 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ===================== Job Controls =====================
-    btnStart.addEventListener('click', () => {
+    btnStart.addEventListener('click', async () => {
         const speed = document.getElementById('param-speed').value;
-
-        // Start pipe and clear any old jobs
-        sendCommand('start');
-        sendCommand('spool clear');
-
-        // Enable all operations and set speed
-        sendCommand('operation* enable');
-        sendCommand(`operation* speed ${speed}`);
-
+        const body = { speed, mode: opMode };
         if (opMode === 'raster') {
-            const dpi = dpiInput.value;
-            sendCommand(`operation* dpi ${dpi}`);
+            body.dpi = dpiInput.value;
         }
 
-        sendCommand('spool clear');
-        sendCommand('plan copy preprocess validate blob spool');
-        sbJob.textContent = 'Ejecutando...';
-        document.getElementById('progress-section').classList.remove('hidden');
-        startProgressPolling();
+        try {
+            logConsole('>> Iniciando trabajo...', 'cmd');
+            const res = await fetch(`${API}/api/laser/start`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+            });
+            const data = await res.json();
+            if (data.success) {
+                sbJob.textContent = 'Ejecutando...';
+                document.getElementById('progress-section').classList.remove('hidden');
+                startProgressPolling();
+            } else {
+                logConsole(data.message, 'err');
+            }
+        } catch (err) {
+            logConsole('Error al iniciar: ' + err.message, 'err');
+        }
     });
 
     btnPause.addEventListener('click', () => sendCommand('pause'));
