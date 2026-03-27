@@ -8,7 +8,7 @@ taskkill /F /IM python.exe >nul 2>&1
 timeout /t 2 /nobreak >nul
 
 echo Iniciando MeerK40t...
-start /B meerk40t -z -c -e "consoleserver -p 2323"
+start /B meerk40t -z -c -e "consoleserver -p 2323" -e "spool clear" -e "element* delete" -e "operation* delete"
 timeout /t 5 /nobreak >nul
 
 :loop
