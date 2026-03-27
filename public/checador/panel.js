@@ -480,13 +480,25 @@ document.getElementById('save-edit-log').addEventListener('click', saveEditChang
 // =====================
 // EMPLEADOS
 // =====================
+function generatePin() {
+    return String(Math.floor(1000 + Math.random() * 9000));
+}
+
 async function saveEmployee(name, phone) {
     if (employeesCache.some(e => e.name.toLowerCase() === name.toLowerCase())) {
         showNotification("Empleado duplicado", "danger");
         return false;
     }
-    await db.collection('checador_employees').add({ name, id: Date.now().toString(), phone });
+    const pin = generatePin();
+    await db.collection('checador_employees').add({ name, id: Date.now().toString(), phone, pin });
+    showNotification(`PIN asignado: ${pin}`);
     return true;
+}
+
+async function regeneratePin(docId) {
+    const pin = generatePin();
+    await db.collection('checador_employees').doc(docId).update({ pin });
+    showNotification(`Nuevo PIN: ${pin}`);
 }
 
 async function deleteEmployee(docId) {
@@ -536,6 +548,10 @@ function renderAdminEmployees() {
                 style="background:transparent; border:1px solid transparent; color:var(--success); padding:6px 8px; border-radius:6px; width:100%; font-size:0.82rem;"
                 onfocus="this.style.borderColor='var(--primary)'; this.style.background='rgba(255,255,255,0.08)'"
                 onblur="this.style.borderColor='transparent'; this.style.background='transparent'"></td>
+            <td style="text-align:center;">
+                <span style="font-family:monospace; font-size:1rem; letter-spacing:2px; color:var(--primary); font-weight:700;">${emp.pin || '—'}</span>
+                <button class="btn-small" onclick="regeneratePin('${emp._docId}')" style="margin-left:6px; padding:4px 8px; font-size:0.7rem;" title="Generar nuevo PIN">🔄</button>
+            </td>
             <td><button class="btn-small btn-danger" onclick="deleteEmployee('${emp._docId}')">Eliminar</button></td>
         `;
         // Guardar al presionar Enter o al perder foco si cambió el valor
