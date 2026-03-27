@@ -15,7 +15,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // DOM refs
     const connDot = document.getElementById('conn-dot');
     const connText = document.getElementById('conn-text');
-    const btnInit = document.getElementById('btn-init');
     const uploadArea = document.getElementById('upload-area');
     const fileInput = document.getElementById('file-input');
     const loadedFile = document.getElementById('loaded-file');
@@ -67,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
         connDot.className = connected ? 'dot on' : 'dot';
         connText.textContent = connected ? 'Conectado' : 'Desconectado';
         sbUsb.textContent = connected ? 'Conectado' : 'Desconectado';
+        if (connected) autoUsbConnect();
     }
 
     // ===================== Console =====================
@@ -106,6 +106,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if (cmd) { sendCommand(cmd); consoleInput.value = ''; }
     });
 
+    // ===================== Auto USB Connect =====================
+    let usbInitDone = false;
+    function autoUsbConnect() {
+        if (usbInitDone) return;
+        usbInitDone = true;
+        sendCommand('usb_connect');
+        sendCommand('start');
+        logConsole('USB conectado automaticamente', 'ok');
+    }
+
     // ===================== Restart Server =====================
     document.getElementById('btn-restart').addEventListener('click', () => {
         if (!confirm('¿Reiniciar el servidor?')) return;
@@ -114,18 +124,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Server will die and restart via bat loop, WS will auto-reconnect
     });
 
-    // ===================== Machine Init =====================
-    btnInit.addEventListener('click', () => {
-        sendCommand('usb_connect');
-        sendCommand('start');
-        logConsole('Inicializando maquina...', 'cmd');
-        setTimeout(() => {
-            sendCommand('home');
-            btnInit.innerHTML = '<i class="fas fa-check"></i> Conectada';
-            btnInit.classList.add('active');
-            btnInit.classList.remove('tag-btn');
-        }, 1500);
-    });
 
     // ===================== File Upload =====================
     uploadArea.addEventListener('click', () => fileInput.click());
