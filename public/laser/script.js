@@ -111,12 +111,12 @@ document.addEventListener('DOMContentLoaded', () => {
     function autoUsbConnect() {
         if (usbInitDone) return;
         usbInitDone = true;
-        // Clear any previous state from MeerK40t (including Whisperer jobs)
+        // Connect USB but do NOT start pipe yet (avoids executing saved jobs)
+        sendCommand('usb_connect');
+        // Clear saved state
         sendCommand('spool clear');
         sendCommand('element* delete');
         sendCommand('operation* delete');
-        sendCommand('usb_connect');
-        sendCommand('start');
         logConsole('USB conectado y estado limpiado', 'ok');
     }
 
@@ -229,6 +229,10 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStart.addEventListener('click', () => {
         const speed = document.getElementById('param-speed').value;
 
+        // Start pipe and clear any old jobs
+        sendCommand('start');
+        sendCommand('spool clear');
+
         // Enable all operations and set speed
         sendCommand('operation* enable');
         sendCommand(`operation* speed ${speed}`);
@@ -310,11 +314,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // ===================== Position Controls =====================
-    btnHome.addEventListener('click', () => sendCommand('home'));
+    function ensurePipeStarted() {
+        sendCommand('start');
+    }
+
+    btnHome.addEventListener('click', () => { ensurePipeStarted(); sendCommand('home'); });
     btnUnlock.addEventListener('click', () => sendCommand('unlock'));
 
     document.querySelectorAll('.jog-btn[data-dir]').forEach(btn => {
         btn.addEventListener('click', () => {
+            ensurePipeStarted();
             sendCommand(`${btn.dataset.dir} ${jogStep}mm`);
         });
     });
