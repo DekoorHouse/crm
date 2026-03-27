@@ -668,20 +668,20 @@ export function populateCategoryFilter() {
     const categories = getAllCategories();
     const currentCategory = elements.categoryFilter.value;
     elements.categoryFilter.innerHTML = `<option value="all">Todas las categorías</option>`;
+    const addNew = document.createElement('option');
+    addNew.value = '__add_new_category__';
+    addNew.textContent = '+ Nueva categoría...';
+    elements.categoryFilter.appendChild(addNew);
+    const separator = document.createElement('option');
+    separator.disabled = true;
+    separator.textContent = '──────────';
+    elements.categoryFilter.appendChild(separator);
     categories.forEach(cat => {
         const option = document.createElement('option');
         option.value = cat;
         option.textContent = cat;
         elements.categoryFilter.appendChild(option);
     });
-    const separator = document.createElement('option');
-    separator.disabled = true;
-    separator.textContent = '──────────';
-    elements.categoryFilter.appendChild(separator);
-    const addNew = document.createElement('option');
-    addNew.value = '__add_new_category__';
-    addNew.textContent = '+ Nueva categoría...';
-    elements.categoryFilter.appendChild(addNew);
     elements.categoryFilter.value = currentCategory;
 }
 
