@@ -169,6 +169,13 @@ async function submitReferencia(event) {
         misRefs.push(docRef.id);
         localStorage.setItem('misReferencias', JSON.stringify(misRefs));
 
+        // Notificar por WhatsApp (no bloquea al usuario)
+        fetch(API_BASE_URL + '/api/referencias/notificar', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nombre: nombre, ciudad: ciudad, rating: selectedRating, texto: texto })
+        }).catch(function() {});
+
         selectedRating = 0;
         selectedPhotos = [];
         document.getElementById('refForm').reset();

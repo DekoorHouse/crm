@@ -20,6 +20,32 @@ const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithC
 const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// --- Notificar nueva referencia por WhatsApp ---
+router.post('/referencias/notificar', async (req, res) => {
+    try {
+        const { nombre, ciudad, rating, texto } = req.body;
+        const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+        if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) {
+            return res.json({ ok: true, skipped: true });
+        }
+        const stars = '⭐'.repeat(rating || 0);
+        const msg = `📝 *Nueva referencia recibida*\n\n👤 *${nombre}*\n📍 ${ciudad}\n${stars}\n\n"${texto}"`;
+        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, {
+            messaging_product: 'whatsapp',
+            to: '526182297167',
+            type: 'text',
+            text: { body: msg }
+        }, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error notificando referencia por WhatsApp:', error.response?.data || error.message);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
 // --- Subir foto de referencia (público, sin auth) ---
 const sharp = require('sharp');
 
