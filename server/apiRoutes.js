@@ -48,27 +48,74 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };
 
-// Coordenadas de estados mexicanos (centroides)
-const ESTADO_COORDS = {
-    'aguascalientes': {lat:21.88,lng:-102.29},'baja california': {lat:30.84,lng:-115.28},
-    'baja california sur': {lat:25.04,lng:-111.66},'campeche': {lat:19.83,lng:-90.53},
-    'chiapas': {lat:16.75,lng:-93.12},'chihuahua': {lat:28.63,lng:-106.09},
-    'ciudad de mexico': {lat:19.43,lng:-99.13},'cdmx': {lat:19.43,lng:-99.13},
-    'coahuila': {lat:25.42,lng:-100.99},'coahuila de zaragoza': {lat:25.42,lng:-100.99},
-    'colima': {lat:19.24,lng:-103.72},'durango': {lat:24.02,lng:-104.67},
-    'guanajuato': {lat:21.02,lng:-101.26},'guerrero': {lat:17.44,lng:-99.55},
-    'hidalgo': {lat:20.09,lng:-98.76},'jalisco': {lat:20.66,lng:-103.35},
-    'mexico': {lat:19.29,lng:-99.65},'estado de mexico': {lat:19.29,lng:-99.65},
-    'michoacan': {lat:19.57,lng:-101.71},'michoacan de ocampo': {lat:19.57,lng:-101.71},
-    'morelos': {lat:18.68,lng:-99.10},'nayarit': {lat:21.75,lng:-104.85},
-    'nuevo leon': {lat:25.67,lng:-100.31},'oaxaca': {lat:17.07,lng:-96.73},
-    'puebla': {lat:19.04,lng:-98.21},'queretaro': {lat:20.59,lng:-100.39},
-    'quintana roo': {lat:19.18,lng:-88.48},'san luis potosi': {lat:22.15,lng:-100.98},
-    'sinaloa': {lat:24.81,lng:-107.39},'sonora': {lat:29.07,lng:-110.96},
-    'tabasco': {lat:17.99,lng:-92.93},'tamaulipas': {lat:24.27,lng:-98.84},
-    'tlaxcala': {lat:19.32,lng:-98.24},'veracruz': {lat:19.17,lng:-96.13},
-    'yucatan': {lat:20.97,lng:-89.62},'zacatecas': {lat:22.77,lng:-102.58}
+// Coordenadas de estados mexicanos (centroides) con variantes
+const ESTADO_COORDS_RAW = {
+    'aguascalientes': {lat:21.88,lng:-102.29},
+    'baja california': {lat:30.84,lng:-115.28},
+    'baja california sur': {lat:25.04,lng:-111.66},
+    'campeche': {lat:19.83,lng:-90.53},
+    'chiapas': {lat:16.75,lng:-93.12},
+    'chihuahua': {lat:28.63,lng:-106.09},
+    'ciudad de mexico': {lat:19.43,lng:-99.13},
+    'coahuila': {lat:25.42,lng:-100.99},
+    'colima': {lat:19.24,lng:-103.72},
+    'durango': {lat:24.02,lng:-104.67},
+    'guanajuato': {lat:21.02,lng:-101.26},
+    'guerrero': {lat:17.44,lng:-99.55},
+    'hidalgo': {lat:20.09,lng:-98.76},
+    'jalisco': {lat:20.66,lng:-103.35},
+    'mexico': {lat:19.29,lng:-99.65},
+    'michoacan': {lat:19.57,lng:-101.71},
+    'morelos': {lat:18.68,lng:-99.10},
+    'nayarit': {lat:21.75,lng:-104.85},
+    'nuevo leon': {lat:25.67,lng:-100.31},
+    'oaxaca': {lat:17.07,lng:-96.73},
+    'puebla': {lat:19.04,lng:-98.21},
+    'queretaro': {lat:20.59,lng:-100.39},
+    'quintana roo': {lat:19.18,lng:-88.48},
+    'san luis potosi': {lat:22.15,lng:-100.98},
+    'sinaloa': {lat:24.81,lng:-107.39},
+    'sonora': {lat:29.07,lng:-110.96},
+    'tabasco': {lat:17.99,lng:-92.93},
+    'tamaulipas': {lat:24.27,lng:-98.84},
+    'tlaxcala': {lat:19.32,lng:-98.24},
+    'veracruz': {lat:19.17,lng:-96.13},
+    'yucatan': {lat:20.97,lng:-89.62},
+    'zacatecas': {lat:22.77,lng:-102.58}
 };
+// Aliases
+const ESTADO_ALIASES = {
+    'cdmx': 'ciudad de mexico', 'df': 'ciudad de mexico', 'distrito federal': 'ciudad de mexico',
+    'estado de mexico': 'mexico', 'edomex': 'mexico', 'edo mex': 'mexico', 'edo. mex.': 'mexico', 'edo de mexico': 'mexico',
+    'coahuila de zaragoza': 'coahuila', 'michoacan de ocampo': 'michoacan',
+    'veracruz de ignacio de la llave': 'veracruz', 'ver': 'veracruz',
+    'nuevo leon': 'nuevo leon', 'nl': 'nuevo leon', 'n.l.': 'nuevo leon', 'n l': 'nuevo leon',
+    'qro': 'queretaro', 'q. roo': 'quintana roo', 'q roo': 'quintana roo',
+    'slp': 'san luis potosi', 's.l.p.': 'san luis potosi',
+    'bc': 'baja california', 'bcs': 'baja california sur',
+    'ags': 'aguascalientes', 'gto': 'guanajuato', 'jal': 'jalisco',
+    'mich': 'michoacan', 'mor': 'morelos', 'nay': 'nayarit',
+    'oax': 'oaxaca', 'pue': 'puebla', 'sin': 'sinaloa', 'son': 'sonora',
+    'tab': 'tabasco', 'tam': 'tamaulipas', 'tamps': 'tamaulipas',
+    'tlax': 'tlaxcala', 'yuc': 'yucatan', 'zac': 'zacatecas',
+    'chis': 'chiapas', 'chih': 'chihuahua', 'col': 'colima',
+    'dgo': 'durango', 'gro': 'guerrero', 'hgo': 'hidalgo',
+    'camp': 'campeche', 'cam': 'campeche'
+};
+
+function normalizeEstado(raw) {
+    const n = raw.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\./g, '').trim();
+    if (ESTADO_COORDS_RAW[n]) return n;
+    if (ESTADO_ALIASES[n]) return ESTADO_ALIASES[n];
+    // Fuzzy: check if any key is contained in the value
+    for (const [alias, target] of Object.entries(ESTADO_ALIASES)) {
+        if (n.includes(alias) || alias.includes(n)) return target;
+    }
+    for (const key of Object.keys(ESTADO_COORDS_RAW)) {
+        if (n.includes(key) || key.includes(n)) return key;
+    }
+    return null;
+}
 
 function parseCSV(text) {
     const lines = [];
@@ -105,12 +152,16 @@ router.get('/referencias/mapa', async (req, res) => {
         const rows = parseCSV(csvRes.data);
         if (rows.length < 2) return res.json([]);
 
-        // Agrupar por estado (columna N=13)
+        // Detectar columna de Estado dinámicamente
+        const header = rows[0];
+        let estadoIdx = header.findIndex(h => h.toLowerCase().trim() === 'estado');
+        if (estadoIdx === -1) estadoIdx = 14; // fallback
+
         const groups = {};
         let totalEntregas = 0;
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            const estado = (row[13] || '').trim();
+            const estado = (row[estadoIdx] || '').trim();
             if (!estado) continue;
             const key = estado.toLowerCase()
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -120,13 +171,19 @@ router.get('/referencias/mapa', async (req, res) => {
             totalEntregas++;
         }
 
-        // Resolver coordenadas con tabla estática
-        const results = [];
+        // Normalizar y agrupar por estado canónico, resolver coordenadas
+        const canonical = {};
         for (const g of Object.values(groups)) {
-            const key = g.estado.toLowerCase()
-                .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-                .replace(/[^a-z ]/g, '').trim();
-            const coords = ESTADO_COORDS[key];
+            const norm = normalizeEstado(g.estado);
+            if (!norm) continue;
+            if (!canonical[norm]) canonical[norm] = { estado: norm.charAt(0).toUpperCase() + norm.slice(1), count: 0 };
+            canonical[norm].count += g.count;
+        }
+
+        const results = [];
+        for (const g of Object.values(canonical)) {
+            const key = g.estado.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+            const coords = ESTADO_COORDS_RAW[key];
             if (coords) {
                 results.push({ estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
             }
