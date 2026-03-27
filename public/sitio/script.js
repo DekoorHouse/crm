@@ -16,7 +16,7 @@ const db = firebase.firestore();
 const API_BASE_URL = window.API_BASE_URL || '';
 
 // --- WhatsApp number ---
-const WA_NUMBER = '5218341841040';
+const WA_NUMBER = '5216181333519';
 
 // ============================================================
 // PRODUCTS DATA
