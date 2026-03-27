@@ -87,14 +87,18 @@ router.post('/start', (req, res) => {
     }
 
     // Build piped command for atomic sequential execution in MeerK40t
-    // After load, delete auto-classified ops and create the correct type
-    let cmd = `spool clear | element* delete | operation* delete | load ${currentFilePath} | element* position 0 0 | operation* delete`;
+    let cmd = `spool clear | element* delete | operation* delete | load ${currentFilePath} | element* position 0 0`;
+
     if (mode === 'raster') {
-        cmd += ` | raster -s ${speed}${dpi ? ` -d ${dpi}` : ''}`;
+        // Raster: keep auto-classified ops, just set speed/dpi
+        cmd += ` | operation* enable | operation* speed ${speed}`;
+        if (dpi) cmd += ` | operation* dpi ${dpi}`;
     } else {
-        cmd += ` | cut -s ${speed}`;
+        // Cut: force stroke + no fill so classify creates only cut ops
+        cmd += ` | element* stroke black | element* fill none | operation* delete | cut -s ${speed} | classify | operation* enable`;
     }
-    cmd += ' | classify | plan copy preprocess validate blob spool';
+
+    cmd += ' | plan copy preprocess validate blob spool';
 
     // Start the device pipe first
     bridge.send('start');
