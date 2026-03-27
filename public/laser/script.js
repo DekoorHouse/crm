@@ -111,9 +111,13 @@ document.addEventListener('DOMContentLoaded', () => {
     function autoUsbConnect() {
         if (usbInitDone) return;
         usbInitDone = true;
+        // Clear any previous state from MeerK40t (including Whisperer jobs)
+        sendCommand('spool clear');
+        sendCommand('element* delete');
+        sendCommand('operation* delete');
         sendCommand('usb_connect');
         sendCommand('start');
-        logConsole('USB conectado automaticamente', 'ok');
+        logConsole('USB conectado y estado limpiado', 'ok');
     }
 
     // ===================== Restart Server =====================
