@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DEKOOR | Regalos Personalizados con Grabado Láser - Envío a Todo México</title>
+    <meta name="description" content="Regalos personalizados con grabado láser. Cuadros con foto, letreros, trofeos y más. Personalizamos con tu foto, nombre o mensaje. Envío a todo México.">
+    <meta name="keywords" content="regalos personalizados, grabado láser, regalos con nombre, regalos con foto, regalos originales, cuadros personalizados, Dekoor, regalos México">
+    <link rel="canonical" href="https://dekoor.com/sitio/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="DEKOOR - Regalos Personalizados con Grabado Láser">
+    <meta property="og:description" content="Creamos piezas únicas personalizadas con tus fotos y mensajes. Envío a todo México.">
+    <meta property="og:image" content="/jt-rastreo/logo.png">
+    <meta property="og:url" content="https://dekoor.com/sitio/">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="es_MX">
+
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "Store",
+        "name": "DEKOOR - Custom Gift Store",
+        "description": "Tienda de regalos personalizados con grabado láser",
+        "url": "https://dekoor.com/sitio/",
+        "logo": "https://dekoor.com/jt-rastreo/logo.png",
+        "address": {
+            "@type": "PostalAddress",
+            "addressLocality": "Durango",
+            "addressCountry": "MX"
+        },
+        "priceRange": "$299 - $3000 MXN"
+    }
+    </script>
+</head>
+<body>
+
+<div class="bg-gradient"></div>
+
+<!-- ========== NAVBAR ========== -->
+<nav class="navbar" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
+        </a>
+        <div class="nav-links" id="navLinks">
+            <a href="#inicio" class="nav-link">Inicio</a>
+            <a href="#productos" class="nav-link">Productos</a>
+            <a href="#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="#galeria" class="nav-link">Galería</a>
+            <a href="/referencias/" class="nav-link">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="#contacto" class="nav-link">Contacto</a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- Mobile Menu -->
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="#inicio" class="mobile-link active"><i class="fas fa-home"></i> Inicio</a>
+        <a href="#productos" class="mobile-link"><i class="fas fa-gift"></i> Productos</a>
+        <a href="#como-funciona" class="mobile-link"><i class="fas fa-cogs"></i> Cómo Funciona</a>
+        <a href="#galeria" class="mobile-link"><i class="fas fa-images"></i> Galería</a>
+        <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<!-- Lightbox -->
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="Foto ampliada">
+</div>
+
+<main>
+
+<!-- ========== HERO ========== -->
+<section class="hero" id="inicio">
+    <div class="hero-content fade-section">
+        <h1>Regalos que cuentan tu historia</h1>
+        <p class="hero-subtitle">Creamos piezas únicas con grabado láser, personalizadas con tus fotos, nombres y mensajes especiales. Envío a todo México.</p>
+        <div class="hero-ctas">
+            <a href="https://wa.me/5218341841040?text=Hola%20Dekoor%2C%20me%20interesan%20sus%20regalos%20personalizados" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
+                <i class="fab fa-whatsapp"></i> Pedir por WhatsApp
+            </a>
+            <a href="#productos" class="btn btn-glass btn-lg">
+                <i class="fas fa-gift"></i> Ver productos
+            </a>
+        </div>
+        <div class="trust-strip">
+            <div class="trust-item">
+                <i class="fas fa-box-open"></i>
+                <span><strong>400+</strong> pedidos</span>
+            </div>
+            <div class="trust-item">
+                <i class="fas fa-truck-fast"></i>
+                <span>Envío nacional</span>
+            </div>
+            <div class="trust-item">
+                <i class="fas fa-star"></i>
+                <span><strong>4.9</strong> estrellas</span>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== PROPUESTAS DE VALOR ========== -->
+<section class="section" id="valor">
+    <div class="container">
+        <div class="usp-grid fade-section">
+            <div class="usp-card">
+                <div class="usp-icon"><i class="fas fa-wand-magic-sparkles"></i></div>
+                <h3>Personalización única</h3>
+                <p>Grabamos tus fotos, nombres y mensajes con láser de precisión</p>
+            </div>
+            <div class="usp-card">
+                <div class="usp-icon"><i class="fas fa-truck-fast"></i></div>
+                <h3>Envío a todo México</h3>
+                <p>Entrega segura a cualquier estado en 5-7 días hábiles</p>
+            </div>
+            <div class="usp-card">
+                <div class="usp-icon"><i class="fas fa-gem"></i></div>
+                <h3>Materiales premium</h3>
+                <p>MDF, madera de pino, bambú y acrílico cristal</p>
+            </div>
+            <div class="usp-card">
+                <div class="usp-icon"><i class="fab fa-whatsapp"></i></div>
+                <h3>Atención personalizada</h3>
+                <p>Te asesoramos por WhatsApp para crear el regalo perfecto</p>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== PRODUCTOS ========== -->
+<section class="section" id="productos">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Nuestros productos</h2>
+            <p>Encuentra el regalo perfecto para cada ocasión</p>
+        </div>
+        <div class="product-filters fade-section" id="productFilters">
+            <button class="filter-btn active" data-filter="todos">Todos</button>
+            <button class="filter-btn" data-filter="ella">Para Ella</button>
+            <button class="filter-btn" data-filter="el">Para Él</button>
+            <button class="filter-btn" data-filter="parejas">Parejas</button>
+            <button class="filter-btn" data-filter="familia">Familia</button>
+            <button class="filter-btn" data-filter="corporativo">Corporativo</button>
+        </div>
+        <div class="product-grid" id="productGrid">
+            <!-- Rendered by JS -->
+        </div>
+    </div>
+</section>
+
+<!-- ========== COMO FUNCIONA ========== -->
+<section class="section section-alt" id="como-funciona">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Cómo funciona</h2>
+            <p>Tu regalo personalizado en 4 simples pasos</p>
+        </div>
+        <div class="steps-grid fade-section">
+            <div class="step-card">
+                <div class="step-number">1</div>
+                <div class="step-icon"><i class="fas fa-hand-pointer"></i></div>
+                <h3>Elige tu producto</h3>
+                <p>Explora nuestro catálogo y escoge el artículo que más te guste</p>
+            </div>
+            <div class="step-connector"><i class="fas fa-chevron-right"></i></div>
+            <div class="step-card">
+                <div class="step-number">2</div>
+                <div class="step-icon"><i class="fas fa-palette"></i></div>
+                <h3>Personalízalo</h3>
+                <p>Envíanos por WhatsApp tu foto, nombre o mensaje especial</p>
+            </div>
+            <div class="step-connector"><i class="fas fa-chevron-right"></i></div>
+            <div class="step-card">
+                <div class="step-number">3</div>
+                <div class="step-icon"><i class="fas fa-fire"></i></div>
+                <h3>Lo fabricamos</h3>
+                <p>Grabamos tu diseño con láser de precisión en nuestro taller</p>
+            </div>
+            <div class="step-connector"><i class="fas fa-chevron-right"></i></div>
+            <div class="step-card">
+                <div class="step-number">4</div>
+                <div class="step-icon"><i class="fas fa-heart"></i></div>
+                <h3>Recíbelo en casa</h3>
+                <p>Envío a todo México con rastreo en tiempo real</p>
+            </div>
+        </div>
+        <div class="steps-cta fade-section">
+            <a href="https://wa.me/5218341841040?text=Hola%20Dekoor%2C%20quiero%20hacer%20un%20pedido" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
+                <i class="fab fa-whatsapp"></i> Iniciar mi pedido
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- ========== GALERÍA ========== -->
+<section class="section" id="galeria">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Galería de creaciones</h2>
+            <p>Algunos de nuestros trabajos recientes</p>
+        </div>
+        <div class="gallery-grid fade-section" id="galleryGrid">
+            <!-- Placeholder gallery items -->
+            <div class="gallery-item gallery-tall" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Cuadro con foto</span></div>
+            </div>
+            <div class="gallery-item" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Letrero MDF</span></div>
+            </div>
+            <div class="gallery-item" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Llavero grabado</span></div>
+            </div>
+            <div class="gallery-item gallery-tall" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Trofeo acrílico</span></div>
+            </div>
+            <div class="gallery-item" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Caja personalizada</span></div>
+            </div>
+            <div class="gallery-item" style="background: linear-gradient(135deg, var(--surface-dark), var(--background-dark));">
+                <div class="gallery-placeholder"><i class="fas fa-image"></i><span>Portarretrato</span></div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== TESTIMONIOS ========== -->
+<section class="section section-alt" id="testimonios">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Lo que dicen nuestros clientes</h2>
+            <p>Opiniones reales de personas que ya probaron nuestros productos</p>
+        </div>
+        <div class="testimonials-stats fade-section">
+            <div class="stat-card">
+                <div class="stat-num" id="tStatTotal">0</div>
+                <div class="stat-label">Referencias</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-num" id="tStatAvg">0</div>
+                <div class="stat-label">Promedio</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-num" id="tStat5">0</div>
+                <div class="stat-label"><i class="fas fa-star" style="color:#f59e0b;font-size:0.75rem;"></i> 5 estrellas</div>
+            </div>
+        </div>
+        <div class="testimonials-grid" id="testimonialsGrid">
+            <div class="testimonial-loading">
+                <div class="spinner"></div>
+                <p>Cargando referencias...</p>
+            </div>
+        </div>
+        <div class="section-cta fade-section">
+            <a href="/referencias/" class="btn btn-glass btn-lg">
+                <i class="fas fa-star"></i> Ver todas las referencias
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- ========== MAPA ========== -->
+<section class="section" id="mapa">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2><i class="fas fa-map-marked-alt" style="color:var(--primary-color);"></i> Nuestras entregas</h2>
+            <p>Hemos llegado a todo México</p>
+        </div>
+        <div class="map-wrapper fade-section">
+            <div id="deliveryMap" class="delivery-map"></div>
+            <div id="mapStats" class="map-stats"></div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== CORPORATIVO / B2B ========== -->
+<section class="section section-alt" id="corporativo">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Regalos corporativos y eventos</h2>
+            <p>Soluciones personalizadas para empresas y ocasiones especiales</p>
+        </div>
+        <div class="b2b-grid fade-section">
+            <div class="b2b-card">
+                <div class="b2b-icon"><i class="fas fa-building"></i></div>
+                <h3>Corporativo</h3>
+                <p>Regalos para colaboradores, reconocimientos, premios y merchandising personalizado con tu marca</p>
+            </div>
+            <div class="b2b-card">
+                <div class="b2b-icon"><i class="fas fa-heart"></i></div>
+                <h3>Bodas y XV Años</h3>
+                <p>Recuerdos y centros de mesa únicos que tus invitados conservarán para siempre</p>
+            </div>
+            <div class="b2b-card">
+                <div class="b2b-icon"><i class="fas fa-calendar-star"></i></div>
+                <h3>Eventos</h3>
+                <p>Baby showers, graduaciones, aniversarios y cualquier celebración especial</p>
+            </div>
+        </div>
+        <div class="section-cta fade-section">
+            <a href="https://wa.me/5218341841040?text=Hola%20Dekoor%2C%20me%20interesa%20una%20cotizaci%C3%B3n%20para%20pedido%20mayoreo" class="btn btn-primary btn-lg" target="_blank" rel="noopener">
+                <i class="fab fa-whatsapp"></i> Solicitar cotización mayoreo
+            </a>
+        </div>
+    </div>
+</section>
+
+<!-- ========== FAQ ========== -->
+<section class="section" id="faq">
+    <div class="container">
+        <div class="section-header fade-section">
+            <h2>Preguntas frecuentes</h2>
+            <p>Todo lo que necesitas saber sobre nuestros productos</p>
+        </div>
+        <div class="faq-list fade-section">
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Qué materiales utilizan?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Trabajamos con MDF de alta calidad, madera de pino, bambú y acrílico cristal. Cada material es seleccionado para garantizar un acabado profesional y duradero en el grabado láser.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Cuánto tarda mi pedido?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>El tiempo de fabricación es de 1-3 días hábiles. El envío tarda entre 3-7 días hábiles dependiendo del destino. En total, recibes tu pedido entre 4 y 10 días hábiles.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Hacen envíos a todo México?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Sí, enviamos a cualquier estado de la República Mexicana a través de paquetería con rastreo en tiempo real. Puedes <a href="/jt-rastreo/">rastrear tu pedido aquí</a>.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Cómo puedo rastrear mi pedido?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Una vez que tu pedido sea enviado, recibirás un número de guía por WhatsApp. Puedes ingresarlo en nuestra <a href="/jt-rastreo/">página de rastreo</a> para ver el estado en tiempo real.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Aceptan pagos con tarjeta?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Aceptamos transferencia bancaria, depósito en OXXO, y pagos con tarjeta a través de un enlace seguro de pago que te enviamos por WhatsApp.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Hacen pedidos al mayoreo?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Sí, ofrecemos precios especiales para pedidos al mayoreo desde 10 piezas. Ideal para empresas, bodas, XV años y eventos. Contáctanos por WhatsApp para una cotización personalizada.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Puedo enviar cualquier foto para grabar?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Sí, puedes enviarnos cualquier foto, nombre, frase o diseño. Nuestro equipo optimizará la imagen para que el grabado láser quede perfecto. Te enviamos una vista previa antes de fabricar.</p>
+                </div>
+            </div>
+            <div class="faq-item">
+                <button class="faq-question">
+                    <span>¿Qué garantía tienen los productos?</span>
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div class="faq-answer">
+                    <p>Todos nuestros productos tienen garantía de satisfacción. Si tu pedido llega dañado o con algún defecto de fabricación, lo reponemos sin costo. Lee las <a href="/referencias/">opiniones de nuestros clientes</a>.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+
+<!-- ========== CONTACTO / FOOTER ========== -->
+<footer class="footer" id="contacto">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-brand">
+                <img src="/jt-rastreo/logo.png" alt="Dekoor" class="footer-logo">
+                <p>Tienda de regalos personalizados con grabado láser. Creamos piezas únicas para momentos especiales.</p>
+            </div>
+            <div class="footer-links">
+                <h4>Navegación</h4>
+                <a href="#productos">Productos</a>
+                <a href="#como-funciona">Cómo Funciona</a>
+                <a href="#galeria">Galería</a>
+                <a href="#faq">Preguntas Frecuentes</a>
+            </div>
+            <div class="footer-links">
+                <h4>Servicios</h4>
+                <a href="/jt-rastreo/">Rastreo de pedidos</a>
+                <a href="/referencias/">Referencias de clientes</a>
+                <a href="#corporativo">Regalos corporativos</a>
+                <a href="/privacidad/">Aviso de privacidad</a>
+            </div>
+            <div class="footer-contact">
+                <h4>Contacto</h4>
+                <a href="https://wa.me/5218341841040" target="_blank" rel="noopener"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+                <a href="https://instagram.com/dekoor.mx" target="_blank" rel="noopener"><i class="fab fa-instagram"></i> @dekoor.mx</a>
+                <a href="https://facebook.com/dekoor.mx" target="_blank" rel="noopener"><i class="fab fa-facebook"></i> Facebook</a>
+                <a href="mailto:contacto@dekoor.com"><i class="fas fa-envelope"></i> contacto@dekoor.com</a>
+                <p class="footer-location"><i class="fas fa-map-marker-alt"></i> Durango, Dgo. México</p>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>&copy; 2026 DEKOOR CUSTOM GIFT STORE. Todos los derechos reservados.</p>
+        </div>
+    </div>
+</footer>
+
+</main>
+
+<!-- WhatsApp FAB -->
+<a href="https://wa.me/5218341841040?text=Hola%20Dekoor%2C%20me%20interesan%20sus%20productos" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+</a>
+
+<!-- Scroll to top -->
+<button class="scroll-top hidden" id="scrollTopBtn" aria-label="Volver arriba">
+    <i class="fas fa-chevron-up"></i>
+</button>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="/env-config.js"></script>
+<script src="/sitio/script.js"></script>
+</body>
+</html>
