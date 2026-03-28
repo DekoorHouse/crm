@@ -775,105 +775,233 @@ batchExportBtn.addEventListener('click', async () => {
     batchProgressEl.style.display = 'none';
 });
 
-// ===================== SAVE / LOAD PROJECT =====================
+// ===================== FIREBASE DB & STORAGE =====================
+const db = firebase.firestore();
+const storage = firebase.storage();
+let currentProjectId = null;
+
+// ===================== SAVE / LOAD PROJECT (FIREBASE) =====================
 const saveProjectBtn = document.getElementById('save-project-btn');
-const loadProjectInput = document.getElementById('load-project-input');
+const openProjectsBtn = document.getElementById('open-projects-btn');
+const projectsModal = document.getElementById('projects-modal');
+const projectsList = document.getElementById('projects-list');
+const projectsEmpty = document.getElementById('projects-empty');
+const closeProjectsModal = document.getElementById('close-projects-modal');
 
-saveProjectBtn.addEventListener('click', () => {
-    if (!baseImage) { alert('No hay proyecto para guardar.'); return; }
+function showSaving(msg) {
+    let el = document.getElementById('saving-indicator');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'saving-indicator';
+        el.className = 'saving-indicator';
+        document.body.appendChild(el);
+    }
+    el.innerHTML = `<i class="fas fa-spinner fa-spin"></i> ${msg}`;
+    el.style.display = 'flex';
+    return el;
+}
+function hideSaving() {
+    const el = document.getElementById('saving-indicator');
+    if (el) el.style.display = 'none';
+}
 
-    // Render canvas without text to capture base + brush strokes
+function generateThumbnail() {
     const sel = selectedTextIdx;
     selectedTextIdx = -1;
-    const savedLayers = [...textLayers];
-    textLayers = [];
     redrawCanvas();
-    const canvasState = canvas.toDataURL('image/png');
-    textLayers = savedLayers;
+    const tmp = document.createElement('canvas');
+    const scale = 200 / canvas.width;
+    tmp.width = 200;
+    tmp.height = canvas.height * scale;
+    tmp.getContext('2d').drawImage(canvas, 0, 0, tmp.width, tmp.height);
     selectedTextIdx = sel;
     redrawCanvas();
+    return tmp.toDataURL('image/jpeg', 0.7);
+}
 
-    const project = {
-        version: 1,
-        width: canvas.width,
-        height: canvas.height,
-        baseImage: baseImage.src,
-        canvasState,
-        textLayers: JSON.parse(JSON.stringify(textLayers)),
-    };
+async function uploadToStorage(dataUrl, path) {
+    const resp = await fetch(dataUrl);
+    const blob = await resp.blob();
+    const ref = storage.ref(path);
+    await ref.put(blob);
+    return await ref.getDownloadURL();
+}
 
-    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
-    const link = document.createElement('a');
-    link.download = `proyecto-${Date.now()}.json`;
-    link.href = URL.createObjectURL(blob);
-    link.click();
-    URL.revokeObjectURL(link.href);
-});
+function getProjectName() {
+    if (textLayers.length > 0 && textLayers[0].text) return textLayers[0].text;
+    return 'Sin nombre';
+}
 
-loadProjectInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-        try {
-            const project = JSON.parse(ev.target.result);
-            if (!project.baseImage || !project.textLayers) {
-                alert('Archivo de proyecto inválido.'); return;
-            }
+function getCanvasStateWithoutText() {
+    const sel = selectedTextIdx;
+    selectedTextIdx = -1;
+    const saved = [...textLayers];
+    textLayers = [];
+    redrawCanvas();
+    const data = canvas.toDataURL('image/png');
+    textLayers = saved;
+    selectedTextIdx = sel;
+    redrawCanvas();
+    return data;
+}
 
-            // Load base image
-            const base = new Image();
-            base.onload = () => {
-                baseImage = base;
-                canvas.width = project.width || base.width;
-                canvas.height = project.height || base.height;
-                canvas.style.display = 'block';
-                canvasPlaceholder.style.display = 'none';
+saveProjectBtn.addEventListener('click', async () => {
+    if (!baseImage) { alert('No hay proyecto para guardar.'); return; }
+    const indicator = showSaving('Guardando...');
+    try {
+        const ts = Date.now();
+        const canvasState = getCanvasStateWithoutText();
+        const thumbnail = generateThumbnail();
 
-                // Load canvas state (base + brush strokes)
-                if (project.canvasState) {
-                    const stateImg = new Image();
-                    stateImg.onload = () => {
-                        ctx.clearRect(0, 0, canvas.width, canvas.height);
-                        ctx.drawImage(stateImg, 0, 0);
-                        textLayers = project.textLayers;
-                        selectedTextIdx = -1;
-                        undoStack = [];
-                        redoStack = [];
-                        resetZoom();
-
-                        // Re-register custom fonts used in text layers
-                        loadProjectFonts(textLayers);
-
-                        redrawCanvas();
-                        saveUndo();
-                    };
-                    stateImg.src = project.canvasState;
-                } else {
-                    ctx.drawImage(base, 0, 0);
-                    textLayers = project.textLayers;
-                    selectedTextIdx = -1;
-                    undoStack = [];
-                    redoStack = [];
-                    resetZoom();
-                    redrawCanvas();
-                    saveUndo();
-                }
-            };
-            base.src = project.baseImage;
-        } catch (err) {
-            alert('Error al cargar proyecto: ' + err.message);
+        if (currentProjectId) {
+            // Update existing
+            const baseUrl = await uploadToStorage(baseImage.src, `ps_projects/${currentProjectId}/base_${ts}`);
+            const stateUrl = await uploadToStorage(canvasState, `ps_projects/${currentProjectId}/state_${ts}`);
+            await db.collection('ps_projects').doc(currentProjectId).update({
+                name: getProjectName(),
+                baseImage: baseUrl,
+                canvasState: stateUrl,
+                textLayers: JSON.stringify(textLayers),
+                width: canvas.width,
+                height: canvas.height,
+                thumbnail,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+        } else {
+            // New project
+            const docRef = await db.collection('ps_projects').add({
+                name: getProjectName(),
+                textLayers: JSON.stringify(textLayers),
+                width: canvas.width,
+                height: canvas.height,
+                thumbnail,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            });
+            currentProjectId = docRef.id;
+            const baseUrl = await uploadToStorage(baseImage.src, `ps_projects/${currentProjectId}/base_${ts}`);
+            const stateUrl = await uploadToStorage(canvasState, `ps_projects/${currentProjectId}/state_${ts}`);
+            await docRef.update({ baseImage: baseUrl, canvasState: stateUrl });
         }
-    };
-    reader.readAsText(file);
-    loadProjectInput.value = '';
+        indicator.innerHTML = '<i class="fas fa-check"></i> Guardado';
+        setTimeout(hideSaving, 1500);
+    } catch (err) {
+        hideSaving();
+        alert('Error al guardar: ' + err.message);
+    }
 });
+
+// ===================== PROJECTS MODAL =====================
+openProjectsBtn.addEventListener('click', () => {
+    projectsModal.style.display = 'flex';
+    loadProjectsList();
+});
+closeProjectsModal.addEventListener('click', () => {
+    projectsModal.style.display = 'none';
+});
+projectsModal.addEventListener('click', (e) => {
+    if (e.target === projectsModal) projectsModal.style.display = 'none';
+});
+
+async function loadProjectsList() {
+    projectsList.innerHTML = '<p style="grid-column:1/-1;text-align:center;color:var(--text-3);padding:20px;"><i class="fas fa-spinner fa-spin"></i> Cargando...</p>';
+    projectsEmpty.style.display = 'none';
+    try {
+        const snap = await db.collection('ps_projects').orderBy('updatedAt', 'desc').get();
+        projectsList.innerHTML = '';
+        if (snap.empty) {
+            projectsEmpty.style.display = 'block';
+            return;
+        }
+        snap.forEach(doc => {
+            const p = doc.data();
+            const card = document.createElement('div');
+            card.className = 'project-card';
+            const date = p.updatedAt ? p.updatedAt.toDate().toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+            card.innerHTML = `
+                <img class="project-card-thumb" src="${p.thumbnail || ''}" alt="" onerror="this.style.display='none'">
+                <div class="project-card-info">
+                    <div class="project-card-name">${p.name || 'Sin nombre'}</div>
+                    <div class="project-card-date">${date}</div>
+                </div>
+                <button class="project-card-delete" data-id="${doc.id}" title="Eliminar"><i class="fas fa-trash"></i></button>
+            `;
+            card.addEventListener('click', (e) => {
+                if (e.target.closest('.project-card-delete')) return;
+                openProject(doc.id, p);
+            });
+            card.querySelector('.project-card-delete').addEventListener('click', (e) => {
+                e.stopPropagation();
+                deleteProject(doc.id);
+            });
+            projectsList.appendChild(card);
+        });
+    } catch (err) {
+        projectsList.innerHTML = `<p style="grid-column:1/-1;text-align:center;color:var(--danger);padding:20px;">Error: ${err.message}</p>`;
+    }
+}
+
+async function openProject(id, p) {
+    projectsModal.style.display = 'none';
+    const indicator = showSaving('Cargando proyecto...');
+    try {
+        const base = new Image();
+        base.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+            base.onload = resolve;
+            base.onerror = reject;
+            base.src = p.canvasState || p.baseImage;
+        });
+
+        // Load base image separately for future saves
+        const origBase = new Image();
+        origBase.crossOrigin = 'anonymous';
+        await new Promise((resolve, reject) => {
+            origBase.onload = resolve;
+            origBase.onerror = reject;
+            origBase.src = p.baseImage;
+        });
+
+        baseImage = origBase;
+        canvas.width = p.width || base.width;
+        canvas.height = p.height || base.height;
+        canvas.style.display = 'block';
+        canvasPlaceholder.style.display = 'none';
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(base, 0, 0);
+
+        textLayers = JSON.parse(p.textLayers || '[]');
+        selectedTextIdx = -1;
+        undoStack = [];
+        redoStack = [];
+        currentProjectId = id;
+        resetZoom();
+        loadProjectFonts(textLayers);
+        redrawCanvas();
+        saveUndo();
+        hideSaving();
+    } catch (err) {
+        hideSaving();
+        alert('Error al cargar proyecto: ' + err.message);
+    }
+}
+
+async function deleteProject(id) {
+    if (!confirm('Eliminar este proyecto?')) return;
+    try {
+        await db.collection('ps_projects').doc(id).delete();
+        if (currentProjectId === id) currentProjectId = null;
+        loadProjectsList();
+    } catch (err) {
+        alert('Error al eliminar: ' + err.message);
+    }
+}
 
 function loadProjectFonts(layers) {
     const defaultFonts = ['Inter', 'Arial', 'Georgia', 'Verdana', 'Courier New', 'Rows of Sunflowers'];
     const needed = [...new Set(layers.map(t => t.fontFamily))].filter(f => !defaultFonts.includes(f));
     needed.forEach(fontName => {
-        // Add to select if not present
         const exists = [...fontFamilySelect.options].some(o => o.value === fontName);
         if (!exists) {
             const opt = document.createElement('option');

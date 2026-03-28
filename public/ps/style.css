@@ -175,6 +175,63 @@ body {
 .batch-progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .batch-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; width: 0%; transition: width 0.3s; }
 
+/* ========== PROJECTS MODAL ========== */
+.modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(4px);
+}
+.modal-box {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow-lg); width: 90%; max-width: 720px; max-height: 80vh;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+.modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 20px; border-bottom: 1px solid var(--border);
+}
+.modal-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+.modal-title i { color: var(--primary); }
+.projects-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 14px; padding: 20px; overflow-y: auto;
+}
+.project-card {
+    background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+    overflow: hidden; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+.project-card:hover { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary-light); }
+.project-card-thumb {
+    width: 100%; aspect-ratio: 4/3; object-fit: cover; display: block;
+    background: var(--border);
+}
+.project-card-info { padding: 8px 10px; }
+.project-card-name {
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+}
+.project-card-date { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+.project-card-delete {
+    position: absolute; top: 6px; right: 6px; width: 24px; height: 24px;
+    background: rgba(0,0,0,0.6); color: #fff; border: none; border-radius: 50%;
+    cursor: pointer; font-size: 10px; display: none; align-items: center; justify-content: center;
+}
+.project-card:hover .project-card-delete { display: flex; }
+.project-card-delete:hover { background: var(--danger); }
+.projects-empty {
+    text-align: center; color: var(--text-3); padding: 48px 20px;
+}
+.projects-empty i { font-size: 36px; margin-bottom: 12px; display: block; opacity: 0.3; }
+.projects-empty p { font-size: 13px; }
+
+.saving-indicator {
+    position: fixed; top: 16px; right: 16px; background: var(--primary);
+    color: #fff; padding: 8px 16px; border-radius: var(--r-sm); font-size: 12px;
+    font-weight: 600; z-index: 1100; display: flex; align-items: center; gap: 6px;
+    box-shadow: var(--shadow-lg);
+}
+
 /* ========== RESPONSIVE ========== */
 @media (max-width: 768px) {
     .toolbar { gap: 6px; padding: 8px 10px; }
