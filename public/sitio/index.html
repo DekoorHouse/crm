@@ -197,16 +197,20 @@
     </div>
 </section>
 
-<!-- ========== TESTIMONIOS INLINE ========== -->
+<!-- ========== TESTIMONIOS CAROUSEL ========== -->
 <section class="section" id="testimonios">
     <div class="container">
-        <div class="testimonials-inline fade-section" id="testimonialsGrid">
-            <div class="testimonial-loading">
-                <div class="spinner"></div>
-                <p>Cargando referencias...</p>
+        <h2 class="section-title fade-section">LO QUE DICEN NUESTROS CLIENTES</h2>
+        <div class="testimonials-carousel fade-section">
+            <button class="tc-arrow tc-prev" id="tcPrev" aria-label="Anterior"><i class="fas fa-chevron-left"></i></button>
+            <div class="tc-track-wrapper">
+                <div class="tc-track" id="testimonialsTrack">
+                    <!-- Filled by JS -->
+                </div>
             </div>
+            <button class="tc-arrow tc-next" id="tcNext" aria-label="Siguiente"><i class="fas fa-chevron-right"></i></button>
         </div>
-        <div class="testimonials-cta fade-section">
+        <div class="testimonials-cta fade-section" style="margin-top:2rem;">
             <a href="/referencias/" class="btn btn-outline">
                 <i class="fas fa-star"></i> Ver todas las referencias
             </a>

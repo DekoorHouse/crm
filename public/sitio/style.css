@@ -738,6 +738,126 @@ body {
     font-size: 0.8rem;
 }
 
+/* Testimonials Carousel */
+.testimonials-carousel {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.tc-track-wrapper {
+    flex: 1;
+    overflow: hidden;
+}
+
+.tc-track {
+    display: flex;
+    gap: 1.25rem;
+    transition: transform 0.4s ease;
+}
+
+.tc-card {
+    min-width: calc(50% - 0.625rem);
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 12px rgba(27, 77, 92, 0.06);
+}
+
+.tc-card-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.tc-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.tc-name {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: var(--text-dark);
+}
+
+.tc-meta {
+    font-size: 0.8rem;
+    color: var(--text-medium);
+}
+
+.tc-city {
+    color: var(--primary);
+    font-weight: 500;
+}
+
+.tc-stars {
+    margin-bottom: 8px;
+}
+
+.tc-stars i {
+    color: #f59e0b;
+    font-size: 0.85rem;
+}
+
+.tc-text {
+    font-size: 0.9rem;
+    line-height: 1.6;
+    color: var(--text-medium);
+    font-style: italic;
+}
+
+.tc-text::before { content: '\201C'; }
+.tc-text::after { content: '\201D'; }
+
+.tc-arrow {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--white);
+    color: var(--teal);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    transition: var(--transition);
+    flex-shrink: 0;
+    box-shadow: 0 2px 8px rgba(27, 77, 92, 0.08);
+}
+
+.tc-arrow:hover {
+    background: var(--teal);
+    color: var(--white);
+    border-color: var(--teal);
+}
+
+.tc-arrow:disabled {
+    opacity: 0.3;
+    cursor: default;
+    pointer-events: none;
+}
+
+@media (max-width: 768px) {
+    .tc-card {
+        min-width: 100%;
+    }
+    .tc-arrow {
+        width: 36px;
+        height: 36px;
+        font-size: 0.8rem;
+    }
+}
+
 .testimonials-cta {
     text-align: center;
     margin-top: 2rem;

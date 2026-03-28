@@ -132,26 +132,29 @@ function closeLightbox() {
 }
 
 // ============================================================
-// TESTIMONIALS (Firebase) - Inline style
+// TESTIMONIALS CAROUSEL (Firebase)
 // ============================================================
+let tcIndex = 0;
+let tcTotal = 0;
+
 function loadTestimonials() {
+    const track = document.getElementById('testimonialsTrack');
+    if (!track) return;
+
     db.collection('referencias')
         .where('aprobado', '==', true)
         .orderBy('fecha', 'desc')
-        .limit(4)
+        .limit(10)
         .get()
         .then(snapshot => {
-            const grid = document.getElementById('testimonialsGrid');
-
             if (snapshot.empty) {
-                grid.innerHTML = '<p style="text-align:center;color:var(--text-light);grid-column:1/-1;">Próximamente nuevas referencias.</p>';
+                track.innerHTML = '<p style="text-align:center;color:var(--text-medium);padding:2rem;">Próximamente nuevas referencias.</p>';
                 return;
             }
 
             let html = '';
             snapshot.forEach(doc => {
                 const ref = doc.data();
-
                 const initial = ref.nombre ? ref.nombre.replace('@', '')[0].toUpperCase() : '?';
                 const avatar = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#1B4D5C"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">${initial}</text></svg>`)}`;
 
@@ -160,33 +163,67 @@ function loadTestimonials() {
                     starsHtml += `<i class="fas fa-star${s < ref.rating ? '' : ' empty'}"></i>`;
                 }
 
-                // Truncate text to ~120 chars
                 let text = ref.texto || '';
-                if (text.length > 120) text = text.substring(0, 117) + '...';
+                if (text.length > 160) text = text.substring(0, 157) + '...';
 
                 const name = escapeHtml(ref.nombre);
-                const city = ref.ciudad ? ` — ${escapeHtml(ref.ciudad)}` : '';
+                const city = ref.ciudad ? escapeHtml(ref.ciudad) : '';
 
                 html += `
-                    <div class="testimonial-inline-card">
-                        <img src="${avatar}" alt="${name}" class="testimonial-avatar-lg" loading="lazy">
-                        <div class="testimonial-inline-body">
-                            <div class="testimonial-inline-stars">${starsHtml}</div>
-                            <p class="testimonial-inline-text">${escapeHtml(text)}</p>
-                            <div class="testimonial-inline-name">${name}${city}</div>
+                    <div class="tc-card">
+                        <div class="tc-card-header">
+                            <img src="${avatar}" alt="${name}" class="tc-avatar">
+                            <div>
+                                <div class="tc-name">${name}</div>
+                                <div class="tc-meta">${city ? '<span class="tc-city"><i class="fas fa-map-marker-alt" style="font-size:0.7rem;margin-right:2px;"></i> ' + city + '</span>' : ''}</div>
+                            </div>
                         </div>
-                    </div>
-                `;
+                        <div class="tc-stars">${starsHtml}</div>
+                        <div class="tc-text">${escapeHtml(text)}</div>
+                    </div>`;
             });
 
-            grid.innerHTML = html;
+            track.innerHTML = html;
+            tcTotal = snapshot.size;
+            tcIndex = 0;
+            updateTcArrows();
         })
         .catch(err => {
             console.error('Error cargando testimonios:', err);
-            document.getElementById('testimonialsGrid').innerHTML =
-                '<p style="text-align:center;color:var(--text-light);grid-column:1/-1;">No se pudieron cargar las referencias.</p>';
+            track.innerHTML = '<p style="text-align:center;color:var(--text-medium);padding:2rem;">No se pudieron cargar las referencias.</p>';
         });
 }
+
+function getCardsPerView() {
+    return window.innerWidth <= 768 ? 1 : 2;
+}
+
+function slideTc(dir) {
+    const perView = getCardsPerView();
+    const maxIndex = Math.max(0, tcTotal - perView);
+    tcIndex = Math.max(0, Math.min(tcIndex + dir, maxIndex));
+
+    const track = document.getElementById('testimonialsTrack');
+    const card = track.querySelector('.tc-card');
+    if (!card) return;
+
+    const gap = 20; // 1.25rem
+    const cardWidth = card.offsetWidth + gap;
+    track.style.transform = `translateX(-${tcIndex * cardWidth}px)`;
+    updateTcArrows();
+}
+
+function updateTcArrows() {
+    const perView = getCardsPerView();
+    const prevBtn = document.getElementById('tcPrev');
+    const nextBtn = document.getElementById('tcNext');
+    if (prevBtn) prevBtn.disabled = tcIndex <= 0;
+    if (nextBtn) nextBtn.disabled = tcIndex >= tcTotal - perView;
+}
+
+document.getElementById('tcPrev')?.addEventListener('click', () => slideTc(-1));
+document.getElementById('tcNext')?.addEventListener('click', () => slideTc(1));
+window.addEventListener('resize', () => { tcIndex = 0; slideTc(0); });
 
 // ============================================================
 // MAP (Leaflet)
