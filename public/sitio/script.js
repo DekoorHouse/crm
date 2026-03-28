@@ -142,19 +142,22 @@ function loadTestimonials() {
     if (!track) return;
 
     db.collection('referencias')
-        .where('aprobado', '==', true)
         .orderBy('fecha', 'desc')
-        .limit(10)
+        .limit(30)
         .get()
         .then(snapshot => {
-            if (snapshot.empty) {
+            const approved = snapshot.docs
+                .map(doc => doc.data())
+                .filter(ref => ref.aprobado === true)
+                .slice(0, 10);
+
+            if (!approved.length) {
                 track.innerHTML = '<p style="text-align:center;color:var(--text-medium);padding:2rem;">Próximamente nuevas referencias.</p>';
                 return;
             }
 
             let html = '';
-            snapshot.forEach(doc => {
-                const ref = doc.data();
+            approved.forEach(ref => {
                 const initial = ref.nombre ? ref.nombre.replace('@', '')[0].toUpperCase() : '?';
                 const avatar = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="50" fill="#1B4D5C"/><text x="50" y="58" text-anchor="middle" font-size="40" fill="white" font-family="sans-serif">${initial}</text></svg>`)}`;
 
@@ -184,7 +187,7 @@ function loadTestimonials() {
             });
 
             track.innerHTML = html;
-            tcTotal = snapshot.size;
+            tcTotal = approved.length;
             tcIndex = 0;
             updateTcArrows();
         })
