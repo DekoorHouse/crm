@@ -96,6 +96,34 @@ router.post('/checador/avatar', uploadRef.single('foto'), async (req, res) => {
     }
 });
 
+// --- Enviar reporte semanal individual por WhatsApp ---
+router.post('/checador/whatsapp-report', async (req, res) => {
+    try {
+        const { phone, name, report } = req.body;
+        if (!phone || !name || !report) return res.status(400).json({ error: 'Faltan datos' });
+        const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+        if (!WHATSAPP_TOKEN || !PHONE_NUMBER_ID) return res.json({ ok: false, error: 'WhatsApp no configurado' });
+
+        // Formatear numero (agregar 521 si es local)
+        let to = phone.replace(/\D/g, '');
+        if (to.length === 10) to = '52' + to;
+
+        await axios.post(`https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`, {
+            messaging_product: 'whatsapp',
+            to,
+            type: 'text',
+            text: { body: report }
+        }, {
+            headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' }
+        });
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error enviando reporte checador:', error.response?.data || error.message);
+        res.json({ ok: false, error: error.message });
+    }
+});
+
 // --- Mapa de entregas (Google Sheets, agrupado por estado) ---
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };

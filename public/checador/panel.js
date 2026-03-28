@@ -787,6 +787,81 @@ document.getElementById('send-whatsapp-btn').addEventListener('click', async () 
 });
 
 // =====================
+// WHATSAPP REPORTE SEMANAL (ASISTENCIA)
+// =====================
+document.getElementById('send-week-whatsapp').addEventListener('click', async () => {
+    const btn = document.getElementById('send-week-whatsapp');
+    const weekDates = getWeekDates(weekOffset);
+    const weekDateStrs = weekDates.map(dateObjToStr);
+    const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
+    const weekLabel = formatWeekLabel(weekOffset);
+    const data = getGroupedData();
+
+    // Construir reporte por persona
+    const empMap = {};
+    employeesCache.forEach(e => {
+        if (e.phone) empMap[e.name.toLowerCase()] = { name: e.name, phone: e.phone, days: [] };
+    });
+
+    if (Object.keys(empMap).length === 0) {
+        showNotification('Nadie tiene numero de WhatsApp', 'danger');
+        return;
+    }
+
+    // Calcular horas por dia para cada persona
+    Object.values(empMap).forEach(emp => {
+        let totalMins = 0;
+        weekDates.forEach((dateObj, i) => {
+            const key = `${emp.name.toLowerCase()}-${weekDateStrs[i]}`;
+            const idx = groupedDataMap[key];
+            if (idx !== undefined) {
+                const mins = getMinsFromGroup(data[idx]);
+                totalMins += mins;
+                if (mins > 0) emp.days.push({ day: dayNames[i], hours: `${Math.floor(mins/60)}h ${mins%60}m` });
+            }
+        });
+        emp.totalMins = totalMins;
+    });
+
+    const withData = Object.values(empMap).filter(e => e.totalMins > 0);
+    if (withData.length === 0) {
+        showNotification('Sin horas registradas esta semana', 'danger');
+        return;
+    }
+
+    if (!confirm(`¿Enviar reporte semanal a ${withData.length} persona(s) por WhatsApp?`)) return;
+
+    btn.disabled = true;
+    btn.textContent = 'Enviando...';
+
+    let sent = 0, errors = 0;
+    for (const emp of withData) {
+        const totalH = Math.floor(emp.totalMins / 60);
+        const totalM = emp.totalMins % 60;
+        const pay = Math.round((emp.totalMins / 60) * 70);
+        const lines = emp.days.map(d => `  ${d.day}: ${d.hours}`).join('\n');
+        const msg = `📋 *Reporte Semanal*\n${weekLabel}\n\n👤 *${emp.name}*\n\n${lines}\n\n⏱ *Total:* ${totalH}h ${totalM}m\n💰 *Pago:* $${pay.toLocaleString()}`;
+
+        try {
+            const resp = await fetch('/api/checador/whatsapp-report', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ phone: emp.phone, name: emp.name, report: msg })
+            });
+            const result = await resp.json();
+            if (result.ok) sent++;
+            else errors++;
+        } catch (e) {
+            errors++;
+        }
+    }
+
+    showNotification(`Enviado a ${sent} persona(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
+    btn.disabled = false;
+    btn.innerHTML = '📲 Enviar reporte semanal';
+});
+
+// =====================
 // NOTIFICATION
 // =====================
 function showNotification(m, t = "success") {
