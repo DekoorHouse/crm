@@ -394,7 +394,7 @@ function loadMapa() {
         attributionControl: false
     }).setView([23.6345, -102.5528], 5);
 
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         maxZoom: 18
     }).addTo(map);
 
@@ -408,12 +408,12 @@ function loadMapa() {
                 '<div class="map-stat-pill"><strong>' + data.totalEstados + '</strong> estados</div>';
 
             data.estados.forEach(function(item) {
-                var size = Math.min(Math.max(Math.sqrt(item.count) * 8 + 20, 28), 60);
                 var icon = L.divIcon({
                     className: '',
-                    html: '<div class="delivery-marker" style="width:' + size + 'px;height:' + size + 'px;">' + item.count + '</div>',
-                    iconSize: [size, size],
-                    iconAnchor: [size / 2, size / 2]
+                    html: '<div class="delivery-pin"><i class="fas fa-map-marker-alt"></i></div>',
+                    iconSize: [24, 32],
+                    iconAnchor: [12, 32],
+                    popupAnchor: [0, -32]
                 });
 
                 L.marker([item.lat, item.lng], { icon: icon })

@@ -1,13 +1,13 @@
 :root {
-    --primary-color: #FF8E41;
-    --primary-hover: #e6752d;
-    --background-dark: #12283A;
-    --surface-dark: #1D3D58;
-    --text-white: #FFFFFF;
-    --text-gray: #A3B3C1;
-    --glass-background: rgba(255, 255, 255, 0.05);
-    --glass-border: rgba(255, 255, 255, 0.1);
-    --accent-glow: rgba(255, 142, 65, 0.15);
+    --primary-color: #D4722C;
+    --primary-hover: #bf5f1e;
+    --background-dark: #FAF0E6;
+    --surface-dark: #FFFFFF;
+    --text-white: #1B3A4B;
+    --text-gray: #4a6274;
+    --glass-background: rgba(27, 77, 92, 0.03);
+    --glass-border: rgba(27, 77, 92, 0.1);
+    --accent-glow: rgba(212, 114, 44, 0.1);
     --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -28,15 +28,7 @@ body {
 
 /* Background Animation */
 .bg-gradient {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(circle at 20% 30%, rgba(255, 142, 65, 0.05) 0%, transparent 50%),
-                radial-gradient(circle at 80% 70%, rgba(29, 61, 88, 0.2) 0%, transparent 50%);
-    z-index: -1;
-    pointer-events: none;
+    display: none;
 }
 
 .container {
@@ -68,7 +60,7 @@ header {
     transition: var(--transition);
     padding: 0;
 }
-.hamburger-btn:hover { background: rgba(255,255,255,0.1); transform: none; }
+.hamburger-btn:hover { background: rgba(27,77,92,0.05); transform: none; }
 
 .nav-menu-overlay {
     position: fixed; inset: 0;
@@ -103,7 +95,7 @@ header {
     font-weight: 600; font-size: 0.95rem;
     transition: var(--transition);
 }
-.nav-link:hover { background: var(--glass-background); color: var(--text-white); }
+.nav-link:hover { background: rgba(27,77,92,0.05); color: var(--text-white); }
 .nav-link.active { background: var(--accent-glow); color: var(--primary-color); }
 .nav-link i { width: 20px; text-align: center; }
 
@@ -136,10 +128,7 @@ header {
 h1 {
     font-size: 3.5rem;
     margin-bottom: 1rem;
-    background: linear-gradient(135deg, #FFF 0%, var(--text-gray) 100%);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #1B4D5C;
     font-weight: 700;
 }
 
@@ -182,15 +171,16 @@ input {
     padding: 1rem 1.5rem;
     font-size: 1.1rem;
     outline: none;
+    font-family: inherit;
 }
 
 input::placeholder {
-    color: var(--text-gray);
+    color: #7a9aab;
 }
 
 button {
     background: var(--primary-color);
-    color: #12283A;
+    color: #FFFFFF;
     border: none;
     padding: 0 2.5rem;
     border-radius: 12px;
@@ -220,12 +210,11 @@ button:hover {
 }
 
 .tracking-card {
-    background: var(--glass-background);
+    background: var(--surface-dark);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
     padding: 2.5rem;
-    backdrop-filter: blur(20px);
-    box-shadow: var(--glass-shadow);
+    box-shadow: 0 4px 24px rgba(27, 77, 92, 0.08);
 }
 
 .card-header {
@@ -285,7 +274,7 @@ button:hover {
     top: 0;
     width: 20px;
     height: 20px;
-    background: var(--surface-dark);
+    background: var(--background-dark);
     border: 2px solid var(--glass-border);
     border-radius: 50%;
     transition: var(--transition);
@@ -294,7 +283,7 @@ button:hover {
 .timeline-item.active::before {
     background: var(--primary-color);
     border-color: var(--primary-color);
-    box-shadow: 0 0 15px var(--primary-color);
+    box-shadow: 0 0 12px rgba(212, 114, 44, 0.3);
 }
 
 .time {
@@ -327,7 +316,7 @@ button:hover {
     left: 0;
     width: 100%;
     height: 100%;
-    background: rgba(0, 0, 0, 0.85);
+    background: rgba(27, 58, 75, 0.7);
     backdrop-filter: blur(15px);
     display: none;
     justify-content: center;
@@ -353,7 +342,7 @@ button:hover {
     position: relative;
     transform: translateY(40px);
     transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
 }
 
 .modal-overlay.active .modal-content {
@@ -364,7 +353,7 @@ button:hover {
     position: absolute;
     top: 1rem;
     right: 1rem;
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(27, 77, 92, 0.05);
     border: none;
     color: var(--text-gray);
     font-size: 1.2rem;
@@ -453,7 +442,7 @@ button:hover {
 }
 
 #modal-reassurance {
-    color: var(--text-white);
+    color: var(--text-gray);
     font-weight: 500;
 }
 
