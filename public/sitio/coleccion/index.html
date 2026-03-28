@@ -289,47 +289,20 @@ document.getElementById('collectionBadge').textContent = `COLECCIÓN ${col.title
 document.getElementById('collectionTitle').textContent = col.title;
 document.getElementById('collectionDesc').textContent = col.desc;
 
-// Load products from local folder via API
-async function loadProducts() {
+// Fotos estáticas por colección
+const PHOTOS = {
+    ninos: ["05362bc1-cbd9-4544-9942-a8e4dca17e0f.jpg","064355fb-6395-4117-b23b-37437d4df249.jpg","476210b4-377e-4bfd-a2ca-5482a7d18e66.jpg","844daad1-9e38-4c93-88d7-1d4ec7cb02e7.png","b6fec1a0-b953-4766-80a4-5aefa79e9cc0.png","ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.jpg"],
+    pareja: ["34b30e1c-d3e8-40d2-8630-d018fa69ac3b.jpg","c10bc838-f275-4556-bf5f-9dba0748ebaa.jpg"],
+    empresas: ["e19f9060-fabc-467d-a1c7-f3e8df6f0a33.jpg","unnamed (5).jpg"],
+    familia: ["460b38b0-4d38-4127-b508-bbb03e55660b.jpg","559ea191-b2b9-41ce-8af3-cfde8c193065.jpg","75626782-dc3b-4e3d-ba26-9bad0ad5e49d.jpg"],
+    memorial: ["9058f734-a4d3-4806-bef6-40e646a1617c.jpg"]
+};
+
+function loadProducts() {
     const grid = document.getElementById('productsGrid');
+    const photos = PHOTOS[colId] || [];
 
-    try {
-        const res = await fetch(`/api/coleccion/photos?folder=${encodeURIComponent(col.folder)}`);
-        const data = await res.json();
-
-        if (!data.photos || !data.photos.length) {
-            grid.innerHTML = `
-                <div class="empty-products">
-                    <i class="fas fa-camera"></i>
-                    <p>Próximamente nuevos productos en esta colección</p>
-                    <a href="https://wa.me/${WA}?text=Hola%20Dekoor%2C%20me%20interesa%20la%20colección%20${encodeURIComponent(col.title)}" target="_blank" rel="noopener" class="btn btn-primary">
-                        <i class="fab fa-whatsapp"></i> Preguntar por esta colección
-                    </a>
-                </div>`;
-            return;
-        }
-
-        grid.innerHTML = data.photos.map((photo, i) => {
-            const waMsg = encodeURIComponent(`Hola Dekoor, me interesa este producto de la colección ${col.title}: ${photo.name}`);
-            return `
-                <div class="product-card">
-                    <div class="product-card-img">
-                        <img src="${photo.url}" alt="${col.productName} - ${col.title}" loading="lazy">
-                    </div>
-                    <div class="product-card-body">
-                        <div class="product-card-name">${col.productName}</div>
-                        <div class="product-card-desc">${col.productDesc}</div>
-                        <div class="product-card-footer">
-                            <div class="product-card-price">${col.price} <small>MXN</small></div>
-                            <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn">
-                                <i class="fab fa-whatsapp"></i> Lo quiero
-                            </a>
-                        </div>
-                    </div>
-                </div>`;
-        }).join('');
-
-    } catch (e) {
+    if (!photos.length) {
         grid.innerHTML = `
             <div class="empty-products">
                 <i class="fas fa-camera"></i>
@@ -338,7 +311,29 @@ async function loadProducts() {
                     <i class="fab fa-whatsapp"></i> Preguntar por esta colección
                 </a>
             </div>`;
+        return;
     }
+
+    grid.innerHTML = photos.map(filename => {
+        const url = `/sitio/img/col/${colId}/${encodeURIComponent(filename)}`;
+        const waMsg = encodeURIComponent(`Hola Dekoor, me interesa este producto de la colección ${col.title}`);
+        return `
+            <div class="product-card">
+                <div class="product-card-img">
+                    <img src="${url}" alt="${col.productName} - ${col.title}" loading="lazy">
+                </div>
+                <div class="product-card-body">
+                    <div class="product-card-name">${col.productName}</div>
+                    <div class="product-card-desc">${col.productDesc}</div>
+                    <div class="product-card-footer">
+                        <div class="product-card-price">${col.price} <small>MXN</small></div>
+                        <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn">
+                            <i class="fab fa-whatsapp"></i> Lo quiero
+                        </a>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
 }
 
 loadProducts();

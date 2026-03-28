@@ -36,36 +36,6 @@ app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 
-// --- API Colecciones (sirve fotos de carpeta local) ---
-const COLECCIONES_BASE = process.env.COLECCIONES_FOLDER || 'C:/Users/chris/Pictures/IA Dekoor/Colecciones';
-app.get('/api/coleccion/photos', (req, res) => {
-    const folder = req.query.folder;
-    if (!folder || /[\/\\\.]{2}/.test(folder)) return res.status(400).json({ error: 'Carpeta inválida' });
-
-    const dirPath = path.join(COLECCIONES_BASE, folder);
-    const fs = require('fs');
-    if (!fs.existsSync(dirPath)) return res.json({ photos: [] });
-
-    const files = fs.readdirSync(dirPath)
-        .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f))
-        .sort();
-
-    const photos = files.map(f => ({
-        name: f.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' '),
-        filename: f,
-        url: `/api/coleccion/file/${encodeURIComponent(folder)}/${encodeURIComponent(f)}`
-    }));
-
-    res.json({ photos, count: photos.length });
-});
-
-app.get('/api/coleccion/file/:folder/:filename', (req, res) => {
-    const fs = require('fs');
-    const filePath = path.join(COLECCIONES_BASE, req.params.folder, req.params.filename);
-    if (!fs.existsSync(filePath)) return res.status(404).send('No encontrada');
-    res.sendFile(filePath);
-});
-
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
