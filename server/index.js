@@ -2,10 +2,12 @@ const { app } = require('./config');
 const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
+const waGroupRouter = require('./autopost/whatsappGroupRoutes');
 const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
+const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -29,6 +31,7 @@ app.get('/env-config.js', (req, res) => {
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
 app.use('/api', apiRouter);
 app.use('/api/autopost', autoPostRouter);
+app.use('/api/wa-group', waGroupRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
@@ -52,6 +55,10 @@ app.get('/datos', (req, res) => {
 
 app.get('/autopost', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'autopost', 'index.html'));
+});
+
+app.get('/wa-group', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'wa-group', 'index.html'));
 });
 
 app.get('/panel', (req, res) => {
@@ -104,6 +111,8 @@ const server = app.listen(PORT, () => {
   console.log(`Servidor escuchando en el puerto ${PORT}`);
   // Iniciar scheduler de auto-publicacion Google Photos -> Facebook
   startScheduler();
+  // Iniciar scheduler de WhatsApp Group
+  startWhatsAppScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });
