@@ -181,13 +181,13 @@ header {
 }
 
 .ref-stat {
-    background: var(--glass-background);
+    background: var(--surface-dark);
     border: 1px solid var(--glass-border);
     border-radius: 16px;
     padding: 16px 24px;
     text-align: center;
     min-width: 120px;
-    backdrop-filter: blur(20px);
+    box-shadow: 0 2px 12px rgba(27, 77, 92, 0.08);
 }
 
 .ref-stat .stat-num {
@@ -549,18 +549,18 @@ textarea {
 
 /* --- Reference Card --- */
 .ref-card {
-    background: var(--glass-background);
+    background: var(--surface-dark);
     border: 1px solid var(--glass-border);
     border-radius: 24px;
     padding: 24px;
-    backdrop-filter: blur(20px);
+    box-shadow: 0 2px 12px rgba(27, 77, 92, 0.06);
     transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
 }
 
 .ref-card:hover {
     transform: translateY(-4px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
-    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 30px rgba(27, 77, 92, 0.12);
+    border-color: rgba(212, 114, 44, 0.2);
 }
 
 .ref-card-header {
