@@ -65,7 +65,7 @@
             <div id="brush-options" class="toolbar-group">
                 <label class="toolbar-label">Tamano</label>
                 <input type="range" id="brush-size" min="0.5" max="200" value="30" step="0.5" class="toolbar-range">
-                <span id="brush-size-val" class="toolbar-val">30</span>
+                <input type="number" id="brush-size-val" class="toolbar-val-input" value="30" min="0.5" max="200" step="0.5">
                 <label class="toolbar-label" style="margin-left:12px;">Color</label>
                 <input type="color" id="brush-color" value="#0a0a2e" class="toolbar-color">
                 <button id="pick-color" class="btn btn-tool" title="Tomar color de la imagen"><i class="fas fa-eye-dropper"></i></button>
@@ -92,16 +92,16 @@
                 </div>
                 <label class="toolbar-label" style="margin-left:12px;">Tamano</label>
                 <input type="range" id="font-size" min="1" max="500" value="48" step="0.5" class="toolbar-range">
-                <span id="font-size-val" class="toolbar-val">48</span>
+                <input type="number" id="font-size-val" class="toolbar-val-input" value="48" min="1" max="500" step="0.5">
                 <label class="toolbar-label" style="margin-left:12px;">Color</label>
                 <input type="color" id="font-color" value="#ffffff" class="toolbar-color">
                 <label class="toolbar-label" style="margin-left:12px;">Glow</label>
                 <input type="range" id="glow-strength" min="0" max="50" value="8" step="0.5" class="toolbar-range">
-                <span id="glow-val" class="toolbar-val">8</span>
+                <input type="number" id="glow-val" class="toolbar-val-input" value="8" min="0" max="50" step="0.5">
                 <input type="color" id="glow-color" value="#4488ff" class="toolbar-color">
                 <label class="toolbar-label" style="margin-left:12px;">Contorno</label>
-                <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.5" class="toolbar-range">
-                <span id="stroke-width-val" class="toolbar-val">0</span>
+                <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.01" class="toolbar-range">
+                <input type="number" id="stroke-width-val" class="toolbar-val-input" value="0" min="0" max="20" step="0.01">
                 <input type="color" id="stroke-color" value="#0066ff" class="toolbar-color">
                 <select id="stroke-dir" class="toolbar-select" title="Dirección del contorno">
                     <option value="center">Uniforme</option>
@@ -116,7 +116,7 @@
                 </select>
                 <label class="toolbar-label" style="margin-left:12px;">Suavizado</label>
                 <input type="range" id="text-quality" min="1" max="4" value="1" step="0.5" class="toolbar-range">
-                <span id="text-quality-val" class="toolbar-val">1x</span>
+                <input type="number" id="text-quality-val" class="toolbar-val-input" value="1" min="1" max="4" step="0.5">
             </div>
             <div style="margin-left:auto; display:flex; gap:8px;">
                 <button id="undo-btn" class="btn btn-tool" title="Deshacer"><i class="fas fa-undo"></i></button>

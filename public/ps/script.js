@@ -160,6 +160,7 @@ imageInput.addEventListener('change', (e) => {
 
 // ===================== PASTE IMAGE (CTRL+V) =====================
 document.addEventListener('paste', (e) => {
+    if (document.activeElement && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA')) return;
     const items = e.clipboardData && e.clipboardData.items;
     if (!items) return;
     for (const item of items) {
@@ -208,11 +209,20 @@ toolBrush.addEventListener('click', () => setTool('brush'));
 toolText.addEventListener('click', () => setTool('text'));
 toolMove.addEventListener('click', () => setTool('move'));
 
+// ===================== RANGE ↔ NUMBER SYNC =====================
+function linkRangeAndNumber(range, num, onChange) {
+    range.addEventListener('input', () => {
+        num.value = range.value;
+        onChange(parseFloat(range.value));
+    });
+    num.addEventListener('input', () => {
+        range.value = num.value;
+        onChange(parseFloat(num.value));
+    });
+}
+
 // ===================== BRUSH CONTROLS =====================
-brushSizeInput.addEventListener('input', () => {
-    brushSize = parseFloat(brushSizeInput.value);
-    brushSizeVal.textContent = brushSize;
-});
+linkRangeAndNumber(brushSizeInput, brushSizeVal, (v) => { brushSize = v; });
 
 brushColorInput.addEventListener('input', () => {
     brushColor = brushColorInput.value;
@@ -226,12 +236,8 @@ pickColorBtn.addEventListener('click', () => {
 });
 
 // ===================== FONT CONTROLS =====================
-fontSizeInput.addEventListener('input', () => {
-    fontSizeVal.textContent = fontSizeInput.value;
-    if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].fontSize = parseFloat(fontSizeInput.value);
-        redrawCanvas();
-    }
+linkRangeAndNumber(fontSizeInput, fontSizeVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].fontSize = v; redrawCanvas(); }
 });
 
 fontColorInput.addEventListener('input', () => {
@@ -248,12 +254,8 @@ fontFamilySelect.addEventListener('change', () => {
     }
 });
 
-glowStrengthInput.addEventListener('input', () => {
-    glowVal.textContent = glowStrengthInput.value;
-    if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].glowStrength = parseFloat(glowStrengthInput.value);
-        redrawCanvas();
-    }
+linkRangeAndNumber(glowStrengthInput, glowVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].glowStrength = v; redrawCanvas(); }
 });
 
 glowColorInput.addEventListener('input', () => {
@@ -263,12 +265,8 @@ glowColorInput.addEventListener('input', () => {
     }
 });
 
-strokeWidthInput.addEventListener('input', () => {
-    strokeWidthVal.textContent = strokeWidthInput.value;
-    if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].strokeWidth = parseFloat(strokeWidthInput.value);
-        redrawCanvas();
-    }
+linkRangeAndNumber(strokeWidthInput, strokeWidthVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].strokeWidth = v; redrawCanvas(); }
 });
 
 strokeColorInput.addEventListener('input', () => {
@@ -298,12 +296,8 @@ alignLeftBtn.addEventListener('click', () => setTextAlign('left'));
 alignCenterBtn.addEventListener('click', () => setTextAlign('center'));
 alignRightBtn.addEventListener('click', () => setTextAlign('right'));
 
-textQualityInput.addEventListener('input', () => {
-    textQualityVal.textContent = textQualityInput.value + 'x';
-    if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].quality = parseFloat(textQualityInput.value);
-        redrawCanvas();
-    }
+linkRangeAndNumber(textQualityInput, textQualityVal, (v) => {
+    if (selectedTextIdx >= 0) { textLayers[selectedTextIdx].quality = v; redrawCanvas(); }
 });
 
 textContent.addEventListener('input', () => {
@@ -473,13 +467,13 @@ function onPointerDown(e) {
                 textContent.value = t.text;
                 fontFamilySelect.value = t.fontFamily;
                 fontSizeInput.value = t.fontSize;
-                fontSizeVal.textContent = t.fontSize;
+                fontSizeVal.value = t.fontSize;
                 fontColorInput.value = t.color;
                 glowStrengthInput.value = t.glowStrength;
-                glowVal.textContent = t.glowStrength;
+                glowVal.value = t.glowStrength;
                 glowColorInput.value = t.glowColor;
                 strokeWidthInput.value = t.strokeWidth || 0;
-                strokeWidthVal.textContent = t.strokeWidth || 0;
+                strokeWidthVal.value = t.strokeWidth || 0;
                 strokeColorInput.value = t.strokeColor || '#0066ff';
                 strokeDirSelect.value = t.strokeDir || 'center';
                 const ta = t.textAlign || 'left';
@@ -487,7 +481,7 @@ function onPointerDown(e) {
                 alignCenterBtn.classList.toggle('active', ta === 'center');
                 alignRightBtn.classList.toggle('active', ta === 'right');
                 textQualityInput.value = t.quality || 1;
-                textQualityVal.textContent = (t.quality || 1) + 'x';
+                textQualityVal.value = t.quality || 1;
                 textInputPanel.style.display = 'block';
                 redrawCanvas();
                 return;
