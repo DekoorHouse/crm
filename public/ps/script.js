@@ -69,6 +69,9 @@ const strokeWidthInput = document.getElementById('stroke-width');
 const strokeWidthVal = document.getElementById('stroke-width-val');
 const strokeColorInput = document.getElementById('stroke-color');
 const strokeDirSelect = document.getElementById('stroke-dir');
+const alignLeftBtn = document.getElementById('align-left');
+const alignCenterBtn = document.getElementById('align-center');
+const alignRightBtn = document.getElementById('align-right');
 
 const textInputPanel = document.getElementById('text-input-panel');
 const textContent = document.getElementById('text-content');
@@ -282,6 +285,19 @@ strokeDirSelect.addEventListener('change', () => {
     }
 });
 
+function setTextAlign(align) {
+    alignLeftBtn.classList.toggle('active', align === 'left');
+    alignCenterBtn.classList.toggle('active', align === 'center');
+    alignRightBtn.classList.toggle('active', align === 'right');
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].textAlign = align;
+        redrawCanvas();
+    }
+}
+alignLeftBtn.addEventListener('click', () => setTextAlign('left'));
+alignCenterBtn.addEventListener('click', () => setTextAlign('center'));
+alignRightBtn.addEventListener('click', () => setTextAlign('right'));
+
 textQualityInput.addEventListener('input', () => {
     textQualityVal.textContent = textQualityInput.value + 'x';
     if (selectedTextIdx >= 0) {
@@ -418,6 +434,7 @@ function onPointerDown(e) {
         const text = textContent.value.trim();
         if (!text) { textContent.focus(); return; }
         saveUndo();
+        const activeAlign = alignCenterBtn.classList.contains('active') ? 'center' : alignRightBtn.classList.contains('active') ? 'right' : 'left';
         textLayers.push({
             text,
             x: pos.x,
@@ -431,6 +448,7 @@ function onPointerDown(e) {
             strokeColor: strokeColorInput.value,
             strokeDir: strokeDirSelect.value,
             quality: parseInt(textQualityInput.value),
+            textAlign: activeAlign,
         });
         selectedTextIdx = textLayers.length - 1;
         redrawCanvas();
@@ -444,7 +462,9 @@ function onPointerDown(e) {
             const metrics = ctx.measureText(t.text);
             const w = metrics.width;
             const h = t.fontSize;
-            if (pos.x >= t.x && pos.x <= t.x + w && pos.y >= t.y - h && pos.y <= t.y) {
+            const align = t.textAlign || 'left';
+            const lx = align === 'center' ? t.x - w / 2 : align === 'right' ? t.x - w : t.x;
+            if (pos.x >= lx && pos.x <= lx + w && pos.y >= t.y - h && pos.y <= t.y) {
                 selectedTextIdx = i;
                 dragOffset = { x: pos.x - t.x, y: pos.y - t.y };
                 isDrawing = true;
@@ -462,6 +482,10 @@ function onPointerDown(e) {
                 strokeWidthVal.textContent = t.strokeWidth || 0;
                 strokeColorInput.value = t.strokeColor || '#0066ff';
                 strokeDirSelect.value = t.strokeDir || 'center';
+                const ta = t.textAlign || 'left';
+                alignLeftBtn.classList.toggle('active', ta === 'left');
+                alignCenterBtn.classList.toggle('active', ta === 'center');
+                alignRightBtn.classList.toggle('active', ta === 'right');
                 textQualityInput.value = t.quality || 1;
                 textQualityVal.textContent = (t.quality || 1) + 'x';
                 textInputPanel.style.display = 'block';
@@ -562,6 +586,7 @@ function drawStroke(c, t, sw, tx, ty) {
 function drawTextLayer(t, isSelected) {
     ctx.save();
     const q = t.quality || 1;
+    const align = t.textAlign || 'left';
     ctx.font = `${t.fontSize}px "${t.fontFamily}"`;
     ctx.textBaseline = 'alphabetic';
     const metrics = ctx.measureText(t.text);
@@ -570,6 +595,8 @@ function drawTextLayer(t, isSelected) {
     const sw = t.strokeWidth || 0;
     const glowPad = t.glowStrength > 0 ? t.glowStrength * 3 : 0;
     const pad = Math.max(glowPad, sw + 6);
+    // Alignment offset: shift destination x so anchor point stays at t.x
+    const alignOff = align === 'center' ? -textW / 2 : align === 'right' ? -textW : 0;
 
     if (q > 1) {
         const offW = Math.ceil(textW + pad * 2);
@@ -596,8 +623,9 @@ function drawTextLayer(t, isSelected) {
 
         ctx.imageSmoothingEnabled = true;
         ctx.imageSmoothingQuality = 'high';
-        ctx.drawImage(tmp, t.x - pad, t.y - textH - pad, offW, offH);
+        ctx.drawImage(tmp, t.x + alignOff - pad, t.y - textH - pad, offW, offH);
     } else {
+        ctx.textAlign = align;
         if (t.glowStrength > 0) {
             ctx.shadowColor = t.glowColor;
             ctx.shadowBlur = t.glowStrength;
@@ -612,11 +640,13 @@ function drawTextLayer(t, isSelected) {
     }
 
     // Selection indicator
+    const selX = t.x + alignOff;
     if (isSelected) {
+        ctx.textAlign = 'left';
         ctx.strokeStyle = '#7aa2f7';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
-        ctx.strokeRect(t.x - 4, t.y - textH - 2, textW + 8, textH + 8);
+        ctx.strokeRect(selX - 4, t.y - textH - 2, textW + 8, textH + 8);
         ctx.setLineDash([]);
     }
 
