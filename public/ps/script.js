@@ -65,6 +65,9 @@ const glowVal = document.getElementById('glow-val');
 const glowColorInput = document.getElementById('glow-color');
 const textQualityInput = document.getElementById('text-quality');
 const textQualityVal = document.getElementById('text-quality-val');
+const strokeWidthInput = document.getElementById('stroke-width');
+const strokeWidthVal = document.getElementById('stroke-width-val');
+const strokeColorInput = document.getElementById('stroke-color');
 
 const textInputPanel = document.getElementById('text-input-panel');
 const textContent = document.getElementById('text-content');
@@ -256,6 +259,21 @@ glowColorInput.addEventListener('input', () => {
     }
 });
 
+strokeWidthInput.addEventListener('input', () => {
+    strokeWidthVal.textContent = strokeWidthInput.value;
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].strokeWidth = parseInt(strokeWidthInput.value);
+        redrawCanvas();
+    }
+});
+
+strokeColorInput.addEventListener('input', () => {
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].strokeColor = strokeColorInput.value;
+        redrawCanvas();
+    }
+});
+
 textQualityInput.addEventListener('input', () => {
     textQualityVal.textContent = textQualityInput.value + 'x';
     if (selectedTextIdx >= 0) {
@@ -401,6 +419,8 @@ function onPointerDown(e) {
             color: fontColorInput.value,
             glowStrength: parseInt(glowStrengthInput.value),
             glowColor: glowColorInput.value,
+            strokeWidth: parseInt(strokeWidthInput.value),
+            strokeColor: strokeColorInput.value,
             quality: parseInt(textQualityInput.value),
         });
         selectedTextIdx = textLayers.length - 1;
@@ -429,6 +449,9 @@ function onPointerDown(e) {
                 glowStrengthInput.value = t.glowStrength;
                 glowVal.textContent = t.glowStrength;
                 glowColorInput.value = t.glowColor;
+                strokeWidthInput.value = t.strokeWidth || 0;
+                strokeWidthVal.textContent = t.strokeWidth || 0;
+                strokeColorInput.value = t.strokeColor || '#0066ff';
                 textQualityInput.value = t.quality || 1;
                 textQualityVal.textContent = (t.quality || 1) + 'x';
                 textInputPanel.style.display = 'block';
@@ -507,8 +530,9 @@ function drawTextLayer(t, isSelected) {
     const metrics = ctx.measureText(t.text);
     const textW = metrics.width;
     const textH = t.fontSize;
+    const sw = t.strokeWidth || 0;
     const glowPad = t.glowStrength > 0 ? t.glowStrength * 3 : 0;
-    const pad = Math.max(glowPad, 6);
+    const pad = Math.max(glowPad, sw + 6);
 
     if (q > 1) {
         // Supersampled rendering: draw at q× resolution, then scale down
@@ -530,6 +554,12 @@ function drawTextLayer(t, isSelected) {
         }
         tc.shadowColor = 'transparent';
         tc.shadowBlur = 0;
+        if (sw > 0) {
+            tc.strokeStyle = t.strokeColor || '#0066ff';
+            tc.lineWidth = sw;
+            tc.lineJoin = 'round';
+            tc.strokeText(t.text, pad, textH + pad);
+        }
         tc.fillStyle = t.color;
         tc.fillText(t.text, pad, textH + pad);
 
@@ -546,6 +576,12 @@ function drawTextLayer(t, isSelected) {
         }
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
+        if (sw > 0) {
+            ctx.strokeStyle = t.strokeColor || '#0066ff';
+            ctx.lineWidth = sw;
+            ctx.lineJoin = 'round';
+            ctx.strokeText(t.text, t.x, t.y);
+        }
         ctx.fillStyle = t.color;
         ctx.fillText(t.text, t.x, t.y);
     }
