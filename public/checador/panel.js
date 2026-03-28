@@ -789,53 +789,104 @@ document.getElementById('send-whatsapp-btn').addEventListener('click', async () 
 // =====================
 // WHATSAPP REPORTE SEMANAL (ASISTENCIA)
 // =====================
-document.getElementById('send-week-whatsapp').addEventListener('click', async () => {
-    const btn = document.getElementById('send-week-whatsapp');
+let waReportData = [];
+
+function buildWeekReportData() {
     const weekDates = getWeekDates(weekOffset);
     const weekDateStrs = weekDates.map(dateObjToStr);
     const dayNames = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
-    const weekLabel = formatWeekLabel(weekOffset);
     const data = getGroupedData();
 
-    // Construir reporte por persona
-    const empMap = {};
-    employeesCache.forEach(e => {
-        if (e.phone) empMap[e.name.toLowerCase()] = { name: e.name, phone: e.phone, days: [] };
-    });
-
-    if (Object.keys(empMap).length === 0) {
-        showNotification('Nadie tiene numero de WhatsApp', 'danger');
-        return;
-    }
-
-    // Calcular horas por dia para cada persona
-    Object.values(empMap).forEach(emp => {
-        let totalMins = 0;
+    const result = [];
+    employeesCache.forEach(emp => {
+        if (!emp.phone) return;
+        const entry = { name: emp.name, phone: emp.phone, photoURL: emp.photoURL || null, days: [], totalMins: 0 };
         weekDates.forEach((dateObj, i) => {
             const key = `${emp.name.toLowerCase()}-${weekDateStrs[i]}`;
             const idx = groupedDataMap[key];
             if (idx !== undefined) {
                 const mins = getMinsFromGroup(data[idx]);
-                totalMins += mins;
-                if (mins > 0) emp.days.push({ day: dayNames[i], hours: `${Math.floor(mins/60)}h ${mins%60}m` });
+                entry.totalMins += mins;
+                if (mins > 0) entry.days.push({ day: dayNames[i], hours: `${Math.floor(mins/60)}h ${mins%60}m` });
             }
         });
-        emp.totalMins = totalMins;
+        if (entry.totalMins > 0) result.push(entry);
     });
+    return result;
+}
 
-    const withData = Object.values(empMap).filter(e => e.totalMins > 0);
-    if (withData.length === 0) {
-        showNotification('Sin horas registradas esta semana', 'danger');
+document.getElementById('send-week-whatsapp').addEventListener('click', () => {
+    waReportData = buildWeekReportData();
+    if (waReportData.length === 0) {
+        showNotification('Sin datos o nadie tiene WhatsApp', 'danger');
         return;
     }
 
-    if (!confirm(`¿Enviar reporte semanal a ${withData.length} persona(s) por WhatsApp?`)) return;
+    document.getElementById('wa-modal-week').textContent = formatWeekLabel(weekOffset);
+    const checklist = document.getElementById('wa-checklist');
+    checklist.innerHTML = '';
 
+    waReportData.forEach((emp, i) => {
+        const totalH = Math.floor(emp.totalMins / 60);
+        const totalM = emp.totalMins % 60;
+        const pay = Math.round((emp.totalMins / 60) * 70);
+        const initials = emp.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+        const avatarHtml = emp.photoURL
+            ? `<img src="${emp.photoURL}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;">`
+            : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; flex-shrink:0; color:var(--text-muted);">${initials}</div>`;
+
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(255,255,255,0.03); border:1px solid var(--glass-border); border-radius:12px; cursor:pointer;';
+        label.innerHTML = `
+            <input type="checkbox" class="wa-check" data-idx="${i}" checked style="width:18px; height:18px; accent-color:#25D366; cursor:pointer; flex-shrink:0;">
+            ${avatarHtml}
+            <div style="flex:1; min-width:0;">
+                <div style="font-weight:600; font-size:0.9rem;">${emp.name}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">${totalH}h ${totalM}m · $${pay.toLocaleString()}</div>
+            </div>
+        `;
+        checklist.appendChild(label);
+    });
+
+    document.getElementById('wa-select-all').checked = true;
+    updateWaSendBtn();
+    document.getElementById('wa-modal').style.display = 'flex';
+});
+
+document.getElementById('wa-modal-close').addEventListener('click', () => {
+    document.getElementById('wa-modal').style.display = 'none';
+});
+
+document.getElementById('wa-select-all').addEventListener('change', (e) => {
+    document.querySelectorAll('.wa-check').forEach(cb => cb.checked = e.target.checked);
+    updateWaSendBtn();
+});
+
+document.getElementById('wa-checklist').addEventListener('change', () => {
+    const all = document.querySelectorAll('.wa-check');
+    const checked = document.querySelectorAll('.wa-check:checked');
+    document.getElementById('wa-select-all').checked = all.length === checked.length;
+    updateWaSendBtn();
+});
+
+function updateWaSendBtn() {
+    const count = document.querySelectorAll('.wa-check:checked').length;
+    const btn = document.getElementById('wa-send-btn');
+    btn.textContent = count > 0 ? `Enviar a ${count} persona${count !== 1 ? 's' : ''}` : 'Selecciona al menos una persona';
+    btn.disabled = count === 0;
+}
+
+document.getElementById('wa-send-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('wa-send-btn');
+    const selected = [...document.querySelectorAll('.wa-check:checked')].map(cb => waReportData[parseInt(cb.dataset.idx)]);
+    if (selected.length === 0) return;
+
+    const weekLabel = formatWeekLabel(weekOffset);
     btn.disabled = true;
     btn.textContent = 'Enviando...';
 
     let sent = 0, errors = 0;
-    for (const emp of withData) {
+    for (const emp of selected) {
         const totalH = Math.floor(emp.totalMins / 60);
         const totalM = emp.totalMins % 60;
         const pay = Math.round((emp.totalMins / 60) * 70);
@@ -857,8 +908,9 @@ document.getElementById('send-week-whatsapp').addEventListener('click', async ()
     }
 
     showNotification(`Enviado a ${sent} persona(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
+    document.getElementById('wa-modal').style.display = 'none';
     btn.disabled = false;
-    btn.innerHTML = '📲 Enviar reporte semanal';
+    btn.textContent = 'Enviar';
 });
 
 // =====================

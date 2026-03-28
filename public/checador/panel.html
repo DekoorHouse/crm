@@ -180,6 +180,23 @@
         </div>
     </div>
 
+    <!-- Modal WhatsApp -->
+    <div id="wa-modal" class="admin-overlay">
+        <div class="admin-modal" style="max-width:420px; height:auto; max-height:85vh;">
+            <div class="admin-header">
+                <h2 style="font-size:1.2rem;">📲 Enviar reporte semanal</h2>
+                <button id="wa-modal-close" class="close-btn">&times;</button>
+            </div>
+            <p id="wa-modal-week" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;"></p>
+            <label style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(255,255,255,0.06); border-radius:10px; cursor:pointer; margin-bottom:10px; font-weight:600; font-size:0.9rem;">
+                <input type="checkbox" id="wa-select-all" style="width:18px; height:18px; accent-color:var(--primary); cursor:pointer;">
+                Seleccionar todos
+            </label>
+            <div id="wa-checklist" style="overflow-y:auto; max-height:45vh; display:flex; flex-direction:column; gap:6px;"></div>
+            <button id="wa-send-btn" class="btn-in" style="width:100%; margin-top:16px; padding:14px; font-size:1rem;">Enviar</button>
+        </div>
+    </div>
+
     <div id="notification" class="notification">OK</div>
 
     <!-- Firebase SDK -->
