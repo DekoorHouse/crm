@@ -571,15 +571,30 @@ function getStrokeDirOffset(dir, sw) {
 function drawStroke(c, t, sw, tx, ty) {
     const dir = t.strokeDir || 'center';
     const sColor = t.strokeColor || '#0066ff';
+    const steps = 8;
+    const stepAlpha = 0.18;
+
     if (dir === 'center') {
-        c.strokeStyle = sColor;
-        c.lineWidth = sw;
-        c.lineJoin = 'round';
-        c.strokeText(t.text, tx, ty);
+        // Draw from outer (large lineWidth, 1 layer) to inner (small, many layers)
+        // Natural overlap accumulation creates the gradient
+        for (let i = steps; i >= 1; i--) {
+            c.globalAlpha = stepAlpha;
+            c.strokeStyle = sColor;
+            c.lineWidth = sw * (i / steps);
+            c.lineJoin = 'round';
+            c.strokeText(t.text, tx, ty);
+        }
+        c.globalAlpha = 1;
     } else {
-        const [dx, dy] = getStrokeDirOffset(dir, sw);
-        c.fillStyle = sColor;
-        c.fillText(t.text, tx + dx, ty + dy);
+        // Draw from farthest offset to closest — overlap builds opacity near text
+        for (let i = steps; i >= 1; i--) {
+            const frac = i / steps;
+            const [dx, dy] = getStrokeDirOffset(dir, sw * frac);
+            c.globalAlpha = stepAlpha;
+            c.fillStyle = sColor;
+            c.fillText(t.text, tx + dx, ty + dy);
+        }
+        c.globalAlpha = 1;
     }
 }
 
