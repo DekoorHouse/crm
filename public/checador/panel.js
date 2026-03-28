@@ -186,6 +186,21 @@ function hasActiveIn(group) {
 }
 
 // =====================
+// VACACIONES
+// =====================
+function getVacationMinutes(dayOfWeek) {
+    // 0=Dom, 1=Lun, ..., 5=Vie, 6=Sáb
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) return 360; // L-V: 9am-3pm = 6h
+    if (dayOfWeek === 6) return 240; // Sáb: 9am-1pm = 4h
+    return 0;
+}
+
+function isOnVacation(empName) {
+    const emp = employeesCache.find(e => e.name.toLowerCase() === empName.toLowerCase());
+    return emp && emp.vacaciones === true;
+}
+
+// =====================
 // ASISTENCIA (VISTA SEMANAL)
 // =====================
 function renderAdminLogs() {
@@ -255,6 +270,18 @@ function renderAdminLogs() {
         const cells = employees.map(emp => {
             const key = `${emp.name.toLowerCase()}-${dateStr}`;
             const idx = groupedDataMap[key];
+            // Vacaciones: si no hay logs y está de vacaciones, auto-llenar horas
+            if (idx === undefined && isOnVacation(emp.name)) {
+                const today = new Date(); today.setHours(23, 59, 59, 999);
+                if (dateObj <= today) {
+                    const vacMins = getVacationMinutes(dateObj.getDay());
+                    if (vacMins > 0) {
+                        dayMins += vacMins;
+                        empTotals[emp.name.toLowerCase()] += vacMins;
+                        return `<td style="text-align:center;"><span style="color:#f59e0b; font-weight:600; font-size:0.9rem;">🏖 ${Math.floor(vacMins/60)}h</span></td>`;
+                    }
+                }
+            }
             if (idx === undefined) return `<td style="text-align:center; color:rgba(255,255,255,0.15);">—</td>`;
             const group = data[idx];
             const mins = getMinsFromGroup(group);
@@ -577,6 +604,13 @@ function renderAdminEmployees() {
                 <span style="font-family:monospace; font-size:1rem; letter-spacing:2px; color:var(--primary); font-weight:700;">${emp.pin || '—'}</span>
                 <button class="btn-small" onclick="regeneratePin('${emp._docId}')" style="margin-left:6px; padding:4px 8px; font-size:0.7rem;" title="Generar nuevo PIN">🔄</button>
             </td>
+            <td style="text-align:center;">
+                <button class="btn-small vacation-toggle" data-doc="${emp._docId}"
+                    style="padding:6px 12px; font-size:0.78rem; border-radius:10px; cursor:pointer;
+                    ${emp.vacaciones ? 'background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none;' : 'background:rgba(255,255,255,0.1); color:var(--text-muted); border:1px solid var(--glass-border);'}">
+                    ${emp.vacaciones ? '🏖 Sí' : 'No'}
+                </button>
+            </td>
             <td><button class="btn-small btn-danger" onclick="deleteEmployee('${emp._docId}')">Eliminar</button></td>
         `;
         // Guardar al presionar Enter o al perder foco si cambió el valor
@@ -590,6 +624,15 @@ function renderAdminEmployees() {
                 if (newVal !== original && (input.dataset.field !== 'name' || newVal)) {
                     updateEmployee(input.dataset.doc, input.dataset.field, newVal, input.dataset.field === 'name' ? original : null);
                 }
+            });
+        });
+        tr.querySelectorAll('.vacation-toggle').forEach(btn => {
+            btn.addEventListener('click', async () => {
+                const docId = btn.dataset.doc;
+                const empObj = employeesCache.find(e => e._docId === docId);
+                const newVal = !(empObj && empObj.vacaciones);
+                await db.collection('checador_employees').doc(docId).update({ vacaciones: newVal });
+                showNotification(newVal ? `${empObj.name} en vacaciones 🏖` : `Vacaciones desactivadas para ${empObj.name}`);
             });
         });
         tbody.appendChild(tr);
@@ -727,6 +770,24 @@ function getResumenData(period) {
         if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
     });
 
+    // Agregar días de vacaciones para empleados que estén de vacaciones
+    const today = new Date(); today.setHours(23, 59, 59, 999);
+    employeesCache.forEach(emp => {
+        if (!emp.vacaciones) return;
+        const k = emp.name.toLowerCase();
+        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
+        const cur = new Date(start);
+        while (cur <= end && cur <= today) {
+            const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
+            const dayKey = `${k}-${dateStr}`;
+            if (!dayGroups[dayKey]) {
+                const vacMins = getVacationMinutes(cur.getDay());
+                if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+    });
+
     return Object.values(byEmployee)
         .map(emp => ({
             ...emp,
@@ -857,6 +918,7 @@ function buildWeekReportData() {
     employeesCache.forEach(emp => {
         if (!emp.phone) return;
         const entry = { name: emp.name, phone: emp.phone, photoURL: emp.photoURL || null, days: [], totalMins: 0 };
+        const today = new Date(); today.setHours(23, 59, 59, 999);
         weekDates.forEach((dateObj, i) => {
             const key = `${emp.name.toLowerCase()}-${weekDateStrs[i]}`;
             const idx = groupedDataMap[key];
@@ -864,6 +926,12 @@ function buildWeekReportData() {
                 const mins = getMinsFromGroup(data[idx]);
                 entry.totalMins += mins;
                 if (mins > 0) entry.days.push({ day: dayNames[i], hours: `${Math.floor(mins/60)}h ${mins%60}m` });
+            } else if (emp.vacaciones && dateObj <= today) {
+                const vacMins = getVacationMinutes(dateObj.getDay());
+                if (vacMins > 0) {
+                    entry.totalMins += vacMins;
+                    entry.days.push({ day: dayNames[i], hours: `${Math.floor(vacMins/60)}h 🏖` });
+                }
             }
         });
         if (entry.totalMins > 0) result.push(entry);
