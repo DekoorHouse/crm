@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockups AI | Dekoor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ========== LOGIN ========== -->
+    <div id="login-view" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center;">
+        <div class="login-card">
+            <h1 class="login-title">
+                <i class="fas fa-wand-magic-sparkles" style="color: var(--primary);"></i> Mockups AI
+            </h1>
+            <p class="login-subtitle">Ingresa tus credenciales para continuar.</p>
+            <form id="login-form">
+                <div style="margin-bottom: 20px;">
+                    <label class="input-label">Correo</label>
+                    <input type="email" id="login-email" required placeholder="admin@tienda.com" class="input-field">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label class="input-label">Contrasena</label>
+                    <input type="password" id="login-password" required placeholder="********" class="input-field">
+                </div>
+                <div id="login-error" class="login-error"></div>
+                <button type="submit" id="login-btn" class="btn btn-primary" style="width: 100%; margin-top: 24px;">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== MAIN APP ========== -->
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h1 class="app-title"><i class="fas fa-wand-magic-sparkles"></i> Mockups AI</h1>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="dark-mode-toggle" class="btn btn-icon" title="Cambiar tema">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <button id="logout-btn" class="btn btn-outline">Salir <i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Cost Tracker -->
+        <div class="cost-tracker">
+            <div class="cost-item">
+                <span class="cost-label">Sesion</span>
+                <span class="cost-value" id="session-cost">$0.0000</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Imagenes</span>
+                <span class="cost-value" id="session-images">0</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Tokens</span>
+                <span class="cost-value" id="session-tokens">0</span>
+            </div>
+        </div>
+
+        <!-- Model Selector -->
+        <div class="section-title">Selecciona un modelo</div>
+        <div class="models-grid" id="models-grid">
+            <!-- Imagen 4 Fast -->
+            <div class="model-card selected" data-model="imagen-4-fast">
+                <div class="model-badge badge-fast">Fast</div>
+                <div class="model-name">Imagen 4 Fast</div>
+                <div class="model-type">Imagen</div>
+                <div class="model-price">$0.02 <span>/img</span></div>
+            </div>
+            <!-- Imagen 4 -->
+            <div class="model-card" data-model="imagen-4">
+                <div class="model-badge badge-standard">Standard</div>
+                <div class="model-name">Imagen 4</div>
+                <div class="model-type">Imagen</div>
+                <div class="model-price">$0.04 <span>/img</span></div>
+            </div>
+            <!-- Imagen 4 Ultra -->
+            <div class="model-card" data-model="imagen-4-ultra">
+                <div class="model-badge badge-premium">Premium</div>
+                <div class="model-name">Imagen 4 Ultra</div>
+                <div class="model-type">Imagen</div>
+                <div class="model-price">$0.06 <span>/img</span></div>
+            </div>
+            <!-- Nano Banana -->
+            <div class="model-card" data-model="nano-banana">
+                <div class="model-badge badge-standard">Standard</div>
+                <div class="model-name">Nano Banana</div>
+                <div class="model-type">Gemini 2.5 Flash</div>
+                <div class="model-price">$0.039 <span>/img</span></div>
+            </div>
+            <!-- Nano Banana 2 Preview -->
+            <div class="model-card" data-model="nano-banana-2">
+                <div class="model-badge badge-standard">Standard</div>
+                <div class="model-name">Nano Banana 2</div>
+                <div class="model-type">Gemini 3.1 Flash</div>
+                <div class="model-price">$0.067 <span>/img</span></div>
+            </div>
+            <!-- Nano Banana Pro -->
+            <div class="model-card" data-model="nano-banana-pro">
+                <div class="model-badge badge-premium">Premium</div>
+                <div class="model-name">Nano Banana Pro</div>
+                <div class="model-type">Gemini 3 Pro</div>
+                <div class="model-price">$0.134 <span>/img</span></div>
+            </div>
+        </div>
+
+        <!-- Prompt Area -->
+        <div class="prompt-section">
+            <div class="prompt-row">
+                <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
+            </div>
+            <div class="prompt-controls">
+                <div class="control-group">
+                    <label class="control-label">Aspecto</label>
+                    <select id="aspect-ratio" class="control-select">
+                        <option value="1:1">1:1</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                        <option value="4:3">4:3</option>
+                        <option value="3:4">3:4</option>
+                    </select>
+                </div>
+                <div class="control-group" id="sample-count-group">
+                    <label class="control-label">Cantidad</label>
+                    <select id="sample-count" class="control-select">
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                    </select>
+                </div>
+                <button id="generate-btn" class="btn btn-primary btn-generate">
+                    <i class="fas fa-bolt"></i> Generar
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-state" class="loading-state" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>Generando imagen...</p>
+        </div>
+
+        <!-- Error -->
+        <div id="error-state" class="error-state" style="display: none;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <p id="error-message"></p>
+        </div>
+
+        <!-- Results Gallery -->
+        <div id="results-section" class="results-section" style="display: none;">
+            <div class="results-header">
+                <div class="section-title" style="margin-bottom:0;">Resultado</div>
+                <div class="result-meta">
+                    <span id="result-model"></span>
+                    <span id="result-tokens"></span>
+                    <span id="result-cost" class="result-cost-badge"></span>
+                </div>
+            </div>
+            <div id="results-grid" class="results-grid"></div>
+        </div>
+
+        <!-- History -->
+        <div id="history-section" class="history-section" style="display: none;">
+            <div class="section-title">Historial de sesion</div>
+            <div id="history-list" class="history-list"></div>
+        </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox" style="display: none;">
+        <button class="lightbox-close" id="lightbox-close"><i class="fas fa-times"></i></button>
+        <img id="lightbox-img" src="" alt="Preview">
+        <button class="lightbox-download" id="lightbox-download"><i class="fas fa-download"></i> Descargar</button>
+    </div>
+
+    <script src="/env-config.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

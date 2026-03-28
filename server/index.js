@@ -4,6 +4,7 @@ const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
 const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
 const metaAdsRouter = require('./meta/metaAdsRoutes');
+const mockupsRouter = require('./mockups/mockupsRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const path = require('path');
 const express = require('express');
@@ -30,6 +31,7 @@ app.use('/api', apiRouter);
 app.use('/api/autopost', autoPostRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
+app.use('/api/mockups', mockupsRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -82,6 +84,10 @@ app.get('/referencias/moderacion', (req, res) => {
 
 app.get('/meta', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'meta', 'index.html'));
+});
+
+app.get('/mockups', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'mockups', 'index.html'));
 });
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
