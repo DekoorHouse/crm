@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colección | Dekoor</title>
+    <meta name="description" content="Explora nuestra colección de regalos personalizados con grabado láser. Lámparas 3D, cuadros y más.">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .collection-hero {
+            padding: calc(var(--nav-height, 80px) + 2rem) 0 2rem;
+            text-align: center;
+        }
+        .collection-hero h1 {
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.5rem;
+        }
+        .collection-hero p {
+            color: var(--text-medium);
+            font-size: 1.05rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .collection-hero .collection-badge {
+            display: inline-block;
+            background: var(--primary-light);
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.8rem;
+            padding: 6px 16px;
+            border-radius: 100px;
+            margin-bottom: 1rem;
+            letter-spacing: 0.5px;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            padding: 2rem 0 4rem;
+        }
+
+        .product-card {
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            transition: var(--transition);
+        }
+        .product-card:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary);
+        }
+
+        .product-card-img {
+            width: 100%;
+            aspect-ratio: 1;
+            overflow: hidden;
+            background: var(--cream-dark);
+        }
+        .product-card-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+        }
+        .product-card:hover .product-card-img img {
+            transform: scale(1.05);
+        }
+
+        .product-card-body {
+            padding: 1.25rem;
+        }
+        .product-card-name {
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--text-dark);
+            margin-bottom: 0.25rem;
+        }
+        .product-card-desc {
+            color: var(--text-medium);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        .product-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .product-card-price {
+            font-weight: 800;
+            font-size: 1.3rem;
+            color: var(--primary);
+        }
+        .product-card-price small {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-medium);
+        }
+        .product-card-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--primary);
+            color: var(--white);
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .product-card-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .empty-products {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-medium);
+            grid-column: 1 / -1;
+        }
+        .empty-products i {
+            font-size: 3rem;
+            color: var(--border);
+            margin-bottom: 1rem;
+        }
+        .empty-products p {
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--teal);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+            transition: var(--transition);
+        }
+        .back-link:hover { color: var(--primary); }
+
+        @media (max-width: 768px) {
+            .products-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        }
+        @media (max-width: 480px) {
+            .products-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
+            .product-card-footer { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+            .product-card-btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Shared Navbar -->
+<nav class="navbar scrolled" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/sitio/img/logo-dekoor.png" alt="Dekoor" class="logo-full">
+        </a>
+        <div class="nav-links">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link active">Colecciones</a>
+            <a href="/sitio/#categorias" class="nav-link">Categorías</a>
+            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="/referencias/" class="nav-link">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn cart-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link active"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<main>
+    <div class="container">
+        <div class="collection-hero">
+            <a href="/sitio/#colecciones" class="back-link"><i class="fas fa-arrow-left"></i> Todas las colecciones</a>
+            <div class="collection-badge" id="collectionBadge">COLECCIÓN</div>
+            <h1 id="collectionTitle">Cargando...</h1>
+            <p id="collectionDesc"></p>
+        </div>
+
+        <div class="products-grid" id="productsGrid">
+            <div class="empty-products">
+                <div class="spinner" style="margin:0 auto 1rem;width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                <p>Cargando productos...</p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- WhatsApp FAB -->
+<a href="https://wa.me/5216181333519?text=Hola%20Dekoor" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+</a>
+
+<script>
+const WA = '5216181333519';
+
+const COLLECTIONS = {
+    ninos: {
+        title: 'Niños',
+        desc: 'Lámparas 3D mágicas para los más pequeños del hogar. Personalizadas con su nombre y personaje favorito.',
+        price: '$549',
+        productName: 'Lámpara 3D',
+        productDesc: 'Lámpara LED personalizada con grabado láser, base negra, control remoto con 16 colores.',
+        folder: 'Ninos'
+    },
+    pareja: {
+        title: 'Pareja',
+        desc: 'Regalos románticos personalizados con tu foto y mensaje especial. El detalle perfecto para esa persona.',
+        price: '$549',
+        productName: 'Lámpara 3D',
+        productDesc: 'Lámpara LED personalizada con foto de pareja, nombre y fecha especial. 16 colores con control remoto.',
+        folder: 'Pareja'
+    },
+    empresas: {
+        title: 'Empresas',
+        desc: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
+        price: '$549',
+        productName: 'Lámpara 3D Corporativa',
+        productDesc: 'Lámpara LED con logo o diseño personalizado. Ideal para reconocimientos, premios y merchandising.',
+        folder: 'Empresas'
+    },
+    familia: {
+        title: 'Familia',
+        desc: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
+        price: '$549',
+        productName: 'Lámpara 3D Familiar',
+        productDesc: 'Lámpara LED con foto familiar, nombre de mascota o retrato grupal. 16 colores con control remoto.',
+        folder: 'Familia'
+    },
+    memorial: {
+        title: 'Memorial',
+        desc: 'Un tributo luminoso para honrar la memoria de tus seres queridos. Un recuerdo que siempre brilla.',
+        price: '$549',
+        productName: 'Lámpara 3D Memorial',
+        productDesc: 'Lámpara LED con foto y mensaje dedicado. Un homenaje luminoso que mantiene viva su memoria.',
+        folder: 'Memorial'
+    }
+};
+
+// Get collection from URL
+const params = new URLSearchParams(window.location.search);
+const colId = params.get('id') || 'ninos';
+const col = COLLECTIONS[colId];
+
+if (!col) {
+    window.location.href = '/sitio/#colecciones';
+}
+
+// Set page info
+document.title = `${col.title} | Dekoor`;
+document.getElementById('collectionBadge').textContent = `COLECCIÓN ${col.title.toUpperCase()}`;
+document.getElementById('collectionTitle').textContent = col.title;
+document.getElementById('collectionDesc').textContent = col.desc;
+
+// Load products from local folder via API
+async function loadProducts() {
+    const grid = document.getElementById('productsGrid');
+
+    try {
+        const res = await fetch(`/api/coleccion/photos?folder=${encodeURIComponent(col.folder)}`);
+        const data = await res.json();
+
+        if (!data.photos || !data.photos.length) {
+            grid.innerHTML = `
+                <div class="empty-products">
+                    <i class="fas fa-camera"></i>
+                    <p>Próximamente nuevos productos en esta colección</p>
+                    <a href="https://wa.me/${WA}?text=Hola%20Dekoor%2C%20me%20interesa%20la%20colección%20${encodeURIComponent(col.title)}" target="_blank" rel="noopener" class="btn btn-primary">
+                        <i class="fab fa-whatsapp"></i> Preguntar por esta colección
+                    </a>
+                </div>`;
+            return;
+        }
+
+        grid.innerHTML = data.photos.map((photo, i) => {
+            const waMsg = encodeURIComponent(`Hola Dekoor, me interesa este producto de la colección ${col.title}: ${photo.name}`);
+            return `
+                <div class="product-card">
+                    <div class="product-card-img">
+                        <img src="${photo.url}" alt="${col.productName} - ${col.title}" loading="lazy">
+                    </div>
+                    <div class="product-card-body">
+                        <div class="product-card-name">${col.productName}</div>
+                        <div class="product-card-desc">${col.productDesc}</div>
+                        <div class="product-card-footer">
+                            <div class="product-card-price">${col.price} <small>MXN</small></div>
+                            <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn">
+                                <i class="fab fa-whatsapp"></i> Lo quiero
+                            </a>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+
+    } catch (e) {
+        grid.innerHTML = `
+            <div class="empty-products">
+                <i class="fas fa-camera"></i>
+                <p>Próximamente nuevos productos en esta colección</p>
+                <a href="https://wa.me/${WA}?text=Hola%20Dekoor%2C%20me%20interesa%20la%20colección%20${encodeURIComponent(col.title)}" target="_blank" rel="noopener" class="btn btn-primary">
+                    <i class="fab fa-whatsapp"></i> Preguntar por esta colección
+                </a>
+            </div>`;
+    }
+}
+
+loadProducts();
+
+// Mobile menu
+var hamburgerBtn = document.getElementById('hamburgerBtn');
+var mobileMenu = document.getElementById('mobileMenu');
+hamburgerBtn.addEventListener('click', function() { mobileMenu.classList.toggle('hidden'); });
+mobileMenu.querySelector('.mobile-menu-overlay').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+</script>
+</body>
+</html>
