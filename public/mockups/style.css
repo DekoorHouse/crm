@@ -156,6 +156,36 @@ body {
 }
 .upload-thumb-remove:hover { opacity: 0.8; }
 
+/* ========== BATCH MODE ========== */
+.batch-toggle-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.batch-toggle-label { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; inset: 0; background: var(--border); border-radius: 24px;
+    cursor: pointer; transition: background 0.3s;
+}
+.toggle-slider::before {
+    content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: transform 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--primary); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+.batch-prompt-readonly { opacity: 0.7; cursor: default; font-size: 12px; }
+.batch-names-area { margin-top: 12px; }
+.batch-names-area .control-label { margin-bottom: 6px; display: block; }
+.batch-uploads { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.batch-upload-slot .control-label { margin-bottom: 6px; display: block; }
+
+.batch-progress {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    padding: 16px; margin-bottom: 24px; box-shadow: var(--shadow); animation: fadeIn 0.3s ease;
+}
+.batch-progress-header { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+.batch-progress-bar { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.batch-progress-fill { height: 100%; background: var(--primary); border-radius: 4px; transition: width 0.3s ease; }
+
 .prompt-controls { display: flex; align-items: flex-end; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .control-group { display: flex; flex-direction: column; gap: 4px; }
 .control-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.04em; }
@@ -284,4 +314,5 @@ body.dark-mode .error-state { background: rgba(247,118,142,0.08); border-color: 
     .cost-tracker { gap: 10px; }
     .prompt-controls { flex-direction: column; align-items: stretch; }
     .prompt-controls .btn-generate { margin-left: 0; }
+    .batch-uploads { grid-template-columns: 1fr; }
 }

@@ -13,7 +13,7 @@ const THUMB_WIDTH = 400;
 
 // ===================== IMAGE GENERATION =====================
 
-async function generateImage(prompt, aspectRatio = '1:1', refImages = []) {
+async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolution = '2K') {
     const apiKey = API_KEY();
     if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
 
@@ -41,7 +41,7 @@ async function generateImage(prompt, aspectRatio = '1:1', refImages = []) {
             contents: [{ parts }],
             generationConfig: {
                 responseModalities: ['TEXT', 'IMAGE'],
-                imageConfig: { aspectRatio, imageSize: '2K' },
+                imageConfig: { aspectRatio, imageSize: resolution },
             },
         }),
     });

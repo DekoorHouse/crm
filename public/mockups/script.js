@@ -20,6 +20,10 @@ let sessionTokensIn = 0;
 let sessionTokensOut = 0;
 let isGenerating = false;
 let uploadedImages = []; // [{ mimeType, base64, dataUrl }]
+let batchMode = false;
+let batchProductImage = null; // { mimeType, base64, dataUrl }
+let batchNameImages = []; // [{ mimeType, base64, dataUrl }]
+const BATCH_PROMPT = 'Cambia el nombre de la lámpara por el de la imagen negra. Respeta la tipografía. Incluye todo el texto de la imagen negra. Y que el nuevo nombre se integre bien para que parezca completamente realista. Que todo el texto esté del mismo lado. De ser necesario ajusta el tamaño del texto para que quepa.';
 let galleryItems = [];
 let currentLightboxItem = null;
 
@@ -35,6 +39,7 @@ const darkModeToggle = document.getElementById('dark-mode-toggle');
 
 const promptInput = document.getElementById('prompt-input');
 const aspectSelect = document.getElementById('aspect-ratio');
+const resolutionSelect = document.getElementById('resolution');
 const generateBtn = document.getElementById('generate-btn');
 
 const loadingState = document.getElementById('loading-state');
@@ -57,8 +62,22 @@ const sessionTokensOutEl = document.getElementById('session-tokens-out');
 
 const uploadDropzone = document.getElementById('upload-dropzone');
 const imageUploadInput = document.getElementById('image-upload');
-const uploadPlaceholder = document.getElementById('upload-placeholder');
 const uploadPreviews = document.getElementById('upload-previews');
+
+const batchModeToggle = document.getElementById('batch-mode-toggle');
+const singleModeDiv = document.getElementById('single-mode');
+const batchModeDiv = document.getElementById('batch-mode');
+const batchNamesInput = document.getElementById('batch-names');
+const batchProductDropzone = document.getElementById('batch-product-dropzone');
+const batchProductInput = document.getElementById('batch-product-input');
+const batchProductPreview = document.getElementById('batch-product-preview');
+const batchNamesDropzone = document.getElementById('batch-names-dropzone');
+const batchNamesInputFile = document.getElementById('batch-names-input');
+const batchNamesPreviews = document.getElementById('batch-names-previews');
+const batchProgress = document.getElementById('batch-progress');
+const batchProgressText = document.getElementById('batch-progress-text');
+const batchProgressPct = document.getElementById('batch-progress-pct');
+const batchProgressFill = document.getElementById('batch-progress-fill');
 
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
@@ -111,8 +130,99 @@ darkModeToggle.addEventListener('click', () => {
     updateDarkModeIcon();
 });
 
+// ===================== BATCH MODE TOGGLE =====================
+batchModeToggle.addEventListener('change', () => {
+    batchMode = batchModeToggle.checked;
+    singleModeDiv.style.display = batchMode ? 'none' : 'block';
+    batchModeDiv.style.display = batchMode ? 'block' : 'none';
+    generateBtn.innerHTML = batchMode
+        ? '<i class="fas fa-bolt"></i> Generar Lote'
+        : '<i class="fas fa-bolt"></i> Generar';
+});
+
+// ===================== BATCH UPLOADS =====================
+// Product image (single)
+batchProductDropzone.addEventListener('click', () => batchProductInput.click());
+batchProductInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) loadBatchProductImage(e.target.files[0]);
+    batchProductInput.value = '';
+});
+batchProductDropzone.addEventListener('dragover', (e) => { e.preventDefault(); batchProductDropzone.classList.add('dragover'); });
+batchProductDropzone.addEventListener('dragleave', () => batchProductDropzone.classList.remove('dragover'));
+batchProductDropzone.addEventListener('drop', (e) => {
+    e.preventDefault(); batchProductDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files[0]) loadBatchProductImage(e.dataTransfer.files[0]);
+});
+
+function loadBatchProductImage(file) {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        batchProductImage = { mimeType: file.type, base64: e.target.result.split(',')[1], dataUrl: e.target.result };
+        renderBatchProductPreview();
+    };
+    reader.readAsDataURL(file);
+}
+
+function renderBatchProductPreview() {
+    batchProductPreview.innerHTML = '';
+    if (!batchProductImage) return;
+    const thumb = document.createElement('div');
+    thumb.className = 'upload-thumb';
+    thumb.innerHTML = `
+        <img src="${batchProductImage.dataUrl}" alt="">
+        <button class="upload-thumb-remove"><i class="fas fa-times"></i></button>
+    `;
+    thumb.querySelector('.upload-thumb-remove').addEventListener('click', () => {
+        batchProductImage = null;
+        renderBatchProductPreview();
+    });
+    batchProductPreview.appendChild(thumb);
+}
+
+// Name images (multiple)
+batchNamesDropzone.addEventListener('click', () => batchNamesInputFile.click());
+batchNamesInputFile.addEventListener('change', (e) => {
+    for (const file of e.target.files) loadBatchNameImage(file);
+    batchNamesInputFile.value = '';
+});
+batchNamesDropzone.addEventListener('dragover', (e) => { e.preventDefault(); batchNamesDropzone.classList.add('dragover'); });
+batchNamesDropzone.addEventListener('dragleave', () => batchNamesDropzone.classList.remove('dragover'));
+batchNamesDropzone.addEventListener('drop', (e) => {
+    e.preventDefault(); batchNamesDropzone.classList.remove('dragover');
+    for (const file of e.dataTransfer.files) loadBatchNameImage(file);
+});
+
+function loadBatchNameImage(file) {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const id = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        batchNameImages.push({ id, mimeType: file.type, base64: e.target.result.split(',')[1], dataUrl: e.target.result });
+        renderBatchNamePreviews();
+    };
+    reader.readAsDataURL(file);
+}
+
+function renderBatchNamePreviews() {
+    batchNamesPreviews.innerHTML = '';
+    batchNameImages.forEach((img, i) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'upload-thumb';
+        thumb.innerHTML = `
+            <img src="${img.dataUrl}" alt="">
+            <button class="upload-thumb-remove" data-id="${img.id}"><i class="fas fa-times"></i></button>
+        `;
+        thumb.querySelector('.upload-thumb-remove').addEventListener('click', () => {
+            batchNameImages = batchNameImages.filter(x => x.id !== img.id);
+            renderBatchNamePreviews();
+        });
+        batchNamesPreviews.appendChild(thumb);
+    });
+}
+
 // ===================== GENERATE =====================
-generateBtn.addEventListener('click', generate);
+generateBtn.addEventListener('click', () => batchMode ? generateBatch() : generate());
 promptInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) generate();
 });
@@ -128,7 +238,7 @@ async function generate() {
     resultsSection.style.display = 'none';
 
     try {
-        const payload = { prompt, aspectRatio: aspectSelect.value };
+        const payload = { prompt, aspectRatio: aspectSelect.value, resolution: resolutionSelect.value };
         if (uploadedImages.length > 0) {
             payload.images = uploadedImages.map(i => ({ mimeType: i.mimeType, base64: i.base64 }));
         }
@@ -155,6 +265,80 @@ async function generate() {
         generateBtn.disabled = false;
         loadingState.style.display = 'none';
     }
+}
+
+// ===================== BATCH GENERATE =====================
+async function generateBatch() {
+    const names = batchNamesInput.value.trim().split('\n').map(n => n.trim()).filter(Boolean);
+    if (names.length === 0) { alert('Agrega al menos un nombre a la lista.'); return; }
+    if (!batchProductImage) { alert('Sube la imagen del producto.'); return; }
+    if (batchNameImages.length !== names.length) {
+        alert(`Tienes ${names.length} nombres pero ${batchNameImages.length} imágenes. Deben coincidir.`);
+        return;
+    }
+    if (isGenerating) return;
+
+    isGenerating = true;
+    generateBtn.disabled = true;
+    errorState.style.display = 'none';
+    resultsSection.style.display = 'none';
+    batchProgress.style.display = 'block';
+
+    let completed = 0;
+    const total = names.length;
+    const errors = [];
+    updateBatchProgress(0, total);
+
+    const promises = names.map((name, i) => {
+        const payload = {
+            prompt: BATCH_PROMPT,
+            aspectRatio: aspectSelect.value,
+            resolution: resolutionSelect.value,
+            images: [
+                { mimeType: batchProductImage.mimeType, base64: batchProductImage.base64 },
+                { mimeType: batchNameImages[i].mimeType, base64: batchNameImages[i].base64 },
+            ],
+        };
+
+        return fetch(`${API_BASE}/api/mockups/generate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        })
+        .then(res => res.json())
+        .then(data => {
+            completed++;
+            updateBatchProgress(completed, total);
+            if (data.success) updateSessionCost(data);
+            else errors.push(`${name}: ${data.error}`);
+            return data;
+        })
+        .catch(err => {
+            completed++;
+            updateBatchProgress(completed, total);
+            errors.push(`${name}: ${err.message}`);
+            return { success: false };
+        });
+    });
+
+    await Promise.all(promises);
+    await loadGallery();
+
+    batchProgress.style.display = 'none';
+    isGenerating = false;
+    generateBtn.disabled = false;
+
+    if (errors.length > 0) {
+        errorState.style.display = 'block';
+        errorMessage.textContent = `${errors.length} errores: ${errors[0]}`;
+    }
+}
+
+function updateBatchProgress(completed, total) {
+    const pct = Math.round((completed / total) * 100);
+    batchProgressText.textContent = `Generando ${completed}/${total}...`;
+    batchProgressPct.textContent = `${pct}%`;
+    batchProgressFill.style.width = `${pct}%`;
 }
 
 // ===================== RENDER RESULTS =====================

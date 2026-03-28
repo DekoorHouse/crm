@@ -72,20 +72,68 @@
 
         <!-- Prompt Area -->
         <div class="prompt-section">
-            <div class="prompt-row">
-                <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
+            <!-- Batch Mode Toggle -->
+            <div class="batch-toggle-row">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="batch-mode-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="batch-toggle-label">Modo Lote</span>
             </div>
-            <!-- Image Upload (multiple) -->
-            <div class="upload-area">
-                <div id="upload-dropzone" class="upload-dropzone">
-                    <input type="file" id="image-upload" accept="image/*" multiple style="display:none;">
-                    <div id="upload-placeholder" class="upload-placeholder">
-                        <i class="fas fa-cloud-upload-alt"></i>
-                        <span>Arrastra imagenes o <strong>haz click</strong> para subir referencias</span>
+
+            <!-- Single Mode -->
+            <div id="single-mode">
+                <div class="prompt-row">
+                    <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
+                </div>
+                <div class="upload-area">
+                    <div id="upload-dropzone" class="upload-dropzone">
+                        <input type="file" id="image-upload" accept="image/*" multiple style="display:none;">
+                        <div class="upload-placeholder">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>Arrastra imagenes o <strong>haz click</strong> para subir referencias</span>
+                        </div>
+                    </div>
+                    <div id="upload-previews" class="upload-previews"></div>
+                </div>
+            </div>
+
+            <!-- Batch Mode -->
+            <div id="batch-mode" style="display:none;">
+                <div class="prompt-row">
+                    <textarea id="batch-prompt" class="prompt-textarea batch-prompt-readonly" rows="3" readonly>Cambia el nombre de la lámpara por el de la imagen negra. Respeta la tipografía. Incluye todo el texto de la imagen negra. Y que el nuevo nombre se integre bien para que parezca completamente realista. Que todo el texto esté del mismo lado. De ser necesario ajusta el tamaño del texto para que quepa.</textarea>
+                </div>
+                <div class="batch-names-area">
+                    <label class="control-label">Nombres (uno por linea)</label>
+                    <textarea id="batch-names" class="prompt-textarea" rows="5" placeholder="Lampara Luna&#10;Lampara Sol&#10;Lampara Estrella"></textarea>
+                </div>
+                <div class="batch-uploads">
+                    <div class="batch-upload-slot">
+                        <label class="control-label">Imagen del producto</label>
+                        <div id="batch-product-dropzone" class="upload-dropzone">
+                            <input type="file" id="batch-product-input" accept="image/*" style="display:none;">
+                            <div class="upload-placeholder">
+                                <i class="fas fa-image"></i>
+                                <span>Foto de la lampara</span>
+                            </div>
+                        </div>
+                        <div id="batch-product-preview" class="upload-previews"></div>
+                    </div>
+                    <div class="batch-upload-slot">
+                        <label class="control-label">Imagenes de nombres</label>
+                        <div id="batch-names-dropzone" class="upload-dropzone">
+                            <input type="file" id="batch-names-input" accept="image/*" multiple style="display:none;">
+                            <div class="upload-placeholder">
+                                <i class="fas fa-font"></i>
+                                <span>PNGs exportados del editor</span>
+                            </div>
+                        </div>
+                        <div id="batch-names-previews" class="upload-previews"></div>
                     </div>
                 </div>
-                <div id="upload-previews" class="upload-previews"></div>
             </div>
+
+            <!-- Controls (shared) -->
             <div class="prompt-controls">
                 <div class="control-group">
                     <label class="control-label">Aspecto</label>
@@ -97,9 +145,27 @@
                         <option value="3:4">3:4</option>
                     </select>
                 </div>
+                <div class="control-group">
+                    <label class="control-label">Resolucion</label>
+                    <select id="resolution" class="control-select">
+                        <option value="1K">1K (1024px)</option>
+                        <option value="2K" selected>2K (2048px)</option>
+                    </select>
+                </div>
                 <button id="generate-btn" class="btn btn-primary btn-generate">
                     <i class="fas fa-bolt"></i> Generar
                 </button>
+            </div>
+        </div>
+
+        <!-- Batch Progress -->
+        <div id="batch-progress" class="batch-progress" style="display:none;">
+            <div class="batch-progress-header">
+                <span id="batch-progress-text">Generando 0/0...</span>
+                <span id="batch-progress-pct">0%</span>
+            </div>
+            <div class="batch-progress-bar">
+                <div id="batch-progress-fill" class="batch-progress-fill" style="width:0%"></div>
             </div>
         </div>
 

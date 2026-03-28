@@ -13,7 +13,7 @@ function asyncHandler(fn) {
 
 // POST /api/mockups/generate — Generar imagen y guardar en galería
 router.post('/generate', asyncHandler(async (req, res) => {
-    const { prompt, aspectRatio, images: refImages } = req.body;
+    const { prompt, aspectRatio, resolution, images: refImages } = req.body;
 
     if (!prompt || !prompt.trim()) {
         return res.status(400).json({ success: false, error: 'Se requiere un prompt.' });
@@ -21,7 +21,7 @@ router.post('/generate', asyncHandler(async (req, res) => {
 
     // refImages: array de { mimeType, base64 }
     const validImages = (refImages || []).filter(i => i?.base64);
-    const result = await svc.generateImage(prompt.trim(), aspectRatio || '1:1', validImages);
+    const result = await svc.generateImage(prompt.trim(), aspectRatio || '1:1', validImages, resolution || '2K');
 
     // Guardar en Firebase Storage + Firestore
     const saved = await svc.saveToGallery(prompt.trim(), aspectRatio || '1:1', result.images, result.usage, result.cost);
