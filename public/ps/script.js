@@ -210,7 +210,7 @@ toolMove.addEventListener('click', () => setTool('move'));
 
 // ===================== BRUSH CONTROLS =====================
 brushSizeInput.addEventListener('input', () => {
-    brushSize = parseInt(brushSizeInput.value);
+    brushSize = parseFloat(brushSizeInput.value);
     brushSizeVal.textContent = brushSize;
 });
 
@@ -229,7 +229,7 @@ pickColorBtn.addEventListener('click', () => {
 fontSizeInput.addEventListener('input', () => {
     fontSizeVal.textContent = fontSizeInput.value;
     if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].fontSize = parseInt(fontSizeInput.value);
+        textLayers[selectedTextIdx].fontSize = parseFloat(fontSizeInput.value);
         redrawCanvas();
     }
 });
@@ -251,7 +251,7 @@ fontFamilySelect.addEventListener('change', () => {
 glowStrengthInput.addEventListener('input', () => {
     glowVal.textContent = glowStrengthInput.value;
     if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].glowStrength = parseInt(glowStrengthInput.value);
+        textLayers[selectedTextIdx].glowStrength = parseFloat(glowStrengthInput.value);
         redrawCanvas();
     }
 });
@@ -266,7 +266,7 @@ glowColorInput.addEventListener('input', () => {
 strokeWidthInput.addEventListener('input', () => {
     strokeWidthVal.textContent = strokeWidthInput.value;
     if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].strokeWidth = parseInt(strokeWidthInput.value);
+        textLayers[selectedTextIdx].strokeWidth = parseFloat(strokeWidthInput.value);
         redrawCanvas();
     }
 });
@@ -301,7 +301,7 @@ alignRightBtn.addEventListener('click', () => setTextAlign('right'));
 textQualityInput.addEventListener('input', () => {
     textQualityVal.textContent = textQualityInput.value + 'x';
     if (selectedTextIdx >= 0) {
-        textLayers[selectedTextIdx].quality = parseInt(textQualityInput.value);
+        textLayers[selectedTextIdx].quality = parseFloat(textQualityInput.value);
         redrawCanvas();
     }
 });
@@ -440,14 +440,14 @@ function onPointerDown(e) {
             x: pos.x,
             y: pos.y,
             fontFamily: fontFamilySelect.value,
-            fontSize: parseInt(fontSizeInput.value),
+            fontSize: parseFloat(fontSizeInput.value),
             color: fontColorInput.value,
-            glowStrength: parseInt(glowStrengthInput.value),
+            glowStrength: parseFloat(glowStrengthInput.value),
             glowColor: glowColorInput.value,
-            strokeWidth: parseInt(strokeWidthInput.value),
+            strokeWidth: parseFloat(strokeWidthInput.value),
             strokeColor: strokeColorInput.value,
             strokeDir: strokeDirSelect.value,
-            quality: parseInt(textQualityInput.value),
+            quality: parseFloat(textQualityInput.value),
             textAlign: activeAlign,
         });
         selectedTextIdx = textLayers.length - 1;
@@ -587,31 +587,32 @@ function drawTextLayer(t, isSelected) {
     ctx.save();
     const q = t.quality || 1;
     const align = t.textAlign || 'left';
+    const scale = t.fontSize / 100; // proportional scaling for effects
+    const glow = (t.glowStrength || 0) * scale;
+    const sw = (t.strokeWidth || 0) * scale;
     ctx.font = `${t.fontSize}px "${t.fontFamily}"`;
     ctx.textBaseline = 'alphabetic';
     const metrics = ctx.measureText(t.text);
     const textW = metrics.width;
     const textH = t.fontSize;
-    const sw = t.strokeWidth || 0;
-    const glowPad = t.glowStrength > 0 ? t.glowStrength * 3 : 0;
+    const glowPad = glow > 0 ? glow * 3 : 0;
     const pad = Math.max(glowPad, sw + 6);
-    // Alignment offset: shift destination x so anchor point stays at t.x
     const alignOff = align === 'center' ? -textW / 2 : align === 'right' ? -textW : 0;
 
     if (q > 1) {
         const offW = Math.ceil(textW + pad * 2);
         const offH = Math.ceil(textH + pad * 2);
         const tmp = document.createElement('canvas');
-        tmp.width = offW * q;
-        tmp.height = offH * q;
+        tmp.width = Math.ceil(offW * q);
+        tmp.height = Math.ceil(offH * q);
         const tc = tmp.getContext('2d');
         tc.scale(q, q);
         tc.font = `${t.fontSize}px "${t.fontFamily}"`;
         tc.textBaseline = 'alphabetic';
 
-        if (t.glowStrength > 0) {
+        if (glow > 0) {
             tc.shadowColor = t.glowColor;
-            tc.shadowBlur = t.glowStrength;
+            tc.shadowBlur = glow;
             tc.fillStyle = t.color;
             for (let g = 0; g < 3; g++) tc.fillText(t.text, pad, textH + pad);
         }
@@ -626,9 +627,9 @@ function drawTextLayer(t, isSelected) {
         ctx.drawImage(tmp, t.x + alignOff - pad, t.y - textH - pad, offW, offH);
     } else {
         ctx.textAlign = align;
-        if (t.glowStrength > 0) {
+        if (glow > 0) {
             ctx.shadowColor = t.glowColor;
-            ctx.shadowBlur = t.glowStrength;
+            ctx.shadowBlur = glow;
             ctx.fillStyle = t.color;
             for (let g = 0; g < 3; g++) ctx.fillText(t.text, t.x, t.y);
         }
