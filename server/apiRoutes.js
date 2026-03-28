@@ -70,6 +70,32 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
+// --- Subir foto de perfil (checador) ---
+router.post('/checador/avatar', uploadRef.single('foto'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ error: 'No se envio archivo' });
+        const empId = req.body.empId;
+        const docId = req.body.docId;
+        if (!empId || !docId) return res.status(400).json({ error: 'Falta empId o docId' });
+        const webpBuffer = await sharp(req.file.buffer)
+            .resize(400, 400, { fit: 'cover' })
+            .webp({ quality: 80 })
+            .toBuffer();
+        const fileName = `checador/avatars/${empId}.webp`;
+        const file = bucket.file(fileName);
+        await file.save(webpBuffer, {
+            metadata: { contentType: 'image/webp' },
+            public: true
+        });
+        const url = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;
+        await db.collection('checador_employees').doc(docId).update({ photoURL: url });
+        res.json({ url });
+    } catch (error) {
+        console.error('Error subiendo avatar:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Mapa de entregas (Google Sheets, agrupado por estado) ---
 const SHEET_CSV_URL = 'https://docs.google.com/spreadsheets/d/1ggvTcOJtasfk0sz4KRSXSUSIfko62AtxfTKhRyKkkCk/export?format=csv';
 let mapaCache = { data: null, timestamp: 0 };

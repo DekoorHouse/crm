@@ -10,7 +10,6 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
-const storage = firebase.storage();
 
 let currentEmployee = null;
 let logsCache = [];
@@ -284,7 +283,6 @@ document.getElementById('avatar-input').addEventListener('change', async (e) => 
     const file = e.target.files[0];
     if (!file || !currentEmployee) return;
 
-    // Validar tipo y tamaño
     if (!file.type.startsWith('image/')) {
         showNotification('Solo se permiten imagenes', 'danger');
         return;
@@ -299,21 +297,18 @@ document.getElementById('avatar-input').addEventListener('change', async (e) => 
     overlay.classList.add('avatar-uploading');
 
     try {
-        const ext = file.name.split('.').pop();
-        const filePath = `checador/avatars/${currentEmployee.id}.${ext}`;
-        const fileRef = storage.ref(filePath);
-        const uploadTask = await fileRef.put(file);
-        const downloadURL = await uploadTask.ref.getDownloadURL();
+        const formData = new FormData();
+        formData.append('foto', file);
+        formData.append('empId', currentEmployee.id);
+        formData.append('docId', currentEmployee._docId);
 
-        // Guardar URL en Firestore
-        await db.collection('checador_employees').doc(currentEmployee._docId).update({
-            photoURL: downloadURL
-        });
+        const resp = await fetch('/api/checador/avatar', { method: 'POST', body: formData });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Error al subir');
 
-        // Actualizar avatar en pantalla
         const avatarEl = document.getElementById('profile-avatar');
-        avatarEl.innerHTML = `<img src="${downloadURL}" alt="${currentEmployee.name}">`;
-        currentEmployee.photoURL = downloadURL;
+        avatarEl.innerHTML = `<img src="${data.url}" alt="${currentEmployee.name}">`;
+        currentEmployee.photoURL = data.url;
 
         showNotification('Foto actualizada');
     } catch (err) {
