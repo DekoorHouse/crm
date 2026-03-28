@@ -22,9 +22,16 @@ var hasMore = true;
 var misRefs = JSON.parse(localStorage.getItem('misReferencias') || '[]');
 
 // --- Menú hamburguesa ---
-function toggleMenu() {
-    document.getElementById('navMenu').classList.toggle('hidden');
-}
+(function() {
+    var btn = document.getElementById('hamburgerBtn');
+    var menu = document.getElementById('mobileMenu');
+    if (btn && menu) {
+        btn.addEventListener('click', function() { menu.classList.toggle('hidden'); });
+        menu.querySelector('.mobile-menu-overlay').addEventListener('click', function() { menu.classList.add('hidden'); });
+        menu.querySelector('.mobile-menu-close').addEventListener('click', function() { menu.classList.add('hidden'); });
+    }
+})();
+function toggleMenu() {} // legacy noop
 
 // --- Toggle formulario ---
 function toggleForm() {

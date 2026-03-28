@@ -11,34 +11,52 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="icon" type="image/png" href="/favicon.png">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
     <link rel="stylesheet" href="/jt-rastreo/style.css">
     <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 
 <body>
-    <div class="bg-gradient"></div>
-    
-    <div class="container fade-in">
-        <header>
-            <a href="/sitio/" class="logo">
-                <img src="/favicon.png" alt="Dekoor" class="logo-img" style="height:44px;width:44px;border-radius:50%;">
-                <span style="font-size:1.5rem;font-weight:700;color:#1B4D5C;text-decoration:none;">dekoor</span>
+    <!-- Shared Navbar -->
+    <nav class="navbar scrolled" id="navbar">
+        <div class="nav-container">
+            <a href="/sitio/" class="nav-logo">
+                <img src="/favicon.png" alt="Dekoor" class="logo-icon">
+                <span class="logo-text">dekoor</span>
             </a>
-            <button class="hamburger-btn" onclick="toggleMenu()" aria-label="Menú">
+            <div class="nav-links">
+                <a href="/sitio/" class="nav-link">Inicio</a>
+                <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
+                <a href="/sitio/#categorias" class="nav-link">Categorías</a>
+                <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+                <a href="/referencias/" class="nav-link">Referencias</a>
+                <a href="/jt-rastreo/" class="nav-link active">Rastreo</a>
+                <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+            </div>
+            <div class="nav-actions">
+                <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+                <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn cart-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+            </div>
+            <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
                 <i class="fas fa-bars"></i>
             </button>
-        </header>
-
-        <div id="navMenu" class="nav-menu hidden">
-            <div class="nav-menu-overlay" onclick="toggleMenu()"></div>
-            <nav class="nav-menu-panel">
-                <button class="nav-close" onclick="toggleMenu()">&times;</button>
-                <a href="/sitio/" class="nav-link"><i class="fas fa-home"></i> Inicio</a>
-                <a href="/jt-rastreo" class="nav-link active"><i class="fas fa-truck"></i> Rastreo de pedido</a>
-                <a href="/referencias" class="nav-link"><i class="fas fa-star"></i> Referencias</a>
-            </nav>
         </div>
+    </nav>
 
+    <!-- Mobile Menu -->
+    <div id="mobileMenu" class="mobile-menu hidden">
+        <div class="mobile-menu-overlay"></div>
+        <div class="mobile-menu-panel">
+            <button class="mobile-menu-close">&times;</button>
+            <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+            <a href="/sitio/#colecciones" class="mobile-link"><i class="fas fa-layer-group"></i> Colecciones</a>
+            <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
+            <a href="/jt-rastreo/" class="mobile-link active"><i class="fas fa-truck"></i> Rastreo</a>
+            <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+        </div>
+    </div>
+
+    <div class="container fade-in" style="padding-top: var(--nav-height, 80px);">
         <main>
             <section class="hero">
                 <h1>Rastrea tu felicidad</h1>
@@ -106,8 +124,13 @@
 
     <script src="/jt-rastreo/script.js"></script>
     <script>
-    function toggleMenu() {
-        document.getElementById('navMenu').classList.toggle('hidden');
+    // Mobile menu
+    var hamburgerBtn = document.getElementById('hamburgerBtn');
+    var mobileMenu = document.getElementById('mobileMenu');
+    if (hamburgerBtn && mobileMenu) {
+        hamburgerBtn.addEventListener('click', function() { mobileMenu.classList.toggle('hidden'); });
+        mobileMenu.querySelector('.mobile-menu-overlay').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+        mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
     }
     </script>
 </body>

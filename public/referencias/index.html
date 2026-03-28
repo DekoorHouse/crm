@@ -11,11 +11,49 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
     <link rel="stylesheet" href="/referencias/style.css">
 </head>
 <body>
 
-<div class="bg-gradient"></div>
+<!-- Shared Navbar -->
+<nav class="navbar scrolled" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/favicon.png" alt="Dekoor" class="logo-icon">
+            <span class="logo-text">dekoor</span>
+        </a>
+        <div class="nav-links">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
+            <a href="/sitio/#categorias" class="nav-link">Categorías</a>
+            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="/referencias/" class="nav-link active">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn cart-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- Mobile Menu -->
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/referencias/" class="mobile-link active"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
 
 <div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
     <img id="lightboxImg" src="" alt="Foto ampliada">
@@ -31,27 +69,7 @@
     </div>
 </div>
 
-<div class="container">
-
-    <header>
-        <a href="/sitio/" style="display:flex;align-items:center;gap:10px;text-decoration:none;">
-            <img src="/favicon.png" alt="Dekoor" class="logo-img" style="border-radius:50%;">
-            <span style="font-size:1.5rem;font-weight:700;color:#1B4D5C;">dekoor</span>
-        </a>
-        <button class="hamburger-btn" onclick="toggleMenu()" aria-label="Menú">
-            <i class="fas fa-bars"></i>
-        </button>
-    </header>
-
-    <div id="navMenu" class="nav-menu hidden">
-        <div class="nav-menu-overlay" onclick="toggleMenu()"></div>
-        <nav class="nav-menu-panel">
-            <button class="nav-close" onclick="toggleMenu()">&times;</button>
-            <a href="/sitio/" class="nav-link"><i class="fas fa-home"></i> Inicio</a>
-            <a href="/referencias" class="nav-link active"><i class="fas fa-star"></i> Referencias</a>
-            <a href="/jt-rastreo" class="nav-link"><i class="fas fa-truck"></i> Rastreo de pedido</a>
-        </nav>
-    </div>
+<div class="container" style="padding-top: var(--nav-height, 80px);">
 
     <section class="hero">
         <h1>Lo que dicen nuestros clientes</h1>
