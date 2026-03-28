@@ -90,16 +90,15 @@ router.post('/preview', async (req, res) => {
     }
 });
 
-// Disparar publicacion manualmente
+// Disparar publicacion manualmente (espera resultado para mostrarlo en UI)
 router.post('/trigger', async (req, res) => {
     try {
-        res.json({ message: 'Publicacion iniciada. El navegador se abrira en tu computadora...' });
-        // Ejecutar en background para no bloquear la respuesta
-        executeWhatsAppGroupPost().then(result => {
-            console.log('[WA-GROUP] Resultado:', result.status);
-        }).catch(err => {
-            console.error('[WA-GROUP] Error en trigger:', err.message);
-        });
+        const result = await executeWhatsAppGroupPost();
+        if (result.status === 'success') {
+            res.json({ message: `Publicado en ${result.groupName}!`, status: 'success', photo: result.photoFilename });
+        } else {
+            res.json({ message: `Error: ${result.error || 'Fallo desconocido'}`, status: result.status });
+        }
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

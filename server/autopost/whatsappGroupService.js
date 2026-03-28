@@ -87,19 +87,26 @@ async function generateWhatsAppCaption(imagePath) {
 async function launchBrowser() {
     console.log(`[WA-GROUP] Abriendo Chrome con perfil: ${CHROME_PROFILE}`);
 
-    browserInstance = await puppeteer.launch({
-        executablePath: CHROME_PATH,
-        userDataDir: CHROME_USER_DATA,
-        headless: false,
-        defaultViewport: null,
-        args: [
-            `--profile-directory=${CHROME_PROFILE}`,
-            '--no-first-run',
-            '--disable-default-apps',
-            '--start-maximized'
-        ],
-        ignoreDefaultArgs: ['--enable-automation']
-    });
+    try {
+        browserInstance = await puppeteer.launch({
+            executablePath: CHROME_PATH,
+            userDataDir: CHROME_USER_DATA,
+            headless: false,
+            defaultViewport: null,
+            args: [
+                `--profile-directory=${CHROME_PROFILE}`,
+                '--no-first-run',
+                '--disable-default-apps',
+                '--start-maximized'
+            ],
+            ignoreDefaultArgs: ['--enable-automation']
+        });
+    } catch (err) {
+        if (err.message.includes('Failed to launch') || err.message.includes('lock') || err.message.includes('already')) {
+            throw new Error('Chrome ya esta abierto. Cierra todas las ventanas de Chrome e intenta de nuevo.');
+        }
+        throw err;
+    }
 
     const pages = await browserInstance.pages();
     pageInstance = pages[0] || await browserInstance.newPage();

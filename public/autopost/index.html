@@ -618,12 +618,16 @@
       try {
         const res = await fetch(`${WA_API}/trigger`, { method: 'POST' });
         const data = await res.json();
-        toast(data.message || 'Publicacion iniciada!');
-        setTimeout(() => { waLoadStatus(); waLoadLog(); waLoadPhotos(); btn.disabled = false; btn.innerHTML = '<i class="fab fa-whatsapp"></i> Publicar ahora'; }, 30000);
+        if (data.status === 'success') {
+          toast(data.message || 'Publicado!');
+        } else {
+          toast(data.message || data.error || 'Error al publicar', 'error');
+        }
+        waLoadStatus(); waLoadLog(); waLoadPhotos();
       } catch (e) {
         toast('Error: ' + e.message, 'error');
-        btn.disabled = false; btn.innerHTML = '<i class="fab fa-whatsapp"></i> Publicar ahora';
       }
+      btn.disabled = false; btn.innerHTML = '<i class="fab fa-whatsapp"></i> Publicar ahora';
     }
 
     async function waCloseBrowser() {
