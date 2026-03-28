@@ -54,15 +54,51 @@ async function generateCaption(imagePath) {
 }
 
 // --- Paso 3: Automatizar WhatsApp Web ---
+const TEMP_PROFILE_DIR = path.join(os.tmpdir(), 'wa-autopost-profile');
+
 async function launchBrowser() {
-    console.log(`[LOCAL] Abriendo Chrome (perfil: ${CHROME_PROFILE})...`);
+    console.log(`[LOCAL] Preparando perfil de Chrome...`);
+
+    // Matar cualquier Chrome residual
+    try {
+        const { execSync } = require('child_process');
+        execSync('taskkill /F /IM chrome.exe', { stdio: 'ignore' });
+        await delay(2000);
+    } catch (e) {}
+
+    // Copiar perfil de Chrome a ubicacion temporal (evita lock del singleton)
+    const srcProfile = path.join(CHROME_USER_DATA, CHROME_PROFILE);
+    const destProfile = path.join(TEMP_PROFILE_DIR, 'Default');
+
+    if (fs.existsSync(TEMP_PROFILE_DIR)) {
+        fs.rmSync(TEMP_PROFILE_DIR, { recursive: true, force: true });
+    }
+    fs.mkdirSync(destProfile, { recursive: true });
+
+    // Copiar solo los datos esenciales para la sesion de WhatsApp
+    const essentialDirs = ['IndexedDB', 'Local Storage', 'Session Storage', 'databases'];
+    const essentialFiles = ['Cookies', 'Cookies-journal', 'Preferences', 'Secure Preferences'];
+
+    for (const dir of essentialDirs) {
+        const src = path.join(srcProfile, dir);
+        if (fs.existsSync(src)) {
+            copyDirSync(src, path.join(destProfile, dir));
+        }
+    }
+    for (const file of essentialFiles) {
+        const src = path.join(srcProfile, file);
+        if (fs.existsSync(src)) {
+            fs.copyFileSync(src, path.join(destProfile, file));
+        }
+    }
+
+    console.log(`[LOCAL] Abriendo Chrome con perfil temporal...`);
     browser = await puppeteer.launch({
         executablePath: CHROME_PATH,
-        userDataDir: CHROME_USER_DATA,
+        userDataDir: TEMP_PROFILE_DIR,
         headless: false,
         defaultViewport: null,
         args: [
-            `--profile-directory=${CHROME_PROFILE}`,
             '--no-first-run',
             '--disable-default-apps',
             '--start-maximized'
@@ -73,31 +109,87 @@ async function launchBrowser() {
     page = pages[0] || await browser.newPage();
 }
 
+function copyDirSync(src, dest) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+        const srcPath = path.join(src, entry.name);
+        const destPath = path.join(dest, entry.name);
+        if (entry.isDirectory()) {
+            copyDirSync(srcPath, destPath);
+        } else {
+            try { fs.copyFileSync(srcPath, destPath); } catch (e) {}
+        }
+    }
+}
+
 async function navigateToWhatsApp() {
     console.log('[LOCAL] Navegando a WhatsApp Web...');
     await page.goto('https://web.whatsapp.com', { waitUntil: 'networkidle2', timeout: 60000 });
     console.log('[LOCAL] Esperando carga de WhatsApp Web...');
-    await page.waitForSelector('div[contenteditable="true"][data-tab="3"]', { timeout: 90000 });
-    console.log('[LOCAL] WhatsApp Web cargado');
+
+    // Esperar a que cargue el panel de chats (varios selectores posibles)
+    const chatListSelector = 'div[aria-label="Lista de chats"], div[aria-label="Chat list"], #pane-side';
+    try {
+        await page.waitForSelector(chatListSelector, { timeout: 30000 });
+        console.log('[LOCAL] WhatsApp Web cargado (sesion activa)');
+    } catch (e) {
+        const ssPath = path.join(os.tmpdir(), 'wa-debug.png');
+        await page.screenshot({ path: ssPath, fullPage: true });
+        console.log(`[LOCAL] Screenshot guardado: ${ssPath}`);
+        throw new Error('WhatsApp Web no cargo la sesion. Ver screenshot: ' + ssPath);
+    }
+    await delay(2000);
 }
 
 async function searchAndOpenGroup() {
     console.log(`[LOCAL] Buscando grupo: "${GROUP_NAME}"...`);
-    const searchBox = await page.waitForSelector('div[contenteditable="true"][data-tab="3"]', { timeout: 15000 });
-    await searchBox.click();
+
+    // Buscar el campo de busqueda (INPUT o DIV con data-tab="3")
+    const searchArea = await page.waitForSelector(
+        'input[data-tab="3"], div[contenteditable="true"][data-tab="3"]',
+        { timeout: 15000 }
+    );
+    await searchArea.click();
     await delay(500);
 
+    // Limpiar y escribir
     await page.keyboard.down('Control');
     await page.keyboard.press('a');
     await page.keyboard.up('Control');
     await page.keyboard.press('Backspace');
     await delay(300);
 
-    await searchBox.type(GROUP_NAME, { delay: 80 });
-    await delay(2000);
+    await page.keyboard.type(GROUP_NAME, { delay: 80 });
+    await delay(3000);
 
-    const groupResult = await page.waitForSelector(`span[title="${GROUP_NAME}"]`, { timeout: 10000 });
-    await groupResult.click();
+    // Screenshot para ver resultados de busqueda
+    const ssSearch = path.join(os.tmpdir(), 'wa-search-results.png');
+    await page.screenshot({ path: ssSearch, fullPage: true });
+    console.log(`[DEBUG] Resultados de busqueda: ${ssSearch}`);
+
+    // Buscar el resultado del grupo (intentar varios selectores)
+    const groupResult = await page.waitForSelector(
+        `span[title="${GROUP_NAME}"], span[title*="Referencias"]`,
+        { timeout: 10000 }
+    ).catch(() => null);
+
+    if (!groupResult) {
+        // Fallback: buscar por texto visible
+        const found = await page.evaluate((name) => {
+            const spans = document.querySelectorAll('span');
+            for (const s of spans) {
+                if (s.textContent?.includes(name) || s.textContent?.includes('Referencias')) {
+                    s.click();
+                    return s.textContent;
+                }
+            }
+            return null;
+        }, GROUP_NAME);
+        if (!found) throw new Error(`Grupo "${GROUP_NAME}" no encontrado en la busqueda`);
+        console.log(`[LOCAL] Grupo encontrado via texto: "${found}"`);
+    } else {
+        await groupResult.click();
+    }
     await delay(1500);
     console.log(`[LOCAL] Grupo "${GROUP_NAME}" abierto`);
 }
@@ -105,30 +197,46 @@ async function searchAndOpenGroup() {
 async function sendImageWithCaption(imagePath, caption) {
     console.log('[LOCAL] Enviando imagen...');
 
-    const attachBtn = await page.waitForSelector('div[title="Adjuntar"], div[title="Adjunta"], span[data-icon="plus"], span[data-icon="clip"]', { timeout: 10000 });
+    // Buscar boton de adjuntar (+)
+    const attachBtn = await page.waitForSelector(
+        'span[data-icon="plus-rounded"], span[data-icon="plus"], ' +
+        'span[data-icon="clip"], span[data-icon="attach-menu-plus"]',
+        { timeout: 10000 }
+    );
     await attachBtn.click();
     await delay(1000);
 
-    const fileInput = await page.waitForSelector('input[accept*="image"]', { timeout: 10000 });
+    const fileInput = await page.waitForSelector('input[accept*="image"], input[type="file"]', { timeout: 10000 });
     await fileInput.uploadFile(imagePath);
     await delay(3000);
 
+    // Esperar el campo de caption (puede ser input o div contenteditable)
     const captionBox = await page.waitForSelector(
-        'div[contenteditable="true"][data-tab="10"], div.copyable-text.selectable-text[contenteditable="true"]:not([data-tab="3"])',
+        'input[data-tab="10"], div[contenteditable="true"][data-tab="10"], ' +
+        'div[contenteditable="true"][role="textbox"]:not([data-tab="3"])',
         { timeout: 15000 }
     );
     await captionBox.click();
     await delay(500);
 
-    await page.evaluate((text) => {
-        const el = document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
-                   document.querySelectorAll('div.copyable-text.selectable-text[contenteditable="true"]')[1];
-        if (el) {
-            el.focus();
-            document.execCommand('insertText', false, text);
+    // Escribir caption
+    const isInput = await captionBox.evaluate(el => el.tagName === 'INPUT');
+    if (isInput) {
+        await captionBox.evaluate((el, text) => {
+            el.value = text;
             el.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    }, caption);
+        }, caption);
+    } else {
+        await page.evaluate((text) => {
+            const el = document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
+                       document.querySelector('div[contenteditable="true"][role="textbox"]:not([data-tab="3"])');
+            if (el) {
+                el.focus();
+                document.execCommand('insertText', false, text);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+        }, caption);
+    }
     await delay(1500);
 
     const sendBtn = await page.waitForSelector('span[data-icon="send"], div[aria-label="Enviar"], div[aria-label="Send"]', { timeout: 10000 });
@@ -170,6 +278,11 @@ async function closeBrowser() {
         try { await browser.close(); } catch (e) {}
         browser = null;
         page = null;
+    }
+    // Limpiar perfil temporal
+    await delay(1000);
+    if (fs.existsSync(TEMP_PROFILE_DIR)) {
+        try { fs.rmSync(TEMP_PROFILE_DIR, { recursive: true, force: true }); } catch (e) {}
     }
 }
 
