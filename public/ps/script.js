@@ -143,6 +143,38 @@ imageInput.addEventListener('change', (e) => {
     imageInput.value = '';
 });
 
+// ===================== PASTE IMAGE (CTRL+V) =====================
+document.addEventListener('paste', (e) => {
+    const items = e.clipboardData && e.clipboardData.items;
+    if (!items) return;
+    for (const item of items) {
+        if (item.type.startsWith('image/')) {
+            e.preventDefault();
+            const file = item.getAsFile();
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                const img = new Image();
+                img.onload = () => {
+                    baseImage = img;
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    canvas.style.display = 'block';
+                    canvasPlaceholder.style.display = 'none';
+                    textLayers = [];
+                    selectedTextIdx = -1;
+                    undoStack = [];
+                    redoStack = [];
+                    redrawCanvas();
+                    saveUndo();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+            break;
+        }
+    }
+});
+
 // ===================== TOOLS =====================
 function setTool(tool) {
     currentTool = tool;
@@ -558,6 +590,17 @@ document.addEventListener('keydown', (e) => {
         redrawCanvas();
     }
 });
+
+// ===================== LOAD BUNDLED FONTS =====================
+(async () => {
+    try {
+        const font = new FontFace('Rows of Sunflowers', "url('/editor/fonts/RowsOfSunflowers.ttf')");
+        await font.load();
+        document.fonts.add(font);
+    } catch (err) {
+        console.warn('No se pudo cargar Rows of Sunflowers:', err);
+    }
+})();
 
 // ===================== INIT =====================
 initDarkMode();
