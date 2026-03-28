@@ -42,7 +42,7 @@ const MODELS = {
         id: 'gemini-3.1-flash-image-preview',
         name: 'Nano Banana 2 Preview',
         type: 'gemini',
-        costPerImage: 0.067,  // 1K resolution
+        costPerImage: 0.101,  // 2K resolution
         inputPer1M: 0.50,
         speed: 'standard',
     },
@@ -50,7 +50,7 @@ const MODELS = {
         id: 'gemini-3-pro-image-preview',
         name: 'Nano Banana Pro',
         type: 'gemini',
-        costPerImage: 0.134,  // 1K resolution
+        costPerImage: 0.134,  // 2K resolution (same as 1K)
         inputPer1M: 2.00,
         speed: 'premium',
     },
@@ -101,19 +101,31 @@ async function generateWithImagen(modelId, prompt, aspectRatio = '1:1', sampleCo
 /**
  * Genera imágenes con modelos Gemini/Nano Banana (endpoint :generateContent)
  */
-async function generateWithGemini(modelId, prompt, aspectRatio = '1:1') {
+async function generateWithGemini(modelId, prompt, aspectRatio = '1:1', imageData = null) {
     const apiKey = API_KEY();
     const url = `${BASE_URL}/models/${modelId}:generateContent?key=${apiKey}`;
+
+    // Construir parts: texto + imagen de referencia opcional
+    const parts = [{ text: prompt }];
+    if (imageData) {
+        parts.push({
+            inlineData: {
+                mimeType: imageData.mimeType,
+                data: imageData.base64,
+            },
+        });
+    }
 
     const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
+            contents: [{ parts }],
             generationConfig: {
                 responseModalities: ['TEXT', 'IMAGE'],
                 imageConfig: {
                     aspectRatio,
+                    imageSize: '2K',
                 },
             },
         }),
@@ -160,9 +172,10 @@ async function generateWithGemini(modelId, prompt, aspectRatio = '1:1') {
  * @param {string} prompt - Prompt de texto
  * @param {string} aspectRatio - Relación de aspecto
  * @param {number} sampleCount - Número de imágenes (solo Imagen)
+ * @param {{ mimeType: string, base64: string }|null} imageData - Imagen de referencia (solo Gemini)
  * @returns {{ images, model, usage, cost }}
  */
-async function generateImage(modelKey, prompt, aspectRatio = '1:1', sampleCount = 1) {
+async function generateImage(modelKey, prompt, aspectRatio = '1:1', sampleCount = 1, imageData = null) {
     const apiKey = API_KEY();
     if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
 
@@ -173,7 +186,7 @@ async function generateImage(modelKey, prompt, aspectRatio = '1:1', sampleCount 
     if (modelConfig.type === 'imagen') {
         result = await generateWithImagen(modelConfig.id, prompt, aspectRatio, sampleCount);
     } else {
-        result = await generateWithGemini(modelConfig.id, prompt, aspectRatio);
+        result = await generateWithGemini(modelConfig.id, prompt, aspectRatio, imageData);
     }
 
     // Calcular costo

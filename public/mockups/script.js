@@ -18,7 +18,7 @@ const MODELS_INFO = {
     'imagen-4':         { name: 'Imagen 4',            type: 'Imagen',             cost: 0.04,  speed: 'standard', isImagen: true },
     'imagen-4-ultra':   { name: 'Imagen 4 Ultra',      type: 'Imagen',             cost: 0.06,  speed: 'premium',  isImagen: true },
     'nano-banana':      { name: 'Nano Banana',         type: 'Gemini 2.5 Flash',   cost: 0.039, speed: 'standard', isImagen: false },
-    'nano-banana-2':    { name: 'Nano Banana 2',       type: 'Gemini 3.1 Flash',   cost: 0.067, speed: 'standard', isImagen: false },
+    'nano-banana-2':    { name: 'Nano Banana 2',       type: 'Gemini 3.1 Flash',   cost: 0.101, speed: 'standard', isImagen: false },
     'nano-banana-pro':  { name: 'Nano Banana Pro',     type: 'Gemini 3 Pro',       cost: 0.134, speed: 'premium',  isImagen: false },
 };
 
@@ -26,9 +26,11 @@ const MODELS_INFO = {
 let selectedModel = 'imagen-4-fast';
 let sessionCost = 0;
 let sessionImages = 0;
-let sessionTokens = 0;
+let sessionTokensIn = 0;
+let sessionTokensOut = 0;
 let history = [];
 let isGenerating = false;
+let uploadedImage = null; // { mimeType, base64 }
 
 // ===================== DOM ELEMENTS =====================
 const loginView = document.getElementById('login-view');
@@ -54,7 +56,8 @@ const errorMessage = document.getElementById('error-message');
 const resultsSection = document.getElementById('results-section');
 const resultsGrid = document.getElementById('results-grid');
 const resultModel = document.getElementById('result-model');
-const resultTokens = document.getElementById('result-tokens');
+const resultTokensIn = document.getElementById('result-tokens-in');
+const resultTokensOut = document.getElementById('result-tokens-out');
 const resultCost = document.getElementById('result-cost');
 
 const historySection = document.getElementById('history-section');
@@ -62,7 +65,16 @@ const historyList = document.getElementById('history-list');
 
 const sessionCostEl = document.getElementById('session-cost');
 const sessionImagesEl = document.getElementById('session-images');
-const sessionTokensEl = document.getElementById('session-tokens');
+const sessionTokensInEl = document.getElementById('session-tokens-in');
+const sessionTokensOutEl = document.getElementById('session-tokens-out');
+
+const uploadArea = document.getElementById('upload-area');
+const uploadDropzone = document.getElementById('upload-dropzone');
+const imageUploadInput = document.getElementById('image-upload');
+const uploadPlaceholder = document.getElementById('upload-placeholder');
+const uploadPreview = document.getElementById('upload-preview');
+const uploadPreviewImg = document.getElementById('upload-preview-img');
+const uploadRemoveBtn = document.getElementById('upload-remove');
 
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
@@ -123,14 +135,17 @@ modelsGrid.addEventListener('click', (e) => {
     modelsGrid.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
     card.classList.add('selected');
     selectedModel = card.dataset.model;
-    updateSampleCountVisibility();
+    updateModelControls();
 });
 
-function updateSampleCountVisibility() {
+function updateModelControls() {
     const info = MODELS_INFO[selectedModel];
     // Solo modelos Imagen soportan multiples imagenes
     sampleCountGroup.style.display = info?.isImagen ? 'flex' : 'none';
     if (!info?.isImagen) sampleCountSelect.value = '1';
+    // Solo modelos Gemini (Nano Banana) soportan imagen de referencia
+    uploadArea.style.display = info?.isImagen ? 'none' : 'block';
+    if (info?.isImagen) clearUploadedImage();
 }
 
 // ===================== GENERATE =====================
@@ -150,15 +165,20 @@ async function generate() {
     resultsSection.style.display = 'none';
 
     try {
+        const payload = {
+            prompt,
+            model: selectedModel,
+            aspectRatio: aspectSelect.value,
+            sampleCount: parseInt(sampleCountSelect.value),
+        };
+        if (uploadedImage) {
+            payload.image = uploadedImage;
+        }
+
         const res = await fetch(`${API_BASE}/api/mockups/generate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                prompt,
-                model: selectedModel,
-                aspectRatio: aspectSelect.value,
-                sampleCount: parseInt(sampleCountSelect.value),
-            }),
+            body: JSON.stringify(payload),
         });
 
         const data = await res.json();
@@ -185,7 +205,8 @@ async function generate() {
 function renderResults(data) {
     resultsSection.style.display = 'block';
     resultModel.textContent = data.model;
-    resultTokens.textContent = `${data.usage.totalTokens} tokens`;
+    resultTokensIn.textContent = `In: ${data.usage.inputTokens.toLocaleString()}`;
+    resultTokensOut.textContent = `Out: ${data.usage.outputTokens.toLocaleString()}`;
     resultCost.textContent = `$${data.cost.total.toFixed(4)}`;
 
     resultsGrid.innerHTML = '';
@@ -211,11 +232,13 @@ function renderResults(data) {
 function updateSessionCost(data) {
     sessionCost += data.cost.total;
     sessionImages += data.images.length;
-    sessionTokens += data.usage.totalTokens;
+    sessionTokensIn += data.usage.inputTokens;
+    sessionTokensOut += data.usage.outputTokens;
 
     sessionCostEl.textContent = `$${sessionCost.toFixed(4)}`;
     sessionImagesEl.textContent = sessionImages;
-    sessionTokensEl.textContent = sessionTokens.toLocaleString();
+    sessionTokensInEl.textContent = sessionTokensIn.toLocaleString();
+    sessionTokensOutEl.textContent = sessionTokensOut.toLocaleString();
 }
 
 // ===================== HISTORY =====================
@@ -278,6 +301,54 @@ document.addEventListener('keydown', (e) => {
         lightbox.style.display = 'none';
     }
 });
+
+// ===================== IMAGE UPLOAD =====================
+uploadDropzone.addEventListener('click', () => imageUploadInput.click());
+
+imageUploadInput.addEventListener('change', (e) => {
+    if (e.target.files?.[0]) handleImageFile(e.target.files[0]);
+});
+
+// Drag and drop
+uploadDropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    uploadDropzone.classList.add('dragover');
+});
+uploadDropzone.addEventListener('dragleave', () => {
+    uploadDropzone.classList.remove('dragover');
+});
+uploadDropzone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    uploadDropzone.classList.remove('dragover');
+    if (e.dataTransfer.files?.[0]) handleImageFile(e.dataTransfer.files[0]);
+});
+
+function handleImageFile(file) {
+    if (!file.type.startsWith('image/')) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+        const dataUrl = e.target.result;
+        const base64 = dataUrl.split(',')[1];
+        uploadedImage = { mimeType: file.type, base64 };
+        uploadPreviewImg.src = dataUrl;
+        uploadPlaceholder.style.display = 'none';
+        uploadPreview.style.display = 'flex';
+    };
+    reader.readAsDataURL(file);
+}
+
+uploadRemoveBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearUploadedImage();
+});
+
+function clearUploadedImage() {
+    uploadedImage = null;
+    imageUploadInput.value = '';
+    uploadPreviewImg.src = '';
+    uploadPlaceholder.style.display = 'flex';
+    uploadPreview.style.display = 'none';
+}
 
 // ===================== UTILITIES =====================
 function downloadImage(dataUrl, filename) {

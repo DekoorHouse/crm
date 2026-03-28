@@ -323,6 +323,70 @@ body.dark-mode .badge-premium { background: rgba(187,154,247,0.2); color: #bb9af
 .prompt-textarea::placeholder {
     color: var(--text-3);
 }
+/* ========== IMAGE UPLOAD ========== */
+.upload-area {
+    margin-top: 12px;
+}
+.upload-dropzone {
+    border: 2px dashed var(--border);
+    border-radius: var(--r-sm);
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+}
+.upload-dropzone:hover,
+.upload-dropzone.dragover {
+    border-color: var(--primary);
+    background: var(--primary-light);
+}
+.upload-placeholder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    color: var(--text-3);
+    font-size: 13px;
+}
+.upload-placeholder i {
+    font-size: 20px;
+    color: var(--primary);
+}
+.upload-preview {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+.upload-preview img {
+    max-height: 120px;
+    max-width: 100%;
+    border-radius: 8px;
+    object-fit: contain;
+}
+.upload-remove {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    font-size: 11px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+}
+.upload-remove:hover {
+    background: var(--danger);
+    opacity: 0.8;
+}
+
 .prompt-controls {
     display: flex;
     align-items: flex-end;

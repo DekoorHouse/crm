@@ -60,8 +60,12 @@
                 <span class="cost-value" id="session-images">0</span>
             </div>
             <div class="cost-item">
-                <span class="cost-label">Tokens</span>
-                <span class="cost-value" id="session-tokens">0</span>
+                <span class="cost-label">Tokens In</span>
+                <span class="cost-value" id="session-tokens-in">0</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Tokens Out</span>
+                <span class="cost-value" id="session-tokens-out">0</span>
             </div>
         </div>
 
@@ -101,7 +105,7 @@
                 <div class="model-badge badge-standard">Standard</div>
                 <div class="model-name">Nano Banana 2</div>
                 <div class="model-type">Gemini 3.1 Flash</div>
-                <div class="model-price">$0.067 <span>/img</span></div>
+                <div class="model-price">$0.101 <span>/img</span></div>
             </div>
             <!-- Nano Banana Pro -->
             <div class="model-card" data-model="nano-banana-pro">
@@ -116,6 +120,20 @@
         <div class="prompt-section">
             <div class="prompt-row">
                 <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
+            </div>
+            <!-- Image Upload (solo Nano Banana) -->
+            <div id="upload-area" class="upload-area" style="display: none;">
+                <div id="upload-dropzone" class="upload-dropzone">
+                    <input type="file" id="image-upload" accept="image/*" style="display:none;">
+                    <div id="upload-placeholder" class="upload-placeholder">
+                        <i class="fas fa-cloud-upload-alt"></i>
+                        <span>Arrastra una imagen o <strong>haz click</strong> para subir referencia</span>
+                    </div>
+                    <div id="upload-preview" class="upload-preview" style="display:none;">
+                        <img id="upload-preview-img" src="" alt="Preview">
+                        <button id="upload-remove" class="upload-remove" title="Quitar imagen"><i class="fas fa-times"></i></button>
+                    </div>
+                </div>
             </div>
             <div class="prompt-controls">
                 <div class="control-group">
@@ -161,7 +179,8 @@
                 <div class="section-title" style="margin-bottom:0;">Resultado</div>
                 <div class="result-meta">
                     <span id="result-model"></span>
-                    <span id="result-tokens"></span>
+                    <span id="result-tokens-in"></span>
+                    <span id="result-tokens-out"></span>
                     <span id="result-cost" class="result-cost-badge"></span>
                 </div>
             </div>

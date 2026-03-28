@@ -29,7 +29,7 @@ router.get('/models', (req, res) => {
 
 // POST /api/mockups/generate — Generar imagen
 router.post('/generate', asyncHandler(async (req, res) => {
-    const { prompt, model, aspectRatio, sampleCount } = req.body;
+    const { prompt, model, aspectRatio, sampleCount, image } = req.body;
 
     if (!prompt || !prompt.trim()) {
         return res.status(400).json({ success: false, error: 'Se requiere un prompt.' });
@@ -41,7 +41,10 @@ router.post('/generate', asyncHandler(async (req, res) => {
         return res.status(400).json({ success: false, error: `Modelo no soportado: ${model}` });
     }
 
-    const result = await generateImage(model, prompt.trim(), aspectRatio || '1:1', sampleCount || 1);
+    // image: { mimeType, base64 } o null
+    const imageData = image?.base64 ? { mimeType: image.mimeType, base64: image.base64 } : null;
+
+    const result = await generateImage(model, prompt.trim(), aspectRatio || '1:1', sampleCount || 1, imageData);
     res.json({ success: true, ...result });
 }));
 
