@@ -324,9 +324,32 @@ function getWhatsAppStatus() {
     };
 }
 
+async function markPhotoAsPublished(filename, caption) {
+    const logEntry = {
+        startedAt: new Date(),
+        completedAt: new Date(),
+        status: 'success',
+        groupName: GROUP_NAME,
+        photoFilename: filename,
+        caption,
+        source: 'local-script'
+    };
+    await saveLog(logEntry);
+
+    // Mover foto a publicados
+    const srcPath = path.join(PHOTOS_FOLDER, filename);
+    const publishedDir = path.join(PHOTOS_FOLDER, 'publicados');
+    if (!fs.existsSync(publishedDir)) fs.mkdirSync(publishedDir, { recursive: true });
+    if (fs.existsSync(srcPath)) {
+        fs.renameSync(srcPath, path.join(publishedDir, filename));
+    }
+    return logEntry;
+}
+
 module.exports = {
     executeWhatsAppGroupPost,
     previewWhatsAppPost,
+    markPhotoAsPublished,
     getWhatsAppLog,
     getWhatsAppStatus,
     getAvailablePhotos,

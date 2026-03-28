@@ -9,7 +9,8 @@ const {
     getWhatsAppLog,
     getWhatsAppStatus,
     getAvailablePhotos,
-    closeBrowser
+    closeBrowser,
+    markPhotoAsPublished
 } = require('./whatsappGroupService');
 
 const PHOTOS_FOLDER = process.env.WA_PHOTOS_FOLDER || 'C:/Users/chris/Pictures/IA Dekoor/Grupo';
@@ -120,6 +121,18 @@ router.get('/log', async (req, res) => {
         const limit = parseInt(req.query.limit) || 20;
         const log = await getWhatsAppLog(limit);
         res.json({ log });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Marcar foto como publicada (llamado desde script local)
+router.post('/mark-published', async (req, res) => {
+    try {
+        const { filename, caption } = req.body;
+        if (!filename) return res.status(400).json({ error: 'filename es requerido' });
+        const result = await markPhotoAsPublished(filename, caption || '');
+        res.json({ status: 'success', result });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
