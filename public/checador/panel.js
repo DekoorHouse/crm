@@ -615,10 +615,16 @@ document.getElementById('add-employee-btn').addEventListener('click', async () =
 function exportToCSV() {
     const data = getGroupedData();
     if (data.length === 0) { showNotification("Sin datos", "danger"); return; }
-    let csv = "Nombre,Fecha,Eventos,Total Tiempo,Pago ($70/hr)\n";
+    const { start: wkS, end: wkE } = getWeekRange(weekOffset);
+    let csv = "Nombre,Fecha,Eventos,Total Tiempo,Pago Horas,Ajustes,Pago Final\n";
     data.forEach(r => {
         const cleanEvents = r.timeline.replace(/<[^>]*>/g, '');
-        csv += `"${r.name}","${r.date}","${cleanEvents}","${r.totalStr}","$${r.payment.toFixed(2)}"\n`;
+        const adjs = getWeekAdjustments(r.name, wkS, wkE);
+        const adjSum = adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
+        const basePay = r.payment.toFixed(2);
+        const adjText = adjs.map(a => `${a.type === 'bono' ? '+' : '-'}$${a.amount} ${a.concept || ''}`).join('; ') || '—';
+        const finalPay = (r.payment + adjSum).toFixed(2);
+        csv += `"${r.name}","${r.date}","${cleanEvents}","${r.totalStr}","$${basePay}","${adjText}","$${finalPay}"\n`;
     });
     const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement("a");
@@ -730,38 +736,70 @@ function getResumenData(period) {
         .sort((a, b) => b.minutes - a.minutes);
 }
 
+function getAdjustmentsForPeriod(name, start, end) {
+    return adjustmentsCache.filter(a => {
+        if (a.name.toLowerCase() !== name.toLowerCase()) return false;
+        const d = a.timestamp ? new Date(a.timestamp) : null;
+        return d && d >= start && d <= end;
+    });
+}
+
 function renderResumen() {
     const data = getResumenData(currentPeriod);
+    const { start, end } = getPeriodRange(currentPeriod);
     const tbody = document.getElementById('resumen-body');
     document.getElementById('resumen-period-label').textContent = getPeriodLabel(currentPeriod);
     tbody.innerHTML = '';
 
     if (data.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Sin registros para este período</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color:var(--text-muted); padding:20px;">Sin registros para este periodo</td></tr>`;
         return;
     }
 
-    let totalMins = 0, totalPay = 0;
+    let totalMins = 0, totalBasePay = 0, totalAdjSum = 0, totalFinal = 0;
     data.forEach(emp => {
         totalMins += emp.minutes;
-        totalPay += emp.payment;
+        const basePay = Math.round(emp.payment);
+        totalBasePay += basePay;
+
+        // Ajustes del periodo
+        const adjs = getAdjustmentsForPeriod(emp.name, start, end);
+        const adjSum = adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
+        totalAdjSum += adjSum;
+        const finalPay = basePay + adjSum;
+        totalFinal += finalPay;
+
+        const adjLabel = adjSum !== 0
+            ? `<span style="color:${adjSum > 0 ? '#10b981' : '#ef4444'}; font-weight:600;">${adjSum > 0 ? '+' : ''}$${adjSum}</span>`
+            : '<span style="color:var(--text-muted);">—</span>';
+        const adjDetail = adjs.length > 0
+            ? `<br><small style="color:var(--text-muted);">${adjs.map(a => `${a.type === 'bono' ? '+' : '-'}$${a.amount} ${a.concept || ''}`).join(', ')}</small>`
+            : '';
+
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td>${emp.name}</td>
-            <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
+            <td>${emp.days} dia${emp.days !== 1 ? 's' : ''}</td>
             <td style="font-weight:bold; color:var(--primary)">${emp.totalStr}</td>
-            <td style="font-weight:bold; color:var(--success)">$${emp.payment.toFixed(2)}</td>
+            <td style="color:var(--text-muted)">$${basePay.toLocaleString()}</td>
+            <td>${adjLabel}${adjDetail}</td>
+            <td style="font-weight:bold; color:var(--success)">$${finalPay.toLocaleString()}</td>
         `;
         tbody.appendChild(tr);
     });
 
     const tfr = document.createElement('tr');
     tfr.style.borderTop = '2px solid var(--glass-border)';
+    const totalAdjLabel = totalAdjSum !== 0
+        ? `<span style="color:${totalAdjSum > 0 ? '#10b981' : '#ef4444'}; font-weight:600;">${totalAdjSum > 0 ? '+' : ''}$${totalAdjSum}</span>`
+        : '—';
     tfr.innerHTML = `
         <td style="font-weight:bold; color:var(--text-muted);">TOTAL</td>
         <td></td>
         <td style="font-weight:bold; color:var(--primary)">${Math.floor(totalMins / 60)}h ${totalMins % 60}m</td>
-        <td style="font-weight:bold; color:var(--success)">$${totalPay.toFixed(2)}</td>
+        <td style="color:var(--text-muted);">$${totalBasePay.toLocaleString()}</td>
+        <td>${totalAdjLabel}</td>
+        <td style="font-weight:bold; color:var(--success)">$${totalFinal.toLocaleString()}</td>
     `;
     tbody.appendChild(tfr);
 }
@@ -844,10 +882,17 @@ document.getElementById('send-week-whatsapp').addEventListener('click', () => {
     const checklist = document.getElementById('wa-checklist');
     checklist.innerHTML = '';
 
+    const { start: wkS, end: wkE } = getWeekRange(weekOffset);
+
     waReportData.forEach((emp, i) => {
         const totalH = Math.floor(emp.totalMins / 60);
         const totalM = emp.totalMins % 60;
-        const pay = Math.round((emp.totalMins / 60) * 70);
+        const basePay = Math.round((emp.totalMins / 60) * 70);
+        const adjs = getWeekAdjustments(emp.name, wkS, wkE);
+        const adjSum = adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
+        const finalPay = basePay + adjSum;
+        const adjInfo = adjSum !== 0 ? ` <span style="color:${adjSum > 0 ? '#10b981' : '#ef4444'};">(${adjSum > 0 ? '+' : ''}$${adjSum})</span>` : '';
+
         const initials = emp.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
         const avatarHtml = emp.photoURL
             ? `<img src="${emp.photoURL}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;">`
@@ -860,7 +905,7 @@ document.getElementById('send-week-whatsapp').addEventListener('click', () => {
             ${avatarHtml}
             <div style="flex:1; min-width:0;">
                 <div style="font-weight:600; font-size:0.9rem;">${emp.name}</div>
-                <div style="font-size:0.75rem; color:var(--text-muted);">${totalH}h ${totalM}m · $${pay.toLocaleString()}</div>
+                <div style="font-size:0.75rem; color:var(--text-muted);">${totalH}h ${totalM}m · $${finalPay.toLocaleString()}${adjInfo}</div>
             </div>
         `;
         checklist.appendChild(label);
