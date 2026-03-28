@@ -51,28 +51,56 @@
       --c-neto: #4f46e5;
     }
 
+    /* Theme B: Deep Blue + Cyan */
+    body.theme-blue {
+      --primary: #2563eb;
+      --primary-light: #60a5fa;
+      --primary-dark: #1d4ed8;
+      --accent: #06b6d4;
+      --c-neto: #1d4ed8;
+    }
+
+    /* Theme C: Emerald + Amber */
+    body.theme-emerald {
+      --primary: #059669;
+      --primary-light: #34d399;
+      --primary-dark: #047857;
+      --accent: #d97706;
+      --c-neto: #047857;
+    }
+
+    /* Theme D: Charcoal + Orange */
+    body.theme-charcoal {
+      --primary: #1e293b;
+      --primary-light: #334155;
+      --primary-dark: #0f172a;
+      --accent: #f97316;
+      --bg-main: #fafaf9;
+      --c-neto: #0f172a;
+    }
+
     body.dark-mode {
       --primary: #818cf8;
       --primary-light: #a5b4fc;
       --primary-dark: #6366f1;
-      
+
       --bg-main: #020617; /* Slate 950 */
       --bg-card: #0f172a; /* Slate 900 */
       --bg-glass: rgba(15, 23, 42, 0.7);
-      
+
       --border-color: rgba(30, 41, 59, 0.8);
       --border-hover: rgba(51, 65, 85, 1);
-      
+
       --text-primary: #f8fafc;
       --text-secondary: #94a3b8;
       --text-muted: #64748b;
-      
+
       --white: #0f172a;
-      
+
       --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3);
       --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.5);
       --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.5);
-      
+
       --c-alex: #818cf8;
       --c-chris: #fb7185;
       --c-sueldos: #fbbf24;
@@ -87,6 +115,104 @@
       --c-ganancia: #34d399;
       --c-sincategorizar: #475569;
       --c-neto: #a5b4fc;
+    }
+
+    /* Dark mode overrides per theme */
+    body.dark-mode.theme-blue {
+      --primary: #60a5fa;
+      --primary-light: #93c5fd;
+      --primary-dark: #2563eb;
+      --accent: #22d3ee;
+      --c-neto: #93c5fd;
+    }
+    body.dark-mode.theme-emerald {
+      --primary: #34d399;
+      --primary-light: #6ee7b7;
+      --primary-dark: #059669;
+      --accent: #fbbf24;
+      --c-neto: #6ee7b7;
+    }
+    body.dark-mode.theme-charcoal {
+      --primary: #94a3b8;
+      --primary-light: #cbd5e1;
+      --primary-dark: #64748b;
+      --accent: #fb923c;
+      --c-neto: #cbd5e1;
+    }
+
+    /* --- THEME PICKER --- */
+    .theme-picker {
+      position: relative;
+    }
+    .theme-picker-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      padding: 5px 10px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .theme-picker-btn:hover {
+      background: var(--bg-main);
+      border-color: var(--border-hover);
+      color: var(--text-primary);
+    }
+    .theme-picker-dropdown {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-md);
+      box-shadow: var(--shadow-xl);
+      z-index: 100;
+      min-width: 200px;
+      padding: 8px;
+      animation: fadeIn 0.2s ease;
+    }
+    .theme-picker-dropdown.open {
+      display: block;
+    }
+    .theme-option {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+      background: none;
+      width: 100%;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-primary);
+    }
+    .theme-option:hover {
+      background: var(--bg-main);
+    }
+    .theme-option.active {
+      background: var(--bg-main);
+      font-weight: 700;
+    }
+    .theme-swatch {
+      display: flex;
+      gap: 3px;
+      flex-shrink: 0;
+    }
+    .theme-swatch span {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-card);
+      box-shadow: 0 0 0 1px rgba(0,0,0,0.1);
     }
 
     * {

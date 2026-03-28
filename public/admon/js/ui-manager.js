@@ -1373,13 +1373,13 @@ export function showToast(message, type = 'success') {
     }, 3000);
 }
 
-// --- DARK MODE --- //
+// --- DARK MODE & THEME PICKER --- //
 export function initDarkMode() {
     const toggleBtn = document.getElementById('theme-toggle');
     const body = document.body;
     const isDark = localStorage.getItem('darkMode') === 'true';
 
-    // Aplicar estado inicial
+    // Aplicar estado inicial dark mode
     if (isDark) {
         body.classList.add('dark-mode');
         if(toggleBtn) toggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
@@ -1390,12 +1390,49 @@ export function initDarkMode() {
             body.classList.toggle('dark-mode');
             const isNowDark = body.classList.contains('dark-mode');
             localStorage.setItem('darkMode', isNowDark);
-            
-            if (isNowDark) {
-                toggleBtn.innerHTML = '<i class="fas fa-sun"></i>';
-            } else {
-                toggleBtn.innerHTML = '<i class="fas fa-moon"></i>';
-            }
+            toggleBtn.innerHTML = isNowDark ? '<i class="fas fa-sun"></i>' : '<i class="fas fa-moon"></i>';
         });
     }
+
+    // --- Theme Picker ---
+    const pickerBtn = document.getElementById('theme-picker-btn');
+    const dropdown = document.getElementById('theme-picker-dropdown');
+    if (!pickerBtn || !dropdown) return;
+
+    // Aplicar tema guardado
+    const savedTheme = localStorage.getItem('colorTheme') || 'default';
+    applyColorTheme(savedTheme);
+
+    pickerBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        dropdown.classList.toggle('open');
+    });
+
+    dropdown.addEventListener('click', (e) => {
+        const option = e.target.closest('.theme-option');
+        if (!option) return;
+        const theme = option.dataset.theme;
+        applyColorTheme(theme);
+        localStorage.setItem('colorTheme', theme);
+        dropdown.classList.remove('open');
+    });
+
+    // Cerrar dropdown al hacer clic fuera
+    document.addEventListener('click', () => dropdown.classList.remove('open'));
+}
+
+function applyColorTheme(theme) {
+    const body = document.body;
+    const allThemes = ['theme-blue', 'theme-emerald', 'theme-charcoal'];
+    body.classList.remove(...allThemes);
+
+    if (theme !== 'default') {
+        body.classList.add(`theme-${theme}`);
+    }
+
+    // Actualizar estado activo en el dropdown
+    const options = document.querySelectorAll('.theme-option');
+    options.forEach(opt => {
+        opt.classList.toggle('active', opt.dataset.theme === theme);
+    });
 }
