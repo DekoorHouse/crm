@@ -141,10 +141,23 @@ async function navigateToWhatsApp() {
     await delay(2000);
 }
 
-async function searchAndOpenGroup() {
-    console.log(`[LOCAL] Buscando grupo: "${GROUP_NAME}"...`);
+async function searchAndOpenChat(target) {
+    console.log(`[LOCAL] Abriendo chat: "${target}"...`);
 
-    // Buscar el campo de busqueda (INPUT o DIV con data-tab="3")
+    // Si es un numero de telefono, usar URL directa
+    const isPhone = /^\d{10,15}$/.test(target.replace(/\+/g, ''));
+    if (isPhone) {
+        const phone = target.replace(/\+/g, '');
+        const phoneWithCountry = phone.startsWith('52') ? phone : `52${phone}`;
+        await page.goto(`https://web.whatsapp.com/send?phone=${phoneWithCountry}`, { waitUntil: 'networkidle2', timeout: 30000 });
+        // Esperar a que cargue el chat
+        await page.waitForSelector('div[contenteditable="true"][data-tab="10"]', { timeout: 30000 });
+        console.log(`[LOCAL] Chat con ${phoneWithCountry} abierto (URL directa)`);
+        await delay(2000);
+        return;
+    }
+
+    // Para grupos/nombres, usar busqueda
     const searchArea = await page.waitForSelector(
         'input[data-tab="3"], div[contenteditable="true"][data-tab="3"]',
         { timeout: 15000 }
@@ -152,96 +165,123 @@ async function searchAndOpenGroup() {
     await searchArea.click();
     await delay(500);
 
-    // Limpiar y escribir
     await page.keyboard.down('Control');
     await page.keyboard.press('a');
     await page.keyboard.up('Control');
     await page.keyboard.press('Backspace');
     await delay(300);
 
-    await page.keyboard.type(GROUP_NAME, { delay: 80 });
+    await page.keyboard.type(target, { delay: 80 });
     await delay(3000);
 
-    // Screenshot para ver resultados de busqueda
-    const ssSearch = path.join(os.tmpdir(), 'wa-search-results.png');
-    await page.screenshot({ path: ssSearch, fullPage: true });
-    console.log(`[DEBUG] Resultados de busqueda: ${ssSearch}`);
-
-    // Buscar el resultado del grupo (intentar varios selectores)
-    const groupResult = await page.waitForSelector(
-        `span[title="${GROUP_NAME}"], span[title*="Referencias"]`,
+    const result = await page.waitForSelector(
+        `span[title="${target}"], span[title*="${target}"]`,
         { timeout: 10000 }
     ).catch(() => null);
 
-    if (!groupResult) {
-        // Fallback: buscar por texto visible
+    if (!result) {
         const found = await page.evaluate((name) => {
             const spans = document.querySelectorAll('span');
             for (const s of spans) {
-                if (s.textContent?.includes(name) || s.textContent?.includes('Referencias')) {
+                if (s.textContent?.includes(name)) {
                     s.click();
                     return s.textContent;
                 }
             }
             return null;
-        }, GROUP_NAME);
-        if (!found) throw new Error(`Grupo "${GROUP_NAME}" no encontrado en la busqueda`);
-        console.log(`[LOCAL] Grupo encontrado via texto: "${found}"`);
+        }, target);
+        if (!found) throw new Error(`Chat "${target}" no encontrado`);
+        console.log(`[LOCAL] Chat encontrado: "${found}"`);
     } else {
-        await groupResult.click();
+        await result.click();
     }
     await delay(1500);
-    console.log(`[LOCAL] Grupo "${GROUP_NAME}" abierto`);
+    console.log(`[LOCAL] Chat "${target}" abierto`);
 }
 
 async function sendImageWithCaption(imagePath, caption) {
     console.log('[LOCAL] Enviando imagen...');
 
-    // Buscar boton de adjuntar (+)
+    // 1. Click en boton + para abrir menu (inyecta los file inputs)
     const attachBtn = await page.waitForSelector(
-        'span[data-icon="plus-rounded"], span[data-icon="plus"], ' +
-        'span[data-icon="clip"], span[data-icon="attach-menu-plus"]',
+        'span[data-icon="plus-rounded"], span[data-icon="plus"], span[data-icon="clip"]',
         { timeout: 10000 }
     );
     await attachBtn.click();
-    await delay(1000);
-
-    const fileInput = await page.waitForSelector('input[accept*="image"], input[type="file"]', { timeout: 10000 });
-    await fileInput.uploadFile(imagePath);
-    await delay(3000);
-
-    // Esperar el campo de caption (puede ser input o div contenteditable)
-    const captionBox = await page.waitForSelector(
-        'input[data-tab="10"], div[contenteditable="true"][data-tab="10"], ' +
-        'div[contenteditable="true"][role="textbox"]:not([data-tab="3"])',
-        { timeout: 15000 }
-    );
-    await captionBox.click();
-    await delay(500);
-
-    // Escribir caption
-    const isInput = await captionBox.evaluate(el => el.tagName === 'INPUT');
-    if (isInput) {
-        await captionBox.evaluate((el, text) => {
-            el.value = text;
-            el.dispatchEvent(new Event('input', { bubbles: true }));
-        }, caption);
-    } else {
-        await page.evaluate((text) => {
-            const el = document.querySelector('div[contenteditable="true"][data-tab="10"]') ||
-                       document.querySelector('div[contenteditable="true"][role="textbox"]:not([data-tab="3"])');
-            if (el) {
-                el.focus();
-                document.execCommand('insertText', false, text);
-                el.dispatchEvent(new Event('input', { bubbles: true }));
-            }
-        }, caption);
-    }
     await delay(1500);
 
-    const sendBtn = await page.waitForSelector('span[data-icon="send"], div[aria-label="Enviar"], div[aria-label="Send"]', { timeout: 10000 });
+    // 2. Interceptar file chooser y click en "Fotos y videos"
+    const [fileChooser] = await Promise.all([
+        page.waitForFileChooser({ timeout: 10000 }),
+        page.evaluate(() => {
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            while (walker.nextNode()) {
+                if (walker.currentNode.textContent.trim().startsWith('Fotos')) {
+                    const el = walker.currentNode.parentElement;
+                    const clickTarget = el.closest('[role="button"], button, li, [tabindex]') || el;
+                    clickTarget.click();
+                    return true;
+                }
+            }
+            return false;
+        })
+    ]);
+
+    console.log('[LOCAL] File chooser interceptado, subiendo imagen...');
+    await fileChooser.accept([imagePath]);
+    console.log('[LOCAL] Imagen cargada, esperando preview...');
+    await delay(5000);
+
+    // Screenshot de preview
+    const ssPreview = path.join(os.tmpdir(), 'wa-preview.png');
+    await page.screenshot({ path: ssPreview, fullPage: true });
+
+    // 3. Buscar campo de caption en la pantalla de preview
+    const fields = await page.evaluate(() => {
+        const els = document.querySelectorAll('[contenteditable="true"], [role="textbox"]');
+        return Array.from(els).map(el => ({
+            tag: el.tagName,
+            dataTab: el.getAttribute('data-tab'),
+            ariaLabel: el.getAttribute('aria-label'),
+            text: el.textContent?.slice(0, 30)
+        }));
+    });
+    console.log('[DEBUG] Campos:', JSON.stringify(fields));
+
+    // El caption field en preview tiene un data-tab diferente al buscador (3) y al chat (10)
+    // Buscar cualquier contenteditable que NO sea el buscador
+    const captionBox = await page.evaluateHandle(() => {
+        const editables = document.querySelectorAll('div[contenteditable="true"]');
+        for (const el of editables) {
+            const tab = el.getAttribute('data-tab');
+            if (tab && tab !== '3') return el;
+        }
+        // Si no hay data-tab, buscar por aria-label
+        for (const el of editables) {
+            const label = (el.getAttribute('aria-label') || '').toLowerCase();
+            if (label.includes('caption') || label.includes('mensaje') || label.includes('pie de foto')) return el;
+        }
+        return null;
+    });
+
+    const captionEl = captionBox.asElement();
+    if (captionEl) {
+        await captionEl.click();
+        await delay(300);
+        await page.keyboard.type(caption, { delay: 5 });
+        console.log('[LOCAL] Caption escrito');
+    } else {
+        console.log('[LOCAL] AVISO: No se encontro campo de caption, enviando sin texto');
+    }
+    await delay(2000);
+
+    // 4. Click en enviar
+    const sendBtn = await page.waitForSelector(
+        'span[data-icon="send"], div[aria-label="Enviar"], div[aria-label="Send"]',
+        { timeout: 10000 }
+    );
     await sendBtn.click();
-    await delay(3000);
+    await delay(5000);
     console.log('[LOCAL] Imagen enviada!');
 }
 
@@ -287,7 +327,12 @@ async function closeBrowser() {
 }
 
 // --- Flujo principal ---
+// Permite pasar un destino como argumento: node scripts/wa-publish.js [destino]
+// Si no se pasa, usa GROUP_NAME
 async function main() {
+    const target = process.argv[2] || GROUP_NAME;
+    const isTest = !!process.argv[2];
+
     try {
         // 1. Seleccionar foto local
         const photo = pickLocalPhoto();
@@ -298,12 +343,16 @@ async function main() {
         // 3. Abrir Chrome y enviar
         await launchBrowser();
         await navigateToWhatsApp();
-        await searchAndOpenGroup();
+        await searchAndOpenChat(target);
         await sendImageWithCaption(photo.fullPath, caption);
 
-        // 4. Mover foto y reportar
-        moveToPublished(photo.filename);
-        await reportPublished(photo.filename, caption);
+        // 4. Mover foto y reportar (solo si no es prueba)
+        if (!isTest) {
+            moveToPublished(photo.filename);
+            await reportPublished(photo.filename, caption);
+        } else {
+            console.log('[LOCAL] Modo prueba: foto NO movida ni reportada');
+        }
 
         console.log('\n[LOCAL] Publicacion completada exitosamente!');
     } catch (error) {
