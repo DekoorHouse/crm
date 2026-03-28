@@ -201,11 +201,11 @@
             <p style="font-size:0.8rem; margin-bottom:20px; color:var(--text-muted);">Ingresa tu nombre y PIN para ver tu informacion</p>
             <div class="input-group" style="margin-bottom:15px;">
                 <label for="emp-name-input">Nombre</label>
-                <input type="text" id="emp-name-input" placeholder="Tu nombre" autocomplete="off">
+                <input type="text" id="emp-name-input" placeholder="Tu nombre" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')">
             </div>
             <div class="input-group" style="margin-bottom:15px;">
                 <label for="emp-pin-input">PIN</label>
-                <input type="password" id="emp-pin-input" placeholder="****" maxlength="4" autocomplete="off" style="text-align:center; font-size:1.5rem; letter-spacing:8px;">
+                <input type="tel" id="emp-pin-input" placeholder="****" maxlength="4" autocomplete="new-password" inputmode="numeric" readonly onfocus="this.removeAttribute('readonly'); this.value=''" style="text-align:center; font-size:1.5rem; letter-spacing:8px;">
             </div>
             <div id="login-error" style="color:var(--danger); font-size:0.85rem; margin-bottom:15px; min-height:1.2em;"></div>
             <div style="display:flex; gap:10px; justify-content:center;">
