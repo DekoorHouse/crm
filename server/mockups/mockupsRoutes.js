@@ -13,14 +13,15 @@ function asyncHandler(fn) {
 
 // POST /api/mockups/generate — Generar imagen y guardar en galería
 router.post('/generate', asyncHandler(async (req, res) => {
-    const { prompt, aspectRatio, image } = req.body;
+    const { prompt, aspectRatio, images: refImages } = req.body;
 
     if (!prompt || !prompt.trim()) {
         return res.status(400).json({ success: false, error: 'Se requiere un prompt.' });
     }
 
-    const imageData = image?.base64 ? { mimeType: image.mimeType, base64: image.base64 } : null;
-    const result = await svc.generateImage(prompt.trim(), aspectRatio || '1:1', imageData);
+    // refImages: array de { mimeType, base64 }
+    const validImages = (refImages || []).filter(i => i?.base64);
+    const result = await svc.generateImage(prompt.trim(), aspectRatio || '1:1', validImages);
 
     // Guardar en Firebase Storage + Firestore
     const saved = await svc.saveToGallery(prompt.trim(), aspectRatio || '1:1', result.images, result.usage, result.cost);

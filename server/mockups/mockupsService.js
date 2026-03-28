@@ -13,16 +13,16 @@ const THUMB_WIDTH = 400;
 
 // ===================== IMAGE GENERATION =====================
 
-async function generateImage(prompt, aspectRatio = '1:1', imageData = null) {
+async function generateImage(prompt, aspectRatio = '1:1', refImages = []) {
     const apiKey = API_KEY();
     if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
 
     const url = `${BASE_URL}/models/${MODEL_ID}:generateContent?key=${apiKey}`;
 
     const parts = [{ text: prompt }];
-    if (imageData) {
+    for (const img of refImages) {
         // Resize a 1024px max para reducir tokens de entrada
-        const resized = await sharp(Buffer.from(imageData.base64, 'base64'))
+        const resized = await sharp(Buffer.from(img.base64, 'base64'))
             .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
             .webp({ quality: 80 })
             .toBuffer();

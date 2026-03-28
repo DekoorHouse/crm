@@ -141,14 +141,20 @@ body {
 .upload-dropzone:hover, .upload-dropzone.dragover { border-color: var(--primary); background: var(--primary-light); }
 .upload-placeholder { display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--text-3); font-size: 13px; }
 .upload-placeholder i { font-size: 20px; color: var(--primary); }
-.upload-preview { display: flex; align-items: center; justify-content: center; position: relative; }
-.upload-preview img { max-height: 120px; max-width: 100%; border-radius: 8px; object-fit: contain; }
-.upload-remove {
-    position: absolute; top: -6px; right: -6px; background: var(--danger); color: #fff; border: none;
-    width: 24px; height: 24px; border-radius: 50%; font-size: 11px; cursor: pointer;
+.upload-previews {
+    display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;
+}
+.upload-thumb {
+    position: relative; width: 72px; height: 72px; border-radius: 8px; overflow: hidden;
+    border: 1px solid var(--border);
+}
+.upload-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.upload-thumb-remove {
+    position: absolute; top: -4px; right: -4px; background: var(--danger); color: #fff; border: none;
+    width: 20px; height: 20px; border-radius: 50%; font-size: 9px; cursor: pointer;
     display: flex; align-items: center; justify-content: center;
 }
-.upload-remove:hover { opacity: 0.8; }
+.upload-thumb-remove:hover { opacity: 0.8; }
 
 .prompt-controls { display: flex; align-items: flex-end; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
 .control-group { display: flex; flex-direction: column; gap: 4px; }

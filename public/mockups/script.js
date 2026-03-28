@@ -19,7 +19,7 @@ let sessionImages = 0;
 let sessionTokensIn = 0;
 let sessionTokensOut = 0;
 let isGenerating = false;
-let uploadedImage = null;
+let uploadedImages = []; // [{ mimeType, base64, dataUrl }]
 let galleryItems = [];
 let currentLightboxItem = null;
 
@@ -58,9 +58,7 @@ const sessionTokensOutEl = document.getElementById('session-tokens-out');
 const uploadDropzone = document.getElementById('upload-dropzone');
 const imageUploadInput = document.getElementById('image-upload');
 const uploadPlaceholder = document.getElementById('upload-placeholder');
-const uploadPreview = document.getElementById('upload-preview');
-const uploadPreviewImg = document.getElementById('upload-preview-img');
-const uploadRemoveBtn = document.getElementById('upload-remove');
+const uploadPreviews = document.getElementById('upload-previews');
 
 const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
@@ -131,7 +129,9 @@ async function generate() {
 
     try {
         const payload = { prompt, aspectRatio: aspectSelect.value };
-        if (uploadedImage) payload.image = uploadedImage;
+        if (uploadedImages.length > 0) {
+            payload.images = uploadedImages.map(i => ({ mimeType: i.mimeType, base64: i.base64 }));
+        }
 
         const res = await fetch(`${API_BASE}/api/mockups/generate`, {
             method: 'POST',
@@ -249,11 +249,12 @@ async function deleteImage(id) {
     }
 }
 
-// ===================== IMAGE UPLOAD =====================
+// ===================== IMAGE UPLOAD (MULTIPLE) =====================
 uploadDropzone.addEventListener('click', () => imageUploadInput.click());
 
 imageUploadInput.addEventListener('change', (e) => {
-    if (e.target.files?.[0]) handleImageFile(e.target.files[0]);
+    for (const file of e.target.files) handleImageFile(file);
+    imageUploadInput.value = '';
 });
 
 uploadDropzone.addEventListener('dragover', (e) => { e.preventDefault(); uploadDropzone.classList.add('dragover'); });
@@ -261,7 +262,7 @@ uploadDropzone.addEventListener('dragleave', () => uploadDropzone.classList.remo
 uploadDropzone.addEventListener('drop', (e) => {
     e.preventDefault();
     uploadDropzone.classList.remove('dragover');
-    if (e.dataTransfer.files?.[0]) handleImageFile(e.dataTransfer.files[0]);
+    for (const file of e.dataTransfer.files) handleImageFile(file);
 });
 
 function handleImageFile(file) {
@@ -269,22 +270,30 @@ function handleImageFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const dataUrl = e.target.result;
-        uploadedImage = { mimeType: file.type, base64: dataUrl.split(',')[1] };
-        uploadPreviewImg.src = dataUrl;
-        uploadPlaceholder.style.display = 'none';
-        uploadPreview.style.display = 'flex';
+        const id = Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+        uploadedImages.push({ id, mimeType: file.type, base64: dataUrl.split(',')[1], dataUrl });
+        renderUploadPreviews();
     };
     reader.readAsDataURL(file);
 }
 
-uploadRemoveBtn.addEventListener('click', (e) => { e.stopPropagation(); clearUploadedImage(); });
+function removeUploadedImage(id) {
+    uploadedImages = uploadedImages.filter(i => i.id !== id);
+    renderUploadPreviews();
+}
 
-function clearUploadedImage() {
-    uploadedImage = null;
-    imageUploadInput.value = '';
-    uploadPreviewImg.src = '';
-    uploadPlaceholder.style.display = 'flex';
-    uploadPreview.style.display = 'none';
+function renderUploadPreviews() {
+    uploadPreviews.innerHTML = '';
+    uploadedImages.forEach((img) => {
+        const thumb = document.createElement('div');
+        thumb.className = 'upload-thumb';
+        thumb.innerHTML = `
+            <img src="${img.dataUrl}" alt="">
+            <button class="upload-thumb-remove" data-id="${img.id}"><i class="fas fa-times"></i></button>
+        `;
+        thumb.querySelector('.upload-thumb-remove').addEventListener('click', () => removeUploadedImage(img.id));
+        uploadPreviews.appendChild(thumb);
+    });
 }
 
 // ===================== LIGHTBOX =====================

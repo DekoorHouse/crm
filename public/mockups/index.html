@@ -75,19 +75,16 @@
             <div class="prompt-row">
                 <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
             </div>
-            <!-- Image Upload -->
+            <!-- Image Upload (multiple) -->
             <div class="upload-area">
                 <div id="upload-dropzone" class="upload-dropzone">
-                    <input type="file" id="image-upload" accept="image/*" style="display:none;">
+                    <input type="file" id="image-upload" accept="image/*" multiple style="display:none;">
                     <div id="upload-placeholder" class="upload-placeholder">
                         <i class="fas fa-cloud-upload-alt"></i>
-                        <span>Arrastra una imagen o <strong>haz click</strong> para subir referencia</span>
-                    </div>
-                    <div id="upload-preview" class="upload-preview" style="display:none;">
-                        <img id="upload-preview-img" src="" alt="Preview">
-                        <button id="upload-remove" class="upload-remove" title="Quitar imagen"><i class="fas fa-times"></i></button>
+                        <span>Arrastra imagenes o <strong>haz click</strong> para subir referencias</span>
                     </div>
                 </div>
+                <div id="upload-previews" class="upload-previews"></div>
             </div>
             <div class="prompt-controls">
                 <div class="control-group">
