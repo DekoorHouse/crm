@@ -36,43 +36,45 @@ document.getElementById('emp-name-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('emp-pin-input').focus();
 });
 
-document.getElementById('pin-login-btn').addEventListener('click', async () => {
-    const nameInput = document.getElementById('emp-name-input').value.trim().toLowerCase();
-    const pinInput = document.getElementById('emp-pin-input').value.trim();
+// Función compartida de login (usada por botón y auto-login)
+async function loginWithPin(nameInput, pinInput, isAutoLogin) {
     const errorEl = document.getElementById('login-error');
     errorEl.textContent = '';
 
     if (!nameInput || !pinInput) {
-        errorEl.textContent = 'Ingresa tu nombre y PIN.';
-        return;
+        if (!isAutoLogin) errorEl.textContent = 'Ingresa tu nombre y PIN.';
+        return false;
     }
 
-    // Buscar empleado en Firestore
     const snap = await db.collection('checador_employees').get();
     const employees = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
-    const match = employees.find(e => e.name.toLowerCase() === nameInput);
+    const match = employees.find(e => e.name.toLowerCase() === nameInput.toLowerCase());
 
     if (!match) {
-        errorEl.textContent = 'No encontrado.';
-        return;
+        if (!isAutoLogin) errorEl.textContent = 'No encontrado.';
+        else localStorage.removeItem('checador_session');
+        return false;
     }
 
     if (!match.pin) {
-        errorEl.textContent = 'No tienes un PIN asignado. Contacta al administrador.';
-        return;
+        if (!isAutoLogin) errorEl.textContent = 'No tienes un PIN asignado. Contacta al administrador.';
+        else localStorage.removeItem('checador_session');
+        return false;
     }
 
     if (match.pin !== pinInput) {
-        errorEl.textContent = 'PIN incorrecto.';
-        return;
+        if (!isAutoLogin) errorEl.textContent = 'PIN incorrecto.';
+        else localStorage.removeItem('checador_session');
+        return false;
     }
 
-    // Login exitoso
+    // Login exitoso - guardar en cache del dispositivo
+    localStorage.setItem('checador_session', JSON.stringify({ name: match.name, pin: match.pin }));
+
     currentEmployee = match;
     document.getElementById('pin-login-view').style.display = 'none';
     document.getElementById('profile-content').style.display = 'block';
 
-    // Info personal
     const avatarEl = document.getElementById('profile-avatar');
     if (match.photoURL) {
         avatarEl.innerHTML = `<img src="${match.photoURL}" alt="${match.name}">`;
@@ -85,14 +87,34 @@ document.getElementById('pin-login-btn').addEventListener('click', async () => {
     document.getElementById('info-phone').textContent = match.phone || 'No registrado';
     document.getElementById('info-id').textContent = match.id || '—';
 
-    // Suscribirse a logs del empleado
     unsubscribeLogs = db.collection('checador_logs')
         .orderBy('timestamp', 'desc')
         .onSnapshot(snap => {
             logsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
             renderProfile();
         });
+
+    return true;
+}
+
+// Botón de login manual
+document.getElementById('pin-login-btn').addEventListener('click', () => {
+    const nameInput = document.getElementById('emp-name-input').value.trim();
+    const pinInput = document.getElementById('emp-pin-input').value.trim();
+    loginWithPin(nameInput, pinInput, false);
 });
+
+// Auto-login desde cache del dispositivo
+(async function autoLogin() {
+    try {
+        const saved = JSON.parse(localStorage.getItem('checador_session'));
+        if (saved && saved.name && saved.pin) {
+            await loginWithPin(saved.name, saved.pin, true);
+        }
+    } catch (e) {
+        localStorage.removeItem('checador_session');
+    }
+})();
 
 // =====================
 // LOGOUT
@@ -101,6 +123,7 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     currentEmployee = null;
     if (unsubscribeLogs) { unsubscribeLogs(); unsubscribeLogs = null; }
     logsCache = [];
+    localStorage.removeItem('checador_session');
     document.getElementById('profile-content').style.display = 'none';
     document.getElementById('pin-login-view').style.display = 'flex';
     document.getElementById('emp-name-input').value = '';
