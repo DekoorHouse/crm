@@ -1,12 +1,7 @@
 /**
  * Script local para publicar en WhatsApp Web via Puppeteer.
- * Se ejecuta desde la PC local (donde esta Chrome + sesion de WhatsApp).
- *
- * Flujo:
- * 1. Llama al servidor para obtener preview (foto + caption generado por IA)
- * 2. Guarda la imagen temporalmente
- * 3. Abre Chrome con Puppeteer y envia al grupo de WhatsApp
- * 4. Reporta al servidor que la foto fue publicada
+ * Lee fotos de la carpeta local, genera caption via servidor (Gemini),
+ * abre Chrome y envia al grupo de WhatsApp.
  *
  * Uso: node scripts/wa-publish.js
  */
@@ -22,31 +17,40 @@ const CHROME_PATH = process.env.WA_CHROME_PATH || 'C:/Program Files/Google/Chrom
 const CHROME_USER_DATA = process.env.WA_CHROME_USER_DATA || path.join(os.homedir(), 'AppData/Local/Google/Chrome/User Data');
 const CHROME_PROFILE = process.env.WA_CHROME_PROFILE || 'Profile 2';
 const GROUP_NAME = process.env.WA_GROUP_NAME || 'Referencias Dekoor';
+const PHOTOS_FOLDER = process.env.WA_PHOTOS_FOLDER || 'C:/Users/chris/Pictures/IA Dekoor/Grupo';
 
 let browser = null;
 let page = null;
 
-// --- Paso 1: Obtener preview del servidor ---
-async function getPreview() {
-    console.log('[LOCAL] Obteniendo preview del servidor...');
-    const res = await fetch(`${SERVER_URL}/api/wa-group/preview`, { method: 'POST' });
-    const data = await res.json();
-    if (data.message) throw new Error(data.message);
-    if (!data.caption || !data.imagePreview) throw new Error('No hay fotos disponibles');
-    console.log(`[LOCAL] Foto: ${data.filename}`);
-    console.log(`[LOCAL] Caption: ${data.caption}`);
-    return data;
+// --- Paso 1: Seleccionar foto local ---
+function pickLocalPhoto() {
+    if (!fs.existsSync(PHOTOS_FOLDER)) throw new Error(`Carpeta no encontrada: ${PHOTOS_FOLDER}`);
+    const files = fs.readdirSync(PHOTOS_FOLDER)
+        .filter(f => /\.(jpg|jpeg|png|webp)$/i.test(f));
+    if (!files.length) throw new Error('No hay fotos en la carpeta');
+    const filename = files[0];
+    const fullPath = path.join(PHOTOS_FOLDER, filename);
+    console.log(`[LOCAL] Foto seleccionada: ${filename} (${files.length} disponibles)`);
+    return { filename, fullPath };
 }
 
-// --- Paso 2: Guardar imagen temporalmente ---
-function saveImageLocally(base64DataUrl, filename) {
-    const base64 = base64DataUrl.replace(/^data:image\/\w+;base64,/, '');
-    const tempDir = path.join(os.tmpdir(), 'wa-autopost');
-    if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-    const filePath = path.join(tempDir, filename);
-    fs.writeFileSync(filePath, Buffer.from(base64, 'base64'));
-    console.log(`[LOCAL] Imagen guardada: ${filePath}`);
-    return filePath;
+// --- Paso 2: Generar caption via servidor (Gemini) ---
+async function generateCaption(imagePath) {
+    console.log('[LOCAL] Generando caption con IA...');
+    const imageBuffer = fs.readFileSync(imagePath);
+    const ext = path.extname(imagePath).toLowerCase();
+    const mimeMap = { '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp' };
+    const base64 = imageBuffer.toString('base64');
+
+    const res = await fetch(`${SERVER_URL}/api/wa-group/generate-caption`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ image: base64, mimeType: mimeMap[ext] || 'image/jpeg' })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(`Gemini: ${data.error}`);
+    console.log(`[LOCAL] Caption: ${data.caption}`);
+    return data.caption;
 }
 
 // --- Paso 3: Automatizar WhatsApp Web ---
@@ -133,57 +137,67 @@ async function sendImageWithCaption(imagePath, caption) {
     console.log('[LOCAL] Imagen enviada!');
 }
 
-// --- Paso 4: Reportar al servidor ---
+// --- Paso 4: Mover foto y reportar al servidor ---
+function moveToPublished(filename) {
+    const publishedDir = path.join(PHOTOS_FOLDER, 'publicados');
+    if (!fs.existsSync(publishedDir)) fs.mkdirSync(publishedDir, { recursive: true });
+    const src = path.join(PHOTOS_FOLDER, filename);
+    const dest = path.join(publishedDir, filename);
+    if (fs.existsSync(src)) fs.renameSync(src, dest);
+    console.log(`[LOCAL] Foto movida a publicados/`);
+}
+
 async function reportPublished(filename, caption) {
     console.log('[LOCAL] Reportando al servidor...');
-    const res = await fetch(`${SERVER_URL}/api/wa-group/mark-published`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename, caption })
-    });
-    const data = await res.json();
-    console.log(`[LOCAL] Servidor: ${data.status}`);
+    try {
+        const res = await fetch(`${SERVER_URL}/api/wa-group/mark-published`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename, caption })
+        });
+        const data = await res.json();
+        console.log(`[LOCAL] Servidor: ${data.status}`);
+    } catch (e) {
+        console.log(`[LOCAL] Aviso: no se pudo reportar al servidor (${e.message})`);
+    }
 }
 
 // --- Utilidades ---
 function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-async function cleanup(imagePath) {
+async function closeBrowser() {
     if (browser) {
         try { await browser.close(); } catch (e) {}
         browser = null;
         page = null;
     }
-    if (imagePath && fs.existsSync(imagePath)) {
-        try { fs.unlinkSync(imagePath); } catch (e) {}
-    }
 }
 
 // --- Flujo principal ---
 async function main() {
-    let imagePath = null;
     try {
-        // 1. Obtener preview
-        const preview = await getPreview();
+        // 1. Seleccionar foto local
+        const photo = pickLocalPhoto();
 
-        // 2. Guardar imagen local
-        imagePath = saveImageLocally(preview.imagePreview, preview.filename);
+        // 2. Generar caption via servidor
+        const caption = await generateCaption(photo.fullPath);
 
         // 3. Abrir Chrome y enviar
         await launchBrowser();
         await navigateToWhatsApp();
         await searchAndOpenGroup();
-        await sendImageWithCaption(imagePath, preview.caption);
+        await sendImageWithCaption(photo.fullPath, caption);
 
-        // 4. Reportar exito
-        await reportPublished(preview.filename, preview.caption);
+        // 4. Mover foto y reportar
+        moveToPublished(photo.filename);
+        await reportPublished(photo.filename, caption);
 
         console.log('\n[LOCAL] Publicacion completada exitosamente!');
     } catch (error) {
         console.error(`\n[LOCAL] ERROR: ${error.message}`);
         process.exitCode = 1;
     } finally {
-        await cleanup(imagePath);
+        await closeBrowser();
     }
 }
 

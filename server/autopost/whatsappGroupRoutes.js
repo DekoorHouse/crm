@@ -126,6 +126,36 @@ router.get('/log', async (req, res) => {
     }
 });
 
+// Generar caption para una imagen enviada como base64 (llamado desde script local)
+router.post('/generate-caption', async (req, res) => {
+    try {
+        const { image, mimeType } = req.body;
+        if (!image) return res.status(400).json({ error: 'image (base64) es requerido' });
+        const { generateGeminiResponse } = require('../services');
+        const CAPTION_PROMPT = `Eres el community manager de Dekoor, una tienda mexicana de decoracion y hogar con grabado laser personalizado.
+Analiza esta imagen de producto y genera un mensaje para publicar en un grupo de WhatsApp de clientes.
+
+Reglas:
+- Escribe en espanol mexicano, tono amigable, calido y cercano (como hablando con amigos)
+- Usa emojis relevantes (5-8 emojis)
+- Maximo 250 caracteres
+- Incluye un llamado a la accion directo (ej: "Escribenos para personalizar el tuyo", "Pide el tuyo por inbox", "Pregunta por precios")
+- La marca SIEMPRE se escribe "Dekoor" (con doble o, k minuscula)
+- NO incluyas hashtags
+- NO uses formato de redes sociales, esto es WhatsApp - se casual y directo
+- Si el producto tiene grabado laser, mencionalo como ventaja
+- Si no identificas el producto, genera un mensaje generico sobre novedades de Dekoor
+
+Responde SOLO con el mensaje, sin explicaciones adicionales.`;
+        const imageParts = [{ inlineData: { mimeType: mimeType || 'image/jpeg', data: image } }];
+        const result = await generateGeminiResponse(CAPTION_PROMPT, imageParts);
+        const caption = result.text.replace(/^["']|["']$/g, '').trim();
+        res.json({ caption });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Marcar foto como publicada (llamado desde script local)
 router.post('/mark-published', async (req, res) => {
     try {
