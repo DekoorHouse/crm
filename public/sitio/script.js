@@ -244,7 +244,50 @@ function escapeHtml(text) {
 }
 
 // ============================================================
+// HERO CAROUSEL
+// ============================================================
+function initCarousel() {
+    const slides = document.querySelectorAll('.carousel-slide');
+    const dots = document.querySelectorAll('.carousel-dot');
+    if (slides.length === 0) return;
+
+    let current = 0;
+    let interval;
+
+    function goTo(index) {
+        slides[current].classList.remove('active');
+        dots[current].classList.remove('active');
+        current = index;
+        slides[current].classList.add('active');
+        dots[current].classList.add('active');
+    }
+
+    function next() {
+        goTo((current + 1) % slides.length);
+    }
+
+    function startAutoplay() {
+        interval = setInterval(next, 4000);
+    }
+
+    function stopAutoplay() {
+        clearInterval(interval);
+    }
+
+    dots.forEach(dot => {
+        dot.addEventListener('click', () => {
+            stopAutoplay();
+            goTo(parseInt(dot.dataset.index));
+            startAutoplay();
+        });
+    });
+
+    startAutoplay();
+}
+
+// ============================================================
 // INIT
 // ============================================================
+initCarousel();
 loadTestimonials();
 loadMapa();
