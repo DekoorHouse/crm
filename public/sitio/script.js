@@ -132,10 +132,11 @@ function closeLightbox() {
 }
 
 // ============================================================
-// TESTIMONIALS CAROUSEL (Firebase)
+// TESTIMONIALS CAROUSEL (Firebase) - Loop infinito + fotos
 // ============================================================
 let tcIndex = 0;
 let tcTotal = 0;
+let tcAutoplay = null;
 
 function loadTestimonials() {
     const track = document.getElementById('testimonialsTrack');
@@ -170,6 +171,12 @@ function loadTestimonials() {
                 const name = escapeHtml(ref.nombre);
                 const city = ref.ciudad ? escapeHtml(ref.ciudad) : '';
 
+                // Foto del producto (primera foto disponible)
+                const fotos = ref.fotos || (ref.foto ? [ref.foto] : []);
+                const photoHtml = fotos.length > 0
+                    ? `<img src="${fotos[0]}" alt="Producto" class="tc-photo" loading="lazy">`
+                    : '';
+
                 html += `
                     <div class="tc-card">
                         <div class="tc-card-header">
@@ -181,13 +188,15 @@ function loadTestimonials() {
                         </div>
                         <div class="tc-stars">${starsHtml}</div>
                         <div class="tc-text">${escapeHtml(text)}</div>
+                        ${photoHtml}
                     </div>`;
             });
 
             track.innerHTML = html;
-            tcTotal = snapshot.size;
+            tcTotal = approved.length;
             tcIndex = 0;
             updateTcArrows();
+            startTcAutoplay();
         })
         .catch(err => {
             console.error('Error cargando testimonios:', err);
@@ -202,28 +211,42 @@ function getCardsPerView() {
 function slideTc(dir) {
     const perView = getCardsPerView();
     const maxIndex = Math.max(0, tcTotal - perView);
-    tcIndex = Math.max(0, Math.min(tcIndex + dir, maxIndex));
+
+    tcIndex += dir;
+    // Loop: si pasa del final vuelve al inicio, si pasa del inicio va al final
+    if (tcIndex > maxIndex) tcIndex = 0;
+    if (tcIndex < 0) tcIndex = maxIndex;
 
     const track = document.getElementById('testimonialsTrack');
     const card = track.querySelector('.tc-card');
     if (!card) return;
 
-    const gap = 20; // 1.25rem
+    const gap = 20;
     const cardWidth = card.offsetWidth + gap;
     track.style.transform = `translateX(-${tcIndex * cardWidth}px)`;
     updateTcArrows();
 }
 
 function updateTcArrows() {
-    const perView = getCardsPerView();
+    // En loop no se deshabilitan las flechas
     const prevBtn = document.getElementById('tcPrev');
     const nextBtn = document.getElementById('tcNext');
-    if (prevBtn) prevBtn.disabled = tcIndex <= 0;
-    if (nextBtn) nextBtn.disabled = tcIndex >= tcTotal - perView;
+    if (prevBtn) prevBtn.disabled = tcTotal <= getCardsPerView();
+    if (nextBtn) nextBtn.disabled = tcTotal <= getCardsPerView();
 }
 
-document.getElementById('tcPrev')?.addEventListener('click', () => slideTc(-1));
-document.getElementById('tcNext')?.addEventListener('click', () => slideTc(1));
+function startTcAutoplay() {
+    stopTcAutoplay();
+    if (tcTotal <= getCardsPerView()) return;
+    tcAutoplay = setInterval(() => slideTc(1), 5000);
+}
+
+function stopTcAutoplay() {
+    if (tcAutoplay) { clearInterval(tcAutoplay); tcAutoplay = null; }
+}
+
+document.getElementById('tcPrev')?.addEventListener('click', () => { stopTcAutoplay(); slideTc(-1); startTcAutoplay(); });
+document.getElementById('tcNext')?.addEventListener('click', () => { stopTcAutoplay(); slideTc(1); startTcAutoplay(); });
 window.addEventListener('resize', () => { tcIndex = 0; slideTc(0); });
 
 // ============================================================

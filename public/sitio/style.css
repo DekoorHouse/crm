@@ -818,6 +818,15 @@ body {
 .tc-text::before { content: '\201C'; }
 .tc-text::after { content: '\201D'; }
 
+.tc-photo {
+    width: 100%;
+    max-height: 180px;
+    object-fit: cover;
+    border-radius: 12px;
+    margin-top: 12px;
+    border: 1px solid var(--border);
+}
+
 .tc-arrow {
     width: 44px;
     height: 44px;
