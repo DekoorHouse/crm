@@ -315,14 +315,10 @@ function delay(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 async function closeBrowser() {
     if (browser) {
-        try { await browser.close(); } catch (e) {}
+        // Desconectar Puppeteer pero dejar Chrome abierto
+        try { browser.disconnect(); } catch (e) {}
         browser = null;
         page = null;
-    }
-    // Limpiar perfil temporal
-    await delay(1000);
-    if (fs.existsSync(TEMP_PROFILE_DIR)) {
-        try { fs.rmSync(TEMP_PROFILE_DIR, { recursive: true, force: true }); } catch (e) {}
     }
 }
 
