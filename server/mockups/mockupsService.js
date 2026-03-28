@@ -151,4 +151,20 @@ async function deleteFromGallery(docId) {
     await db.collection(COLLECTION).doc(docId).delete();
 }
 
-module.exports = { generateImage, saveToGallery, getGallery, deleteFromGallery };
+// ===================== BATCH JOBS =====================
+
+const BATCH_COLLECTION = 'mockup_batches';
+
+async function saveBatch(names, nameImageUrls) {
+    const doc = { names, nameImageUrls, createdAt: new Date().toISOString() };
+    const ref = await db.collection(BATCH_COLLECTION).add(doc);
+    return ref.id;
+}
+
+async function getBatch(id) {
+    const doc = await db.collection(BATCH_COLLECTION).doc(id).get();
+    if (!doc.exists) throw new Error('Batch no encontrado.');
+    return { id: doc.id, ...doc.data() };
+}
+
+module.exports = { generateImage, saveToGallery, getGallery, deleteFromGallery, saveBatch, getBatch };

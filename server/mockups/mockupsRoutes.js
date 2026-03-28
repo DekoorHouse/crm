@@ -47,4 +47,20 @@ router.delete('/gallery/:id', asyncHandler(async (req, res) => {
     res.json({ success: true });
 }));
 
+// POST /api/mockups/batch — Crear batch job desde el editor
+router.post('/batch', asyncHandler(async (req, res) => {
+    const { names, nameImageUrls } = req.body;
+    if (!names?.length || !nameImageUrls?.length) {
+        return res.status(400).json({ success: false, error: 'Se requieren nombres e imágenes.' });
+    }
+    const id = await svc.saveBatch(names, nameImageUrls);
+    res.json({ success: true, id });
+}));
+
+// GET /api/mockups/batch/:id — Obtener batch job
+router.get('/batch/:id', asyncHandler(async (req, res) => {
+    const batch = await svc.getBatch(req.params.id);
+    res.json({ success: true, batch });
+}));
+
 module.exports = router;

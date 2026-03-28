@@ -92,6 +92,7 @@ firebaseAuth.onAuthStateChanged(user => {
         loginView.style.display = 'none';
         app.style.display = 'block';
         loadGallery();
+        loadBatchFromEditor();
     } else {
         loginView.style.display = 'flex';
         app.style.display = 'none';
@@ -515,6 +516,60 @@ function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+// ===================== LOAD BATCH FROM EDITOR =====================
+async function loadBatchFromEditor() {
+    const params = new URLSearchParams(window.location.search);
+    const batchId = params.get('batch');
+    if (!batchId) return;
+
+    try {
+        const res = await fetch(`${API_BASE}/api/mockups/batch/${batchId}`);
+        const data = await res.json();
+        if (!data.success || !data.batch) return;
+
+        const batch = data.batch;
+
+        // Enable batch mode
+        batchModeToggle.checked = true;
+        batchMode = true;
+        singleModeDiv.style.display = 'none';
+        batchModeDiv.style.display = 'block';
+        generateBtn.innerHTML = '<i class="fas fa-bolt"></i> Generar Lote';
+
+        // Fill names
+        batchNamesInput.value = batch.names.join('\n');
+
+        // Fetch name images from URLs and convert to base64
+        for (let i = 0; i < batch.nameImageUrls.length; i++) {
+            try {
+                const imgRes = await fetch(batch.nameImageUrls[i]);
+                const blob = await imgRes.blob();
+                const dataUrl = await new Promise(r => {
+                    const fr = new FileReader();
+                    fr.onload = () => r(fr.result);
+                    fr.readAsDataURL(blob);
+                });
+                const id = Date.now() + '_' + i;
+                batchNameImages.push({
+                    id,
+                    mimeType: blob.type || 'image/png',
+                    base64: dataUrl.split(',')[1],
+                    dataUrl,
+                });
+            } catch (e) {
+                console.error(`Error cargando imagen ${i}:`, e);
+            }
+        }
+        renderBatchNamePreviews();
+
+        // Clean up URL
+        window.history.replaceState({}, '', '/mockups');
+
+    } catch (err) {
+        console.error('Error cargando batch:', err);
+    }
 }
 
 // ===================== INIT =====================

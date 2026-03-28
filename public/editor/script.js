@@ -4345,6 +4345,7 @@ function handleMenuAction(action) {
         case 'ungroup':     ungroupSelected(); break;
         case 'join-nodes':  joinNodes(); break;
         case 'import-names': showImportNamesModal(); break;
+        case 'export-mockups': showMockupsExportDialog(); break;
         case 'bmp-converter': showBmpConverterModal(); break;
         case 'bg-removal': showBgRemovalModal(); break;
         case 'ai-instructions': showAIInstructionsModal(); break;
@@ -11021,6 +11022,187 @@ function setupBmpConverterModal() {
         document.getElementById('bmp-proc-container').style.display = '';
         document.getElementById('bmp-view-processed').classList.add('active');
         document.getElementById('bmp-view-original').classList.remove('active');
+    });
+}
+
+// =============================================
+// EXPORT TO MOCKUPS
+// =============================================
+
+function findFirstText(objects) {
+    for (const o of objects) {
+        if (o.type === 'text') return o;
+        if (o.children) { const f = findFirstText(o.children); if (f) return f; }
+        if (o.type === 'powerclip') {
+            if (o.contents) { const f = findFirstText(o.contents); if (f) return f; }
+            if (o.container) { const f = findFirstText([o.container]); if (f) return f; }
+        }
+    }
+    return null;
+}
+
+async function renderToDataURL(width = 1024) {
+    const clone = svg.cloneNode(true);
+    for (const id of ['selection-layer', 'snap-layer', 'preview-layer']) {
+        const el = clone.querySelector('#' + id);
+        if (el) el.innerHTML = '';
+    }
+    // Inline external images
+    const images = clone.querySelectorAll('image');
+    await Promise.all([...images].map(async (img) => {
+        const href = img.getAttribute('href') || img.getAttributeNS('http://www.w3.org/1999/xlink', 'href');
+        if (!href || href.startsWith('data:')) return;
+        try {
+            const resp = await fetch(href);
+            const blob = await resp.blob();
+            const dataUrl = await new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob); });
+            img.removeAttribute('href');
+            img.setAttributeNS('http://www.w3.org/1999/xlink', 'href', dataUrl);
+        } catch (e) { /* skip */ }
+    }));
+    clone.setAttribute('viewBox', `0 0 ${state.pageWidth} ${state.pageHeight}`);
+    const h = Math.round(width * state.pageHeight / state.pageWidth);
+    clone.setAttribute('width', width);
+    clone.setAttribute('height', h);
+    const svgStr = new XMLSerializer().serializeToString(clone);
+    const blob = new Blob([svgStr], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    return await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => {
+            const c = document.createElement('canvas');
+            c.width = width; c.height = h;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(0, 0, c.width, c.height);
+            ctx.drawImage(img, 0, 0, c.width, c.height);
+            URL.revokeObjectURL(url);
+            resolve(c.toDataURL('image/png'));
+        };
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
+        img.src = url;
+    });
+}
+
+function showMockupsExportDialog() {
+    const textObj = findFirstText(state.objects);
+    if (!textObj) { alert('No se encontró ningún texto en el diseño para reemplazar.'); return; }
+
+    // Create modal
+    const overlay = document.createElement('div');
+    overlay.id = 'mockups-export-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    overlay.innerHTML = `
+        <div style="background:var(--panel-bg,#1a1b2e);border:1px solid var(--border,#333);border-radius:12px;padding:24px;max-width:440px;width:90%;color:var(--text,#fff);font-family:Inter,sans-serif;">
+            <h3 style="margin:0 0 4px;font-size:16px;"><i class="fas fa-wand-magic-sparkles" style="color:#7aa2f7;"></i> Exportar a Mockups</h3>
+            <p style="margin:0 0 16px;font-size:12px;color:var(--text-2,#888);">Texto detectado: "<strong id="mexp-detected"></strong>"</p>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;color:var(--text-2,#888);letter-spacing:0.04em;">Nombres (uno por línea)</label>
+            <textarea id="mexp-names" rows="8" style="width:100%;margin-top:6px;padding:10px;border:1px solid var(--border,#333);border-radius:8px;background:var(--input-bg,#24283b);color:var(--text,#fff);font-family:inherit;font-size:13px;resize:vertical;" placeholder="Lámpara Luna&#10;Lámpara Sol&#10;Lámpara Estrella"></textarea>
+            <div id="mexp-progress" style="display:none;margin-top:12px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text-2,#888);margin-bottom:4px;">
+                    <span id="mexp-progress-text">Exportando 0/0...</span>
+                    <span id="mexp-progress-pct">0%</span>
+                </div>
+                <div style="height:6px;background:var(--border,#333);border-radius:3px;overflow:hidden;">
+                    <div id="mexp-progress-fill" style="height:100%;background:#7aa2f7;border-radius:3px;width:0%;transition:width 0.3s;"></div>
+                </div>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end;">
+                <button id="mexp-cancel" style="padding:8px 16px;border:1px solid var(--border,#333);border-radius:8px;background:transparent;color:var(--text,#fff);cursor:pointer;font-family:inherit;font-size:13px;">Cancelar</button>
+                <button id="mexp-export" style="padding:8px 20px;border:none;border-radius:8px;background:#7aa2f7;color:#fff;cursor:pointer;font-family:inherit;font-size:13px;font-weight:600;"><i class="fas fa-paper-plane"></i> Exportar</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(overlay);
+
+    document.getElementById('mexp-detected').textContent = textObj.text || '(vacío)';
+    document.getElementById('mexp-cancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+
+    document.getElementById('mexp-export').addEventListener('click', async () => {
+        const namesRaw = document.getElementById('mexp-names').value.trim();
+        if (!namesRaw) { alert('Agrega al menos un nombre.'); return; }
+        const names = namesRaw.split('\n').map(n => n.trim()).filter(Boolean);
+
+        const exportBtn = document.getElementById('mexp-export');
+        const cancelBtn = document.getElementById('mexp-cancel');
+        const progressDiv = document.getElementById('mexp-progress');
+        exportBtn.disabled = true;
+        cancelBtn.disabled = true;
+        progressDiv.style.display = 'block';
+
+        const originalText = textObj.text;
+        const originalFontSize = textObj.fontSize;
+        const originalX = textObj.x;
+        const originalY = textObj.y;
+        const originalAlign = textObj.textAlign;
+        const urls = [];
+
+        try {
+            for (let i = 0; i < names.length; i++) {
+                // Update progress
+                const pct = Math.round(((i) / names.length) * 100);
+                document.getElementById('mexp-progress-text').textContent = `Exportando ${i + 1}/${names.length}...`;
+                document.getElementById('mexp-progress-pct').textContent = `${pct}%`;
+                document.getElementById('mexp-progress-fill').style.width = `${pct}%`;
+
+                // Change text
+                textObj.text = names[i];
+                await fitTextToRefArea(textObj);
+                refreshElement(textObj);
+
+                // Small delay to let SVG re-render
+                await new Promise(r => setTimeout(r, 50));
+
+                // Render high-res PNG
+                const dataUrl = await renderToDataURL(1024);
+                if (!dataUrl) throw new Error(`Error renderizando "${names[i]}"`);
+
+                // Upload to Firebase Storage
+                const storagePath = `mockups_temp/${Date.now()}_${i}.png`;
+                const downloadUrl = await window.fbUploadImage(dataUrl, storagePath);
+                urls.push(downloadUrl);
+            }
+
+            // Restore original text
+            textObj.text = originalText;
+            textObj.fontSize = originalFontSize;
+            textObj.x = originalX;
+            textObj.y = originalY;
+            textObj.textAlign = originalAlign;
+            refreshElement(textObj);
+
+            // Final progress
+            document.getElementById('mexp-progress-text').textContent = `Guardando batch...`;
+            document.getElementById('mexp-progress-pct').textContent = `100%`;
+            document.getElementById('mexp-progress-fill').style.width = `100%`;
+
+            // Save batch via backend API
+            const res = await fetch('/api/mockups/batch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ names, nameImageUrls: urls }),
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.error || 'Error guardando batch');
+
+            overlay.remove();
+            window.open(`/mockups?batch=${data.id}`, '_blank');
+
+        } catch (err) {
+            // Restore original text on error
+            textObj.text = originalText;
+            textObj.fontSize = originalFontSize;
+            textObj.x = originalX;
+            textObj.y = originalY;
+            textObj.textAlign = originalAlign;
+            refreshElement(textObj);
+
+            alert('Error exportando: ' + err.message);
+            exportBtn.disabled = false;
+            cancelBtn.disabled = false;
+            progressDiv.style.display = 'none';
+        }
     });
 }
 
