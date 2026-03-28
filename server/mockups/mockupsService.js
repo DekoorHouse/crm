@@ -21,10 +21,15 @@ async function generateImage(prompt, aspectRatio = '1:1', imageData = null) {
 
     const parts = [{ text: prompt }];
     if (imageData) {
+        // Resize a 1024px max para reducir tokens de entrada
+        const resized = await sharp(Buffer.from(imageData.base64, 'base64'))
+            .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+            .webp({ quality: 80 })
+            .toBuffer();
         parts.push({
             inlineData: {
-                mimeType: imageData.mimeType,
-                data: imageData.base64,
+                mimeType: 'image/webp',
+                data: resized.toString('base64'),
             },
         });
     }
