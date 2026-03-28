@@ -454,6 +454,55 @@ body {
 /* ============================================================
    COLLECTIONS
    ============================================================ */
+.collections-grid-5 {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 1.25rem;
+}
+
+.collection-card-v2 {
+    text-decoration: none;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: var(--white);
+    border: 1px solid var(--border);
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+}
+
+.collection-card-v2:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary);
+}
+
+.collection-img-v2 {
+    width: 100%;
+    aspect-ratio: 0.8;
+    overflow: hidden;
+}
+
+.collection-img-v2 img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.collection-card-v2:hover .collection-img-v2 img {
+    transform: scale(1.05);
+}
+
+.collection-name {
+    padding: 1rem;
+    font-weight: 700;
+    font-size: 1rem;
+    color: var(--text-dark);
+    text-align: center;
+    letter-spacing: 0.3px;
+}
+
 .collections-grid {
     display: grid;
     grid-template-columns: 1fr 1fr 1fr;
@@ -1150,18 +1199,8 @@ body {
    RESPONSIVE
    ============================================================ */
 @media (max-width: 1024px) {
-    .collections-grid {
-        grid-template-columns: 1fr 1fr;
-    }
-
-    .collection-small:nth-child(3) {
-        grid-column: auto;
-        grid-row: auto;
-    }
-
-    .collection-small:nth-child(4) {
-        grid-column: auto;
-        grid-row: auto;
+    .collections-grid-5 {
+        grid-template-columns: repeat(3, 1fr);
     }
 
     .categories-grid {
@@ -1213,10 +1252,8 @@ body {
 
     .section { padding: 3.5rem 0; }
 
-    .collections-grid {
-        grid-template-columns: 1fr;
-        max-width: 500px;
-        margin: 0 auto;
+    .collections-grid-5 {
+        grid-template-columns: repeat(2, 1fr);
     }
 
     .categories-grid {
