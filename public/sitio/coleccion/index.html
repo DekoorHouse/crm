@@ -96,15 +96,38 @@
             align-items: center;
             justify-content: space-between;
         }
-        .product-card-price {
+        .product-card-pricing {
+            margin-bottom: 1rem;
+        }
+        .price-row {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+        .price-original {
+            font-size: 1rem;
+            color: var(--text-medium);
+            text-decoration: line-through;
+            font-weight: 500;
+        }
+        .price-current {
             font-weight: 800;
-            font-size: 1.3rem;
+            font-size: 1.4rem;
             color: var(--primary);
         }
-        .product-card-price small {
+        .price-current small {
             font-size: 0.75rem;
             font-weight: 500;
             color: var(--text-medium);
+        }
+        .price-shipping {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #10b981;
         }
         .product-card-btn {
             display: inline-flex;
@@ -235,7 +258,7 @@ const COLLECTIONS = {
     ninos: {
         title: 'Niños',
         desc: 'Lámparas 3D mágicas para los más pequeños del hogar. Personalizadas con su nombre y personaje favorito.',
-        price: '$549',
+        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D',
         productDesc: 'Lámpara LED personalizada con grabado láser, base negra, control remoto con 16 colores.',
         folder: 'Ninos'
@@ -243,7 +266,7 @@ const COLLECTIONS = {
     pareja: {
         title: 'Pareja',
         desc: 'Regalos románticos personalizados con tu foto y mensaje especial. El detalle perfecto para esa persona.',
-        price: '$549',
+        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D',
         productDesc: 'Lámpara LED personalizada con foto de pareja, nombre y fecha especial. 16 colores con control remoto.',
         folder: 'Pareja'
@@ -251,7 +274,7 @@ const COLLECTIONS = {
     empresas: {
         title: 'Empresas',
         desc: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
-        price: '$549',
+        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Corporativa',
         productDesc: 'Lámpara LED con logo o diseño personalizado. Ideal para reconocimientos, premios y merchandising.',
         folder: 'Empresas'
@@ -259,7 +282,7 @@ const COLLECTIONS = {
     familia: {
         title: 'Familia',
         desc: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
-        price: '$549',
+        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Familiar',
         productDesc: 'Lámpara LED con foto familiar, nombre de mascota o retrato grupal. 16 colores con control remoto.',
         folder: 'Familia'
@@ -267,7 +290,7 @@ const COLLECTIONS = {
     memorial: {
         title: 'Memorial',
         desc: 'Un tributo luminoso para honrar la memoria de tus seres queridos. Un recuerdo que siempre brilla.',
-        price: '$549',
+        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Memorial',
         productDesc: 'Lámpara LED con foto y mensaje dedicado. Un homenaje luminoso que mantiene viva su memoria.',
         folder: 'Memorial'
@@ -325,12 +348,16 @@ function loadProducts() {
                 <div class="product-card-body">
                     <div class="product-card-name">${col.productName}</div>
                     <div class="product-card-desc">${col.productDesc}</div>
-                    <div class="product-card-footer">
-                        <div class="product-card-price">${col.price} <small>MXN</small></div>
-                        <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn">
-                            <i class="fab fa-whatsapp"></i> Lo quiero
-                        </a>
+                    <div class="product-card-pricing">
+                        <div class="price-row">
+                            <span class="price-original">${col.originalPrice}</span>
+                            <span class="price-current">${col.price} <small>MXN</small></span>
+                        </div>
+                        <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
                     </div>
+                    <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn" style="width:100%;justify-content:center;">
+                        <i class="fab fa-whatsapp"></i> Lo quiero
+                    </a>
                 </div>
             </div>`;
     }).join('');
