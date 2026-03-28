@@ -121,6 +121,13 @@
             <div style="margin-left:auto; display:flex; gap:8px;">
                 <button id="undo-btn" class="btn btn-tool" title="Deshacer"><i class="fas fa-undo"></i></button>
                 <button id="redo-btn" class="btn btn-tool" title="Rehacer"><i class="fas fa-redo"></i></button>
+                <div class="toolbar-separator"></div>
+                <button id="save-project-btn" class="btn btn-tool" title="Guardar proyecto"><i class="fas fa-save"></i></button>
+                <label class="btn btn-tool" title="Abrir proyecto" style="cursor:pointer;">
+                    <i class="fas fa-folder-open"></i>
+                    <input type="file" id="load-project-input" accept=".json" style="display:none;">
+                </label>
+                <div class="toolbar-separator"></div>
                 <button id="export-btn" class="btn btn-primary"><i class="fas fa-download"></i> Exportar</button>
             </div>
         </div>

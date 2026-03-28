@@ -774,11 +774,121 @@ batchExportBtn.addEventListener('click', async () => {
     batchProgressEl.style.display = 'none';
 });
 
+// ===================== SAVE / LOAD PROJECT =====================
+const saveProjectBtn = document.getElementById('save-project-btn');
+const loadProjectInput = document.getElementById('load-project-input');
+
+saveProjectBtn.addEventListener('click', () => {
+    if (!baseImage) { alert('No hay proyecto para guardar.'); return; }
+
+    // Render canvas without text to capture base + brush strokes
+    const sel = selectedTextIdx;
+    selectedTextIdx = -1;
+    const savedLayers = [...textLayers];
+    textLayers = [];
+    redrawCanvas();
+    const canvasState = canvas.toDataURL('image/png');
+    textLayers = savedLayers;
+    selectedTextIdx = sel;
+    redrawCanvas();
+
+    const project = {
+        version: 1,
+        width: canvas.width,
+        height: canvas.height,
+        baseImage: baseImage.src,
+        canvasState,
+        textLayers: JSON.parse(JSON.stringify(textLayers)),
+    };
+
+    const blob = new Blob([JSON.stringify(project)], { type: 'application/json' });
+    const link = document.createElement('a');
+    link.download = `proyecto-${Date.now()}.json`;
+    link.href = URL.createObjectURL(blob);
+    link.click();
+    URL.revokeObjectURL(link.href);
+});
+
+loadProjectInput.addEventListener('change', (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+        try {
+            const project = JSON.parse(ev.target.result);
+            if (!project.baseImage || !project.textLayers) {
+                alert('Archivo de proyecto inválido.'); return;
+            }
+
+            // Load base image
+            const base = new Image();
+            base.onload = () => {
+                baseImage = base;
+                canvas.width = project.width || base.width;
+                canvas.height = project.height || base.height;
+                canvas.style.display = 'block';
+                canvasPlaceholder.style.display = 'none';
+
+                // Load canvas state (base + brush strokes)
+                if (project.canvasState) {
+                    const stateImg = new Image();
+                    stateImg.onload = () => {
+                        ctx.clearRect(0, 0, canvas.width, canvas.height);
+                        ctx.drawImage(stateImg, 0, 0);
+                        textLayers = project.textLayers;
+                        selectedTextIdx = -1;
+                        undoStack = [];
+                        redoStack = [];
+                        resetZoom();
+
+                        // Re-register custom fonts used in text layers
+                        loadProjectFonts(textLayers);
+
+                        redrawCanvas();
+                        saveUndo();
+                    };
+                    stateImg.src = project.canvasState;
+                } else {
+                    ctx.drawImage(base, 0, 0);
+                    textLayers = project.textLayers;
+                    selectedTextIdx = -1;
+                    undoStack = [];
+                    redoStack = [];
+                    resetZoom();
+                    redrawCanvas();
+                    saveUndo();
+                }
+            };
+            base.src = project.baseImage;
+        } catch (err) {
+            alert('Error al cargar proyecto: ' + err.message);
+        }
+    };
+    reader.readAsText(file);
+    loadProjectInput.value = '';
+});
+
+function loadProjectFonts(layers) {
+    const defaultFonts = ['Inter', 'Arial', 'Georgia', 'Verdana', 'Courier New', 'Rows of Sunflowers'];
+    const needed = [...new Set(layers.map(t => t.fontFamily))].filter(f => !defaultFonts.includes(f));
+    needed.forEach(fontName => {
+        // Add to select if not present
+        const exists = [...fontFamilySelect.options].some(o => o.value === fontName);
+        if (!exists) {
+            const opt = document.createElement('option');
+            opt.value = fontName;
+            opt.textContent = fontName + ' (proyecto)';
+            fontFamilySelect.appendChild(opt);
+        }
+    });
+}
+
 // ===================== KEYBOARD SHORTCUTS =====================
 document.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoBtn.click(); }
     if (e.ctrlKey && e.key === 'y') { e.preventDefault(); redoBtn.click(); }
+    if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveProjectBtn.click(); }
     if (e.key === 'Delete' && selectedTextIdx >= 0) {
         saveUndo();
         textLayers.splice(selectedTextIdx, 1);
