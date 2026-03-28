@@ -149,17 +149,39 @@ body {
     font-weight: 700;
 }
 
-/* Leaflet cluster override */
-.marker-cluster-small,
-.marker-cluster-medium,
-.marker-cluster-large {
+/* Leaflet cluster custom styles */
+.marker-cluster-custom {
     background: transparent !important;
 }
 
-.marker-cluster-small div,
-.marker-cluster-medium div,
-.marker-cluster-large div {
-    background: transparent !important;
+.cluster-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    font-family: 'Outfit', sans-serif;
+    font-weight: 700;
+    color: #fff;
+    box-shadow: 0 3px 12px rgba(212, 114, 44, 0.4);
+    border: 3px solid #fff;
+}
+
+.cluster-small {
+    width: 36px; height: 36px;
+    font-size: 0.8rem;
+    background: var(--primary-color);
+}
+
+.cluster-medium {
+    width: 44px; height: 44px;
+    font-size: 0.95rem;
+    background: #c0571a;
+}
+
+.cluster-large {
+    width: 52px; height: 52px;
+    font-size: 1.1rem;
+    background: #a34815;
 }
 
 /* Leaflet custom marker */
@@ -191,6 +213,12 @@ body {
 .popup-city {
     font-weight: 700;
     font-size: 1rem;
+    margin-bottom: 2px;
+}
+
+.popup-state {
+    font-size: 0.8rem;
+    color: #9ec5d0;
     margin-bottom: 2px;
 }
 

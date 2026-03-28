@@ -197,6 +197,155 @@ function normalizeEstado(raw) {
     return null;
 }
 
+// Coordenadas de ciudades mexicanas (lat, lng)
+const CIUDAD_COORDS = {
+    // Estado de México
+    'naucalpan':{lat:19.4784,lng:-99.2398},'cuautitlan izcalli':{lat:19.6474,lng:-99.2118},
+    'toluca':{lat:19.2826,lng:-99.6557},'tlalnepantla':{lat:19.5440,lng:-99.1945},
+    'ecatepec':{lat:19.6010,lng:-99.0500},'chimalhuacan':{lat:19.4275,lng:-98.9581},
+    'nezahualcoyotl':{lat:19.4007,lng:-99.0145},'zumpango':{lat:19.7954,lng:-99.0993},
+    'tecamac':{lat:19.7130,lng:-98.9687},'huixquilucan':{lat:19.3591,lng:-99.3517},
+    'atizapan de zaragoza':{lat:19.5578,lng:-99.2542},'chalco':{lat:19.2646,lng:-98.8975},
+    'lerma':{lat:19.2844,lng:-99.5119},'zinacantepec':{lat:19.2847,lng:-99.7357},
+    'apaxco':{lat:19.9756,lng:-99.1664},'iztapaluca':{lat:19.3173,lng:-98.8827},
+    'temoaya':{lat:19.4684,lng:-99.5932},'cuajimalpa':{lat:19.3586,lng:-99.2929},
+    'acambay':{lat:19.9539,lng:-99.8442},'valle de chalco':{lat:19.2724,lng:-98.9372},
+    'san pedro atzompa':{lat:19.5359,lng:-99.6903},'almoloya de juarez':{lat:19.3720,lng:-99.7525},
+    // Ciudad de México
+    'iztapalapa':{lat:19.3553,lng:-99.0574},'miguel hidalgo':{lat:19.4328,lng:-99.1937},
+    'alvaro obregon':{lat:19.3550,lng:-99.2032},'coyoacan':{lat:19.3467,lng:-99.1617},
+    'tlalpan':{lat:19.2897,lng:-99.1680},'benito juarez':{lat:19.3714,lng:-99.1598},
+    'tlahuac':{lat:19.2869,lng:-99.0059},'azcapotzalco':{lat:19.4869,lng:-99.1838},
+    'polanco':{lat:19.4333,lng:-99.1975},'cuauhtemoc':{lat:19.4320,lng:-99.1561},
+    // Veracruz
+    'veracruz':{lat:19.1738,lng:-96.1342},'xalapa':{lat:19.5438,lng:-96.9102},
+    'cordoba':{lat:18.8844,lng:-96.9337},'minatitlan':{lat:17.9932,lng:-94.5556},
+    'poza rica':{lat:20.5332,lng:-97.4596},'orizaba':{lat:18.8501,lng:-97.0999},
+    'coatzacoalcos':{lat:18.1348,lng:-94.4587},'martinez de la torre':{lat:20.0693,lng:-97.0553},
+    'nogales':{lat:18.8236,lng:-97.1574},'las choapas':{lat:17.9164,lng:-94.1022},
+    // Baja California
+    'tijuana':{lat:32.5149,lng:-117.0382},'ensenada':{lat:31.8667,lng:-116.5964},
+    'mexicali':{lat:32.6245,lng:-115.4523},'tecate':{lat:32.5721,lng:-116.6262},
+    // Jalisco
+    'guadalajara':{lat:20.6597,lng:-103.3496},'zapopan':{lat:20.7231,lng:-103.3839},
+    'tlaquepaque':{lat:20.6419,lng:-103.3118},'puerto vallarta':{lat:20.6534,lng:-105.2253},
+    'tlajomulco':{lat:20.4727,lng:-103.4443},'chapalita':{lat:20.6685,lng:-103.3972},
+    // Guanajuato
+    'leon':{lat:21.1250,lng:-101.6860},'irapuato':{lat:20.6768,lng:-101.3556},
+    'villagran':{lat:20.5155,lng:-100.9946},
+    // Nuevo León
+    'monterrey':{lat:25.6866,lng:-100.3161},'apodaca':{lat:25.7817,lng:-100.1884},
+    'guadalupe':{lat:25.6771,lng:-100.2594},'garcia':{lat:25.8050,lng:-100.5910},
+    // Quintana Roo
+    'cancun':{lat:21.1619,lng:-86.8515},'playa del carmen':{lat:20.6296,lng:-87.0739},
+    'solidaridad':{lat:20.6296,lng:-87.0739},
+    // San Luis Potosí
+    'san luis potosi':{lat:22.1565,lng:-100.9855},'soledad de graciano sanchez':{lat:22.1833,lng:-100.9289},
+    'ciudad valles':{lat:21.9864,lng:-99.0119},'ebano':{lat:22.2244,lng:-98.3850},
+    // Chihuahua
+    'chihuahua':{lat:28.6353,lng:-106.0889},'ciudad juarez':{lat:31.6904,lng:-106.4245},
+    'hidalgo del parral':{lat:26.9319,lng:-105.6671},'delicias':{lat:28.1901,lng:-105.4710},
+    // Coahuila
+    'saltillo':{lat:25.4232,lng:-100.9924},'torreon':{lat:25.5428,lng:-103.4068},
+    'monclova':{lat:26.9063,lng:-101.4213},
+    // Puebla
+    'puebla':{lat:19.0414,lng:-98.2063},'san andres cholula':{lat:19.0529,lng:-98.2985},
+    'coronango':{lat:19.1553,lng:-98.3062},
+    // Sinaloa
+    'mazatlan':{lat:23.2494,lng:-106.4111},'culiacan':{lat:24.7994,lng:-107.3940},
+    'escuinapa':{lat:22.8483,lng:-105.7667},'los mochis':{lat:25.7905,lng:-108.9935},
+    // Tamaulipas
+    'matamoros':{lat:25.8693,lng:-97.5024},'ciudad victoria':{lat:23.7369,lng:-99.1411},
+    'nuevo laredo':{lat:27.4761,lng:-99.5065},'reynosa':{lat:26.0509,lng:-98.2973},
+    'rio bravo':{lat:25.9869,lng:-98.0942},
+    // Michoacán
+    'morelia':{lat:19.7060,lng:-101.1950},'maravatio':{lat:19.8889,lng:-100.4450},
+    'la piedad':{lat:20.3461,lng:-102.0342},'tacambaro':{lat:19.2345,lng:-101.4585},
+    // Yucatán
+    'merida':{lat:20.9674,lng:-89.5926},'uman':{lat:20.8832,lng:-89.7417},
+    'kanasin':{lat:20.9351,lng:-89.5571},
+    // Hidalgo
+    'tula de allende':{lat:20.0543,lng:-99.3418},'tezontepec de aldama':{lat:20.1893,lng:-99.2753},
+    'mineral de la reforma':{lat:20.0728,lng:-98.6968},
+    // Baja California Sur
+    'los cabos':{lat:22.8905,lng:-109.9167},'san jose del cabo':{lat:23.0586,lng:-109.7008},
+    'san jose':{lat:23.0586,lng:-109.7008},
+    // Guerrero
+    'acapulco':{lat:16.8634,lng:-99.8901},
+    // Sonora
+    'hermosillo':{lat:29.0729,lng:-110.9559},'san luis rio colorado':{lat:32.4563,lng:-114.7719},
+    // Morelos
+    'jiutepec':{lat:18.8833,lng:-99.1736},'yautepec':{lat:18.8783,lng:-99.0681},
+    'cuautla':{lat:18.8122,lng:-98.9544},
+    // Aguascalientes
+    'aguascalientes':{lat:21.8818,lng:-102.2916},
+    // Colima
+    'manzanillo':{lat:19.1131,lng:-104.3381},
+    // Zacatecas
+    'fresnillo':{lat:23.1750,lng:-102.8700},
+    // Querétaro
+    'queretaro':{lat:20.5888,lng:-100.3899},'el marques':{lat:20.6169,lng:-100.2922},
+};
+
+// Aliases para normalizar nombres de ciudades con variantes
+const CIUDAD_ALIASES = {
+    'cd juarez':'ciudad juarez','cuidad juarez':'ciudad juarez','cd victoria':'ciudad victoria',
+    'h matamoros':'matamoros','h. matamoros':'matamoros',
+    'naucalpan de juarez':'naucalpan','naucalpan de juárez':'naucalpan',
+    'ecatepec de morelos':'ecatepec','tlalnepantla de baz':'tlalnepantla',
+    'acapulco de juarez':'acapulco','acapulco de juárez':'acapulco',
+    'valle de chalco solidaridad':'valle de chalco',
+    'san diego churubusco coyoacan':'coyoacan',
+    'guadalajara jalisco':'guadalajara','xalapa veracruz':'xalapa',
+    'xalapa enriquez':'xalapa','minatitlan ver':'minatitlan',
+    'matamoros tamaulipas':'matamoros','san andres cholula puebla':'san andres cholula',
+    'coronango puebla':'coronango','ensenada bc':'ensenada','tijuana bc':'tijuana',
+    'cancun qr':'cancun','cancun benito juarez':'cancun','cancun q r':'cancun',
+    'leon guanajuato':'leon','merida yucatan':'merida',
+    'huixquilucan edomex':'huixquilucan','huixquilucan edo mex':'huixquilucan',
+    'iztapaluca estado mexico':'iztapaluca','san pedro tlaquepaque':'tlaquepaque',
+    'acambay de ruiz castaneda':'acambay','alcaldia miguel hidalgo':'miguel hidalgo',
+    'san rafael chamapa cuarta seccion':'naucalpan',
+    'soledad de graciano sanchez':'soledad de graciano sanchez',
+    'atizapan de zaragoza':'atizapan de zaragoza',
+    'cuautitlan izcalli':'cuautitlan izcalli',
+};
+
+function normalizeCiudad(raw) {
+    let n = raw.toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9 ]/g, '').trim();
+    // Remove trailing state names
+    n = n.replace(/\s+(ver|veracruz|jalisco|puebla|yucatan|tamaulipas|guanajuato|bc|qr|q r|edo\s*mex|estado\s*mexico)$/g, '').trim();
+    if (CIUDAD_ALIASES[n]) return CIUDAD_ALIASES[n];
+    if (CIUDAD_COORDS[n]) return n;
+    // Partial match
+    for (const key of Object.keys(CIUDAD_COORDS)) {
+        if (n.includes(key) && key.length >= 4) return key;
+    }
+    for (const key of Object.keys(CIUDAD_COORDS)) {
+        if (key.includes(n) && n.length >= 4) return key;
+    }
+    return n;
+}
+
+function getCiudadCoords(normCity, normState) {
+    // State-specific overrides for ambiguous names
+    if (normCity === 'benito juarez' && normState === 'quintana roo') return CIUDAD_COORDS['cancun'];
+    if (normCity === 'juarez' && normState === 'chihuahua') return CIUDAD_COORDS['ciudad juarez'];
+    if (normCity === 'juarez' && normState === 'nuevo leon') return {lat:25.6479,lng:-100.0955};
+    // Direct lookup
+    if (CIUDAD_COORDS[normCity]) return CIUDAD_COORDS[normCity];
+    // Fallback: state centroid with deterministic offset
+    if (normState && ESTADO_COORDS_RAW[normState]) {
+        const sc = ESTADO_COORDS_RAW[normState];
+        let hash = 0;
+        for (let i = 0; i < normCity.length; i++) hash = ((hash << 5) - hash) + normCity.charCodeAt(i);
+        return { lat: sc.lat + ((hash % 100) / 400) - 0.125, lng: sc.lng + (((hash >> 8) % 100) / 400) - 0.125 };
+    }
+    return null;
+}
+
 function parseCSV(text) {
     const lines = [];
     let current = '';
@@ -232,44 +381,73 @@ router.get('/referencias/mapa', async (req, res) => {
         const rows = parseCSV(csvRes.data);
         if (rows.length < 2) return res.json([]);
 
-        // Detectar columna de Estado dinámicamente
+        // Detectar columnas dinámicamente
         const header = rows[0];
         let estadoIdx = header.findIndex(h => h.toLowerCase().trim() === 'estado');
-        if (estadoIdx === -1) estadoIdx = 14; // fallback
+        if (estadoIdx === -1) estadoIdx = 14;
+        let ciudadIdx = header.findIndex(h => h.toLowerCase().trim().includes('ciudad'));
+        if (ciudadIdx === -1) ciudadIdx = estadoIdx - 2; // fallback: 2 cols antes de estado
 
-        const groups = {};
+        const stateGroups = {};
+        const cityGroups = {};
         let totalEntregas = 0;
+
         for (let i = 1; i < rows.length; i++) {
             const row = rows[i];
-            const estado = (row[estadoIdx] || '').trim();
-            if (!estado) continue;
-            const key = estado.toLowerCase()
+            const estadoRaw = (row[estadoIdx] || '').trim();
+            const ciudadRaw = (row[ciudadIdx] || '').trim();
+            if (!estadoRaw) continue;
+            totalEntregas++;
+
+            // Agrupación por estado
+            const stateKey = estadoRaw.toLowerCase()
                 .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
                 .replace(/[^a-z ]/g, '').trim();
-            if (!groups[key]) groups[key] = { estado, count: 0 };
-            groups[key].count++;
-            totalEntregas++;
+            if (!stateGroups[stateKey]) stateGroups[stateKey] = { estado: estadoRaw, count: 0 };
+            stateGroups[stateKey].count++;
+
+            // Agrupación por ciudad
+            if (ciudadRaw && ciudadRaw.length >= 2) {
+                const normState = normalizeEstado(estadoRaw);
+                const normCity = normalizeCiudad(ciudadRaw);
+                const cityKey = normCity + '|' + (normState || stateKey);
+                if (!cityGroups[cityKey]) {
+                    cityGroups[cityKey] = { ciudad: ciudadRaw, estadoNorm: normState, estadoRaw, normCity, count: 0 };
+                }
+                cityGroups[cityKey].count++;
+            }
         }
 
-        // Normalizar y agrupar por estado canónico, resolver coordenadas
+        // Resolver estados
         const canonical = {};
-        for (const g of Object.values(groups)) {
+        for (const g of Object.values(stateGroups)) {
             const norm = normalizeEstado(g.estado);
             if (!norm) continue;
             if (!canonical[norm]) canonical[norm] = { estado: norm.charAt(0).toUpperCase() + norm.slice(1), count: 0 };
             canonical[norm].count += g.count;
         }
-
-        const results = [];
+        const stateResults = [];
         for (const g of Object.values(canonical)) {
             const key = g.estado.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
             const coords = ESTADO_COORDS_RAW[key];
-            if (coords) {
-                results.push({ estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
-            }
+            if (coords) stateResults.push({ estado: g.estado, count: g.count, lat: coords.lat, lng: coords.lng });
         }
 
-        const response = { estados: results, totalEntregas, totalEstados: results.length };
+        // Resolver ciudades con coordenadas
+        const cityResults = [];
+        for (const g of Object.values(cityGroups)) {
+            const coords = getCiudadCoords(g.normCity, g.estadoNorm);
+            if (!coords) continue;
+            let displayCity = g.ciudad.replace(/\s*-\s*[A-Z]{2,3}\s*$/g, '').trim();
+            displayCity = displayCity.charAt(0).toUpperCase() + displayCity.slice(1);
+            let displayState = g.estadoRaw.replace(/\s*-\s*[A-Z]{2,3}\s*$/g, '').trim();
+            cityResults.push({ ciudad: displayCity, estado: displayState, count: g.count, lat: coords.lat, lng: coords.lng });
+        }
+
+        const response = {
+            estados: stateResults, ciudades: cityResults,
+            totalEntregas, totalEstados: stateResults.length, totalCiudades: cityResults.length
+        };
         mapaCache = { data: response, timestamp: Date.now() };
         res.json(response);
     } catch (error) {
