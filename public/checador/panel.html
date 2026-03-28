@@ -225,6 +225,29 @@
         </div>
     </div>
 
+    <!-- Modal Vacaciones -->
+    <div id="vac-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#1e293b; width:92%; max-width:400px; border-radius:24px; padding:28px; animation:zoomIn 0.3s ease-out;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 id="vac-modal-title" style="font-size:1.1rem;">🏖 Vacaciones</h2>
+                <button id="vac-modal-close" class="close-btn">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom:14px;">
+                <label style="font-size:0.8rem;">Fecha inicio</label>
+                <input type="date" id="vac-desde" style="font-size:1rem;">
+            </div>
+            <div class="input-group" style="margin-bottom:18px;">
+                <label style="font-size:0.8rem;">Fecha fin</label>
+                <input type="date" id="vac-hasta" style="font-size:1rem;">
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:16px;">Horario vacaciones: L-V 9am-3pm (6h), Sáb 9am-1pm (4h) a $70/hr</p>
+            <div style="display:flex; gap:10px;">
+                <button id="vac-save-btn" class="btn-in" style="flex:1; padding:14px; font-size:1rem;">Guardar</button>
+                <button id="vac-remove-btn" class="btn-small btn-danger" style="padding:14px 20px; font-size:0.9rem; display:none;">Quitar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="notification" class="notification">OK</div>
 
     <!-- Firebase SDK -->

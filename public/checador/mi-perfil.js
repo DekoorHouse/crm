@@ -89,6 +89,17 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
     document.getElementById('info-phone').textContent = match.phone || 'No registrado';
     document.getElementById('info-id').textContent = match.id || '—';
 
+    // Vacaciones
+    const vacSection = document.getElementById('vacation-section');
+    if (match.vacaciones && match.vacacionesDesde && match.vacacionesHasta) {
+        vacSection.style.display = 'block';
+        const fmtDate = d => new Date(d + 'T12:00:00').toLocaleDateString('es-MX', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' });
+        document.getElementById('vac-desde-label').textContent = fmtDate(match.vacacionesDesde);
+        document.getElementById('vac-hasta-label').textContent = fmtDate(match.vacacionesHasta);
+    } else {
+        vacSection.style.display = 'none';
+    }
+
     unsubscribeLogs = db.collection('checador_logs')
         .orderBy('timestamp', 'desc')
         .onSnapshot(snap => {
@@ -247,19 +258,34 @@ function renderProfile() {
             timeline.push('(activo)');
         }
 
-        if (dayLogs.length > 0) {
+        // Vacaciones: si no hay logs, checar si está de vacaciones en esa fecha
+        let isVacDay = false;
+        if (dayLogs.length === 0 && currentEmployee.vacaciones && currentEmployee.vacacionesDesde && currentEmployee.vacacionesHasta) {
+            const checkD = new Date(dateObj); checkD.setHours(12, 0, 0, 0);
+            const desde = new Date(currentEmployee.vacacionesDesde + 'T00:00:00');
+            const hasta = new Date(currentEmployee.vacacionesHasta + 'T23:59:59');
+            const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+            if (checkD >= desde && checkD <= hasta && dateObj <= todayEnd) {
+                const dow = dateObj.getDay();
+                if (dow >= 1 && dow <= 5) { dayMins = 360; isVacDay = true; }
+                else if (dow === 6) { dayMins = 240; isVacDay = true; }
+            }
+        }
+
+        if (dayLogs.length > 0 || isVacDay) {
             daysWorked++;
             totalWeekMins += dayMins;
         }
 
-        const hasData = dayLogs.length > 0;
+        const hasData = dayLogs.length > 0 || isVacDay;
         const hoursStr = dayMins > 0 ? `${Math.floor(dayMins / 60)}h ${dayMins % 60}m` : (hasData ? '0h 0m' : '—');
 
         const row = document.createElement('div');
         row.className = `day-row ${hasData ? 'has-data' : 'no-data'} ${isToday ? 'today' : ''}`;
+        row.style.borderLeftColor = isVacDay ? '#f59e0b' : '';
         row.innerHTML = `
             <span class="day-name">${dayNames[i]}</span>
-            <span class="day-detail">${hasData ? timeline.join(' &bull; ') : ''}</span>
+            <span class="day-detail">${isVacDay ? '🏖 Vacaciones' : (dayLogs.length > 0 ? timeline.join(' &bull; ') : '')}</span>
             <span class="day-hours">${hoursStr}</span>
         `;
         daysList.appendChild(row);

@@ -195,9 +195,14 @@ function getVacationMinutes(dayOfWeek) {
     return 0;
 }
 
-function isOnVacation(empName) {
+function isOnVacation(empName, checkDate) {
     const emp = employeesCache.find(e => e.name.toLowerCase() === empName.toLowerCase());
-    return emp && emp.vacaciones === true;
+    if (!emp || !emp.vacaciones || !emp.vacacionesDesde || !emp.vacacionesHasta) return false;
+    const d = checkDate ? new Date(checkDate) : new Date();
+    d.setHours(12, 0, 0, 0);
+    const desde = new Date(emp.vacacionesDesde + 'T00:00:00');
+    const hasta = new Date(emp.vacacionesHasta + 'T23:59:59');
+    return d >= desde && d <= hasta;
 }
 
 // =====================
@@ -270,8 +275,8 @@ function renderAdminLogs() {
         const cells = employees.map(emp => {
             const key = `${emp.name.toLowerCase()}-${dateStr}`;
             const idx = groupedDataMap[key];
-            // Vacaciones: si no hay logs y está de vacaciones, auto-llenar horas
-            if (idx === undefined && isOnVacation(emp.name)) {
+            // Vacaciones: si no hay logs y está de vacaciones en esa fecha, auto-llenar horas
+            if (idx === undefined && isOnVacation(emp.name, dateObj)) {
                 const today = new Date(); today.setHours(23, 59, 59, 999);
                 if (dateObj <= today) {
                     const vacMins = getVacationMinutes(dateObj.getDay());
@@ -605,10 +610,10 @@ function renderAdminEmployees() {
                 <button class="btn-small" onclick="regeneratePin('${emp._docId}')" style="margin-left:6px; padding:4px 8px; font-size:0.7rem;" title="Generar nuevo PIN">🔄</button>
             </td>
             <td style="text-align:center;">
-                <button class="btn-small vacation-toggle" data-doc="${emp._docId}"
+                <button class="btn-small vacation-toggle" data-doc="${emp._docId}" data-name="${emp.name}"
                     style="padding:6px 12px; font-size:0.78rem; border-radius:10px; cursor:pointer;
-                    ${emp.vacaciones ? 'background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none;' : 'background:rgba(255,255,255,0.1); color:var(--text-muted); border:1px solid var(--glass-border);'}">
-                    ${emp.vacaciones ? '🏖 Sí' : 'No'}
+                    ${emp.vacaciones && emp.vacacionesDesde ? 'background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none;' : 'background:rgba(255,255,255,0.1); color:var(--text-muted); border:1px solid var(--glass-border);'}">
+                    ${emp.vacaciones && emp.vacacionesDesde && emp.vacacionesHasta ? `🏖 ${emp.vacacionesDesde.slice(5)} a ${emp.vacacionesHasta.slice(5)}` : 'No'}
                 </button>
             </td>
             <td><button class="btn-small btn-danger" onclick="deleteEmployee('${emp._docId}')">Eliminar</button></td>
@@ -627,13 +632,7 @@ function renderAdminEmployees() {
             });
         });
         tr.querySelectorAll('.vacation-toggle').forEach(btn => {
-            btn.addEventListener('click', async () => {
-                const docId = btn.dataset.doc;
-                const empObj = employeesCache.find(e => e._docId === docId);
-                const newVal = !(empObj && empObj.vacaciones);
-                await db.collection('checador_employees').doc(docId).update({ vacaciones: newVal });
-                showNotification(newVal ? `${empObj.name} en vacaciones 🏖` : `Vacaciones desactivadas para ${empObj.name}`);
-            });
+            btn.addEventListener('click', () => openVacModal(btn.dataset.doc, btn.dataset.name));
         });
         tbody.appendChild(tr);
     });
@@ -770,19 +769,21 @@ function getResumenData(period) {
         if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
     });
 
-    // Agregar días de vacaciones para empleados que estén de vacaciones
+    // Agregar días de vacaciones para empleados que estén de vacaciones en cada fecha
     const today = new Date(); today.setHours(23, 59, 59, 999);
     employeesCache.forEach(emp => {
-        if (!emp.vacaciones) return;
+        if (!emp.vacaciones || !emp.vacacionesDesde || !emp.vacacionesHasta) return;
         const k = emp.name.toLowerCase();
         if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
         const cur = new Date(start);
         while (cur <= end && cur <= today) {
-            const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
-            const dayKey = `${k}-${dateStr}`;
-            if (!dayGroups[dayKey]) {
-                const vacMins = getVacationMinutes(cur.getDay());
-                if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+            if (isOnVacation(emp.name, cur)) {
+                const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
+                const dayKey = `${k}-${dateStr}`;
+                if (!dayGroups[dayKey]) {
+                    const vacMins = getVacationMinutes(cur.getDay());
+                    if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+                }
             }
             cur.setDate(cur.getDate() + 1);
         }
@@ -926,7 +927,7 @@ function buildWeekReportData() {
                 const mins = getMinsFromGroup(data[idx]);
                 entry.totalMins += mins;
                 if (mins > 0) entry.days.push({ day: dayNames[i], hours: `${Math.floor(mins/60)}h ${mins%60}m` });
-            } else if (emp.vacaciones && dateObj <= today) {
+            } else if (isOnVacation(emp.name, dateObj) && dateObj <= today) {
                 const vacMins = getVacationMinutes(dateObj.getDay());
                 if (vacMins > 0) {
                     entry.totalMins += vacMins;
@@ -1180,6 +1181,54 @@ document.getElementById('adj-modal-close').addEventListener('click', () => {
 
 document.getElementById('adj-modal').addEventListener('click', (e) => {
     if (e.target.id === 'adj-modal') document.getElementById('adj-modal').style.display = 'none';
+});
+
+// =====================
+// VACACIONES MODAL
+// =====================
+let vacCurrentDocId = '';
+
+function openVacModal(docId, name) {
+    vacCurrentDocId = docId;
+    const emp = employeesCache.find(e => e._docId === docId);
+    document.getElementById('vac-modal-title').textContent = `🏖 Vacaciones — ${name}`;
+    document.getElementById('vac-desde').value = emp && emp.vacacionesDesde ? emp.vacacionesDesde : '';
+    document.getElementById('vac-hasta').value = emp && emp.vacacionesHasta ? emp.vacacionesHasta : '';
+    document.getElementById('vac-remove-btn').style.display = emp && emp.vacaciones ? 'block' : 'none';
+    document.getElementById('vac-modal').style.display = 'flex';
+    document.getElementById('vac-desde').focus();
+}
+
+document.getElementById('vac-save-btn').addEventListener('click', async () => {
+    const desde = document.getElementById('vac-desde').value;
+    const hasta = document.getElementById('vac-hasta').value;
+    if (!desde || !hasta) { showNotification('Selecciona ambas fechas', 'danger'); return; }
+    if (hasta < desde) { showNotification('La fecha fin debe ser después del inicio', 'danger'); return; }
+
+    const btn = document.getElementById('vac-save-btn');
+    btn.disabled = true; btn.textContent = 'Guardando...';
+    await db.collection('checador_employees').doc(vacCurrentDocId).update({
+        vacaciones: true, vacacionesDesde: desde, vacacionesHasta: hasta
+    });
+    btn.disabled = false; btn.textContent = 'Guardar';
+    document.getElementById('vac-modal').style.display = 'none';
+    showNotification('Vacaciones guardadas 🏖');
+});
+
+document.getElementById('vac-remove-btn').addEventListener('click', async () => {
+    await db.collection('checador_employees').doc(vacCurrentDocId).update({
+        vacaciones: false, vacacionesDesde: '', vacacionesHasta: ''
+    });
+    document.getElementById('vac-modal').style.display = 'none';
+    showNotification('Vacaciones removidas');
+});
+
+document.getElementById('vac-modal-close').addEventListener('click', () => {
+    document.getElementById('vac-modal').style.display = 'none';
+});
+
+document.getElementById('vac-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'vac-modal') document.getElementById('vac-modal').style.display = 'none';
 });
 
 // =====================
