@@ -812,7 +812,11 @@ body {
     flex-shrink: 0;
     box-shadow: 0 2px 12px rgba(27, 77, 92, 0.06);
     overflow: hidden;
-    white-space: normal;
+}
+
+.tc-card,
+.tc-card * {
+    white-space: normal !important;
 }
 
 .tc-card-header {
@@ -861,6 +865,8 @@ body {
     line-height: 1.6;
     color: var(--text-medium);
     font-style: italic;
+    white-space: normal !important;
+    word-break: break-word;
 }
 
 .tc-text::before { content: '\201C'; }
