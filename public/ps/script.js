@@ -68,6 +68,7 @@ const textQualityVal = document.getElementById('text-quality-val');
 const strokeWidthInput = document.getElementById('stroke-width');
 const strokeWidthVal = document.getElementById('stroke-width-val');
 const strokeColorInput = document.getElementById('stroke-color');
+const strokeDirSelect = document.getElementById('stroke-dir');
 
 const textInputPanel = document.getElementById('text-input-panel');
 const textContent = document.getElementById('text-content');
@@ -274,6 +275,13 @@ strokeColorInput.addEventListener('input', () => {
     }
 });
 
+strokeDirSelect.addEventListener('change', () => {
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].strokeDir = strokeDirSelect.value;
+        redrawCanvas();
+    }
+});
+
 textQualityInput.addEventListener('input', () => {
     textQualityVal.textContent = textQualityInput.value + 'x';
     if (selectedTextIdx >= 0) {
@@ -421,6 +429,7 @@ function onPointerDown(e) {
             glowColor: glowColorInput.value,
             strokeWidth: parseInt(strokeWidthInput.value),
             strokeColor: strokeColorInput.value,
+            strokeDir: strokeDirSelect.value,
             quality: parseInt(textQualityInput.value),
         });
         selectedTextIdx = textLayers.length - 1;
@@ -452,6 +461,7 @@ function onPointerDown(e) {
                 strokeWidthInput.value = t.strokeWidth || 0;
                 strokeWidthVal.textContent = t.strokeWidth || 0;
                 strokeColorInput.value = t.strokeColor || '#0066ff';
+                strokeDirSelect.value = t.strokeDir || 'center';
                 textQualityInput.value = t.quality || 1;
                 textQualityVal.textContent = (t.quality || 1) + 'x';
                 textInputPanel.style.display = 'block';
@@ -522,6 +532,33 @@ function redrawCanvas() {
     }
 }
 
+function getStrokeDirOffset(dir, sw) {
+    const d = sw * 0.7;
+    const map = {
+        'center': [0, 0],
+        'top': [0, -d], 'bottom': [0, d],
+        'left': [-d, 0], 'right': [d, 0],
+        'top-right': [d, -d], 'top-left': [-d, -d],
+        'bottom-right': [d, d], 'bottom-left': [-d, d],
+    };
+    return map[dir] || [0, 0];
+}
+
+function drawStroke(c, t, sw, tx, ty) {
+    const dir = t.strokeDir || 'center';
+    const sColor = t.strokeColor || '#0066ff';
+    if (dir === 'center') {
+        c.strokeStyle = sColor;
+        c.lineWidth = sw;
+        c.lineJoin = 'round';
+        c.strokeText(t.text, tx, ty);
+    } else {
+        const [dx, dy] = getStrokeDirOffset(dir, sw);
+        c.fillStyle = sColor;
+        c.fillText(t.text, tx + dx, ty + dy);
+    }
+}
+
 function drawTextLayer(t, isSelected) {
     ctx.save();
     const q = t.quality || 1;
@@ -535,7 +572,6 @@ function drawTextLayer(t, isSelected) {
     const pad = Math.max(glowPad, sw + 6);
 
     if (q > 1) {
-        // Supersampled rendering: draw at q× resolution, then scale down
         const offW = Math.ceil(textW + pad * 2);
         const offH = Math.ceil(textH + pad * 2);
         const tmp = document.createElement('canvas');
@@ -554,12 +590,7 @@ function drawTextLayer(t, isSelected) {
         }
         tc.shadowColor = 'transparent';
         tc.shadowBlur = 0;
-        if (sw > 0) {
-            tc.strokeStyle = t.strokeColor || '#0066ff';
-            tc.lineWidth = sw;
-            tc.lineJoin = 'round';
-            tc.strokeText(t.text, pad, textH + pad);
-        }
+        if (sw > 0) drawStroke(tc, t, sw, pad, textH + pad);
         tc.fillStyle = t.color;
         tc.fillText(t.text, pad, textH + pad);
 
@@ -567,7 +598,6 @@ function drawTextLayer(t, isSelected) {
         ctx.imageSmoothingQuality = 'high';
         ctx.drawImage(tmp, t.x - pad, t.y - textH - pad, offW, offH);
     } else {
-        // Normal rendering
         if (t.glowStrength > 0) {
             ctx.shadowColor = t.glowColor;
             ctx.shadowBlur = t.glowStrength;
@@ -576,12 +606,7 @@ function drawTextLayer(t, isSelected) {
         }
         ctx.shadowColor = 'transparent';
         ctx.shadowBlur = 0;
-        if (sw > 0) {
-            ctx.strokeStyle = t.strokeColor || '#0066ff';
-            ctx.lineWidth = sw;
-            ctx.lineJoin = 'round';
-            ctx.strokeText(t.text, t.x, t.y);
-        }
+        if (sw > 0) drawStroke(ctx, t, sw, t.x, t.y);
         ctx.fillStyle = t.color;
         ctx.fillText(t.text, t.x, t.y);
     }
