@@ -3,6 +3,7 @@ const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
 const waGroupRouter = require('./autopost/whatsappGroupRoutes');
+const fbGroupRouter = require('./autopost/fbGroupRoutes');
 const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
@@ -32,6 +33,7 @@ app.get('/env-config.js', (req, res) => {
 app.use('/api', apiRouter);
 app.use('/api/autopost', autoPostRouter);
 app.use('/api/wa-group', waGroupRouter);
+app.use('/api/fb-group', fbGroupRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
