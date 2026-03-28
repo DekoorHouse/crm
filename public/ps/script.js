@@ -63,6 +63,8 @@ const fontColorInput = document.getElementById('font-color');
 const glowStrengthInput = document.getElementById('glow-strength');
 const glowVal = document.getElementById('glow-val');
 const glowColorInput = document.getElementById('glow-color');
+const textQualityInput = document.getElementById('text-quality');
+const textQualityVal = document.getElementById('text-quality-val');
 
 const textInputPanel = document.getElementById('text-input-panel');
 const textContent = document.getElementById('text-content');
@@ -254,6 +256,14 @@ glowColorInput.addEventListener('input', () => {
     }
 });
 
+textQualityInput.addEventListener('input', () => {
+    textQualityVal.textContent = textQualityInput.value + 'x';
+    if (selectedTextIdx >= 0) {
+        textLayers[selectedTextIdx].quality = parseInt(textQualityInput.value);
+        redrawCanvas();
+    }
+});
+
 textContent.addEventListener('input', () => {
     if (selectedTextIdx >= 0) {
         textLayers[selectedTextIdx].text = textContent.value;
@@ -391,6 +401,7 @@ function onPointerDown(e) {
             color: fontColorInput.value,
             glowStrength: parseInt(glowStrengthInput.value),
             glowColor: glowColorInput.value,
+            quality: parseInt(textQualityInput.value),
         });
         selectedTextIdx = textLayers.length - 1;
         redrawCanvas();
@@ -418,6 +429,8 @@ function onPointerDown(e) {
                 glowStrengthInput.value = t.glowStrength;
                 glowVal.textContent = t.glowStrength;
                 glowColorInput.value = t.glowColor;
+                textQualityInput.value = t.quality || 1;
+                textQualityVal.textContent = (t.quality || 1) + 'x';
                 textInputPanel.style.display = 'block';
                 redrawCanvas();
                 return;
@@ -488,33 +501,61 @@ function redrawCanvas() {
 
 function drawTextLayer(t, isSelected) {
     ctx.save();
+    const q = t.quality || 1;
     ctx.font = `${t.fontSize}px "${t.fontFamily}"`;
     ctx.textBaseline = 'alphabetic';
+    const metrics = ctx.measureText(t.text);
+    const textW = metrics.width;
+    const textH = t.fontSize;
+    const glowPad = t.glowStrength > 0 ? t.glowStrength * 3 : 0;
+    const pad = Math.max(glowPad, 6);
 
-    // Glow effect
-    if (t.glowStrength > 0) {
-        ctx.shadowColor = t.glowColor;
-        ctx.shadowBlur = t.glowStrength;
-        ctx.fillStyle = t.color;
-        // Draw multiple times for stronger glow
-        for (let g = 0; g < 3; g++) {
-            ctx.fillText(t.text, t.x, t.y);
+    if (q > 1) {
+        // Supersampled rendering: draw at q× resolution, then scale down
+        const offW = Math.ceil(textW + pad * 2);
+        const offH = Math.ceil(textH + pad * 2);
+        const tmp = document.createElement('canvas');
+        tmp.width = offW * q;
+        tmp.height = offH * q;
+        const tc = tmp.getContext('2d');
+        tc.scale(q, q);
+        tc.font = `${t.fontSize}px "${t.fontFamily}"`;
+        tc.textBaseline = 'alphabetic';
+
+        if (t.glowStrength > 0) {
+            tc.shadowColor = t.glowColor;
+            tc.shadowBlur = t.glowStrength;
+            tc.fillStyle = t.color;
+            for (let g = 0; g < 3; g++) tc.fillText(t.text, pad, textH + pad);
         }
-    }
+        tc.shadowColor = 'transparent';
+        tc.shadowBlur = 0;
+        tc.fillStyle = t.color;
+        tc.fillText(t.text, pad, textH + pad);
 
-    // Main text
-    ctx.shadowColor = 'transparent';
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = t.color;
-    ctx.fillText(t.text, t.x, t.y);
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(tmp, t.x - pad, t.y - textH - pad, offW, offH);
+    } else {
+        // Normal rendering
+        if (t.glowStrength > 0) {
+            ctx.shadowColor = t.glowColor;
+            ctx.shadowBlur = t.glowStrength;
+            ctx.fillStyle = t.color;
+            for (let g = 0; g < 3; g++) ctx.fillText(t.text, t.x, t.y);
+        }
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = t.color;
+        ctx.fillText(t.text, t.x, t.y);
+    }
 
     // Selection indicator
     if (isSelected) {
-        const metrics = ctx.measureText(t.text);
         ctx.strokeStyle = '#7aa2f7';
         ctx.lineWidth = 2;
         ctx.setLineDash([5, 3]);
-        ctx.strokeRect(t.x - 4, t.y - t.fontSize - 2, metrics.width + 8, t.fontSize + 8);
+        ctx.strokeRect(t.x - 4, t.y - textH - 2, textW + 8, textH + 8);
         ctx.setLineDash([]);
     }
 
