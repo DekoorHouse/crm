@@ -264,8 +264,10 @@
           <button class="btn btn-wa-dark" onclick="waPreviewPost()" id="waBtnPreview">
             <i class="fas fa-eye"></i> Vista previa
           </button>
+          <button class="btn btn-wa" onclick="waTriggerPost()" id="waBtnTrigger">
+            <i class="fab fa-whatsapp"></i> Publicar Ahora
+          </button>
         </div>
-        <p style="margin-top:12px;font-size:0.8rem;color:var(--text-muted)"><i class="fas fa-terminal"></i> Para publicar, ejecuta en tu PC: <code style="background:var(--bg-main);padding:2px 8px;border-radius:6px;font-size:0.8rem">node scripts/wa-publish.js</code></p>
         <div class="preview-area" id="waPreviewArea">
           <div class="wa-bubble" id="waPreviewBubble">
             <img id="waPreviewImage" src="" alt="Preview" />
@@ -601,6 +603,25 @@
         area.scrollIntoView({ behavior: 'smooth', block: 'center' });
       } catch (e) { toast('Error generando preview: ' + e.message, 'error'); }
       finally { btn.disabled = false; btn.innerHTML = '<i class="fas fa-eye"></i> Vista previa'; }
+    }
+
+    async function waTriggerPost() {
+      const btn = document.getElementById('waBtnTrigger');
+      if (!confirm('Publicar la siguiente foto en el grupo de WhatsApp?')) return;
+      btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Publicando...';
+      try {
+        const res = await fetch(`${WA_API}/trigger`, { method: 'POST' });
+        const data = await res.json();
+        if (data.status === 'success') {
+          toast(data.message || 'Publicado!');
+        } else {
+          toast(data.message || data.error || 'Error al publicar', 'error');
+        }
+        waLoadStatus(); waLoadLog(); waLoadPhotos();
+      } catch (e) {
+        toast('Error: ' + e.message, 'error');
+      }
+      btn.disabled = false; btn.innerHTML = '<i class="fab fa-whatsapp"></i> Publicar Ahora';
     }
 
     async function waLoadLog() {
