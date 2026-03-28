@@ -10,6 +10,7 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
+const storage = firebase.storage();
 
 let currentEmployee = null;
 let logsCache = [];
@@ -73,8 +74,13 @@ document.getElementById('pin-login-btn').addEventListener('click', async () => {
     document.getElementById('profile-content').style.display = 'block';
 
     // Info personal
-    const initials = match.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
-    document.getElementById('profile-avatar').textContent = initials;
+    const avatarEl = document.getElementById('profile-avatar');
+    if (match.photoURL) {
+        avatarEl.innerHTML = `<img src="${match.photoURL}" alt="${match.name}">`;
+    } else {
+        const initials = match.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+        avatarEl.textContent = initials;
+    }
     document.getElementById('profile-name').textContent = match.name;
     document.getElementById('info-name').textContent = match.name;
     document.getElementById('info-phone').textContent = match.phone || 'No registrado';
@@ -265,6 +271,60 @@ function showNotification(m, t = 'success') {
     notification.classList.add('show');
     setTimeout(() => notification.classList.remove('show'), 3000);
 }
+
+// =====================
+// FOTO DE PERFIL
+// =====================
+document.getElementById('avatar-wrapper').addEventListener('click', () => {
+    if (!currentEmployee) return;
+    document.getElementById('avatar-input').click();
+});
+
+document.getElementById('avatar-input').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file || !currentEmployee) return;
+
+    // Validar tipo y tamaño
+    if (!file.type.startsWith('image/')) {
+        showNotification('Solo se permiten imagenes', 'danger');
+        return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+        showNotification('La imagen no debe superar 5 MB', 'danger');
+        return;
+    }
+
+    const overlay = document.getElementById('avatar-overlay');
+    overlay.textContent = 'SUBIENDO...';
+    overlay.classList.add('avatar-uploading');
+
+    try {
+        const ext = file.name.split('.').pop();
+        const filePath = `checador/avatars/${currentEmployee.id}.${ext}`;
+        const fileRef = storage.ref(filePath);
+        const uploadTask = await fileRef.put(file);
+        const downloadURL = await uploadTask.ref.getDownloadURL();
+
+        // Guardar URL en Firestore
+        await db.collection('checador_employees').doc(currentEmployee._docId).update({
+            photoURL: downloadURL
+        });
+
+        // Actualizar avatar en pantalla
+        const avatarEl = document.getElementById('profile-avatar');
+        avatarEl.innerHTML = `<img src="${downloadURL}" alt="${currentEmployee.name}">`;
+        currentEmployee.photoURL = downloadURL;
+
+        showNotification('Foto actualizada');
+    } catch (err) {
+        console.error('Error subiendo foto:', err);
+        showNotification('Error al subir la foto', 'danger');
+    } finally {
+        overlay.textContent = 'CAMBIAR';
+        overlay.classList.remove('avatar-uploading');
+        e.target.value = '';
+    }
+});
 
 // Focus
 setTimeout(() => document.getElementById('emp-name-input').focus(), 300);
