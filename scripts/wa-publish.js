@@ -323,12 +323,11 @@ async function closeBrowser() {
 }
 
 // --- Flujo principal ---
-// Permite pasar un destino como argumento: node scripts/wa-publish.js [destino]
-// Si no se pasa, usa GROUP_NAME
-async function main() {
-    const target = process.argv[2] || GROUP_NAME;
-    const isTest = !!process.argv[2];
-
+// Uso:
+//   node scripts/wa-publish.js              → publica en grupo (1 intento)
+//   node scripts/wa-publish.js 6181234567   → prueba a un numero
+//   node scripts/wa-publish.js --auto       → modo automatico con reintentos cada hora
+async function publish(target, isTest) {
     try {
         // 1. Seleccionar foto local
         const photo = pickLocalPhoto();
@@ -351,12 +350,43 @@ async function main() {
         }
 
         console.log('\n[LOCAL] Publicacion completada exitosamente!');
+        return true;
     } catch (error) {
         console.error(`\n[LOCAL] ERROR: ${error.message}`);
-        process.exitCode = 1;
+        return false;
     } finally {
         await closeBrowser();
     }
+}
+
+async function main() {
+    const arg = process.argv[2];
+    const isAuto = arg === '--auto';
+    const target = (!arg || isAuto) ? GROUP_NAME : arg;
+    const isTest = !!(arg && !isAuto);
+    const RETRY_INTERVAL = 60 * 60 * 1000; // 1 hora
+    const MAX_RETRIES = 12; // maximo 12 horas de reintentos
+
+    if (!isAuto) {
+        const ok = await publish(target, isTest);
+        if (!ok) process.exitCode = 1;
+        return;
+    }
+
+    // Modo automatico: reintentar cada hora si falla
+    console.log('[AUTO] Modo automatico activado. Reintentara cada hora si falla.');
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        console.log(`\n[AUTO] Intento ${attempt}/${MAX_RETRIES} - ${new Date().toLocaleString('es-MX')}`);
+        const ok = await publish(target, false);
+        if (ok) return;
+
+        if (attempt < MAX_RETRIES) {
+            console.log(`[AUTO] Reintentando en 1 hora...`);
+            await delay(RETRY_INTERVAL);
+        }
+    }
+    console.error('[AUTO] Se agotaron los reintentos.');
+    process.exitCode = 1;
 }
 
 main();
