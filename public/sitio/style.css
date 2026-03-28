@@ -90,6 +90,11 @@ body {
     text-decoration: none;
 }
 
+.logo-full {
+    height: 56px;
+    width: auto;
+}
+
 .logo-icon {
     height: 48px;
     width: 48px;
@@ -1044,25 +1049,10 @@ body {
     text-align: center;
 }
 
-.footer-logo-img {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    margin-bottom: 0.75rem;
-}
-
-.footer-brand-name {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--white);
-    letter-spacing: -0.5px;
-}
-
-.footer-brand-sub {
-    font-size: 0.7rem;
-    letter-spacing: 2px;
-    color: rgba(255, 255, 255, 0.5);
-    margin-top: 2px;
+.footer-logo-full {
+    height: 80px;
+    width: auto;
+    filter: brightness(0) invert(1);
 }
 
 .footer-bottom {
@@ -1327,6 +1317,7 @@ body {
 
     .section-title { font-size: 1.3rem; }
 
+    .logo-full { height: 40px; }
     .logo-icon { height: 38px; width: 38px; }
     .logo-text { font-size: 1.3rem; }
 
