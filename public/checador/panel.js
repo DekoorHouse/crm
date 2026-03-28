@@ -857,6 +857,10 @@ document.getElementById('wa-modal-close').addEventListener('click', () => {
     document.getElementById('wa-modal').style.display = 'none';
 });
 
+document.getElementById('wa-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'wa-modal') document.getElementById('wa-modal').style.display = 'none';
+});
+
 document.getElementById('wa-select-all').addEventListener('change', (e) => {
     document.querySelectorAll('.wa-check').forEach(cb => cb.checked = e.target.checked);
     updateWaSendBtn();
