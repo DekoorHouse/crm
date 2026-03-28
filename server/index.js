@@ -58,7 +58,7 @@ app.get('/autopost', (req, res) => {
 });
 
 app.get('/wa-group', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'wa-group', 'index.html'));
+    res.redirect('/autopost?tab=wa');
 });
 
 app.get('/panel', (req, res) => {
