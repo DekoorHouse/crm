@@ -13,24 +13,15 @@ const firebaseAuth = firebase.auth();
 // ===================== CONSTANTS =====================
 const API_BASE = window.API_BASE_URL || '';
 
-const MODELS_INFO = {
-    'imagen-4-fast':    { name: 'Imagen 4 Fast',       type: 'Imagen',             cost: 0.02,  speed: 'fast',     isImagen: true },
-    'imagen-4':         { name: 'Imagen 4',            type: 'Imagen',             cost: 0.04,  speed: 'standard', isImagen: true },
-    'imagen-4-ultra':   { name: 'Imagen 4 Ultra',      type: 'Imagen',             cost: 0.06,  speed: 'premium',  isImagen: true },
-    'nano-banana':      { name: 'Nano Banana',         type: 'Gemini 2.5 Flash',   cost: 0.039, speed: 'standard', isImagen: false },
-    'nano-banana-2':    { name: 'Nano Banana 2',       type: 'Gemini 3.1 Flash',   cost: 0.101, speed: 'standard', isImagen: false },
-    'nano-banana-pro':  { name: 'Nano Banana Pro',     type: 'Gemini 3 Pro',       cost: 0.134, speed: 'premium',  isImagen: false },
-};
-
 // ===================== STATE =====================
-let selectedModel = 'imagen-4-fast';
 let sessionCost = 0;
 let sessionImages = 0;
 let sessionTokensIn = 0;
 let sessionTokensOut = 0;
-let history = [];
 let isGenerating = false;
-let uploadedImage = null; // { mimeType, base64 }
+let uploadedImage = null;
+let galleryItems = [];
+let currentLightboxItem = null;
 
 // ===================== DOM ELEMENTS =====================
 const loginView = document.getElementById('login-view');
@@ -42,11 +33,8 @@ const loginError = document.getElementById('login-error');
 const logoutBtn = document.getElementById('logout-btn');
 const darkModeToggle = document.getElementById('dark-mode-toggle');
 
-const modelsGrid = document.getElementById('models-grid');
 const promptInput = document.getElementById('prompt-input');
 const aspectSelect = document.getElementById('aspect-ratio');
-const sampleCountSelect = document.getElementById('sample-count');
-const sampleCountGroup = document.getElementById('sample-count-group');
 const generateBtn = document.getElementById('generate-btn');
 
 const loadingState = document.getElementById('loading-state');
@@ -55,20 +43,18 @@ const errorMessage = document.getElementById('error-message');
 
 const resultsSection = document.getElementById('results-section');
 const resultsGrid = document.getElementById('results-grid');
-const resultModel = document.getElementById('result-model');
 const resultTokensIn = document.getElementById('result-tokens-in');
 const resultTokensOut = document.getElementById('result-tokens-out');
 const resultCost = document.getElementById('result-cost');
 
-const historySection = document.getElementById('history-section');
-const historyList = document.getElementById('history-list');
+const galleryGrid = document.getElementById('gallery-grid');
+const galleryEmpty = document.getElementById('gallery-empty');
 
 const sessionCostEl = document.getElementById('session-cost');
 const sessionImagesEl = document.getElementById('session-images');
 const sessionTokensInEl = document.getElementById('session-tokens-in');
 const sessionTokensOutEl = document.getElementById('session-tokens-out');
 
-const uploadArea = document.getElementById('upload-area');
 const uploadDropzone = document.getElementById('upload-dropzone');
 const imageUploadInput = document.getElementById('image-upload');
 const uploadPlaceholder = document.getElementById('upload-placeholder');
@@ -80,12 +66,15 @@ const lightbox = document.getElementById('lightbox');
 const lightboxImg = document.getElementById('lightbox-img');
 const lightboxClose = document.getElementById('lightbox-close');
 const lightboxDownload = document.getElementById('lightbox-download');
+const lightboxDelete = document.getElementById('lightbox-delete');
+const lightboxPrompt = document.getElementById('lightbox-prompt');
 
 // ===================== AUTH =====================
 firebaseAuth.onAuthStateChanged(user => {
     if (user) {
         loginView.style.display = 'none';
         app.style.display = 'block';
+        loadGallery();
     } else {
         loginView.style.display = 'flex';
         app.style.display = 'none';
@@ -109,17 +98,13 @@ function initDarkMode() {
     const saved = localStorage.getItem('mockups-dark-mode');
     if (saved === 'true' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
         document.body.classList.add('dark-mode');
-        updateDarkModeIcon();
     }
+    updateDarkModeIcon();
 }
 
 function updateDarkModeIcon() {
     const icon = darkModeToggle.querySelector('i');
-    if (document.body.classList.contains('dark-mode')) {
-        icon.className = 'fas fa-sun';
-    } else {
-        icon.className = 'fas fa-moon';
-    }
+    icon.className = document.body.classList.contains('dark-mode') ? 'fas fa-sun' : 'fas fa-moon';
 }
 
 darkModeToggle.addEventListener('click', () => {
@@ -127,26 +112,6 @@ darkModeToggle.addEventListener('click', () => {
     localStorage.setItem('mockups-dark-mode', document.body.classList.contains('dark-mode'));
     updateDarkModeIcon();
 });
-
-// ===================== MODEL SELECTOR =====================
-modelsGrid.addEventListener('click', (e) => {
-    const card = e.target.closest('.model-card');
-    if (!card) return;
-    modelsGrid.querySelectorAll('.model-card').forEach(c => c.classList.remove('selected'));
-    card.classList.add('selected');
-    selectedModel = card.dataset.model;
-    updateModelControls();
-});
-
-function updateModelControls() {
-    const info = MODELS_INFO[selectedModel];
-    // Solo modelos Imagen soportan multiples imagenes
-    sampleCountGroup.style.display = info?.isImagen ? 'flex' : 'none';
-    if (!info?.isImagen) sampleCountSelect.value = '1';
-    // Solo modelos Gemini (Nano Banana) soportan imagen de referencia
-    uploadArea.style.display = info?.isImagen ? 'none' : 'block';
-    if (info?.isImagen) clearUploadedImage();
-}
 
 // ===================== GENERATE =====================
 generateBtn.addEventListener('click', generate);
@@ -165,15 +130,8 @@ async function generate() {
     resultsSection.style.display = 'none';
 
     try {
-        const payload = {
-            prompt,
-            model: selectedModel,
-            aspectRatio: aspectSelect.value,
-            sampleCount: parseInt(sampleCountSelect.value),
-        };
-        if (uploadedImage) {
-            payload.image = uploadedImage;
-        }
+        const payload = { prompt, aspectRatio: aspectSelect.value };
+        if (uploadedImage) payload.image = uploadedImage;
 
         const res = await fetch(`${API_BASE}/api/mockups/generate`, {
             method: 'POST',
@@ -182,14 +140,12 @@ async function generate() {
         });
 
         const data = await res.json();
-
-        if (!res.ok || !data.success) {
-            throw new Error(data.error || `Error ${res.status}`);
-        }
+        if (!res.ok || !data.success) throw new Error(data.error || `Error ${res.status}`);
 
         renderResults(data);
         updateSessionCost(data);
-        addToHistory(prompt, data);
+        // Recargar galería para mostrar la nueva imagen
+        await loadGallery();
 
     } catch (err) {
         errorState.style.display = 'block';
@@ -204,26 +160,16 @@ async function generate() {
 // ===================== RENDER RESULTS =====================
 function renderResults(data) {
     resultsSection.style.display = 'block';
-    resultModel.textContent = data.model;
     resultTokensIn.textContent = `In: ${data.usage.inputTokens.toLocaleString()}`;
     resultTokensOut.textContent = `Out: ${data.usage.outputTokens.toLocaleString()}`;
     resultCost.textContent = `$${data.cost.total.toFixed(4)}`;
 
     resultsGrid.innerHTML = '';
-    data.images.forEach((src, i) => {
+    data.images.forEach((img) => {
         const card = document.createElement('div');
         card.className = 'result-card';
-        card.innerHTML = `
-            <img src="${src}" alt="Generated image ${i + 1}">
-            <div class="result-card-actions">
-                <button class="btn download-btn" data-index="${i}"><i class="fas fa-download"></i> Descargar</button>
-            </div>
-        `;
-        card.querySelector('img').addEventListener('click', () => openLightbox(src));
-        card.querySelector('.download-btn').addEventListener('click', (e) => {
-            e.stopPropagation();
-            downloadImage(src, `mockup-${Date.now()}-${i}.png`);
-        });
+        card.innerHTML = `<img src="${img.fullUrl}" alt="Generated">`;
+        card.addEventListener('click', () => openLightbox({ fullUrl: img.fullUrl, id: img.id, prompt: promptInput.value.trim() }));
         resultsGrid.appendChild(card);
     });
 }
@@ -241,66 +187,67 @@ function updateSessionCost(data) {
     sessionTokensOutEl.textContent = sessionTokensOut.toLocaleString();
 }
 
-// ===================== HISTORY =====================
-function addToHistory(prompt, data) {
-    const entry = {
-        prompt,
-        model: data.model,
-        cost: data.cost.total,
-        thumb: data.images[0],
-        timestamp: new Date(),
-    };
-    history.unshift(entry);
-    renderHistory();
+// ===================== GALLERY =====================
+async function loadGallery() {
+    try {
+        const res = await fetch(`${API_BASE}/api/mockups/gallery`);
+        const data = await res.json();
+        if (data.success) {
+            galleryItems = data.items;
+            renderGallery();
+        }
+    } catch (err) {
+        console.error('Error cargando galería:', err);
+    }
 }
 
-function renderHistory() {
-    if (history.length === 0) {
-        historySection.style.display = 'none';
+function renderGallery() {
+    galleryGrid.innerHTML = '';
+
+    if (galleryItems.length === 0) {
+        galleryGrid.innerHTML = `
+            <div class="gallery-empty">
+                <i class="fas fa-images"></i>
+                <p>Las imagenes generadas apareceran aqui</p>
+            </div>`;
         return;
     }
-    historySection.style.display = 'block';
-    historyList.innerHTML = '';
-    history.forEach((h) => {
-        const div = document.createElement('div');
-        div.className = 'history-item';
-        div.innerHTML = `
-            <img class="history-thumb" src="${h.thumb}" alt="">
-            <span class="history-prompt">${escapeHtml(h.prompt)}</span>
-            <span class="history-model">${h.model}</span>
-            <span class="history-cost">$${h.cost.toFixed(4)}</span>
+
+    galleryItems.forEach((item) => {
+        const card = document.createElement('div');
+        card.className = 'gallery-card';
+        card.innerHTML = `
+            <img src="${item.thumbUrl}" alt="${escapeHtml(item.prompt)}" loading="lazy">
+            <div class="gallery-card-overlay">
+                <button class="btn delete-btn" data-id="${item.id}"><i class="fas fa-trash"></i></button>
+            </div>
         `;
-        div.addEventListener('click', () => openLightbox(h.thumb));
-        historyList.appendChild(div);
+        card.addEventListener('click', (e) => {
+            if (e.target.closest('.delete-btn')) return;
+            openLightbox(item);
+        });
+        card.querySelector('.delete-btn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            deleteImage(item.id);
+        });
+        galleryGrid.appendChild(card);
     });
 }
 
-// ===================== LIGHTBOX =====================
-let currentLightboxSrc = '';
-
-function openLightbox(src) {
-    currentLightboxSrc = src;
-    lightboxImg.src = src;
-    lightbox.style.display = 'flex';
-}
-
-lightboxClose.addEventListener('click', () => {
-    lightbox.style.display = 'none';
-});
-
-lightbox.addEventListener('click', (e) => {
-    if (e.target === lightbox) lightbox.style.display = 'none';
-});
-
-lightboxDownload.addEventListener('click', () => {
-    downloadImage(currentLightboxSrc, `mockup-${Date.now()}.png`);
-});
-
-document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && lightbox.style.display === 'flex') {
-        lightbox.style.display = 'none';
+async function deleteImage(id) {
+    if (!confirm('Eliminar esta imagen?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/api/mockups/gallery/${id}`, { method: 'DELETE' });
+        const data = await res.json();
+        if (data.success) {
+            galleryItems = galleryItems.filter(i => i.id !== id);
+            renderGallery();
+            if (currentLightboxItem?.id === id) lightbox.style.display = 'none';
+        }
+    } catch (err) {
+        console.error('Error eliminando:', err);
     }
-});
+}
 
 // ===================== IMAGE UPLOAD =====================
 uploadDropzone.addEventListener('click', () => imageUploadInput.click());
@@ -309,14 +256,8 @@ imageUploadInput.addEventListener('change', (e) => {
     if (e.target.files?.[0]) handleImageFile(e.target.files[0]);
 });
 
-// Drag and drop
-uploadDropzone.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    uploadDropzone.classList.add('dragover');
-});
-uploadDropzone.addEventListener('dragleave', () => {
-    uploadDropzone.classList.remove('dragover');
-});
+uploadDropzone.addEventListener('dragover', (e) => { e.preventDefault(); uploadDropzone.classList.add('dragover'); });
+uploadDropzone.addEventListener('dragleave', () => uploadDropzone.classList.remove('dragover'));
 uploadDropzone.addEventListener('drop', (e) => {
     e.preventDefault();
     uploadDropzone.classList.remove('dragover');
@@ -328,8 +269,7 @@ function handleImageFile(file) {
     const reader = new FileReader();
     reader.onload = (e) => {
         const dataUrl = e.target.result;
-        const base64 = dataUrl.split(',')[1];
-        uploadedImage = { mimeType: file.type, base64 };
+        uploadedImage = { mimeType: file.type, base64: dataUrl.split(',')[1] };
         uploadPreviewImg.src = dataUrl;
         uploadPlaceholder.style.display = 'none';
         uploadPreview.style.display = 'flex';
@@ -337,10 +277,7 @@ function handleImageFile(file) {
     reader.readAsDataURL(file);
 }
 
-uploadRemoveBtn.addEventListener('click', (e) => {
-    e.stopPropagation();
-    clearUploadedImage();
-});
+uploadRemoveBtn.addEventListener('click', (e) => { e.stopPropagation(); clearUploadedImage(); });
 
 function clearUploadedImage() {
     uploadedImage = null;
@@ -350,16 +287,37 @@ function clearUploadedImage() {
     uploadPreview.style.display = 'none';
 }
 
-// ===================== UTILITIES =====================
-function downloadImage(dataUrl, filename) {
+// ===================== LIGHTBOX =====================
+function openLightbox(item) {
+    currentLightboxItem = item;
+    lightboxImg.src = item.fullUrl;
+    lightboxPrompt.textContent = item.prompt || '';
+    lightbox.style.display = 'flex';
+}
+
+lightboxClose.addEventListener('click', () => { lightbox.style.display = 'none'; });
+lightbox.addEventListener('click', (e) => { if (e.target === lightbox) lightbox.style.display = 'none'; });
+
+lightboxDownload.addEventListener('click', () => {
+    if (!currentLightboxItem) return;
     const a = document.createElement('a');
-    a.href = dataUrl;
-    a.download = filename;
+    a.href = currentLightboxItem.fullUrl;
+    a.download = `mockup-${Date.now()}.webp`;
+    a.target = '_blank';
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
-}
+});
 
+lightboxDelete.addEventListener('click', () => {
+    if (currentLightboxItem?.id) deleteImage(currentLightboxItem.id);
+});
+
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && lightbox.style.display === 'flex') lightbox.style.display = 'none';
+});
+
+// ===================== UTILITIES =====================
 function escapeHtml(str) {
     const div = document.createElement('div');
     div.textContent = str;
@@ -368,4 +326,3 @@ function escapeHtml(str) {
 
 // ===================== INIT =====================
 initDarkMode();
-updateSampleCountVisibility();

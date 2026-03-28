@@ -40,6 +40,7 @@
         <div class="top-bar">
             <div style="display: flex; align-items: center; gap: 12px;">
                 <h1 class="app-title"><i class="fas fa-wand-magic-sparkles"></i> Mockups AI</h1>
+                <span class="model-badge-inline">Nano Banana Pro <span class="model-cost-inline">$0.134/img</span></span>
             </div>
             <div style="display: flex; align-items: center; gap: 10px;">
                 <button id="dark-mode-toggle" class="btn btn-icon" title="Cambiar tema">
@@ -69,60 +70,13 @@
             </div>
         </div>
 
-        <!-- Model Selector -->
-        <div class="section-title">Selecciona un modelo</div>
-        <div class="models-grid" id="models-grid">
-            <!-- Imagen 4 Fast -->
-            <div class="model-card selected" data-model="imagen-4-fast">
-                <div class="model-badge badge-fast">Fast</div>
-                <div class="model-name">Imagen 4 Fast</div>
-                <div class="model-type">Imagen</div>
-                <div class="model-price">$0.02 <span>/img</span></div>
-            </div>
-            <!-- Imagen 4 -->
-            <div class="model-card" data-model="imagen-4">
-                <div class="model-badge badge-standard">Standard</div>
-                <div class="model-name">Imagen 4</div>
-                <div class="model-type">Imagen</div>
-                <div class="model-price">$0.04 <span>/img</span></div>
-            </div>
-            <!-- Imagen 4 Ultra -->
-            <div class="model-card" data-model="imagen-4-ultra">
-                <div class="model-badge badge-premium">Premium</div>
-                <div class="model-name">Imagen 4 Ultra</div>
-                <div class="model-type">Imagen</div>
-                <div class="model-price">$0.06 <span>/img</span></div>
-            </div>
-            <!-- Nano Banana -->
-            <div class="model-card" data-model="nano-banana">
-                <div class="model-badge badge-standard">Standard</div>
-                <div class="model-name">Nano Banana</div>
-                <div class="model-type">Gemini 2.5 Flash</div>
-                <div class="model-price">$0.039 <span>/img</span></div>
-            </div>
-            <!-- Nano Banana 2 Preview -->
-            <div class="model-card" data-model="nano-banana-2">
-                <div class="model-badge badge-standard">Standard</div>
-                <div class="model-name">Nano Banana 2</div>
-                <div class="model-type">Gemini 3.1 Flash</div>
-                <div class="model-price">$0.101 <span>/img</span></div>
-            </div>
-            <!-- Nano Banana Pro -->
-            <div class="model-card" data-model="nano-banana-pro">
-                <div class="model-badge badge-premium">Premium</div>
-                <div class="model-name">Nano Banana Pro</div>
-                <div class="model-type">Gemini 3 Pro</div>
-                <div class="model-price">$0.134 <span>/img</span></div>
-            </div>
-        </div>
-
         <!-- Prompt Area -->
         <div class="prompt-section">
             <div class="prompt-row">
                 <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
             </div>
-            <!-- Image Upload (solo Nano Banana) -->
-            <div id="upload-area" class="upload-area" style="display: none;">
+            <!-- Image Upload -->
+            <div class="upload-area">
                 <div id="upload-dropzone" class="upload-dropzone">
                     <input type="file" id="image-upload" accept="image/*" style="display:none;">
                     <div id="upload-placeholder" class="upload-placeholder">
@@ -146,15 +100,6 @@
                         <option value="3:4">3:4</option>
                     </select>
                 </div>
-                <div class="control-group" id="sample-count-group">
-                    <label class="control-label">Cantidad</label>
-                    <select id="sample-count" class="control-select">
-                        <option value="1">1</option>
-                        <option value="2">2</option>
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                    </select>
-                </div>
                 <button id="generate-btn" class="btn btn-primary btn-generate">
                     <i class="fas fa-bolt"></i> Generar
                 </button>
@@ -173,12 +118,11 @@
             <p id="error-message"></p>
         </div>
 
-        <!-- Results Gallery -->
+        <!-- Last Result -->
         <div id="results-section" class="results-section" style="display: none;">
             <div class="results-header">
                 <div class="section-title" style="margin-bottom:0;">Resultado</div>
                 <div class="result-meta">
-                    <span id="result-model"></span>
                     <span id="result-tokens-in"></span>
                     <span id="result-tokens-out"></span>
                     <span id="result-cost" class="result-cost-badge"></span>
@@ -187,10 +131,15 @@
             <div id="results-grid" class="results-grid"></div>
         </div>
 
-        <!-- History -->
-        <div id="history-section" class="history-section" style="display: none;">
-            <div class="section-title">Historial de sesion</div>
-            <div id="history-list" class="history-list"></div>
+        <!-- Gallery -->
+        <div class="gallery-section">
+            <div class="section-title">Galeria</div>
+            <div id="gallery-grid" class="gallery-grid">
+                <div id="gallery-empty" class="gallery-empty">
+                    <i class="fas fa-images"></i>
+                    <p>Las imagenes generadas apareceran aqui</p>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -198,7 +147,13 @@
     <div id="lightbox" class="lightbox" style="display: none;">
         <button class="lightbox-close" id="lightbox-close"><i class="fas fa-times"></i></button>
         <img id="lightbox-img" src="" alt="Preview">
-        <button class="lightbox-download" id="lightbox-download"><i class="fas fa-download"></i> Descargar</button>
+        <div class="lightbox-info">
+            <p id="lightbox-prompt" class="lightbox-prompt"></p>
+            <div class="lightbox-actions">
+                <button class="btn lightbox-download" id="lightbox-download"><i class="fas fa-download"></i> Descargar</button>
+                <button class="btn lightbox-delete" id="lightbox-delete"><i class="fas fa-trash"></i> Eliminar</button>
+            </div>
+        </div>
     </div>
 
     <script src="/env-config.js"></script>

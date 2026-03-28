@@ -1,111 +1,24 @@
 const fetch = require('node-fetch');
+const sharp = require('sharp');
+const { db, bucket } = require('../config');
 
 const API_KEY = () => process.env.GOOGLE_AI_IMAGE_KEY;
 const BASE_URL = 'https://generativelanguage.googleapis.com/v1beta';
-
-// ===================== MODEL DEFINITIONS =====================
-
-const MODELS = {
-    'imagen-4-fast': {
-        id: 'imagen-4.0-fast-generate-001',
-        name: 'Imagen 4 Fast',
-        type: 'imagen',
-        costPerImage: 0.02,
-        speed: 'fast',
-        maxPromptTokens: 480,
-    },
-    'imagen-4': {
-        id: 'imagen-4.0-generate-001',
-        name: 'Imagen 4',
-        type: 'imagen',
-        costPerImage: 0.04,
-        speed: 'standard',
-        maxPromptTokens: 480,
-    },
-    'imagen-4-ultra': {
-        id: 'imagen-4.0-ultra-generate-001',
-        name: 'Imagen 4 Ultra',
-        type: 'imagen',
-        costPerImage: 0.06,
-        speed: 'premium',
-        maxPromptTokens: 480,
-    },
-    'nano-banana': {
-        id: 'gemini-2.5-flash-image',
-        name: 'Nano Banana',
-        type: 'gemini',
-        costPerImage: 0.039,
-        inputPer1M: 0.30,
-        speed: 'standard',
-    },
-    'nano-banana-2': {
-        id: 'gemini-3.1-flash-image-preview',
-        name: 'Nano Banana 2 Preview',
-        type: 'gemini',
-        costPerImage: 0.101,  // 2K resolution
-        inputPer1M: 0.50,
-        speed: 'standard',
-    },
-    'nano-banana-pro': {
-        id: 'gemini-3-pro-image-preview',
-        name: 'Nano Banana Pro',
-        type: 'gemini',
-        costPerImage: 0.134,  // 2K resolution (same as 1K)
-        inputPer1M: 2.00,
-        speed: 'premium',
-    },
-};
+const MODEL_ID = 'gemini-3-pro-image-preview';
+const COST_PER_IMAGE = 0.134;   // 2K resolution
+const INPUT_PER_1M = 2.00;
+const COLLECTION = 'mockups_gallery';
+const STORAGE_DIR = 'mockups';
+const THUMB_WIDTH = 400;
 
 // ===================== IMAGE GENERATION =====================
 
-/**
- * Genera imágenes con modelos Imagen 4 (endpoint :predict)
- */
-async function generateWithImagen(modelId, prompt, aspectRatio = '1:1', sampleCount = 1) {
+async function generateImage(prompt, aspectRatio = '1:1', imageData = null) {
     const apiKey = API_KEY();
-    const url = `${BASE_URL}/models/${modelId}:predict`;
+    if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
 
-    const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            'x-goog-api-key': apiKey,
-        },
-        body: JSON.stringify({
-            instances: [{ prompt }],
-            parameters: {
-                sampleCount: Math.min(sampleCount, 4),
-                aspectRatio,
-                personGeneration: 'allow_adult',
-            },
-        }),
-    });
+    const url = `${BASE_URL}/models/${MODEL_ID}:generateContent?key=${apiKey}`;
 
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Imagen API error ${res.status}: ${errText}`);
-    }
-
-    const data = await res.json();
-    const images = (data.predictions || []).map(p => {
-        const bytes = p.bytesBase64Encoded || p.image?.imageBytes || '';
-        return `data:image/png;base64,${bytes}`;
-    });
-
-    // Imagen no devuelve usageMetadata, estimamos tokens del prompt (~4 chars/token)
-    const estimatedTokens = Math.ceil(prompt.length / 4);
-
-    return { images, inputTokens: estimatedTokens, outputTokens: 0 };
-}
-
-/**
- * Genera imágenes con modelos Gemini/Nano Banana (endpoint :generateContent)
- */
-async function generateWithGemini(modelId, prompt, aspectRatio = '1:1', imageData = null) {
-    const apiKey = API_KEY();
-    const url = `${BASE_URL}/models/${modelId}:generateContent?key=${apiKey}`;
-
-    // Construir parts: texto + imagen de referencia opcional
     const parts = [{ text: prompt }];
     if (imageData) {
         parts.push({
@@ -123,10 +36,7 @@ async function generateWithGemini(modelId, prompt, aspectRatio = '1:1', imageDat
             contents: [{ parts }],
             generationConfig: {
                 responseModalities: ['TEXT', 'IMAGE'],
-                imageConfig: {
-                    aspectRatio,
-                    imageSize: '2K',
-                },
+                imageConfig: { aspectRatio, imageSize: '2K' },
             },
         }),
     });
@@ -140,12 +50,12 @@ async function generateWithGemini(modelId, prompt, aspectRatio = '1:1', imageDat
     const candidate = data.candidates?.[0];
     if (!candidate) throw new Error('No se recibió respuesta del modelo.');
 
-    // Extraer imágenes y texto de las parts
-    const images = [];
+    // Extraer imágenes y texto
+    const images = []; // { mimeType, base64 }
     let textResponse = '';
     for (const part of candidate.content?.parts || []) {
         if (part.inlineData) {
-            images.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+            images.push({ mimeType: part.inlineData.mimeType, base64: part.inlineData.data });
         }
         if (part.text) {
             textResponse += part.text;
@@ -157,69 +67,83 @@ async function generateWithGemini(modelId, prompt, aspectRatio = '1:1', imageDat
     }
 
     const usage = data.usageMetadata || {};
+    const inputTokens = usage.promptTokenCount || 0;
+    const outputTokens = usage.candidatesTokenCount || 0;
+    const inputTokenCost = (inputTokens / 1_000_000) * INPUT_PER_1M;
+    const imagesCost = COST_PER_IMAGE * images.length;
+
     return {
         images,
-        inputTokens: usage.promptTokenCount || 0,
-        outputTokens: usage.candidatesTokenCount || 0,
+        usage: { inputTokens, outputTokens, totalTokens: inputTokens + outputTokens },
+        cost: { perImage: COST_PER_IMAGE, imagesCost, inputTokenCost, total: inputTokenCost + imagesCost },
     };
 }
 
-// ===================== MAIN FUNCTION =====================
+// ===================== FIREBASE STORAGE =====================
 
-/**
- * Genera imágenes según el modelo seleccionado y calcula costos.
- * @param {string} modelKey - Clave del modelo (ej: 'imagen-4-fast')
- * @param {string} prompt - Prompt de texto
- * @param {string} aspectRatio - Relación de aspecto
- * @param {number} sampleCount - Número de imágenes (solo Imagen)
- * @param {{ mimeType: string, base64: string }|null} imageData - Imagen de referencia (solo Gemini)
- * @returns {{ images, model, usage, cost }}
- */
-async function generateImage(modelKey, prompt, aspectRatio = '1:1', sampleCount = 1, imageData = null) {
-    const apiKey = API_KEY();
-    if (!apiKey) throw new Error('GOOGLE_AI_IMAGE_KEY no está configurada.');
+async function saveToGallery(prompt, aspectRatio, generatedImages, usage, cost) {
+    const saved = [];
 
-    const modelConfig = MODELS[modelKey];
-    if (!modelConfig) throw new Error(`Modelo no soportado: ${modelKey}`);
+    for (const img of generatedImages) {
+        const ts = Date.now();
+        const id = ts + '_' + Math.random().toString(36).slice(2, 8);
+        const buffer = Buffer.from(img.base64, 'base64');
 
-    let result;
-    if (modelConfig.type === 'imagen') {
-        result = await generateWithImagen(modelConfig.id, prompt, aspectRatio, sampleCount);
-    } else {
-        result = await generateWithGemini(modelConfig.id, prompt, aspectRatio, imageData);
+        // Subir imagen completa como webp
+        const fullWebp = await sharp(buffer).webp({ quality: 85 }).toBuffer();
+        const fullPath = `${STORAGE_DIR}/${id}_full.webp`;
+        const fullFile = bucket.file(fullPath);
+        await fullFile.save(fullWebp, { metadata: { contentType: 'image/webp' }, public: true });
+        const fullUrl = `https://storage.googleapis.com/${bucket.name}/${fullPath}`;
+
+        // Generar y subir thumbnail
+        const thumbWebp = await sharp(buffer).resize(THUMB_WIDTH, THUMB_WIDTH, { fit: 'inside', withoutEnlargement: true }).webp({ quality: 60 }).toBuffer();
+        const thumbPath = `${STORAGE_DIR}/${id}_thumb.webp`;
+        const thumbFile = bucket.file(thumbPath);
+        await thumbFile.save(thumbWebp, { metadata: { contentType: 'image/webp' }, public: true });
+        const thumbUrl = `https://storage.googleapis.com/${bucket.name}/${thumbPath}`;
+
+        // Guardar metadata en Firestore
+        const doc = {
+            prompt,
+            aspectRatio,
+            fullUrl,
+            thumbUrl,
+            fullPath,
+            thumbPath,
+            usage,
+            cost,
+            createdAt: new Date().toISOString(),
+        };
+        const ref = await db.collection(COLLECTION).add(doc);
+        saved.push({ id: ref.id, ...doc });
     }
 
-    // Calcular costo
-    const imageCount = result.images.length;
-    let cost;
-    if (modelConfig.type === 'imagen') {
-        cost = {
-            perImage: modelConfig.costPerImage,
-            imagesCost: modelConfig.costPerImage * imageCount,
-            inputTokenCost: 0,
-            total: modelConfig.costPerImage * imageCount,
-        };
-    } else {
-        const inputTokenCost = (result.inputTokens / 1_000_000) * (modelConfig.inputPer1M || 0);
-        const imagesCost = modelConfig.costPerImage * imageCount;
-        cost = {
-            perImage: modelConfig.costPerImage,
-            imagesCost,
-            inputTokenCost,
-            total: inputTokenCost + imagesCost,
-        };
-    }
-
-    return {
-        images: result.images,
-        model: modelConfig.name,
-        usage: {
-            inputTokens: result.inputTokens,
-            outputTokens: result.outputTokens,
-            totalTokens: result.inputTokens + result.outputTokens,
-        },
-        cost,
-    };
+    return saved;
 }
 
-module.exports = { generateImage, MODELS };
+// ===================== GALLERY =====================
+
+async function getGallery(limit = 50, startAfter = null) {
+    let query = db.collection(COLLECTION).orderBy('createdAt', 'desc').limit(limit);
+    if (startAfter) {
+        query = query.startAfter(startAfter);
+    }
+    const snap = await query.get();
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+async function deleteFromGallery(docId) {
+    const doc = await db.collection(COLLECTION).doc(docId).get();
+    if (!doc.exists) throw new Error('Imagen no encontrada.');
+    const data = doc.data();
+
+    // Eliminar archivos de Storage
+    try { await bucket.file(data.fullPath).delete(); } catch (e) { /* ignore */ }
+    try { await bucket.file(data.thumbPath).delete(); } catch (e) { /* ignore */ }
+
+    // Eliminar documento
+    await db.collection(COLLECTION).doc(docId).delete();
+}
+
+module.exports = { generateImage, saveToGallery, getGallery, deleteFromGallery };
