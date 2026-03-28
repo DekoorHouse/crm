@@ -53,7 +53,7 @@ document.getElementById('pin-login-btn').addEventListener('click', async () => {
     const match = employees.find(e => e.name.toLowerCase() === nameInput);
 
     if (!match) {
-        errorEl.textContent = 'Empleado no encontrado.';
+        errorEl.textContent = 'No encontrado.';
         return;
     }
 

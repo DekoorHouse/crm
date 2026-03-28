@@ -215,8 +215,8 @@ function renderAdminLogs() {
     const employees = Object.values(empMap).sort((a, b) => a.name.localeCompare(b.name));
 
     if (!employees.length) {
-        thead.innerHTML = '<tr><th>Sin empleados registrados</th></tr>';
-        tbody.innerHTML = '<tr><td style="color:var(--text-muted); text-align:center; padding:20px;">Añade empleados en la pestaña Empleados</td></tr>';
+        thead.innerHTML = '<tr><th>Sin registros</th></tr>';
+        tbody.innerHTML = '<tr><td style="color:var(--text-muted); text-align:center; padding:20px;">Añade personas en la pestaña Equipo</td></tr>';
         return;
     }
 
@@ -228,7 +228,7 @@ function renderAdminLogs() {
             if (isRecognized) {
                 return `<th style="text-align:center; min-width:85px;">${e.name}</th>`;
             } else {
-                return `<th style="text-align:center; min-width:85px; cursor:pointer; color:var(--warning);" onclick="promptMergeEmployee('${e.name.replace(/'/g, "\\'")}')" title="Click para asignar a un empleado">${e.name} ⚠️</th>`;
+                return `<th style="text-align:center; min-width:85px; cursor:pointer; color:var(--warning);" onclick="promptMergeEmployee('${e.name.replace(/'/g, "\\'")}')" title="Click para asignar">${e.name} ⚠️</th>`;
             }
         }).join('')}
         <th style="text-align:center; min-width:70px;">Total</th>
@@ -285,7 +285,7 @@ function renderAdminLogs() {
 // =====================
 async function promptMergeEmployee(oldName) {
     const options = employeesCache.map((e, i) => `${i + 1}. ${e.name}`).join('\n');
-    const input = prompt(`"${oldName}" no es un empleado reconocido.\n\nEscribe el número o nombre del empleado al que pertenecen estos registros:\n${options}`);
+    const input = prompt(`"${oldName}" no esta reconocido.\n\nEscribe el numero o nombre al que pertenecen estos registros:\n${options}`);
     if (!input) return;
 
     let emp;
@@ -295,7 +295,7 @@ async function promptMergeEmployee(oldName) {
     } else {
         emp = employeesCache.find(e => e.name.toLowerCase() === input.trim().toLowerCase());
     }
-    if (!emp) { showNotification('Empleado no encontrado', 'danger'); return; }
+    if (!emp) { showNotification('No encontrado', 'danger'); return; }
 
     if (!confirm(`¿Mover todos los registros de "${oldName}" a "${emp.name}"?`)) return;
 
@@ -352,7 +352,7 @@ function renderEditEntries() {
     metaDiv.style.cssText = 'margin-bottom:14px; display:flex; gap:10px;';
     metaDiv.innerHTML = `
         <div style="flex:1;">
-            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">Empleado</label>
+            <label style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:5px;">Nombre</label>
             <select id="edit-employee" style="width:100%; padding:9px; font-size:0.9rem; margin:0; background:rgba(255,255,255,0.08); border:1px solid var(--glass-border); border-radius:8px; color:white;">
                 ${empOptions}
                 <option value="__manual__" ${!employeesCache.find(e => e.name.toLowerCase() === editingMeta.name.toLowerCase()) ? 'selected' : ''}>✏️ Manual...</option>
@@ -493,7 +493,7 @@ function generatePin() {
 
 async function saveEmployee(name, phone) {
     if (employeesCache.some(e => e.name.toLowerCase() === name.toLowerCase())) {
-        showNotification("Empleado duplicado", "danger");
+        showNotification("Nombre duplicado", "danger");
         return false;
     }
     const pin = generatePin();
@@ -538,7 +538,7 @@ async function updateEmployee(docId, field, value, oldName) {
             }
         }
     }
-    showNotification('Empleado actualizado');
+    showNotification('Actualizado');
 }
 
 function renderAdminEmployees() {
@@ -597,7 +597,7 @@ document.getElementById('add-employee-btn').addEventListener('click', async () =
 function exportToCSV() {
     const data = getGroupedData();
     if (data.length === 0) { showNotification("Sin datos", "danger"); return; }
-    let csv = "Empleado,Fecha,Eventos,Total Tiempo,Pago ($70/hr)\n";
+    let csv = "Nombre,Fecha,Eventos,Total Tiempo,Pago ($70/hr)\n";
     data.forEach(r => {
         const cleanEvents = r.timeline.replace(/<[^>]*>/g, '');
         csv += `"${r.name}","${r.date}","${cleanEvents}","${r.totalStr}","$${r.payment.toFixed(2)}"\n`;
@@ -767,9 +767,9 @@ document.getElementById('send-whatsapp-btn').addEventListener('click', async () 
     if (data.length === 0) { showNotification('Sin datos para enviar', 'danger'); return; }
 
     const withPhone = employeesCache.filter(e => e.phone);
-    if (withPhone.length === 0) { showNotification('Ningún empleado tiene número de WhatsApp', 'danger'); return; }
+    if (withPhone.length === 0) { showNotification('Nadie tiene numero de WhatsApp', 'danger'); return; }
 
-    if (!confirm(`¿Enviar reporte ${currentPeriod} a ${withPhone.length} empleado(s) por WhatsApp?`)) return;
+    if (!confirm(`¿Enviar reporte ${currentPeriod} a ${withPhone.length} persona(s) por WhatsApp?`)) return;
 
     btn.disabled = true;
     btn.textContent = 'Enviando...';
@@ -777,7 +777,7 @@ document.getElementById('send-whatsapp-btn').addEventListener('click', async () 
         const sendReport = functions.httpsCallable('sendReportManual');
         const result = await sendReport({ period: currentPeriod });
         const { sent, errors } = result.data;
-        showNotification(`Enviado a ${sent} empleado(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
+        showNotification(`Enviado a ${sent} persona(s)${errors > 0 ? `. ${errors} error(es)` : ''}`);
     } catch (err) {
         showNotification('Error al enviar: ' + (err.message || 'Intenta de nuevo'), 'danger');
     } finally {
