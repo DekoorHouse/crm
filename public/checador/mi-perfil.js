@@ -71,7 +71,14 @@ document.getElementById('pin-login-btn').addEventListener('click', async () => {
     currentEmployee = match;
     document.getElementById('pin-login-view').style.display = 'none';
     document.getElementById('profile-content').style.display = 'block';
+
+    // Info personal
+    const initials = match.name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+    document.getElementById('profile-avatar').textContent = initials;
     document.getElementById('profile-name').textContent = match.name;
+    document.getElementById('info-name').textContent = match.name;
+    document.getElementById('info-phone').textContent = match.phone || 'No registrado';
+    document.getElementById('info-id').textContent = match.id || '—';
 
     // Suscribirse a logs del empleado
     unsubscribeLogs = db.collection('checador_logs')
@@ -228,6 +235,24 @@ function renderProfile() {
     document.getElementById('stat-days').textContent = daysWorked;
     document.getElementById('stat-hours').textContent = `${totalHours}h ${totalRemainMins}m`;
     document.getElementById('stat-pay').textContent = `$${pay.toLocaleString()}`;
+
+    // Estado actual: revisar si hoy tiene entrada activa sin salida
+    const todayLogs = myLogs
+        .filter(log => log.date === todayStr)
+        .sort((a, b) => a.timestamp - b.timestamp);
+    let activeNow = false;
+    todayLogs.forEach(log => {
+        if (log.type === 'IN') activeNow = true;
+        else if (log.type === 'OUT') activeNow = false;
+    });
+    const statusEl = document.getElementById('info-status');
+    if (activeNow) {
+        statusEl.innerHTML = '<span style="color:var(--success);">En oficina</span>';
+    } else if (todayLogs.length > 0) {
+        statusEl.innerHTML = '<span style="color:var(--warning);">Salio hoy</span>';
+    } else {
+        statusEl.innerHTML = '<span style="color:var(--text-muted);">Sin registro hoy</span>';
+    }
 }
 
 // =====================

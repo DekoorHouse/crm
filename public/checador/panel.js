@@ -36,6 +36,13 @@ firebaseAuth.onAuthStateChanged(user => {
         db.collection('checador_employees')
             .onSnapshot(snap => {
                 employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                // Auto-asignar PIN a empleados que no tengan
+                employeesCache.forEach(emp => {
+                    if (!emp.pin) {
+                        const pin = generatePin();
+                        db.collection('checador_employees').doc(emp._docId).update({ pin });
+                    }
+                });
                 if (document.getElementById('panel-content').style.display !== 'none') {
                     renderAdminEmployees();
                 }
