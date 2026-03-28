@@ -275,12 +275,11 @@ function loadMapa() {
                 `<div class="map-stat-pill"><strong>${data.totalEstados}</strong> estados</div>`;
 
             data.estados.forEach(item => {
-                const size = Math.min(Math.max(Math.sqrt(item.count) * 8 + 20, 28), 60);
                 const icon = L.divIcon({
                     className: '',
-                    html: `<div class="delivery-marker" style="width:${size}px;height:${size}px;">${item.count}</div>`,
-                    iconSize: [size, size],
-                    iconAnchor: [size / 2, size / 2]
+                    html: `<div class="delivery-pin"><div class="pin-head">${item.count}</div><div class="pin-tail"></div></div>`,
+                    iconSize: [36, 46],
+                    iconAnchor: [18, 46]
                 });
 
                 L.marker([item.lat, item.lng], { icon })
