@@ -29,6 +29,7 @@ firebaseAuth.onAuthStateChanged(user => {
         unsubscribeEmployees = db.collection('checador_employees')
             .onSnapshot(snap => {
                 employeesCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                renderHistory();
             });
     } else {
         loginView.style.display = 'flex';
@@ -145,14 +146,29 @@ async function registerAttendance(type) {
 }
 
 // 4. Renderizado
+function getEmployeePhoto(name) {
+    const emp = employeesCache.find(e => e.name.toLowerCase() === name.toLowerCase());
+    return emp && emp.photoURL ? emp.photoURL : null;
+}
+
+function getEmployeeInitials(name) {
+    return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2);
+}
+
 function renderHistory() {
     historyList.innerHTML = '';
     if (recentHidden) return;
     logsCache.slice(0, 5).forEach(item => {
+        const photo = getEmployeePhoto(item.name);
+        const avatarHtml = photo
+            ? `<img src="${photo}" alt="${item.name}" style="width:36px; height:36px; border-radius:50%; object-fit:cover; flex-shrink:0;">`
+            : `<div style="width:36px; height:36px; border-radius:50%; background:rgba(255,255,255,0.1); display:flex; align-items:center; justify-content:center; font-size:0.75rem; font-weight:700; flex-shrink:0; color:var(--text-muted);">${getEmployeeInitials(item.name)}</div>`;
+
         const li = document.createElement('li');
         li.className = `history-item ${item.type.toLowerCase()}`;
         li.innerHTML = `
-            <div class="item-info">
+            ${avatarHtml}
+            <div class="item-info" style="flex:1; margin-left:10px;">
                 <span class="item-time">${item.time} - ${item.name}</span>
                 <span class="item-type">${item.type === 'IN' ? 'Entrada' : 'Salida'}</span>
             </div>
