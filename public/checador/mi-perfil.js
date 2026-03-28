@@ -13,8 +13,10 @@ const db = firebase.firestore();
 
 let currentEmployee = null;
 let logsCache = [];
+let adjustmentsCache = [];
 let weekOffset = 0;
 let unsubscribeLogs = null;
+let unsubscribeAdj = null;
 
 // =====================
 // AUTH - requiere Firebase auth activo
@@ -94,6 +96,12 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
             renderProfile();
         });
 
+    unsubscribeAdj = db.collection('checador_adjustments')
+        .onSnapshot(snap => {
+            adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            renderProfile();
+        });
+
     return true;
 }
 
@@ -122,7 +130,9 @@ document.getElementById('pin-login-btn').addEventListener('click', () => {
 document.getElementById('logout-btn').addEventListener('click', () => {
     currentEmployee = null;
     if (unsubscribeLogs) { unsubscribeLogs(); unsubscribeLogs = null; }
+    if (unsubscribeAdj) { unsubscribeAdj(); unsubscribeAdj = null; }
     logsCache = [];
+    adjustmentsCache = [];
     localStorage.removeItem('checador_session');
     document.getElementById('profile-content').style.display = 'none';
     document.getElementById('pin-login-view').style.display = 'flex';
@@ -258,11 +268,48 @@ function renderProfile() {
     // Stats
     const totalHours = Math.floor(totalWeekMins / 60);
     const totalRemainMins = totalWeekMins % 60;
-    const pay = Math.round((totalWeekMins / 60) * 70);
+    const basePay = Math.round((totalWeekMins / 60) * 70);
+
+    // Ajustes de la semana
+    const { start: wkStart, end: wkEnd } = getWeekRange(weekOffset);
+    const myAdjs = adjustmentsCache.filter(a => {
+        if (a.name.toLowerCase() !== empName) return false;
+        const d = a.timestamp ? new Date(a.timestamp) : null;
+        return d && d >= wkStart && d <= wkEnd;
+    });
+    const adjTotal = myAdjs.reduce((sum, a) => sum + (a.type === 'bono' ? a.amount : -a.amount), 0);
+    const finalPay = basePay + adjTotal;
 
     document.getElementById('stat-days').textContent = daysWorked;
     document.getElementById('stat-hours').textContent = `${totalHours}h ${totalRemainMins}m`;
-    document.getElementById('stat-pay').textContent = `$${pay.toLocaleString()}`;
+    document.getElementById('stat-pay').textContent = `$${finalPay.toLocaleString()}`;
+
+    // Render ajustes
+    const adjSection = document.getElementById('adj-section');
+    if (myAdjs.length > 0) {
+        adjSection.style.display = 'block';
+        adjSection.innerHTML = `<div style="font-size:0.8rem; color:var(--text-muted); text-transform:uppercase; font-weight:600; margin-bottom:8px;">Ajustes esta semana</div>`;
+        myAdjs.forEach(a => {
+            const isBono = a.type === 'bono';
+            const div = document.createElement('div');
+            div.className = 'day-row has-data';
+            div.style.borderLeftColor = isBono ? '#10b981' : '#ef4444';
+            div.innerHTML = `
+                <span style="font-weight:600; color:${isBono ? '#10b981' : '#ef4444'};">${isBono ? '+' : '-'}$${a.amount}</span>
+                <span class="day-detail">${a.concept || ''}</span>
+                <span class="day-hours" style="color:${isBono ? '#10b981' : '#ef4444'};">${isBono ? 'Bono' : 'Descuento'}</span>
+            `;
+            adjSection.appendChild(div);
+        });
+        if (adjTotal !== 0) {
+            const sumDiv = document.createElement('div');
+            sumDiv.style.cssText = 'text-align:right; font-size:0.8rem; color:var(--text-muted); margin-top:4px;';
+            sumDiv.innerHTML = `Pago horas: $${basePay.toLocaleString()} ${adjTotal > 0 ? '+' : ''}${adjTotal} = <strong style="color:var(--primary);">$${finalPay.toLocaleString()}</strong>`;
+            adjSection.appendChild(sumDiv);
+        }
+    } else {
+        adjSection.style.display = 'none';
+    }
 
     // Estado actual: revisar si hoy tiene entrada activa sin salida
     const todayLogs = myLogs

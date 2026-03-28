@@ -16,6 +16,7 @@ const ADMIN_PIN = "1234";
 
 let logsCache = [];
 let employeesCache = [];
+let adjustmentsCache = [];
 let weekOffset = 0; // 0 = semana actual, -1 = anterior, etc.
 
 // =====================
@@ -45,6 +46,13 @@ firebaseAuth.onAuthStateChanged(user => {
                 });
                 if (document.getElementById('panel-content').style.display !== 'none') {
                     renderAdminEmployees();
+                }
+            });
+        db.collection('checador_adjustments')
+            .onSnapshot(snap => {
+                adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                if (document.getElementById('panel-content').style.display !== 'none') {
+                    renderAdminLogs();
                 }
             });
     }
@@ -266,12 +274,22 @@ function renderAdminLogs() {
         tbody.appendChild(tr);
     });
 
+    // Obtener rango de la semana para filtrar ajustes
+    const { start: weekStart, end: weekEnd } = getWeekRange(weekOffset);
+
     // Fila de totales
     const totalCells = employees.map(e => {
         const mins = empTotals[e.name.toLowerCase()];
+        const basePay = Math.round((mins / 60) * 70);
+        // Ajustes de esta persona en esta semana
+        const adjs = getWeekAdjustments(e.name, weekStart, weekEnd);
+        const adjTotal = adjs.reduce((sum, a) => sum + (a.type === 'bono' ? a.amount : -a.amount), 0);
+        const finalPay = basePay + adjTotal;
+        const adjLabel = adjTotal !== 0 ? `<br><small style="color:${adjTotal > 0 ? '#10b981' : '#ef4444'};">${adjTotal > 0 ? '+' : ''}$${adjTotal}</small>` : '';
         return `<td style="text-align:center; border-top:2px solid var(--glass-border);">
             <span style="font-weight:bold; color:var(--success);">${mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : '—'}</span>
-            ${mins > 0 ? `<br><small style="color:var(--text-muted);">$${((mins/60)*70).toFixed(0)}</small>` : ''}
+            ${mins > 0 || adjTotal !== 0 ? `<br><small style="color:var(--text-muted);">$${finalPay}</small>${adjLabel}` : ''}
+            <br><span style="cursor:pointer; font-size:0.7rem; color:var(--primary); opacity:0.7;" onclick="openAdjModal('${e.name.replace(/'/g, "\\'")}')">+/-</span>
         </td>`;
     }).join('');
     const totalAll = Object.values(empTotals).reduce((a, b) => a + b, 0);
@@ -889,13 +907,29 @@ document.getElementById('wa-send-btn').addEventListener('click', async () => {
     btn.disabled = true;
     btn.textContent = 'Enviando...';
 
+    const { start: wkStart, end: wkEnd } = getWeekRange(weekOffset);
+
     let sent = 0, errors = 0;
     for (const emp of selected) {
         const totalH = Math.floor(emp.totalMins / 60);
         const totalM = emp.totalMins % 60;
-        const pay = Math.round((emp.totalMins / 60) * 70);
+        const basePay = Math.round((emp.totalMins / 60) * 70);
         const lines = emp.days.map(d => `  ${d.day}: ${d.hours}`).join('\n');
-        const msg = `📋 *Reporte Semanal*\n${weekLabel}\n\n👤 *${emp.name}*\n\n${lines}\n\n⏱ *Total:* ${totalH}h ${totalM}m\n💰 *Pago:* $${pay.toLocaleString()}`;
+
+        // Ajustes
+        const adjs = getWeekAdjustments(emp.name, wkStart, wkEnd);
+        let adjLines = '';
+        let adjTotal = 0;
+        if (adjs.length > 0) {
+            adjLines = '\n\n📝 *Ajustes:*\n' + adjs.map(a => {
+                const sign = a.type === 'bono' ? '+' : '-';
+                adjTotal += a.type === 'bono' ? a.amount : -a.amount;
+                return `  ${sign}$${a.amount} ${a.concept || ''}`;
+            }).join('\n');
+        }
+        const finalPay = basePay + adjTotal;
+
+        const msg = `📋 *Reporte Semanal*\n${weekLabel}\n\n👤 *${emp.name}*\n\n${lines}\n\n⏱ *Total:* ${totalH}h ${totalM}m\n💰 *Pago horas:* $${basePay.toLocaleString()}${adjLines}\n\n💵 *Pago final:* $${finalPay.toLocaleString()}`;
 
         try {
             const resp = await fetch('/api/checador/whatsapp-report', {
@@ -915,6 +949,124 @@ document.getElementById('wa-send-btn').addEventListener('click', async () => {
     document.getElementById('wa-modal').style.display = 'none';
     btn.disabled = false;
     btn.textContent = 'Enviar';
+});
+
+// =====================
+// BONOS / DESCUENTOS
+// =====================
+let adjCurrentName = '';
+let adjCurrentType = 'bono';
+
+function getWeekAdjustments(name, weekStart, weekEnd) {
+    return adjustmentsCache.filter(a => {
+        if (a.name.toLowerCase() !== name.toLowerCase()) return false;
+        const d = a.timestamp ? new Date(a.timestamp) : null;
+        return d && d >= weekStart && d <= weekEnd;
+    });
+}
+
+function openAdjModal(name) {
+    adjCurrentName = name;
+    adjCurrentType = 'bono';
+    document.getElementById('adj-modal-title').textContent = name;
+    document.getElementById('adj-amount').value = '';
+    document.getElementById('adj-concept').value = '';
+
+    // Reset botones tipo
+    document.querySelectorAll('.adj-type-btn').forEach(btn => {
+        if (btn.dataset.type === 'bono') {
+            btn.style.background = 'linear-gradient(135deg,#10b981,#059669)';
+            btn.style.border = 'none';
+        } else {
+            btn.style.background = 'rgba(255,255,255,0.1)';
+            btn.style.border = '1px solid var(--glass-border)';
+        }
+    });
+
+    renderAdjExisting();
+    document.getElementById('adj-modal').style.display = 'flex';
+    document.getElementById('adj-amount').focus();
+}
+
+function renderAdjExisting() {
+    const container = document.getElementById('adj-existing');
+    const { start, end } = getWeekRange(weekOffset);
+    const adjs = getWeekAdjustments(adjCurrentName, start, end);
+
+    if (adjs.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    container.innerHTML = `<div style="font-size:0.75rem; color:var(--text-muted); margin-bottom:6px; text-transform:uppercase; font-weight:600;">Ajustes esta semana</div>`;
+    adjs.forEach(a => {
+        const isBono = a.type === 'bono';
+        const div = document.createElement('div');
+        div.style.cssText = 'display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:rgba(255,255,255,0.03); border-radius:8px; margin-bottom:4px; font-size:0.85rem;';
+        div.innerHTML = `
+            <div style="flex:1;">
+                <span style="color:${isBono ? '#10b981' : '#ef4444'}; font-weight:700;">${isBono ? '+' : '-'}$${a.amount}</span>
+                <span style="color:var(--text-muted); margin-left:8px;">${a.concept || ''}</span>
+            </div>
+            <button onclick="deleteAdjustment('${a._docId}')" style="background:none; border:none; color:#ef4444; cursor:pointer; font-size:1rem; padding:2px 6px;" title="Eliminar">&times;</button>
+        `;
+        container.appendChild(div);
+    });
+}
+
+document.querySelectorAll('.adj-type-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+        adjCurrentType = btn.dataset.type;
+        document.querySelectorAll('.adj-type-btn').forEach(b => {
+            if (b.dataset.type === adjCurrentType) {
+                b.style.background = adjCurrentType === 'bono' ? 'linear-gradient(135deg,#10b981,#059669)' : 'linear-gradient(135deg,#ef4444,#dc2626)';
+                b.style.border = 'none';
+            } else {
+                b.style.background = 'rgba(255,255,255,0.1)';
+                b.style.border = '1px solid var(--glass-border)';
+            }
+        });
+    });
+});
+
+document.getElementById('adj-save-btn').addEventListener('click', async () => {
+    const amount = parseInt(document.getElementById('adj-amount').value);
+    const concept = document.getElementById('adj-concept').value.trim();
+    if (!amount || amount <= 0) { showNotification('Ingresa un monto valido', 'danger'); return; }
+
+    const btn = document.getElementById('adj-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Guardando...';
+
+    await db.collection('checador_adjustments').add({
+        name: adjCurrentName,
+        type: adjCurrentType,
+        amount,
+        concept,
+        timestamp: Date.now(),
+        weekOffset
+    });
+
+    showNotification(`${adjCurrentType === 'bono' ? 'Bono' : 'Descuento'} de $${amount} agregado`);
+    document.getElementById('adj-amount').value = '';
+    document.getElementById('adj-concept').value = '';
+    btn.disabled = false;
+    btn.textContent = 'Guardar';
+    renderAdjExisting();
+});
+
+async function deleteAdjustment(docId) {
+    await db.collection('checador_adjustments').doc(docId).delete();
+    showNotification('Ajuste eliminado');
+    renderAdjExisting();
+}
+
+document.getElementById('adj-modal-close').addEventListener('click', () => {
+    document.getElementById('adj-modal').style.display = 'none';
+});
+
+document.getElementById('adj-modal').addEventListener('click', (e) => {
+    if (e.target.id === 'adj-modal') document.getElementById('adj-modal').style.display = 'none';
 });
 
 // =====================
