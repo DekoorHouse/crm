@@ -142,19 +142,17 @@ function loadTestimonials() {
     if (!track) return;
 
     db.collection('referencias')
+        .where('aprobado', '==', true)
         .orderBy('fecha', 'desc')
-        .limit(30)
+        .limit(10)
         .get()
         .then(snapshot => {
-            const approved = snapshot.docs
-                .map(doc => doc.data())
-                .filter(ref => ref.aprobado === true)
-                .slice(0, 10);
-
-            if (!approved.length) {
+            if (snapshot.empty) {
                 track.innerHTML = '<p style="text-align:center;color:var(--text-medium);padding:2rem;">Próximamente nuevas referencias.</p>';
                 return;
             }
+
+            const approved = snapshot.docs.map(doc => doc.data());
 
             let html = '';
             approved.forEach(ref => {
@@ -187,7 +185,7 @@ function loadTestimonials() {
             });
 
             track.innerHTML = html;
-            tcTotal = approved.length;
+            tcTotal = snapshot.size;
             tcIndex = 0;
             updateTcArrows();
         })
