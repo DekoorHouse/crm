@@ -22,6 +22,11 @@ let dragOffset = null;
 let customFonts = [];      // [{ name, url }]
 let undoStack = [];
 let redoStack = [];
+let zoomLevel = 1;
+let panX = 0;
+let panY = 0;
+let isPanning = false;
+let panStart = null;
 
 // ===================== DOM =====================
 const loginView = document.getElementById('login-view');
@@ -134,6 +139,7 @@ imageInput.addEventListener('change', (e) => {
             selectedTextIdx = -1;
             undoStack = [];
             redoStack = [];
+            resetZoom();
             redrawCanvas();
             saveUndo();
         };
@@ -164,6 +170,7 @@ document.addEventListener('paste', (e) => {
                     selectedTextIdx = -1;
                     undoStack = [];
                     redoStack = [];
+                    resetZoom();
                     redrawCanvas();
                     saveUndo();
                 };
@@ -280,6 +287,41 @@ fontUpload.addEventListener('change', async (e) => {
     fontUpload.value = '';
 });
 
+// ===================== ZOOM & PAN =====================
+function applyZoom() {
+    canvas.style.transformOrigin = '0 0';
+    canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
+    const indicator = document.getElementById('zoom-indicator');
+    if (indicator) indicator.textContent = Math.round(zoomLevel * 100) + '%';
+}
+
+function resetZoom() {
+    zoomLevel = 1;
+    panX = 0;
+    panY = 0;
+    applyZoom();
+}
+
+canvasContainer.addEventListener('wheel', (e) => {
+    if (!baseImage) return;
+    e.preventDefault();
+    const rect = canvasContainer.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+    const oldZoom = zoomLevel;
+    const factor = e.deltaY > 0 ? 0.9 : 1.1;
+    zoomLevel = Math.min(5, Math.max(0.1, zoomLevel * factor));
+    const ratio = zoomLevel / oldZoom;
+    panX = mouseX - ratio * (mouseX - panX);
+    panY = mouseY - ratio * (mouseY - panY);
+    applyZoom();
+}, { passive: false });
+
+canvasContainer.addEventListener('dblclick', (e) => {
+    if (!baseImage) return;
+    resetZoom();
+});
+
 // ===================== CANVAS EVENTS =====================
 function getCanvasPos(e) {
     const rect = canvas.getBoundingClientRect();
@@ -293,6 +335,7 @@ function getCanvasPos(e) {
     };
 }
 
+canvas.addEventListener('auxclick', (e) => e.preventDefault());
 canvas.addEventListener('mousedown', onPointerDown);
 canvas.addEventListener('mousemove', onPointerMove);
 canvas.addEventListener('mouseup', onPointerUp);
@@ -303,6 +346,16 @@ canvas.addEventListener('touchend', onPointerUp);
 
 function onPointerDown(e) {
     if (!baseImage) return;
+
+    // Pan with middle mouse or Alt+left click
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+        e.preventDefault();
+        isPanning = true;
+        panStart = { x: e.clientX - panX, y: e.clientY - panY };
+        canvas.style.cursor = 'grabbing';
+        return;
+    }
+
     const pos = getCanvasPos(e);
 
     if (currentTool === 'eyedropper') {
@@ -377,6 +430,12 @@ function onPointerDown(e) {
 }
 
 function onPointerMove(e) {
+    if (isPanning && panStart) {
+        panX = e.clientX - panStart.x;
+        panY = e.clientY - panStart.y;
+        applyZoom();
+        return;
+    }
     if (!isDrawing || !baseImage) return;
     const pos = getCanvasPos(e);
 
@@ -393,6 +452,12 @@ function onPointerMove(e) {
 }
 
 function onPointerUp() {
+    if (isPanning) {
+        isPanning = false;
+        panStart = null;
+        canvas.style.cursor = currentTool === 'brush' ? 'crosshair' : currentTool === 'text' ? 'text' : currentTool === 'move' ? 'grab' : 'crosshair';
+        return;
+    }
     if (isDrawing && currentTool === 'brush') {
         saveUndo();
     }
