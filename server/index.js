@@ -90,6 +90,10 @@ app.get('/mockups', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'mockups', 'index.html'));
 });
 
+app.get('/ps', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'ps', 'index.html'));
+});
+
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));

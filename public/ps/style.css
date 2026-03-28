@@ -1,0 +1,175 @@
+/* ========== CSS VARIABLES ========== */
+:root {
+    --bg: #f8f5f0;
+    --surface: #ffffff;
+    --surface-hover: #f5f2ed;
+    --border: #e8e2da;
+    --text: #3d3d3d;
+    --text-2: #6b6b6b;
+    --text-3: #999;
+    --primary: #81B29A;
+    --primary-hover: #6a9a82;
+    --primary-light: rgba(129,178,154,0.12);
+    --danger: #dc3545;
+    --r: 14px;
+    --r-sm: 10px;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.08);
+}
+
+body.dark-mode {
+    --bg: #1a1b26;
+    --surface: #24283b;
+    --surface-hover: #2a2e42;
+    --border: #414868;
+    --text: #ffffff;
+    --text-2: #c0caf5;
+    --text-3: #787c99;
+    --primary: #7aa2f7;
+    --primary-hover: #5d8ae6;
+    --primary-light: rgba(122,162,247,0.15);
+    --danger: #f7768e;
+    --shadow: 0 1px 3px rgba(0,0,0,0.2);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.3);
+}
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg); color: var(--text);
+    min-height: 100vh; transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ========== LOGIN ========== */
+#login-view { background: var(--bg); }
+.login-card {
+    background: var(--surface); padding: 48px; border-radius: var(--r);
+    box-shadow: var(--shadow-lg); max-width: 440px; width: 90%; border: 1px solid var(--border);
+}
+.login-title { font-size: 28px; font-weight: 800; margin-bottom: 8px; }
+.login-subtitle { color: var(--text-2); margin-bottom: 32px; font-size: 14px; }
+.input-label { font-size: 12px; font-weight: 600; text-transform: uppercase; color: var(--text-2); letter-spacing: 0.05em; }
+.input-field {
+    width: 100%; margin-top: 6px; padding: 10px 14px;
+    border: 1px solid var(--border); border-radius: var(--r-sm);
+    font-size: 14px; font-family: inherit; background: var(--surface); color: var(--text); transition: border-color 0.2s;
+}
+.input-field:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+.login-error { color: var(--danger); margin-top: 12px; min-height: 1.2em; font-size: 13px; }
+
+/* ========== LAYOUT ========== */
+.app-container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+
+/* ========== TOP BAR ========== */
+.top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
+.app-title { font-size: 22px; font-weight: 800; }
+.app-title i { color: var(--primary); }
+.model-badge {
+    font-size: 12px; font-weight: 600; color: var(--text-2);
+    background: var(--primary-light); padding: 4px 12px; border-radius: 20px;
+}
+
+/* ========== BUTTONS ========== */
+.btn {
+    font-family: inherit; font-weight: 600; padding: 8px 16px; border: none;
+    border-radius: var(--r-sm); cursor: pointer; font-size: 13px; transition: all 0.2s;
+    display: inline-flex; align-items: center; gap: 6px;
+}
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover { background: var(--primary-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-outline { background: transparent; border: 1px solid var(--border); color: var(--text-2); }
+.btn-outline:hover { background: var(--surface-hover); }
+.btn-icon {
+    background: transparent; border: 1px solid var(--border); color: var(--text-2);
+    width: 36px; height: 36px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: var(--r-sm);
+}
+.btn-icon:hover { background: var(--surface-hover); }
+.btn-tool {
+    background: transparent; border: 1px solid var(--border); color: var(--text-2);
+    padding: 6px 10px; border-radius: var(--r-sm);
+}
+.btn-tool:hover { background: var(--surface-hover); }
+.btn-tool.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+/* ========== TOOLBAR ========== */
+.toolbar {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); margin-bottom: 12px; flex-wrap: wrap;
+}
+.toolbar-group { display: flex; align-items: center; gap: 6px; }
+.toolbar-separator { width: 1px; height: 28px; background: var(--border); }
+.toolbar-label { font-size: 11px; font-weight: 600; text-transform: uppercase; color: var(--text-3); letter-spacing: 0.04em; }
+.toolbar-range { width: 80px; accent-color: var(--primary); }
+.toolbar-val { font-size: 12px; font-weight: 700; color: var(--primary); min-width: 24px; font-variant-numeric: tabular-nums; }
+.toolbar-color { width: 28px; height: 28px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; padding: 0; }
+.toolbar-select {
+    padding: 6px 10px; border: 1px solid var(--border); border-radius: var(--r-sm);
+    font-size: 12px; font-family: inherit; background: var(--bg); color: var(--text); cursor: pointer;
+}
+.upload-font-btn { cursor: pointer; }
+
+/* ========== CANVAS ========== */
+.canvas-container {
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow); min-height: 500px; display: flex; align-items: center;
+    justify-content: center; overflow: hidden; position: relative;
+}
+.canvas-placeholder { text-align: center; color: var(--text-3); padding: 60px 20px; }
+.canvas-placeholder i { font-size: 48px; margin-bottom: 16px; display: block; opacity: 0.3; }
+.canvas-placeholder p { font-size: 14px; }
+
+#canvas {
+    max-width: 100%; max-height: 75vh; cursor: crosshair;
+}
+
+/* ========== TEXT INPUT ========== */
+.text-input-panel {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
+    box-shadow: var(--shadow-lg); padding: 12px 16px; z-index: 100; min-width: 320px;
+}
+.text-input-field {
+    width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-sm);
+    font-size: 16px; font-family: inherit; background: var(--bg); color: var(--text);
+}
+.text-input-field:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--primary-light); }
+
+/* ========== BATCH ========== */
+.batch-section {
+    margin-top: 12px; background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--r); padding: 14px 16px; box-shadow: var(--shadow);
+}
+.batch-toggle-row { display: flex; align-items: center; gap: 10px; }
+.batch-toggle-label { font-size: 13px; font-weight: 600; color: var(--text-2); }
+.toggle-switch { position: relative; width: 44px; height: 24px; flex-shrink: 0; }
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+    position: absolute; inset: 0; background: var(--border); border-radius: 24px;
+    cursor: pointer; transition: background 0.3s;
+}
+.toggle-slider::before {
+    content: ''; position: absolute; left: 3px; top: 3px; width: 18px; height: 18px;
+    background: #fff; border-radius: 50%; transition: transform 0.3s;
+}
+.toggle-switch input:checked + .toggle-slider { background: var(--primary); }
+.toggle-switch input:checked + .toggle-slider::before { transform: translateX(20px); }
+
+.batch-textarea {
+    width: 100%; margin-top: 10px; padding: 10px; border: 1px solid var(--border);
+    border-radius: var(--r-sm); font-size: 13px; font-family: inherit;
+    background: var(--bg); color: var(--text); resize: vertical;
+}
+.batch-progress { margin-top: 8px; }
+.batch-progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+.batch-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; width: 0%; transition: width 0.3s; }
+
+/* ========== RESPONSIVE ========== */
+@media (max-width: 768px) {
+    .toolbar { gap: 6px; padding: 8px 10px; }
+    .toolbar-range { width: 60px; }
+    .canvas-container { min-height: 300px; }
+}
