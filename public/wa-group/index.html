@@ -88,6 +88,16 @@
     .toast-error { background: var(--danger); }
     @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
 
+    .upload-zone { border: 2px dashed var(--border-color); border-radius: var(--radius-md); padding: 32px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .upload-zone:hover, .upload-zone.dragover { border-color: var(--primary); background: rgba(37, 211, 102, 0.05); }
+    .upload-zone i { font-size: 2rem; color: var(--primary); }
+
+    .photo-card { position: relative; border-radius: var(--radius-md); overflow: hidden; border: 2px solid var(--border-color); }
+    .photo-card img { width: 100%; aspect-ratio: 1; object-fit: cover; display: block; }
+    .photo-card .delete-btn { position: absolute; top: 6px; right: 6px; width: 26px; height: 26px; border-radius: 50%; background: rgba(239,68,68,0.9); color: white; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; opacity: 0; transition: opacity 0.2s; }
+    .photo-card:hover .delete-btn { opacity: 1; }
+    .photo-card .filename { font-size: 0.65rem; color: var(--text-muted); padding: 4px 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; background: var(--bg-main); }
+
     .empty-state { text-align: center; padding: 40px 20px; color: var(--text-muted); }
     .empty-state i { font-size: 3rem; margin-bottom: 12px; opacity: 0.4; }
     .empty-state p { font-size: 0.9rem; }
@@ -159,9 +169,23 @@
     </div>
   </div>
 
+  <!-- Subir fotos -->
+  <div class="card">
+    <div class="card-title"><i class="fas fa-cloud-upload-alt"></i> Subir fotos</div>
+    <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+      <i class="fas fa-images"></i>
+      <p style="color:var(--text-secondary);margin-top:8px">Arrastra imagenes aqui o haz clic para seleccionar</p>
+      <p style="color:var(--text-muted);font-size:0.8rem;margin-top:4px">JPG, PNG, WEBP - Max 15MB cada una</p>
+    </div>
+    <input type="file" id="fileInput" multiple accept="image/*" style="display:none" onchange="uploadFiles(this.files)" />
+    <div id="uploadProgress" style="display:none;margin-top:12px;padding:12px;background:var(--bg-main);border-radius:var(--radius-md);text-align:center;color:var(--primary);font-weight:600">
+      <span class="spinner" style="border-color:rgba(37,211,102,0.3);border-top-color:var(--primary)"></span> Subiendo...
+    </div>
+  </div>
+
   <!-- Fotos en cola -->
   <div class="card">
-    <div class="card-title"><i class="fas fa-images"></i> Fotos en cola</div>
+    <div class="card-title"><i class="fas fa-images"></i> Fotos en cola <span id="photosCountBadge" style="font-size:0.8rem;color:var(--text-muted);font-weight:400"></span></div>
     <div id="photosGrid" class="photos-grid">
       <div class="empty-state"><i class="fas fa-photo-video"></i><p>Cargando...</p></div>
     </div>
@@ -200,24 +224,67 @@ async function loadPhotos() {
     const res = await fetch(`${API}/photos`);
     const data = await res.json();
     const grid = document.getElementById('photosGrid');
+    const badge = document.getElementById('photosCountBadge');
 
     if (!data.photos?.length) {
-      grid.innerHTML = '<div class="empty-state"><i class="fas fa-photo-video"></i><p>No hay fotos en la carpeta</p></div>';
+      grid.innerHTML = '<div class="empty-state"><i class="fas fa-photo-video"></i><p>No hay fotos. Sube imagenes arriba.</p></div>';
+      badge.textContent = '';
       return;
     }
 
+    badge.textContent = `(${data.photos.length})`;
     grid.innerHTML = data.photos.map(p => `
-      <div style="text-align:center">
-        <div style="width:100%;aspect-ratio:1;background:var(--bg-main);border-radius:var(--radius-md);display:flex;align-items:center;justify-content:center;border:2px solid var(--border-color)">
-          <i class="fas fa-image" style="font-size:2rem;color:var(--text-muted)"></i>
-        </div>
-        <div style="font-size:0.7rem;color:var(--text-muted);margin-top:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.filename.substring(0, 12)}...</div>
+      <div class="photo-card">
+        <img src="${API}/photos/file/${encodeURIComponent(p.filename)}" alt="${p.filename}" loading="lazy" />
+        <button class="delete-btn" onclick="deletePhoto('${p.filename}')" title="Eliminar"><i class="fas fa-times"></i></button>
+        <div class="filename">${p.filename}</div>
       </div>
     `).join('');
   } catch (e) {
     console.error('Error cargando fotos:', e);
   }
 }
+
+async function uploadFiles(files) {
+  if (!files.length) return;
+  const progress = document.getElementById('uploadProgress');
+  progress.style.display = 'block';
+
+  const formData = new FormData();
+  for (const f of files) formData.append('photos', f);
+
+  try {
+    const res = await fetch(`${API}/photos/upload`, { method: 'POST', body: formData });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    showToast(`${data.count} foto(s) subida(s)`, 'success');
+    loadPhotos();
+    loadStatus();
+  } catch (e) {
+    showToast('Error subiendo: ' + e.message, 'error');
+  } finally {
+    progress.style.display = 'none';
+    document.getElementById('fileInput').value = '';
+  }
+}
+
+async function deletePhoto(filename) {
+  if (!confirm(`Eliminar ${filename}?`)) return;
+  try {
+    await fetch(`${API}/photos/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    showToast('Foto eliminada', 'success');
+    loadPhotos();
+    loadStatus();
+  } catch (e) {
+    showToast('Error: ' + e.message, 'error');
+  }
+}
+
+// Drag and drop
+const zone = document.getElementById('uploadZone');
+zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('dragover'); });
+zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+zone.addEventListener('drop', e => { e.preventDefault(); zone.classList.remove('dragover'); uploadFiles(e.dataTransfer.files); });
 
 async function loadLog() {
   try {

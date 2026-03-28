@@ -1,5 +1,8 @@
 const express = require('express');
 const router = express.Router();
+const multer = require('multer');
+const path = require('path');
+const fs = require('fs');
 const {
     executeWhatsAppGroupPost,
     previewWhatsAppPost,
@@ -8,6 +11,29 @@ const {
     getAvailablePhotos,
     closeBrowser
 } = require('./whatsappGroupService');
+
+const PHOTOS_FOLDER = process.env.WA_PHOTOS_FOLDER || 'C:/Users/chris/Pictures/IA Dekoor/Grupo';
+
+// Multer para guardar fotos directo a la carpeta local
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        if (!fs.existsSync(PHOTOS_FOLDER)) fs.mkdirSync(PHOTOS_FOLDER, { recursive: true });
+        cb(null, PHOTOS_FOLDER);
+    },
+    filename: (req, file, cb) => {
+        const ext = path.extname(file.originalname);
+        const name = `${Date.now()}-${Math.random().toString(36).substring(2, 8)}${ext}`;
+        cb(null, name);
+    }
+});
+const upload = multer({
+    storage,
+    limits: { fileSize: 15 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+        if (file.mimetype.startsWith('image/')) cb(null, true);
+        else cb(new Error('Solo se permiten imagenes.'));
+    }
+});
 
 // Estado del servicio
 router.get('/status', (req, res) => {
@@ -22,6 +48,36 @@ router.get('/photos', (req, res) => {
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
+});
+
+// Subir fotos a la carpeta local
+router.post('/photos/upload', upload.array('photos', 20), (req, res) => {
+    try {
+        if (!req.files?.length) return res.status(400).json({ error: 'No se enviaron fotos.' });
+        const uploaded = req.files.map(f => ({ filename: f.filename, size: f.size }));
+        res.json({ uploaded, count: uploaded.length });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Eliminar foto de la carpeta
+router.delete('/photos/:filename', (req, res) => {
+    try {
+        const filePath = path.join(PHOTOS_FOLDER, req.params.filename);
+        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Foto no encontrada.' });
+        fs.unlinkSync(filePath);
+        res.json({ deleted: req.params.filename });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Servir imagen para thumbnail
+router.get('/photos/file/:filename', (req, res) => {
+    const filePath = path.join(PHOTOS_FOLDER, req.params.filename);
+    if (!fs.existsSync(filePath)) return res.status(404).send('No encontrada');
+    res.sendFile(filePath);
 });
 
 // Preview del proximo post (genera caption sin enviar)
