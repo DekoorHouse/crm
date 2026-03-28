@@ -38,9 +38,6 @@ async function generateImage(prompt, aspectRatio = '1:1', refImages = [], resolu
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-            systemInstruction: {
-                parts: [{ text: 'Eres un asistente de diseño gráfico para un catálogo de lámparas infantiles. Tu trabajo es únicamente modificar el texto y nombre del producto en las imágenes proporcionadas. No generes personajes nuevos ni modifiques las ilustraciones existentes. Solo cambia el texto manteniendo el estilo visual original.' }],
-            },
             contents: [{ parts }],
             generationConfig: {
                 responseModalities: ['TEXT', 'IMAGE'],
