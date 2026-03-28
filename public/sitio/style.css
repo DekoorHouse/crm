@@ -33,7 +33,7 @@
 
 html {
     scroll-behavior: smooth;
-    scroll-padding-top: var(--nav-height);
+    scroll-padding-top: calc(var(--nav-height) + 32px);
 }
 
 body {
@@ -54,11 +54,57 @@ body {
 }
 
 /* ============================================================
+   TICKER BANNER
+   ============================================================ */
+.ticker-banner {
+    background: var(--teal);
+    color: var(--white);
+    overflow: hidden;
+    white-space: nowrap;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    z-index: 101;
+    height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+.ticker-track {
+    display: inline-flex;
+    align-items: center;
+    animation: ticker 20s linear infinite;
+}
+
+.ticker-item {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    padding: 0 1.5rem;
+}
+
+.ticker-item i {
+    margin-right: 6px;
+    color: var(--primary);
+}
+
+.ticker-sep {
+    color: var(--primary);
+    font-size: 0.6rem;
+}
+
+@keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+}
+
+/* ============================================================
    NAVBAR
    ============================================================ */
 .navbar {
     position: fixed;
-    top: 0;
+    top: 32px;
     left: 0;
     width: 100%;
     height: var(--nav-height);
@@ -256,7 +302,7 @@ body {
    HERO
    ============================================================ */
 .hero {
-    padding-top: var(--nav-height);
+    padding-top: calc(var(--nav-height) + 32px);
     background: var(--cream-dark);
     color: var(--text-dark);
     overflow: hidden;
