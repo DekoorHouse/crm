@@ -145,7 +145,7 @@ function loadTestimonials() {
     db.collection('referencias')
         .where('aprobado', '==', true)
         .orderBy('fecha', 'desc')
-        .limit(10)
+        .limit(30)
         .get()
         .then(snapshot => {
             if (snapshot.empty) {
@@ -153,7 +153,10 @@ function loadTestimonials() {
                 return;
             }
 
-            const approved = snapshot.docs.map(doc => doc.data());
+            // Solo mostrar referencias con foto en el home
+            const approved = snapshot.docs
+                .map(doc => doc.data())
+                .filter(ref => (ref.fotos && ref.fotos.length > 0) || ref.foto);
 
             let html = '';
             approved.forEach(ref => {
