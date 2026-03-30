@@ -250,8 +250,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
 
-    trackBtn.addEventListener('click', trackPackage);
-    
+    trackBtn.addEventListener('click', () => {
+        if (typeof gtag === 'function') gtag('event', 'track_package', { waybill: waybillInput.value.trim() });
+        trackPackage();
+    });
+
     waybillInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') trackPackage();
     });

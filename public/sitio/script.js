@@ -357,6 +357,74 @@ function initCarousel() {
 }
 
 // ============================================================
+// GA4 EVENT TRACKING
+// ============================================================
+function gEvent(name, params) {
+    if (typeof gtag === 'function') gtag('event', name, params);
+}
+
+// --- WhatsApp clicks ---
+document.querySelectorAll('a[href*="wa.me"]').forEach(link => {
+    link.addEventListener('click', () => {
+        const label = link.closest('.category-item')?.querySelector('span')?.textContent
+            || link.closest('.hero-text')?.querySelector('.btn')?.textContent?.trim()
+            || link.classList.contains('whatsapp-fab') ? 'FAB flotante'
+            : link.closest('.footer-col') ? 'Footer'
+            : link.closest('.nav-actions') ? 'Navbar'
+            : 'Otro';
+        gEvent('whatsapp_click', { link_label: label, link_url: link.href });
+    });
+});
+
+// --- Collection clicks ---
+document.querySelectorAll('.collection-card-v2').forEach(card => {
+    card.addEventListener('click', () => {
+        const name = card.querySelector('.collection-name')?.textContent || '';
+        gEvent('select_collection', { collection_name: name });
+    });
+});
+
+// --- Section visibility (qué secciones ven) ---
+const sectionObserver = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+        if (entry.isIntersecting) {
+            gEvent('section_view', { section_id: entry.target.id || entry.target.className });
+            sectionObserver.unobserve(entry.target);
+        }
+    });
+}, { threshold: 0.3 });
+
+document.querySelectorAll('section[id]').forEach(s => sectionObserver.observe(s));
+
+// --- FAQ clicks ---
+document.querySelectorAll('.faq-question').forEach(btn => {
+    btn.addEventListener('click', () => {
+        const q = btn.querySelector('span')?.textContent || '';
+        gEvent('faq_click', { question: q });
+    });
+});
+
+// --- CTA buttons ---
+document.querySelectorAll('.btn-outline, .btn-primary').forEach(btn => {
+    if (btn.closest('a[href*="wa.me"]')) return; // ya tracked arriba
+    btn.addEventListener('click', () => {
+        gEvent('cta_click', { cta_text: btn.textContent.trim(), cta_url: btn.href || '' });
+    });
+});
+
+// --- Scroll depth ---
+let scrollMarks = { 25: false, 50: false, 75: false, 100: false };
+window.addEventListener('scroll', () => {
+    const pct = Math.round((window.scrollY / (document.body.scrollHeight - window.innerHeight)) * 100);
+    [25, 50, 75, 100].forEach(mark => {
+        if (pct >= mark && !scrollMarks[mark]) {
+            scrollMarks[mark] = true;
+            gEvent('scroll_depth', { depth_percent: mark });
+        }
+    });
+});
+
+// ============================================================
 // INIT
 // ============================================================
 initCarousel();

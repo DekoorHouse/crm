@@ -457,6 +457,19 @@ function loadMapa() {
         });
 }
 
+// --- GA4 Events ---
+function gEvent(n, p) { if (typeof gtag === 'function') gtag('event', n, p); }
+
+document.querySelectorAll('a[href*="wa.me"]').forEach(l => {
+    l.addEventListener('click', () => gEvent('whatsapp_click', { link_label: 'Referencias', link_url: l.href }));
+});
+
+// Track referencia form submit
+const refForm = document.getElementById('refForm');
+if (refForm) {
+    refForm.addEventListener('submit', () => gEvent('submit_reference', { rating: selectedRating }));
+}
+
 // --- Init ---
 loadReferencias();
 loadMapa();
