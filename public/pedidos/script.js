@@ -986,7 +986,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return snapshot.data().count;
     }
 
-    async function fetchInitialOrders(filters) {
+    async function fetchInitialOrders(filters, silent = false) {
         if (!cuerpoTablaPedidos) return;
         if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
 
@@ -995,7 +995,9 @@ document.addEventListener('DOMContentLoaded', () => {
         allLoadedPedidos = [];
         pedidosDataMap.clear();
 
-        cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
+        if (!silent) {
+            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
+        }
 
         try {
             const response = await fetch(buildApiUrl(filters));
@@ -1084,8 +1086,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Debounce: re-fetch the current view after a short delay
             clearTimeout(window._pedidosRealtimeTimer);
-            window._pedidosRealtimeTimer = setTimeout(() => {
-                fetchInitialOrders(pedidosPagination.currentFilters);
+            window._pedidosRealtimeTimer = setTimeout(async () => {
+                const scrollPos = tablaContainer ? tablaContainer.scrollTop : 0;
+                await fetchInitialOrders(pedidosPagination.currentFilters, true);
+                if (tablaContainer) tablaContainer.scrollTop = scrollPos;
             }, 1500);
         });
     }
@@ -1421,7 +1425,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 Object.keys(pedidoData).forEach(key => pedidoData[key] === undefined && delete pedidoData[key]);
                 await updateDoc(docRef, pedidoData);
                 cerrarModalPedido();
-                fetchInitialOrders(pedidosPagination.currentFilters);
+                // Update the row in-place instead of re-fetching everything
+                const existingData = pedidosDataMap.get(editingPedidoId);
+                if (existingData) {
+                    Object.assign(existingData, pedidoData);
+                    const oldRow = cuerpoTablaPedidos.querySelector(`tr[data-id="${editingPedidoId}"]`);
+                    if (oldRow) {
+                        const newRow = createPedidoRow(existingData, new Set());
+                        oldRow.replaceWith(newRow);
+                    }
+                }
             } else {
                 btnGuardarPedido.innerHTML = '<i class="fas fa-database"></i> Guardando...';
                 const newOrderNumber = await runTransaction(db, async (transaction) => {
@@ -1444,7 +1457,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 await addDoc(pedidosCollectionRef, nuevoPedido);
                 cerrarModalPedido();
                 mostrarModalConfirmacionRegistro(newOrderNumber);
-                fetchInitialOrders(pedidosPagination.currentFilters);
+                const scrollPos = tablaContainer ? tablaContainer.scrollTop : 0;
+                await fetchInitialOrders(pedidosPagination.currentFilters, true);
+                if (tablaContainer) tablaContainer.scrollTop = scrollPos;
                 actualizarContadorHoy();
             }
             populateProductFilter();
