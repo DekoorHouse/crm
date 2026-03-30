@@ -794,20 +794,17 @@ body {
 
 .tc-track-wrapper {
     flex: 1;
-    overflow-x: clip;
-    overflow-y: visible;
+    overflow: hidden;
 }
 
 .tc-track {
     display: flex;
     gap: 1.25rem;
     transition: transform 0.4s ease;
-    width: 100%;
 }
 
 .tc-card {
     min-width: calc(50% - 0.625rem);
-    max-width: calc(50% - 0.625rem);
     background: var(--white);
     border: 1px solid var(--border);
     border-radius: var(--radius-lg);
@@ -916,7 +913,6 @@ body {
 @media (max-width: 768px) {
     .tc-card {
         min-width: 100%;
-        max-width: 100%;
     }
     .tc-arrow {
         width: 32px;

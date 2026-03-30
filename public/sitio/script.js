@@ -195,6 +195,7 @@ function loadTestimonials() {
             track.innerHTML = html;
             tcTotal = approved.length;
             tcIndex = 0;
+            sizeCards();
             updateTcArrows();
             startTcAutoplay();
         })
@@ -206,6 +207,16 @@ function loadTestimonials() {
 
 function getCardsPerView() {
     return window.innerWidth <= 768 ? 1 : 2;
+}
+
+function sizeCards() {
+    const wrapper = document.querySelector('.tc-track-wrapper');
+    const cards = document.querySelectorAll('.tc-card');
+    if (!wrapper || !cards.length) return;
+    const perView = getCardsPerView();
+    const gap = 20;
+    const w = (wrapper.offsetWidth - (perView - 1) * gap) / perView;
+    cards.forEach(c => { c.style.minWidth = w + 'px'; c.style.maxWidth = w + 'px'; });
 }
 
 function slideTc(dir) {
@@ -247,7 +258,7 @@ function stopTcAutoplay() {
 
 document.getElementById('tcPrev')?.addEventListener('click', () => { stopTcAutoplay(); slideTc(-1); startTcAutoplay(); });
 document.getElementById('tcNext')?.addEventListener('click', () => { stopTcAutoplay(); slideTc(1); startTcAutoplay(); });
-window.addEventListener('resize', () => { tcIndex = 0; slideTc(0); });
+window.addEventListener('resize', () => { sizeCards(); tcIndex = 0; slideTc(0); });
 
 // ============================================================
 // MAP (Leaflet)
