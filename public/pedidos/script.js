@@ -967,6 +967,23 @@ document.addEventListener('DOMContentLoaded', () => {
         return `/api/orders/list?${params.toString()}`;
     }
 
+    async function getFilteredCount(filters) {
+        let q = query(pedidosCollectionRef);
+        if (filters.producto) q = query(q, where("producto", "==", filters.producto));
+        if (filters.estatus) q = query(q, where("estatus", "==", filters.estatus));
+        if (filters.dateFilter === 'personalizado' && filters.customStart && filters.customEnd) {
+            q = query(q, where("createdAt", ">=", Timestamp.fromMillis(Number(filters.customStart))));
+            q = query(q, where("createdAt", "<=", Timestamp.fromMillis(Number(filters.customEnd))));
+        } else if (filters.dateFilter) {
+            const { startDate, endDate } = getDateRange(filters.dateFilter);
+            if (startDate && endDate) {
+                q = query(q, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
+            }
+        }
+        const snapshot = await getCountFromServer(q);
+        return snapshot.data().count;
+    }
+
     async function fetchInitialOrders(filters) {
         if (!cuerpoTablaPedidos) return;
         if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
@@ -988,14 +1005,14 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidosPagination.lastVisibleId = data.lastVisibleId;
             pedidosPagination.hasMore = data.hasMore;
 
-            // Update counters
-            const totalLoaded = allLoadedPedidos.length;
+            // Update counters — exact count from server
+            const exactCount = await getFilteredCount(filters);
             const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
 
             const defaultDateFilter = (auth.currentUser && auth.currentUser.email === 'alex@dekoor.com') ? 'hoy' : 'ultimos-10-dias';
             const isDefaultView = !filters.producto && !filters.estatus && filters.dateFilter === defaultDateFilter && !filters.customStart;
 
-            contadorPedidosFiltrados.textContent = `${totalLoaded}${data.hasMore ? '+' : ''} filtrados`;
+            contadorPedidosFiltrados.textContent = `${exactCount} filtrados`;
             contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
             contadorPedidosFiltrados.classList.toggle('visible', !isDefaultView);
             if (isDefaultView) {
@@ -1025,9 +1042,8 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidosPagination.lastVisibleId = data.lastVisibleId;
             pedidosPagination.hasMore = data.hasMore;
 
-            // Update counter with cumulative total
+            // Update sum with loaded data (count stays exact from initial fetch)
             const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
-            contadorPedidosFiltrados.textContent = `${allLoadedPedidos.length}${data.hasMore ? '+' : ''} filtrados`;
             contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
 
             renderOrders(data.orders, true);
