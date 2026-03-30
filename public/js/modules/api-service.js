@@ -204,7 +204,10 @@ async function fetchPendingAiCount() {
             url += `?departmentId=${departmentIdParam}`;
         }
 
-        const response = await fetch(url);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 8000);
+        const response = await fetch(url, { signal: controller.signal });
+        clearTimeout(timeoutId);
         const data = await response.json();
 
         if (response.ok && data.success) {
