@@ -62,6 +62,7 @@ app.use((req, res, next) => {
         "img-src 'self' data: blob: https: http:; " +
         "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; " +
         "connect-src 'self' https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://pay.conekta.com https://www.gstatic.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://graph.facebook.com https://cdn.jsdelivr.net; " +
+        "media-src 'self' https: blob:; " +
         "frame-src https://pay.conekta.com; " +
         "object-src 'none'; " +
         "base-uri 'self';"
