@@ -513,7 +513,12 @@ router.post('/', async (req, res) => {
                 const phone = contact?.phones?.[0]?.phone || '';
                 messageData.text = `👤 Contacto: ${name}${phone ? ' (' + phone + ')' : ''}`;
             } else if (message.type === 'unsupported') {
-                messageData.text = '⚠️ Mensaje no soportado por WhatsApp Business';
+                const errorDetail = message.errors?.[0];
+                const errorTitle = errorDetail?.title || '';
+                const errorMsg = errorDetail?.message || '';
+                const detail = errorTitle || errorMsg || '';
+                messageData.text = `⚠️ Mensaje no soportado${detail ? ': ' + detail : ''}`;
+                console.log(`[WEBHOOK] Mensaje unsupported de ${from}. Errors:`, JSON.stringify(message.errors || {}), 'Full:', JSON.stringify(message));
             } else {
                 console.warn(`[WEBHOOK] Tipo de mensaje no manejado completamente: ${message.type}. Payload:`, JSON.stringify(message));
                 messageData.text = `Mensaje multimedia (${message.type})`;
