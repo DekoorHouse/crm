@@ -30,6 +30,11 @@ router.post('/checkout', async (req, res) => {
         // Expires in 72 hours
         const expiresAt = Math.floor(Date.now() / 1000) + (72 * 60 * 60);
 
+        if (!CONEKTA_PRIVATE_KEY) {
+            console.error('[CONEKTA] CONEKTA_PRIVATE_KEY not set');
+            return res.status(500).json({ error: 'Pasarela de pago no configurada' });
+        }
+
         const orderPayload = {
             currency: 'MXN',
             customer_info: {
@@ -45,7 +50,7 @@ router.post('/checkout', async (req, res) => {
             checkout: {
                 type: 'HostedPayment',
                 allowed_payment_methods: ['card', 'cash', 'bank_transfer'],
-                success_url: `${BASE_URL}/sitio/pago-exitoso?session_id={checkout_id}`,
+                success_url: `${BASE_URL}/sitio/pago-exitoso`,
                 failure_url: `${BASE_URL}/sitio/pago-fallido`,
                 expires_at: expiresAt
             },
@@ -56,8 +61,14 @@ router.post('/checkout', async (req, res) => {
             }
         };
 
+        console.log('[CONEKTA] Creating order with expires_at:', expiresAt);
+
         const response = await axios.post(`${CONEKTA_API}/orders`, orderPayload, {
-            headers: CONEKTA_HEADERS
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/vnd.conekta-v2.1.0+json',
+                'Authorization': `Bearer ${CONEKTA_PRIVATE_KEY}`
+            }
         });
 
         const order = response.data;

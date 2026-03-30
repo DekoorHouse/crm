@@ -120,22 +120,6 @@
             </div>
         </div>
     </div>
-    <script src="/env-config.js"></script>
-    <script>
-        const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('session_id');
-        if (sessionId) {
-            const API = window.API_BASE_URL || '';
-            fetch(API + '/api/conekta/order/' + sessionId)
-                .then(r => r.json())
-                .then(data => {
-                    if (data.orderNumber) {
-                        document.getElementById('orderNumber').textContent = data.orderNumber;
-                        document.getElementById('orderInfo').style.display = '';
-                    }
-                })
-                .catch(() => {});
-        }
-    </script>
+    <script></script>
 </body>
 </html>
