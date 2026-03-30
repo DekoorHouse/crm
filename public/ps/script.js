@@ -936,6 +936,7 @@ saveProjectBtn.addEventListener('click', async () => {
         }
         indicator.innerHTML = '<i class="fas fa-check"></i> Guardado';
         setTimeout(hideSaving, 1500);
+        loadProjectsList();
     } catch (err) {
         hideSaving();
         alert('Error al guardar: ' + err.message);
