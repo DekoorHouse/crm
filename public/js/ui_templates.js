@@ -1284,7 +1284,7 @@ const NewOrderModalTemplate = () => `
                          </div>
                          <div class="form-item">
                               <label for="pedidoPrecio">Precio (MXN):</label>
-                              <input type="number" id="pedidoPrecio" step="0.01" placeholder="Ej: 275.00" value="275">
+                              <input type="number" id="pedidoPrecio" step="0.01" placeholder="Ej: 650.00" value="650">
                           </div>
 
                           <div class="form-item form-item-full">

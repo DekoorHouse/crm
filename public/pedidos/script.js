@@ -505,7 +505,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else { // NEW ORDER MODE
             modalTitle.innerHTML = '<i class="fas fa-pencil-alt"></i> Registrar Nuevo Pedido';
             btnGuardarPedido.innerHTML = '<i class="fas fa-save"></i> Guardar Pedido';
-            pedidoPrecioInput.value = '275';
+            pedidoPrecioInput.value = '650';
             pedidoProductoSelect.value = 'Spiderman';
         }
 
