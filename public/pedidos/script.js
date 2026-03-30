@@ -1421,6 +1421,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 Object.keys(pedidoData).forEach(key => pedidoData[key] === undefined && delete pedidoData[key]);
                 await updateDoc(docRef, pedidoData);
                 cerrarModalPedido();
+                fetchInitialOrders(pedidosPagination.currentFilters);
             } else {
                 btnGuardarPedido.innerHTML = '<i class="fas fa-database"></i> Guardando...';
                 const newOrderNumber = await runTransaction(db, async (transaction) => {
@@ -1443,6 +1444,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 await addDoc(pedidosCollectionRef, nuevoPedido);
                 cerrarModalPedido();
                 mostrarModalConfirmacionRegistro(newOrderNumber);
+                fetchInitialOrders(pedidosPagination.currentFilters);
+                actualizarContadorHoy();
             }
             populateProductFilter();
         } catch (error) {
