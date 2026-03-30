@@ -794,7 +794,8 @@ body {
 
 .tc-track-wrapper {
     flex: 1;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
 }
 
 .tc-track {
@@ -811,7 +812,6 @@ body {
     padding: 1.5rem;
     flex-shrink: 0;
     box-shadow: 0 2px 12px rgba(27, 77, 92, 0.06);
-    overflow: hidden;
 }
 
 .tc-card,
