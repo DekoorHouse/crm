@@ -129,54 +129,56 @@
             </div>
         </div>
 
-        <!-- Canvas Area -->
-        <div id="canvas-container" class="canvas-container">
-            <div id="canvas-placeholder" class="canvas-placeholder">
-                <i class="fas fa-image"></i>
-                <p>Sube una foto o pega con Ctrl+V</p>
-            </div>
-            <canvas id="canvas" style="display:none;"></canvas>
-            <div id="zoom-indicator" class="zoom-indicator">100%</div>
-            <!-- Text overlay for positioning -->
-            <div id="text-overlay" style="display:none;"></div>
-        </div>
-
-        <!-- Text Input Panel (floating) -->
-        <div id="text-input-panel" class="text-input-panel" style="display:none;">
-            <input type="text" id="text-content" placeholder="Escribe el nombre..." class="text-input-field">
-        </div>
-
-        <!-- Batch mode -->
-        <div class="batch-section">
-            <div class="batch-toggle-row">
-                <label class="toggle-switch">
-                    <input type="checkbox" id="batch-toggle">
-                    <span class="toggle-slider"></span>
-                </label>
-                <span class="batch-toggle-label">Modo Lote</span>
-            </div>
-            <div id="batch-panel" style="display:none;">
-                <textarea id="batch-names" class="batch-textarea" rows="4" placeholder="Un nombre por linea..."></textarea>
-                <button id="batch-export" class="btn btn-primary" style="margin-top:8px;"><i class="fas fa-download"></i> Exportar lote</button>
-                <div id="batch-progress" class="batch-progress" style="display:none;">
-                    <span id="batch-progress-text">0/0</span>
-                    <div class="batch-progress-bar"><div id="batch-progress-fill" class="batch-progress-fill"></div></div>
+        <!-- Workspace: sidebar + main content -->
+        <div id="workspace">
+            <!-- Projects Sidebar -->
+            <div id="projects-sidebar" class="projects-sidebar collapsed">
+                <div class="sidebar-header">
+                    <h2 class="sidebar-title"><i class="fas fa-folder-open"></i> Proyectos</h2>
+                    <button id="close-sidebar-btn" class="btn btn-icon btn-sm" title="Cerrar panel"><i class="fas fa-chevron-left"></i></button>
+                </div>
+                <div id="projects-list" class="projects-sidebar-grid"></div>
+                <div id="projects-empty" class="projects-empty" style="display:none;">
+                    <i class="fas fa-inbox"></i>
+                    <p>No hay proyectos guardados</p>
                 </div>
             </div>
-        </div>
-    </div>
+            <div id="sidebar-scrim" class="sidebar-scrim"></div>
+            <button id="sidebar-open-btn" class="sidebar-open-btn visible" title="Mis proyectos"><i class="fas fa-folder-open"></i></button>
 
-    <!-- ========== PROJECTS MODAL ========== -->
-    <div id="projects-modal" class="modal-overlay" style="display:none;">
-        <div class="modal-box">
-            <div class="modal-header">
-                <h2 class="modal-title"><i class="fas fa-folder-open"></i> Mis Proyectos</h2>
-                <button id="close-projects-modal" class="btn btn-icon"><i class="fas fa-times"></i></button>
-            </div>
-            <div id="projects-list" class="projects-grid"></div>
-            <div id="projects-empty" class="projects-empty" style="display:none;">
-                <i class="fas fa-inbox"></i>
-                <p>No hay proyectos guardados</p>
+            <!-- Main Content -->
+            <div id="main-content">
+                <div id="canvas-container" class="canvas-container">
+                    <div id="canvas-placeholder" class="canvas-placeholder">
+                        <i class="fas fa-image"></i>
+                        <p>Sube una foto o pega con Ctrl+V</p>
+                    </div>
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    <div id="zoom-indicator" class="zoom-indicator">100%</div>
+                    <div id="text-overlay" style="display:none;"></div>
+                </div>
+
+                <div id="text-input-panel" class="text-input-panel" style="display:none;">
+                    <input type="text" id="text-content" placeholder="Escribe el nombre..." class="text-input-field">
+                </div>
+
+                <div class="batch-section">
+                    <div class="batch-toggle-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="batch-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="batch-toggle-label">Modo Lote</span>
+                    </div>
+                    <div id="batch-panel" style="display:none;">
+                        <textarea id="batch-names" class="batch-textarea" rows="4" placeholder="Un nombre por linea..."></textarea>
+                        <button id="batch-export" class="btn btn-primary" style="margin-top:8px;"><i class="fas fa-download"></i> Exportar lote</button>
+                        <div id="batch-progress" class="batch-progress" style="display:none;">
+                            <span id="batch-progress-text">0/0</span>
+                            <div class="batch-progress-bar"><div id="batch-progress-fill" class="batch-progress-fill"></div></div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

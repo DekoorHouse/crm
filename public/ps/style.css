@@ -60,7 +60,7 @@ body {
 .login-error { color: var(--danger); margin-top: 12px; min-height: 1.2em; font-size: 13px; }
 
 /* ========== LAYOUT ========== */
-.app-container { max-width: 1200px; margin: 0 auto; padding: 16px 20px; }
+.app-container { margin: 0 auto; padding: 16px 20px; }
 
 /* ========== TOP BAR ========== */
 .top-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 10px; }
@@ -184,27 +184,49 @@ body {
 .batch-progress-bar { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 4px; }
 .batch-progress-fill { height: 100%; background: var(--primary); border-radius: 3px; width: 0%; transition: width 0.3s; }
 
-/* ========== PROJECTS MODAL ========== */
-.modal-overlay {
-    position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 1000;
-    display: flex; align-items: center; justify-content: center;
-    backdrop-filter: blur(4px);
+/* ========== WORKSPACE ========== */
+#workspace {
+    display: flex; flex-direction: row; position: relative; flex: 1; overflow: hidden;
 }
-.modal-box {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--r);
-    box-shadow: var(--shadow-lg); width: 90%; max-width: 720px; max-height: 80vh;
-    display: flex; flex-direction: column; overflow: hidden;
+#main-content {
+    flex: 1; min-width: 0; display: flex; flex-direction: column;
 }
-.modal-header {
+
+/* ========== PROJECTS SIDEBAR ========== */
+.projects-sidebar {
+    width: 260px; flex-shrink: 0; background: var(--surface);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.06);
+    transition: width 0.25s ease, opacity 0.25s ease;
+    overflow: hidden;
+}
+.projects-sidebar.collapsed {
+    width: 0; opacity: 0; pointer-events: none;
+}
+.sidebar-header {
     display: flex; align-items: center; justify-content: space-between;
-    padding: 16px 20px; border-bottom: 1px solid var(--border);
+    padding: 12px 14px; border-bottom: 1px solid var(--border); flex-shrink: 0;
 }
-.modal-title { font-size: 16px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
-.modal-title i { color: var(--primary); }
-.projects-grid {
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 14px; padding: 20px; overflow-y: auto;
+.sidebar-title {
+    font-size: 14px; font-weight: 700; display: flex; align-items: center;
+    gap: 8px; white-space: nowrap;
 }
+.sidebar-title i { color: var(--primary); }
+.btn-sm { width: 28px; height: 28px; padding: 0; font-size: 11px; }
+.projects-sidebar-grid {
+    display: flex; flex-direction: column; gap: 10px;
+    padding: 12px; overflow-y: auto; flex: 1;
+}
+.sidebar-open-btn {
+    position: absolute; left: 8px; top: 8px; z-index: 10;
+    width: 36px; height: 36px; border: 1px solid var(--border);
+    background: var(--surface); border-radius: var(--r-sm); cursor: pointer;
+    display: none; align-items: center; justify-content: center;
+    color: var(--text-2); box-shadow: var(--shadow); transition: all 0.2s;
+}
+.sidebar-open-btn:hover { background: var(--surface-hover); color: var(--primary); }
+.sidebar-open-btn.visible { display: flex; }
+.sidebar-scrim { display: none; }
 .project-card {
     background: var(--bg); border: 1px solid var(--border); border-radius: var(--r-sm);
     overflow: hidden; cursor: pointer; transition: border-color 0.2s, box-shadow 0.2s;
@@ -246,4 +268,19 @@ body {
     .toolbar { gap: 6px; padding: 8px 10px; }
     .toolbar-range { width: 60px; }
     .canvas-container { min-height: 300px; }
+    .projects-sidebar {
+        position: fixed; top: 0; left: 0; width: 280px; height: 100vh;
+        z-index: 210; transform: translateX(0); border-radius: 0;
+        transition: transform 0.25s cubic-bezier(.4,0,.2,1);
+        opacity: 1; pointer-events: auto;
+    }
+    .projects-sidebar.collapsed {
+        transform: translateX(-100%); width: 280px; opacity: 1; pointer-events: none;
+    }
+    .sidebar-scrim {
+        position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+        z-index: 205; display: none;
+    }
+    .sidebar-scrim.visible { display: block; }
+    .sidebar-open-btn { display: none !important; }
 }

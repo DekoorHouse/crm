@@ -93,6 +93,10 @@ firebaseAuth.onAuthStateChanged(user => {
     if (user) {
         loginView.style.display = 'none';
         app.style.display = 'block';
+        // Restore sidebar state
+        if (localStorage.getItem('ps-sidebar-open') === 'true' && window.innerWidth > 768) {
+            openSidebar();
+        }
     } else {
         loginView.style.display = 'flex';
         app.style.display = 'none';
@@ -792,10 +796,12 @@ let currentProjectId = null;
 // ===================== SAVE / LOAD PROJECT (FIREBASE) =====================
 const saveProjectBtn = document.getElementById('save-project-btn');
 const openProjectsBtn = document.getElementById('open-projects-btn');
-const projectsModal = document.getElementById('projects-modal');
+const projectsSidebar = document.getElementById('projects-sidebar');
 const projectsList = document.getElementById('projects-list');
 const projectsEmpty = document.getElementById('projects-empty');
-const closeProjectsModal = document.getElementById('close-projects-modal');
+const closeSidebarBtn = document.getElementById('close-sidebar-btn');
+const sidebarOpenBtn = document.getElementById('sidebar-open-btn');
+const sidebarScrim = document.getElementById('sidebar-scrim');
 
 function showSaving(msg) {
     let el = document.getElementById('saving-indicator');
@@ -900,16 +906,29 @@ saveProjectBtn.addEventListener('click', async () => {
     }
 });
 
-// ===================== PROJECTS MODAL =====================
-openProjectsBtn.addEventListener('click', () => {
-    projectsModal.style.display = 'flex';
+// ===================== PROJECTS SIDEBAR =====================
+function openSidebar() {
+    projectsSidebar.classList.remove('collapsed');
+    sidebarOpenBtn.classList.remove('visible');
+    if (window.innerWidth <= 768) sidebarScrim.classList.add('visible');
+    localStorage.setItem('ps-sidebar-open', 'true');
     loadProjectsList();
+}
+function closeSidebar() {
+    projectsSidebar.classList.add('collapsed');
+    sidebarOpenBtn.classList.add('visible');
+    sidebarScrim.classList.remove('visible');
+    localStorage.setItem('ps-sidebar-open', 'false');
+}
+openProjectsBtn.addEventListener('click', () => {
+    if (!projectsSidebar.classList.contains('collapsed')) closeSidebar();
+    else openSidebar();
 });
-closeProjectsModal.addEventListener('click', () => {
-    projectsModal.style.display = 'none';
-});
-projectsModal.addEventListener('click', (e) => {
-    if (e.target === projectsModal) projectsModal.style.display = 'none';
+closeSidebarBtn.addEventListener('click', closeSidebar);
+sidebarOpenBtn.addEventListener('click', openSidebar);
+sidebarScrim.addEventListener('click', closeSidebar);
+window.addEventListener('resize', () => {
+    if (window.innerWidth > 768) sidebarScrim.classList.remove('visible');
 });
 
 async function loadProjectsList() {
@@ -951,7 +970,7 @@ async function loadProjectsList() {
 }
 
 async function openProject(id, p) {
-    projectsModal.style.display = 'none';
+    if (window.innerWidth <= 768) closeSidebar();
     const indicator = showSaving('Cargando proyecto...');
     try {
         const base = new Image();
