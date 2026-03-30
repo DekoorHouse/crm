@@ -182,6 +182,154 @@
         @media (max-width: 768px) {
             .products-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         }
+        .product-card-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .product-card-btn.secondary {
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+        .product-card-btn.secondary:hover {
+            background: var(--primary-light);
+        }
+
+        /* Checkout Modal */
+        .checkout-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .checkout-overlay.active { display: flex; }
+        .checkout-modal {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            max-width: 440px;
+            width: 100%;
+            padding: 2rem;
+            position: relative;
+            box-shadow: var(--shadow-lg);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .checkout-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-medium);
+            line-height: 1;
+        }
+        .checkout-modal h2 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.25rem;
+        }
+        .checkout-modal .checkout-subtitle {
+            color: var(--text-medium);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+        }
+        .checkout-product {
+            display: flex;
+            gap: 12px;
+            background: var(--cream);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 1.25rem;
+        }
+        .checkout-product img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .checkout-product-info {
+            flex: 1;
+        }
+        .checkout-product-info .name {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .checkout-product-info .price {
+            font-weight: 800;
+            color: var(--primary);
+            font-size: 1.1rem;
+        }
+        .checkout-field {
+            margin-bottom: 1rem;
+        }
+        .checkout-field label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            margin-bottom: 4px;
+        }
+        .checkout-field input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+        .checkout-field input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .checkout-submit {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 1rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .checkout-submit:hover { background: var(--primary-hover); }
+        .checkout-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .checkout-methods {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .checkout-methods span {
+            font-size: 0.75rem;
+            color: var(--text-medium);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
         @media (max-width: 480px) {
             .products-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
             .product-card-footer { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
@@ -246,13 +394,47 @@
     </div>
 </main>
 
+<!-- Checkout Modal -->
+<div class="checkout-overlay" id="checkoutOverlay">
+    <div class="checkout-modal">
+        <button class="checkout-close" id="checkoutClose">&times;</button>
+        <h2>Completa tu pedido</h2>
+        <p class="checkout-subtitle">Llena tus datos y paga de forma segura</p>
+        <div class="checkout-product" id="checkoutProduct"></div>
+        <form id="checkoutForm">
+            <div class="checkout-field">
+                <label for="ckName">Nombre completo *</label>
+                <input type="text" id="ckName" required placeholder="Tu nombre">
+            </div>
+            <div class="checkout-field">
+                <label for="ckPhone">WhatsApp (10 digitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+            </div>
+            <div class="checkout-field">
+                <label for="ckEmail">Email (opcional)</label>
+                <input type="email" id="ckEmail" placeholder="tu@email.com">
+            </div>
+            <button type="submit" class="checkout-submit" id="checkoutBtn">
+                <i class="fas fa-lock"></i> Pagar $650 MXN
+            </button>
+        </form>
+        <div class="checkout-methods">
+            <span><i class="far fa-credit-card"></i> Tarjeta</span>
+            <span><i class="fas fa-store"></i> OXXO</span>
+            <span><i class="fas fa-university"></i> SPEI</span>
+        </div>
+    </div>
+</div>
+
 <!-- WhatsApp FAB -->
 <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="WhatsApp">
     <i class="fab fa-whatsapp"></i>
 </a>
 
+<script src="/env-config.js"></script>
 <script>
 const WA = '5216181333519';
+const API = window.API_BASE_URL || '';
 
 const COLLECTIONS = {
     ninos: {
@@ -355,15 +537,75 @@ function loadProducts() {
                         </div>
                         <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
                     </div>
-                    <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn" style="width:100%;justify-content:center;">
-                        <i class="fab fa-whatsapp"></i> Lo quiero
-                    </a>
+                    <div class="product-card-buttons">
+                        <button onclick="openCheckout('${url}', '${col.productName}')" class="product-card-btn" style="width:100%;justify-content:center;">
+                            <i class="fas fa-credit-card"></i> Pagar en línea
+                        </button>
+                        <a href="https://wa.me/${WA}?text=${waMsg}" target="_blank" rel="noopener" class="product-card-btn secondary" style="width:100%;justify-content:center;">
+                            <i class="fab fa-whatsapp"></i> Preguntar
+                        </a>
+                    </div>
                 </div>
             </div>`;
     }).join('');
 }
 
 loadProducts();
+
+// Checkout modal
+let currentProductImg = '';
+let currentProductName = '';
+
+function openCheckout(imgUrl, productName) {
+    currentProductImg = imgUrl;
+    currentProductName = productName;
+    document.getElementById('checkoutProduct').innerHTML = `
+        <img src="${imgUrl}" alt="${productName}">
+        <div class="checkout-product-info">
+            <div class="name">${productName} - ${col.title}</div>
+            <div class="price">$650 <small style="font-weight:400;color:var(--text-medium)">MXN</small></div>
+        </div>`;
+    document.getElementById('checkoutOverlay').classList.add('active');
+}
+
+document.getElementById('checkoutClose').addEventListener('click', () => {
+    document.getElementById('checkoutOverlay').classList.remove('active');
+});
+document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+});
+
+document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('checkoutBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
+
+    try {
+        const res = await fetch(API + '/api/conekta/checkout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                customerName: document.getElementById('ckName').value.trim(),
+                customerPhone: document.getElementById('ckPhone').value.trim(),
+                customerEmail: document.getElementById('ckEmail').value.trim(),
+                productName: currentProductName,
+                collection: col.title,
+                imageUrl: currentProductImg
+            })
+        });
+        const data = await res.json();
+        if (data.checkoutUrl) {
+            window.location.href = data.checkoutUrl;
+        } else {
+            throw new Error(data.error || 'Error al crear el pago');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message + '\nPuedes intentar de nuevo o contactarnos por WhatsApp.');
+        btn.disabled = false;
+        btn.innerHTML = '<i class="fas fa-lock"></i> Pagar $650 MXN';
+    }
+});
 
 // Mobile menu
 var hamburgerBtn = document.getElementById('hamburgerBtn');

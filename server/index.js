@@ -7,6 +7,7 @@ const fbGroupRouter = require('./autopost/fbGroupRoutes');
 const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
+const conektaRouter = require('./conekta/conektaRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const path = require('path');
@@ -37,6 +38,7 @@ app.use('/api/fb-group', fbGroupRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
+app.use('/api/conekta', conektaRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -101,6 +103,14 @@ app.get('/mockups', (req, res) => {
 
 app.get('/ps', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'ps', 'index.html'));
+});
+
+app.get('/sitio/pago-exitoso', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-exitoso', 'index.html'));
+});
+
+app.get('/sitio/pago-fallido', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-fallido', 'index.html'));
 });
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook

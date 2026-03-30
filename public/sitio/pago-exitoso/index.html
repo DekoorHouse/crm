@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pago Exitoso | Dekoor</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .result-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            background: var(--cream);
+        }
+        .result-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 3rem 2rem;
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+            box-shadow: var(--shadow-lg);
+        }
+        .result-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            font-size: 2rem;
+        }
+        .result-icon.success {
+            background: #d1fae5;
+            color: #059669;
+        }
+        .result-card h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.5rem;
+        }
+        .result-card p {
+            color: var(--text-medium);
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 1.5rem;
+        }
+        .result-order {
+            background: var(--cream);
+            border-radius: var(--radius);
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            font-size: 0.95rem;
+        }
+        .result-order strong {
+            color: var(--teal);
+            font-size: 1.2rem;
+        }
+        .result-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+        .result-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 24px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: var(--transition);
+            font-family: inherit;
+            border: none;
+            cursor: pointer;
+        }
+        .result-btn.primary {
+            background: #25d366;
+            color: white;
+        }
+        .result-btn.primary:hover { background: #1ebe57; }
+        .result-btn.secondary {
+            background: var(--cream);
+            color: var(--teal);
+            border: 2px solid var(--border);
+        }
+        .result-btn.secondary:hover { border-color: var(--teal); }
+    </style>
+</head>
+<body>
+    <div class="result-page">
+        <div class="result-card">
+            <div class="result-icon success">
+                <i class="fas fa-check"></i>
+            </div>
+            <h1>Pago Recibido</h1>
+            <p>Tu pago se ha procesado correctamente. En breve nos pondremos en contacto contigo por WhatsApp para coordinar los detalles de tu lampara personalizada.</p>
+            <div class="result-order" id="orderInfo" style="display:none;">
+                <div>Tu numero de pedido:</div>
+                <strong id="orderNumber"></strong>
+            </div>
+            <div class="result-actions">
+                <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20acabo%20de%20hacer%20mi%20pago%20en%20linea" target="_blank" rel="noopener" class="result-btn primary">
+                    <i class="fab fa-whatsapp"></i> Enviar foto para mi lampara
+                </a>
+                <a href="/sitio/" class="result-btn secondary">
+                    <i class="fas fa-home"></i> Volver al inicio
+                </a>
+            </div>
+        </div>
+    </div>
+    <script src="/env-config.js"></script>
+    <script>
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session_id');
+        if (sessionId) {
+            const API = window.API_BASE_URL || '';
+            fetch(API + '/api/conekta/order/' + sessionId)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.orderNumber) {
+                        document.getElementById('orderNumber').textContent = data.orderNumber;
+                        document.getElementById('orderInfo').style.display = '';
+                    }
+                })
+                .catch(() => {});
+        }
+    </script>
+</body>
+</html>
