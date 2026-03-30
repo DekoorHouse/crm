@@ -133,6 +133,53 @@
             display: block;
         }
 
+        /* Rotate buttons */
+        .photo-wrapper {
+            position: relative;
+        }
+        .ref-photos-grid .photo-wrapper {
+            aspect-ratio: 1;
+            overflow: hidden;
+            border-radius: 4px;
+        }
+        .ref-photos-grid .photo-wrapper .ref-grid-photo {
+            border-radius: 0;
+        }
+        .ref-photos-3 .photo-wrapper:first-child {
+            grid-row: span 2;
+        }
+        .photo-wrapper:hover .rotate-btn {
+            opacity: 1;
+        }
+        .rotate-btn {
+            position: absolute;
+            bottom: 8px;
+            right: 8px;
+            background: rgba(0,0,0,0.7);
+            color: white;
+            border: none;
+            border-radius: 50%;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            font-size: 0.85rem;
+            opacity: 0;
+            transition: opacity 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 2;
+        }
+        .rotate-btn:hover {
+            background: rgba(255,142,65,0.9);
+        }
+        .rotate-btn.rotating {
+            opacity: 1;
+            pointer-events: none;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
         @media (max-width: 640px) {
             .ref-card-actions {
                 flex-direction: column;
@@ -269,11 +316,17 @@ function renderRefs() {
         var photoHtml = '';
         var refFotos = ref.fotos || (ref.foto ? [ref.foto] : []);
         if (refFotos.length === 1) {
-            photoHtml = '<img src="' + refFotos[0] + '" class="ref-card-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">';
+            photoHtml = '<div class="photo-wrapper">' +
+                '<img src="' + refFotos[0] + '" class="ref-card-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[0] + '\')" loading="lazy">' +
+                '<button class="rotate-btn" onclick="event.stopPropagation(); rotatePhoto(\'' + ref.id + '\', 0, this)" title="Rotar"><i class="fas fa-redo"></i></button>' +
+                '</div>';
         } else if (refFotos.length > 1) {
             photoHtml = '<div class="ref-photos-grid ref-photos-' + Math.min(refFotos.length, 5) + '">';
             for (var f = 0; f < refFotos.length; f++) {
-                photoHtml += '<img src="' + refFotos[f] + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">';
+                photoHtml += '<div class="photo-wrapper">' +
+                    '<img src="' + refFotos[f] + '" class="ref-grid-photo" alt="Foto" onclick="openLightbox(\'' + refFotos[f] + '\')" loading="lazy">' +
+                    '<button class="rotate-btn" onclick="event.stopPropagation(); rotatePhoto(\'' + ref.id + '\', ' + f + ', this)" title="Rotar"><i class="fas fa-redo"></i></button>' +
+                    '</div>';
             }
             photoHtml += '</div>';
         }
@@ -343,6 +396,25 @@ function openLightbox(url) {
 function closeLightbox() {
     document.getElementById('lightbox').classList.add('hidden');
     document.getElementById('lightboxImg').src = '';
+}
+
+// --- Rotar foto ---
+async function rotatePhoto(refId, photoIndex, btn) {
+    btn.classList.add('rotating');
+    try {
+        var resp = await fetch('/api/referencias/rotate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ refId: refId, photoIndex: photoIndex, direction: 'cw' })
+        });
+        var data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || 'Error al rotar');
+        // onSnapshot se encarga de re-renderizar
+    } catch (err) {
+        alert('Error al rotar: ' + err.message);
+    } finally {
+        btn.classList.remove('rotating');
+    }
 }
 
 // --- Utilidades ---

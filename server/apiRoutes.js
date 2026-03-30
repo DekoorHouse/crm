@@ -70,6 +70,50 @@ router.post('/referencias/upload', uploadRef.single('foto'), async (req, res) =>
     }
 });
 
+// --- Rotar foto de referencia ---
+router.post('/referencias/rotate', async (req, res) => {
+    try {
+        const { refId, photoIndex, direction } = req.body;
+        if (!refId || photoIndex === undefined) return res.status(400).json({ error: 'Faltan parámetros' });
+
+        const docRef = db.collection('referencias').doc(refId);
+        const doc = await docRef.get();
+        if (!doc.exists) return res.status(404).json({ error: 'Referencia no encontrada' });
+
+        const data = doc.data();
+        const fotos = data.fotos || (data.foto ? [data.foto] : []);
+        if (photoIndex < 0 || photoIndex >= fotos.length) return res.status(400).json({ error: 'Índice inválido' });
+
+        const oldUrl = fotos[photoIndex];
+        // Descargar imagen
+        const response = await axios.get(oldUrl, { responseType: 'arraybuffer' });
+        const angle = direction === 'ccw' ? -90 : 90;
+        const rotatedBuffer = await sharp(Buffer.from(response.data))
+            .rotate(angle)
+            .webp({ quality: 80 })
+            .toBuffer();
+
+        // Subir con nuevo nombre
+        const fileName = 'referencias/' + Date.now() + '_' + Math.random().toString(36).slice(2) + '.webp';
+        const file = bucket.file(fileName);
+        await file.save(rotatedBuffer, { metadata: { contentType: 'image/webp' }, public: true });
+        const newUrl = 'https://storage.googleapis.com/' + bucket.name + '/' + fileName;
+
+        // Actualizar Firestore
+        fotos[photoIndex] = newUrl;
+        if (data.fotos) {
+            await docRef.update({ fotos });
+        } else {
+            await docRef.update({ foto: newUrl });
+        }
+
+        res.json({ url: newUrl });
+    } catch (error) {
+        console.error('Error rotando foto:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Subir foto de perfil (checador) ---
 router.post('/checador/avatar', uploadRef.single('foto'), async (req, res) => {
     try {
