@@ -49,7 +49,7 @@ router.post('/checkout', async (req, res) => {
             }],
             checkout: {
                 type: 'Integration',
-                allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank'],
+                allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank', 'bnpl'],
                 expires_at: expiresAt
             },
             metadata: {
