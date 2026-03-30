@@ -7,7 +7,7 @@ const CONEKTA_PRIVATE_KEY = process.env.CONEKTA_PRIVATE_KEY;
 const CONEKTA_API = 'https://api.conekta.io';
 const CONEKTA_HEADERS = {
     'Content-Type': 'application/json',
-    'Accept': 'application/vnd.conekta-v2.1.0+json',
+    'Accept': 'application/vnd.conekta-v2.2.0+json',
     'Authorization': `Bearer ${CONEKTA_PRIVATE_KEY}`
 };
 
@@ -70,7 +70,7 @@ router.post('/checkout', async (req, res) => {
             },
             checkout: {
                 type: 'Integration',
-                allowed_payment_methods: ['card', 'cash'],
+                allowed_payment_methods: ['cash', 'card', 'bank_transfer', 'bnpl', 'pay_by_bank'],
                 expires_at: expiresAt
             },
             metadata: {
@@ -86,7 +86,7 @@ router.post('/checkout', async (req, res) => {
         const response = await axios.post(`${CONEKTA_API}/orders`, orderPayload, {
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/vnd.conekta-v2.1.0+json',
+                'Accept': 'application/vnd.conekta-v2.2.0+json',
                 'Authorization': `Bearer ${CONEKTA_PRIVATE_KEY}`
             }
         });
