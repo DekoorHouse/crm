@@ -1,0 +1,27 @@
+User-agent: *
+Allow: /sitio/
+Allow: /sitio/coleccion/
+Allow: /referencias/
+Allow: /jt-rastreo/
+Allow: /privacidad/
+Disallow: /admon/
+Disallow: /pedidos/
+Disallow: /clientes/
+Disallow: /checador/
+Disallow: /datos/
+Disallow: /editor/
+Disallow: /envios/
+Disallow: /formulario/
+Disallow: /laser/
+Disallow: /meta/
+Disallow: /meta-config/
+Disallow: /mockups/
+Disallow: /ads/
+Disallow: /autopost/
+Disallow: /ps/
+Disallow: /wa-group/
+Disallow: /sitio/pago-exitoso/
+Disallow: /sitio/pago-fallido/
+Disallow: /referencias/moderacion.html
+
+Sitemap: https://app.dekoormx.com/sitemap.xml
