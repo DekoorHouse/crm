@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, updateDoc, where, getDocs, runTransaction, getDoc, deleteDoc, Timestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, updateDoc, where, getDocs, runTransaction, getDoc, deleteDoc, Timestamp, limit as firestoreLimit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -148,6 +148,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let filteredCounterClicks = 0;
     let lastFilteredCounterClickTime = 0;
 
+    // Data map for event delegation (orderId -> pedido data)
+    let pedidosDataMap = new Map();
+
+    // Pagination state
+    let pedidosPagination = {
+        lastVisibleId: null,
+        hasMore: true,
+        isLoadingMore: false,
+        currentFilters: { producto: '', dateFilter: '', estatus: '', customStart: null, customEnd: null }
+    };
+    let allLoadedPedidos = []; // All currently loaded order data
+
     // State for multiple order photos
     let orderPhotosManager = [];
     let initialOrderPhotoUrls = []; 
@@ -190,9 +202,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     
     function formatFirebaseTimestamp(timestamp) {
-         if (!timestamp || typeof timestamp.toDate !== 'function') return 'Fecha inválida';
+         if (!timestamp) return 'Fecha inválida';
          try {
-             return timestamp.toDate().toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+             let date;
+             if (typeof timestamp.toDate === 'function') {
+                 date = timestamp.toDate();
+             } else if (timestamp._seconds != null) {
+                 date = new Date(timestamp._seconds * 1000);
+             } else {
+                 return 'Fecha inválida';
+             }
+             return date.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
          } catch (e) { return 'Fecha inválida'; }
     }
     function formatCurrency(value) {
@@ -201,31 +221,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return number.toLocaleString('es-MX', { style: 'currency', currency: 'MXN', minimumFractionDigits: 2 });
     }
 
-    function preloadImage(src) {
-        const img = new Image();
-        img.src = src;
-    }
-
-    function preloadAllImagesInBackground(pedidos) {
-        let imagesToPreloadCount = 0;
-        pedidos.forEach(pedido => {
-            if (pedido.fotoUrls && pedido.fotoUrls.length > 1) {
-                for (let i = 1; i < pedido.fotoUrls.length; i++) {
-                    preloadImage(pedido.fotoUrls[i]);
-                    imagesToPreloadCount++;
-                }
-            }
-            if (pedido.fotoPromocionUrls && pedido.fotoPromocionUrls.length > 1) {
-                for (let i = 1; i < pedido.fotoPromocionUrls.length; i++) {
-                    preloadImage(pedido.fotoPromocionUrls[i]);
-                    imagesToPreloadCount++;
-                }
-            }
-        });
-        if (imagesToPreloadCount > 0) {
-            console.log(`Pre-cargando ${imagesToPreloadCount} imágenes adicionales en segundo plano...`);
-        }
-    }
 
     function arePhotoArraysIdentical(arr1, arr2) {
         if (arr1.length !== arr2.length) return false;
@@ -702,329 +697,390 @@ document.addEventListener('DOMContentLoaded', () => {
         return { startDate, endDate };
     }
     
-    function cargarPedidos(productoFilter = '', dateFilter = '', statusFilter = '', customStartDate = null, customEndDate = null) {
+    // --- Row rendering helper ---
+    function detectPhoneDuplicates(orders) {
+        const ordersToHighlight = new Set();
+        const phoneGroups = new Map();
+        for (const order of orders) {
+            if (!order.telefono || !order.createdAt) continue;
+            let date;
+            if (typeof order.createdAt.toDate === 'function') {
+                date = order.createdAt.toDate();
+            } else if (order.createdAt._seconds != null) {
+                date = new Date(order.createdAt._seconds * 1000);
+            } else continue;
+            if (!phoneGroups.has(order.telefono)) phoneGroups.set(order.telefono, []);
+            phoneGroups.get(order.telefono).push({ id: order.id, date });
+        }
+        for (const [, entries] of phoneGroups) {
+            if (entries.length < 2) continue;
+            entries.sort((a, b) => a.date - b.date);
+            for (let i = 0; i < entries.length - 1; i++) {
+                for (let j = i + 1; j < entries.length; j++) {
+                    const diffHours = (entries[j].date - entries[i].date) / 36e5;
+                    if (diffHours >= 24) break;
+                    ordersToHighlight.add(entries[i].id);
+                    ordersToHighlight.add(entries[j].id);
+                }
+            }
+        }
+        return ordersToHighlight;
+    }
+
+    function createPedidoRow(pedido, ordersToHighlight) {
+        pedidosDataMap.set(pedido.id, pedido);
+        const tr = document.createElement('tr');
+        tr.dataset.id = pedido.id;
+
+        const consecutiveOrderNumber = pedido.consecutiveOrderNumber || 'N/A';
+        const fechaFormateada = formatFirebaseTimestamp(pedido.createdAt);
+        const precioFormateado = formatCurrency(pedido.precio);
+        const vendedor = pedido.vendedor || '<em>N/A</em>';
+        const telefonoOriginal = pedido.telefono || '-';
+        const estatus = pedido.estatus || 'Sin estatus';
+        const comentarios = pedido.comentarios || '-';
+        const productoNombre = pedido.producto || '<em>N/A</em>';
+        const datosProductoTexto = pedido.datosProducto || '-';
+        const datosPromocionTexto = pedido.datosPromocion || '-';
+
+        const orderPhotoUrls = pedido.fotoUrls || (pedido.fotoUrl ? [pedido.fotoUrl] : []);
+        const promoPhotoUrls = pedido.fotoPromocionUrls || (pedido.fotoPromocionUrl ? [pedido.fotoPromocionUrl] : []);
+
+        const createTd = (content, isHtml = false) => {
+            const td = document.createElement('td');
+            if (isHtml) td.innerHTML = content; else td.textContent = content;
+            return td;
+        };
+
+        const createDatosCell = (photoUrls, texto, orderId, type) => {
+            const td = createTd('');
+            const container = document.createElement('div');
+            container.className = 'datos-container';
+
+            if (photoUrls.length > 0) {
+                const imgContainer = document.createElement('div');
+                imgContainer.className = 'img-container';
+
+                const placeholder = document.createElement('div');
+                placeholder.className = 'foto-placeholder-icon';
+                placeholder.innerHTML = '<i class="fas fa-camera"></i>';
+                placeholder.title = 'Ver foto(s)';
+
+                placeholder.dataset.action = 'view-photo';
+                placeholder.dataset.photoUrls = JSON.stringify(photoUrls);
+                placeholder.dataset.orderNumber = orderId;
+                imgContainer.appendChild(placeholder);
+
+                if (photoUrls.length > 1) {
+                    const badge = document.createElement('span');
+                    badge.className = 'photo-count-badge';
+                    badge.textContent = `+${photoUrls.length - 1}`;
+                    badge.title = `${photoUrls.length} fotos en total`;
+                    imgContainer.appendChild(badge);
+                }
+                container.appendChild(imgContainer);
+            } else {
+                const ph = document.createElement('span');
+                ph.className = 'foto-placeholder'; ph.textContent = '-';
+                container.appendChild(ph);
+            }
+
+            const textoSpan = document.createElement('span');
+            textoSpan.className = 'datos-text';
+            textoSpan.innerHTML = texto;
+            container.appendChild(textoSpan);
+            td.appendChild(container);
+            return td;
+        };
+
+        tr.appendChild(createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A'));
+        tr.appendChild(createTd(fechaFormateada));
+        tr.appendChild(createTd(vendedor, true));
+
+        const telefonoTd = document.createElement('td');
+        const phoneActionsContainer = document.createElement('div');
+        phoneActionsContainer.className = 'phone-actions-container';
+
+        if (telefonoOriginal !== '-') {
+            const checkboxContainer = document.createElement('label');
+            checkboxContainer.className = 'phone-checkbox-container';
+            checkboxContainer.title = 'Marcar como verificado';
+
+            const checkboxInput = document.createElement('input');
+            checkboxInput.type = 'checkbox';
+            checkboxInput.checked = pedido.telefonoVerificado === true;
+            checkboxInput.dataset.action = 'toggle-phone-verified';
+            checkboxInput.dataset.orderId = pedido.id;
+
+            const checkmarkSpan = document.createElement('span');
+            checkmarkSpan.className = 'checkmark';
+
+            checkboxContainer.appendChild(checkboxInput);
+            checkboxContainer.appendChild(checkmarkSpan);
+            phoneActionsContainer.appendChild(checkboxContainer);
+        }
+
+        const telefonoSpan = document.createElement('span');
+        telefonoSpan.textContent = telefonoOriginal;
+        if (ordersToHighlight.has(pedido.id)) {
+            telefonoSpan.style.color = 'red';
+            telefonoSpan.style.fontWeight = 'bold';
+            telefonoSpan.title = 'Este número fue registrado múltiples veces en menos de 24 horas.';
+        }
+        phoneActionsContainer.appendChild(telefonoSpan);
+
+        if (telefonoOriginal !== '-') {
+            const copyButton = document.createElement('button');
+            copyButton.className = 'copy-phone-button';
+            copyButton.title = 'Copiar teléfono';
+            copyButton.innerHTML = '<i class="fas fa-copy"></i>';
+            copyButton.dataset.action = 'copy-phone';
+            copyButton.dataset.phone = telefonoOriginal;
+            phoneActionsContainer.appendChild(copyButton);
+        }
+        telefonoTd.appendChild(phoneActionsContainer);
+        tr.appendChild(telefonoTd);
+
+        const estatusTdCell = createTd('');
+        const statusActionsContainer = document.createElement('div');
+        statusActionsContainer.className = 'status-actions-container';
+
+        const checkboxContainerEstatus = document.createElement('label');
+        checkboxContainerEstatus.className = 'status-checkbox-container';
+        checkboxContainerEstatus.title = 'Marcar como verificado';
+
+        const checkboxInputEstatus = document.createElement('input');
+        checkboxInputEstatus.type = 'checkbox';
+        checkboxInputEstatus.checked = pedido.estatusVerificado === true;
+        checkboxInputEstatus.dataset.action = 'toggle-status-verified';
+        checkboxInputEstatus.dataset.orderId = pedido.id;
+
+        const checkmarkSpanEstatus = document.createElement('span');
+        checkmarkSpanEstatus.className = 'checkmark';
+
+        checkboxContainerEstatus.appendChild(checkboxInputEstatus);
+        checkboxContainerEstatus.appendChild(checkmarkSpanEstatus);
+        statusActionsContainer.appendChild(checkboxContainerEstatus);
+
+        const estatusSpan = document.createElement('span');
+        estatusSpan.className = `status-display status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
+        estatusSpan.textContent = estatus;
+        estatusSpan.title = "Clic para cambiar estatus";
+        estatusSpan.dataset.action = 'change-status';
+        estatusSpan.dataset.orderId = pedido.id;
+        estatusSpan.dataset.status = estatus;
+        statusActionsContainer.appendChild(estatusSpan);
+
+        estatusTdCell.appendChild(statusActionsContainer);
+        tr.appendChild(estatusTdCell);
+
+        const comentariosTd = createTd(comentarios);
+        comentariosTd.classList.add('comment-cell');
+        comentariosTd.dataset.fullText = comentarios;
+        comentariosTd.title = 'Doble clic para ver el comentario completo';
+        tr.appendChild(comentariosTd);
+
+        tr.appendChild(createTd(productoNombre, true));
+        tr.appendChild(createDatosCell(orderPhotoUrls, datosProductoTexto, consecutiveOrderNumber, 'Pedido'));
+        tr.appendChild(createDatosCell(promoPhotoUrls, datosPromocionTexto, consecutiveOrderNumber, 'Promo'));
+        tr.appendChild(createTd(precioFormateado));
+
+        const accionesTd = createTd('');
+        const editButton = document.createElement('button');
+        editButton.className = 'action-button edit-button';
+        editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
+        editButton.title = 'Editar Pedido';
+        editButton.dataset.action = 'edit';
+        editButton.dataset.orderId = pedido.id;
+        accionesTd.appendChild(editButton);
+
+        const deleteButton = document.createElement('button');
+        deleteButton.className = 'action-button delete-button';
+        deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Borrar';
+        deleteButton.title = 'Borrar Pedido';
+        deleteButton.dataset.action = 'delete';
+        deleteButton.dataset.orderId = pedido.id;
+        accionesTd.appendChild(deleteButton);
+        tr.appendChild(accionesTd);
+
+        return tr;
+    }
+
+    function renderOrders(orders, append = false) {
         if (!cuerpoTablaPedidos) return;
-        if (unsubscribePedidos) unsubscribePedidos();
 
-        cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
-        
-        let q = query(pedidosCollectionRef, orderBy("createdAt", "desc"));
-        if (productoFilter) q = query(q, where("producto", "==", productoFilter));
-        if (statusFilter) q = query(q, where("estatus", "==", statusFilter));
-
-        if (dateFilter === 'personalizado' && customStartDate && customEndDate) {
-            q = query(q, where("createdAt", ">=", customStartDate), where("createdAt", "<=", customEndDate));
+        if (!append) {
+            cuerpoTablaPedidos.innerHTML = '';
         } else {
-            const { startDate: filterStartDate, endDate: filterEndDate } = getDateRange(dateFilter);
-            if (filterStartDate && filterEndDate) {
-                 q = query(q, where("createdAt", ">=", filterStartDate), where("createdAt", "<", filterEndDate));
+            // Remove the loading sentinel if present
+            const sentinel = cuerpoTablaPedidos.querySelector('.loading-sentinel');
+            if (sentinel) sentinel.remove();
+        }
+
+        if (orders.length === 0 && !append) {
+            cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell">Aún no hay pedidos registrados que coincidan con los filtros. 😊</td></tr>`;
+            return;
+        }
+
+        const ordersToHighlight = detectPhoneDuplicates(allLoadedPedidos);
+
+        const fragment = document.createDocumentFragment();
+        orders.forEach(pedido => {
+            fragment.appendChild(createPedidoRow(pedido, ordersToHighlight));
+        });
+        cuerpoTablaPedidos.appendChild(fragment);
+
+        // Add loading sentinel for infinite scroll
+        if (pedidosPagination.hasMore) {
+            const sentinel = document.createElement('tr');
+            sentinel.className = 'loading-sentinel';
+            sentinel.innerHTML = `<td colspan="11" class="loading-cell" style="padding: 12px; text-align: center; opacity: 0.5;"><i class="fas fa-spinner fa-spin"></i> Cargando más...</td>`;
+            cuerpoTablaPedidos.appendChild(sentinel);
+        }
+
+        if (selectedRowId) {
+            const rowToReselect = cuerpoTablaPedidos.querySelector(`tr[data-id="${selectedRowId}"]`);
+            if (rowToReselect) {
+                rowToReselect.classList.add('selected-row');
+                currentlySelectedRow = rowToReselect;
+            } else if (!append) {
+                selectedRowId = null;
+                currentlySelectedRow = null;
             }
         }
 
-        unsubscribePedidos = onSnapshot(q, (snapshot) => {
-            let focusedPedidoId = null;
-            if (document.body.classList.contains('search-active') && currentSearchIndex > -1 && searchMatches[currentSearchIndex]) {
-                const oldRow = searchMatches[currentSearchIndex].element.closest('tr');
-                if (oldRow) {
-                    focusedPedidoId = oldRow.dataset.id;
-                }
-            }
+        if (document.body.classList.contains('search-active')) {
+            performSearch(false);
+        }
+    }
 
-            cuerpoTablaPedidos.innerHTML = '';
+    // --- Paginated data fetching ---
+    function buildApiUrl(filters, startAfterId = null) {
+        const params = new URLSearchParams();
+        params.set('limit', '50');
+        if (filters.producto) params.set('producto', filters.producto);
+        if (filters.estatus) params.set('estatus', filters.estatus);
+        if (filters.dateFilter) params.set('dateFilter', filters.dateFilter);
+        if (filters.customStart) params.set('customStart', filters.customStart);
+        if (filters.customEnd) params.set('customEnd', filters.customEnd);
+        if (startAfterId) params.set('startAfterId', startAfterId);
+        return `/api/orders/list?${params.toString()}`;
+    }
 
-            const totalFiltrados = snapshot.size;
-            let sumaFiltradaTotal = 0;
-            snapshot.docs.forEach(doc => {
-                sumaFiltradaTotal += Number(doc.data().precio) || 0;
-            });
+    async function fetchInitialOrders(filters) {
+        if (!cuerpoTablaPedidos) return;
+        if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
 
-            contadorPedidosFiltrados.textContent = `${totalFiltrados} filtrados`;
-            contadorSumaFiltrada.textContent = formatCurrency(sumaFiltradaTotal);
-            
+        // Reset pagination state
+        pedidosPagination = { lastVisibleId: null, hasMore: true, isLoadingMore: false, currentFilters: { ...filters } };
+        allLoadedPedidos = [];
+        pedidosDataMap.clear();
+
+        cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando pedidos lindos...</td></tr>`;
+
+        try {
+            const response = await fetch(buildApiUrl(filters));
+            const data = await response.json();
+
+            if (!data.success) throw new Error(data.message || 'Error fetching orders');
+
+            allLoadedPedidos = data.orders;
+            pedidosPagination.lastVisibleId = data.lastVisibleId;
+            pedidosPagination.hasMore = data.hasMore;
+
+            // Update counters
+            const totalLoaded = allLoadedPedidos.length;
+            const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
+
             const defaultDateFilter = (auth.currentUser && auth.currentUser.email === 'alex@dekoor.com') ? 'hoy' : 'ultimos-10-dias';
-            const isDefaultView = !productoFilter && !statusFilter && dateFilter === defaultDateFilter && !customStartDate;
-            
+            const isDefaultView = !filters.producto && !filters.estatus && filters.dateFilter === defaultDateFilter && !filters.customStart;
+
+            contadorPedidosFiltrados.textContent = `${totalLoaded}${data.hasMore ? '+' : ''} filtrados`;
+            contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
             contadorPedidosFiltrados.classList.toggle('visible', !isDefaultView);
-            if(isDefaultView) {
+            if (isDefaultView) {
                 contadorSumaFiltrada.classList.remove('visible');
                 filteredCounterClicks = 0;
             }
 
-            if (snapshot.empty) {
-                cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell">Aún no hay pedidos registrados que coincidan con los filtros. 😊</td></tr>`;
-                return;
-            }
-
-            const allPedidosData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            const ordersToHighlight = new Set();
-
-            for (let i = 0; i < allPedidosData.length; i++) {
-                const orderA = allPedidosData[i];
-                if (!orderA.telefono || !orderA.createdAt || typeof orderA.createdAt.toDate !== 'function') continue;
-                for (let j = 0; j < allPedidosData.length; j++) {
-                    if (i === j) continue;
-                    const orderB = allPedidosData[j];
-                    if (!orderB.telefono || !orderB.createdAt || typeof orderB.createdAt.toDate !== 'function') continue;
-                    if (orderA.telefono === orderB.telefono) {
-                        try {
-                            const dateA = orderA.createdAt.toDate();
-                            const dateB = orderB.createdAt.toDate();
-                            const diffInHours = Math.abs(dateA.getTime() - dateB.getTime()) / 36e5;
-
-                            if (diffInHours < 24) {
-                                ordersToHighlight.add(orderA.id);
-                                ordersToHighlight.add(orderB.id);
-                            }
-                        } catch (e) {
-                            console.warn("Error comparing dates for phone highlighting:", e, orderA, orderB);
-                        }
-                    }
-                }
-            }
-
-            allPedidosData.forEach((pedido) => {
-                const tr = document.createElement('tr');
-                tr.dataset.id = pedido.id;
-
-                tr.addEventListener('click', (event) => {
-                    if (event.target.closest('button, a, .status-display, input, select, textarea, img')) return;
-                    if (document.body.classList.contains('search-active')) return;
-
-                    const isCurrentlySelected = tr.classList.contains('selected-row');
-                    if (currentlySelectedRow) currentlySelectedRow.classList.remove('selected-row');
-                    if (!isCurrentlySelected) {
-                        tr.classList.add('selected-row');
-                        currentlySelectedRow = tr;
-                        selectedRowId = tr.dataset.id;
-                    } else {
-                        currentlySelectedRow = null;
-                        selectedRowId = null;
-                    }
-                });
-
-                const consecutiveOrderNumber = pedido.consecutiveOrderNumber || 'N/A';
-                const fechaFormateada = formatFirebaseTimestamp(pedido.createdAt);
-                const precioFormateado = formatCurrency(pedido.precio);
-                const vendedor = pedido.vendedor || '<em>N/A</em>';
-                const telefonoOriginal = pedido.telefono || '-';
-                const estatus = pedido.estatus || 'Sin estatus';
-                const comentarios = pedido.comentarios || '-';
-                const productoNombre = pedido.producto || '<em>N/A</em>';
-                const datosProductoTexto = pedido.datosProducto || '-';
-                const datosPromocionTexto = pedido.datosPromocion || '-';
-                
-                const orderPhotoUrls = pedido.fotoUrls || (pedido.fotoUrl ? [pedido.fotoUrl] : []);
-                const promoPhotoUrls = pedido.fotoPromocionUrls || (pedido.fotoPromocionUrl ? [pedido.fotoPromocionUrl] : []);
-
-                const createTd = (content, isHtml = false) => {
-                    const td = document.createElement('td');
-                    if (isHtml) td.innerHTML = content; else td.textContent = content;
-                    return td;
-                };
-                
-                    const createDatosCell = (photoUrls, texto, orderId, type) => {
-                        const td = createTd('');
-                        const container = document.createElement('div');
-                        container.className = 'datos-container';
-                
-                        if (photoUrls.length > 0) {
-                            const imgContainer = document.createElement('div');
-                            imgContainer.className = 'img-container';
-                
-                            // Create a placeholder icon instead of an img tag
-                            const placeholder = document.createElement('div');
-                            placeholder.className = 'foto-placeholder-icon'; // A new class for styling
-                            placeholder.innerHTML = '<i class="fas fa-camera"></i>';
-                            placeholder.title = 'Ver foto(s)';
-                            
-                            placeholder.addEventListener('click', (e) => {
-                                e.stopPropagation();
-                                abrirModalImagen(photoUrls, 0, `DH${orderId}`);
-                            });
-                            imgContainer.appendChild(placeholder);
-                
-                            if (photoUrls.length > 1) {
-                                const badge = document.createElement('span');
-                                badge.className = 'photo-count-badge';
-                                badge.textContent = `+${photoUrls.length - 1}`;
-                                badge.title = `${photoUrls.length} fotos en total`;
-                                imgContainer.appendChild(badge);
-                            }
-                            container.appendChild(imgContainer);
-                        } else {
-                            const ph = document.createElement('span');
-                            ph.className = 'foto-placeholder'; ph.textContent = '-';
-                            container.appendChild(ph);
-                        }
-                
-                        const textoSpan = document.createElement('span');
-                        textoSpan.className = 'datos-text';
-                        textoSpan.innerHTML = texto;
-                        container.appendChild(textoSpan);
-                        td.appendChild(container);
-                        return td;
-                    };
-                tr.appendChild(createTd(consecutiveOrderNumber !== 'N/A' ? `DH${consecutiveOrderNumber}` : 'N/A'));
-                tr.appendChild(createTd(fechaFormateada));
-                tr.appendChild(createTd(vendedor, true));
-                
-                // MODIFIED: Phone Column with Checkbox on the left
-                const telefonoTd = document.createElement('td');
-                const phoneActionsContainer = document.createElement('div');
-                phoneActionsContainer.className = 'phone-actions-container';
-
-                if (telefonoOriginal !== '-') {
-                    // Checkbox (now first)
-                    const checkboxContainer = document.createElement('label');
-                    checkboxContainer.className = 'phone-checkbox-container';
-                    checkboxContainer.title = 'Marcar como verificado';
-
-                    const checkboxInput = document.createElement('input');
-                    checkboxInput.type = 'checkbox';
-                    checkboxInput.checked = pedido.telefonoVerificado === true;
-                    checkboxInput.addEventListener('change', (e) => {
-                        e.stopPropagation();
-                        actualizarVerificacionTelefono(pedido.id, e.target.checked);
-                    });
-
-                    const checkmarkSpan = document.createElement('span');
-                    checkmarkSpan.className = 'checkmark';
-
-                    checkboxContainer.appendChild(checkboxInput);
-                    checkboxContainer.appendChild(checkmarkSpan);
-                    phoneActionsContainer.appendChild(checkboxContainer);
-                }
-
-                const telefonoSpan = document.createElement('span');
-                telefonoSpan.textContent = telefonoOriginal;
-                if (ordersToHighlight.has(pedido.id)) {
-                    telefonoSpan.style.color = 'red';
-                    telefonoSpan.style.fontWeight = 'bold';
-                    telefonoSpan.title = 'Este número fue registrado múltiples veces en menos de 24 horas.';
-                }
-                phoneActionsContainer.appendChild(telefonoSpan);
-
-                if (telefonoOriginal !== '-') {
-                    // Copy Button (now last)
-                    const copyButton = document.createElement('button');
-                    copyButton.className = 'copy-phone-button';
-                    copyButton.title = 'Copiar teléfono';
-                    copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-                    copyButton.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        navigator.clipboard.writeText(telefonoOriginal).then(() => {
-                            copyButton.classList.add('copied');
-                            copyButton.innerHTML = '<i class="fas fa-check"></i>';
-                            showCopyToast("¡Teléfono copiado!", "success");
-                            setTimeout(() => {
-                                copyButton.classList.remove('copied');
-                                copyButton.innerHTML = '<i class="fas fa-copy"></i>';
-                            }, 1500);
-                        }).catch(err => console.error('Error al copiar el teléfono: ', err));
-                    });
-                    phoneActionsContainer.appendChild(copyButton);
-                }
-                telefonoTd.appendChild(phoneActionsContainer);
-                tr.appendChild(telefonoTd);
-                // END MODIFICATION
-                
-                // MODIFIED: Estatus Column with Checkbox
-                const estatusTdCell = createTd('');
-                const statusActionsContainer = document.createElement('div');
-                statusActionsContainer.className = 'status-actions-container';
-
-                // Checkbox
-                const checkboxContainerEstatus = document.createElement('label');
-                checkboxContainerEstatus.className = 'status-checkbox-container';
-                checkboxContainerEstatus.title = 'Marcar como verificado';
-
-                const checkboxInputEstatus = document.createElement('input');
-                checkboxInputEstatus.type = 'checkbox';
-                checkboxInputEstatus.checked = pedido.estatusVerificado === true;
-                checkboxInputEstatus.addEventListener('change', (e) => {
-                    e.stopPropagation();
-                    actualizarVerificacionEstatus(pedido.id, e.target.checked);
-                });
-
-                const checkmarkSpanEstatus = document.createElement('span');
-                checkmarkSpanEstatus.className = 'checkmark';
-
-                checkboxContainerEstatus.appendChild(checkboxInputEstatus);
-                checkboxContainerEstatus.appendChild(checkmarkSpanEstatus);
-                statusActionsContainer.appendChild(checkboxContainerEstatus);
-
-                // Estatus display (existing logic)
-                const estatusSpan = document.createElement('span');
-                estatusSpan.className = `status-display status-${estatus.toLowerCase().replace(/\s+/g, '-')}`;
-                estatusSpan.textContent = estatus;
-                estatusSpan.title = "Clic para cambiar estatus";
-                estatusSpan.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    mostrarMenuEstatus(e, pedido.id, estatus)
-                });
-                statusActionsContainer.appendChild(estatusSpan);
-                
-                estatusTdCell.appendChild(statusActionsContainer);
-                tr.appendChild(estatusTdCell);
-                // END MODIFICATION
-
-                const comentariosTd = createTd(comentarios);
-                comentariosTd.classList.add('comment-cell');
-                comentariosTd.dataset.fullText = comentarios;
-                comentariosTd.title = 'Doble clic para ver el comentario completo';
-                tr.appendChild(comentariosTd);
-
-                tr.appendChild(createTd(productoNombre, true));
-                tr.appendChild(createDatosCell(orderPhotoUrls, datosProductoTexto, consecutiveOrderNumber, 'Pedido'));
-                tr.appendChild(createDatosCell(promoPhotoUrls, datosPromocionTexto, consecutiveOrderNumber, 'Promo'));
-                tr.appendChild(createTd(precioFormateado));
-
-                const accionesTd = createTd('');
-                const editButton = document.createElement('button');
-                editButton.className = 'action-button edit-button';
-                editButton.innerHTML = '<i class="fas fa-edit"></i> Editar';
-                editButton.title = 'Editar Pedido';
-                editButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    abrirModalPedido(pedido);
-                });
-                accionesTd.appendChild(editButton);
-
-                const deleteButton = document.createElement('button');
-                deleteButton.className = 'action-button delete-button';
-                deleteButton.innerHTML = '<i class="fas fa-trash-alt"></i> Borrar';
-                deleteButton.title = 'Borrar Pedido';
-                deleteButton.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    abrirModalConfirmarBorrado(pedido.id, pedido)
-                });
-                accionesTd.appendChild(deleteButton);
-                tr.appendChild(accionesTd);
-
-                cuerpoTablaPedidos.appendChild(tr);
-            });
-            
-            preloadAllImagesInBackground(allPedidosData);
-
-            if (selectedRowId) {
-                const rowToReselect = cuerpoTablaPedidos.querySelector(`tr[data-id="${selectedRowId}"]`);
-                if (rowToReselect) {
-                    rowToReselect.classList.add('selected-row');
-                    currentlySelectedRow = rowToReselect;
-                } else {
-                    selectedRowId = null;
-                    currentlySelectedRow = null;
-                }
-            }
-
-            if(document.body.classList.contains('search-active')) {
-                performSearch(false, focusedPedidoId);
-            }
-
-        }, (error) => {
+            renderOrders(allLoadedPedidos, false);
+            setupRealtimeListener(filters);
+        } catch (error) {
             console.error("Error al obtener pedidos:", error);
             cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell" style="color: #d9534f;">Hubo un error al cargar los pedidos.</td></tr>`;
+        }
+    }
+
+    async function fetchMoreOrders() {
+        if (pedidosPagination.isLoadingMore || !pedidosPagination.hasMore || !pedidosPagination.lastVisibleId) return;
+        pedidosPagination.isLoadingMore = true;
+
+        try {
+            const response = await fetch(buildApiUrl(pedidosPagination.currentFilters, pedidosPagination.lastVisibleId));
+            const data = await response.json();
+
+            if (!data.success) throw new Error(data.message || 'Error fetching more orders');
+
+            allLoadedPedidos.push(...data.orders);
+            pedidosPagination.lastVisibleId = data.lastVisibleId;
+            pedidosPagination.hasMore = data.hasMore;
+
+            // Update counter with cumulative total
+            const sumaTotal = allLoadedPedidos.reduce((sum, o) => sum + (Number(o.precio) || 0), 0);
+            contadorPedidosFiltrados.textContent = `${allLoadedPedidos.length}${data.hasMore ? '+' : ''} filtrados`;
+            contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
+
+            renderOrders(data.orders, true);
+        } catch (error) {
+            console.error("Error al cargar más pedidos:", error);
+        } finally {
+            pedidosPagination.isLoadingMore = false;
+        }
+    }
+
+    // Lightweight real-time listener for the most recent orders
+    function setupRealtimeListener(filters) {
+        if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
+
+        let q = query(pedidosCollectionRef, orderBy("createdAt", "desc"));
+        if (filters.producto) q = query(q, where("producto", "==", filters.producto));
+        if (filters.estatus) q = query(q, where("estatus", "==", filters.estatus));
+
+        if (filters.dateFilter === 'personalizado' && filters.customStart && filters.customEnd) {
+            q = query(q, where("createdAt", ">=", Timestamp.fromMillis(Number(filters.customStart))));
+            q = query(q, where("createdAt", "<=", Timestamp.fromMillis(Number(filters.customEnd))));
+        } else if (filters.dateFilter) {
+            const { startDate, endDate } = getDateRange(filters.dateFilter);
+            if (startDate && endDate) {
+                q = query(q, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
+            }
+        }
+
+        // Limit to 1 doc — we only care about detecting changes, not the data
+        q = query(q, firestoreLimit(1));
+
+        let isFirstSnapshot = true;
+        unsubscribePedidos = onSnapshot(q, { includeMetadataChanges: false }, (snapshot) => {
+            if (isFirstSnapshot) { isFirstSnapshot = false; return; }
+
+            // Debounce: re-fetch the current view after a short delay
+            clearTimeout(window._pedidosRealtimeTimer);
+            window._pedidosRealtimeTimer = setTimeout(() => {
+                fetchInitialOrders(pedidosPagination.currentFilters);
+            }, 1500);
         });
+    }
+
+    // Backward-compatible wrapper
+    function cargarPedidos(productoFilter = '', dateFilter = '', statusFilter = '', customStartDate = null, customEndDate = null) {
+        const filters = {
+            producto: productoFilter,
+            dateFilter: dateFilter,
+            estatus: statusFilter,
+            customStart: customStartDate ? customStartDate.toMillis().toString() : null,
+            customEnd: customEndDate ? customEndDate.toMillis().toString() : null
+        };
+        fetchInitialOrders(filters);
     }
 
     async function borrarPedido() {
@@ -1100,7 +1156,7 @@ document.addEventListener('DOMContentLoaded', () => {
         event.stopPropagation();
         cerrarMenuEstatus();
 
-        const clickedElement = event.currentTarget;
+        const clickedElement = event.target.closest('.status-display') || event.target;
         const clickedRect = clickedElement.getBoundingClientRect();
 
         activeCircularMenu = document.createElement('div');
@@ -1806,6 +1862,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (tablaContainer && scrollToTopBtn) {
         tablaContainer.addEventListener('scroll', () => {
             scrollToTopBtn.style.display = (tablaContainer.scrollTop > 100) ? 'block' : 'none';
+
+            // Infinite scroll: load more when near bottom
+            if (tablaContainer.scrollHeight - tablaContainer.scrollTop - tablaContainer.clientHeight < 300) {
+                fetchMoreOrders();
+            }
         });
         scrollToTopBtn.addEventListener('click', () => {
             tablaContainer.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1843,10 +1904,80 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         });
     }
+    // --- Delegated Event Handlers for Orders Table ---
     if (cuerpoTablaPedidos) {
         cuerpoTablaPedidos.addEventListener('dblclick', e => {
             if (e.target && e.target.classList.contains('comment-cell')) {
                 abrirModalComentario(e.target.dataset.fullText);
+            }
+        });
+
+        cuerpoTablaPedidos.addEventListener('click', (e) => {
+            const actionEl = e.target.closest('[data-action]');
+            if (actionEl) {
+                const action = actionEl.dataset.action;
+                const orderId = actionEl.dataset.orderId || actionEl.closest('tr')?.dataset.id;
+
+                if (action === 'view-photo') {
+                    e.stopPropagation();
+                    const photoUrls = JSON.parse(actionEl.dataset.photoUrls);
+                    abrirModalImagen(photoUrls, 0, `DH${actionEl.dataset.orderNumber}`);
+                } else if (action === 'copy-phone') {
+                    e.stopPropagation();
+                    const phone = actionEl.dataset.phone;
+                    navigator.clipboard.writeText(phone).then(() => {
+                        actionEl.classList.add('copied');
+                        actionEl.innerHTML = '<i class="fas fa-check"></i>';
+                        showCopyToast("¡Teléfono copiado!", "success");
+                        setTimeout(() => {
+                            actionEl.classList.remove('copied');
+                            actionEl.innerHTML = '<i class="fas fa-copy"></i>';
+                        }, 1500);
+                    }).catch(err => console.error('Error al copiar el teléfono: ', err));
+                } else if (action === 'change-status') {
+                    e.stopPropagation();
+                    mostrarMenuEstatus(e, orderId, actionEl.dataset.status);
+                } else if (action === 'edit') {
+                    e.stopPropagation();
+                    const pedido = pedidosDataMap.get(orderId);
+                    if (pedido) abrirModalPedido(pedido);
+                } else if (action === 'delete') {
+                    e.stopPropagation();
+                    const pedido = pedidosDataMap.get(orderId);
+                    if (pedido) abrirModalConfirmarBorrado(orderId, pedido);
+                }
+                return;
+            }
+
+            // Row selection (no action element clicked)
+            const tr = e.target.closest('tr');
+            if (!tr || e.target.closest('button, a, .status-display, input, select, textarea, img')) return;
+            if (document.body.classList.contains('search-active')) return;
+
+            const isCurrentlySelected = tr.classList.contains('selected-row');
+            if (currentlySelectedRow) currentlySelectedRow.classList.remove('selected-row');
+            if (!isCurrentlySelected) {
+                tr.classList.add('selected-row');
+                currentlySelectedRow = tr;
+                selectedRowId = tr.dataset.id;
+            } else {
+                currentlySelectedRow = null;
+                selectedRowId = null;
+            }
+        });
+
+        cuerpoTablaPedidos.addEventListener('change', (e) => {
+            const actionEl = e.target.closest('[data-action]');
+            if (!actionEl) return;
+            const action = actionEl.dataset.action;
+            const orderId = actionEl.dataset.orderId;
+
+            if (action === 'toggle-phone-verified') {
+                e.stopPropagation();
+                actualizarVerificacionTelefono(orderId, e.target.checked);
+            } else if (action === 'toggle-status-verified') {
+                e.stopPropagation();
+                actualizarVerificacionEstatus(orderId, e.target.checked);
             }
         });
     }
@@ -1954,7 +2085,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    searchInput.addEventListener('input', () => performSearch(true));
+    let searchDebounceTimer;
+    searchInput.addEventListener('input', () => {
+        clearTimeout(searchDebounceTimer);
+        searchDebounceTimer = setTimeout(() => performSearch(true), 200);
+    });
     closeSearchBtn.addEventListener('click', closeSearch);
     prevMatchBtn.addEventListener('click', () => navigateMatches('prev'));
     nextMatchBtn.addEventListener('click', () => navigateMatches('next'));

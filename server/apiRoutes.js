@@ -598,6 +598,97 @@ async function generateDailySnapshot(dateISO) {
     };
 }
 
+// --- Endpoint GET /api/orders/list (Pedidos paginados con cursor) ---
+router.get('/orders/list', async (req, res) => {
+    try {
+        const { limit = 50, startAfterId, producto, estatus, dateFilter, customStart, customEnd } = req.query;
+        const pageLimit = Math.min(Number(limit) || 50, 100);
+
+        let query = db.collection('pedidos');
+
+        if (producto) query = query.where('producto', '==', producto);
+        if (estatus) query = query.where('estatus', '==', estatus);
+
+        // Date range filtering
+        const getMexicoDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+        if (dateFilter === 'personalizado' && customStart && customEnd) {
+            query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)));
+            query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
+        } else if (dateFilter) {
+            const mexicoDate = getMexicoDate();
+            let startDate, endDate;
+
+            if (dateFilter === 'hoy') {
+                startDate = new Date(mexicoDate + 'T00:00:00-06:00');
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            } else if (dateFilter === 'ayer') {
+                const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
+                yesterday.setDate(yesterday.getDate() - 1);
+                startDate = yesterday;
+                endDate = new Date(mexicoDate + 'T00:00:00-06:00');
+            } else if (dateFilter === 'este-mes') {
+                startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            } else if (dateFilter === 'ultimos-10-dias') {
+                const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
+                tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+                startDate = tenDaysAgo;
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            }
+
+            if (startDate && endDate) {
+                query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate));
+                query = query.where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
+            }
+        }
+
+        query = query.orderBy('createdAt', 'desc');
+
+        // Cursor-based pagination
+        if (startAfterId) {
+            const lastDoc = await db.collection('pedidos').doc(startAfterId).get();
+            if (lastDoc.exists) {
+                query = query.startAfter(lastDoc);
+            }
+        }
+
+        // Fetch one extra to know if there are more pages
+        const snapshot = await query.limit(pageLimit + 1).get();
+        const hasMore = snapshot.docs.length > pageLimit;
+        const docs = hasMore ? snapshot.docs.slice(0, pageLimit) : snapshot.docs;
+
+        const orders = docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber || null,
+                producto: data.producto || '',
+                telefono: data.telefono || '',
+                precio: data.precio || 0,
+                datosProducto: data.datosProducto || '',
+                datosPromocion: data.datosPromocion || '',
+                comentarios: data.comentarios || '',
+                fotoUrls: data.fotoUrls || (data.fotoUrl ? [data.fotoUrl] : []),
+                fotoPromocionUrls: data.fotoPromocionUrls || (data.fotoPromocionUrl ? [data.fotoPromocionUrl] : []),
+                estatus: data.estatus || 'Sin estatus',
+                telefonoVerificado: data.telefonoVerificado || false,
+                estatusVerificado: data.estatusVerificado || false,
+                createdAt: data.createdAt ? { _seconds: data.createdAt._seconds, _nanoseconds: data.createdAt._nanoseconds } : null,
+                vendedor: data.vendedor || '',
+                contactId: data.contactId || null,
+            };
+        });
+
+        const lastVisibleId = docs.length > 0 ? docs[docs.length - 1].id : null;
+
+        res.status(200).json({ success: true, orders, lastVisibleId, hasMore });
+    } catch (error) {
+        console.error("Error fetching paginated orders:", error);
+        res.status(500).json({ success: false, message: 'Error al obtener los pedidos.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
 router.get('/orders/today', async (req, res) => {
     try {
