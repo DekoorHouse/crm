@@ -201,6 +201,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
+    function preloadImage(src) { const img = new Image(); img.src = src; }
+
     function formatFirebaseTimestamp(timestamp) {
          if (!timestamp) return 'Fecha inválida';
          try {
@@ -1141,21 +1143,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateProductFilter() {
-         if (!filtroProductoSelect) return;
+         if (!filtroProductoSelect || !pedidoProductoSelect) return;
          const currentValue = filtroProductoSelect.value;
          filtroProductoSelect.innerHTML = '<option value="">Todos los productos</option>';
-         getDocs(collection(db, "pedidos")).then((querySnapshot) => {
-             const productNames = new Set();
-             querySnapshot.forEach((doc) => { if (doc.data().producto) productNames.add(doc.data().producto); });
-             Array.from(productNames).sort().forEach(product => {
-                 const option = document.createElement('option');
-                 option.value = product; option.textContent = product;
-                 filtroProductoSelect.appendChild(option);
-             });
-             if (Array.from(productNames).includes(currentValue)) {
-                filtroProductoSelect.value = currentValue;
-             }
-         }).catch(error => console.error("Error fetching product names for filter:", error));
+         // Reuse product options from the order modal instead of fetching all documents
+         Array.from(pedidoProductoSelect.options).forEach(opt => {
+             const option = document.createElement('option');
+             option.value = opt.value;
+             option.textContent = opt.textContent;
+             filtroProductoSelect.appendChild(option);
+         });
+         filtroProductoSelect.value = currentValue;
     }
 
     function populateStatusFilter() {
