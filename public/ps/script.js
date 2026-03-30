@@ -1164,23 +1164,40 @@ clearRefAreaBtn.addEventListener('click', () => {
 (function setupRefAreaDraw() {
     let startX, startY, drawRect;
 
+    function screenToCanvas(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left) * (canvas.width / rect.width),
+            y: (clientY - rect.top) * (canvas.height / rect.height),
+        };
+    }
+
+    function canvasToOverlay(clientX, clientY) {
+        const cRect = canvas.getBoundingClientRect();
+        const oRect = refAreaOverlay.getBoundingClientRect();
+        return {
+            x: cRect.left - oRect.left + (clientX - cRect.left),
+            y: cRect.top - oRect.top + (clientY - cRect.top),
+        };
+    }
+
     refAreaOverlay.addEventListener('mousedown', (e) => {
         if (!isDrawingRefArea) return;
-        const rect = canvas.getBoundingClientRect();
-        startX = (e.clientX - rect.left) / (rect.width / canvas.width);
-        startY = (e.clientY - rect.top) / (rect.height / canvas.height);
+        const startCanvas = screenToCanvas(e.clientX, e.clientY);
+        startX = startCanvas.x;
+        startY = startCanvas.y;
+        const startOverlay = canvasToOverlay(e.clientX, e.clientY);
 
         drawRect = document.createElement('div');
         drawRect.style.cssText = 'position:absolute;border:2px dashed #4da6ff;background:rgba(77,166,255,0.1);pointer-events:none;';
         refAreaOverlay.appendChild(drawRect);
 
         function onMove(ev) {
-            const curX = (ev.clientX - rect.left);
-            const curY = (ev.clientY - rect.top);
-            const sx = Math.min(e.clientX - rect.left, curX);
-            const sy = Math.min(e.clientY - rect.top, curY);
-            const w = Math.abs(curX - (e.clientX - rect.left));
-            const h = Math.abs(curY - (e.clientY - rect.top));
+            const cur = canvasToOverlay(ev.clientX, ev.clientY);
+            const sx = Math.min(startOverlay.x, cur.x);
+            const sy = Math.min(startOverlay.y, cur.y);
+            const w = Math.abs(cur.x - startOverlay.x);
+            const h = Math.abs(cur.y - startOverlay.y);
             drawRect.style.left = sx + 'px';
             drawRect.style.top = sy + 'px';
             drawRect.style.width = w + 'px';
@@ -1192,12 +1209,11 @@ clearRefAreaBtn.addEventListener('click', () => {
             document.removeEventListener('mouseup', onUp);
             if (drawRect) drawRect.remove();
 
-            const endX = (ev.clientX - rect.left) / (rect.width / canvas.width);
-            const endY = (ev.clientY - rect.top) / (rect.height / canvas.height);
-            const x = Math.min(startX, endX);
-            const y = Math.min(startY, endY);
-            const w = Math.abs(endX - startX);
-            const h = Math.abs(endY - startY);
+            const endCanvas = screenToCanvas(ev.clientX, ev.clientY);
+            const x = Math.min(startX, endCanvas.x);
+            const y = Math.min(startY, endCanvas.y);
+            const w = Math.abs(endCanvas.x - startX);
+            const h = Math.abs(endCanvas.y - startY);
 
             refAreaOverlay.style.display = 'none';
             isDrawingRefArea = false;
