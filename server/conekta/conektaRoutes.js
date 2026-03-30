@@ -46,14 +46,6 @@ router.post('/checkout', async (req, res) => {
             quantity: 1
         }];
 
-        if (isDHL) {
-            lineItems.push({
-                name: 'Envío DHL Express (2-3 días hábiles)',
-                unit_price: shippingCost,
-                quantity: 1
-            });
-        }
-
         const orderPayload = {
             currency: 'MXN',
             customer_info: {
@@ -62,9 +54,23 @@ router.post('/checkout', async (req, res) => {
                 phone: phone
             },
             line_items: lineItems,
+            shipping_lines: [{
+                amount: shippingCost
+            }],
+            shipping_contact: {
+                phone: phone,
+                receiver: customerName,
+                address: {
+                    street1: address ? `${address.street}, ${address.colonia}` : '',
+                    city: address?.city || '',
+                    state: address?.state || '',
+                    country: 'MX',
+                    postal_code: address?.zip || '00000'
+                }
+            },
             checkout: {
                 type: 'Integration',
-                allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank', 'bnpl'],
+                allowed_payment_methods: ['card', 'cash'],
                 expires_at: expiresAt
             },
             metadata: {
