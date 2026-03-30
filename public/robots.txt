@@ -4,6 +4,7 @@ Allow: /sitio/coleccion/
 Allow: /referencias/
 Allow: /jt-rastreo/
 Allow: /privacidad/
+Allow: /terminos/
 Disallow: /admon/
 Disallow: /pedidos/
 Disallow: /clientes/

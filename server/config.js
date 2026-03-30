@@ -3,6 +3,8 @@ const express = require('express');
 const admin = require('firebase-admin');
 const { getStorage } = require('firebase-admin/storage');
 const cors = require('cors');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const path = require('path');
 
 // --- CONFIGURACIÓN DE FIREBASE ---
@@ -24,6 +26,48 @@ const bucket = getStorage().bucket();
 
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
+
+// --- COMPRESIÓN GZIP/BROTLI ---
+app.use(compression());
+
+// --- RATE LIMITING ---
+const apiLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutos
+    max: 200, // máximo 200 peticiones por IP por ventana
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Demasiadas peticiones, intenta de nuevo en unos minutos.' }
+});
+app.use('/api/', apiLimiter);
+
+// Rate limit más estricto para checkout/pagos
+const checkoutLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: { error: 'Demasiados intentos de pago, intenta más tarde.' }
+});
+app.use('/api/conekta/', checkoutLimiter);
+
+// --- SECURITY HEADERS ---
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+    res.setHeader('Content-Security-Policy',
+        "default-src 'self'; " +
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://www.googletagmanager.com https://www.google-analytics.com https://www.gstatic.com https://pay.conekta.com https://unpkg.com https://cdnjs.cloudflare.com; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com; " +
+        "img-src 'self' data: blob: https: http:; " +
+        "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; " +
+        "connect-src 'self' https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://pay.conekta.com; " +
+        "frame-src https://pay.conekta.com; " +
+        "object-src 'none'; " +
+        "base-uri 'self';"
+    );
+    next();
+});
 
 // --- SOLUCIÓN DE CORS ---
 const allowedOrigins = [

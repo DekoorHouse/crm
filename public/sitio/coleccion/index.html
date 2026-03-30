@@ -21,11 +21,17 @@
     <meta property="og:type" content="website">
     <meta property="og:locale" content="es_MX">
 
-    <link rel="icon" type="image/png" href="/favicon.png">
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+    <meta name="theme-color" content="#1B4D5C">
+
+    <!-- Preload -->
+    <link rel="preload" href="/sitio/style.css" as="style">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" integrity="sha512-DTOQO9RWCH3ppGqcWaEA1BIZOC6xxalwEsw9c2QQeAIftl+Vegevlber0GR09IVN9z+IpHhZMSK55hGXpYk9EA==" crossorigin="anonymous" referrerpolicy="no-referrer" />
     <link rel="stylesheet" href="/sitio/style.css">
     <style>
         .collection-hero {
@@ -481,10 +487,30 @@
 <main>
     <div class="container">
         <div class="collection-hero">
+            <!-- Breadcrumb nav -->
+            <nav aria-label="Breadcrumb" style="margin-bottom:1rem;">
+                <ol style="list-style:none;display:flex;gap:6px;font-size:0.85rem;color:var(--text-medium);flex-wrap:wrap;">
+                    <li><a href="/sitio/" style="color:var(--teal);text-decoration:none;">Inicio</a></li>
+                    <li>/</li>
+                    <li><a href="/sitio/#colecciones" style="color:var(--teal);text-decoration:none;">Colecciones</a></li>
+                    <li>/</li>
+                    <li id="breadcrumbCurrent" style="color:var(--text-dark);font-weight:600;">Cargando...</li>
+                </ol>
+            </nav>
             <a href="/sitio/#colecciones" class="back-link"><i class="fas fa-arrow-left"></i> Todas las colecciones</a>
             <div class="collection-badge" id="collectionBadge">COLECCIÓN</div>
             <h1 id="collectionTitle">Cargando...</h1>
             <p id="collectionDesc"></p>
+        </div>
+
+        <!-- Buscador de productos -->
+        <div style="max-width:500px;margin:0 auto 1.5rem;">
+            <div style="position:relative;">
+                <input type="search" id="productSearch" placeholder="Buscar productos..." aria-label="Buscar productos"
+                    style="width:100%;padding:12px 14px 12px 42px;border:2px solid var(--border);border-radius:9999px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;background:var(--white);"
+                    onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+                <i class="fas fa-search" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-medium);"></i>
+            </div>
         </div>
 
         <div class="products-grid" id="productsGrid">
@@ -658,6 +684,51 @@ document.getElementById('collectionBadge').textContent = `COLECCIÓN ${col.title
 document.getElementById('collectionTitle').textContent = col.title;
 document.getElementById('collectionDesc').textContent = col.desc;
 
+// Inject Product + BreadcrumbList schema
+const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": `${col.productName} - Colección ${col.title}`,
+    "description": col.productDesc,
+    "image": `https://app.dekoormx.com/sitio/img/lamp-${colId === 'ninos' ? 'ariel' : colId === 'otros' ? 'otros' : colId}.webp`,
+    "brand": { "@type": "Brand", "name": "Dekoor" },
+    "offers": {
+        "@type": "Offer",
+        "price": "650",
+        "priceCurrency": "MXN",
+        "availability": "https://schema.org/InStock",
+        "url": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}`,
+        "seller": { "@type": "Organization", "name": "Dekoor" },
+        "shippingDetails": {
+            "@type": "OfferShippingDetails",
+            "shippingRate": { "@type": "MonetaryAmount", "value": "0", "currency": "MXN" },
+            "deliveryTime": { "@type": "ShippingDeliveryTime", "handlingTime": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 3, "unitCode": "DAY" }, "transitTime": { "@type": "QuantitativeValue", "minValue": 5, "maxValue": 7, "unitCode": "DAY" } },
+            "shippingDestination": { "@type": "DefinedRegion", "addressCountry": "MX" }
+        }
+    },
+    "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "5000",
+        "bestRating": "5"
+    }
+};
+const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://app.dekoormx.com/sitio/" },
+        { "@type": "ListItem", "position": 2, "name": "Colecciones", "item": "https://app.dekoormx.com/sitio/#colecciones" },
+        { "@type": "ListItem", "position": 3, "name": col.title, "item": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}` }
+    ]
+};
+[productSchema, breadcrumbSchema].forEach(schema => {
+    const el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.textContent = JSON.stringify(schema);
+    document.head.appendChild(el);
+});
+
 // Fotos estáticas por colección
 const PHOTOS = {
     ninos: ["05362bc1-cbd9-4544-9942-a8e4dca17e0f.webp","064355fb-6395-4117-b23b-37437d4df249.webp","476210b4-377e-4bfd-a2ca-5482a7d18e66.webp","844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp","b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp","ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.webp"],
@@ -716,6 +787,20 @@ function loadProducts() {
 }
 
 loadProducts();
+
+// Update breadcrumb
+document.getElementById('breadcrumbCurrent').textContent = col.title;
+
+// Product search
+document.getElementById('productSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    const cards = document.querySelectorAll('.product-card');
+    cards.forEach(card => {
+        const name = card.querySelector('.product-card-name')?.textContent.toLowerCase() || '';
+        const desc = card.querySelector('.product-card-desc')?.textContent.toLowerCase() || '';
+        card.style.display = (name.includes(q) || desc.includes(q) || !q) ? '' : 'none';
+    });
+});
 
 // Checkout modal
 let currentProductImg = '';
@@ -776,6 +861,22 @@ var mobileMenu = document.getElementById('mobileMenu');
 hamburgerBtn.addEventListener('click', function() { mobileMenu.classList.toggle('hidden'); });
 mobileMenu.querySelector('.mobile-menu-overlay').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
 mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+</script>
+
+<!-- Cookie Banner (LFPDPPP) -->
+<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#1B4D5C;color:#fff;padding:1rem 1.5rem;z-index:9999;font-size:0.9rem;box-shadow:0 -4px 20px rgba(0,0,0,0.15);">
+    <div style="max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+        <p style="margin:0;flex:1;min-width:200px;">Usamos cookies para mejorar tu experiencia. Al continuar, aceptas nuestra <a href="/privacidad/" style="color:#D4722C;text-decoration:underline;">Política de Privacidad</a>.</p>
+        <div style="display:flex;gap:0.75rem;">
+            <button onclick="localStorage.setItem('cookie_consent','accepted');this.closest('#cookieBanner').style.display='none'" style="background:#D4722C;color:#fff;border:none;padding:8px 24px;border-radius:9999px;font-weight:600;cursor:pointer;font-family:inherit;font-size:0.85rem;">Aceptar</button>
+            <button onclick="localStorage.setItem('cookie_consent','rejected');this.closest('#cookieBanner').style.display='none';window['ga-disable-G-9LPWQEBBGG']=true" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.3);padding:8px 18px;border-radius:9999px;font-weight:600;cursor:pointer;font-family:inherit;font-size:0.85rem;">Rechazar</button>
+        </div>
+    </div>
+</div>
+<script>
+if(!localStorage.getItem('cookie_consent'))document.getElementById('cookieBanner').style.display='block';
+if(localStorage.getItem('cookie_consent')==='rejected')window['ga-disable-G-9LPWQEBBGG']=true;
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
 </script>
 </body>
 </html>

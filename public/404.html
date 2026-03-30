@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Página no encontrada | Dekoor</title>
+    <meta name="robots" content="noindex, nofollow">
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #FAF0E6;
+            color: #1B3A4B;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 2rem;
+        }
+        .error-container { max-width: 480px; }
+        .error-code {
+            font-size: clamp(5rem, 15vw, 8rem);
+            font-weight: 800;
+            color: #D4722C;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        .error-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #1B4D5C;
+            margin-bottom: 0.75rem;
+        }
+        .error-text {
+            color: #4a6274;
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 2rem;
+        }
+        .error-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: all 0.3s ease;
+            font-family: inherit;
+        }
+        .btn-primary { background: #D4722C; color: #fff; }
+        .btn-primary:hover { background: #bf5f1e; transform: translateY(-2px); }
+        .btn-outline { background: transparent; color: #1B4D5C; border: 2px solid #1B4D5C; }
+        .btn-outline:hover { background: #1B4D5C; color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-code">404</div>
+        <h1 class="error-title">Página no encontrada</h1>
+        <p class="error-text">Lo sentimos, la página que buscas no existe o fue movida. Pero no te preocupes, puedes volver a explorar nuestros productos.</p>
+        <div class="error-actions">
+            <a href="/sitio/" class="btn btn-primary">Ver productos</a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener noreferrer" class="btn btn-outline">Contactar</a>
+        </div>
+    </div>
+</body>
+</html>

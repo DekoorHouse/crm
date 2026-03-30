@@ -105,6 +105,10 @@ app.get('/ps', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'ps', 'index.html'));
 });
 
+app.get('/terminos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'terminos', 'index.html'));
+});
+
 app.get('/sitio/checkout', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'checkout', 'index.html'));
 });
@@ -115,6 +119,44 @@ app.get('/sitio/pago-exitoso', (req, res) => {
 
 app.get('/sitio/pago-fallido', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-fallido', 'index.html'));
+});
+
+// --- SITEMAP DINÁMICO ---
+app.get('/sitemap.xml', (req, res) => {
+    const baseUrl = 'https://app.dekoormx.com';
+    const collections = ['ninos', 'pareja', 'empresas', 'familia', 'memorial', 'otros'];
+    const today = new Date().toISOString().split('T')[0];
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+
+    // Páginas estáticas
+    const pages = [
+        { loc: '/sitio/', changefreq: 'weekly', priority: '1.0' },
+        { loc: '/sitio/coleccion/', changefreq: 'weekly', priority: '0.9' },
+        { loc: '/referencias/', changefreq: 'weekly', priority: '0.8' },
+        { loc: '/jt-rastreo/', changefreq: 'monthly', priority: '0.6' },
+        { loc: '/privacidad/', changefreq: 'yearly', priority: '0.3' },
+        { loc: '/terminos/', changefreq: 'yearly', priority: '0.3' },
+    ];
+
+    pages.forEach(p => {
+        xml += `  <url>\n    <loc>${baseUrl}${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>\n`;
+    });
+
+    // Colecciones dinámicas
+    collections.forEach(col => {
+        xml += `  <url>\n    <loc>${baseUrl}/sitio/coleccion/?id=${col}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+    });
+
+    xml += '</urlset>';
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+});
+
+// --- PÁGINA 404 para rutas del sitio público ---
+app.get('/sitio/*', (req, res) => {
+    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
 });
 
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
