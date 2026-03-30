@@ -16,7 +16,7 @@ const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
 // POST /api/conekta/checkout — Create a Conekta hosted checkout session
 router.post('/checkout', async (req, res) => {
     try {
-        const { customerName, customerEmail, customerPhone, productName, collection, imageUrl } = req.body;
+        const { customerName, customerEmail, customerPhone, productName, collection, imageUrl, shipping, address } = req.body;
 
         if (!customerName || !customerPhone) {
             return res.status(400).json({ error: 'Nombre y teléfono son requeridos' });
@@ -27,12 +27,31 @@ router.post('/checkout', async (req, res) => {
         if (phone.length === 10) phone = '52' + phone;
         if (!phone.startsWith('+')) phone = '+' + phone;
 
+        // Shipping cost
+        const isDHL = shipping === 'dhl';
+        const shippingCost = isDHL ? 16000 : 0; // in centavos
+        const productPrice = 65000; // $650 MXN in centavos
+
         // Expires in 72 hours
         const expiresAt = Math.floor(Date.now() / 1000) + (72 * 60 * 60);
 
         if (!CONEKTA_PRIVATE_KEY) {
             console.error('[CONEKTA] CONEKTA_PRIVATE_KEY not set');
             return res.status(500).json({ error: 'Pasarela de pago no configurada' });
+        }
+
+        const lineItems = [{
+            name: productName || 'Lámpara 3D Personalizada',
+            unit_price: productPrice,
+            quantity: 1
+        }];
+
+        if (isDHL) {
+            lineItems.push({
+                name: 'Envío DHL Express (2-3 días hábiles)',
+                unit_price: shippingCost,
+                quantity: 1
+            });
         }
 
         const orderPayload = {
@@ -42,11 +61,7 @@ router.post('/checkout', async (req, res) => {
                 email: customerEmail || `${phone.replace('+', '')}@dekoor.mx`,
                 phone: phone
             },
-            line_items: [{
-                name: productName || 'Lámpara 3D Personalizada',
-                unit_price: 65000, // $650.00 MXN in centavos
-                quantity: 1
-            }],
+            line_items: lineItems,
             checkout: {
                 type: 'Integration',
                 allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank', 'bnpl'],
@@ -55,6 +70,7 @@ router.post('/checkout', async (req, res) => {
             metadata: {
                 collection: collection || '',
                 image_url: imageUrl || '',
+                shipping: isDHL ? 'DHL Express' : 'J&T Express',
                 source: 'sitio_web'
             }
         };
@@ -73,6 +89,8 @@ router.post('/checkout', async (req, res) => {
         const checkoutRequestId = order.checkout?.id;
         const orderId = order.id;
 
+        const totalAmount = (productPrice + shippingCost) / 100;
+
         // Save pending order to Firestore
         await db.collection('conekta_orders').doc(orderId).set({
             conektaOrderId: orderId,
@@ -82,7 +100,11 @@ router.post('/checkout', async (req, res) => {
             customerPhone: phone,
             productName: productName || 'Lámpara 3D Personalizada',
             collection: collection || '',
-            amount: 650,
+            amount: totalAmount,
+            productPrice: 650,
+            shippingMethod: isDHL ? 'DHL Express' : 'J&T Express',
+            shippingCost: isDHL ? 160 : 0,
+            address: address || null,
             status: 'pending',
             createdAt: new Date(),
             imageUrl: imageUrl || null
@@ -135,6 +157,8 @@ router.post('/webhook', async (req, res) => {
             });
 
             const orderNumber = `DH${newOrderNumber}`;
+            const addr = conektaData.address;
+            const addressStr = addr ? `${addr.street}, ${addr.colonia}, ${addr.city}, ${addr.state} C.P. ${addr.zip}` : '';
             const pedido = {
                 consecutiveOrderNumber: orderNumber,
                 contactId: null,
@@ -143,7 +167,7 @@ router.post('/webhook', async (req, res) => {
                 precio: conektaData.amount,
                 datosProducto: `Colección: ${conektaData.collection}`,
                 datosPromocion: '',
-                comentarios: `Pago online via Conekta (${conektaOrderId}). Cliente: ${conektaData.customerName}`,
+                comentarios: `Pago online via Conekta (${conektaOrderId}). Cliente: ${conektaData.customerName}. Envío: ${conektaData.shippingMethod || 'J&T Express'}. Dirección: ${addressStr}`,
                 fotoUrls: conektaData.imageUrl ? [conektaData.imageUrl] : [],
                 fotoPromocionUrls: [],
                 estatus: 'Confirmado',
@@ -152,7 +176,10 @@ router.post('/webhook', async (req, res) => {
                 telefonoVerificado: true,
                 estatusVerificado: false,
                 pagoConekta: true,
-                conektaOrderId
+                conektaOrderId,
+                shippingMethod: conektaData.shippingMethod || 'J&T Express',
+                shippingCost: conektaData.shippingCost || 0,
+                address: conektaData.address || null
             };
 
             await db.collection('pedidos').doc(orderNumber).set(pedido);

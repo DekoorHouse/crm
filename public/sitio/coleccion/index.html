@@ -195,6 +195,74 @@
         }
         .back-link:hover { color: var(--primary); }
 
+        /* Shipping options */
+        .checkout-shipping-options {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+        .shipping-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .shipping-option:hover, .shipping-option.selected {
+            border-color: var(--primary);
+        }
+        .shipping-option input[type="radio"] {
+            accent-color: var(--primary);
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            flex-shrink: 0;
+        }
+        .shipping-option-content {
+            flex: 1;
+        }
+        .shipping-option-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .shipping-name {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .shipping-price {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .shipping-price.free {
+            color: #10b981;
+        }
+        .shipping-time {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+        }
+        .checkout-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 800;
+            font-size: 1.15rem;
+            color: var(--text-dark);
+            padding: 1rem 0;
+            border-top: 2px solid var(--border);
+            margin-bottom: 1rem;
+        }
+        .checkout-total #totalAmount {
+            color: var(--primary);
+            font-size: 1.3rem;
+        }
+
         @media (max-width: 768px) {
             .products-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
         }
@@ -430,8 +498,62 @@
                 <label for="ckEmail">Email *</label>
                 <input type="email" id="ckEmail" required placeholder="tu@email.com">
             </div>
+
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div class="checkout-field">
+                <label for="ckStreet">Calle y numero *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+            </div>
+            <div class="checkout-field">
+                <label for="ckColonia">Colonia *</label>
+                <input type="text" id="ckColonia" required placeholder="Centro">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div class="checkout-field">
+                    <label for="ckCity">Ciudad *</label>
+                    <input type="text" id="ckCity" required placeholder="Durango">
+                </div>
+                <div class="checkout-field">
+                    <label for="ckState">Estado *</label>
+                    <input type="text" id="ckState" required placeholder="Durango">
+                </div>
+            </div>
+            <div class="checkout-field">
+                <label for="ckZip">Codigo postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+            </div>
+
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div class="checkout-shipping-options">
+                <label class="shipping-option selected">
+                    <input type="radio" name="shipping" value="jt" checked>
+                    <div class="shipping-option-content">
+                        <div class="shipping-option-top">
+                            <span class="shipping-name">J&T Express</span>
+                            <span class="shipping-price free">Gratis</span>
+                        </div>
+                        <span class="shipping-time">5-7 dias habiles</span>
+                    </div>
+                </label>
+                <label class="shipping-option">
+                    <input type="radio" name="shipping" value="dhl">
+                    <div class="shipping-option-content">
+                        <div class="shipping-option-top">
+                            <span class="shipping-name">DHL Express</span>
+                            <span class="shipping-price">+$160 MXN</span>
+                        </div>
+                        <span class="shipping-time">2-3 dias habiles</span>
+                    </div>
+                </label>
+            </div>
+
+            <div class="checkout-total" id="checkoutTotal">
+                <span>Total:</span>
+                <span id="totalAmount">$650 MXN</span>
+            </div>
+
             <button type="submit" class="checkout-submit" id="checkoutBtn">
-                <i class="fas fa-lock"></i> Pagar $650 MXN
+                <i class="fas fa-lock"></i> Continuar al pago
             </button>
         </form>
         <div class="checkout-methods">
@@ -591,13 +713,29 @@ document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
 });
 
+// Shipping option toggle
+document.querySelectorAll('input[name="shipping"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.shipping-option').forEach(el => el.classList.remove('selected'));
+        radio.closest('.shipping-option').classList.add('selected');
+        const isDHL = radio.value === 'dhl';
+        document.getElementById('totalAmount').textContent = isDHL ? '$810 MXN' : '$650 MXN';
+    });
+});
+
 document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const name = document.getElementById('ckName').value.trim();
-    const phone = document.getElementById('ckPhone').value.trim();
-    const email = document.getElementById('ckEmail').value.trim();
+    const shipping = document.querySelector('input[name="shipping"]:checked').value;
     const params = new URLSearchParams({
-        name, phone, email,
+        name: document.getElementById('ckName').value.trim(),
+        phone: document.getElementById('ckPhone').value.trim(),
+        email: document.getElementById('ckEmail').value.trim(),
+        street: document.getElementById('ckStreet').value.trim(),
+        colonia: document.getElementById('ckColonia').value.trim(),
+        city: document.getElementById('ckCity').value.trim(),
+        state: document.getElementById('ckState').value.trim(),
+        zip: document.getElementById('ckZip').value.trim(),
+        shipping,
         product: currentProductName,
         collection: col.title,
         img: currentProductImg

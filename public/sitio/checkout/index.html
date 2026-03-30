@@ -250,20 +250,21 @@
             <h2><i class="fas fa-shopping-bag"></i> Tu pedido</h2>
             <div id="customerInfo" class="customer-info"></div>
             <div class="order-product" id="orderProduct"></div>
+            <div id="addressInfo" class="customer-info" style="margin-top:0;"></div>
             <div class="order-line">
                 <span>Subtotal</span>
                 <span>$650.00</span>
             </div>
-            <div class="order-line">
+            <div class="order-line" id="shippingLine">
                 <span>Envio</span>
                 <span style="color:#10b981;font-weight:600;">Gratis</span>
             </div>
-            <div class="order-line total">
+            <div class="order-line total" id="totalLine">
                 <span>Total</span>
                 <span>$650.00 MXN</span>
             </div>
-            <div class="order-shipping">
-                <i class="fas fa-truck"></i> Envio gratis a todo Mexico
+            <div class="order-shipping" id="shippingMethod">
+                <i class="fas fa-truck"></i> J&T Express - 5-7 dias habiles
             </div>
             <div class="order-trust">
                 <div class="order-trust-item">
@@ -300,6 +301,16 @@ const customerEmail = params.get('email') || '';
 const productName = params.get('product') || 'Lampara 3D';
 const collection = params.get('collection') || '';
 const imageUrl = params.get('img') || '';
+const shipping = params.get('shipping') || 'jt';
+const street = params.get('street') || '';
+const colonia = params.get('colonia') || '';
+const city = params.get('city') || '';
+const state = params.get('state') || '';
+const zip = params.get('zip') || '';
+
+const isDHL = shipping === 'dhl';
+const shippingCost = isDHL ? 160 : 0;
+const total = 650 + shippingCost;
 
 if (!customerName || !customerPhone) {
     window.location.href = '/sitio/#colecciones';
@@ -310,6 +321,18 @@ document.getElementById('customerInfo').innerHTML =
     `<strong>${customerName}</strong><br>` +
     `<i class="fab fa-whatsapp" style="color:#25d366"></i> ${customerPhone}` +
     (customerEmail ? `<br><i class="fas fa-envelope" style="font-size:0.75rem"></i> ${customerEmail}` : '');
+
+// Show address
+document.getElementById('addressInfo').innerHTML =
+    `<i class="fas fa-map-marker-alt" style="color:var(--primary)"></i> <strong>Enviar a:</strong><br>` +
+    `${street}, ${colonia}<br>${city}, ${state} C.P. ${zip}`;
+
+// Show shipping method & totals
+if (isDHL) {
+    document.getElementById('shippingLine').innerHTML = '<span>Envio DHL Express</span><span>$160.00</span>';
+    document.getElementById('shippingMethod').innerHTML = '<i class="fas fa-bolt"></i> DHL Express - 2-3 dias habiles';
+}
+document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total}.00 MXN</span>`;
 
 // Show product info
 document.getElementById('orderProduct').innerHTML = `
@@ -329,7 +352,7 @@ async function initCheckout() {
         const res = await fetch(API + '/api/conekta/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerName, customerPhone, customerEmail, productName, collection, imageUrl })
+            body: JSON.stringify({ customerName, customerPhone, customerEmail, productName, collection, imageUrl, shipping, address: { street, colonia, city, state, zip } })
         });
         const data = await res.json();
 
