@@ -75,6 +75,10 @@ const alignRightBtn = document.getElementById('align-right');
 
 const textInputPanel = document.getElementById('text-input-panel');
 const textContent = document.getElementById('text-content');
+const toggleRefAreaBtn = document.getElementById('toggle-ref-area');
+const clearRefAreaBtn = document.getElementById('clear-ref-area');
+const refAreaOverlay = document.getElementById('ref-area-overlay');
+let isDrawingRefArea = false;
 
 const undoBtn = document.getElementById('undo-btn');
 const redoBtn = document.getElementById('redo-btn');
@@ -254,6 +258,11 @@ fontColorInput.addEventListener('input', () => {
 fontFamilySelect.addEventListener('change', () => {
     if (selectedTextIdx >= 0) {
         textLayers[selectedTextIdx].fontFamily = fontFamilySelect.value;
+        if (textLayers[selectedTextIdx].refArea) {
+            fitTextToRefArea(textLayers[selectedTextIdx]);
+            fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
+            fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
+        }
         redrawCanvas();
     }
 });
@@ -307,6 +316,11 @@ linkRangeAndNumber(textQualityInput, textQualityVal, (v) => {
 textContent.addEventListener('input', () => {
     if (selectedTextIdx >= 0) {
         textLayers[selectedTextIdx].text = textContent.value;
+        if (textLayers[selectedTextIdx].refArea) {
+            fitTextToRefArea(textLayers[selectedTextIdx]);
+            fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
+            fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
+        }
         redrawCanvas();
     }
 });
@@ -487,12 +501,14 @@ function onPointerDown(e) {
                 textQualityInput.value = t.quality || 1;
                 textQualityVal.value = t.quality || 1;
                 textInputPanel.style.display = 'block';
+                updateRefAreaUI();
                 redrawCanvas();
                 return;
             }
         }
         selectedTextIdx = -1;
         textInputPanel.style.display = 'none';
+        updateRefAreaUI();
         redrawCanvas();
     }
 }
@@ -513,8 +529,15 @@ function onPointerMove(e) {
     }
 
     if (currentTool === 'move' && selectedTextIdx >= 0 && dragOffset) {
-        textLayers[selectedTextIdx].x = pos.x - dragOffset.x;
-        textLayers[selectedTextIdx].y = pos.y - dragOffset.y;
+        const t = textLayers[selectedTextIdx];
+        const dx = (pos.x - dragOffset.x) - t.x;
+        const dy = (pos.y - dragOffset.y) - t.y;
+        t.x += dx;
+        t.y += dy;
+        if (t.refArea) {
+            t.refArea.x += dx;
+            t.refArea.y += dy;
+        }
         redrawCanvas();
     }
 }
@@ -546,6 +569,11 @@ function redrawCanvas() {
     // Replay brush strokes from undo stack is complex, so we use imageData approach
     // Instead, we'll redraw from the last saved state + text layers
     // For simplicity, brush strokes are baked into the undo snapshots
+
+    // Draw ref areas (only for selected text, or all in edit view)
+    for (let i = 0; i < textLayers.length; i++) {
+        if (i === selectedTextIdx) drawRefArea(textLayers[i]);
+    }
 
     // Draw text layers
     for (let i = 0; i < textLayers.length; i++) {
@@ -759,6 +787,7 @@ batchExportBtn.addEventListener('click', async () => {
     for (let i = 0; i < names.length; i++) {
         // Update first text layer with the new name
         textLayers[0].text = names[i];
+        if (textLayers[0].refArea) fitTextToRefArea(textLayers[0]);
         const prevSel = selectedTextIdx;
         selectedTextIdx = -1;
         redrawCanvas();
@@ -782,6 +811,7 @@ batchExportBtn.addEventListener('click', async () => {
 
     // Restore original texts
     textLayers.forEach((t, i) => { t.text = originalTexts[i]; });
+    if (textLayers[0].refArea) fitTextToRefArea(textLayers[0]);
     redrawCanvas();
 
     batchExportBtn.disabled = false;
@@ -1054,6 +1084,150 @@ document.addEventListener('keydown', (e) => {
         redrawCanvas();
     }
 });
+
+// ===================== REFERENCE AREA =====================
+function fitTextToRefArea(t) {
+    if (!t.refArea) return;
+    const ra = t.refArea;
+    const tmpCanvas = document.createElement('canvas');
+    tmpCanvas.width = 1; tmpCanvas.height = 1;
+    const tc = tmpCanvas.getContext('2d');
+
+    // Binary search for max font size that fits within refArea
+    let lo = 4, hi = 1000;
+    for (let iter = 0; iter < 30; iter++) {
+        const mid = (lo + hi) / 2;
+        tc.font = `${mid}px "${t.fontFamily}"`;
+        const m = tc.measureText(t.text);
+        if (m.width <= ra.w && mid <= ra.h) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    t.fontSize = Math.max(4, Math.floor(lo * 10) / 10);
+
+    // Center text in the ref area
+    tc.font = `${t.fontSize}px "${t.fontFamily}"`;
+    const finalW = tc.measureText(t.text).width;
+    t.x = ra.x + ra.w / 2;
+    t.y = ra.y + ra.h / 2 + t.fontSize * 0.35; // baseline adjust
+    t.textAlign = 'center';
+}
+
+function drawRefArea(t) {
+    if (!t.refArea) return;
+    const ra = t.refArea;
+    ctx.save();
+    ctx.strokeStyle = '#4da6ff';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 4]);
+    ctx.globalAlpha = 0.6;
+    ctx.strokeRect(ra.x, ra.y, ra.w, ra.h);
+    ctx.fillStyle = 'rgba(77, 166, 255, 0.06)';
+    ctx.fillRect(ra.x, ra.y, ra.w, ra.h);
+    ctx.setLineDash([]);
+    ctx.restore();
+}
+
+function updateRefAreaUI() {
+    const hasRef = selectedTextIdx >= 0 && textLayers[selectedTextIdx] && textLayers[selectedTextIdx].refArea;
+    clearRefAreaBtn.style.display = hasRef ? 'inline-flex' : 'none';
+    toggleRefAreaBtn.classList.toggle('ref-active', hasRef);
+}
+
+// Enter ref area draw mode
+toggleRefAreaBtn.addEventListener('click', () => {
+    if (selectedTextIdx < 0 && textLayers.length === 0) {
+        alert('Agrega un texto primero.');
+        return;
+    }
+    // If no text selected, select the first one
+    if (selectedTextIdx < 0) {
+        selectedTextIdx = 0;
+        redrawCanvas();
+    }
+    refAreaOverlay.style.display = 'block';
+    isDrawingRefArea = true;
+});
+
+clearRefAreaBtn.addEventListener('click', () => {
+    if (selectedTextIdx >= 0) {
+        saveUndo();
+        textLayers[selectedTextIdx].refArea = null;
+        updateRefAreaUI();
+        redrawCanvas();
+    }
+});
+
+// Ref area drawing on overlay
+(function setupRefAreaDraw() {
+    let startX, startY, drawRect;
+
+    refAreaOverlay.addEventListener('mousedown', (e) => {
+        if (!isDrawingRefArea) return;
+        const rect = canvas.getBoundingClientRect();
+        startX = (e.clientX - rect.left) / (rect.width / canvas.width);
+        startY = (e.clientY - rect.top) / (rect.height / canvas.height);
+
+        drawRect = document.createElement('div');
+        drawRect.style.cssText = 'position:absolute;border:2px dashed #4da6ff;background:rgba(77,166,255,0.1);pointer-events:none;';
+        refAreaOverlay.appendChild(drawRect);
+
+        function onMove(ev) {
+            const curX = (ev.clientX - rect.left);
+            const curY = (ev.clientY - rect.top);
+            const sx = Math.min(e.clientX - rect.left, curX);
+            const sy = Math.min(e.clientY - rect.top, curY);
+            const w = Math.abs(curX - (e.clientX - rect.left));
+            const h = Math.abs(curY - (e.clientY - rect.top));
+            drawRect.style.left = sx + 'px';
+            drawRect.style.top = sy + 'px';
+            drawRect.style.width = w + 'px';
+            drawRect.style.height = h + 'px';
+        }
+
+        function onUp(ev) {
+            document.removeEventListener('mousemove', onMove);
+            document.removeEventListener('mouseup', onUp);
+            if (drawRect) drawRect.remove();
+
+            const endX = (ev.clientX - rect.left) / (rect.width / canvas.width);
+            const endY = (ev.clientY - rect.top) / (rect.height / canvas.height);
+            const x = Math.min(startX, endX);
+            const y = Math.min(startY, endY);
+            const w = Math.abs(endX - startX);
+            const h = Math.abs(endY - startY);
+
+            refAreaOverlay.style.display = 'none';
+            isDrawingRefArea = false;
+
+            if (w < 10 || h < 10) return; // too small, ignore
+
+            if (selectedTextIdx >= 0) {
+                saveUndo();
+                textLayers[selectedTextIdx].refArea = { x, y, w, h };
+                fitTextToRefArea(textLayers[selectedTextIdx]);
+                updateRefAreaUI();
+                // Sync font size to controls
+                fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
+                fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
+                redrawCanvas();
+            }
+        }
+
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+    });
+
+    // Cancel on Escape
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && isDrawingRefArea) {
+            refAreaOverlay.style.display = 'none';
+            isDrawingRefArea = false;
+        }
+    });
+})();
 
 // ===================== LOAD BUNDLED FONTS =====================
 (async () => {

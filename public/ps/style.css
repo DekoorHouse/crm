@@ -256,6 +256,18 @@ body {
 .projects-empty i { font-size: 36px; margin-bottom: 12px; display: block; opacity: 0.3; }
 .projects-empty p { font-size: 13px; }
 
+/* ========== REF AREA ========== */
+#ref-area-overlay {
+    position: absolute; inset: 0; z-index: 20; cursor: crosshair; display: none;
+}
+.ref-area-hint {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,0.7); color: #fff; padding: 6px 14px;
+    border-radius: var(--r-sm); font-size: 12px; font-weight: 600;
+    pointer-events: none; white-space: nowrap;
+}
+.btn-tool.ref-active { background: #4da6ff; color: #fff; border-color: #4da6ff; }
+
 .saving-indicator {
     position: fixed; top: 16px; right: 16px; background: var(--primary);
     color: #fff; padding: 8px 16px; border-radius: var(--r-sm); font-size: 12px;

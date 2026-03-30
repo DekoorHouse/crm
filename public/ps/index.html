@@ -117,6 +117,9 @@
                 <label class="toolbar-label" style="margin-left:12px;">Suavizado</label>
                 <input type="range" id="text-quality" min="1" max="4" value="1" step="0.5" class="toolbar-range">
                 <input type="number" id="text-quality-val" class="toolbar-val-input" value="1" min="1" max="4" step="0.5">
+                <div class="toolbar-separator"></div>
+                <button id="toggle-ref-area" class="btn btn-tool" title="Definir area de referencia para auto-ajuste de texto"><i class="fas fa-vector-square"></i> Ref</button>
+                <button id="clear-ref-area" class="btn btn-tool" title="Quitar area de referencia" style="display:none;"><i class="fas fa-times"></i></button>
             </div>
             <div style="margin-left:auto; display:flex; gap:8px;">
                 <button id="undo-btn" class="btn btn-tool" title="Deshacer"><i class="fas fa-undo"></i></button>
@@ -156,6 +159,9 @@
                     <canvas id="canvas" style="display:none;"></canvas>
                     <div id="zoom-indicator" class="zoom-indicator">100%</div>
                     <div id="text-overlay" style="display:none;"></div>
+                    <div id="ref-area-overlay">
+                        <span class="ref-area-hint">Dibuja un rectangulo para el area de referencia</span>
+                    </div>
                 </div>
 
                 <div id="text-input-panel" class="text-input-panel" style="display:none;">
