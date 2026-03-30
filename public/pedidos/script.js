@@ -1,6 +1,6 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, updateDoc, where, getDocs, runTransaction, getDoc, deleteDoc, Timestamp, limit as firestoreLimit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, addDoc, query, onSnapshot, serverTimestamp, orderBy, doc, updateDoc, where, getDocs, runTransaction, getDoc, deleteDoc, Timestamp, limit as firestoreLimit, getCountFromServer } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 import { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -1649,19 +1649,30 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    function actualizarContadorHoy() {
-        if (unsubscribeHoy) unsubscribeHoy();
-
+    async function actualizarContadorHoy() {
         const { startDate, endDate } = getDateRange('hoy');
         if (!startDate || !endDate) return;
 
-        const q = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
-        
-        unsubscribeHoy = onSnapshot(q, (snapshot) => {
-            contadorPedidosHoy.textContent = snapshot.size;
-        }, (error) => {
+        try {
+            const q = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
+            const snapshot = await getCountFromServer(q);
+            contadorPedidosHoy.textContent = snapshot.data().count;
+        } catch (error) {
             console.error("Error getting today's orders count:", error);
             contadorPedidosHoy.textContent = 'X';
+        }
+
+        // Lightweight listener to detect new orders today and re-count
+        if (unsubscribeHoy) unsubscribeHoy();
+        const listenerQuery = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate), firestoreLimit(1));
+        let isFirst = true;
+        unsubscribeHoy = onSnapshot(listenerQuery, () => {
+            if (isFirst) { isFirst = false; return; }
+            // Re-count server-side when changes detected
+            const q = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
+            getCountFromServer(q).then(snap => {
+                contadorPedidosHoy.textContent = snap.data().count;
+            }).catch(() => {});
         });
     }
 
