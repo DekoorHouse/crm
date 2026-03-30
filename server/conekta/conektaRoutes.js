@@ -49,7 +49,7 @@ router.post('/checkout', async (req, res) => {
             }],
             checkout: {
                 type: 'HostedPayment',
-                allowed_payment_methods: ['card', 'cash', 'bank_transfer'],
+                allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank'],
                 success_url: `${BASE_URL}/sitio/pago-exitoso`,
                 failure_url: `${BASE_URL}/sitio/pago-fallido`,
                 expires_at: expiresAt
