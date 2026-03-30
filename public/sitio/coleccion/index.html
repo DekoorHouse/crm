@@ -591,36 +591,18 @@ document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
     if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
 });
 
-document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
+document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     e.preventDefault();
-    const btn = document.getElementById('checkoutBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Procesando...';
-
-    try {
-        const res = await fetch(API + '/api/conekta/checkout', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                customerName: document.getElementById('ckName').value.trim(),
-                customerPhone: document.getElementById('ckPhone').value.trim(),
-                customerEmail: document.getElementById('ckEmail').value.trim(),
-                productName: currentProductName,
-                collection: col.title,
-                imageUrl: currentProductImg
-            })
-        });
-        const data = await res.json();
-        if (data.checkoutUrl) {
-            window.location.href = data.checkoutUrl;
-        } else {
-            throw new Error(data.error || 'Error al crear el pago');
-        }
-    } catch (err) {
-        alert('Error: ' + err.message + '\nPuedes intentar de nuevo o contactarnos por WhatsApp.');
-        btn.disabled = false;
-        btn.innerHTML = '<i class="fas fa-lock"></i> Pagar $650 MXN';
-    }
+    const name = document.getElementById('ckName').value.trim();
+    const phone = document.getElementById('ckPhone').value.trim();
+    const email = document.getElementById('ckEmail').value.trim();
+    const params = new URLSearchParams({
+        name, phone, email,
+        product: currentProductName,
+        collection: col.title,
+        img: currentProductImg
+    });
+    window.location.href = '/sitio/checkout/?' + params.toString();
 });
 
 // Mobile menu

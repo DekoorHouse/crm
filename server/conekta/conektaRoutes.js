@@ -48,10 +48,8 @@ router.post('/checkout', async (req, res) => {
                 quantity: 1
             }],
             checkout: {
-                type: 'HostedPayment',
+                type: 'Integration',
                 allowed_payment_methods: ['card', 'cash', 'bank_transfer', 'pay_by_bank'],
-                success_url: `${BASE_URL}/sitio/pago-exitoso`,
-                failure_url: `${BASE_URL}/sitio/pago-fallido`,
                 expires_at: expiresAt
             },
             metadata: {
@@ -72,12 +70,13 @@ router.post('/checkout', async (req, res) => {
         });
 
         const order = response.data;
-        const checkoutUrl = order.checkout?.url;
+        const checkoutRequestId = order.checkout?.id;
         const orderId = order.id;
 
         // Save pending order to Firestore
         await db.collection('conekta_orders').doc(orderId).set({
             conektaOrderId: orderId,
+            checkoutRequestId,
             customerName,
             customerEmail: customerEmail || null,
             customerPhone: phone,
@@ -85,13 +84,12 @@ router.post('/checkout', async (req, res) => {
             collection: collection || '',
             amount: 650,
             status: 'pending',
-            checkoutUrl,
             createdAt: new Date(),
             imageUrl: imageUrl || null
         });
 
-        console.log(`[CONEKTA] Checkout created: ${orderId} for ${customerName}`);
-        res.json({ checkoutUrl, orderId });
+        console.log(`[CONEKTA] Checkout created: ${orderId} (checkout: ${checkoutRequestId}) for ${customerName}`);
+        res.json({ checkoutRequestId, orderId });
 
     } catch (error) {
         console.error('[CONEKTA] Error creating checkout:', error.response?.data || error.message);

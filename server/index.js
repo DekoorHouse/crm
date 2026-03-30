@@ -105,6 +105,10 @@ app.get('/ps', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'ps', 'index.html'));
 });
 
+app.get('/sitio/checkout', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'checkout', 'index.html'));
+});
+
 app.get('/sitio/pago-exitoso', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-exitoso', 'index.html'));
 });
