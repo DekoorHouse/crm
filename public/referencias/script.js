@@ -365,6 +365,28 @@ function updateStats(refs) {
     var avg = refs.length > 0 ? (total / refs.length).toFixed(1) : '0';
     document.getElementById('statAvg').textContent = avg;
     document.getElementById('stat5').textContent = five;
+
+    // Inject AggregateRating structured data for Google
+    if (refs.length > 0) {
+        var ld = document.createElement('script');
+        ld.type = 'application/ld+json';
+        ld.textContent = JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "LocalBusiness",
+            "name": "Dekoor - Regalos Personalizados",
+            "url": "https://app.dekoormx.com/sitio/",
+            "image": "https://app.dekoormx.com/jt-rastreo/logo.png",
+            "address": { "@type": "PostalAddress", "addressLocality": "Durango", "addressRegion": "Durango", "addressCountry": "MX" },
+            "aggregateRating": {
+                "@type": "AggregateRating",
+                "ratingValue": avg,
+                "bestRating": "5",
+                "worstRating": "1",
+                "ratingCount": String(refs.length)
+            }
+        });
+        document.head.appendChild(ld);
+    }
 }
 
 // --- Lightbox ---
