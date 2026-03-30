@@ -1337,6 +1337,23 @@ body.search-active #tablaPedidos tbody tr:not(.search-match) {
 body.dark-mode #scrollToTopBtn:hover {
     background-color: #c0392b;
 }
+#loadAllBtn {
+    position: absolute;
+    bottom: 20px;
+    right: 75px;
+    z-index: 10;
+    padding: 8px 14px;
+    border-radius: 20px;
+    background-color: var(--color-primary);
+    color: white;
+    font-size: 0.8em;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+}
+#loadAllBtn:hover { opacity: 0.9; }
+#loadAllBtn:disabled { opacity: 0.5; cursor: wait; }
 
 /* NEW: Modal for Full Comment */
 #modalComentario {

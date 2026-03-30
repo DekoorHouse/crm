@@ -48,6 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tablaPedidos = document.getElementById('tablaPedidos');
     const tablaContainer = document.querySelector('.tabla-container');
     const scrollToTopBtn = document.getElementById('scrollToTopBtn');
+    const loadAllBtn = document.getElementById('loadAllBtn');
     const copyToast = document.getElementById('copy-toast');
     const photoCopyToast = document.getElementById('photo-copy-toast');
 
@@ -1026,6 +1027,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             renderOrders(allLoadedPedidos, false);
             setupRealtimeListener(filters);
+            if (loadAllBtn) loadAllBtn.style.display = data.hasMore ? 'block' : 'none';
         } catch (error) {
             console.error("Error al obtener pedidos:", error);
             cuerpoTablaPedidos.innerHTML = `<tr><td colspan="11" class="empty-cell" style="color: #d9534f;">Hubo un error al cargar los pedidos.</td></tr>`;
@@ -1051,10 +1053,27 @@ document.addEventListener('DOMContentLoaded', () => {
             contadorSumaFiltrada.textContent = formatCurrency(sumaTotal);
 
             renderOrders(data.orders, true);
+            if (loadAllBtn && !data.hasMore) loadAllBtn.style.display = 'none';
         } catch (error) {
             console.error("Error al cargar más pedidos:", error);
         } finally {
             pedidosPagination.isLoadingMore = false;
+        }
+    }
+
+    async function fetchAllRemainingOrders() {
+        if (!pedidosPagination.hasMore) return;
+        if (loadAllBtn) {
+            loadAllBtn.disabled = true;
+            loadAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...';
+        }
+        while (pedidosPagination.hasMore && pedidosPagination.lastVisibleId) {
+            await fetchMoreOrders();
+        }
+        if (loadAllBtn) {
+            loadAllBtn.style.display = 'none';
+            loadAllBtn.disabled = false;
+            loadAllBtn.innerHTML = '<i class="fas fa-download"></i> Cargar todos';
         }
     }
 
@@ -1915,6 +1934,9 @@ document.addEventListener('DOMContentLoaded', () => {
         scrollToTopBtn.addEventListener('click', () => {
             tablaContainer.scrollTo({ top: 0, behavior: 'smooth' });
         });
+    }
+    if (loadAllBtn) {
+        loadAllBtn.addEventListener('click', fetchAllRemainingOrders);
     }
     
     // Modal Event Listeners
