@@ -1059,9 +1059,10 @@ document.addEventListener('DOMContentLoaded', () => {
         // Limit to 1 doc — we only care about detecting changes, not the data
         q = query(q, firestoreLimit(1));
 
-        let isFirstSnapshot = true;
+        // Ignore snapshots during initial sync (cache + server reconciliation)
+        const setupTime = Date.now();
         unsubscribePedidos = onSnapshot(q, { includeMetadataChanges: false }, (snapshot) => {
-            if (isFirstSnapshot) { isFirstSnapshot = false; return; }
+            if (Date.now() - setupTime < 3000) return;
 
             // Debounce: re-fetch the current view after a short delay
             clearTimeout(window._pedidosRealtimeTimer);
