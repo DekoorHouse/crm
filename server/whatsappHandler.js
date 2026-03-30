@@ -507,9 +507,16 @@ router.post('/', async (req, res) => {
                 } else {
                      messageData.text = `Respuesta interactiva (${message.interactive.type})`; // Generic text
                 }
+            } else if (message.type === 'contacts' && message.contacts) {
+                const contact = message.contacts[0];
+                const name = contact?.name?.formatted_name || 'Contacto';
+                const phone = contact?.phones?.[0]?.phone || '';
+                messageData.text = `👤 Contacto: ${name}${phone ? ' (' + phone + ')' : ''}`;
+            } else if (message.type === 'unsupported') {
+                messageData.text = '⚠️ Mensaje no soportado por WhatsApp Business';
             } else {
                 console.warn(`[WEBHOOK] Tipo de mensaje no manejado completamente: ${message.type}. Payload:`, JSON.stringify(message));
-                messageData.text = `Mensaje multimedia (${message.type})`; // Generic fallback
+                messageData.text = `Mensaje multimedia (${message.type})`;
             }
              // --- Remove null/undefined fields before saving ---
             Object.keys(messageData).forEach(key => messageData[key] == null && delete messageData[key]);
