@@ -20,6 +20,7 @@ let textLayers = [];       // [{ text, x, y, fontFamily, fontSize, color, glowSt
 let selectedTextIdx = -1;
 let dragOffset = null;
 let customFonts = [];      // [{ name, url }]
+let currentProjectName = '';
 let undoStack = [];
 let redoStack = [];
 let zoomLevel = 1;
@@ -873,8 +874,13 @@ async function uploadToStorage(dataUrl, path) {
 }
 
 function getProjectName() {
-    if (textLayers.length > 0 && textLayers[0].text) return textLayers[0].text;
-    return 'Sin nombre';
+    if (textLayers.length > 0 && textLayers[0].text && textLayers[0].text !== 'Nombre') return textLayers[0].text;
+    const name = prompt('Nombre del proyecto:', currentProjectName || '');
+    if (name && name.trim()) {
+        currentProjectName = name.trim();
+        return currentProjectName;
+    }
+    return currentProjectName || 'Sin nombre';
 }
 
 function getCanvasStateWithoutText() {
@@ -1034,6 +1040,7 @@ async function openProject(id, p) {
         undoStack = [];
         redoStack = [];
         currentProjectId = id;
+        currentProjectName = p.name || '';
         resetZoom();
         loadProjectFonts(textLayers);
         redrawCanvas();
