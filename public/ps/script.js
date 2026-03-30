@@ -1138,15 +1138,7 @@ function updateRefAreaUI() {
 
 // Enter ref area draw mode
 toggleRefAreaBtn.addEventListener('click', () => {
-    if (selectedTextIdx < 0 && textLayers.length === 0) {
-        alert('Agrega un texto primero.');
-        return;
-    }
-    // If no text selected, select the first one
-    if (selectedTextIdx < 0) {
-        selectedTextIdx = 0;
-        redrawCanvas();
-    }
+    if (!baseImage) { alert('Sube una imagen primero.'); return; }
     refAreaOverlay.style.display = 'block';
     isDrawingRefArea = true;
 });
@@ -1220,16 +1212,42 @@ clearRefAreaBtn.addEventListener('click', () => {
 
             if (w < 10 || h < 10) return; // too small, ignore
 
-            if (selectedTextIdx >= 0) {
-                saveUndo();
+            saveUndo();
+            if (selectedTextIdx < 0) {
+                // Create a new text layer with this ref area
+                const activeAlign = 'center';
+                textLayers.push({
+                    text: textContent.value.trim() || 'Nombre',
+                    x: x + w / 2,
+                    y: y + h / 2,
+                    fontFamily: fontFamilySelect.value,
+                    fontSize: 48,
+                    color: fontColorInput.value,
+                    glowStrength: parseFloat(glowStrengthInput.value),
+                    glowColor: glowColorInput.value,
+                    strokeWidth: parseFloat(strokeWidthInput.value),
+                    strokeColor: strokeColorInput.value,
+                    strokeDir: strokeDirSelect.value,
+                    quality: parseFloat(textQualityInput.value),
+                    textAlign: activeAlign,
+                    refArea: { x, y, w, h },
+                });
+                selectedTextIdx = textLayers.length - 1;
+            } else {
                 textLayers[selectedTextIdx].refArea = { x, y, w, h };
-                fitTextToRefArea(textLayers[selectedTextIdx]);
-                updateRefAreaUI();
-                // Sync font size to controls
-                fontSizeInput.value = textLayers[selectedTextIdx].fontSize;
-                fontSizeVal.value = textLayers[selectedTextIdx].fontSize;
-                redrawCanvas();
             }
+            fitTextToRefArea(textLayers[selectedTextIdx]);
+            updateRefAreaUI();
+            // Sync controls
+            const t = textLayers[selectedTextIdx];
+            textContent.value = t.text;
+            fontSizeInput.value = t.fontSize;
+            fontSizeVal.value = t.fontSize;
+            textInputPanel.style.display = 'block';
+            setTool('move');
+            redrawCanvas();
+            textContent.focus();
+            textContent.select();
         }
 
         document.addEventListener('mousemove', onMove);
