@@ -166,7 +166,7 @@ function loadTestimonials() {
                 }
 
                 let text = ref.texto || '';
-                if (text.length > 160) text = text.substring(0, 157) + '...';
+                // Mostrar texto completo en el carrusel
 
                 const name = escapeHtml(ref.nombre);
                 const city = ref.ciudad ? escapeHtml(ref.ciudad) : '';

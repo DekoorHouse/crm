@@ -874,11 +874,12 @@ body {
 
 .tc-photo {
     width: 100%;
-    max-height: 180px;
-    object-fit: cover;
+    max-height: 360px;
+    object-fit: contain;
     border-radius: 12px;
     margin-top: 12px;
     border: 1px solid var(--border);
+    background: #f8f4ef;
 }
 
 .tc-arrow {
