@@ -990,18 +990,20 @@ function setFilter(filter) {
  */
 function toggleUnreadFilter() {
     state.unreadOnly = !state.unreadOnly;
-    state.purchaseFilter = null; // Limpiar filtro de coronita al activar no leídos
+    state.purchaseFilter = null;
+    state.activeFilter = 'all';
     renderTagFilters();
+    state.contacts = [];
     fetchInitialContacts();
 }
 
 function setPurchaseFilter(filter) {
-    // Toggle: si el mismo filtro está activo, desactivarlo
     state.purchaseFilter = state.purchaseFilter === filter ? null : filter;
-    state.unreadOnly = false; // Limpiar otros filtros
+    state.unreadOnly = false;
     state.activeFilter = 'all';
     renderTagFilters();
-    scheduleContactListRender();
+    state.contacts = [];
+    fetchInitialContacts();
 }
 window.setPurchaseFilter = setPurchaseFilter;
 
