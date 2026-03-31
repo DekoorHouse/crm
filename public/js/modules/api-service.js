@@ -112,7 +112,11 @@ async function fetchInitialContacts() {
         if (state.unreadOnly) {
             url += `&unreadOnly=true`;
         }
-        
+
+        if (state.purchaseFilter) {
+            url += `&purchaseStatus=${state.purchaseFilter}`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -166,8 +170,8 @@ async function fetchInitialContacts() {
         state.contacts = processContacts(data.contacts);
 
         // Actualiza el estado de paginación
-        if (state.unreadOnly) {
-            // Con filtro de no leídos se traen todos de una vez, no hay paginación
+        if (state.unreadOnly || state.purchaseFilter) {
+            // Con filtros especiales se traen todos de una vez, no hay paginación
             state.pagination.lastVisibleId = null;
             state.pagination.hasMore = false;
         } else {
@@ -317,7 +321,11 @@ async function fetchMoreContacts() {
         if (state.unreadOnly) {
             url += `&unreadOnly=true`;
         }
-        
+
+        if (state.purchaseFilter) {
+            url += `&purchaseStatus=${state.purchaseFilter}`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
