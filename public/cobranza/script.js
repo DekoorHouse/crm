@@ -131,8 +131,8 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Seleccionar todos por default
-        pedidosSeleccionados = new Set(pedidosEncontrados.map(p => p.id));
+        // Seleccionar todos por default (excepto los ya cobrados hoy)
+        pedidosSeleccionados = new Set(pedidosEncontrados.filter(p => !p.cobradoHoy).map(p => p.id));
 
         listaPedidos.innerHTML = `
             <div class="select-all-row">
@@ -143,13 +143,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span id="contadorSeleccionados">${pedidosEncontrados.length} seleccionados</span>
             </div>
         ` + pedidosEncontrados.map(p => `
-            <div class="pedido-item">
-                <input type="checkbox" class="pedido-check" data-id="${p.id}" checked onchange="togglePedido('${p.id}', this.checked)">
+            <div class="pedido-item ${p.cobradoHoy ? 'cobrado' : ''}">
+                <input type="checkbox" class="pedido-check" data-id="${p.id}" ${p.cobradoHoy ? 'disabled' : 'checked'} onchange="togglePedido('${p.id}', this.checked)">
                 <div class="pedido-info">
                     <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
                     <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
                     <span class="pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
                     <span class="pedido-estatus">${p.estatus || 'Sin estatus'}</span>
+                    ${p.cobradoHoy ? '<span class="badge-cobrado">Cobrado Hoy</span>' : ''}
                 </div>
                 <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
             </div>
@@ -168,9 +169,9 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     window.toggleSelectAll = (checked) => {
-        if (checked) pedidosSeleccionados = new Set(pedidosEncontrados.map(p => p.id));
+        if (checked) pedidosSeleccionados = new Set(pedidosEncontrados.filter(p => !p.cobradoHoy).map(p => p.id));
         else pedidosSeleccionados.clear();
-        document.querySelectorAll('.pedido-check').forEach(cb => cb.checked = checked);
+        document.querySelectorAll('.pedido-check:not(:disabled)').forEach(cb => cb.checked = checked);
         actualizarBotonEnviar();
     };
 

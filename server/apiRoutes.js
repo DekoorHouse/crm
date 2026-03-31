@@ -5611,6 +5611,27 @@ router.get('/cobranza/buscar-pedidos', async (req, res) => {
             };
         });
 
+        // Obtener lastCobranzaDate de cada contacto para marcar "Cobrado Hoy"
+        const telefonos = [...new Set(orders.map(o => o.telefono).filter(Boolean))];
+        const cobranzaMap = {};
+        // Firestore 'in' soporta max 30 valores por query
+        for (let i = 0; i < telefonos.length; i += 30) {
+            const batch = telefonos.slice(i, i + 30);
+            const contactsSnap = await db.collection('contacts_whatsapp')
+                .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
+            contactsSnap.docs.forEach(doc => {
+                const d = doc.data();
+                if (d.lastCobranzaDate) cobranzaMap[doc.id] = d.lastCobranzaDate;
+            });
+        }
+
+        // Fecha de hoy en formato YYYY-MM-DD (zona horaria de México)
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+        orders.forEach(o => {
+            o.cobradoHoy = cobranzaMap[o.telefono] === todayMx;
+        });
+
         res.json({ success: true, orders });
     } catch (error) {
         console.error('Error buscando pedidos para cobranza:', error);
@@ -5631,6 +5652,13 @@ router.post('/cobranza/enviar', async (req, res) => {
         const contactDoc = await contactRef.get();
         if (!contactDoc.exists) {
             return res.json({ success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' });
+        }
+
+        // 1.5 Verificar que no se haya cobrado hoy (por fecha calendario, no 24h)
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const contactData = contactDoc.data();
+        if (contactData.lastCobranzaDate === todayMx) {
+            return res.json({ success: false, skipped: true, reason: 'Ya se cobró hoy' });
         }
 
         // 2. Cargar historial de conversación (ordenado desc para detectar ventana 24h)
@@ -5829,7 +5857,8 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
 
             await contactRef.update({
                 lastMessage: sendResult.textForDb,
-                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                lastCobranzaDate: todayMx
             });
         }
 
