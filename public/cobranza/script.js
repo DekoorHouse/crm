@@ -36,6 +36,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const logCobranza = document.getElementById('logCobranza');
 
     let pedidosEncontrados = [];
+    let pedidosSeleccionados = new Set();
 
     // --- Auth ---
     formularioLogin.addEventListener('submit', async (e) => {
@@ -120,15 +121,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderPedidos() {
         resultadosBox.style.display = 'block';
         totalPedidosSpan.textContent = pedidosEncontrados.length;
-        btnEnviar.disabled = pedidosEncontrados.length === 0;
 
         if (pedidosEncontrados.length === 0) {
             listaPedidos.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">No se encontraron pedidos en este rango.</div>';
+            pedidosSeleccionados.clear();
+            actualizarBotonEnviar();
             return;
         }
 
-        listaPedidos.innerHTML = pedidosEncontrados.map(p => `
+        // Seleccionar todos por default
+        pedidosSeleccionados = new Set(pedidosEncontrados.map(p => p.id));
+
+        listaPedidos.innerHTML = `
+            <div class="select-all-row">
+                <label>
+                    <input type="checkbox" id="selectAll" checked onchange="toggleSelectAll(this.checked)">
+                    <strong>Seleccionar todos (${pedidosEncontrados.length})</strong>
+                </label>
+                <span id="contadorSeleccionados">${pedidosEncontrados.length} seleccionados</span>
+            </div>
+        ` + pedidosEncontrados.map(p => `
             <div class="pedido-item">
+                <input type="checkbox" class="pedido-check" data-id="${p.id}" checked onchange="togglePedido('${p.id}', this.checked)">
                 <div class="pedido-info">
                     <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
                     <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
@@ -137,16 +151,45 @@ document.addEventListener('DOMContentLoaded', () => {
                 <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
             </div>
         `).join('');
+
+        actualizarBotonEnviar();
+    }
+
+    window.togglePedido = (id, checked) => {
+        if (checked) pedidosSeleccionados.add(id);
+        else pedidosSeleccionados.delete(id);
+        // Actualizar checkbox "Seleccionar todos"
+        const selectAll = document.getElementById('selectAll');
+        if (selectAll) selectAll.checked = pedidosSeleccionados.size === pedidosEncontrados.length;
+        actualizarBotonEnviar();
+    };
+
+    window.toggleSelectAll = (checked) => {
+        if (checked) pedidosSeleccionados = new Set(pedidosEncontrados.map(p => p.id));
+        else pedidosSeleccionados.clear();
+        document.querySelectorAll('.pedido-check').forEach(cb => cb.checked = checked);
+        actualizarBotonEnviar();
+    };
+
+    function actualizarBotonEnviar() {
+        const count = pedidosSeleccionados.size;
+        btnEnviar.disabled = count === 0;
+        btnEnviar.innerHTML = count > 0
+            ? `<i class="fas fa-paper-plane"></i> Enviar Cobranza (${count})`
+            : `<i class="fas fa-paper-plane"></i> Enviar Cobranza Masiva`;
+        const contador = document.getElementById('contadorSeleccionados');
+        if (contador) contador.textContent = `${count} seleccionados`;
     }
 
     // --- Enviar cobranza ---
     window.enviarCobranza = async () => {
-        if (pedidosEncontrados.length === 0) return;
+        if (pedidosSeleccionados.size === 0) return;
 
         const instrucciones = instruccionesTA.value.trim();
         if (!instrucciones) { alert('Escribe las instrucciones de IA primero.'); return; }
 
-        if (!confirm(`Se enviarán mensajes de cobranza a ${pedidosEncontrados.length} pedidos. ¿Continuar?`)) return;
+        const pedidosAEnviar = pedidosEncontrados.filter(p => pedidosSeleccionados.has(p.id));
+        if (!confirm(`Se enviarán mensajes de cobranza a ${pedidosAEnviar.length} pedidos (${new Set(pedidosAEnviar.map(p => p.telefono)).size} contactos). ¿Continuar?`)) return;
 
         // Mostrar progreso
         progresoBox.style.display = 'block';
@@ -155,7 +198,7 @@ document.addEventListener('DOMContentLoaded', () => {
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
 
-        const telefonos = [...new Set(pedidosEncontrados.map(p => p.telefono).filter(Boolean))];
+        const telefonos = [...new Set(pedidosAEnviar.map(p => p.telefono).filter(Boolean))];
         const total = telefonos.length;
         let processed = 0;
 
@@ -163,7 +206,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const token = await auth.currentUser.getIdToken();
 
             for (const telefono of telefonos) {
-                const pedidosDeContacto = pedidosEncontrados.filter(p => p.telefono === telefono);
+                const pedidosDeContacto = pedidosAEnviar.filter(p => p.telefono === telefono);
                 const orderNumbers = pedidosDeContacto.map(p => `DH${p.consecutiveOrderNumber}`).join(', ');
 
                 try {
