@@ -73,6 +73,9 @@ function handleSearchContacts() {
     if (state.unreadOnly) {
         contactsToRender = contactsToRender.filter(c => c.unreadCount > 0);
     }
+    if (state.purchaseFilter) {
+        contactsToRender = contactsToRender.filter(c => c.purchaseStatus === state.purchaseFilter);
+    }
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
     // --------------------------------------------------------------------
@@ -966,8 +969,10 @@ function handleFileInputChange(event) { const files = event.target.files; if (fi
 
 function handlePaste(event) { const items = (event.clipboardData || event.originalEvent.clipboardData).items; for (let i = 0; i < items.length; i++) { if (items[i].kind === 'file') { const file = items[i].getAsFile(); if(file) { event.preventDefault(); stageFile(file); } } } }
 
-function setFilter(filter) { 
-    state.activeFilter = filter; 
+function setFilter(filter) {
+    state.activeFilter = filter;
+    state.purchaseFilter = null; // Limpiar filtro de coronita
+    state.unreadOnly = false; // Limpiar filtro de no leídos
     renderTagFilters(); 
     
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
@@ -985,9 +990,20 @@ function setFilter(filter) {
  */
 function toggleUnreadFilter() {
     state.unreadOnly = !state.unreadOnly;
+    state.purchaseFilter = null; // Limpiar filtro de coronita al activar no leídos
     renderTagFilters();
     fetchInitialContacts();
 }
+
+function setPurchaseFilter(filter) {
+    // Toggle: si el mismo filtro está activo, desactivarlo
+    state.purchaseFilter = state.purchaseFilter === filter ? null : filter;
+    state.unreadOnly = false; // Limpiar otros filtros
+    state.activeFilter = 'all';
+    renderTagFilters();
+    scheduleContactListRender();
+}
+window.setPurchaseFilter = setPurchaseFilter;
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
 

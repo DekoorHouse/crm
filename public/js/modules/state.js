@@ -36,6 +36,7 @@ let state = {
     stagedRemoteFile: null, // Archivo remoto (de QR) preparado para enviar
     activeFilter: 'all', // Filtro de etiqueta activo ('all' o key de la etiqueta)
     unreadOnly: false, // Filtro para mostrar solo chats con mensajes sin leer
+    purchaseFilter: null, // Filtro por estatus de compra ('registered' = corona gris, 'completed' = corona azul)
     activeTab: 'chat', // Pestaña activa en el chat ('chat' o 'notes')
     emojiPickerOpen: false, // Estado del selector de emojis
     quickReplyPickerOpen: false, // Estado del selector de respuestas rápidas

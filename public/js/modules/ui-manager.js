@@ -140,22 +140,28 @@ function renderTagFilters() {
     const container = document.getElementById('tag-filters-container');
     if (!container) return;
 
-    // Verificar si algún filtro del dropdown está activo
-    const dropdownFilters = ['unread', ...state.tags.map(t => t.key)];
-    const activeDropdownFilter = dropdownFilters.includes(state.activeFilter) || state.unreadOnly;
-    const activeDropdownLabel = state.unreadOnly
-        ? 'No leídos'
-        : state.tags.find(t => t.key === state.activeFilter)?.label || null;
+    // Verificar si algún filtro del dropdown está activo (solo etiquetas)
+    const dropdownFilters = state.tags.map(t => t.key);
+    const activeDropdownFilter = dropdownFilters.includes(state.activeFilter);
+    const activeDropdownLabel = state.tags.find(t => t.key === state.activeFilter)?.label || null;
 
     // Botón "Todos"
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Botón "Pendientes IA"
     buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active text-purple-600 border-purple-600 bg-purple-50' : ''}" onclick="setFilter('pendientes_ia')"><i class="fas fa-robot text-xs mr-1"></i> Pendientes IA</button>`;
 
-    // Menú desplegable de tres puntos con los demás filtros
+    // Botón "No leídos" (directo, fuera del dropdown)
+    buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
+
+    // Botón "Coronita gris" (pedidos registrados)
+    buttonsHtml += `<button id="filter-crown-registered" class="filter-btn ${state.purchaseFilter === 'registered' ? 'active' : ''}" onclick="setPurchaseFilter('registered')" title="Pedidos registrados"><i class="fas fa-crown text-xs mr-1" style="color: ${state.purchaseFilter === 'registered' ? 'white' : '#A0A0A0'};"></i></button>`;
+
+    // Botón "Coronita azul" (pedidos confirmados)
+    buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${state.purchaseFilter === 'completed' ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos confirmados"><i class="fas fa-crown text-xs mr-1" style="color: ${state.purchaseFilter === 'completed' ? 'white' : '#1E90FF'};"></i></button>`;
+
+    // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';
-    dropdownItems += `<button id="filter-unread" class="tag-dropdown-item ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter(); closeTagDropdown();"><i class="fas fa-envelope text-xs mr-2"></i>No leídos</button>`;
     state.tags.forEach(tag => {
         dropdownItems += `<button id="filter-${tag.key}" class="tag-dropdown-item ${state.activeFilter === tag.key ? 'active' : ''}" onclick="setFilter('${tag.key}'); closeTagDropdown();">${tag.label}</button>`;
     });
