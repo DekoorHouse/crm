@@ -1,0 +1,66 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: 'Nunito Sans', sans-serif; background-color: #f0f2f5; color: #333; }
+h1, h2 { font-family: 'Poppins', sans-serif; }
+
+#loading-overlay { position: fixed; inset: 0; background: #f0f2f5; display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.loading-logo { width: 60px; animation: pulse 1.5s infinite; }
+@keyframes pulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.1); opacity: 0.7; } }
+
+.main-container { max-width: 900px; margin: 0 auto; padding: 20px; }
+
+.login-container { max-width: 400px; margin: 80px auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); }
+.login-container h1 { text-align: center; margin-bottom: 24px; color: #6366f1; font-size: 1.5rem; }
+.login-container label { display: block; margin-bottom: 4px; font-weight: 600; font-size: 0.85rem; color: #555; }
+.login-container input { width: 100%; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.95rem; margin-bottom: 16px; }
+.login-container button { width: 100%; padding: 12px; background: #6366f1; color: white; border: none; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer; }
+.login-container button:hover { background: #5558e6; }
+#mensajeError { color: #e53e3e; font-size: 0.85rem; margin-bottom: 8px; }
+
+.titulo-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
+.titulo-container h1 { font-size: 1.4rem; }
+.user-info { display: flex; align-items: center; gap: 10px; font-size: 0.85rem; color: #666; }
+.user-info button { background: none; border: none; color: #999; cursor: pointer; font-size: 1.1rem; }
+.user-info button:hover { color: #e53e3e; }
+
+.content-box { background: white; border-radius: 12px; padding: 24px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); }
+.content-box h2 { font-size: 1rem; margin-bottom: 12px; color: #444; }
+.hint { font-size: 0.8rem; color: #888; margin-bottom: 12px; }
+
+textarea { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-family: 'Nunito Sans', sans-serif; font-size: 0.9rem; resize: vertical; }
+textarea:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 3px rgba(99,102,241,0.1); }
+
+button { padding: 10px 20px; background: #6366f1; color: white; border: none; border-radius: 8px; font-size: 0.9rem; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+button:hover { background: #5558e6; }
+button:disabled { background: #ccc; cursor: not-allowed; }
+
+.filtros-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 16px; }
+.filtro-item label { display: block; font-size: 0.8rem; font-weight: 600; color: #555; margin-bottom: 4px; }
+.filtro-item input { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; }
+
+.resultados-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.resultados-header h2 { margin-bottom: 0; }
+
+.pedidos-list { max-height: 400px; overflow-y: auto; }
+.pedido-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #f0f0f0; font-size: 0.85rem; }
+.pedido-item:last-child { border-bottom: none; }
+.pedido-info { display: flex; gap: 16px; align-items: center; }
+.pedido-numero { font-weight: 700; color: #6366f1; min-width: 80px; }
+.pedido-producto { color: #666; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pedido-fecha { color: #999; font-size: 0.8rem; }
+.pedido-telefono { color: #888; font-size: 0.8rem; }
+
+.progress-bar-container { width: 100%; height: 24px; background: #e5e7eb; border-radius: 12px; overflow: hidden; margin-bottom: 12px; }
+.progress-bar { height: 100%; background: linear-gradient(90deg, #6366f1, #8b5cf6); border-radius: 12px; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; color: white; font-size: 0.75rem; font-weight: 700; }
+
+#progresoTexto { font-size: 0.85rem; color: #666; margin-bottom: 12px; }
+
+.log-container { max-height: 300px; overflow-y: auto; font-size: 0.8rem; font-family: monospace; background: #f8f9fa; border-radius: 8px; padding: 12px; }
+.log-entry { padding: 4px 0; border-bottom: 1px solid #eee; }
+.log-entry.success { color: #16a34a; }
+.log-entry.error { color: #dc2626; }
+.log-entry.skip { color: #f59e0b; }
+
+@media (max-width: 600px) {
+    .filtros-grid { grid-template-columns: 1fr; }
+    .resultados-header { flex-direction: column; gap: 12px; }
+}

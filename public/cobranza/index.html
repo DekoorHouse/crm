@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cobranza Masiva IA</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+    <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
+    <link rel="stylesheet" href="/cobranza/style.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-credit-card"></i> Cobranza Masiva IA</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="seccionCobranza" style="display:none;">
+        <div class="titulo-container">
+            <h1><i class="fas fa-credit-card" style="color: #6366f1;"></i> Cobranza Masiva IA</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" onclick="cerrarSesion()"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Instrucciones de IA -->
+        <div class="content-box">
+            <h2><i class="fas fa-brain"></i> Instrucciones para la IA de cobranza</h2>
+            <p class="hint">La IA leer&aacute; la conversaci&oacute;n de cada cliente y decidir&aacute; qu&eacute; mensaje de cobranza enviar basado en estas instrucciones y las respuestas guardadas disponibles.</p>
+            <textarea id="instruccionesIA" rows="8" placeholder="Ej: Eres Carmela, encargada de cobranza. Tu objetivo es dar seguimiento al pago de los pedidos. Revisa la conversaci&oacute;n y decide si debes: recordar el pago, pedir comprobante, confirmar recepci&oacute;n, etc."></textarea>
+            <button id="btnGuardarInstrucciones" onclick="guardarInstrucciones()">
+                <i class="fas fa-save"></i> Guardar instrucciones
+            </button>
+        </div>
+
+        <!-- Seleccion de rango -->
+        <div class="content-box">
+            <h2><i class="fas fa-calendar-alt"></i> Seleccionar pedidos por rango de fecha</h2>
+            <div class="filtros-grid">
+                <div class="filtro-item">
+                    <label for="fechaInicio"><i class="fas fa-calendar"></i> Desde:</label>
+                    <input type="text" id="fechaInicio" placeholder="Seleccionar fecha">
+                </div>
+                <div class="filtro-item">
+                    <label for="fechaFin"><i class="fas fa-calendar"></i> Hasta:</label>
+                    <input type="text" id="fechaFin" placeholder="Seleccionar fecha">
+                </div>
+            </div>
+            <button id="btnBuscarPedidos" onclick="buscarPedidos()">
+                <i class="fas fa-search"></i> Buscar pedidos
+            </button>
+        </div>
+
+        <!-- Resultados -->
+        <div id="resultadosBox" class="content-box" style="display:none;">
+            <div class="resultados-header">
+                <h2><i class="fas fa-list"></i> Pedidos encontrados: <span id="totalPedidos">0</span></h2>
+                <button id="btnEnviarCobranza" onclick="enviarCobranza()" disabled>
+                    <i class="fas fa-paper-plane"></i> Enviar Cobranza Masiva
+                </button>
+            </div>
+            <div id="listaPedidos" class="pedidos-list"></div>
+        </div>
+
+        <!-- Progreso -->
+        <div id="progresoBox" class="content-box" style="display:none;">
+            <h2><i class="fas fa-spinner fa-spin"></i> Procesando cobranza...</h2>
+            <div class="progress-bar-container">
+                <div id="progressBar" class="progress-bar" style="width: 0%"></div>
+            </div>
+            <p id="progresoTexto">0 / 0 procesados</p>
+            <div id="logCobranza" class="log-container"></div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/cobranza/script.js"></script>
+</body>
+</html>

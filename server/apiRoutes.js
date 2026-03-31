@@ -5577,4 +5577,153 @@ router.post('/meta/config/claim-page', async (req, res) => {
     res.json({ success: claimed, business_id: businessId, page_id, results });
 });
 
+// =============================================================================
+// COBRANZA MASIVA IA
+// =============================================================================
+
+// Buscar pedidos por rango de fecha para cobranza
+router.get('/cobranza/buscar-pedidos', async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, message: 'Se requieren startDate y endDate.' });
+        }
+
+        const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
+        const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
+
+        const snapshot = await db.collection('pedidos')
+            .where('createdAt', '>=', start)
+            .where('createdAt', '<=', end)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                telefono: data.telefono,
+                precio: data.precio,
+                estatus: data.estatus,
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+            };
+        });
+
+        res.json({ success: true, orders });
+    } catch (error) {
+        console.error('Error buscando pedidos para cobranza:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Enviar mensaje de cobranza IA para un contacto
+router.post('/cobranza/enviar', async (req, res) => {
+    try {
+        const { contactId, instructions, orderNumbers } = req.body;
+        if (!contactId || !instructions) {
+            return res.status(400).json({ success: false, message: 'Faltan contactId o instrucciones.' });
+        }
+
+        // 1. Verificar que el contacto existe
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.json({ success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' });
+        }
+
+        // 2. Cargar historial de conversación
+        const messagesSnapshot = await contactRef.collection('messages')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+
+        const conversationHistory = messagesSnapshot.docs.map(doc => {
+            const d = doc.data();
+            const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
+            return `${fromLabel}: ${d.text || ''}`;
+        }).reverse().join('\n');
+
+        if (!conversationHistory.trim()) {
+            return res.json({ success: false, skipped: true, reason: 'Sin historial de conversación' });
+        }
+
+        // 3. Cargar respuestas guardadas para contexto
+        const quickRepliesSnapshot = await db.collection('quick_replies').get();
+        const quickReplies = quickRepliesSnapshot.docs.map(doc => {
+            const d = doc.data();
+            return `/${d.shortcut}: ${d.message || '[archivo adjunto]'}`;
+        }).join('\n');
+
+        // 4. Construir prompt para la IA
+        const ordersInfo = orderNumbers ? `Pedidos del cliente: ${orderNumbers.map(n => 'DH' + n).join(', ')}` : '';
+
+        const systemPrompt = `${instructions}
+
+--- RESPUESTAS GUARDADAS DISPONIBLES ---
+${quickReplies}
+
+--- REGLAS ---
+- Genera SOLAMENTE el mensaje de cobranza que se debe enviar al cliente.
+- Puedes usar el contenido de las respuestas guardadas como base.
+- Adapta el mensaje al contexto de la conversación.
+- Si la conversación indica que el cliente ya pagó o ya se resolvió el cobro, responde SOLO con la palabra: SKIP
+- No uses saludos formales excesivos. Sé directo pero amable.
+- No incluyas "Asistente:" ni etiquetas.`;
+
+        const dynamicPrompt = `${ordersInfo}
+
+--- HISTORIAL DE CONVERSACIÓN ---
+${conversationHistory}
+
+--- INSTRUCCIÓN ---
+Basándote en la conversación anterior y los pedidos del cliente, genera el mensaje de cobranza apropiado. Si el cobro ya fue resuelto, responde SKIP.`;
+
+        // 5. Llamar a Gemini
+        const aiResponse = await generateGeminiResponse(dynamicPrompt, [], systemPrompt);
+        const responseText = aiResponse.text.trim();
+
+        // 6. Si la IA dice SKIP, no enviar
+        if (responseText === 'SKIP' || responseText.toUpperCase() === 'SKIP') {
+            return res.json({ success: false, skipped: true, reason: 'IA determinó que no requiere cobro' });
+        }
+
+        // 7. Enviar mensaje por WhatsApp
+        const sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
+
+        // 8. Guardar en historial de mensajes
+        await contactRef.collection('messages').doc(sendResult.id).set({
+            from: process.env.PHONE_NUMBER_ID || 'system',
+            text: sendResult.textForDb,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'sent',
+            id: sendResult.id,
+            isAutoReply: true
+        });
+
+        // 9. Actualizar último mensaje del contacto
+        await contactRef.update({
+            lastMessage: sendResult.textForDb,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+        });
+
+        // 10. Log de uso de tokens
+        const today = new Date().toISOString().split('T')[0];
+        const usageRef = db.collection('ai_usage_logs').doc(today);
+        await usageRef.set({
+            inputTokens: admin.firestore.FieldValue.increment(aiResponse.inputTokens),
+            outputTokens: admin.firestore.FieldValue.increment(aiResponse.outputTokens),
+            requestCount: admin.firestore.FieldValue.increment(1),
+            date: today
+        }, { merge: true });
+
+        res.json({ success: true, message: 'Mensaje enviado', sentText: responseText });
+
+    } catch (error) {
+        console.error('Error en cobranza individual:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 module.exports = router;
