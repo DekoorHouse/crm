@@ -109,10 +109,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
 
-            // Excluir pedidos ya pagados o en fabricación
+            // Excluir pedidos que no requieren cobranza
+            const excluidos = new Set(['pagado', 'fabricar', 'cancelado', 'corregido', 'corregir']);
             pedidosEncontrados = data.orders.filter(p => {
-                const estatus = (p.estatus || '').toLowerCase();
-                return estatus !== 'pagado' && estatus !== 'fabricar';
+                return !excluidos.has((p.estatus || '').toLowerCase());
             });
             renderPedidos();
         } catch (e) {
