@@ -73,6 +73,8 @@ function handleSearchContacts() {
     if (state.unreadOnly) {
         contactsToRender = contactsToRender.filter(c => c.unreadCount > 0);
     }
+    // Siempre ordenar por fecha descendente antes de renderizar
+    contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
     // --------------------------------------------------------------------
 
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
