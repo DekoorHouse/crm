@@ -47,8 +47,9 @@ app.use('/api/', (req, res, next) => {
 });
 app.get('/api/traffic-stats', (req, res) => {
     const elapsed = Math.round((Date.now() - requestCounter.windowStart) / 1000);
+    const remaining = Math.max(0, 15 * 60 - elapsed);
     res.json({
-        current: { count: requestCounter.count, elapsedSeconds: elapsed },
+        current: { count: requestCounter.count, elapsedSeconds: elapsed, remainingSeconds: remaining },
         history: requestHistory.slice(-50)
     });
 });
@@ -56,7 +57,7 @@ app.get('/api/traffic-stats', (req, res) => {
 // --- RATE LIMITING ---
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 1000, // máximo 1000 peticiones por IP por ventana
+    max: 10000, // máximo 10000 peticiones por IP por ventana
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Demasiadas peticiones, intenta de nuevo en unos minutos.' }

@@ -2882,24 +2882,35 @@ function actualizarBadgePedidosHoy(count) {
 // --- TRAFFIC STATS BADGE (temporal) ---
 (function initTrafficBadge() {
     const badge = document.getElementById('traffic-badge');
+    const timer = document.getElementById('traffic-timer');
     if (!badge) return;
+    let localRemaining = 0;
     async function update() {
         try {
             const res = await fetch('/api/traffic-stats');
             const data = await res.json();
             badge.textContent = data.current.count;
             badge.style.display = 'inline-block';
-            badge.title = `${data.current.count} requests en ${Math.round(data.current.elapsedSeconds / 60)}min`;
+            localRemaining = data.current.remainingSeconds;
+            updateTimer();
+            if (timer) timer.style.display = 'inline-block';
         } catch (e) { /* ignore */ }
     }
+    function updateTimer() {
+        if (!timer) return;
+        const m = Math.floor(localRemaining / 60);
+        const s = localRemaining % 60;
+        timer.textContent = `${m}:${String(s).padStart(2, '0')}`;
+    }
     update();
-    setInterval(update, 30000); // cada 30 seg
+    setInterval(update, 30000);
+    setInterval(() => { if (localRemaining > 0) { localRemaining--; updateTimer(); } }, 1000);
     badge.addEventListener('click', async () => {
         try {
             const res = await fetch('/api/traffic-stats');
             const data = await res.json();
             const lines = data.history.map(h => `${h.date} ${h.from}-${h.to}: ${h.count} req`).join('\n');
-            alert(`Ventana actual: ${data.current.count} req (${Math.round(data.current.elapsedSeconds/60)} min)\n\nHistorial:\n${lines || 'Sin datos aún'}`);
+            alert(`Ventana actual: ${data.current.count} req (restan ${Math.floor(data.current.remainingSeconds/60)}:${String(data.current.remainingSeconds%60).padStart(2,'0')})\n\nHistorial:\n${lines || 'Sin datos aún'}`);
         } catch (e) { alert('Error al obtener stats'); }
     });
 })();
