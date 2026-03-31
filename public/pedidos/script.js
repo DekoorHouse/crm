@@ -1081,9 +1081,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function setupRealtimeListener(filters) {
         if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
 
+        // No incluir filtro de estatus ni producto en el listener para detectar
+        // CUALQUIER cambio (incluyendo cambios de estatus desde el CRM).
+        // El re-fetch aplica los filtros correctos al recargar.
         let q = query(pedidosCollectionRef, orderBy("createdAt", "desc"));
-        if (filters.producto) q = query(q, where("producto", "==", filters.producto));
-        if (filters.estatus) q = query(q, where("estatus", "==", filters.estatus));
 
         if (filters.dateFilter === 'personalizado' && filters.customStart && filters.customEnd) {
             q = query(q, where("createdAt", ">=", Timestamp.fromMillis(Number(filters.customStart))));
@@ -1095,7 +1096,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        // Limit to 1 doc — we only care about detecting changes, not the data
+        // Limit to 1 doc — solo detectamos cambios, el re-fetch trae los datos completos
         q = query(q, firestoreLimit(1));
 
         // Ignore snapshots during initial sync (cache + server reconciliation)
