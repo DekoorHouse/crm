@@ -230,6 +230,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
                     if (result.success) {
                         addLog(`${orderNumbers} (${telefono}): Enviado`, 'success');
+                        // Marcar como cobrado hoy en la lista local
+                        pedidosEncontrados.filter(p => p.telefono === telefono).forEach(p => {
+                            p.cobradoHoy = true;
+                            pedidosSeleccionados.delete(p.id);
+                        });
                     } else if (result.skipped) {
                         addLog(`${orderNumbers} (${telefono}): ${result.reason}`, 'skip');
                     } else {
@@ -248,6 +253,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             progresoTexto.textContent = `Completado: ${processed} / ${total} contactos procesados`;
             document.querySelector('#progresoBox h2').innerHTML = '<i class="fas fa-check-circle" style="color:#16a34a;"></i> Cobranza completada';
+
+            // Re-renderizar lista para mostrar badges "Cobrado Hoy"
+            renderPedidos();
 
         } catch (e) {
             alert('Error general: ' + e.message);
