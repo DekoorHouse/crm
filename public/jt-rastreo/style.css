@@ -42,6 +42,8 @@ body {
 .hero {
     text-align: center;
     margin-bottom: 4rem;
+    background: transparent;
+    padding-top: 2rem;
 }
 
 h1 {
