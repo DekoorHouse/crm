@@ -109,7 +109,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
 
-            pedidosEncontrados = data.orders;
+            // Excluir pedidos ya pagados o en fabricación
+            pedidosEncontrados = data.orders.filter(p => {
+                const estatus = (p.estatus || '').toLowerCase();
+                return estatus !== 'pagado' && estatus !== 'fabricar';
+            });
             renderPedidos();
         } catch (e) {
             alert('Error buscando pedidos: ' + e.message);
@@ -145,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
                     <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
                     <span class="pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
+                    <span class="pedido-estatus">${p.estatus || 'Sin estatus'}</span>
                 </div>
                 <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
             </div>
