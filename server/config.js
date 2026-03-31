@@ -30,6 +30,18 @@ const app = express();
 // --- COMPRESIÓN GZIP/BROTLI ---
 app.use(compression());
 
+// --- REQUEST COUNTER (temporal - para medir tráfico) ---
+let requestCounter = { count: 0, windowStart: Date.now() };
+app.use('/api/', (req, res, next) => {
+    const now = Date.now();
+    if (now - requestCounter.windowStart > 15 * 60 * 1000) {
+        console.log(`[TRAFFIC] ${requestCounter.count} requests en los últimos 15 min (${new Date(requestCounter.windowStart).toLocaleTimeString('es-MX')} - ${new Date(now).toLocaleTimeString('es-MX')})`);
+        requestCounter = { count: 0, windowStart: now };
+    }
+    requestCounter.count++;
+    next();
+});
+
 // --- RATE LIMITING ---
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
