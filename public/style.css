@@ -1504,8 +1504,17 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 
 @media (max-width: 768px) {
     /* General Layout */
+    #app-container {
+        position: fixed;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+
     #app-header {
         padding: 0.75rem 1rem;
+        flex-shrink: 0;
     }
 
     #main-sidebar {
