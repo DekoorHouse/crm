@@ -1833,6 +1833,11 @@ router.get('/contacts', async (req, res) => {
             }
         }
 
+        // Aplicar filtro de revisión de diseño
+        if (req.query.designReview === 'true') {
+            query = query.where('inDesignReview', '==', true);
+        }
+
         // --- INICIO: Filtro por Departamento ---
         // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
         if (departmentId && departmentId !== 'all') {

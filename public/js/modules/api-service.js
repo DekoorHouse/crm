@@ -117,6 +117,10 @@ async function fetchInitialContacts() {
             url += `&purchaseStatus=${state.purchaseFilter}`;
         }
 
+        if (state.designReviewFilter) {
+            url += `&designReview=true`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -324,6 +328,10 @@ async function fetchMoreContacts() {
 
         if (state.purchaseFilter) {
             url += `&purchaseStatus=${state.purchaseFilter}`;
+        }
+
+        if (state.designReviewFilter) {
+            url += `&designReview=true`;
         }
 
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---

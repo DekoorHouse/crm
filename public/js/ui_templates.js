@@ -741,6 +741,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
                     <i class="${contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
                     ${contact.name || 'Desconocido'}
                     ${contact.botActive ? '<i class="fas fa-robot text-green-500 ml-1 text-[10px]" title="IA Activa"></i>' : ''}
+                    ${contact.inDesignReview ? '<i class="fas fa-paint-brush text-purple-500 ml-1 text-[10px]" title="En diseño"></i>' : ''}
                 </h3>
                 <div class="contact-meta">
                      ${timeOrBadgeHTML}
@@ -1133,6 +1134,16 @@ const ChatWindowTemplate = (contact) => {
         </button>
     `;
 
+    // --- Botón de Revisión de Diseño ---
+    const isInDesign = contact.inDesignReview === true;
+    const designToggleHTML = `
+        <button onclick="handleDesignToggle('${contact.id}', ${!isInDesign})"
+            class="p-2 rounded-full hover:bg-gray-200 transition-colors ${isInDesign ? 'text-purple-500' : 'text-gray-400'} ml-2"
+            title="${isInDesign ? 'Regresar de diseño' : 'Enviar a diseño'}">
+            <i class="fas fa-paint-brush text-xl"></i>
+        </button>
+    `;
+
     // --- NUEVO: Botón de Transferencia de Chat ---
     const transferButtonHTML = `
         <button onclick="openTransferModal('${contact.id}')" class="p-2 rounded-full hover:bg-gray-200 transition-colors text-gray-500 ml-2" title="Transferir Chat">
@@ -1170,6 +1181,7 @@ const ChatWindowTemplate = (contact) => {
                 <div id="contact-status-wrapper" class="mt-1.5"></div>
             </div>
             <div class="flex items-center pr-2">
+                ${designToggleHTML}
                 ${botToggleHTML}
                 ${transferButtonHTML}
                 ${clearHistoryButtonHTML}

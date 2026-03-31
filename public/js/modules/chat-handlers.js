@@ -80,6 +80,9 @@ function handleSearchContacts() {
             contactsToRender = contactsToRender.filter(c => c.purchaseStatus === state.purchaseFilter);
         }
     }
+    if (state.designReviewFilter) {
+        contactsToRender = contactsToRender.filter(c => c.inDesignReview === true);
+    }
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
     // --------------------------------------------------------------------
@@ -975,8 +978,9 @@ function handlePaste(event) { const items = (event.clipboardData || event.origin
 
 function setFilter(filter) {
     state.activeFilter = filter;
-    state.purchaseFilter = null; // Limpiar filtro de coronita
-    state.unreadOnly = false; // Limpiar filtro de no leídos
+    state.purchaseFilter = null;
+    state.unreadOnly = false;
+    state.designReviewFilter = false;
     renderTagFilters(); 
     
     document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active')); 
@@ -995,6 +999,7 @@ function setFilter(filter) {
 function toggleUnreadFilter() {
     state.unreadOnly = !state.unreadOnly;
     state.purchaseFilter = null;
+    state.designReviewFilter = false;
     state.activeFilter = 'all';
     renderTagFilters();
     state.contacts = [];
@@ -1002,9 +1007,9 @@ function toggleUnreadFilter() {
 }
 
 function setPurchaseFilter(filter) {
+    state.designReviewFilter = false;
     const current = state.purchaseFilter;
     if (!current) {
-        // Ninguno activo → activar el clickeado
         state.purchaseFilter = filter;
     } else if (current === filter) {
         // Desactivar el mismo que ya estaba
@@ -1023,6 +1028,40 @@ function setPurchaseFilter(filter) {
     fetchInitialContacts();
 }
 window.setPurchaseFilter = setPurchaseFilter;
+
+function toggleDesignFilter() {
+    state.designReviewFilter = !state.designReviewFilter;
+    state.unreadOnly = false;
+    state.purchaseFilter = null;
+    state.activeFilter = 'all';
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.toggleDesignFilter = toggleDesignFilter;
+
+async function handleDesignToggle(contactId, inDesign) {
+    try {
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].inDesignReview = inDesign;
+            scheduleContactListRender();
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+        await db.collection("contacts_whatsapp").doc(contactId).update({
+            inDesignReview: inDesign
+        });
+    } catch (error) {
+        console.error("Error al cambiar estado de diseño:", error);
+        showError("No se pudo cambiar el estado de diseño.");
+        const contactIndex = state.contacts.findIndex(c => c.id === contactId);
+        if (contactIndex > -1) {
+            state.contacts[contactIndex].inDesignReview = !inDesign;
+            if (state.selectedContactId === contactId) renderChatWindow();
+        }
+    }
+}
+window.handleDesignToggle = handleDesignToggle;
 
 function setActiveTab(tab) { state.activeTab = tab; renderChatWindow(); }
 

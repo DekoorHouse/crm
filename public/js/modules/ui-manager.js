@@ -146,7 +146,7 @@ function renderTagFilters() {
     const activeDropdownLabel = state.tags.find(t => t.key === state.activeFilter)?.label || null;
 
     // Botón "Todos"
-    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
+    let buttonsHtml = `<button id="filter-all" class="filter-btn ${state.activeFilter === 'all' && !state.unreadOnly && !state.purchaseFilter && !state.designReviewFilter ? 'active' : ''}" onclick="setFilter('all')">Todos</button>`;
 
     // Botón "Pendientes IA"
     buttonsHtml += `<button id="filter-pendientes_ia" class="filter-btn ${state.activeFilter === 'pendientes_ia' ? 'active text-purple-600 border-purple-600 bg-purple-50' : ''}" onclick="setFilter('pendientes_ia')"><i class="fas fa-robot text-xs mr-1"></i> Pendientes IA</button>`;
@@ -161,6 +161,9 @@ function renderTagFilters() {
     // Botón "Coronita azul" (pedidos confirmados)
     const blueActive = state.purchaseFilter === 'completed' || state.purchaseFilter === 'both';
     buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${blueActive ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos confirmados"><i class="fas fa-crown text-xs mr-1" style="color: ${blueActive ? 'white' : '#1E90FF'};"></i></button>`;
+
+    // Botón "En diseño" (revisión de diseño)
+    buttonsHtml += `<button id="filter-design" class="filter-btn ${state.designReviewFilter ? 'active' : ''}" onclick="toggleDesignFilter()" title="En revisión de diseño"><i class="fas fa-paint-brush text-xs mr-1" style="color: ${state.designReviewFilter ? 'white' : '#a855f7'};"></i></button>`;
 
     // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';
