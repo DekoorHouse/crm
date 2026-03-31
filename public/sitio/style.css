@@ -1389,6 +1389,324 @@ body {
 }
 
 /* ============================================================
+   HERO CTAs
+   ============================================================ */
+.hero-ctas {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+/* ============================================================
+   SECTION SUBTITLE
+   ============================================================ */
+.section-subtitle {
+    text-align: center;
+    color: var(--text-medium);
+    font-size: 1.05rem;
+    margin-top: -2rem;
+    margin-bottom: 2.5rem;
+    max-width: 600px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* ============================================================
+   COLLECTION CARD ENHANCEMENTS
+   ============================================================ */
+.collection-img-v2 {
+    position: relative;
+}
+
+.collection-badge-price {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    background: rgba(27, 77, 92, 0.9);
+    color: var(--white);
+    font-size: 0.78rem;
+    font-weight: 700;
+    padding: 5px 12px;
+    border-radius: 100px;
+    backdrop-filter: blur(4px);
+}
+
+.collection-card-info {
+    padding: 0.9rem 1rem;
+}
+
+.collection-card-info .collection-name {
+    padding: 0;
+    margin-bottom: 4px;
+}
+
+.collection-rating {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #f59e0b;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.collection-rating i {
+    font-size: 0.7rem;
+}
+
+.collection-orders {
+    color: var(--text-light);
+    font-weight: 500;
+    margin-left: 4px;
+}
+
+/* ============================================================
+   CATEGORY CARDS V2
+   ============================================================ */
+.categories-grid-v2 {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 1.5rem;
+}
+
+.category-card-v2 {
+    text-decoration: none;
+    background: var(--white);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    transition: var(--transition);
+    display: flex;
+    flex-direction: column;
+}
+
+.category-card-v2:hover {
+    transform: translateY(-6px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary);
+}
+
+.category-card-img {
+    width: 100%;
+    aspect-ratio: 1;
+    overflow: hidden;
+    background: var(--cream-dark);
+}
+
+.category-card-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: transform 0.4s ease;
+}
+
+.category-card-v2:hover .category-card-img img {
+    transform: scale(1.05);
+}
+
+.category-card-img-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--teal), var(--teal-light));
+    color: var(--white);
+}
+
+.category-card-img-cta i {
+    font-size: 2.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.category-card-img-cta span {
+    font-size: 0.85rem;
+    font-weight: 500;
+    opacity: 0.85;
+}
+
+.category-card-body {
+    padding: 1.15rem;
+}
+
+.category-card-body h3 {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    margin-bottom: 4px;
+}
+
+.category-card-body p {
+    font-size: 0.82rem;
+    color: var(--text-medium);
+    line-height: 1.5;
+    margin-bottom: 0.75rem;
+}
+
+.category-card-price {
+    display: inline-block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.category-card-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: #25D366;
+}
+
+/* ============================================================
+   STEP NUMBERS
+   ============================================================ */
+.step-card {
+    position: relative;
+}
+
+.step-number {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    width: 28px;
+    height: 28px;
+    background: var(--primary);
+    color: var(--white);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.85rem;
+}
+
+/* ============================================================
+   PAYMENT METHODS
+   ============================================================ */
+.payment-methods {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+}
+
+.payment-label {
+    font-size: 0.8rem;
+    color: var(--text-light);
+    font-weight: 500;
+}
+
+.payment-icons {
+    display: flex;
+    gap: 1rem;
+}
+
+.payment-icon {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-medium);
+    background: var(--cream);
+    padding: 6px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+}
+
+.payment-icon i {
+    color: var(--teal);
+}
+
+/* ============================================================
+   WHATSAPP TOOLTIP
+   ============================================================ */
+.whatsapp-fab {
+    position: relative;
+}
+
+.wa-tooltip {
+    position: absolute;
+    right: calc(100% + 12px);
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--white);
+    color: var(--text-dark);
+    font-size: 0.82rem;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 10px;
+    white-space: nowrap;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    animation: tooltipBounce 0.5s ease;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+}
+
+.wa-tooltip::after {
+    content: '';
+    position: absolute;
+    right: -6px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 0;
+    height: 0;
+    border-top: 6px solid transparent;
+    border-bottom: 6px solid transparent;
+    border-left: 6px solid var(--white);
+}
+
+.wa-tooltip.hide {
+    opacity: 0;
+}
+
+@keyframes tooltipBounce {
+    0% { opacity: 0; transform: translateY(-50%) translateX(10px); }
+    100% { opacity: 1; transform: translateY(-50%) translateX(0); }
+}
+
+/* ============================================================
+   TICKER HIGHLIGHT
+   ============================================================ */
+.ticker-highlight {
+    color: #fbbf24;
+}
+
+.ticker-highlight i {
+    color: #fbbf24;
+}
+
+/* ============================================================
+   FOOTER CTA
+   ============================================================ */
+.footer-cta {
+    text-align: center;
+    padding-bottom: 3rem;
+    margin-bottom: 3rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.footer-cta h2 {
+    font-size: clamp(1.5rem, 3vw, 2rem);
+    font-weight: 800;
+    color: var(--white);
+    margin-bottom: 0.75rem;
+}
+
+.footer-cta p {
+    color: rgba(255, 255, 255, 0.7);
+    font-size: 1rem;
+    margin-bottom: 1.5rem;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 1024px) {
@@ -1396,9 +1714,8 @@ body {
         grid-template-columns: repeat(3, 1fr);
     }
 
-    .categories-grid {
-        grid-template-columns: repeat(4, 1fr);
-        gap: 1.5rem;
+    .categories-grid-v2 {
+        grid-template-columns: repeat(2, 1fr);
     }
 
     .steps-grid {
@@ -1441,23 +1758,27 @@ body {
 
     .hero h1 { font-size: 2.2rem; }
 
+    .hero-ctas {
+        justify-content: center;
+    }
+
     .trust-strip { justify-content: center; }
 
     .section { padding: 3.5rem 0; }
+
+    .section-subtitle {
+        margin-top: -1.5rem;
+        margin-bottom: 2rem;
+        font-size: 0.95rem;
+    }
 
     .collections-grid-5 {
         grid-template-columns: repeat(2, 1fr);
     }
 
-    .categories-grid {
+    .categories-grid-v2 {
         grid-template-columns: repeat(2, 1fr);
-        gap: 1.25rem;
-    }
-
-    .category-icon {
-        width: 80px;
-        height: 80px;
-        font-size: 1.5rem;
+        gap: 1rem;
     }
 
     .testimonials-inline {
@@ -1501,18 +1822,24 @@ body {
     .trust-strip { gap: 0.75rem; }
     .trust-item { font-size: 0.8rem; }
 
-    .categories-grid {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 1rem;
+    .categories-grid-v2 {
+        grid-template-columns: 1fr;
+        max-width: 400px;
+        margin: 0 auto;
     }
 
-    .category-icon {
-        width: 70px;
-        height: 70px;
-        font-size: 1.3rem;
+    .hero-ctas {
+        flex-direction: column;
     }
 
-    .category-item span { font-size: 0.7rem; }
+    .payment-icons {
+        gap: 0.5rem;
+    }
+
+    .payment-icon {
+        font-size: 0.72rem;
+        padding: 5px 10px;
+    }
 
     .steps-grid { grid-template-columns: 1fr; }
 

@@ -428,6 +428,14 @@ window.addEventListener('scroll', () => {
 });
 
 // ============================================================
+// WHATSAPP TOOLTIP
+// ============================================================
+const waTooltip = document.getElementById('waTooltip');
+if (waTooltip) {
+    setTimeout(() => { waTooltip.classList.add('hide'); }, 5000);
+}
+
+// ============================================================
 // INIT
 // ============================================================
 initCarousel();
