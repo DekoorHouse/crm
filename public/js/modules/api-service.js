@@ -170,8 +170,8 @@ async function fetchInitialContacts() {
         state.contacts = processContacts(data.contacts);
 
         // Actualiza el estado de paginación
-        if (state.unreadOnly || state.purchaseFilter) {
-            // Con filtros especiales se traen todos de una vez, no hay paginación
+        if (state.unreadOnly) {
+            // Con filtro de no leídos se traen todos de una vez, no hay paginación
             state.pagination.lastVisibleId = null;
             state.pagination.hasMore = false;
         } else {

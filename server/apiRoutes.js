@@ -1850,18 +1850,16 @@ router.get('/contacts', async (req, res) => {
         // --- FIN: Filtro por Departamento ---
 
         // Ordenar por último mensaje y limitar resultados
-        const noLimit = req.query.unreadOnly === 'true' || req.query.purchaseStatus;
+        const noLimit = req.query.unreadOnly === 'true';
         if (req.query.unreadOnly === 'true') {
-            // Firestore requiere ordenar primero por el campo de la desigualdad
+            // Firestore requiere ordenar primero por el campo de la desigualdad (unreadCount > 0)
             query = query.orderBy('unreadCount', 'desc').orderBy('lastMessageTimestamp', 'desc');
-        } else if (noLimit) {
-            // purchaseStatus: traer todos sin limit, el frontend usa virtual scroll
-            query = query.orderBy('lastMessageTimestamp', 'desc');
         } else {
+            // purchaseStatus usa igualdad, permite orderBy timestamp + limit + paginación normal
             query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
         }
 
-        // Paginación: no aplica con filtros especiales que traen todo
+        // Paginación: no aplica con unreadOnly que trae todo
         if (startAfterId && !noLimit) {
             const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
             if (lastDoc.exists) {
