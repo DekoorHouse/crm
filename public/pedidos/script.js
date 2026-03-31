@@ -1730,7 +1730,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Lightweight listener to detect new orders today and re-count
         if (unsubscribeHoy) unsubscribeHoy();
-        const listenerQuery = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate), firestoreLimit(1));
+        const listenerQuery = query(pedidosCollectionRef, where("createdAt", ">=", startDate), where("createdAt", "<", endDate), orderBy("createdAt", "desc"), firestoreLimit(1));
         let isFirst = true;
         unsubscribeHoy = onSnapshot(listenerQuery, () => {
             if (isFirst) { isFirst = false; return; }
