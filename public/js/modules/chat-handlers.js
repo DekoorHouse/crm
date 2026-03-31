@@ -22,6 +22,18 @@ function handleSearchInput(event) {
 }
 
 
+// --- Coalescencia de renders: múltiples mutaciones en el mismo tick = 1 solo render ---
+let _renderScheduled = false;
+function scheduleContactListRender() {
+    if (_renderScheduled) return;
+    _renderScheduled = true;
+    queueMicrotask(() => {
+        _renderScheduled = false;
+        handleSearchContacts();
+    });
+}
+window.scheduleContactListRender = scheduleContactListRender;
+
 // CORREGIDO: Ahora aplica filtros de departamento y oculta el mensaje de "Cargando..."
 function handleSearchContacts() {
     // --- INICIO DE LA MODIFICACIÓN: Filtro por Departamentos del Usuario ---
@@ -43,7 +55,7 @@ function handleSearchContacts() {
 
             // Regla 2: Si tiene ID, pero ese departamento YA NO EXISTE en el sistema,
             // se considera huérfano ("Gris" visualmente) y debe ser visible para todos.
-            const deptExists = state.departments.some(d => d.id === deptId);
+            const deptExists = state._deptColorMap ? state._deptColorMap.has(deptId) : state.departments.some(d => d.id === deptId);
             if (!deptExists) {
                 return true;
             }
@@ -63,18 +75,19 @@ function handleSearchContacts() {
     }
     // --------------------------------------------------------------------
 
-    const contactsListEl = document.getElementById('contacts-list');
     const contactsLoadingEl = document.getElementById('contacts-loading'); // Obtener el elemento de carga
+    const spacer = document.getElementById('contacts-scroll-spacer');
 
-    if (contactsListEl) {
+    if (spacer) {
         // Si no hay contactos para mostrar (después del filtro), mostrar mensaje vacío
         if (contactsToRender.length === 0 && state.contacts.length > 0) {
-             contactsListEl.innerHTML = `<div class="p-8 text-center text-gray-400 italic text-sm flex flex-col items-center">
+             spacer.style.height = '0px';
+             spacer.innerHTML = `<div class="p-8 text-center text-gray-400 italic text-sm flex flex-col items-center">
                 <i class="fas fa-inbox text-2xl mb-2 opacity-50"></i>
                 <span>No tienes chats asignados en tus departamentos.</span>
              </div>`;
         } else {
-             contactsListEl.innerHTML = contactsToRender.map(c => ContactItemTemplate(c, c.id === state.selectedContactId)).join('');
+             updateVirtualList(contactsToRender);
         }
     }
 
@@ -89,14 +102,8 @@ function setupChatListEventListeners() {
     const contactsList = document.getElementById('contacts-list');
     if (!contactsList) return;
 
-    // Lógica de Scroll Infinito
-    contactsList.addEventListener('scroll', () => {
-        const { scrollTop, scrollHeight, clientHeight } = contactsList;
-        // Si el scroll está cerca del final (a menos de 200px), carga más
-        if (scrollHeight - scrollTop - clientHeight < 200) {
-            fetchMoreContacts();
-        }
-    });
+    // Virtual Scroll (incluye infinite scroll internamente)
+    initVirtualScroll();
     
     // Lógica de Drag & Drop para archivos en el pie de página del chat
     const chatFooter = document.querySelector('.chat-footer');
@@ -351,7 +358,7 @@ async function handleSelectContact(contactId) {
     state.isSessionExpired = false; // Resetear al cambiar de contacto
     
     // Re-renderizamos la lista para que el contacto seleccionado se marque visualmente
-    handleSearchContacts(); 
+    scheduleContactListRender();
     
     // En móviles, activamos la clase para mostrar el panel de mensajes
     const chatView = document.getElementById('chat-view');
@@ -496,7 +503,7 @@ async function handleSelectContact(contactId) {
                 state.contacts.unshift(updatedContact);
             }
             // Re-renderizar la lista para reflejar cambios (ej. corona plateada→zafiro)
-            handleSearchContacts();
+            scheduleContactListRender();
             // Si el timer cambió o se activó, actualizarlo en la UI
             if (window.checkAiTimer) window.checkAiTimer();
         }
@@ -1569,7 +1576,7 @@ async function handleMarkAsUnread(event, contactId) {
             state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
             // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
             state.contacts[contactIndex].lastMessageTimestamp = new Date(); 
-            handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
+            scheduleContactListRender(); // Re-renderizar la lista para mostrar el cambio
         }
 
         // 2. Actualizar en Firestore
@@ -1590,7 +1597,7 @@ async function handleMarkAsUnread(event, contactId) {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);
         if (contactIndex > -1) {
             state.contacts[contactIndex].unreadCount = 0;
-            handleSearchContacts();
+            scheduleContactListRender();
         }
     }
 }
@@ -1606,7 +1613,7 @@ async function handleBotToggle(contactId, isActive) {
             state.contacts[contactIndex].botActive = isActive;
             
             // Refrescar lista de contactos para ver el aro pulsante/icono
-            handleSearchContacts();
+            scheduleContactListRender();
             
             // Si el chat está abierto, refrescar cabecera
             if (state.selectedContactId === contactId) {

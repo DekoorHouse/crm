@@ -18,6 +18,7 @@ function handleSelectContactFromPipeline(contactId) {
     // Espera un breve momento para que la vista se renderice antes de seleccionar
     setTimeout(() => {
         handleSelectContact(contactId); // Llama a la función que selecciona el contacto
+        scrollToContact(contactId); // Scroll al contacto en la lista virtual
     }, 100); // 100ms de espera
 }
 
@@ -865,7 +866,7 @@ async function handleStatusChange(contactId, newStatusKey) {
     // --- Optimistic UI Update ---
     const originalStatus = contact.status; // Guardar estado original para revertir si falla
     contact.status = finalStatus; // Actualizar estado localmente
-    handleSearchContacts(); // Re-renderizar la lista de contactos
+    scheduleContactListRender(); // Re-renderizar la lista de contactos
     if (state.selectedContactId === id) {
         renderChatWindow(); // Re-renderizar la ventana de chat si es el contacto activo
         if (state.contactDetailsOpen) {
@@ -895,7 +896,7 @@ async function handleStatusChange(contactId, newStatusKey) {
         showError("Error al actualizar el estatus del contacto. Revisa la consola.", 'error');
         // --- Revertir UI si la API falla ---
         contact.status = originalStatus;
-        handleSearchContacts();
+        scheduleContactListRender();
         if (state.selectedContactId === id) {
             renderChatWindow();
             if (state.contactDetailsOpen) {

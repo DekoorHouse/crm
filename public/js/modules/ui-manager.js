@@ -41,7 +41,7 @@ function navigateTo(viewName, force = false) {
             renderChatWindow(); // Renderiza la ventana de chat vacía o con el contacto seleccionado
             renderTagFilters(); // Dibuja los filtros de etiqueta
             setupChatListEventListeners(); // Añade scroll infinito, etc.
-            handleSearchContacts(); // Renderiza la lista de contactos inicial
+            scheduleContactListRender(); // Renderiza la lista de contactos inicial
             break;
         case 'pipeline':
             mainViewContainer.innerHTML = PipelineViewTemplate();

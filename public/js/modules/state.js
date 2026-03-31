@@ -50,6 +50,16 @@ let state = {
     appLoadTimestamp: null, // Momento en que se cargó la app (para listener de updates)
     isSessionExpired: false, // Indica si la ventana de 24h ha cerrado para el chat actual
 
+    // --- Virtual Scroll para la lista de contactos ---
+    virtualScroll: {
+        scrollTop: 0,
+        containerHeight: 0,
+        startIndex: 0,
+        endIndex: 0,
+        filteredContacts: [],
+        rafId: null
+    },
+
     // --- Variables de Paginación para la lista de contactos ---
     pagination: {
         lastVisibleId: null, // Guarda el ID del último contacto cargado

@@ -170,7 +170,7 @@ async function fetchInitialContacts() {
         state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null; // Hay más si se devolvieron contactos y hay un ID para seguir
 
         // Renderiza la lista de contactos en la UI
-        handleSearchContacts();
+        scheduleContactListRender();
 
         if (contactsLoadingEl) contactsLoadingEl.style.display = 'none'; // Ocultar carga
     } catch (error) {
@@ -378,7 +378,7 @@ async function fetchMoreContacts() {
         }
 
         // Re-renderizar la lista de contactos
-        handleSearchContacts();
+        scheduleContactListRender();
     } catch (error) {
         console.error(error);
         showError(error.message);
@@ -415,7 +415,7 @@ async function searchContactsAPI(query) {
         state.pagination.lastVisibleId = null;
 
         // Re-renderizar la lista
-        handleSearchContacts();
+        scheduleContactListRender();
     } catch (error) {
         console.error(error);
         showError(error.message);
@@ -497,7 +497,7 @@ function listenForContactUpdates() {
                 const idx = state.contacts.findIndex(c => c.id === updatedContactData.id);
                 if (idx > -1) {
                     state.contacts.splice(idx, 1);
-                    handleSearchContacts(); // Re-renderizar para que el cambio sea visible.
+                    scheduleContactListRender(); // Re-renderizar para que el cambio sea visible.
                 }
                 return; // No añadir ni actualizar este contacto.
             }
@@ -541,8 +541,8 @@ function listenForContactUpdates() {
         state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
 
         // Re-renderizar la lista de contactos
-        handleSearchContacts();
-        
+        scheduleContactListRender();
+
         // Si el contacto actualizado es el seleccionado, revisar si el timer de IA cambió
         if (snapshot.docChanges().some(change => change.doc.id === state.selectedContactId)) {
             if (window.checkAiTimer) window.checkAiTimer();
@@ -580,7 +580,7 @@ function listenForTags() {
         // Re-renderiza componentes que dependen de las etiquetas si están activos
         if (state.activeView === 'chats') {
             renderTagFilters(); // Actualiza filtros en vista de chats
-            handleSearchContacts(); // Re-renderiza lista de contactos (para colores de icono)
+            scheduleContactListRender(); // Re-renderiza lista de contactos (para colores de icono)
         }
         if (state.activeView === 'etiquetas') {
             renderTagsView(); // Actualiza tabla de etiquetas
@@ -631,6 +631,7 @@ function listenForDepartments() {
     unsubscribeDepartmentsListener = db.collection('departments').orderBy('createdAt').onSnapshot(snapshot => {
         // Actualiza estado global
         state.departments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        state._deptColorMap = new Map(state.departments.map(d => [d.id, d.color]));
         // Re-renderizar vista si es la activa
         if (state.activeView === 'departments') {
             renderDepartmentsView();
@@ -879,7 +880,7 @@ async function handleMarkAsUnread(event, contactId) {
             state.contacts[contactIndex].unreadCount = 1; // Forzar contador a 1 para mostrar badge
             // Actualizar timestamp localmente para reflejar el cambio de orden inmediato
             state.contacts[contactIndex].lastMessageTimestamp = new Date();
-            handleSearchContacts(); // Re-renderizar la lista para mostrar el cambio
+            scheduleContactListRender(); // Re-renderizar la lista para mostrar el cambio
         }
 
         // 2. Actualizar en Firestore
@@ -900,7 +901,7 @@ async function handleMarkAsUnread(event, contactId) {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);
         if (contactIndex > -1) {
             state.contacts[contactIndex].unreadCount = 0;
-            handleSearchContacts();
+            scheduleContactListRender();
         }
     }
 }

@@ -14,7 +14,9 @@ const ChatViewTemplate = () => `
             </div>
             <div id="tag-filters-container" class="p-2 flex flex-wrap gap-2 justify-center border-b border-[var(--color-border)] bg-[var(--color-container-bg)] items-center"></div>
             <div id="contacts-loading" class="p-4 text-center text-gray-400">Cargando contactos...</div>
-            <div id="contacts-list" class="flex-1 overflow-y-auto"></div>
+            <div id="contacts-list" class="flex-1 overflow-y-auto" style="position:relative;">
+                <div id="contacts-scroll-spacer" style="position:relative;"></div>
+            </div>
         </aside>
         <section id="chat-panel" class="flex-1 flex flex-col relative"></section>
         <aside id="contact-details-panel"></aside>
@@ -691,7 +693,9 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
     }
 
     if (contact && contact.profileImageUrl) {
-        return `<img src="${contact.profileImageUrl}" alt="${contact.name}" class="${size} rounded-full object-cover">`;
+        return `<div class="${size} rounded-full flex-shrink-0 relative" style="overflow:visible;">
+                    <img src="${contact.profileImageUrl}" alt="${contact.name}" class="w-full h-full rounded-full object-cover" loading="lazy">
+                </div>`;
     }
 
     const contactStatusKey = contact.status;
@@ -704,7 +708,7 @@ const UserIcon = (contact, size = 'h-9 w-9') => {
             </div>`;
 };
 
-const ContactItemTemplate = (contact, isSelected) => {
+const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
     const typingText = contact.lastMessage || 'Sin mensajes.';
 
     let timeHTML = '';
@@ -727,14 +731,8 @@ const ContactItemTemplate = (contact, isSelected) => {
         : '';
     
     const defaultColor = '#d1d5db';
-    let color = defaultColor;
-    if (contact.assignedDepartmentId) {
-        const department = state.departments.find(d => d.id === contact.assignedDepartmentId);
-        if (department) {
-            color = department.color;
-        }
-    }
-    const departmentStripe = `style="border-left-color: ${color};"`;
+    let color = (state._deptColorMap && state._deptColorMap.get(contact.assignedDepartmentId)) || defaultColor;
+    const itemStyle = `style="${vsStyle}border-left-color: ${color};"`;
 
     const mainContent = `
         <div class="flex-grow overflow-hidden ml-2">
@@ -764,7 +762,7 @@ const ContactItemTemplate = (contact, isSelected) => {
     const aiActive = contact.botActive === true;
     const aiClass = aiActive ? 'ai-active' : '';
 
-    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass}" data-contact-id="${contact.id}" ${departmentStripe}>
+    return `<div ${onClickAction} class="contact-item flex items-center p-1.5 cursor-pointer ${isSelected ? 'selected' : ''} ${aiClass}" data-contact-id="${contact.id}" ${itemStyle}>
                 ${UserIcon(contact)}
                 ${mainContent}
             </div>`;
