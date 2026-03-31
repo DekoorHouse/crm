@@ -2879,6 +2879,31 @@ function actualizarBadgePedidosHoy(count) {
     // Efecto de animación jumpy cuando cambia el número (opcional, ya tiene la animación de pop por CSS al aparecer)
 }
 
+// --- TRAFFIC STATS BADGE (temporal) ---
+(function initTrafficBadge() {
+    const badge = document.getElementById('traffic-badge');
+    if (!badge) return;
+    async function update() {
+        try {
+            const res = await fetch('/api/traffic-stats');
+            const data = await res.json();
+            badge.textContent = data.current.count;
+            badge.style.display = 'inline-block';
+            badge.title = `${data.current.count} requests en ${Math.round(data.current.elapsedSeconds / 60)}min`;
+        } catch (e) { /* ignore */ }
+    }
+    update();
+    setInterval(update, 30000); // cada 30 seg
+    badge.addEventListener('click', async () => {
+        try {
+            const res = await fetch('/api/traffic-stats');
+            const data = await res.json();
+            const lines = data.history.map(h => `${h.date} ${h.from}-${h.to}: ${h.count} req`).join('\n');
+            alert(`Ventana actual: ${data.current.count} req (${Math.round(data.current.elapsedSeconds/60)} min)\n\nHistorial:\n${lines || 'Sin datos aún'}`);
+        } catch (e) { alert('Error al obtener stats'); }
+    });
+})();
+
 /**
  * Cierra la ventana de chat en móviles para volver a la lista de contactos.
  */

@@ -66,6 +66,7 @@
              <!-- Botón Dark Mode añadido aquí -->
              <div class="flex items-center gap-4">
                  <div class="flex items-center gap-3" title="Pedidos registrados hoy">
+                    <span id="traffic-badge" style="display:none;font-size:11px;background:#6c5ce7;color:#fff;padding:2px 8px;border-radius:12px;cursor:pointer;font-weight:600;" title="Requests API en ventana actual (15 min)">0</span>
                     <span id="header-daily-orders-badge" class="orders-badge hidden">0</span>
                     <button onclick="toggleDarkMode()" class="text-gray-600 hover:text-primary transition-colors p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700" title="Alternar Tema Oscuro">
                         <i id="dark-mode-icon" class="fas fa-moon"></i>

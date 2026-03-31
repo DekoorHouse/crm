@@ -32,14 +32,25 @@ app.use(compression());
 
 // --- REQUEST COUNTER (temporal - para medir tráfico) ---
 let requestCounter = { count: 0, windowStart: Date.now() };
+const requestHistory = []; // últimas ventanas de 15 min
 app.use('/api/', (req, res, next) => {
     const now = Date.now();
     if (now - requestCounter.windowStart > 15 * 60 * 1000) {
-        console.log(`[TRAFFIC] ${requestCounter.count} requests en los últimos 15 min (${new Date(requestCounter.windowStart).toLocaleTimeString('es-MX')} - ${new Date(now).toLocaleTimeString('es-MX')})`);
+        const entry = { count: requestCounter.count, from: new Date(requestCounter.windowStart).toLocaleTimeString('es-MX'), to: new Date(now).toLocaleTimeString('es-MX'), date: new Date(requestCounter.windowStart).toLocaleDateString('es-MX') };
+        console.log(`[TRAFFIC] ${entry.count} requests (${entry.from} - ${entry.to})`);
+        requestHistory.push(entry);
+        if (requestHistory.length > 200) requestHistory.shift();
         requestCounter = { count: 0, windowStart: now };
     }
     requestCounter.count++;
     next();
+});
+app.get('/api/traffic-stats', (req, res) => {
+    const elapsed = Math.round((Date.now() - requestCounter.windowStart) / 1000);
+    res.json({
+        current: { count: requestCounter.count, elapsedSeconds: elapsed },
+        history: requestHistory.slice(-50)
+    });
 });
 
 // --- RATE LIMITING ---
