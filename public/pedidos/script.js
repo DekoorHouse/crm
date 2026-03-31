@@ -1301,6 +1301,20 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
             if (!response.ok) {
                 console.error("Error del servidor al actualizar estatus:", result.message);
+            } else {
+                // Update the status span in-place
+                const row = cuerpoTablaPedidos.querySelector(`tr[data-id="${pedidoId}"]`);
+                if (row) {
+                    const span = row.querySelector('.status-display');
+                    if (span) {
+                        span.className = `status-display status-${nuevoEstatus.toLowerCase().replace(/\s+/g, '-')}`;
+                        span.textContent = nuevoEstatus;
+                        span.dataset.status = nuevoEstatus;
+                    }
+                }
+                // Update in-memory data
+                const data = pedidosDataMap.get(pedidoId);
+                if (data) data.estatus = nuevoEstatus;
             }
         } catch (error) {
             console.error("Error al actualizar estatus: ", error);
