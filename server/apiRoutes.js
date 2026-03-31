@@ -5633,11 +5633,16 @@ router.post('/cobranza/enviar', async (req, res) => {
             return res.json({ success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' });
         }
 
-        // 2. Cargar historial de conversación
+        // 2. Cargar historial de conversación (ordenado desc para detectar ventana 24h)
         const messagesSnapshot = await contactRef.collection('messages')
             .orderBy('timestamp', 'desc')
             .limit(50)
             .get();
+
+        // Detectar ventana de 24h: buscar último mensaje ENTRANTE del cliente
+        const lastInboundMsg = messagesSnapshot.docs.find(d => d.data().from === contactId);
+        const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
+        const windowOpen = lastInboundTime && (Date.now() - lastInboundTime.getTime() < 24 * 60 * 60 * 1000);
 
         const conversationHistory = messagesSnapshot.docs.map(doc => {
             const d = doc.data();
@@ -5649,28 +5654,69 @@ router.post('/cobranza/enviar', async (req, res) => {
             return res.json({ success: false, skipped: true, reason: 'Sin historial de conversación' });
         }
 
-        // 3. Cargar respuestas guardadas para contexto
+        // 3. Cargar respuestas guardadas CON archivos adjuntos
         const quickRepliesSnapshot = await db.collection('quick_replies').get();
-        const quickReplies = quickRepliesSnapshot.docs.map(doc => {
-            const d = doc.data();
-            return `/${d.shortcut}: ${d.message || '[archivo adjunto]'}`;
+        const quickRepliesData = quickRepliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const quickRepliesContext = quickRepliesData.map(qr => {
+            let entry = `/${qr.shortcut}: ${qr.message || ''}`;
+            if (qr.fileUrl) entry += ` [ARCHIVO: ${qr.fileUrl}]`;
+            return entry;
         }).join('\n');
 
-        // 4. Construir prompt para la IA
+        // 4. Cargar plantillas de WhatsApp aprobadas (para chats cerrados)
+        let templatesContext = '';
+        let templatesData = [];
+        try {
+            const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+            const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+            if (WHATSAPP_BUSINESS_ACCOUNT_ID && WHATSAPP_TOKEN) {
+                const tplRes = await axios.get(
+                    `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`,
+                    { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }, params: { limit: 100 } }
+                );
+                templatesData = (tplRes.data.data || [])
+                    .filter(t => t.status === 'APPROVED')
+                    .map(t => ({
+                        name: t.name,
+                        language: t.language,
+                        components: t.components?.map(c => ({ type: c.type, text: c.text, format: c.format, buttons: c.buttons })) || []
+                    }));
+                templatesContext = templatesData.map(t => {
+                    const body = t.components.find(c => c.type === 'BODY');
+                    return `[TEMPLATE:${t.name}]: ${body?.text || '(sin texto)'}`;
+                }).join('\n');
+            }
+        } catch (e) {
+            console.warn('[Cobranza] Error cargando plantillas:', e.message);
+        }
+
+        // 5. Info de pedidos del contacto
         const ordersInfo = orderNumbers ? `Pedidos del cliente: ${orderNumbers.map(n => 'DH' + n).join(', ')}` : '';
+
+        // 6. Construir prompt para la IA
+        const windowStatus = windowOpen
+            ? 'VENTANA DE 24H: ABIERTA - Puedes enviar mensaje normal o respuesta rápida.'
+            : 'VENTANA DE 24H: CERRADA - Debes usar una plantilla. Responde con [TEMPLATE:nombre_plantilla]';
 
         const systemPrompt = `${instructions}
 
 --- RESPUESTAS GUARDADAS DISPONIBLES ---
-${quickReplies}
+${quickRepliesContext}
 
---- REGLAS ---
-- Genera SOLAMENTE el mensaje de cobranza que se debe enviar al cliente.
-- Puedes usar el contenido de las respuestas guardadas como base.
-- Adapta el mensaje al contexto de la conversación.
-- Si la conversación indica que el cliente ya pagó o ya se resolvió el cobro, responde SOLO con la palabra: SKIP
-- No uses saludos formales excesivos. Sé directo pero amable.
-- No incluyas "Asistente:" ni etiquetas.`;
+--- PLANTILLAS DE WHATSAPP APROBADAS (para chats cerrados) ---
+${templatesContext || '(ninguna disponible)'}
+
+--- ESTADO DEL CHAT ---
+${windowStatus}
+
+--- FORMATO DE RESPUESTA ---
+- Para enviar una respuesta rápida: responde SOLAMENTE con el shortcut, ej: /a3
+- Para enviar una plantilla (chat cerrado): responde con [TEMPLATE:nombre_plantilla]
+- Para enviar un mensaje personalizado (chat abierto): escribe solo el mensaje
+- Si necesitas cambiar el estatus del pedido, agrega al final: [ESTATUS:NuevoEstatus]
+  Valores válidos: Foto enviada, Esperando pago, Pagado, Mns Amenazador, Cancelado
+- Si el cobro ya se resolvió o ya pagó: responde SKIP
+- No incluyas "Asistente:" ni etiquetas extra.`;
 
         const dynamicPrompt = `${ordersInfo}
 
@@ -5678,37 +5724,13 @@ ${quickReplies}
 ${conversationHistory}
 
 --- INSTRUCCIÓN ---
-Basándote en la conversación anterior y los pedidos del cliente, genera el mensaje de cobranza apropiado. Si el cobro ya fue resuelto, responde SKIP.`;
+Analiza la conversación y decide qué acción de cobranza tomar.`;
 
-        // 5. Llamar a Gemini
+        // 7. Llamar a Gemini
         const aiResponse = await generateGeminiResponse(dynamicPrompt, [], systemPrompt);
-        const responseText = aiResponse.text.trim();
+        let responseText = aiResponse.text.trim();
 
-        // 6. Si la IA dice SKIP, no enviar
-        if (responseText === 'SKIP' || responseText.toUpperCase() === 'SKIP') {
-            return res.json({ success: false, skipped: true, reason: 'IA determinó que no requiere cobro' });
-        }
-
-        // 7. Enviar mensaje por WhatsApp
-        const sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
-
-        // 8. Guardar en historial de mensajes
-        await contactRef.collection('messages').doc(sendResult.id).set({
-            from: process.env.PHONE_NUMBER_ID || 'system',
-            text: sendResult.textForDb,
-            timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            status: 'sent',
-            id: sendResult.id,
-            isAutoReply: true
-        });
-
-        // 9. Actualizar último mensaje del contacto
-        await contactRef.update({
-            lastMessage: sendResult.textForDb,
-            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
-        });
-
-        // 10. Log de uso de tokens
+        // 8. Log de uso de tokens
         const today = new Date().toISOString().split('T')[0];
         const usageRef = db.collection('ai_usage_logs').doc(today);
         await usageRef.set({
@@ -5718,7 +5740,106 @@ Basándote en la conversación anterior y los pedidos del cliente, genera el men
             date: today
         }, { merge: true });
 
-        res.json({ success: true, message: 'Mensaje enviado', sentText: responseText });
+        // 9. SKIP
+        if (responseText.toUpperCase().includes('SKIP')) {
+            return res.json({ success: false, skipped: true, reason: 'IA determinó que no requiere cobro' });
+        }
+
+        // 10. Extraer y ejecutar cambio de estatus si la IA lo indica
+        const statusMatch = responseText.match(/\[ESTATUS:(.+?)\]/);
+        if (statusMatch) {
+            const newStatus = statusMatch[1].trim();
+            responseText = responseText.replace(/\[ESTATUS:.+?\]/, '').trim();
+            // Buscar pedidos del contacto y actualizar estatus
+            if (orderNumbers && orderNumbers.length > 0) {
+                for (const orderNum of orderNumbers) {
+                    const orderQuery = await db.collection('pedidos')
+                        .where('consecutiveOrderNumber', '==', orderNum)
+                        .limit(1).get();
+                    if (!orderQuery.empty) {
+                        await orderQuery.docs[0].ref.update({ estatus: newStatus });
+                        console.log(`[Cobranza] Estatus de DH${orderNum} cambiado a: ${newStatus}`);
+                    }
+                }
+            }
+        }
+
+        // 11. Detectar si es un shortcut de respuesta rápida
+        const shortcutMatch = responseText.match(/^\/(\S+)$/);
+        let sendResult;
+
+        if (shortcutMatch) {
+            const shortcut = shortcutMatch[1];
+            const qr = quickRepliesData.find(q => q.shortcut === shortcut);
+            if (qr) {
+                sendResult = await sendAdvancedWhatsAppMessage(contactId, {
+                    text: qr.message || '',
+                    fileUrl: qr.fileUrl || null,
+                    fileType: qr.fileType || null
+                });
+            } else {
+                // Shortcut no encontrado, enviar como texto
+                sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
+            }
+        }
+        // 12. Detectar si es plantilla (chat cerrado)
+        else if (responseText.includes('[TEMPLATE:')) {
+            const templateMatch = responseText.match(/\[TEMPLATE:(.+?)\]/);
+            if (templateMatch) {
+                const templateName = templateMatch[1].trim();
+                const template = templatesData.find(t => t.name === templateName);
+                if (template) {
+                    const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+                    const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+                    const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+                    const tplResponse = await axios.post(
+                        `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                        payload,
+                        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+                    );
+                    const messageId = tplResponse.data.messages[0].id;
+                    sendResult = { id: messageId, textForDb: messageToSaveText };
+                } else {
+                    // Plantilla no encontrada, intentar enviar como texto normal
+                    const cleanText = responseText.replace(/\[TEMPLATE:.+?\]/, '').trim();
+                    if (cleanText) {
+                        sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: cleanText });
+                    } else {
+                        return res.json({ success: false, skipped: true, reason: `Plantilla '${templateName}' no encontrada` });
+                    }
+                }
+            }
+        }
+        // 13. Mensaje normal
+        else {
+            sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
+        }
+
+        // 14. Guardar en historial de mensajes
+        if (sendResult) {
+            await contactRef.collection('messages').doc(sendResult.id).set({
+                from: process.env.PHONE_NUMBER_ID || 'system',
+                text: sendResult.textForDb,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                status: 'sent',
+                id: sendResult.id,
+                isAutoReply: true,
+                ...(sendResult.fileUrlForDb ? { fileUrl: sendResult.fileUrlForDb, fileType: sendResult.fileTypeForDb } : {})
+            });
+
+            await contactRef.update({
+                lastMessage: sendResult.textForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp()
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Mensaje enviado',
+            sentText: responseText,
+            windowOpen,
+            statusChanged: statusMatch ? statusMatch[1].trim() : null
+        });
 
     } catch (error) {
         console.error('Error en cobranza individual:', error);
