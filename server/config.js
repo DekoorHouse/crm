@@ -33,7 +33,7 @@ app.use(compression());
 // --- RATE LIMITING ---
 const apiLimiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 200, // máximo 200 peticiones por IP por ventana
+    max: 1000, // máximo 1000 peticiones por IP por ventana
     standardHeaders: true,
     legacyHeaders: false,
     message: { error: 'Demasiadas peticiones, intenta de nuevo en unos minutos.' }
