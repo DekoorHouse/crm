@@ -1999,6 +1999,20 @@ async function handleOrderStatusChange(orderId, newStatus, selectEl) {
 
         showError('Estatus del pedido actualizado.', 'success');
 
+        // Actualizar estado local inmediatamente
+        const orderInState = state.selectedContactOrders.find(o => o.id === orderId);
+        if (orderInState) {
+            orderInState.estatus = newStatus;
+        }
+
+        // Actualizar estilos del select inmediatamente
+        if (selectEl) {
+            const statusStyle = state.orderStatuses.find(s => s.key === newStatus) || { color: '#e9ecef' };
+            selectEl.style.backgroundColor = statusStyle.color + '20';
+            selectEl.style.color = statusStyle.color;
+            selectEl.style.borderColor = statusStyle.color + '50';
+        }
+
     } catch (error) {
         console.error("Error al actualizar el estatus del pedido: ", error);
         showError("Error al guardar el cambio. Revisa la consola.", 'error');
