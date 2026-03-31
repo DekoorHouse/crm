@@ -165,6 +165,9 @@ async function fetchInitialContacts() {
         // Procesa los timestamps y actualiza el estado
         state.contacts = processContacts(data.contacts);
 
+        // Reordenar por fecha (Firestore ordena por unreadCount primero cuando hay filtro de no leídos)
+        state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
+
         // Actualiza el estado de paginación
         state.pagination.lastVisibleId = data.lastVisibleId; // ID del último contacto para la siguiente página
         state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null; // Hay más si se devolvieron contactos y hay un ID para seguir
@@ -369,6 +372,9 @@ async function fetchMoreContacts() {
             const existingIds = new Set(state.contacts.map(c => c.id));
             const filteredNewContacts = newContacts.filter(c => !existingIds.has(c.id));
             state.contacts.push(...filteredNewContacts);
+
+            // Reordenar por fecha (Firestore ordena por unreadCount primero cuando hay filtro de no leídos)
+            state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
 
             // Actualizar el ID del último contacto visible
             state.pagination.lastVisibleId = data.lastVisibleId;
