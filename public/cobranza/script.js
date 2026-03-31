@@ -98,10 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const fin = document.getElementById('fechaFin').value;
         if (!inicio || !fin) { alert('Selecciona ambas fechas.'); return; }
 
-        const startDate = new Date(inicio);
-        startDate.setHours(0, 0, 0, 0);
-        const endDate = new Date(fin);
-        endDate.setHours(23, 59, 59, 999);
+        const startDate = new Date(inicio + 'T00:00:00');
+        const endDate = new Date(fin + 'T23:59:59.999');
 
         try {
             const token = await auth.currentUser.getIdToken();
