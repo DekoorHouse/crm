@@ -39,7 +39,15 @@ body {
     animation: fadeIn 0.6s ease-out;
 }
 
-/* Old header/nav removed - using shared navbar from /sitio/style.css */
+header {
+    text-align: center;
+    padding: 1.5rem 0 0;
+}
+
+.logo-img {
+    height: 56px;
+    width: auto;
+}
 
 /* --- Hero --- */
 .hero {
