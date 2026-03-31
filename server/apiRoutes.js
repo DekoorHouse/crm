@@ -1842,13 +1842,15 @@ router.get('/contacts', async (req, res) => {
 
         // Ordenar por último mensaje y limitar resultados (Firestore requiere ordenar primero por el campo de la desigualdad)
         if (req.query.unreadOnly === 'true') {
-            query = query.orderBy('unreadCount', 'desc').orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
+            // No usar limit: traer todos los no leídos para que no se pierdan los de count bajo.
+            // El frontend usa virtual scroll para renderizar solo los visibles.
+            query = query.orderBy('unreadCount', 'desc').orderBy('lastMessageTimestamp', 'desc');
         } else {
             query = query.orderBy('lastMessageTimestamp', 'desc').limit(Number(limit));
         }
 
-        // Paginación: Empezar después del último documento de la página anterior
-        if (startAfterId) {
+        // Paginación: Empezar después del último documento de la página anterior (no aplica con unreadOnly que trae todo)
+        if (startAfterId && req.query.unreadOnly !== 'true') {
             const lastDoc = await db.collection('contacts_whatsapp').doc(startAfterId).get();
             if (lastDoc.exists) {
                 query = query.startAfter(lastDoc); // Iniciar consulta después de este documento

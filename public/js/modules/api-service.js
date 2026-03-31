@@ -169,8 +169,14 @@ async function fetchInitialContacts() {
         state.contacts.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
 
         // Actualiza el estado de paginación
-        state.pagination.lastVisibleId = data.lastVisibleId; // ID del último contacto para la siguiente página
-        state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null; // Hay más si se devolvieron contactos y hay un ID para seguir
+        if (state.unreadOnly) {
+            // Con filtro de no leídos se traen todos de una vez, no hay paginación
+            state.pagination.lastVisibleId = null;
+            state.pagination.hasMore = false;
+        } else {
+            state.pagination.lastVisibleId = data.lastVisibleId;
+            state.pagination.hasMore = data.contacts.length > 0 && data.lastVisibleId !== null;
+        }
 
         // Renderiza la lista de contactos en la UI
         scheduleContactListRender();
