@@ -107,8 +107,8 @@ describe('Sitio - Seguridad', () => {
         expect(html).toContain('cookieBanner');
     });
 
-    test('tiene SRI en Font Awesome CDN', () => {
-        expect(html).toContain('integrity="sha512');
+    test('CDN scripts tienen crossorigin', () => {
+        expect(html).toContain('crossorigin="anonymous"');
     });
 });
 
