@@ -74,7 +74,11 @@ function handleSearchContacts() {
         contactsToRender = contactsToRender.filter(c => c.unreadCount > 0);
     }
     if (state.purchaseFilter) {
-        contactsToRender = contactsToRender.filter(c => c.purchaseStatus === state.purchaseFilter);
+        if (state.purchaseFilter === 'both') {
+            contactsToRender = contactsToRender.filter(c => c.purchaseStatus === 'registered' || c.purchaseStatus === 'completed');
+        } else {
+            contactsToRender = contactsToRender.filter(c => c.purchaseStatus === state.purchaseFilter);
+        }
     }
     // Siempre ordenar por fecha descendente antes de renderizar
     contactsToRender.sort((a, b) => (b.lastMessageTimestamp?.getTime() || 0) - (a.lastMessageTimestamp?.getTime() || 0));
@@ -998,7 +1002,20 @@ function toggleUnreadFilter() {
 }
 
 function setPurchaseFilter(filter) {
-    state.purchaseFilter = state.purchaseFilter === filter ? null : filter;
+    const current = state.purchaseFilter;
+    if (!current) {
+        // Ninguno activo → activar el clickeado
+        state.purchaseFilter = filter;
+    } else if (current === filter) {
+        // Desactivar el mismo que ya estaba
+        state.purchaseFilter = null;
+    } else if (current === 'both') {
+        // Ambos activos → desactivar el clickeado, dejar el otro
+        state.purchaseFilter = filter === 'registered' ? 'completed' : 'registered';
+    } else {
+        // Uno activo, click en el otro → activar ambos
+        state.purchaseFilter = 'both';
+    }
     state.unreadOnly = false;
     state.activeFilter = 'all';
     renderTagFilters();

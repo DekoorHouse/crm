@@ -155,10 +155,12 @@ function renderTagFilters() {
     buttonsHtml += `<button id="filter-unread" class="filter-btn ${state.unreadOnly ? 'active' : ''}" onclick="toggleUnreadFilter()">No leídos</button>`;
 
     // Botón "Coronita gris" (pedidos registrados)
-    buttonsHtml += `<button id="filter-crown-registered" class="filter-btn ${state.purchaseFilter === 'registered' ? 'active' : ''}" onclick="setPurchaseFilter('registered')" title="Pedidos registrados"><i class="fas fa-crown text-xs mr-1" style="color: ${state.purchaseFilter === 'registered' ? 'white' : '#A0A0A0'};"></i></button>`;
+    const greyActive = state.purchaseFilter === 'registered' || state.purchaseFilter === 'both';
+    buttonsHtml += `<button id="filter-crown-registered" class="filter-btn ${greyActive ? 'active' : ''}" onclick="setPurchaseFilter('registered')" title="Pedidos registrados"><i class="fas fa-crown text-xs mr-1" style="color: ${greyActive ? 'white' : '#A0A0A0'};"></i></button>`;
 
     // Botón "Coronita azul" (pedidos confirmados)
-    buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${state.purchaseFilter === 'completed' ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos confirmados"><i class="fas fa-crown text-xs mr-1" style="color: ${state.purchaseFilter === 'completed' ? 'white' : '#1E90FF'};"></i></button>`;
+    const blueActive = state.purchaseFilter === 'completed' || state.purchaseFilter === 'both';
+    buttonsHtml += `<button id="filter-crown-completed" class="filter-btn ${blueActive ? 'active' : ''}" onclick="setPurchaseFilter('completed')" title="Pedidos confirmados"><i class="fas fa-crown text-xs mr-1" style="color: ${blueActive ? 'white' : '#1E90FF'};"></i></button>`;
 
     // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';

@@ -1826,7 +1826,11 @@ router.get('/contacts', async (req, res) => {
 
         // Aplicar filtro por estatus de compra (coronita gris/azul)
         if (req.query.purchaseStatus) {
-            query = query.where('purchaseStatus', '==', req.query.purchaseStatus);
+            if (req.query.purchaseStatus === 'both') {
+                query = query.where('purchaseStatus', 'in', ['registered', 'completed']);
+            } else {
+                query = query.where('purchaseStatus', '==', req.query.purchaseStatus);
+            }
         }
 
         // --- INICIO: Filtro por Departamento ---
