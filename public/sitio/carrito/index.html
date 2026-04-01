@@ -653,6 +653,9 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     if (!cart.length) return;
     const firstItem = cart[0];
     const shipping = document.querySelector('input[name="shipping"]:checked').value;
+    const subtotal = DekoorCart.subtotal();
+    const totalQty = DekoorCart.count();
+    const itemsSummary = cart.map(i => `${i.name} (${i.collection})${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ');
     const params = new URLSearchParams({
         name: document.getElementById('ckName').value.trim(),
         phone: document.getElementById('ckPhone').value.trim(),
@@ -663,9 +666,11 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
         state: document.getElementById('ckState').value.trim(),
         zip: document.getElementById('ckZip').value.trim(),
         shipping,
-        product: firstItem.name,
+        product: itemsSummary,
         collection: firstItem.collection,
-        img: firstItem.img
+        img: firstItem.img,
+        subtotal: subtotal,
+        qty: totalQty
     });
     window.location.href = '/sitio/checkout/?' + params.toString();
 });

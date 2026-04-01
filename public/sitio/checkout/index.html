@@ -273,7 +273,7 @@
             <div id="customerInfo" class="customer-info"></div>
             <div class="order-product" id="orderProduct"></div>
             <div id="addressInfo" class="customer-info" style="margin-top:0;"></div>
-            <div class="order-line">
+            <div class="order-line" id="subtotalLine">
                 <span>Subtotal</span>
                 <span>$650.00</span>
             </div>
@@ -331,9 +331,11 @@ const city = params.get('city') || '';
 const state = params.get('state') || '';
 const zip = params.get('zip') || '';
 
+const qty = parseInt(params.get('qty')) || 1;
+const subtotalParam = parseInt(params.get('subtotal')) || 650;
 const isDHL = shipping === 'dhl';
 const shippingCost = isDHL ? 160 : 0;
-const total = 650 + shippingCost;
+const total = subtotalParam + shippingCost;
 
 if (!customerName || !customerPhone) {
     window.location.href = '/sitio/#colecciones';
@@ -350,22 +352,24 @@ document.getElementById('addressInfo').innerHTML =
     `<i class="fas fa-map-marker-alt" style="color:var(--primary)"></i> <strong>Enviar a:</strong><br>` +
     `${street}, ${colonia}<br>${city}, ${state} C.P. ${zip}`;
 
-// Show shipping method & totals
+// Show subtotal & shipping & totals
+document.getElementById('subtotalLine').innerHTML = `<span>Subtotal${qty > 1 ? ' (' + qty + ' productos)' : ''}</span><span>$${subtotalParam.toLocaleString('en')}.00</span>`;
 if (isDHL) {
     document.getElementById('shippingLine').innerHTML = '<span>Envio DHL Express</span><span>$160.00</span>';
     document.getElementById('shippingMethod').innerHTML = '<i class="fas fa-bolt"></i> DHL Express - 2-3 dias habiles';
 }
-document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total}.00 MXN</span>`;
+document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total.toLocaleString('en')}.00 MXN</span>`;
 
 // Show product info
+const originalTotal = qty * 780;
 document.getElementById('orderProduct').innerHTML = `
     ${imageUrl ? `<img src="${decodeURIComponent(imageUrl)}" alt="${productName}">` : ''}
     <div class="order-product-info">
         <div class="name">${productName}</div>
         <div class="collection">${collection ? 'Coleccion ' + collection : 'Lampara personalizada'}</div>
         <div class="price-row">
-            <span class="price-original">$780</span>
-            <span class="price">$650 <small style="font-weight:400;color:var(--text-medium);font-size:0.75rem">MXN</small></span>
+            <span class="price-original">$${originalTotal.toLocaleString('en')}</span>
+            <span class="price">$${subtotalParam.toLocaleString('en')} <small style="font-weight:400;color:var(--text-medium);font-size:0.75rem">MXN</small></span>
         </div>
     </div>`;
 
@@ -375,7 +379,7 @@ async function initCheckout() {
         const res = await fetch(API + '/api/conekta/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerName, customerPhone, customerEmail, productName, collection, imageUrl, shipping, address: { street, colonia, city, state, zip } })
+            body: JSON.stringify({ customerName, customerPhone, customerEmail, productName, collection, imageUrl, shipping, qty, subtotal: subtotalParam, total, address: { street, colonia, city, state, zip } })
         });
         const data = await res.json();
 
