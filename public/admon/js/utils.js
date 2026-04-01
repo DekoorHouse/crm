@@ -161,7 +161,7 @@ export function autoCategorizeWithRulesOnly(concept) {
         Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167'], 
         Alex: ['alex', 'bolt'], 
         Publicidad: ['facebook'],
-        Material: ['material', 'raza', 'c00008749584'], 
+        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre'],
         Envios: ['guias'], 
         Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
         Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger'], 
