@@ -1755,7 +1755,9 @@ body {
 @media (max-width: 768px) {
     :root { --nav-height: 70px; }
 
-    .nav-links, .nav-actions { display: none; }
+    .nav-links { display: none; }
+    .nav-actions { display: flex; gap: 0.35rem; }
+    .nav-actions .nav-icon-btn:not(.cart-btn) { display: none; }
     .hamburger-btn { display: flex; }
 
     .hero-inner {
