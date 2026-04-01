@@ -356,11 +356,29 @@ async function handleSelectContact(contactId) {
     // Actualizamos el contador de no leídos localmente para una respuesta de UI más rápida
     const contactIdx = state.contacts.findIndex(c => c.id === contactId);
     if (contactIdx > -1) {
-        state.contacts[contactIdx].unreadCount = 0;
+        const contact = state.contacts[contactIdx];
+        if (state.designReviewFilter) {
+            // La diseñadora abre desde filtro de diseño → limpiar designUnreadCount
+            contact.designUnreadCount = 0;
+            db.collection('contacts_whatsapp').doc(contactId).update({ designUnreadCount: 0 }).catch(err => console.error("Error al resetear designUnreadCount:", err));
+        } else {
+            // Alguien abre desde la vista normal → limpiar unreadCount
+            // Si tiene pincelito, preservar no leídos para la diseñadora
+            if (contact.inDesignReview && contact.unreadCount > 0) {
+                const currentDesign = contact.designUnreadCount || 0;
+                contact.designUnreadCount = currentDesign + contact.unreadCount;
+                db.collection('contacts_whatsapp').doc(contactId).update({
+                    unreadCount: 0,
+                    designUnreadCount: contact.designUnreadCount
+                }).catch(err => console.error("Error al resetear contador:", err));
+            } else {
+                db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err));
+            }
+            contact.unreadCount = 0;
+        }
+    } else {
+        db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err));
     }
-    
-    // La actualización en la base de datos sigue siendo importante
-    db.collection('contacts_whatsapp').doc(contactId).update({ unreadCount: 0 }).catch(err => console.error("Error al resetear contador:", err)); 
     
     state.selectedContactId = contactId; 
     state.loadingMessages = true; 

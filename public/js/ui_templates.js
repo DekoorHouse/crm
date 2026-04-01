@@ -720,8 +720,10 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
         timeHTML = `<span class="contact-time-label">${timeString}</span>`;
     }
 
-    const unreadBadgeHTML = contact.unreadCount > 0
-        ? `<span class="unread-badge">${contact.unreadCount}</span>`
+    // En filtro de diseño, mostrar designUnreadCount; en vista normal, mostrar unreadCount
+    const displayUnread = state.designReviewFilter ? (contact.designUnreadCount || 0) : (contact.unreadCount || 0);
+    const unreadBadgeHTML = displayUnread > 0
+        ? `<span class="unread-badge">${displayUnread}</span>`
         : '';
 
     const timeOrBadgeHTML = timeHTML + unreadBadgeHTML;
