@@ -311,6 +311,38 @@
             .cart-item { flex-direction: column; gap: 10px; }
             .cart-item-img { width: 100%; height: 200px; }
         }
+
+        /* Checkout Modal */
+        .checkout-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            z-index: 9999; display: none; align-items: center; justify-content: center; padding: 1rem;
+        }
+        .checkout-overlay.active { display: flex; }
+        .checkout-modal {
+            background: var(--white); border-radius: var(--radius-lg); max-width: 440px;
+            width: 100%; padding: 2rem; position: relative; box-shadow: var(--shadow-lg);
+            max-height: 90vh; overflow-y: auto;
+        }
+        .checkout-modal h2 { font-size: 1.3rem; font-weight: 800; color: var(--teal); margin-bottom: 0.25rem; }
+        .checkout-subtitle { color: var(--text-medium); font-size: 0.9rem; margin-bottom: 1.25rem; }
+        .checkout-close {
+            position: absolute; top: 12px; right: 16px; background: none;
+            border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-medium); line-height: 1;
+        }
+        .ck-field { margin-bottom: 1rem; }
+        .ck-field label { display: block; font-weight: 600; font-size: 0.85rem; color: var(--text-dark); margin-bottom: 4px; }
+        .ck-field input {
+            width: 100%; padding: 10px 14px; border: 2px solid var(--border); border-radius: var(--radius);
+            font-size: 0.95rem; font-family: inherit; transition: border-color 0.2s; box-sizing: border-box;
+        }
+        .ck-field input:focus { outline: none; border-color: var(--primary); }
+        .ck-shipping-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
+        .ck-shipping {
+            display: flex; align-items: center; gap: 10px; border: 2px solid var(--border);
+            border-radius: var(--radius); padding: 12px 14px; cursor: pointer; transition: border-color 0.2s;
+        }
+        .ck-shipping:hover, .ck-shipping.selected { border-color: var(--primary); }
+        .ck-shipping input[type="radio"] { accent-color: var(--primary); width: 18px; height: 18px; margin: 0; flex-shrink: 0; }
     </style>
 </head>
 <body>
@@ -403,6 +435,75 @@
         </div>
     </div>
 </main>
+
+<!-- Checkout Modal -->
+<div class="checkout-overlay" id="checkoutOverlay">
+    <div class="checkout-modal">
+        <button class="checkout-close" id="checkoutClose">&times;</button>
+        <h2>Completa tu pedido</h2>
+        <p class="checkout-subtitle">Llena tus datos y paga de forma segura</p>
+        <div id="checkoutProduct" style="background:var(--cream);border-radius:var(--radius);padding:12px;margin-bottom:1.25rem;font-size:0.9rem;color:var(--text-dark);"></div>
+        <form id="checkoutForm">
+            <div class="ck-field">
+                <label for="ckName">Nombre completo *</label>
+                <input type="text" id="ckName" required placeholder="Tu nombre">
+            </div>
+            <div class="ck-field">
+                <label for="ckPhone">WhatsApp (10 digitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+            </div>
+            <div class="ck-field">
+                <label for="ckEmail">Email *</label>
+                <input type="email" id="ckEmail" required placeholder="tu@email.com">
+            </div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div class="ck-field">
+                <label for="ckStreet">Calle y numero *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+            </div>
+            <div class="ck-field">
+                <label for="ckColonia">Colonia *</label>
+                <input type="text" id="ckColonia" required placeholder="Centro">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div class="ck-field">
+                    <label for="ckCity">Ciudad *</label>
+                    <input type="text" id="ckCity" required placeholder="Durango">
+                </div>
+                <div class="ck-field">
+                    <label for="ckState">Estado *</label>
+                    <input type="text" id="ckState" required placeholder="Durango">
+                </div>
+            </div>
+            <div class="ck-field">
+                <label for="ckZip">Codigo postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+            </div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div class="ck-shipping-options">
+                <label class="ck-shipping selected">
+                    <input type="radio" name="shipping" value="jt" checked>
+                    <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">J&T Express</span><span style="font-weight:700;font-size:0.9rem;color:#10b981;">Gratis</span></div>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">5-7 dias habiles</span>
+                    </div>
+                </label>
+                <label class="ck-shipping">
+                    <input type="radio" name="shipping" value="dhl">
+                    <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">DHL Express</span><span style="font-weight:700;font-size:0.9rem;">+$160 MXN</span></div>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">2-3 dias habiles</span>
+                    </div>
+                </label>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.15rem;padding:1rem 0;border-top:2px solid var(--border);margin:1rem 0;">
+                <span>Total:</span>
+                <span id="ckTotal" style="color:var(--primary);font-size:1.3rem;">$0 MXN</span>
+            </div>
+            <button type="submit" class="checkout-btn"><i class="fas fa-lock"></i> Continuar al pago</button>
+        </form>
+    </div>
+</div>
 
 <!-- WhatsApp FAB -->
 <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20me%20interesan%20sus%20productos" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">
@@ -506,15 +607,68 @@ function goToCheckout(e) {
     e.preventDefault();
     const cart = DekoorCart.get();
     if (!cart.length) return;
-    // For single item, go directly to collection checkout
-    if (cart.length === 1) {
-        const item = cart[0];
-        window.location.href = `/sitio/coleccion/?id=${encodeURIComponent(item.collectionId)}&autoCheckout=1`;
-        return;
-    }
-    // For multiple items, open WhatsApp with full order
-    document.getElementById('waCheckoutLink').click();
+
+    const subtotal = DekoorCart.subtotal();
+    const totalCount = DekoorCart.count();
+    const firstItem = cart[0];
+
+    // Show product summary in modal
+    document.getElementById('checkoutProduct').innerHTML =
+        `<strong>${totalCount} ${totalCount === 1 ? 'producto' : 'productos'}</strong> — ` +
+        cart.map(i => `${i.name} (${i.collection})${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ') +
+        `<br><span style="font-weight:800;color:var(--primary);font-size:1.1rem;">$${subtotal.toLocaleString('en')} MXN</span>`;
+
+    updateCheckoutTotal();
+    document.getElementById('checkoutOverlay').classList.add('active');
 }
+
+function updateCheckoutTotal() {
+    const subtotal = DekoorCart.subtotal();
+    const isDHL = document.querySelector('input[name="shipping"]:checked')?.value === 'dhl';
+    const total = subtotal + (isDHL ? 160 : 0);
+    document.getElementById('ckTotal').textContent = `$${total.toLocaleString('en')} MXN`;
+}
+
+// Checkout modal events
+document.getElementById('checkoutClose').addEventListener('click', () => {
+    document.getElementById('checkoutOverlay').classList.remove('active');
+});
+document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+});
+
+// Shipping toggle
+document.querySelectorAll('input[name="shipping"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.ck-shipping').forEach(el => el.classList.remove('selected'));
+        radio.closest('.ck-shipping').classList.add('selected');
+        updateCheckoutTotal();
+    });
+});
+
+// Form submit → redirect to Conekta checkout
+document.getElementById('checkoutForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cart = DekoorCart.get();
+    if (!cart.length) return;
+    const firstItem = cart[0];
+    const shipping = document.querySelector('input[name="shipping"]:checked').value;
+    const params = new URLSearchParams({
+        name: document.getElementById('ckName').value.trim(),
+        phone: document.getElementById('ckPhone').value.trim(),
+        email: document.getElementById('ckEmail').value.trim(),
+        street: document.getElementById('ckStreet').value.trim(),
+        colonia: document.getElementById('ckColonia').value.trim(),
+        city: document.getElementById('ckCity').value.trim(),
+        state: document.getElementById('ckState').value.trim(),
+        zip: document.getElementById('ckZip').value.trim(),
+        shipping,
+        product: firstItem.name,
+        collection: firstItem.collection,
+        img: firstItem.img
+    });
+    window.location.href = '/sitio/checkout/?' + params.toString();
+});
 
 function esc(str) {
     const d = document.createElement('div');
