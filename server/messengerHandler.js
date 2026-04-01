@@ -308,6 +308,11 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
             lastMessageTimestamp: messageData.timestamp,
             unreadCount: admin.firestore.FieldValue.increment(1)
         };
+
+        // Si el chat está en revisión de diseño, también incrementar designUnreadCount
+        if (contactDoc.exists && contactDoc.data().inDesignReview) {
+            contactUpdateData.designUnreadCount = admin.firestore.FieldValue.increment(1);
+        }
     }
 
     await contactRef.set(contactUpdateData, { merge: true });

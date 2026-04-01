@@ -544,6 +544,11 @@ router.post('/', async (req, res) => {
                 unreadCount: admin.firestore.FieldValue.increment(1) // Increment unread count
             };
 
+            // Si el chat está en revisión de diseño, también incrementar designUnreadCount
+            if (contactDoc.exists && contactDoc.data().inDesignReview) {
+                contactUpdateData.designUnreadCount = admin.firestore.FieldValue.increment(1);
+            }
+
             // Only add adReferral if it exists in the incoming message AND the contact doesn't already have it (first ad message)
             if (message.referral && (!contactDoc.exists || !contactDoc.data().adReferral)) {
                 let adName = message.referral.headline || message.referral.body || `ID: ${message.referral.source_id}`;
