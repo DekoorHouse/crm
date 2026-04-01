@@ -8,6 +8,7 @@ const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoute
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
 const conektaRouter = require('./conekta/conektaRoutes');
+const jtGuiasRouter = require('./jt/jtRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const path = require('path');
@@ -39,6 +40,7 @@ app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/conekta', conektaRouter);
+app.use('/api/jt-guias', jtGuiasRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
@@ -83,6 +85,10 @@ app.get('/laser', (req, res) => {
 
 app.get('/envios', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'envios', 'index.html'));
+});
+
+app.get('/guias', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'guias', 'index.html'));
 });
 
 app.get('/referencias', (req, res) => {

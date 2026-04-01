@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guías J&T Express - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/guias/style.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+    <!-- Header -->
+    <div class="page-header">
+        <h1><i class="fas fa-shipping-fast"></i> Guías J&T Express</h1>
+        <div class="header-actions">
+            <span id="statusBadge" class="status-badge warn"><i class="fas fa-spinner fa-spin"></i> Verificando...</span>
+            <span id="contadorGuias" class="counter-badge">0 guías</span>
+            <button id="btnRecargar" class="btn btn-secondary" title="Recargar"><i class="fas fa-sync-alt"></i></button>
+            <a href="/envios" class="btn btn-secondary"><i class="fas fa-list"></i> Datos Envío</a>
+        </div>
+    </div>
+
+    <div class="grid-layout">
+        <!-- Left: Form -->
+        <div class="content-box">
+            <h2><i class="fas fa-plus-circle"></i> Crear Nueva Guía</h2>
+
+            <!-- Auto-fill from pedido -->
+            <div class="autofill-section">
+                <label><i class="fas fa-magic"></i> Cargar datos de un pedido</label>
+                <div class="autofill-row">
+                    <input type="text" id="autofillPedido" placeholder="Ej: DH1042">
+                    <button type="button" id="btnAutofill" class="btn btn-success btn-sm"><i class="fas fa-search"></i></button>
+                </div>
+                <p class="form-hint">Escribe el No. de pedido para auto-llenar los datos de envío</p>
+            </div>
+
+            <div id="formAlert" class="alert"></div>
+
+            <form id="guiaForm">
+                <div class="form-group">
+                    <label for="orderNumber">No. Pedido *</label>
+                    <input type="text" id="orderNumber" required placeholder="DH1042">
+                </div>
+
+                <div class="form-section-title"><i class="fas fa-user"></i> Destinatario</div>
+
+                <div class="form-group">
+                    <label for="receiverName">Nombre completo *</label>
+                    <input type="text" id="receiverName" required placeholder="Juan Pérez">
+                </div>
+
+                <div class="form-group">
+                    <label for="receiverPhone">Teléfono (10 dígitos) *</label>
+                    <input type="tel" id="receiverPhone" required placeholder="6181234567" maxlength="10" pattern="[0-9]{10}">
+                </div>
+
+                <div class="form-section-title"><i class="fas fa-map-marker-alt"></i> Dirección de envío</div>
+
+                <div class="form-group">
+                    <label for="street">Calle y número *</label>
+                    <input type="text" id="street" required placeholder="Av. 20 de Noviembre #456">
+                </div>
+
+                <div class="form-group">
+                    <label for="colonia">Colonia *</label>
+                    <input type="text" id="colonia" required placeholder="Centro">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="city">Ciudad *</label>
+                        <input type="text" id="city" required placeholder="Durango">
+                    </div>
+                    <div class="form-group">
+                        <label for="state">Estado *</label>
+                        <input type="text" id="state" required placeholder="Durango">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="zip">Código Postal *</label>
+                        <input type="text" id="zip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+                    </div>
+                    <div class="form-group">
+                        <label for="reference">Referencia</label>
+                        <input type="text" id="reference" placeholder="Entre calles, color de casa...">
+                    </div>
+                </div>
+
+                <div class="form-section-title"><i class="fas fa-box"></i> Paquete</div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="productName">Producto</label>
+                        <input type="text" id="productName" placeholder="Lámpara 3D Personalizada">
+                    </div>
+                    <div class="form-group">
+                        <label for="weight">Peso (kg)</label>
+                        <input type="number" id="weight" value="1" min="0.1" step="0.1">
+                    </div>
+                </div>
+
+                <button type="submit" id="btnSubmit" class="btn btn-primary">
+                    <i class="fas fa-shipping-fast"></i> Crear Guía J&T
+                </button>
+            </form>
+        </div>
+
+        <!-- Right: Table of guides -->
+        <div class="content-box">
+            <h2><i class="fas fa-clipboard-list"></i> Guías Creadas</h2>
+
+            <div class="table-wrapper">
+                <table class="table" id="tablaGuias">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Pedido</th>
+                            <th>No. Guía</th>
+                            <th>Destinatario</th>
+                            <th>Teléfono</th>
+                            <th>Dirección</th>
+                            <th>Estado</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuerpoTablaGuias">
+                        <tr><td colspan="8" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando guías...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="/env-config.js"></script>
+<script src="/guias/script.js"></script>
+
+</body>
+</html>
