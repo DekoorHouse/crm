@@ -236,6 +236,10 @@
             <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
             <a href="/sitio/#contacto" class="nav-link">Contacto</a>
         </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
+        </div>
         <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menu">
             <i class="fas fa-bars"></i>
         </button>
@@ -306,6 +310,7 @@
     </div>
 </main>
 
+<script src="/sitio/cart.js"></script>
 <script src="/env-config.js"></script>
 <script>
 const API = window.API_BASE_URL || '';
