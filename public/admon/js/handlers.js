@@ -219,7 +219,7 @@ export function initEventListeners() {
             ui.showModal({ show: false });
             return;
         }
-        if (e.target === elements.modal) ui.showModal({ show: false });
+        // Click outside modal no longer closes it
     });
     
     elements.dataTableBody.addEventListener('click', (e) => {
