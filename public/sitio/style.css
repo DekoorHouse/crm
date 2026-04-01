@@ -1645,9 +1645,6 @@ body {
 /* ============================================================
    WHATSAPP TOOLTIP
    ============================================================ */
-.whatsapp-fab {
-    position: relative;
-}
 
 .wa-tooltip {
     position: absolute;
@@ -1756,9 +1753,16 @@ body {
     :root { --nav-height: 70px; }
 
     .nav-links { display: none; }
-    .nav-actions { display: flex; gap: 0.35rem; }
+    .nav-actions {
+        display: flex;
+        gap: 0.35rem;
+        order: 1;
+    }
     .nav-actions .nav-icon-btn:not(.cart-btn) { display: none; }
-    .hamburger-btn { display: flex; }
+    .hamburger-btn {
+        display: flex;
+        order: 2;
+    }
 
     .hero-inner {
         grid-template-columns: 1fr;
