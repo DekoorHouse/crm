@@ -293,7 +293,7 @@
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Clics</th>
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CTR</th>
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CPC</th>
-                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CPM</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Cobrado / ROAS</th>
                         </tr>
                     </thead>
                     <tbody id="campaigns-body"></tbody>
@@ -529,22 +529,39 @@
             const body = document.getElementById('campaigns-body');
             const summary = document.getElementById('campaigns-summary');
             try {
-                const res = await fetch(`${API_BASE}/api/meta-ads/campaigns?accountId=1890131678412987&date_from=${dateISO}&date_to=${dateISO}`);
-                const data = await res.json();
-                if (!data.data || data.data.length === 0) { section.style.display = 'none'; return; }
+                // Fetch campañas de Meta y pagos por campaña en paralelo
+                const [metaRes, paymentsRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/meta-ads/campaigns?accountId=1890131678412987&date_from=${dateISO}&date_to=${dateISO}`),
+                    fetch(`${API_BASE}/api/campaigns/payments?date=${dateISO}`)
+                ]);
+                const metaData = await metaRes.json();
+                const paymentsData = await paymentsRes.json();
 
-                // Filtrar campañas con gasto > 0 y extraer insights
-                const campaigns = data.data
+                // Mapear pagos por nombre de campaña
+                const paymentsByCampaign = {};
+                if (paymentsData.success) {
+                    paymentsData.campaigns.forEach(c => {
+                        paymentsByCampaign[c.name] = c;
+                    });
+                }
+
+                if (!metaData.data || metaData.data.length === 0) { section.style.display = 'none'; return; }
+
+                const campaigns = metaData.data
                     .map(c => {
                         const ins = c.insights?.data?.[0] || {};
+                        const payments = paymentsByCampaign[c.name] || null;
                         return {
+                            id: c.id,
                             name: c.name,
                             spend: parseFloat(ins.spend || 0),
                             impressions: parseInt(ins.impressions || 0),
                             clicks: parseInt(ins.clicks || 0),
                             ctr: parseFloat(ins.ctr || 0),
                             cpc: parseFloat(ins.cpc || 0),
-                            cpm: parseFloat(ins.cpm || 0)
+                            cpm: parseFloat(ins.cpm || 0),
+                            payments: payments ? payments.payments : [],
+                            totalPayments: payments ? payments.totalAmount : 0
                         };
                     })
                     .filter(c => c.spend > 0)
@@ -553,30 +570,88 @@
                 if (campaigns.length === 0) { section.style.display = 'none'; return; }
 
                 const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
-                summary.textContent = `${campaigns.length} campañas — $${totalSpend.toLocaleString('es-MX', {minimumFractionDigits:2})}`;
+                const totalPayments = campaigns.reduce((s, c) => s + c.totalPayments, 0);
+                summary.innerHTML = `${campaigns.length} campañas — Gasto: $${totalSpend.toLocaleString('es-MX', {minimumFractionDigits:2})} — <span class="text-green-500">Cobrado: $${totalPayments.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>`;
 
-                body.innerHTML = campaigns.map(c => {
+                body.innerHTML = campaigns.map((c, idx) => {
                     const pct = totalSpend > 0 ? ((c.spend / totalSpend) * 100).toFixed(1) : 0;
+                    const roas = c.spend > 0 ? (c.totalPayments / c.spend).toFixed(1) : '0.0';
+
+                    // Filas de pagos expandibles
+                    const paymentRows = c.payments.length > 0 ? c.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-${idx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8">
+                                <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName}</div>
+                            </td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td colspan="5" class="py-2 px-4 text-xs text-gray-400">${p.producto}</td>
+                        </tr>
+                    `).join('') : '';
+
+                    const hasPayments = c.payments.length > 0;
+                    const expandIcon = hasPayments ? `<i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${idx}" style="color:var(--color-text-light);"></i>` : '<span style="width:16px;display:inline-block;"></span>';
+                    const clickAttr = hasPayments ? `style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${idx})"` : `style="border-top: 1px solid var(--color-border);"`;
+
                     return `
-                    <tr style="border-top: 1px solid var(--color-border);">
+                    <tr ${clickAttr}>
                         <td class="py-3 px-4">
-                            <div class="font-bold text-xs" style="color: var(--color-text);">${c.name}</div>
-                            <div class="text-[10px] text-gray-400">${pct}% del gasto</div>
+                            ${expandIcon}
+                            <span class="font-bold text-xs" style="color: var(--color-text);">${c.name}</span>
+                            <div class="text-[10px] text-gray-400 ml-5">${pct}% del gasto${hasPayments ? ` — ${c.payments.length} pago(s)` : ''}</div>
                         </td>
                         <td class="py-3 px-4 text-right font-black text-sm text-orange-500">$${c.spend.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.impressions.toLocaleString('es-MX')}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.clicks.toLocaleString('es-MX')}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.ctr.toFixed(2)}%</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">$${c.cpc.toFixed(2)}</td>
-                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">$${c.cpm.toFixed(2)}</td>
-                    </tr>`;
+                        <td class="py-3 px-4 text-right">
+                            <span class="font-bold text-xs text-green-500">$${c.totalPayments.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>
+                            <div class="text-[10px] text-gray-400">ROAS ${roas}</div>
+                        </td>
+                    </tr>
+                    ${paymentRows}`;
                 }).join('');
+
+                // Agregar pagos orgánicos si existen
+                const organic = paymentsByCampaign['Orgánico / Directo'];
+                if (organic) {
+                    const orgRows = organic.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-org" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8"><div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName}</div></td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td colspan="5" class="py-2 px-4 text-xs text-gray-400">${p.producto}</td>
+                        </tr>
+                    `).join('');
+                    body.innerHTML += `
+                    <tr style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments('org')">
+                        <td class="py-3 px-4">
+                            <i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-org" style="color:var(--color-text-light);"></i>
+                            <span class="font-bold text-xs" style="color: var(--color-text);">Orgánico / Directo</span>
+                            <div class="text-[10px] text-gray-400 ml-5">${organic.payments.length} pago(s)</div>
+                        </td>
+                        <td class="py-3 px-4 text-right text-gray-400">—</td>
+                        <td class="py-3 px-4 text-right text-gray-400">—</td>
+                        <td class="py-3 px-4 text-right text-gray-400">—</td>
+                        <td class="py-3 px-4 text-right text-gray-400">—</td>
+                        <td class="py-3 px-4 text-right text-gray-400">—</td>
+                        <td class="py-3 px-4 text-right font-bold text-xs text-green-500">$${organic.totalAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                    </tr>
+                    ${orgRows}`;
+                }
 
                 section.style.display = 'block';
             } catch (e) {
                 console.error('Error fetching campaign breakdown:', e);
                 section.style.display = 'none';
             }
+        }
+
+        function toggleCampaignPayments(idx) {
+            const rows = document.querySelectorAll(`.campaign-payments-${idx}`);
+            const chevron = document.querySelector(`.campaign-chevron-${idx}`);
+            const isVisible = rows[0]?.style.display !== 'none';
+            rows.forEach(r => r.style.display = isVisible ? 'none' : 'table-row');
+            if (chevron) chevron.style.transform = isVisible ? '' : 'rotate(90deg)';
         }
 
         async function fetchOrders(dateISO) {

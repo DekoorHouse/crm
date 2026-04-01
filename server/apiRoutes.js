@@ -5578,6 +5578,130 @@ router.post('/meta/config/claim-page', async (req, res) => {
 });
 
 // =============================================================================
+// DESGLOSE DE PAGOS POR CAMPAÑA
+// =============================================================================
+
+router.get('/campaigns/payments', async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) return res.status(400).json({ success: false, message: 'Se requiere date (YYYY-MM-DD).' });
+
+        // 1. Obtener pedidos confirmados (Fabricar/Pagado) de esa fecha
+        const startDate = new Date(date + 'T00:00:00-06:00');
+        const endDate = new Date(date + 'T23:59:59.999-06:00');
+
+        const ordersSnap = await db.collection('pedidos')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate))
+            .where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate))
+            .get();
+
+        // 2. Para cada pedido, buscar contacto y obtener adReferral.source_id
+        const adIdToPayments = {}; // { ad_source_id: [{ orderNumber, amount, clientName }] }
+        const noAdPayments = []; // Pedidos sin ad referral
+
+        for (const doc of ordersSnap.docs) {
+            const order = doc.data();
+            const status = (order.estatus || '').toLowerCase();
+            const isConfirmed = status.includes('fabricar') || status.includes('pagado');
+            if (!isConfirmed) continue;
+
+            const contactId = order.contactId || order.telefono;
+            let adSourceId = null;
+            let adName = null;
+            let clientName = 'Sin nombre';
+
+            if (contactId) {
+                const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
+                if (contactDoc.exists) {
+                    const cd = contactDoc.data();
+                    clientName = cd.name || clientName;
+                    if (cd.adReferral && cd.adReferral.source_id) {
+                        adSourceId = cd.adReferral.source_id;
+                        adName = cd.adReferral.ad_name || adSourceId;
+                    }
+                }
+            }
+
+            const payment = {
+                orderNumber: order.consecutiveOrderNumber,
+                amount: order.precio || 0,
+                clientName,
+                producto: order.producto || ''
+            };
+
+            if (adSourceId) {
+                if (!adIdToPayments[adSourceId]) adIdToPayments[adSourceId] = { adName, payments: [] };
+                adIdToPayments[adSourceId].payments.push(payment);
+            } else {
+                noAdPayments.push(payment);
+            }
+        }
+
+        // 3. Obtener la relación ad → campaign desde Meta API
+        const META_TOKEN = process.env.META_GRAPH_TOKEN || process.env.WHATSAPP_TOKEN;
+        const adIds = Object.keys(adIdToPayments);
+        const adToCampaign = {}; // { ad_id: { campaignId, campaignName } }
+
+        // Consultar en batches de 50
+        for (let i = 0; i < adIds.length; i += 50) {
+            const batch = adIds.slice(i, i + 50);
+            const idsParam = batch.join(',');
+            try {
+                const metaRes = await axios.get(`https://graph.facebook.com/v22.0/`, {
+                    params: {
+                        ids: idsParam,
+                        fields: 'campaign_id,campaign{name}',
+                        access_token: META_TOKEN
+                    }
+                });
+                for (const [adId, adData] of Object.entries(metaRes.data)) {
+                    adToCampaign[adId] = {
+                        campaignId: adData.campaign_id || adData.campaign?.id || 'unknown',
+                        campaignName: adData.campaign?.name || 'Campaña desconocida'
+                    };
+                }
+            } catch (e) {
+                console.warn(`[Campaigns/Payments] Error consultando Meta para ads:`, e.message);
+            }
+        }
+
+        // 4. Agrupar pagos por campaña
+        const campaignPayments = {}; // { campaignId: { name, totalAmount, payments: [] } }
+
+        for (const [adId, data] of Object.entries(adIdToPayments)) {
+            const campaign = adToCampaign[adId] || { campaignId: 'unknown', campaignName: adIdToPayments[adId].adName };
+            const cId = campaign.campaignId;
+            if (!campaignPayments[cId]) {
+                campaignPayments[cId] = { name: campaign.campaignName, totalAmount: 0, payments: [] };
+            }
+            for (const p of data.payments) {
+                campaignPayments[cId].totalAmount += p.amount;
+                campaignPayments[cId].payments.push(p);
+            }
+        }
+
+        // 5. Agregar pagos sin ad como categoría "Orgánico / Directo"
+        if (noAdPayments.length > 0) {
+            campaignPayments['organic'] = {
+                name: 'Orgánico / Directo',
+                totalAmount: noAdPayments.reduce((s, p) => s + p.amount, 0),
+                payments: noAdPayments
+            };
+        }
+
+        // Ordenar por monto total desc
+        const result = Object.entries(campaignPayments)
+            .map(([id, data]) => ({ campaignId: id, ...data }))
+            .sort((a, b) => b.totalAmount - a.totalAmount);
+
+        res.json({ success: true, campaigns: result });
+    } catch (error) {
+        console.error('Error en campaigns/payments:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// =============================================================================
 // COBRANZA MASIVA IA
 // =============================================================================
 
