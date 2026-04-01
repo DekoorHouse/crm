@@ -1077,14 +1077,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Lightweight real-time listener for the most recent orders
+    // Real-time listener: observa TODOS los pedidos del rango de fecha (sin filtro de
+    // estatus/producto ni limit) para detectar cualquier cambio en cualquier pedido.
     function setupRealtimeListener(filters) {
         if (unsubscribePedidos) { unsubscribePedidos(); unsubscribePedidos = null; }
 
-        // No incluir filtro de estatus ni producto en el listener para detectar
-        // CUALQUIER cambio (incluyendo cambios de estatus desde el CRM).
-        // El re-fetch aplica los filtros correctos al recargar.
-        let q = query(pedidosCollectionRef, orderBy("createdAt", "desc"));
+        let q = query(pedidosCollectionRef);
 
         if (filters.dateFilter === 'personalizado' && filters.customStart && filters.customEnd) {
             q = query(q, where("createdAt", ">=", Timestamp.fromMillis(Number(filters.customStart))));
@@ -1095,9 +1093,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 q = query(q, where("createdAt", ">=", startDate), where("createdAt", "<", endDate));
             }
         }
-
-        // Limit to 1 doc — solo detectamos cambios, el re-fetch trae los datos completos
-        q = query(q, firestoreLimit(1));
 
         // Ignore snapshots during initial sync (cache + server reconciliation)
         const setupTime = Date.now();
