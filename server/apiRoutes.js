@@ -5595,8 +5595,8 @@ router.get('/campaigns/payments', async (req, res) => {
             .where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate))
             .get();
 
-        // 2. Para cada pedido confirmado, buscar contacto y agrupar por ad source
-        const byAdSource = {}; // { adSourceName: { payments: [] } }
+        // 2. Para cada pedido confirmado, buscar contacto y obtener adReferral
+        const payments = []; // { adSourceId, adName, payment }
         const noAdPayments = [];
 
         for (const doc of ordersSnap.docs) {
@@ -5606,7 +5606,8 @@ router.get('/campaigns/payments', async (req, res) => {
             if (!isConfirmed) continue;
 
             const contactId = order.contactId || order.telefono;
-            let adSource = null;
+            let adSourceId = null;
+            let adName = null;
             let clientName = 'Sin nombre';
 
             if (contactId) {
@@ -5614,8 +5615,9 @@ router.get('/campaigns/payments', async (req, res) => {
                 if (contactDoc.exists) {
                     const cd = contactDoc.data();
                     clientName = cd.name || clientName;
-                    if (cd.adReferral) {
-                        adSource = cd.adReferral.ad_name || cd.adReferral.source_id || null;
+                    if (cd.adReferral && cd.adReferral.source_id) {
+                        adSourceId = cd.adReferral.source_id;
+                        adName = cd.adReferral.ad_name || adSourceId;
                     }
                 }
             }
@@ -5627,20 +5629,58 @@ router.get('/campaigns/payments', async (req, res) => {
                 producto: order.producto || ''
             };
 
-            if (adSource) {
-                if (!byAdSource[adSource]) byAdSource[adSource] = { payments: [] };
-                byAdSource[adSource].payments.push(payment);
+            if (adSourceId) {
+                payments.push({ adSourceId, adName, payment });
             } else {
                 noAdPayments.push(payment);
             }
         }
 
-        // 3. Construir resultado agrupado por ad source
+        // 3. Resolver ad_id → campaign_id via Meta API
+        const META_TOKEN = process.env.META_GRAPH_TOKEN || process.env.WHATSAPP_TOKEN;
+        const uniqueAdIds = [...new Set(payments.map(p => p.adSourceId))];
+        const adToCampaign = {}; // { ad_id: campaignId }
+
+        for (let i = 0; i < uniqueAdIds.length; i += 50) {
+            const batch = uniqueAdIds.slice(i, i + 50);
+            try {
+                const metaRes = await axios.get(`https://graph.facebook.com/v22.0/`, {
+                    params: {
+                        ids: batch.join(','),
+                        fields: 'campaign_id',
+                        access_token: META_TOKEN
+                    }
+                });
+                for (const [adId, adData] of Object.entries(metaRes.data)) {
+                    if (adData.campaign_id) {
+                        adToCampaign[adId] = adData.campaign_id;
+                    }
+                }
+            } catch (e) {
+                console.warn('[Campaigns/Payments] Error consultando Meta API:', e.response?.data?.error?.message || e.message);
+                // Fallback: no podemos resolver, agrupar por ad name
+            }
+        }
+
+        // 4. Agrupar pagos por campaign_id
+        const byCampaignId = {}; // { campaignId: { adNames: Set, payments: [] } }
+
+        for (const { adSourceId, adName, payment } of payments) {
+            const campaignId = adToCampaign[adSourceId] || `ad_${adSourceId}`;
+            if (!byCampaignId[campaignId]) {
+                byCampaignId[campaignId] = { adNames: new Set(), payments: [] };
+            }
+            byCampaignId[campaignId].adNames.add(adName);
+            byCampaignId[campaignId].payments.push(payment);
+        }
+
+        // 5. Construir resultado con campaign_id como clave para cruce en frontend
         const campaignPayments = {};
 
-        for (const [adName, data] of Object.entries(byAdSource)) {
-            campaignPayments[adName] = {
-                name: adName,
+        for (const [campaignId, data] of Object.entries(byCampaignId)) {
+            campaignPayments[campaignId] = {
+                campaignId,
+                name: [...data.adNames].join(', '),
                 totalAmount: data.payments.reduce((s, p) => s + p.amount, 0),
                 payments: data.payments
             };
@@ -5648,6 +5688,7 @@ router.get('/campaigns/payments', async (req, res) => {
 
         if (noAdPayments.length > 0) {
             campaignPayments['organic'] = {
+                campaignId: 'organic',
                 name: 'Orgánico / Directo',
                 totalAmount: noAdPayments.reduce((s, p) => s + p.amount, 0),
                 payments: noAdPayments

@@ -293,7 +293,7 @@
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Clics</th>
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CTR</th>
                             <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CPC</th>
-                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CPM</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Cobrado / ROAS</th>
                         </tr>
                     </thead>
                     <tbody id="campaigns-body"></tbody>
@@ -539,9 +539,20 @@
 
                 if (!metaData.data || metaData.data.length === 0) { section.style.display = 'none'; return; }
 
+                // Mapear pagos por campaign_id para cruzar con campañas de Meta
+                const paymentsByCampaignId = {};
+                let organicPayments = null;
+                if (paymentsData.success) {
+                    paymentsData.campaigns.forEach(c => {
+                        if (c.campaignId === 'organic') { organicPayments = c; }
+                        else { paymentsByCampaignId[c.campaignId] = c; }
+                    });
+                }
+
                 const campaigns = metaData.data
                     .map(c => {
                         const ins = c.insights?.data?.[0] || {};
+                        const pmts = paymentsByCampaignId[c.id] || null;
                         return {
                             id: c.id,
                             name: c.name,
@@ -550,7 +561,10 @@
                             clicks: parseInt(ins.clicks || 0),
                             ctr: parseFloat(ins.ctr || 0),
                             cpc: parseFloat(ins.cpc || 0),
-                            cpm: parseFloat(ins.cpm || 0)
+                            cpm: parseFloat(ins.cpm || 0),
+                            payments: pmts ? pmts.payments : [],
+                            totalPayments: pmts ? pmts.totalAmount : 0,
+                            adNames: pmts ? pmts.name : ''
                         };
                     })
                     .filter(c => c.spend > 0)
@@ -559,60 +573,68 @@
                 if (campaigns.length === 0) { section.style.display = 'none'; return; }
 
                 const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
-                summary.textContent = `${campaigns.length} campañas — $${totalSpend.toLocaleString('es-MX', {minimumFractionDigits:2})}`;
+                const totalPaid = campaigns.reduce((s, c) => s + c.totalPayments, 0) + (organicPayments ? organicPayments.totalAmount : 0);
+                summary.innerHTML = `${campaigns.length} campañas — Gasto: $${totalSpend.toLocaleString('es-MX', {minimumFractionDigits:2})} — <span class="text-green-500">Cobrado: $${totalPaid.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>`;
 
+                let paymentIdx = 0;
                 body.innerHTML = campaigns.map(c => {
                     const pct = totalSpend > 0 ? ((c.spend / totalSpend) * 100).toFixed(1) : 0;
+                    const roas = c.spend > 0 ? (c.totalPayments / c.spend).toFixed(1) : '—';
+                    const hasPayments = c.payments.length > 0;
+                    const idx = paymentIdx++;
+
+                    const paymentRows = hasPayments ? c.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-${idx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8" colspan="5">
+                                <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName} — ${p.producto}</div>
+                            </td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500" colspan="2">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                        </tr>
+                    `).join('') : '';
+
+                    const expandIcon = hasPayments ? `<i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${idx}" style="color:var(--color-text-light);"></i>` : '';
+                    const clickAttr = hasPayments ? `style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${idx})"` : `style="border-top: 1px solid var(--color-border);"`;
+
                     return `
-                    <tr style="border-top: 1px solid var(--color-border);">
+                    <tr ${clickAttr}>
                         <td class="py-3 px-4">
-                            <div class="font-bold text-xs" style="color: var(--color-text);">${c.name}</div>
-                            <div class="text-[10px] text-gray-400">${pct}% del gasto</div>
+                            ${expandIcon}<span class="font-bold text-xs" style="color: var(--color-text);">${c.name}</span>
+                            <div class="text-[10px] text-gray-400 ${hasPayments ? 'ml-4' : ''}">${pct}% del gasto${hasPayments ? ` · ${c.payments.length} pago(s) · Anuncios: ${c.adNames}` : ''}</div>
                         </td>
                         <td class="py-3 px-4 text-right font-black text-sm text-orange-500">$${c.spend.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.impressions.toLocaleString('es-MX')}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.clicks.toLocaleString('es-MX')}</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.ctr.toFixed(2)}%</td>
                         <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">$${c.cpc.toFixed(2)}</td>
-                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">$${c.cpm.toFixed(2)}</td>
-                    </tr>`;
+                        <td class="py-3 px-4 text-right">
+                            <span class="font-bold text-xs text-green-500">$${c.totalPayments.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>
+                            <div class="text-[10px] text-gray-400">ROAS ${roas}</div>
+                        </td>
+                    </tr>
+                    ${paymentRows}`;
                 }).join('');
 
-                // Agregar sección de pagos confirmados por origen
-                if (paymentsData.success && paymentsData.campaigns.length > 0) {
-                    const totalPaid = paymentsData.campaigns.reduce((s, c) => s + c.totalAmount, 0);
-                    body.innerHTML += `
-                    <tr style="border-top: 3px solid var(--color-border);">
-                        <td colspan="7" class="py-3 px-4">
-                            <div class="text-[10px] uppercase font-black tracking-widest text-gray-400 mb-1">
-                                <i class="fas fa-money-bill-wave mr-1 text-green-500"></i>Pagos confirmados por origen —
-                                <span class="text-green-500">$${totalPaid.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>
-                            </div>
-                        </td>
-                    </tr>`;
-
-                    paymentsData.campaigns.forEach((group, idx) => {
-                        const paymentRows = group.payments.map(p => `
-                            <tr class="campaign-payments campaign-payments-${idx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
-                                <td class="py-2 px-4 pl-8" colspan="2">
-                                    <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName}</div>
-                                </td>
-                                <td class="py-2 px-4 text-right font-bold text-xs text-green-500">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
-                                <td colspan="4" class="py-2 px-4 text-xs text-gray-400">${p.producto}</td>
-                            </tr>
-                        `).join('');
-
-                        body.innerHTML += `
-                        <tr style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${idx})">
-                            <td class="py-3 px-4" colspan="2">
-                                <i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${idx}" style="color:var(--color-text-light);"></i>
-                                <span class="font-bold text-xs" style="color: var(--color-text);">${group.name}</span>
-                                <span class="text-[10px] text-gray-400 ml-2">${group.payments.length} pago(s)</span>
+                // Orgánico / Directo
+                if (organicPayments) {
+                    const orgIdx = paymentIdx++;
+                    const orgRows = organicPayments.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-${orgIdx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8" colspan="5">
+                                <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName} — ${p.producto}</div>
                             </td>
-                            <td class="py-3 px-4 text-right font-black text-sm text-green-500" colspan="5">$${group.totalAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500" colspan="2">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
                         </tr>
-                        ${paymentRows}`;
-                    });
+                    `).join('');
+                    body.innerHTML += `
+                    <tr style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${orgIdx})">
+                        <td class="py-3 px-4" colspan="6">
+                            <i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${orgIdx}" style="color:var(--color-text-light);"></i>
+                            <span class="font-bold text-xs" style="color: var(--color-text);">Orgánico / Directo</span>
+                            <span class="text-[10px] text-gray-400 ml-2">${organicPayments.payments.length} pago(s)</span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-bold text-sm text-green-500">$${organicPayments.totalAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                    </tr>
+                    ${orgRows}`;
                 }
 
                 section.style.display = 'block';
