@@ -3999,68 +3999,32 @@ router.post('/test/simulate-ad-message', async (req, res) => {
 });
 
 // --- Endpoint GET /api/metrics (Obtener métricas de mensajes) ---
-let metricsCache = { data: null, timestamp: 0 };
-const METRICS_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
-
 router.get('/metrics', async (req, res) => {
     try {
-        // Devolver cache si es reciente
-        if (metricsCache.data && (Date.now() - metricsCache.timestamp) < METRICS_CACHE_TTL) {
-            return res.status(200).json({ success: true, data: metricsCache.data });
-        }
-
-        // Rango de fechas: últimos 30 días
+        // Leer los últimos 30 días de daily_metrics (máximo 30 documentos)
         const endDate = new Date();
         const startDate = new Date();
         startDate.setDate(endDate.getDate() - 30);
-        const startTimestamp = admin.firestore.Timestamp.fromDate(startDate);
-        const endTimestamp = admin.firestore.Timestamp.fromDate(endDate);
+        const startKey = startDate.toISOString().split('T')[0]; // YYYY-MM-DD
 
-        // Ejecutar ambas queries en paralelo
-        const [contactsSnapshot, messagesSnapshot] = await Promise.all([
-            db.collection('contacts_whatsapp').select('status').get(),
-            db.collectionGroup('messages')
-                .where('timestamp', '>=', startTimestamp)
-                .where('timestamp', '<=', endTimestamp)
-                .where('from', '!=', PHONE_NUMBER_ID)
-                .select('timestamp')
-                .get()
-        ]);
+        const snapshot = await db.collection('daily_metrics')
+            .where(admin.firestore.FieldPath.documentId(), '>=', startKey)
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .get();
 
-        const contactTags = {};
-        contactsSnapshot.forEach(doc => {
-            contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
+        if (snapshot.empty) {
+            // Fallback: si no hay datos pre-agregados, devolver vacío
+            return res.status(200).json({ success: true, data: [] });
+        }
+
+        const formattedMetrics = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                date: doc.id,
+                totalMessages: data.totalMessages || 0,
+                tags: data.tags || {}
+            };
         });
-
-        // Procesar mensajes para agrupar por fecha y etiqueta
-        const metricsByDate = {};
-        messagesSnapshot.forEach(doc => {
-            const message = doc.data();
-            const contactId = doc.ref.parent.parent.id;
-            const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
-
-            if (!metricsByDate[dateKey]) {
-                metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
-            }
-            metricsByDate[dateKey].totalMessages++;
-
-            const tag = contactTags[contactId] || 'sin_etiqueta';
-            if (!metricsByDate[dateKey].tags[tag]) {
-                metricsByDate[dateKey].tags[tag] = 0;
-            }
-            metricsByDate[dateKey].tags[tag]++;
-        });
-
-        const formattedMetrics = Object.keys(metricsByDate)
-            .map(date => ({
-                date,
-                totalMessages: metricsByDate[date].totalMessages,
-                tags: metricsByDate[date].tags
-            }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date));
-
-        // Guardar en cache
-        metricsCache = { data: formattedMetrics, timestamp: Date.now() };
 
         res.status(200).json({ success: true, data: formattedMetrics });
     } catch (error) {

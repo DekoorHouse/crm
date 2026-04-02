@@ -284,8 +284,17 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
     await contactRef.collection('messages').add(messageData);
     console.log(`[MESSENGER] Mensaje de fb_${senderPsid} guardado en Firestore.`);
 
-    // --- Update/Create contact ---
+    // --- Incrementar métricas diarias pre-agregadas ---
     const contactDoc = await contactRef.get();
+    const contactTag = (contactDoc.exists && contactDoc.data().status) || 'sin_etiqueta';
+    const metricsDateKey = new Date().toISOString().split('T')[0];
+    const dailyMetricRef = db.collection('daily_metrics').doc(metricsDateKey);
+    dailyMetricRef.set({
+        totalMessages: admin.firestore.FieldValue.increment(1),
+        [`tags.${contactTag}`]: admin.firestore.FieldValue.increment(1)
+    }, { merge: true }).catch(err => console.error('[METRICS] Error incrementando métrica diaria:', err));
+
+    // --- Update/Create contact ---
     const isNewContact = !contactDoc.exists;
 
     let contactUpdateData;

@@ -530,8 +530,17 @@ router.post('/', async (req, res) => {
             await contactRef.collection('messages').add(messageData);
             console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
 
-            // --- Update contact document ---
+            // --- Incrementar métricas diarias pre-agregadas ---
             const contactDoc = await contactRef.get();
+            const contactTag = (contactDoc.exists && contactDoc.data().status) || 'sin_etiqueta';
+            const metricsDateKey = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const dailyMetricRef = db.collection('daily_metrics').doc(metricsDateKey);
+            dailyMetricRef.set({
+                totalMessages: admin.firestore.FieldValue.increment(1),
+                [`tags.${contactTag}`]: admin.firestore.FieldValue.increment(1)
+            }, { merge: true }).catch(err => console.error('[METRICS] Error incrementando métrica diaria:', err));
+
+            // --- Update contact document ---
             const isNewContact = !contactDoc.exists;
             let isAiRuleEnabled = false; // Nueva bandera para saber si la regla tiene IA
 
