@@ -1,42 +1,22 @@
-/* --- Base & Variables (Light Mode) --- */
+/* --- Base & Variables: hereda del style.css principal del CRM (Tokyo Night) --- */
+/* Solo se definen variables adicionales que no existen en el principal */
 :root {
     --font-heading: 'Poppins', sans-serif;
     --font-body: 'Nunito Sans', sans-serif;
-    --color-bg: #FFFBF5;
-    --color-container-bg: #FFFFFF;
-    --color-text: #5D5C61;
-    --color-text-light: #7e7c82;
-    --color-primary: #E07A5F;
-    --color-secondary: #81B29A;
-    --color-accent: #F2CC8F;
-    --color-border: #EAE6E1;
-    --color-shadow: rgba(93, 92, 97, 0.1);
-    --color-danger: #dc3545; /* Color for delete actions */
-    --color-danger-hover: #c82333;
-    --border-radius-sm: 6px;
-    --border-radius-md: 10px;
-    --border-radius-lg: 15px;
-    --color-row-selected-bg: #fdebd0; /* Light orange for selected row */
+    --color-row-selected-bg: #e8f4fd;
     --color-row-selected-text: #5D5C61;
-    --color-search-highlight-current: #FCD34D; /* Amarillo más intenso para el actual */
+    --color-search-highlight-current: #FCD34D;
+    --color-subtle-bg: #f0f2f5;
+    --color-subtle-hover-bg: #e4e7eb;
 }
 
-/* --- Dark Mode Variables --- */
+/* --- Dark Mode: hereda del CRM principal (Tokyo Night) --- */
 body.dark-mode {
-    --color-bg: #2c3e50;
-    --color-container-bg: #34495e;
-    --color-text: #ecf0f1;
-    --color-text-light: #bdc3c7;
-    --color-primary: #e74c3c;
-    --color-secondary: #2ecc71;
-    --color-accent: #f1c40f;
-    --color-border: #3b5b7d;
-    --color-shadow: rgba(0, 0, 0, 0.3);
-    --color-danger: #e74c3c;
-    --color-danger-hover: #c0392b;
-    --color-row-selected-bg: #52504a; /* Darker orange/brown for selected row in dark mode */
+    --color-row-selected-bg: #2a2e42;
     --color-row-selected-text: #ecf0f1;
     --color-search-highlight-current: #f59e0b;
+    --color-subtle-bg: #292e42;
+    --color-subtle-hover-bg: #3b4261;
 }
 
 body {
@@ -311,13 +291,11 @@ body.dark-mode button[type="submit"]:hover, body.dark-mode #btnGuardarPedido:hov
 
 
 #btnMostrarFormularioPedido {
-     background: linear-gradient(135deg, var(--color-primary), #f4a261); color: white; font-size: 1.1em;
-     padding: 14px 30px; border-radius: var(--border-radius-lg); margin-bottom: 30px;
-     box-shadow: 0 4px 15px rgba(224, 122, 95, 0.3);
+     background: var(--color-primary); color: white; font-size: 1em;
+     padding: 12px 24px; border-radius: 9999px; margin-bottom: 30px;
+     box-shadow: 0 2px 10px var(--color-shadow); font-weight: 700;
 }
-#btnMostrarFormularioPedido:hover { box-shadow: 0 6px 20px rgba(224, 122, 95, 0.4); transform: translateY(-2px); }
-body.dark-mode #btnMostrarFormularioPedido { background: linear-gradient(135deg, var(--color-primary), #e67e22); box-shadow: 0 4px 15px rgba(231, 76, 60, 0.3); }
-body.dark-mode #btnMostrarFormularioPedido:hover { box-shadow: 0 6px 20px rgba(231, 76, 60, 0.4); }
+#btnMostrarFormularioPedido:hover { transform: translateY(-1px); box-shadow: 0 4px 15px var(--color-shadow); }
 
 
 #btnCerrarSesion { margin: 40px auto 10px auto; display: block; width: fit-content; }
@@ -402,10 +380,11 @@ body.dark-mode #photo-copy-toast {
     text-align: left;
     color: var(--color-primary);
     margin-bottom: 0;
-    font-size: 2em;
-    font-weight: 700;
+    font-size: 1.6em;
+    font-weight: 800;
     border: none;
     padding-bottom: 0;
+    letter-spacing: -0.02em;
 }
 
 .contador-pedidos {
@@ -453,9 +432,9 @@ body.dark-mode #contadorSumaFiltrada {
 
 #usuarioLogueado { text-align: right; color: var(--color-text-light); font-size: 0.95em; margin-bottom: 25px; }
 
-.content-box { background-color: var(--color-container-bg); padding: 25px 30px; border-radius: var(--border-radius-lg); box-shadow: 0 4px 20px var(--color-shadow); margin-bottom: 30px; transition: background-color 0.3s ease, box-shadow 0.3s ease; }
+.content-box { background-color: var(--color-container-bg); padding: 25px 30px; border-radius: var(--border-radius-lg); box-shadow: 0 4px 20px var(--color-shadow); margin-bottom: 30px; transition: background-color 0.3s ease, box-shadow 0.3s ease; border: 1px solid var(--color-border); }
 
-#filtrosContainer h2 { font-size: 1.3em; color: var(--color-secondary); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+#filtrosContainer h2 { font-size: 0.85em; color: var(--color-primary); margin-bottom: 20px; display: flex; align-items: center; gap: 10px; text-transform: uppercase; font-weight: 800; letter-spacing: 0.05em; }
 .filtros-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px 20px; align-items: end; }
 #filtrosContainer label { font-weight: 600; font-size: 0.85em; color: var(--color-text); margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
 
@@ -473,17 +452,15 @@ body.dark-mode #contadorSumaFiltrada {
     background-color: var(--color-primary);
     color: white;
     padding: 10px 20px;
-    font-size: 0.9em;
+    font-size: 0.85em;
     justify-self: start;
     margin-top: 10px;
+    border-radius: 9999px;
+    font-weight: 700;
 }
- #btnAplicarFiltros:hover {
-     background-color: #c96850;
- }
- body.dark-mode #btnAplicarFiltros:hover { background-color: #c0392b; }
+#btnAplicarFiltros:hover { opacity: 0.9; }
 
-
-#btnBorrarFiltros { padding: 10px 20px; font-size: 0.9em; justify-self: start; margin-top: 10px; }
+#btnBorrarFiltros { padding: 10px 20px; font-size: 0.85em; justify-self: start; margin-top: 10px; border-radius: 9999px; border: 1px solid var(--color-border); }
 
 .modal-overlay {
     display: none; position: fixed; z-index: 1000;
@@ -640,6 +617,10 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
     overflow-x: auto;
     overflow-y: auto;
     max-height: 60vh;
+    background: var(--color-container-bg);
+    border-radius: var(--border-radius-lg);
+    border: 1px solid var(--color-border);
+    box-shadow: 0 4px 20px var(--color-shadow);
 }
 #tablaPedidos {
     width: 100%; min-width: 1100px;
@@ -657,24 +638,24 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
 }
 
 #tablaPedidos thead th {
-    background-color: var(--color-secondary); color: white; font-weight: 600; font-family: var(--font-heading);
+    background-color: var(--color-subtle-bg); color: var(--color-text-light); font-weight: 700; font-family: var(--font-heading);
     position: sticky;
     top: 0;
     z-index: 1;
-    border-bottom: 2px solid #6aa88d;
-    transition: background-color 0.3s ease, color 0.3s ease, border-bottom-color 0.3s ease;
+    border-bottom: 1px solid var(--color-border);
+    text-transform: uppercase;
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    transition: background-color 0.3s ease, color 0.3s ease;
 }
- body.dark-mode #tablaPedidos thead th { border-bottom-color: #27ae60; }
 
 #tablaPedidos th:first-child, #tablaPedidos td:first-child { border-left: none; }
 #tablaPedidos th:last-child, #tablaPedidos td:last-child { border-right: none; }
 #tablaPedidos tbody tr { transition: background-color 0.15s ease, opacity 0.3s ease; }
 #tablaPedidos tbody tr:last-child td { border-bottom: none; }
-#tablaPedidos tbody tr:nth-child(even) { background-color: #f8fafa; }
-body.dark-mode #tablaPedidos tbody tr:nth-child(even) { background-color: #3b5b7d; }
+#tablaPedidos tbody tr:nth-child(even) { background-color: var(--color-subtle-bg); }
 
-#tablaPedidos tbody tr:hover { background-color: rgba(242, 204, 143, 0.2); }
-body.dark-mode #tablaPedidos tbody tr:hover { background-color: rgba(241, 196, 15, 0.3); }
+#tablaPedidos tbody tr:hover { background-color: var(--color-subtle-hover-bg); }
 
 #tablaPedidos tbody tr.selected-row {
     background-color: var(--color-row-selected-bg) !important;
