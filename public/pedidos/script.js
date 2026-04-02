@@ -1636,10 +1636,10 @@ document.addEventListener('DOMContentLoaded', () => {
         updateSearchUI();
     }
     
-    function performSearch(isNewSearch = true, focusedPedidoId = null) {
+    async function performSearch(isNewSearch = true, focusedPedidoId = null) {
         clearSearchHighlight();
         const searchTerm = searchInput.value.trim();
-        const allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
+        let allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
 
         searchMatches = [];
         allRows.forEach(row => row.classList.remove('search-match', 'current-search-highlight'));
@@ -1650,11 +1650,11 @@ document.addEventListener('DOMContentLoaded', () => {
             updateSearchUI();
             return;
         }
-        
+
         document.body.classList.add('search-active');
         const regex = new RegExp(escapeRegExp(searchTerm), 'gi');
         const matchedRows = new Set();
-        
+
         allRows.forEach(row => {
             row.querySelectorAll('td').forEach(cell => {
                 highlightTextInNode(cell, regex, searchMatches, cell);
@@ -1663,6 +1663,23 @@ document.addEventListener('DOMContentLoaded', () => {
                 matchedRows.add(row);
             }
         });
+
+        // Si no hay resultados locales pero hay más pedidos por cargar, cargar todos y re-buscar
+        if (searchMatches.length === 0 && pedidosPagination.hasMore) {
+            await fetchAllRemainingOrders();
+            // Re-buscar en todas las filas ahora cargadas
+            allRows = document.querySelectorAll('#cuerpoTablaPedidos tr');
+            searchMatches = [];
+            matchedRows.clear();
+            allRows.forEach(row => {
+                row.querySelectorAll('td').forEach(cell => {
+                    highlightTextInNode(cell, regex, searchMatches, cell);
+                });
+                if (row.querySelector('mark.search-highlight-text')) {
+                    matchedRows.add(row);
+                }
+            });
+        }
 
         allRows.forEach(row => {
             if (matchedRows.has(row)) {
