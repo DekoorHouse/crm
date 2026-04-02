@@ -328,8 +328,14 @@ function renderAdminLogs() {
         </td>`;
     }).join('');
     const totalAll = Object.values(empTotals).reduce((a, b) => a + b, 0);
+    const totalPay = employees.reduce((sum, e) => {
+        const mins = empTotals[e.name.toLowerCase()];
+        const basePay = Math.round((mins / 60) * 70);
+        const adjs = getWeekAdjustments(e.name, weekStart, weekEnd);
+        return sum + basePay + adjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
+    }, 0);
     const totalRow = document.createElement('tr');
-    totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; color:var(--primary); border-top:2px solid var(--glass-border);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</td>`;
+    totalRow.innerHTML = `<td style="font-weight:bold; color:var(--text-muted); border-top:2px solid var(--glass-border);">TOTAL</td>${totalCells}<td style="text-align:center; font-weight:bold; border-top:2px solid var(--glass-border);"><span style="color:var(--primary);">${totalAll > 0 ? `${Math.floor(totalAll/60)}h ${totalAll%60}m` : '—'}</span>${totalPay > 0 ? `<br><small style="color:var(--text-muted);">$${totalPay.toLocaleString()}</small>` : ''}</td>`;
     tbody.appendChild(totalRow);
 }
 
