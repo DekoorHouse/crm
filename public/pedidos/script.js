@@ -160,6 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         currentFilters: { producto: '', dateFilter: '', estatus: '', customStart: null, customEnd: null }
     };
     let allLoadedPedidos = []; // All currently loaded order data
+    let isFetchingAll = false; // Guard against recursive fetchAllRemainingOrders
 
     // State for multiple order photos
     let orderPhotosManager = [];
@@ -952,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
 
-        if (document.body.classList.contains('search-active')) {
+        if (document.body.classList.contains('search-active') && !isFetchingAll) {
             performSearch(false);
         }
     }
@@ -1062,18 +1063,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchAllRemainingOrders() {
-        if (!pedidosPagination.hasMore) return;
+        if (!pedidosPagination.hasMore || isFetchingAll) return;
+        isFetchingAll = true;
         if (loadAllBtn) {
             loadAllBtn.disabled = true;
             loadAllBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cargando...';
         }
-        while (pedidosPagination.hasMore && pedidosPagination.lastVisibleId) {
-            await fetchMoreOrders();
-        }
-        if (loadAllBtn) {
-            loadAllBtn.style.display = 'none';
-            loadAllBtn.disabled = false;
-            loadAllBtn.innerHTML = '<i class="fas fa-download"></i> Cargar todos';
+        try {
+            while (pedidosPagination.hasMore && pedidosPagination.lastVisibleId) {
+                await fetchMoreOrders();
+            }
+        } finally {
+            isFetchingAll = false;
+            if (loadAllBtn) {
+                loadAllBtn.style.display = 'none';
+                loadAllBtn.disabled = false;
+                loadAllBtn.innerHTML = '<i class="fas fa-download"></i> Cargar todos';
+            }
+            // Run search once after all orders are loaded (not during each batch)
+            if (document.body.classList.contains('search-active')) {
+                performSearch(false);
+            }
         }
     }
 
