@@ -502,36 +502,52 @@ router.get('/referencias/mapa', async (req, res) => {
 
 // --- Helper para procesar pedidos y adjuntar info de contacto/anuncio ---
 async function processOrdersData(ordersSnapshot) {
-    const orders = [];
-    for (const doc of ordersSnapshot.docs) {
+    // Recopilar IDs de contacto únicos
+    const contactIds = new Set();
+    ordersSnapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const contactId = data.contactId || data.telefono;
+        if (contactId) contactIds.add(contactId);
+    });
+
+    // Traer todos los contactos en paralelo (un solo batch)
+    const contactsMap = {};
+    if (contactIds.size > 0) {
+        const contactPromises = [...contactIds].map(id =>
+            db.collection('contacts_whatsapp').doc(id).get()
+        );
+        const contactDocs = await Promise.all(contactPromises);
+        contactDocs.forEach(doc => {
+            if (doc.exists) contactsMap[doc.id] = doc.data();
+        });
+    }
+
+    // Construir orders usando el mapa de contactos
+    return ordersSnapshot.docs.map(doc => {
         const orderData = doc.data();
         const contactId = orderData.contactId || orderData.telefono;
-        let adSource = 'Desconocido';
+        const contactData = contactsMap[contactId];
         let clientName = 'Sin nombre';
+        let adSource = 'Desconocido';
 
-        if (contactId) {
-            const contactDoc = await db.collection('contacts_whatsapp').doc(contactId).get();
-            if (contactDoc.exists) {
-                const contactData = contactDoc.data();
-                clientName = contactData.name || clientName;
-                if (contactData.adReferral) {
-                    adSource = contactData.adReferral.ad_name || contactData.adReferral.source_id || adSource;
-                }
+        if (contactData) {
+            clientName = contactData.name || clientName;
+            if (contactData.adReferral) {
+                adSource = contactData.adReferral.ad_name || contactData.adReferral.source_id || adSource;
             }
         }
 
-        orders.push({
+        return {
             id: doc.id,
             consecutiveOrderNumber: orderData.consecutiveOrderNumber,
-            clientName: clientName,
+            clientName,
             total: orderData.precio || 0,
             createdAt: orderData.createdAt ? orderData.createdAt.toDate() : null,
-            adSource: adSource,
+            adSource,
             producto: orderData.producto,
             estatus: orderData.estatus || 'Sin estatus'
-        });
-    }
-    return orders;
+        };
+    });
 }
 
 // --- Helper para generar snapshot diario de KPIs ---
