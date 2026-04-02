@@ -287,7 +287,7 @@ function renderAdminLogs() {
                     }
                 }
             }
-            if (idx === undefined) return `<td style="text-align:center; color:rgba(255,255,255,0.15);">—</td>`;
+            if (idx === undefined) return `<td style="text-align:center; cursor:pointer; color:rgba(255,255,255,0.15);" onclick="openNewEntryModal('${emp.name}', '${emp.id}', '${dateStr}')" title="Click para agregar">—</td>`;
             const group = data[idx];
             const mins = getMinsFromGroup(group);
             dayMins += mins;
@@ -375,6 +375,17 @@ function openEditModal(idx) {
         .sort((a, b) => a.timestamp - b.timestamp)
         .map(e => ({ ...e, isNew: false, isDeleted: false }));
     document.getElementById('edit-log-title').textContent = `${group.name} — ${group.date}`;
+    renderEditEntries();
+    document.getElementById('edit-log-modal').style.display = 'flex';
+}
+
+function openNewEntryModal(empName, empId, dateStr) {
+    // Convertir dateStr (YYYY-MM-DD) a formato D/M/YYYY
+    const [y, m, d] = dateStr.split('-');
+    const displayDate = `${parseInt(d)}/${parseInt(m)}/${y}`;
+    editingMeta = { name: empName, id: empId, date: displayDate };
+    editingEntries = [];
+    document.getElementById('edit-log-title').textContent = `${empName} — ${displayDate}`;
     renderEditEntries();
     document.getElementById('edit-log-modal').style.display = 'flex';
 }
