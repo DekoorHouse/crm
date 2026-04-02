@@ -755,6 +755,8 @@ body.dark-mode .reply-thumbnail { background-color: #414868; }
     padding: 1.5rem;
     border-radius: var(--border-radius-lg);
     box-shadow: 0 4px 12px var(--color-shadow);
+    height: 400px;
+    position: relative;
 }
 .chart-container h2 {
     margin-top: 0;

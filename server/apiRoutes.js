@@ -3999,64 +3999,68 @@ router.post('/test/simulate-ad-message', async (req, res) => {
 });
 
 // --- Endpoint GET /api/metrics (Obtener métricas de mensajes) ---
+let metricsCache = { data: null, timestamp: 0 };
+const METRICS_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
+
 router.get('/metrics', async (req, res) => {
     try {
+        // Devolver cache si es reciente
+        if (metricsCache.data && (Date.now() - metricsCache.timestamp) < METRICS_CACHE_TTL) {
+            return res.status(200).json({ success: true, data: metricsCache.data });
+        }
+
         // Rango de fechas: últimos 30 días
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 30); // Restar 30 días
+        startDate.setDate(endDate.getDate() - 30);
         const startTimestamp = admin.firestore.Timestamp.fromDate(startDate);
         const endTimestamp = admin.firestore.Timestamp.fromDate(endDate);
 
-        // Obtener todas las etiquetas de los contactos para mapear
-        const contactsSnapshot = await db.collection('contacts_whatsapp').get();
+        // Ejecutar ambas queries en paralelo
+        const [contactsSnapshot, messagesSnapshot] = await Promise.all([
+            db.collection('contacts_whatsapp').select('status').get(),
+            db.collectionGroup('messages')
+                .where('timestamp', '>=', startTimestamp)
+                .where('timestamp', '<=', endTimestamp)
+                .where('from', '!=', PHONE_NUMBER_ID)
+                .select('timestamp')
+                .get()
+        ]);
+
         const contactTags = {};
         contactsSnapshot.forEach(doc => {
-            contactTags[doc.id] = doc.data().status || 'sin_etiqueta'; // Mapear ID de contacto a su etiqueta
+            contactTags[doc.id] = doc.data().status || 'sin_etiqueta';
         });
-
-        // Obtener todos los mensajes entrantes en el rango de fechas usando collectionGroup
-        const messagesSnapshot = await db.collectionGroup('messages')
-            .where('timestamp', '>=', startTimestamp)
-            .where('timestamp', '<=', endTimestamp)
-            .where('from', '!=', PHONE_NUMBER_ID) // Solo mensajes entrantes (no enviados por el bot)
-            .get();
 
         // Procesar mensajes para agrupar por fecha y etiqueta
         const metricsByDate = {};
         messagesSnapshot.forEach(doc => {
             const message = doc.data();
-            const contactId = doc.ref.parent.parent.id; // ID del contacto (documento padre de la subcolección)
-
-            // Obtener fecha en formato YYYY-MM-DD
+            const contactId = doc.ref.parent.parent.id;
             const dateKey = message.timestamp.toDate().toISOString().split('T')[0];
 
-            // Inicializar contador para la fecha si no existe
             if (!metricsByDate[dateKey]) {
                 metricsByDate[dateKey] = { totalMessages: 0, tags: {} };
             }
-
-            // Incrementar contador total para la fecha
             metricsByDate[dateKey].totalMessages++;
 
-            // Obtener etiqueta del contacto
-            const tag = contactTags[contactId] || 'sin_etiqueta'; // Usar 'sin_etiqueta' si no tiene
-
-            // Inicializar y/o incrementar contador para esa etiqueta en esa fecha
+            const tag = contactTags[contactId] || 'sin_etiqueta';
             if (!metricsByDate[dateKey].tags[tag]) {
                 metricsByDate[dateKey].tags[tag] = 0;
             }
             metricsByDate[dateKey].tags[tag]++;
         });
 
-        // Formatear resultados en un array ordenado por fecha
         const formattedMetrics = Object.keys(metricsByDate)
             .map(date => ({
                 date,
                 totalMessages: metricsByDate[date].totalMessages,
-                tags: metricsByDate[date].tags // Objeto con cuentas por etiqueta para ese día
+                tags: metricsByDate[date].tags
             }))
-            .sort((a, b) => new Date(a.date) - new Date(b.date)); // Ordenar cronológicamente
+            .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+        // Guardar en cache
+        metricsCache = { data: formattedMetrics, timestamp: Date.now() };
 
         res.status(200).json({ success: true, data: formattedMetrics });
     } catch (error) {
