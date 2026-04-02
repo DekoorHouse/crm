@@ -3044,6 +3044,51 @@ router.get('/orders/cohort-progression', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/orders/confirmed-today (Pedidos que cambiaron a Fabricar/Pagado en una fecha) ---
+router.get('/orders/confirmed-today', async (req, res) => {
+    try {
+        const { date } = req.query;
+        if (!date) {
+            return res.status(400).json({ success: false, message: 'Se requiere una fecha (date).' });
+        }
+
+        const start = new Date(date + 'T00:00:00-06:00');
+        const end = new Date(date + 'T23:59:59.999-06:00');
+        const firestoreStart = admin.firestore.Timestamp.fromDate(start);
+        const firestoreEnd = admin.firestore.Timestamp.fromDate(end);
+
+        const snapshot = await db.collection('pedidos')
+            .where('confirmedAt', '>=', firestoreStart)
+            .where('confirmedAt', '<=', firestoreEnd)
+            .get();
+
+        let totalAmount = 0;
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            const precio = parseFloat(data.precio) || 0;
+            totalAmount += precio;
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                precio,
+                estatus: data.estatus,
+                confirmedAt: data.confirmedAt?.toDate?.()?.toISOString() || null
+            };
+        });
+
+        res.status(200).json({
+            success: true,
+            count: orders.length,
+            totalAmount: Math.round(totalAmount * 100) / 100,
+            orders
+        });
+    } catch (error) {
+        console.error('Error fetching confirmed orders:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener pedidos confirmados.' });
+    }
+});
+
 // --- Endpoint POST /api/orders/backfill-confirmed (Rellenar confirmedAt en pedidos existentes) ---
 router.post('/orders/backfill-confirmed', async (req, res) => {
     try {

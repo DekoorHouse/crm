@@ -199,7 +199,7 @@
         </header>
 
         <!-- Stats Grid -->
-        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 mb-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-12">
             <!-- Stats: Proyectado -->
             <div class="header-stats justify-between">
                 <div class="text-right flex-1">
@@ -221,6 +221,18 @@
                 </div>
                 <div class="stat-icon bg-green-500">
                     <i class="fas fa-cash-register"></i>
+                </div>
+            </div>
+
+            <!-- Stats: Fabricar -->
+            <div class="header-stats justify-between border-purple-500/20 bg-purple-50/30 dark:bg-purple-900/5">
+                <div class="text-right flex-1">
+                    <p id="fabricar-label" class="text-[0.65rem] text-purple-600 dark:text-purple-400 uppercase font-black tracking-widest mb-1">Fabricar Hoy</p>
+                    <p id="fabricar-total" class="text-3xl font-black text-purple-600 dark:text-purple-400">$0.00</p>
+                    <p id="fabricar-count" class="text-[11px] font-bold text-purple-400 mt-1">0 pedidos</p>
+                </div>
+                <div class="stat-icon bg-purple-500">
+                    <i class="fas fa-gem"></i>
                 </div>
             </div>
 
@@ -686,35 +698,54 @@
                 
                 // Mostrar cargando en las tarjetas
                 const statLoader = '<i class="fas fa-circle-notch fa-spin opacity-40"></i>';
+                const fabricarText = document.getElementById('fabricar-total');
+                const fabricarCount = document.getElementById('fabricar-count');
+                const fabricarLabel = document.getElementById('fabricar-label');
                 totalText.innerHTML = statLoader;
                 confirmedText.innerHTML = statLoader;
                 adSpendText.innerHTML = statLoader;
                 ordersConvText.innerHTML = statLoader;
                 revenueConvText.innerHTML = statLoader;
                 roasText.innerHTML = statLoader;
-                
+                fabricarText.innerHTML = statLoader;
+
                 // Actualizar labels según la fecha
                 if (isToday) {
                     totalLabel.textContent = 'Venta Proyectada (Hoy)';
                     confirmedLabel.textContent = 'Venta Real (Hoy)';
+                    fabricarLabel.textContent = 'Fabricar Hoy';
                     if (loadingText) loadingText.textContent = 'Sincronizando con Firestore';
                 } else {
                     totalLabel.textContent = `Proyectado (${dateISO})`;
                     confirmedLabel.textContent = `Real (${dateISO})`;
                     adSpendLabel.textContent = `Ads (${dateISO})`;
+                    fabricarLabel.textContent = `Fabricar (${dateISO})`;
                     if (loadingText) loadingText.textContent = `Cargando histórico del ${dateISO}`;
                 }
 
-                // --- NUEVO: Obtener gasto publicitario ---
+                // --- Obtener gasto publicitario y pedidos Fabricar en paralelo ---
                 let adSpend = 0;
                 try {
-                    const kpiRes = await fetch(`${API_BASE}/api/kpi/daily?date=${dateISO}`);
+                    const [kpiRes, fabricarRes] = await Promise.all([
+                        fetch(`${API_BASE}/api/kpi/daily?date=${dateISO}`),
+                        fetch(`${API_BASE}/api/orders/confirmed-today?date=${dateISO}`)
+                    ]);
                     const kpiData = await kpiRes.json();
                     if (kpiData.success) {
                         adSpend = kpiData.spend || 0;
                     }
+                    const fabricarData = await fabricarRes.json();
+                    if (fabricarData.success) {
+                        fabricarText.textContent = '$' + fabricarData.totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                        fabricarCount.textContent = `${fabricarData.count} pedido${fabricarData.count !== 1 ? 's' : ''}`;
+                    } else {
+                        fabricarText.textContent = '$0.00';
+                        fabricarCount.textContent = '0 pedidos';
+                    }
                 } catch (e) {
-                    console.error("Error fetching KPI spend:", e);
+                    console.error("Error fetching KPI/Fabricar:", e);
+                    fabricarText.textContent = '$0.00';
+                    fabricarCount.textContent = '0 pedidos';
                 }
                 adSpendText.textContent = '$' + adSpend.toLocaleString('es-MX', { minimumFractionDigits: 2 });
 
