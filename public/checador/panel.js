@@ -287,7 +287,7 @@ function renderAdminLogs() {
                     }
                 }
             }
-            if (idx === undefined) return `<td style="text-align:center; cursor:pointer; color:rgba(255,255,255,0.15);" onclick="openNewEntryModal('${emp.name}', '${emp.id}', '${dateStr}')" title="Click para agregar">—</td>`;
+            if (idx === undefined) return `<td style="text-align:center; cursor:pointer; color:rgba(255,255,255,0.15);" onclick="openNewEntryModal(\`${emp.name.replace(/`/g,'')}\`, \`${emp.id}\`, \`${dateStr}\`)" title="Click para agregar">—</td>`;
             const group = data[idx];
             const mins = getMinsFromGroup(group);
             dayMins += mins;
@@ -380,12 +380,10 @@ function openEditModal(idx) {
 }
 
 function openNewEntryModal(empName, empId, dateStr) {
-    // Convertir dateStr (YYYY-MM-DD) a formato D/M/YYYY
-    const [y, m, d] = dateStr.split('-');
-    const displayDate = `${parseInt(d)}/${parseInt(m)}/${y}`;
-    editingMeta = { name: empName, id: empId, date: displayDate };
+    // dateStr viene en formato D/M/YYYY desde dateObjToStr
+    editingMeta = { name: empName, id: empId, date: dateStr };
     editingEntries = [];
-    document.getElementById('edit-log-title').textContent = `${empName} — ${displayDate}`;
+    document.getElementById('edit-log-title').textContent = `${empName} — ${dateStr}`;
     renderEditEntries();
     document.getElementById('edit-log-modal').style.display = 'flex';
 }
