@@ -615,8 +615,6 @@ body.dark-mode .modal-image-nav-btn:disabled { background-color: #4a6572; }
 .tabla-container {
     width: 100%;
     overflow-x: auto;
-    overflow-y: auto;
-    max-height: calc(100vh - 120px);
     background: var(--color-container-bg);
     border-radius: var(--border-radius-lg);
     border: 1px solid var(--color-border);
