@@ -287,7 +287,10 @@ function renderAdminLogs() {
                     }
                 }
             }
-            if (idx === undefined) return `<td style="text-align:center; cursor:pointer; color:rgba(255,255,255,0.15);" onclick="openNewEntryModal(\`${emp.name.replace(/`/g,'')}\`, \`${emp.id}\`, \`${dateStr}\`)" title="Click para agregar">—</td>`;
+            if (idx === undefined) {
+                const safeArgs = btoa(JSON.stringify([emp.name, emp.id, dateStr]));
+                return `<td style="text-align:center; cursor:pointer; color:rgba(255,255,255,0.15);" onclick="openNewEntryFromAttr('${safeArgs}')" title="Click para agregar">—</td>`;
+            }
             const group = data[idx];
             const mins = getMinsFromGroup(group);
             dayMins += mins;
@@ -377,6 +380,11 @@ function openEditModal(idx) {
     document.getElementById('edit-log-title').textContent = `${group.name} — ${group.date}`;
     renderEditEntries();
     document.getElementById('edit-log-modal').style.display = 'flex';
+}
+
+function openNewEntryFromAttr(encoded) {
+    const [empName, empId, dateStr] = JSON.parse(atob(encoded));
+    openNewEntryModal(empName, empId, dateStr);
 }
 
 function openNewEntryModal(empName, empId, dateStr) {
