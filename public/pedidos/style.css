@@ -368,7 +368,7 @@ body.dark-mode #photo-copy-toast {
     padding: 0;
     box-shadow: none;
     margin: 20px auto;
-    min-height: calc(100vh - 70px); 
+    height: calc(100vh - 70px);
 }
 
 .titulo-contador-container {
