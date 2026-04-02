@@ -75,14 +75,12 @@
         
         .header-stats {
             background: var(--color-container-bg);
-            padding: 16px 24px;
+            padding: 16px 12px;
             border-radius: var(--border-radius-lg);
             border: 1px solid var(--color-border);
             box-shadow: 0 2px 10px var(--color-shadow);
             display: flex;
             align-items: center;
-            gap: 12px;
-            overflow: hidden;
         }
 
         .stat-icon {
@@ -204,65 +202,50 @@
         <!-- Stats Grid -->
         <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-12">
             <!-- Stats: Proyectado -->
-            <div class="header-stats justify-between">
-                <div class="text-right flex-1">
-                    <p id="total-label" class="text-[0.65rem] text-gray-400 uppercase font-black tracking-widest mb-1">Venta Proyectada</p>
+            <div class="header-stats">
+                <div class="text-center flex-1">
+                    <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-chart-line mr-1"></i>Venta Proyectada</p>
                     <p id="total-today" class="text-2xl font-black text-gray-500">$0.00</p>
                     <p id="snapshot-total" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
-                </div>
-                <div class="stat-icon bg-gray-400 opacity-20">
-                    <i class="fas fa-chart-line"></i>
                 </div>
             </div>
 
             <!-- Stats: Real -->
-            <div class="header-stats justify-between border-green-500/20 bg-green-50/30 dark:bg-green-900/5">
-                <div class="text-right flex-1">
-                    <p id="confirmed-label" class="text-[0.65rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1">Venta Real</p>
-                    <p id="confirmed-total" class="text-3xl font-black text-green-600 dark:text-green-400">$0.00</p>
+            <div class="header-stats border-green-500/20 bg-green-50/30 dark:bg-green-900/5">
+                <div class="text-center flex-1">
+                    <p id="confirmed-label" class="text-[0.6rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-cash-register mr-1"></i>Venta Real</p>
+                    <p id="confirmed-total" class="text-2xl font-black text-green-600 dark:text-green-400">$0.00</p>
                     <p id="snapshot-confirmed" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
-                </div>
-                <div class="stat-icon bg-green-500">
-                    <i class="fas fa-cash-register"></i>
                 </div>
             </div>
 
             <!-- Stats: Fabricar -->
-            <div class="header-stats justify-between border-purple-500/20 bg-purple-50/30 dark:bg-purple-900/5">
-                <div class="text-right flex-1">
-                    <p id="fabricar-label" class="text-[0.65rem] text-purple-600 dark:text-purple-400 uppercase font-black tracking-widest mb-1">Fabricar Hoy</p>
-                    <p id="fabricar-total" class="text-3xl font-black text-purple-600 dark:text-purple-400">$0.00</p>
+            <div class="header-stats border-purple-500/20 bg-purple-50/30 dark:bg-purple-900/5">
+                <div class="text-center flex-1">
+                    <p id="fabricar-label" class="text-[0.6rem] text-purple-600 dark:text-purple-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-gem mr-1"></i>Fabricar Hoy</p>
+                    <p id="fabricar-total" class="text-2xl font-black text-purple-600 dark:text-purple-400">$0.00</p>
                     <p id="fabricar-count" class="text-[11px] font-bold text-purple-400 mt-1">0 pedidos</p>
-                </div>
-                <div class="stat-icon bg-purple-500">
-                    <i class="fas fa-gem"></i>
                 </div>
             </div>
 
             <!-- Stats: Efectividad -->
-            <div class="header-stats justify-between border-blue-500/20 bg-blue-50/30 dark:bg-blue-900/5">
-                <div class="text-right flex-1">
-                    <p class="text-[0.65rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1">Efectividad</p>
-                    <div class="flex flex-col items-end leading-none gap-1.5">
+            <div class="header-stats border-blue-500/20 bg-blue-50/30 dark:bg-blue-900/5">
+                <div class="text-center flex-1">
+                    <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-bullseye mr-1"></i>Efectividad</p>
+                    <div class="flex flex-col items-center leading-none gap-1.5">
                         <p id="orders-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
                         <p id="revenue-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
                         <p id="roas-val" class="font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
                         <p id="snapshot-conv" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: 0% / 0.0 ROAS</p>
                     </div>
                 </div>
-                <div class="stat-icon bg-blue-500">
-                    <i class="fas fa-bullseye"></i>
-                </div>
             </div>
 
             <!-- Stats: Gasto -->
-            <div class="header-stats justify-between border-orange-500/20 bg-orange-50/30 dark:bg-orange-900/5">
-                <div class="text-right flex-1">
-                    <p id="ad-spend-label" class="text-[0.65rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1">Inversión Ads</p>
-                    <p id="ad-spend-total" class="text-3xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
-                </div>
-                <div class="stat-icon bg-orange-500">
-                    <i class="fas fa-ad"></i>
+            <div class="header-stats border-orange-500/20 bg-orange-50/30 dark:bg-orange-900/5">
+                <div class="text-center flex-1">
+                    <p id="ad-spend-label" class="text-[0.6rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-ad mr-1"></i>Inversión Ads</p>
+                    <p id="ad-spend-total" class="text-2xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
                 </div>
             </div>
         </div>
