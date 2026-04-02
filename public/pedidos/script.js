@@ -1288,6 +1288,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nuevoEstatus === 'Fabricar' && animX && animY) {
             playGemPlacementAnimation(animX, animY);
         }
+        // Optimistic update: actualizar DOM e in-memory antes del API call
+        const row = cuerpoTablaPedidos.querySelector(`tr[data-id="${pedidoId}"]`);
+        const oldStatus = row ? row.querySelector('.status-display')?.textContent : null;
+        if (row) {
+            const span = row.querySelector('.status-display');
+            if (span) {
+                span.className = `status-display status-${nuevoEstatus.toLowerCase().replace(/\s+/g, '-')}`;
+                span.textContent = nuevoEstatus;
+                span.dataset.status = nuevoEstatus;
+            }
+        }
+        const data = pedidosDataMap.get(pedidoId);
+        if (data) data.estatus = nuevoEstatus;
         try {
             const response = await fetch(`/api/orders/${pedidoId}/change-status`, {
                 method: 'POST',
@@ -1297,23 +1310,29 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await response.json();
             if (!response.ok) {
                 console.error("Error del servidor al actualizar estatus:", result.message);
-            } else {
-                // Update the status span in-place
-                const row = cuerpoTablaPedidos.querySelector(`tr[data-id="${pedidoId}"]`);
-                if (row) {
+                // Revertir si falla
+                if (row && oldStatus) {
                     const span = row.querySelector('.status-display');
                     if (span) {
-                        span.className = `status-display status-${nuevoEstatus.toLowerCase().replace(/\s+/g, '-')}`;
-                        span.textContent = nuevoEstatus;
-                        span.dataset.status = nuevoEstatus;
+                        span.className = `status-display status-${oldStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                        span.textContent = oldStatus;
+                        span.dataset.status = oldStatus;
                     }
                 }
-                // Update in-memory data
-                const data = pedidosDataMap.get(pedidoId);
-                if (data) data.estatus = nuevoEstatus;
+                if (data && oldStatus) data.estatus = oldStatus;
             }
         } catch (error) {
             console.error("Error al actualizar estatus: ", error);
+            // Revertir si falla
+            if (row && oldStatus) {
+                const span = row.querySelector('.status-display');
+                if (span) {
+                    span.className = `status-display status-${oldStatus.toLowerCase().replace(/\s+/g, '-')}`;
+                    span.textContent = oldStatus;
+                    span.dataset.status = oldStatus;
+                }
+            }
+            if (data && oldStatus) data.estatus = oldStatus;
         }
     }
 
@@ -1452,18 +1471,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 btnGuardarPedido.innerHTML = '<i class="fas fa-database"></i> Actualizando...';
                 const docRef = doc(db, "pedidos", editingPedidoId);
                 Object.keys(pedidoData).forEach(key => pedidoData[key] === undefined && delete pedidoData[key]);
-                await updateDoc(docRef, pedidoData);
+                // Optimistic update: cerrar modal y actualizar fila antes del await
+                const editedId = editingPedidoId;
                 cerrarModalPedido();
-                // Update the row in-place instead of re-fetching everything
-                const existingData = pedidosDataMap.get(editingPedidoId);
+                const existingData = pedidosDataMap.get(editedId);
                 if (existingData) {
                     Object.assign(existingData, pedidoData);
-                    const oldRow = cuerpoTablaPedidos.querySelector(`tr[data-id="${editingPedidoId}"]`);
+                    const oldRow = cuerpoTablaPedidos.querySelector(`tr[data-id="${editedId}"]`);
                     if (oldRow) {
                         const newRow = createPedidoRow(existingData, new Set());
                         oldRow.replaceWith(newRow);
                     }
                 }
+                await updateDoc(docRef, pedidoData);
             } else {
                 btnGuardarPedido.innerHTML = '<i class="fas fa-database"></i> Guardando...';
                 const newOrderNumber = await runTransaction(db, async (transaction) => {
