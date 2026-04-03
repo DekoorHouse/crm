@@ -45,6 +45,19 @@ app.use('/api/jt-guias', jtGuiasRouter);
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
+// --- NUEVA APP NEXT.JS (Pedidos Redesign) ---
+// Servir archivos estáticos de Next.js desde /pedidos-new/
+app.use('/pedidos-new/_next', express.static(path.join(__dirname, '..', 'public', 'pedidos-new', '_next')));
+app.get('/pedidos-new', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+});
+app.get('/pedidos-new/login', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'login.html'));
+});
+app.get('/pedidos-new/pedidos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+});
+
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
 app.get('/ads', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'ads', 'index.html'));
