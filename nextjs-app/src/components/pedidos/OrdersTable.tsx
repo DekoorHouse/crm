@@ -12,7 +12,7 @@ interface OrdersTableProps {
   hasMore: boolean;
   isLoadingMore: boolean;
   onLoadMore: () => void;
-  onStatusClick?: (order: Order) => void;
+  onStatusClick?: (order: Order, event: React.MouseEvent) => void;
   onEdit?: (order: Order) => void;
   onDelete?: (order: Order) => void;
   onPhotoClick?: (urls: string[], index: number, orderNumber: number | null) => void;
@@ -99,7 +99,7 @@ export default function OrdersTable({
                 <span className="text-xs font-bold text-primary">DH{order.consecutiveOrderNumber ?? "--"}</span>
                 <span className="text-[10px] text-on-surface-variant ml-2">{formatDate(order.createdAt)}</span>
               </div>
-              <StatusBadge status={order.estatus} onClick={() => onStatusClick?.(order)} />
+              <StatusBadge status={order.estatus} onClick={(e) => onStatusClick?.(order, e)} />
             </div>
             <p className="text-sm font-bold mb-1">{order.producto || "--"}</p>
             <div className="flex items-center gap-2 text-xs text-on-surface-variant mb-2">
@@ -216,7 +216,7 @@ export default function OrdersTable({
                 <td className="px-4 py-3">
                   <StatusBadge
                     status={order.estatus}
-                    onClick={() => onStatusClick?.(order)}
+                    onClick={(e) => onStatusClick?.(order, e)}
                   />
                 </td>
 

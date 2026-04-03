@@ -1,3 +1,3 @@
-:HL["/pedidos-new/_next/static/chunks/0~mt-0o67n1cq.css","style"]
+:HL["/pedidos-new/_next/static/chunks/138_xtah.w992.css","style"]
 :HL["https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap","style"]
-0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"M7qjbPeUHdeNc8EYq-vtw"}
+0:{"tree":{"name":"","param":null,"prefetchHints":16,"slots":{"children":{"name":"/_not-found","param":null,"prefetchHints":0,"slots":{"children":{"name":"__PAGE__","param":null,"prefetchHints":0,"slots":null}}}}},"staleTime":300,"buildId":"NQxbJOg69N7x9FFbqP_C_"}

@@ -4,7 +4,7 @@ import { getStatusConfig } from "@/lib/utils/statusConfig";
 
 interface StatusBadgeProps {
   status: string;
-  onClick?: () => void;
+  onClick?: (event: React.MouseEvent) => void;
 }
 
 export default function StatusBadge({ status, onClick }: StatusBadgeProps) {

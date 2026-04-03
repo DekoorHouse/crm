@@ -16,6 +16,8 @@ import OrderModal from "@/components/pedidos/OrderModal";
 import ImageViewer from "@/components/pedidos/ImageViewer";
 import DeleteConfirmModal from "@/components/pedidos/DeleteConfirmModal";
 import SearchBar from "@/components/pedidos/SearchBar";
+import StatusPicker from "@/components/pedidos/StatusPicker";
+import { changeOrderStatus } from "@/lib/api/orders";
 import { exportOrdersToCsv } from "@/lib/utils/exportCsv";
 import toast from "react-hot-toast";
 
@@ -49,6 +51,7 @@ export default function PedidosPage() {
   const [imageViewer, setImageViewer] = useState<{ urls: string[]; index: number; orderNum: number | null } | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
+  const [statusPicker, setStatusPicker] = useState<{ order: Order; rect: DOMRect } | null>(null);
   const [currentFilters, setCurrentFilters] = useState<OrderFilters>({});
 
   // Keyboard shortcuts: Ctrl+F for search
@@ -163,8 +166,9 @@ export default function PedidosPage() {
               hasMore={pagination.hasMore}
               isLoadingMore={pagination.isLoadingMore}
               onLoadMore={loadMore}
-              onStatusClick={() => {
-                // TODO: Fase 5 — menú radial (por ahora se cambia desde Kanban)
+              onStatusClick={(order, event) => {
+                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                setStatusPicker({ order, rect });
               }}
               onEdit={handleEditOrder}
               onDelete={(order) => setDeleteTarget(order)}
@@ -215,6 +219,25 @@ export default function PedidosPage() {
           orderNumber={deleteTarget.consecutiveOrderNumber}
           onConfirm={handleDeleteOrder}
           onCancel={() => setDeleteTarget(null)}
+        />
+      )}
+
+      {statusPicker && (
+        <StatusPicker
+          currentStatus={statusPicker.order.estatus}
+          anchorRect={statusPicker.rect}
+          onSelect={async (newStatus) => {
+            const order = statusPicker.order;
+            updateOrderStatus(order.id, newStatus, order.estatus);
+            try {
+              await changeOrderStatus(order.id, newStatus);
+              toast.success(`Estatus → "${newStatus}"`, { duration: 2000 });
+            } catch {
+              updateOrderStatus(order.id, order.estatus, newStatus);
+              toast.error("Error al cambiar estatus");
+            }
+          }}
+          onClose={() => setStatusPicker(null)}
         />
       )}
 
