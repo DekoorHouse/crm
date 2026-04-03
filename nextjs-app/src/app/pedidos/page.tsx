@@ -7,7 +7,6 @@ import { useOrders } from "@/lib/hooks/useOrders";
 import type { Order, OrderFilters } from "@/lib/api/types";
 import { deleteOrder as deleteOrderFromDb } from "@/lib/firebase/firestore";
 import { deletePhoto } from "@/lib/firebase/storage";
-import Sidebar from "@/components/layout/Sidebar";
 import Navbar from "@/components/layout/Navbar";
 import LoadingOverlay from "@/components/layout/LoadingOverlay";
 import FilterBar from "@/components/pedidos/FilterBar";
@@ -140,9 +139,7 @@ export default function PedidosPage() {
 
   return (
     <div className="flex h-screen bg-background">
-      <Sidebar />
-
-      <main className="flex-1 xl:ml-64 flex flex-col overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden">
         <Navbar
           viewMode={viewMode}
           onViewModeChange={setViewMode}
