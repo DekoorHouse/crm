@@ -7,9 +7,7 @@ const nextConfig: NextConfig = {
   ...(isProd && {
     output: "export",
     distDir: "out",
-    // Base path for production: served under /pedidos-new/ initially
-    // Remove basePath once switchover is complete and it replaces /pedidos/
-    // basePath: "/pedidos-new",
+    basePath: "/pedidos-new",
   }),
 
   // Proxy API calls to Express backend during development only
