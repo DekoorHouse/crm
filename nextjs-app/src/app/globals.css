@@ -52,8 +52,8 @@
   --color-inverse-on-surface: #f3eff5;
   --color-inverse-primary: #9fd1b8;
 
-  /* Chat bubble (mensaje enviado) - solido para evitar tonos turbios */
-  --color-bubble-sent: #dcefe0;
+  /* Chat bubble (mensaje enviado) - tinte claro derivado de --color-primary #386753 */
+  --color-bubble-sent: #c8dccf;
 
   /* Status colors */
   --color-status-sin-estatus: #6c757d;
@@ -108,7 +108,8 @@
   --color-inverse-on-surface: #1a1b26;
   --color-inverse-primary: #386753;
 
-  --color-bubble-sent: #2a3b5c;
+  /* Tinte Tokyo Night derivado de --color-primary #7aa2f7 */
+  --color-bubble-sent: #1e2a3f;
 }
 
 /* --- Tailwind v4 Theme Integration --- */
