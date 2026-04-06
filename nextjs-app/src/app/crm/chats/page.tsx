@@ -1,26 +1,37 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useContacts } from "@/lib/hooks/useContacts";
 import { useMessages } from "@/lib/hooks/useMessages";
 import ContactList from "@/components/crm/ContactList";
 import ChatWindow from "@/components/crm/ChatWindow";
+import ContactDetails from "@/components/crm/ContactDetails";
 
 export default function ChatsPage() {
-  const { contacts, loading, hasMore, loadContacts, loadMore } = useContacts();
+  const { contacts, loading, hasMore, loadContacts, loadMore, searchQuery, search, filters, applyFilters } = useContacts();
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { messages, loading: messagesLoading, sessionExpired, sendText } = useMessages(selectedId);
+  const { messages, loading: messagesLoading, sessionExpired, replyTo, setReplyTo, send, loadOlder } = useMessages(selectedId);
+  const [showDetails, setShowDetails] = useState(false);
+  const [activeTag, setActiveTag] = useState("");
+  const [unreadOnly, setUnreadOnly] = useState(false);
 
-  // Load contacts on mount
-  useEffect(() => {
-    loadContacts();
-  }, [loadContacts]);
+  useEffect(() => { loadContacts(); }, [loadContacts]);
 
-  // Find selected contact object
   const selectedContact = useMemo(
     () => contacts.find((c) => c.id === selectedId) ?? null,
     [contacts, selectedId]
   );
+
+  const handleTagFilter = useCallback((tag: string) => {
+    setActiveTag(tag);
+    applyFilters({ ...filters, tag: tag || undefined });
+  }, [applyFilters, filters]);
+
+  const handleToggleUnread = useCallback(() => {
+    const next = !unreadOnly;
+    setUnreadOnly(next);
+    applyFilters({ ...filters, unreadOnly: next || undefined });
+  }, [applyFilters, filters, unreadOnly]);
 
   return (
     <div className="flex h-full">
@@ -31,14 +42,31 @@ export default function ChatsPage() {
         onSelect={setSelectedId}
         onLoadMore={loadMore}
         hasMore={hasMore}
+        searchQuery={searchQuery}
+        onSearch={search}
+        activeTag={activeTag}
+        onTagFilter={handleTagFilter}
+        unreadOnly={unreadOnly}
+        onToggleUnread={handleToggleUnread}
       />
       <ChatWindow
         contact={selectedContact}
         messages={messages}
         loading={messagesLoading}
         sessionExpired={sessionExpired}
-        onSend={sendText}
+        onSend={send}
+        replyTo={replyTo}
+        onSetReplyTo={setReplyTo}
+        onLoadOlder={loadOlder}
+        onToggleDetails={() => setShowDetails(!showDetails)}
+        showDetails={showDetails}
       />
+      {showDetails && selectedContact && (
+        <ContactDetails
+          contact={selectedContact}
+          onClose={() => setShowDetails(false)}
+        />
+      )}
     </div>
   );
 }
