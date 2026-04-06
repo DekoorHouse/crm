@@ -1,8 +1,19 @@
 "use client";
 
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import type { Order, OrderFilters, PaginationState } from "../api/types";
-import { fetchOrders, fetchTodayOrders, fetchOrderCount } from "../api/orders";
+import { fetchOrders, fetchOrderCount } from "../api/orders";
+import { db } from "../firebase/config";
+import {
+  collection,
+  query,
+  where,
+  orderBy,
+  limit,
+  onSnapshot,
+  Timestamp,
+  getCountFromServer,
+} from "firebase/firestore";
 
 interface UseOrdersReturn {
   orders: Order[];
@@ -15,8 +26,20 @@ interface UseOrdersReturn {
   loadInitial: (filters: OrderFilters) => Promise<void>;
   loadMore: () => Promise<void>;
   loadAll: () => Promise<void>;
-  refreshTodayCount: () => Promise<void>;
+  refreshTodayCount: () => void;
   updateOrderStatus: (orderId: string, newStatus: string, oldStatus: string) => void;
+}
+
+function getTodayRange() {
+  const mexicoDate = new Date().toLocaleDateString("en-CA", {
+    timeZone: "America/Mexico_City",
+  });
+  const start = new Date(mexicoDate + "T00:00:00-06:00");
+  const end = new Date(mexicoDate + "T23:59:59.999-06:00");
+  return {
+    start: Timestamp.fromDate(start),
+    end: Timestamp.fromDate(end),
+  };
 }
 
 export function useOrders(): UseOrdersReturn {
@@ -34,14 +57,58 @@ export function useOrders(): UseOrdersReturn {
 
   const currentFilters = useRef<OrderFilters>({});
   const allOrders = useRef<Order[]>([]);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const refreshTodayCount = useCallback(async () => {
-    try {
-      const data = await fetchTodayOrders();
-      setTodayCount(data.orders.length);
-    } catch {
-      // silently fail
+  // Real-time today count via Firestore onSnapshot (same pattern as old app)
+  const refreshTodayCount = useCallback(() => {
+    // Cleanup previous listener
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
     }
+
+    const { start, end } = getTodayRange();
+    const pedidosRef = collection(db, "pedidos");
+
+    // Initial count
+    const countQuery = query(
+      pedidosRef,
+      where("createdAt", ">=", start),
+      where("createdAt", "<", end)
+    );
+    getCountFromServer(countQuery)
+      .then((snap) => setTodayCount(snap.data().count))
+      .catch(() => {});
+
+    // Lightweight listener: watch only the latest doc, re-count on changes
+    const listenerQuery = query(
+      pedidosRef,
+      where("createdAt", ">=", start),
+      where("createdAt", "<", end),
+      orderBy("createdAt", "desc"),
+      limit(1)
+    );
+
+    let isFirst = true;
+    unsubscribeRef.current = onSnapshot(listenerQuery, () => {
+      if (isFirst) {
+        isFirst = false;
+        return;
+      }
+      // Re-count when a change is detected
+      getCountFromServer(countQuery)
+        .then((snap) => setTodayCount(snap.data().count))
+        .catch(() => {});
+    });
+  }, []);
+
+  // Cleanup listener on unmount
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
   }, []);
 
   const loadInitial = useCallback(async (filters: OrderFilters) => {
@@ -120,7 +187,6 @@ export function useOrders(): UseOrdersReturn {
 
   const updateOrderStatus = useCallback(
     (orderId: string, newStatus: string, _oldStatus: string) => {
-      // Optimistic update in local state
       const updated = allOrders.current.map((o) =>
         o.id === orderId ? { ...o, estatus: newStatus } : o
       );
