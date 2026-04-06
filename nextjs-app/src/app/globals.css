@@ -171,6 +171,8 @@ h1, h2, h3, h4, h5, h6 {
 .kanban-scroll::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 10px; }
 
 /* --- Smooth transitions for theme switch --- */
-* {
-  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+@layer base {
+  * {
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  }
 }
