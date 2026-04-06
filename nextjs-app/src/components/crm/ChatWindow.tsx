@@ -98,13 +98,6 @@ export default function ChatWindow({
         </div>
       </div>
 
-      {sessionExpired && (
-        <div className="px-4 py-2 bg-error-container/20 text-error text-xs flex items-center gap-2">
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>warning</span>
-          Sesion expirada — han pasado mas de 24h desde el ultimo mensaje del cliente
-        </div>
-      )}
-
       {/* Messages */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3" onScroll={handleScroll}>
         {loading ? (
@@ -151,7 +144,7 @@ export default function ChatWindow({
       <MessageComposer
         onSend={onSend}
         disabled={sessionExpired && contact.channel === "whatsapp"}
-        disabledReason="Sesion expirada — envia un template para reiniciar"
+        disabledReason="Sesion expirada — han pasado mas de 24h desde el ultimo mensaje del cliente"
         replyTo={replyTo}
         onCancelReply={() => onSetReplyTo(null)}
       />

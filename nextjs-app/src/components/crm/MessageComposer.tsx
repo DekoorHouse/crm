@@ -98,10 +98,10 @@ export default function MessageComposer({ onSend, disabled, disabledReason, repl
 
   if (disabled) {
     return (
-      <div className="px-4 py-3 border-t border-outline-variant/10 bg-surface-container-low/50">
-        <div className="flex items-center gap-2 text-on-surface-variant/60 text-sm">
-          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>lock</span>
-          <span>{disabledReason || "No puedes enviar mensajes"}</span>
+      <div className="px-4 py-4 border-t border-outline-variant/10 bg-error-container/10">
+        <div className="flex items-center justify-center gap-2 text-error text-sm">
+          <span className="material-symbols-outlined" style={{ fontSize: 18 }}>warning</span>
+          <span className="font-medium">{disabledReason || "No puedes enviar mensajes"}</span>
         </div>
       </div>
     );
