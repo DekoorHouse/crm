@@ -705,6 +705,57 @@ router.get('/orders/list', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/orders/count (Conteo rápido sin traer documentos) ---
+router.get('/orders/count', async (req, res) => {
+    try {
+        const { producto, estatus, dateFilter, customStart, customEnd } = req.query;
+
+        let query = db.collection('pedidos');
+
+        if (producto) query = query.where('producto', '==', producto);
+        if (estatus) query = query.where('estatus', '==', estatus);
+
+        const getMexicoDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+        if (dateFilter === 'personalizado' && customStart && customEnd) {
+            query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(customStart)));
+            query = query.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(customEnd)));
+        } else if (dateFilter) {
+            const mexicoDate = getMexicoDate();
+            let startDate, endDate;
+
+            if (dateFilter === 'hoy') {
+                startDate = new Date(mexicoDate + 'T00:00:00-06:00');
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            } else if (dateFilter === 'ayer') {
+                const yesterday = new Date(mexicoDate + 'T00:00:00-06:00');
+                yesterday.setDate(yesterday.getDate() - 1);
+                startDate = yesterday;
+                endDate = new Date(mexicoDate + 'T00:00:00-06:00');
+            } else if (dateFilter === 'este-mes') {
+                startDate = new Date(mexicoDate.substring(0, 7) + '-01T00:00:00-06:00');
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            } else if (dateFilter === 'ultimos-10-dias') {
+                const tenDaysAgo = new Date(mexicoDate + 'T00:00:00-06:00');
+                tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+                startDate = tenDaysAgo;
+                endDate = new Date(mexicoDate + 'T23:59:59.999-06:00');
+            }
+
+            if (startDate && endDate) {
+                query = query.where('createdAt', '>=', admin.firestore.Timestamp.fromDate(startDate));
+                query = query.where('createdAt', '<', admin.firestore.Timestamp.fromDate(endDate));
+            }
+        }
+
+        const snapshot = await query.count().get();
+        res.status(200).json({ success: true, count: snapshot.data().count });
+    } catch (error) {
+        console.error("Error counting orders:", error);
+        res.status(500).json({ success: false, message: 'Error al contar pedidos.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/orders/today (Pedidos del día con origen de anuncio) ---
 router.get('/orders/today', async (req, res) => {
     try {

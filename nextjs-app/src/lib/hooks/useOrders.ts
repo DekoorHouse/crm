@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useRef } from "react";
 import type { Order, OrderFilters, PaginationState } from "../api/types";
-import { fetchOrders, fetchTodayOrders } from "../api/orders";
+import { fetchOrders, fetchTodayOrders, fetchOrderCount } from "../api/orders";
 
 interface UseOrdersReturn {
   orders: Order[];
@@ -51,7 +51,10 @@ export function useOrders(): UseOrdersReturn {
     allOrders.current = [];
 
     try {
-      const data = await fetchOrders(filters);
+      const [data, totalCount] = await Promise.all([
+        fetchOrders(filters),
+        fetchOrderCount(filters).catch(() => null),
+      ]);
       allOrders.current = data.orders;
       setOrders(data.orders);
       setPagination({
@@ -60,8 +63,7 @@ export function useOrders(): UseOrdersReturn {
         isLoadingMore: false,
       });
 
-      // Calculate counters
-      setFilteredCount(data.orders.length + (data.hasMore ? 1 : 0)); // approximate, will refine
+      setFilteredCount(totalCount ?? data.orders.length);
       const sum = data.orders.reduce((acc, o) => acc + (Number(o.precio) || 0), 0);
       setFilteredSum(sum);
     } catch (err) {
@@ -89,7 +91,6 @@ export function useOrders(): UseOrdersReturn {
 
       const sum = allOrders.current.reduce((acc, o) => acc + (Number(o.precio) || 0), 0);
       setFilteredSum(sum);
-      setFilteredCount(allOrders.current.length);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar más pedidos");
       setPagination((prev) => ({ ...prev, isLoadingMore: false }));
@@ -115,7 +116,6 @@ export function useOrders(): UseOrdersReturn {
     setPagination({ lastVisibleId: currentLastId, hasMore: false, isLoadingMore: false });
     const sum = allOrders.current.reduce((acc, o) => acc + (Number(o.precio) || 0), 0);
     setFilteredSum(sum);
-    setFilteredCount(allOrders.current.length);
   }, [pagination]);
 
   const updateOrderStatus = useCallback(
