@@ -150,6 +150,7 @@ export default function PedidosPage() {
           onViewModeChange={setViewMode}
           onNewOrder={handleNewOrder}
           onExport={() => exportOrdersToCsv(orders)}
+          onSearchClick={() => setSearchVisible(true)}
         />
 
         <FilterBar

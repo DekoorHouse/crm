@@ -10,9 +10,10 @@ interface NavbarProps {
   onViewModeChange: (mode: "tabla" | "kanban") => void;
   onExport?: () => void;
   onNewOrder: () => void;
+  onSearchClick?: () => void;
 }
 
-export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExport }: NavbarProps) {
+export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExport, onSearchClick }: NavbarProps) {
   const { isDark, toggleTheme } = useTheme();
   const { user } = useAuth();
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -34,17 +35,14 @@ export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExpor
           </span>
         </nav>
 
-        {/* Search */}
-        <div className="relative hidden lg:block">
-          <span className="absolute inset-y-0 left-3 flex items-center text-on-surface-variant">
-            <span className="material-symbols-outlined text-lg">search</span>
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar pedido..."
-            className="pl-10 pr-4 py-2 bg-surface-container-low border-none rounded-xl text-sm focus:ring-2 ring-primary/20 w-64 text-on-surface placeholder:text-on-surface-variant/50"
-          />
-        </div>
+        {/* Search trigger */}
+        <button
+          onClick={onSearchClick}
+          className="relative hidden lg:flex items-center gap-2 pl-3 pr-4 py-2 bg-surface-container-low rounded-xl text-sm text-on-surface-variant/50 hover:bg-surface-container transition-colors w-64 cursor-text"
+        >
+          <span className="material-symbols-outlined text-lg">search</span>
+          <span>Buscar pedido...</span>
+        </button>
       </div>
 
       {/* Right side */}
