@@ -16,7 +16,6 @@ interface ContactDetailsProps {
   onClose: () => void;
   onNewOrder?: () => void;
   onStatusChange?: (orderId: string, newStatus: string) => void;
-  onContactUpdated?: () => void;
 }
 
 function formatOrderDate(createdAt?: string | null): string {
@@ -24,7 +23,7 @@ function formatOrderDate(createdAt?: string | null): string {
   return new Date(createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
-export default function ContactDetails({ contact, onClose, onNewOrder, onStatusChange, onContactUpdated }: ContactDetailsProps) {
+export default function ContactDetails({ contact, onClose, onNewOrder, onStatusChange }: ContactDetailsProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [newNote, setNewNote] = useState("");
@@ -59,15 +58,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
   async function saveNote(noteId: string) {
     await updateDoc(doc(db, "contacts_whatsapp", contact.id, "notes", noteId), { text: editText });
     setEditingNote(null);
-  }
-
-  async function toggleBot() {
-    try {
-      const newVal = !contact.botActive;
-      await updateDoc(doc(db, "contacts_whatsapp", contact.id), { botActive: newVal });
-      toast.success(newVal ? "IA activada" : "IA desactivada");
-      onContactUpdated?.();
-    } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
   }
 
   async function handleMarkPurchase() {
@@ -207,15 +197,6 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:opacity-90 transition-all">
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>shopping_cart</span>
           Registrar Compra (Meta)
-        </button>
-        <button onClick={toggleBot}
-          className={`w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${
-            contact.botActive
-              ? "bg-error-container/20 text-error hover:bg-error-container/30"
-              : "bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest"
-          }`}>
-          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
-          {contact.botActive ? "Desactivar IA" : "Activar IA"}
         </button>
         {onNewOrder && (
           <button onClick={onNewOrder}

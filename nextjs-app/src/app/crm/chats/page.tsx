@@ -114,9 +114,6 @@ export default function ChatsPage() {
               toast.error(err instanceof Error ? err.message : "Error");
             }
           }}
-          onContactUpdated={() => {
-            if (selectedId) updateContactLocal(selectedId, { botActive: !selectedContact.botActive });
-          }}
         />
       )}
 
