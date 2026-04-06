@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react";
 import { useState } from "react";
 import type { Contact, Message } from "@/lib/api/contacts";
+import { reactToMessage } from "@/lib/api/contacts";
 import MessageBubble from "./MessageBubble";
 import MessageComposer from "./MessageComposer";
 import TransferModal from "./TransferModal";
@@ -135,6 +136,7 @@ export default function ChatWindow({
                     message={msg}
                     isSent={msg.from !== contact.id}
                     onReply={onSetReplyTo}
+                    onReact={(docId, emoji) => reactToMessage(contact.id, docId, emoji).catch(() => {})}
                     allMessages={messages}
                   />
                 </div>

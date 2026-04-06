@@ -1,11 +1,13 @@
 "use client";
 
+import { useState, useRef, useEffect } from "react";
 import type { Message } from "@/lib/api/contacts";
 
 interface MessageBubbleProps {
   message: Message;
   isSent: boolean;
   onReply?: (msg: Message) => void;
+  onReact?: (msgDocId: string, emoji: string) => void;
   allMessages?: Message[];
 }
 
@@ -27,23 +29,48 @@ function StatusIcon({ status }: { status: string }) {
   }
 }
 
-export default function MessageBubble({ message, isSent, onReply, allMessages }: MessageBubbleProps) {
+const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
+
+export default function MessageBubble({ message, isSent, onReply, onReact, allMessages }: MessageBubbleProps) {
+  const [showReactions, setShowReactions] = useState(false);
+  const reactRef = useRef<HTMLDivElement>(null);
   const hasMedia = !!message.fileUrl;
   const isImage = message.fileType?.startsWith("image/") || message.type === "image" || message.type === "sticker";
   const isVideo = message.fileType?.startsWith("video/") || message.type === "video";
   const isAudio = message.fileType?.startsWith("audio/") || message.type === "audio";
   const isLocation = message.type === "location" && message.location;
 
-  // Find replied-to message
   const repliedMsg = message.context?.id && allMessages
     ? allMessages.find((m) => m.id === message.context!.id)
     : null;
 
+  // Close reaction picker on click outside
+  useEffect(() => {
+    if (!showReactions) return;
+    function handleClick(e: MouseEvent) {
+      if (reactRef.current && !reactRef.current.contains(e.target as Node)) setShowReactions(false);
+    }
+    setTimeout(() => document.addEventListener("mousedown", handleClick), 0);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showReactions]);
+
+  function handleDoubleClick() {
+    if (onReply) onReply(message);
+  }
+
+  function handleReact(emoji: string) {
+    if (onReact) onReact(message.docId, emoji);
+    setShowReactions(false);
+  }
+
   return (
     <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1 group`}>
-      <div className={`max-w-[75%] rounded-2xl px-3 py-2 relative ${
-        isSent ? "bg-primary text-on-primary rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
-      }`}>
+      <div
+        className={`max-w-[75%] rounded-2xl px-3 py-2 relative ${
+          isSent ? "bg-primary text-on-primary rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
+        }`}
+        onDoubleClick={handleDoubleClick}
+      >
         {/* Reply context */}
         {repliedMsg && (
           <div className={`mb-1.5 px-2.5 py-1.5 rounded-lg border-l-2 ${
@@ -56,15 +83,9 @@ export default function MessageBubble({ message, isSent, onReply, allMessages }:
         )}
 
         {/* Media */}
-        {hasMedia && isImage && (
-          <img src={message.fileUrl} alt="" className="rounded-xl max-w-full max-h-60 object-cover mb-1" loading="lazy" />
-        )}
-        {hasMedia && isVideo && (
-          <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />
-        )}
-        {hasMedia && isAudio && (
-          <audio src={message.fileUrl} controls className="max-w-full mb-1" />
-        )}
+        {hasMedia && isImage && <img src={message.fileUrl} alt="" className="rounded-xl max-w-full max-h-60 object-cover mb-1" loading="lazy" />}
+        {hasMedia && isVideo && <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />}
+        {hasMedia && isAudio && <audio src={message.fileUrl} controls className="max-w-full mb-1" />}
         {hasMedia && !isImage && !isVideo && !isAudio && (
           <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-on-primary/80" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>attach_file</span>
@@ -72,7 +93,6 @@ export default function MessageBubble({ message, isSent, onReply, allMessages }:
           </a>
         )}
 
-        {/* Location */}
         {isLocation && message.location && (
           <a href={`https://maps.google.com/?q=${message.location.latitude},${message.location.longitude}`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-on-primary/80" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>location_on</span>
@@ -80,11 +100,16 @@ export default function MessageBubble({ message, isSent, onReply, allMessages }:
           </a>
         )}
 
-        {/* Text */}
         {message.text && <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>}
 
-        {/* Reaction */}
-        {message.reaction && <span className="text-base">{message.reaction}</span>}
+        {/* Reaction badge */}
+        {message.reaction && (
+          <div className="absolute -bottom-2 left-2">
+            <span className="text-sm bg-surface-container-lowest rounded-full px-1 shadow-sm border border-outline-variant/10">
+              {message.reaction}
+            </span>
+          </div>
+        )}
 
         {/* Timestamp + status */}
         <div className={`flex items-center justify-end gap-1 mt-0.5 ${isSent ? "text-on-primary/60" : "text-on-surface-variant/60"}`}>
@@ -92,17 +117,39 @@ export default function MessageBubble({ message, isSent, onReply, allMessages }:
           {isSent && <StatusIcon status={message.status} />}
         </div>
 
-        {/* Reply action (on hover) */}
-        {onReply && (
-          <button
-            onClick={() => onReply(message)}
-            className={`absolute top-1 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded-lg ${
-              isSent ? "-left-8 text-on-surface-variant/50 hover:text-on-surface" : "-right-8 text-on-surface-variant/50 hover:text-on-surface"
-            }`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>reply</span>
-          </button>
-        )}
+        {/* Hover actions */}
+        <div className={`absolute top-1 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${
+          isSent ? "-left-16" : "-right-16"
+        }`}>
+          {/* Reaction button */}
+          {onReact && (
+            <div ref={reactRef} className="relative">
+              <button onClick={() => setShowReactions(!showReactions)}
+                className="p-1 rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-surface-container-low transition-all">
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add_reaction</span>
+              </button>
+              {showReactions && (
+                <div className={`absolute z-50 bottom-full mb-1 bg-surface-container-lowest rounded-xl shadow-lg border border-outline-variant/20 p-1 flex gap-0.5 ${
+                  isSent ? "right-0" : "left-0"
+                }`}>
+                  {QUICK_REACTIONS.map((emoji) => (
+                    <button key={emoji} onClick={() => handleReact(emoji)}
+                      className="w-7 h-7 flex items-center justify-center text-base hover:bg-surface-container-low rounded-lg transition-colors">
+                      {emoji}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {/* Reply button */}
+          {onReply && (
+            <button onClick={() => onReply(message)}
+              className="p-1 rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-surface-container-low transition-all">
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>reply</span>
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

@@ -163,6 +163,16 @@ export async function getSignedUploadUrl(filename: string, contentType: string):
   return data.url;
 }
 
+export async function reactToMessage(contactId: string, messageDocId: string, emoji: string): Promise<void> {
+  const res = await fetch(`/api/contacts/${contactId}/messages/${messageDocId}/react`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ emoji }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error reacting");
+}
+
 export async function fetchContactOrders(contactId: string): Promise<unknown[]> {
   const res = await fetch(`/api/contacts/${contactId}/orders`);
   const data = await res.json();
