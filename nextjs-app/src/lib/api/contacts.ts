@@ -163,6 +163,16 @@ export async function getSignedUploadUrl(filename: string, contentType: string):
   return data.url;
 }
 
+export async function markContactUnread(contactId: string): Promise<void> {
+  const res = await fetch(`/api/contacts/${contactId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ unreadCount: 1 }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error marking unread");
+}
+
 export async function reactToMessage(contactId: string, messageDocId: string, emoji: string): Promise<void> {
   const res = await fetch(`/api/contacts/${contactId}/messages/${messageDocId}/react`, {
     method: "POST",

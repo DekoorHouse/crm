@@ -6,6 +6,8 @@ interface ContactItemProps {
   contact: Contact;
   isActive: boolean;
   onClick: () => void;
+  onPreview?: (contactId: string) => void;
+  onMarkUnread?: (contactId: string) => void;
 }
 
 function timeAgo(ts: { _seconds: number } | null): string {
@@ -20,34 +22,29 @@ function timeAgo(ts: { _seconds: number } | null): string {
   return `${days}d`;
 }
 
-export default function ContactItem({ contact, isActive, onClick }: ContactItemProps) {
+export default function ContactItem({ contact, isActive, onClick, onPreview, onMarkUnread }: ContactItemProps) {
   return (
-    <button
-      onClick={onClick}
-      className={`w-full flex items-start gap-3 px-4 py-3 text-left transition-colors ${
-        isActive
-          ? "bg-primary/10"
-          : "hover:bg-surface-container-low"
+    <div
+      className={`relative w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer group ${
+        isActive ? "bg-primary/10" : "hover:bg-surface-container-low"
       }`}
+      onClick={onClick}
     >
       {/* Avatar */}
       <div className="flex-shrink-0">
         {contact.purchaseStatus === "completed" ? (
-          // Corona verde — compra confirmada (Fabricar/Pagado alcanzado)
           <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
             <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
               workspace_premium
             </span>
           </div>
         ) : contact.purchaseStatus === "registered" ? (
-          // Corona gris — tiene pedido pero aun no en Fabricar/Pagado
           <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center">
             <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
               workspace_premium
             </span>
           </div>
         ) : (
-          // Inicial gris — sin pedido
           <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-sm">
             {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
@@ -60,9 +57,30 @@ export default function ContactItem({ contact, isActive, onClick }: ContactItemP
           <span className={`text-sm font-semibold truncate ${isActive ? "text-primary" : "text-on-surface"}`}>
             {contact.name || contact.id}
           </span>
-          <span className="text-[10px] text-on-surface-variant flex-shrink-0">
+          <span className="text-[10px] text-on-surface-variant flex-shrink-0 group-hover:hidden">
             {timeAgo(contact.lastMessageTimestamp)}
           </span>
+          {/* Hover actions — replace time */}
+          <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
+            {onPreview && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onPreview(contact.id); }}
+                title="Previsualizar"
+                className="p-0.5 text-on-surface-variant/40 hover:text-primary rounded transition-colors"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>visibility</span>
+              </button>
+            )}
+            {onMarkUnread && (
+              <button
+                onClick={(e) => { e.stopPropagation(); onMarkUnread(contact.id); }}
+                title="Marcar como no leido"
+                className="p-0.5 text-on-surface-variant/40 hover:text-primary rounded transition-colors"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 16 }}>mark_email_unread</span>
+              </button>
+            )}
+          </div>
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
           <p className="text-xs text-on-surface-variant truncate">
@@ -75,6 +93,6 @@ export default function ContactItem({ contact, isActive, onClick }: ContactItemP
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }

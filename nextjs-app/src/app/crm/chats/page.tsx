@@ -4,6 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useContacts } from "@/lib/hooks/useContacts";
 import { useMessages } from "@/lib/hooks/useMessages";
 import { changeOrderStatus } from "@/lib/api/orders";
+import { markContactUnread } from "@/lib/api/contacts";
 import ContactList from "@/components/crm/ContactList";
 import ChatWindow from "@/components/crm/ChatWindow";
 import ContactDetails from "@/components/crm/ContactDetails";
@@ -74,6 +75,8 @@ export default function ChatsPage() {
         activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
         designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
         pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
+        onPreview={(id) => setSelectedId(id)}
+        onMarkUnread={(id) => { markContactUnread(id).then(() => toast.success("Marcado como no leido")).catch(() => {}); }}
       />
       <ChatWindow
         contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}

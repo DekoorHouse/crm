@@ -25,12 +25,15 @@ interface ContactListProps {
   onToggleDesignReview: () => void;
   pendingAi: boolean;
   onTogglePendingAi: () => void;
+  onPreview?: (contactId: string) => void;
+  onMarkUnread?: (contactId: string) => void;
 }
 
 export default function ContactList({
   contacts, loading, selectedId, onSelect, onLoadMore, hasMore,
   searchQuery, onSearch, activeTag, onTagFilter, unreadOnly, onToggleUnread,
   designReview, onToggleDesignReview, pendingAi, onTogglePendingAi,
+  onPreview, onMarkUnread,
 }: ContactListProps) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -196,7 +199,7 @@ export default function ContactList({
         ) : (
           <>
             {contacts.map((contact) => (
-              <ContactItem key={contact.id} contact={contact} isActive={selectedId === contact.id} onClick={() => onSelect(contact.id)} />
+              <ContactItem key={contact.id} contact={contact} isActive={selectedId === contact.id} onClick={() => onSelect(contact.id)} onPreview={onPreview} onMarkUnread={onMarkUnread} />
             ))}
             {hasMore && (
               <div className="flex justify-center py-3">
