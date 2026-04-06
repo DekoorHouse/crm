@@ -138,7 +138,7 @@ export default function SearchBar({ visible, onClose, onLoadAll, tableRef }: Sea
   if (!visible) return null;
 
   return (
-    <div className="fixed top-20 right-8 z-[60] bg-surface-container-lowest rounded-2xl shadow-lg dark:shadow-[0_0_20px_rgba(122,162,247,0.15)] border border-outline-variant/20 p-3 flex items-center gap-2 animate-in slide-in-from-top">
+    <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[60] bg-surface-container-lowest rounded-2xl shadow-lg dark:shadow-[0_0_20px_rgba(122,162,247,0.15)] border border-outline-variant/20 p-3 flex items-center gap-2 animate-in slide-in-from-top">
       <span className="material-symbols-outlined text-on-surface-variant text-lg">search</span>
       <input
         ref={inputRef}
