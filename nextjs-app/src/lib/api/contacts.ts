@@ -164,13 +164,9 @@ export async function getSignedUploadUrl(filename: string, contentType: string):
 }
 
 export async function markContactUnread(contactId: string): Promise<void> {
-  const res = await fetch(`/api/contacts/${contactId}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ unreadCount: 1 }),
-  });
-  const data = await res.json();
-  if (!data.success) throw new Error(data.message || "Error marking unread");
+  const { doc, updateDoc } = await import("firebase/firestore");
+  const { db } = await import("../firebase/config");
+  await updateDoc(doc(db, "contacts_whatsapp", contactId), { unreadCount: 1 });
 }
 
 export async function reactToMessage(contactId: string, messageDocId: string, emoji: string): Promise<void> {
