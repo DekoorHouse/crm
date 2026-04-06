@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import type { OrderFilters } from "@/lib/api/types";
 import { PRODUCT_OPTIONS } from "@/lib/utils/productConfig";
 import { STATUS_OPTIONS } from "@/lib/utils/statusConfig";
@@ -18,6 +18,7 @@ interface FilterBarProps {
   todayCount: number;
   filteredCount: number;
   filteredSum: number;
+  defaultDateFilter?: string;
 }
 
 export default function FilterBar({
@@ -25,10 +26,20 @@ export default function FilterBar({
   todayCount,
   filteredCount,
   filteredSum,
+  defaultDateFilter = "ultimos-10-dias",
 }: FilterBarProps) {
   const [producto, setProducto] = useState("");
-  const [dateFilter, setDateFilter] = useState("ultimos-10-dias");
+  const [dateFilter, setDateFilter] = useState(defaultDateFilter);
   const [estatus, setEstatus] = useState("");
+  const didMount = useRef(false);
+
+  // Auto-apply filters on mount
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      onApply({ dateFilter: defaultDateFilter });
+    }
+  }, [defaultDateFilter, onApply]);
 
   function handleApply() {
     onApply({

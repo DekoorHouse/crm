@@ -90,7 +90,8 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
                 }`}
                 style={{
                   backgroundColor: isActive ? `${status.color}12` : undefined,
-                  ringColor: isActive ? status.color : undefined,
+                  // @ts-expect-error -- Tailwind ring-color via CSS variable
+                  "--tw-ring-color": isActive ? status.color : undefined,
                   boxShadow: isActive ? `0 0 0 2px ${status.color}30` : undefined,
                   opacity: mounted ? 1 : 0,
                   transform: mounted ? "translateY(0)" : "translateY(6px)",

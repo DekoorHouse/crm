@@ -78,17 +78,15 @@ export default function PedidosPage() {
     }
   }, [user, authLoading, router]);
 
-  // Load initial data when user is authenticated
+  const defaultDateFilter =
+    user?.email === "alex@dekoor.com" ? "hoy" : "ultimos-10-dias";
+
+  // Refresh today count when user is authenticated
   useEffect(() => {
     if (user) {
-      const defaultDateFilter =
-        user.email === "alex@dekoor.com" ? "hoy" : "ultimos-10-dias";
-      const filters = { dateFilter: defaultDateFilter };
-      setCurrentFilters(filters);
-      loadInitial(filters);
       refreshTodayCount();
     }
-  }, [user, loadInitial, refreshTodayCount]);
+  }, [user, refreshTodayCount]);
 
   const handleFilterApply = useCallback(
     (filters: OrderFilters) => {
@@ -155,6 +153,7 @@ export default function PedidosPage() {
           todayCount={todayCount}
           filteredCount={filteredCount}
           filteredSum={filteredSum}
+          defaultDateFilter={defaultDateFilter}
         />
 
         {/* Content Area */}
