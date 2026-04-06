@@ -110,14 +110,6 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
             <p className="text-[10px] text-on-surface-variant font-medium">CRM Workspace</p>
           </div>
         )}
-        {/* Today orders badge */}
-        {todayOrders > 0 && (
-          <div className={`flex items-center justify-center rounded-full bg-primary text-on-primary font-bold flex-shrink-0 ${
-            collapsed ? "w-6 h-6 text-[10px]" : "min-w-[24px] h-6 px-1.5 text-[11px]"
-          }`} title={`${todayOrders} pedidos hoy`}>
-            {todayOrders}
-          </div>
-        )}
       </div>
 
       {/* Navigation */}
@@ -168,6 +160,16 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
 
       {/* Footer */}
       <div className={`pb-4 space-y-1 ${collapsed ? "px-2" : "px-3"}`}>
+        {/* Today orders count */}
+        {todayOrders > 0 && (
+          <div className={`flex items-center rounded-xl text-[13px] font-medium transition-all ${
+            collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
+          }`} title={`${todayOrders} pedidos hoy`}>
+            <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>receipt_long</span>
+            {!collapsed && <span className="text-on-surface"><span className="font-bold text-primary">{todayOrders}</span> pedidos hoy</span>}
+          </div>
+        )}
+
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
