@@ -31,17 +31,25 @@ export default function ContactItem({ contact, isActive, onClick }: ContactItemP
       }`}
     >
       {/* Avatar */}
-      <div className="relative flex-shrink-0">
-        <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm">
-          {(contact.name || contact.id).charAt(0).toUpperCase()}
-        </div>
-        {contact.purchaseStatus && (
-          <div className={`absolute -top-0.5 -right-0.5 w-4.5 h-4.5 rounded-full flex items-center justify-center ${
-            contact.purchaseStatus === "completed" ? "bg-primary" : "bg-surface-container-high"
-          }`} style={{ width: 18, height: 18 }}>
-            <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 11, fontVariationSettings: "'FILL' 1" }}>
+      <div className="flex-shrink-0">
+        {contact.purchaseStatus === "completed" ? (
+          // Corona verde — compra confirmada (Fabricar/Pagado alcanzado)
+          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
+            <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
               workspace_premium
             </span>
+          </div>
+        ) : contact.purchaseStatus === "registered" ? (
+          // Corona gris — tiene pedido pero aun no en Fabricar/Pagado
+          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center">
+            <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
+              workspace_premium
+            </span>
+          </div>
+        ) : (
+          // Inicial gris — sin pedido
+          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-sm">
+            {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
         )}
       </div>
