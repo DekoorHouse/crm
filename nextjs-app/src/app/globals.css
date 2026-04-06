@@ -156,6 +156,15 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-headline);
 }
 
+/* --- Global scrollbar --- */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-on-surface-variant); }
+
+/* Firefox */
+* { scrollbar-width: thin; scrollbar-color: var(--color-outline-variant) transparent; }
+
 /* --- Kanban scrollbar --- */
 .kanban-scroll::-webkit-scrollbar { height: 8px; }
 .kanban-scroll::-webkit-scrollbar-track { background: var(--color-surface-container-low); }
