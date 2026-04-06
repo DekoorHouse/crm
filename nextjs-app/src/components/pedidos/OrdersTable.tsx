@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import type { Order } from "@/lib/api/types";
 import StatusBadge from "./StatusBadge";
 import { formatCurrency } from "@/lib/utils/format";
@@ -46,6 +46,27 @@ export default function OrdersTable({
   onPhotoClick,
 }: OrdersTableProps) {
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+
+  // Click outside table or Escape to deselect
+  useEffect(() => {
+    if (!selectedId) return;
+    function onMouseDown(e: MouseEvent) {
+      if (tableRef.current && !tableRef.current.contains(e.target as Node)) {
+        setSelectedId(null);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setSelectedId(null);
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [selectedId]);
 
   // Infinite scroll with IntersectionObserver
   const handleObserver = useCallback(
@@ -89,7 +110,7 @@ export default function OrdersTable({
   }
 
   return (
-    <div className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 overflow-hidden">
+    <div ref={tableRef} className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/10 overflow-hidden">
       {/* Mobile card layout */}
       <div className="md:hidden space-y-3 p-4">
         {orders.map((order) => (
@@ -166,8 +187,13 @@ export default function OrdersTable({
             {orders.map((order, idx) => (
               <tr
                 key={order.id}
-                className={`border-b border-outline-variant/5 hover:bg-surface-container-low/30 transition-colors ${
-                  idx % 2 === 0 ? "" : "bg-surface-container-low/10"
+                onClick={() => setSelectedId(selectedId === order.id ? null : order.id)}
+                className={`border-b border-outline-variant/5 transition-colors cursor-pointer ${
+                  selectedId === order.id
+                    ? "bg-primary/8 ring-1 ring-inset ring-primary/20"
+                    : idx % 2 === 0
+                      ? "hover:bg-surface-container-low/30"
+                      : "bg-surface-container-low/10 hover:bg-surface-container-low/30"
                 }`}
               >
                 {/* #Pedido */}
