@@ -52,6 +52,9 @@
   --color-inverse-on-surface: #f3eff5;
   --color-inverse-primary: #9fd1b8;
 
+  /* Chat bubble (mensaje enviado) - solido para evitar tonos turbios */
+  --color-bubble-sent: #dcefe0;
+
   /* Status colors */
   --color-status-sin-estatus: #6c757d;
   --color-status-foto-enviada: #007bff;
@@ -104,6 +107,8 @@
   --color-inverse-surface: #e4e1e7;
   --color-inverse-on-surface: #1a1b26;
   --color-inverse-primary: #386753;
+
+  --color-bubble-sent: #2a3b5c;
 }
 
 /* --- Tailwind v4 Theme Integration --- */
@@ -140,6 +145,8 @@
 
   --color-inverse-surface: var(--color-inverse-surface);
   --color-inverse-on-surface: var(--color-inverse-on-surface);
+
+  --color-bubble-sent: var(--color-bubble-sent);
 
   --font-headline: "Plus Jakarta Sans", sans-serif;
   --font-body: "Manrope", sans-serif;
