@@ -141,9 +141,23 @@ export default function ConversationPreview({ contact, onClose, onOpenChat }: Co
             <p className="text-sm text-on-surface-variant/50 text-center py-8">Sin mensajes</p>
           ) : (
             <>
-              {messages.map((msg) => (
-                <MessageBubble key={msg.docId} message={msg} isSent={msg.from !== contact.id} allMessages={messages} />
-              ))}
+              {messages.map((msg, i) => {
+                const msgDate = msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+                const prevDate = i > 0 && messages[i - 1].timestamp ? new Date(messages[i - 1].timestamp!.seconds * 1000).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+                const showDate = msgDate && msgDate !== prevDate;
+                return (
+                  <div key={msg.docId}>
+                    {showDate && (
+                      <div className="flex justify-center my-3">
+                        <span className="text-[10px] font-bold text-on-surface-variant/50 bg-surface-container-low px-3 py-1 rounded-full capitalize">
+                          {msgDate}
+                        </span>
+                      </div>
+                    )}
+                    <MessageBubble message={msg} isSent={msg.from !== contact.id} allMessages={messages} />
+                  </div>
+                );
+              })}
               <div ref={endRef} />
             </>
           )}
