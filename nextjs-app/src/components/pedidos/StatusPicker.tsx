@@ -35,23 +35,19 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
     };
   }, [onClose]);
 
-  // Position popover below the badge, centered horizontally
-  const popoverWidth = 280;
+  const popoverWidth = 300;
   const gap = 8;
   const padding = 12;
 
   let left = anchorRect.left + anchorRect.width / 2 - popoverWidth / 2;
   let top = anchorRect.bottom + gap;
 
-  // Clamp to viewport
   left = Math.max(padding, Math.min(left, window.innerWidth - popoverWidth - padding));
 
-  // If not enough space below, show above
-  const estimatedHeight = 320;
+  const estimatedHeight = 280;
   if (top + estimatedHeight > window.innerHeight - padding) {
     top = anchorRect.top - estimatedHeight - gap;
   }
-  // Clamp top
   top = Math.max(padding, top);
 
   return (
@@ -63,40 +59,36 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
         top,
         width: popoverWidth,
         opacity: mounted ? 1 : 0,
-        transform: mounted ? "translateY(0) scale(1)" : "translateY(-8px) scale(0.97)",
-        transition: "opacity 0.2s ease, transform 0.2s ease",
+        transform: mounted ? "translateY(0) scale(1)" : "translateY(-6px) scale(0.98)",
+        transition: "opacity 0.18s ease, transform 0.18s ease",
       }}
     >
-      <div className="bg-surface-container-lowest rounded-xl shadow-2xl border border-outline-variant/20 overflow-hidden">
-        {/* Header */}
-        <div className="px-4 pt-3 pb-2">
-          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
-            Cambiar estado
-          </p>
-        </div>
-
-        {/* Grid of status options */}
-        <div className="px-3 pb-3 grid grid-cols-2 gap-1.5">
+      <div className="bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/15 overflow-hidden">
+        {/* Grid of status chips */}
+        <div className="p-2.5 grid grid-cols-2 gap-1.5">
           {STATUS_OPTIONS.map((status, index) => {
             const isActive = status.label === currentStatus;
 
             return (
               <button
                 key={status.id}
-                className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 text-left group ${
-                  isActive
-                    ? "ring-2 ring-offset-1"
-                    : "hover:bg-surface-container-low active:scale-[0.97]"
-                }`}
+                className="flex items-center gap-2 px-2.5 py-2 rounded-xl cursor-pointer transition-all duration-150 text-left group active:scale-[0.96]"
                 style={{
-                  backgroundColor: isActive ? `${status.color}12` : undefined,
-                  // @ts-expect-error -- Tailwind ring-color via CSS variable
-                  "--tw-ring-color": isActive ? status.color : undefined,
-                  "--tw-ring-offset-color": "var(--color-surface-container-lowest)",
-                  boxShadow: isActive ? `0 0 0 2px ${status.color}30` : undefined,
+                  backgroundColor: isActive ? `${status.color}20` : undefined,
+                  border: isActive ? `1.5px solid ${status.color}50` : "1.5px solid transparent",
                   opacity: mounted ? 1 : 0,
-                  transform: mounted ? "translateY(0)" : "translateY(6px)",
-                  transition: `all 0.2s ease ${index * 25}ms`,
+                  transform: mounted ? "translateY(0)" : "translateY(5px)",
+                  transition: `all 0.2s ease ${index * 20}ms`,
+                }}
+                onMouseEnter={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = `${status.color}10`;
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!isActive) {
+                    e.currentTarget.style.backgroundColor = "transparent";
+                  }
                 }}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -104,28 +96,36 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
                   onClose();
                 }}
               >
-                {/* Icon circle */}
+                {/* Icon */}
                 <div
-                  className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-110"
-                  style={{
-                    backgroundColor: `${status.color}18`,
-                    color: status.color,
-                  }}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-transform duration-150 group-hover:scale-110"
+                  style={{ backgroundColor: `${status.color}18` }}
                 >
-                  <span className="material-symbols-outlined text-base" style={{ color: status.color }}>
+                  <span
+                    className="material-symbols-outlined"
+                    style={{ fontSize: 16, color: status.color }}
+                  >
                     {status.icon}
                   </span>
                 </div>
 
                 {/* Label */}
                 <span
-                  className={`text-xs leading-tight font-medium ${
-                    isActive ? "font-bold" : "text-on-surface-variant"
-                  }`}
-                  style={isActive ? { color: status.color } : undefined}
+                  className="text-[11px] leading-tight font-semibold truncate"
+                  style={{ color: isActive ? status.color : "var(--color-on-surface)" }}
                 >
                   {status.label}
                 </span>
+
+                {/* Active check */}
+                {isActive && (
+                  <span
+                    className="material-symbols-outlined ml-auto flex-shrink-0"
+                    style={{ fontSize: 14, color: status.color }}
+                  >
+                    check
+                  </span>
+                )}
               </button>
             );
           })}
