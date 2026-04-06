@@ -3,6 +3,8 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { Order } from "@/lib/api/types";
 import { PRODUCT_OPTIONS } from "@/lib/utils/productConfig";
+import Select from "@/components/ui/Select";
+import type { SelectOption } from "@/components/ui/Select";
 import { createOrder, updateOrder } from "@/lib/firebase/firestore";
 import { processPhotos } from "@/lib/firebase/storage";
 import toast from "react-hot-toast";
@@ -19,6 +21,11 @@ interface OrderModalProps {
   onClose: () => void;
   onSaved: () => void;
 }
+
+const PRODUCT_SELECT_OPTIONS: SelectOption[] = [
+  { value: "", label: "Seleccionar..." },
+  ...PRODUCT_OPTIONS.map((p) => ({ value: p, label: p })),
+];
 
 export default function OrderModal({ order, onClose, onSaved }: OrderModalProps) {
   const isEditing = !!order;
@@ -160,16 +167,12 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="space-y-1.5">
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Producto *</label>
-              <select
+              <Select
                 value={producto}
-                onChange={(e) => setProducto(e.target.value)}
-                className="w-full bg-surface-container-low border-none rounded-xl text-sm font-medium text-on-surface focus:ring-primary/20"
-              >
-                <option value="">Seleccionar...</option>
-                {PRODUCT_OPTIONS.map((p) => (
-                  <option key={p} value={p}>{p}</option>
-                ))}
-              </select>
+                onChange={setProducto}
+                options={PRODUCT_SELECT_OPTIONS}
+                className="w-full"
+              />
             </div>
             <div className="space-y-1.5">
               <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Teléfono *</label>
