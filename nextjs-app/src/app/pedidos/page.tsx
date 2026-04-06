@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useOrders } from "@/lib/hooks/useOrders";
@@ -52,6 +52,7 @@ export default function PedidosPage() {
   const [deleteTarget, setDeleteTarget] = useState<Order | null>(null);
   const [searchVisible, setSearchVisible] = useState(false);
   const [statusPicker, setStatusPicker] = useState<{ order: Order; rect: DOMRect } | null>(null);
+  const statusPickerClosedAt = useRef(0);
   const [currentFilters, setCurrentFilters] = useState<OrderFilters>({});
 
   // Keyboard shortcuts: Ctrl+F for search
@@ -168,6 +169,8 @@ export default function PedidosPage() {
               isLoadingMore={pagination.isLoadingMore}
               onLoadMore={loadMore}
               onStatusClick={(order, event) => {
+                // Ignore clicks that happen right after the picker closed (mousedown-outside race)
+                if (Date.now() - statusPickerClosedAt.current < 200) return;
                 if (statusPicker?.order.id === order.id) {
                   setStatusPicker(null);
                 } else {
@@ -242,7 +245,7 @@ export default function PedidosPage() {
               toast.error("Error al cambiar estatus");
             }
           }}
-          onClose={() => setStatusPicker(null)}
+          onClose={() => { statusPickerClosedAt.current = Date.now(); setStatusPicker(null); }}
         />
       )}
 
