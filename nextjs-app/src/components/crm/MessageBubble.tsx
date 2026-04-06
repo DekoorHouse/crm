@@ -98,7 +98,12 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           </>
         )}
         {hasMedia && isVideo && <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />}
-        {hasMedia && isAudio && <audio src={message.fileUrl} controls className="max-w-full mb-1" />}
+        {hasMedia && isAudio && (
+          <div className="flex items-center gap-2 bg-surface-container rounded-xl px-3 py-2 mb-1 min-w-[220px]">
+            <span className="material-symbols-outlined text-primary" style={{ fontSize: 18 }}>mic</span>
+            <audio src={message.fileUrl} controls className="flex-1 h-8 [&::-webkit-media-controls-panel]:bg-transparent" />
+          </div>
+        )}
         {hasMedia && !isImage && !isVideo && !isAudio && (
           <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-primary" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>attach_file</span>
@@ -113,7 +118,7 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           </a>
         )}
 
-        {message.text && !(hasMedia && message.text.toLowerCase() === "imagen") && (
+        {message.text && !(hasMedia && (message.text.toLowerCase() === "imagen" || message.text.toLowerCase() === "mensaje de voz" || message.text.toLowerCase() === "audio" || message.text.toLowerCase() === "video" || message.text.toLowerCase() === "sticker" || message.text.toLowerCase() === "documento")) && (
           <p className="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
         )}
 
