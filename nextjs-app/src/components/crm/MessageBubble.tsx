@@ -68,16 +68,16 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
     <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1 group`}>
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 relative ${
-          isSent ? "bg-primary text-on-primary rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
+          isSent ? "bg-primary/30 text-on-surface rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
         }`}
         onDoubleClick={handleDoubleClick}
       >
         {/* Reply context */}
         {repliedMsg && (
           <div className={`mb-1.5 px-2.5 py-1.5 rounded-lg border-l-2 ${
-            isSent ? "bg-on-primary/10 border-on-primary/30" : "bg-primary/5 border-primary"
+            isSent ? "bg-primary/10 border-primary/30" : "bg-primary/5 border-primary"
           }`}>
-            <p className={`text-[10px] truncate ${isSent ? "text-on-primary/70" : "text-on-surface-variant"}`}>
+            <p className={`text-[10px] truncate ${isSent ? "text-on-surface-variant" : "text-on-surface-variant"}`}>
               {repliedMsg.text || "[archivo]"}
             </p>
           </div>
@@ -100,14 +100,14 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
         {hasMedia && isVideo && <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />}
         {hasMedia && isAudio && <audio src={message.fileUrl} controls className="max-w-full mb-1" />}
         {hasMedia && !isImage && !isVideo && !isAudio && (
-          <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-on-primary/80" : "text-primary"}`}>
+          <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-primary" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>attach_file</span>
             <span className="text-xs underline">Archivo adjunto</span>
           </a>
         )}
 
         {isLocation && message.location && (
-          <a href={`https://maps.google.com/?q=${message.location.latitude},${message.location.longitude}`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-on-primary/80" : "text-primary"}`}>
+          <a href={`https://maps.google.com/?q=${message.location.latitude},${message.location.longitude}`} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-primary" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>location_on</span>
             <span className="text-xs underline">{message.location.name || "Ubicacion"}</span>
           </a>
@@ -127,7 +127,7 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
         )}
 
         {/* Timestamp + status */}
-        <div className={`flex items-center justify-end gap-1 mt-0.5 ${isSent ? "text-on-primary/60" : "text-on-surface-variant/60"}`}>
+        <div className={`flex items-center justify-end gap-1 mt-0.5 ${isSent ? "text-on-surface-variant/60" : "text-on-surface-variant/60"}`}>
           <span className="text-[10px]">{formatTime(message.timestamp)}</span>
           {isSent && <StatusIcon status={message.status} />}
         </div>
