@@ -155,7 +155,6 @@ export default function PedidosPage() {
           onApply={handleFilterApply}
           todayCount={todayCount}
           filteredCount={filteredCount}
-          filteredSum={filteredSum}
           defaultDateFilter={defaultDateFilter}
         />
 

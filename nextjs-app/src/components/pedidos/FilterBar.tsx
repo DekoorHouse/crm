@@ -4,7 +4,6 @@ import { useState, useEffect, useRef } from "react";
 import type { OrderFilters } from "@/lib/api/types";
 import { PRODUCT_OPTIONS } from "@/lib/utils/productConfig";
 import { STATUS_OPTIONS } from "@/lib/utils/statusConfig";
-import { formatCurrency } from "@/lib/utils/format";
 import Select from "@/components/ui/Select";
 import type { SelectOption } from "@/components/ui/Select";
 
@@ -29,7 +28,6 @@ interface FilterBarProps {
   onApply: (filters: OrderFilters) => void;
   todayCount: number;
   filteredCount: number;
-  filteredSum: number;
   defaultDateFilter?: string;
 }
 
@@ -37,7 +35,6 @@ export default function FilterBar({
   onApply,
   todayCount,
   filteredCount,
-  filteredSum,
   defaultDateFilter = "ultimos-10-dias",
 }: FilterBarProps) {
   const [producto, setProducto] = useState("");
@@ -136,12 +133,8 @@ export default function FilterBar({
           </div>
           <div className="text-center">
             <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Filtrados</p>
-            <p className="text-xl font-black text-secondary">{filteredCount}</p>
-          </div>
-          <div className="text-right">
-            <p className="text-[10px] font-black uppercase text-on-surface-variant mb-1">Total MXN</p>
-            <p className="text-2xl font-black text-on-surface tracking-tight">
-              {formatCurrency(filteredSum)}
+            <p className="text-xl font-black text-secondary">
+              {filteredCount === todayCount ? "–" : filteredCount}
             </p>
           </div>
         </div>
