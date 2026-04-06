@@ -96,11 +96,6 @@ export default function ChatWindow({
               IA
             </span>
           )}
-          <button onClick={onToggleDetails}
-            className={`p-1.5 rounded-lg transition-all ${showDetails ? "bg-primary/10 text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
-            title="Detalles del contacto">
-            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>info</span>
-          </button>
         </div>
       </div>
 
