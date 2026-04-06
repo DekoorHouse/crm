@@ -116,15 +116,30 @@ export default function ChatWindow({
           </div>
         ) : (
           <>
-            {messages.map((msg) => (
-              <MessageBubble
-                key={msg.docId}
-                message={msg}
-                isSent={msg.from !== contact.id}
-                onReply={onSetReplyTo}
-                allMessages={messages}
-              />
-            ))}
+            {messages.map((msg, i) => {
+              // Date separator
+              const msgDate = msg.timestamp ? new Date(msg.timestamp.seconds * 1000).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+              const prevDate = i > 0 && messages[i - 1].timestamp ? new Date(messages[i - 1].timestamp!.seconds * 1000).toLocaleDateString("es-MX", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "";
+              const showDate = msgDate && msgDate !== prevDate;
+
+              return (
+                <div key={msg.docId}>
+                  {showDate && (
+                    <div className="flex justify-center my-3">
+                      <span className="text-[10px] font-bold text-on-surface-variant/50 bg-surface-container-low px-3 py-1 rounded-full capitalize">
+                        {msgDate}
+                      </span>
+                    </div>
+                  )}
+                  <MessageBubble
+                    message={msg}
+                    isSent={msg.from !== contact.id}
+                    onReply={onSetReplyTo}
+                    allMessages={messages}
+                  />
+                </div>
+              );
+            })}
             <div ref={messagesEndRef} />
           </>
         )}
