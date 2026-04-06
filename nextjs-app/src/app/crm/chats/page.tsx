@@ -10,6 +10,8 @@ import ChatWindow from "@/components/crm/ChatWindow";
 import ContactDetails from "@/components/crm/ContactDetails";
 import ConversationPreview from "@/components/crm/ConversationPreview";
 import OrderModal from "@/components/pedidos/OrderModal";
+import { db } from "@/lib/firebase/config";
+import { doc, updateDoc } from "firebase/firestore";
 import toast from "react-hot-toast";
 
 export default function ChatsPage() {
@@ -69,6 +71,19 @@ export default function ChatsPage() {
     applyFilters({ tag: next ? "pendientes_ia" : undefined });
   }, [applyFilters, pendingAi]);
 
+  const handleToggleBot = useCallback(async () => {
+    if (!selectedContact) return;
+    const newVal = !selectedContact.botActive;
+    updateContactLocal(selectedContact.id, { botActive: newVal });
+    try {
+      await updateDoc(doc(db, "contacts_whatsapp", selectedContact.id), { botActive: newVal });
+      toast.success(newVal ? "IA activada" : "IA desactivada");
+    } catch (err) {
+      updateContactLocal(selectedContact.id, { botActive: !newVal });
+      toast.error(err instanceof Error ? err.message : "Error");
+    }
+  }, [selectedContact, updateContactLocal]);
+
   return (
     <div className="flex h-full">
       <ContactList
@@ -84,6 +99,7 @@ export default function ChatsPage() {
         contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}
         onSend={send} replyTo={replyTo} onSetReplyTo={setReplyTo} onLoadOlder={loadOlder}
         onToggleDetails={() => setShowDetails(!showDetails)} showDetails={showDetails}
+        onToggleBot={handleToggleBot}
       />
       {showDetails && selectedContact && (
         <ContactDetails

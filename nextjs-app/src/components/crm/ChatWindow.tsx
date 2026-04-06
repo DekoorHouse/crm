@@ -17,11 +17,12 @@ interface ChatWindowProps {
   onLoadOlder: () => void;
   onToggleDetails: () => void;
   showDetails: boolean;
+  onToggleBot: () => void;
 }
 
 export default function ChatWindow({
   contact, messages, loading, sessionExpired, onSend,
-  replyTo, onSetReplyTo, onLoadOlder, onToggleDetails, showDetails,
+  replyTo, onSetReplyTo, onLoadOlder, onToggleDetails, showDetails, onToggleBot,
 }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -90,12 +91,18 @@ export default function ChatWindow({
           </div>
         </button>
         <div className="flex items-center gap-1">
-          {contact.botActive && (
-            <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded-full flex items-center gap-1">
-              <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
-              IA
-            </span>
-          )}
+          <button
+            onClick={onToggleBot}
+            title={contact.botActive ? "Desactivar IA" : "Activar IA"}
+            className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 transition-all ${
+              contact.botActive
+                ? "text-primary bg-primary/10 hover:bg-primary/20"
+                : "text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest"
+            }`}
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
+            IA
+          </button>
         </div>
       </div>
 
