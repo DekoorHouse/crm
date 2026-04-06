@@ -3,9 +3,12 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { useContacts } from "@/lib/hooks/useContacts";
 import { useMessages } from "@/lib/hooks/useMessages";
+import { changeOrderStatus } from "@/lib/api/orders";
 import ContactList from "@/components/crm/ContactList";
 import ChatWindow from "@/components/crm/ChatWindow";
 import ContactDetails from "@/components/crm/ContactDetails";
+import OrderModal from "@/components/pedidos/OrderModal";
+import toast from "react-hot-toast";
 
 export default function ChatsPage() {
   const { contacts, loading, hasMore, loadContacts, loadMore, searchQuery, search, filters, applyFilters } = useContacts();
@@ -21,6 +24,7 @@ export default function ChatsPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [designReview, setDesignReview] = useState(false);
   const [pendingAi, setPendingAi] = useState(false);
+  const [orderModalOpen, setOrderModalOpen] = useState(false);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
 
@@ -77,7 +81,27 @@ export default function ChatsPage() {
         onToggleDetails={() => setShowDetails(!showDetails)} showDetails={showDetails}
       />
       {showDetails && selectedContact && (
-        <ContactDetails contact={selectedContact} onClose={() => setShowDetails(false)} />
+        <ContactDetails
+          contact={selectedContact}
+          onClose={() => setShowDetails(false)}
+          onNewOrder={() => setOrderModalOpen(true)}
+          onStatusChange={async (orderId, newStatus) => {
+            try {
+              await changeOrderStatus(orderId, newStatus);
+              toast.success(`Estatus cambiado a ${newStatus}`);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : "Error");
+            }
+          }}
+        />
+      )}
+
+      {/* Order modal */}
+      {orderModalOpen && (
+        <OrderModal
+          onClose={() => setOrderModalOpen(false)}
+          onSaved={() => setOrderModalOpen(false)}
+        />
       )}
     </div>
   );

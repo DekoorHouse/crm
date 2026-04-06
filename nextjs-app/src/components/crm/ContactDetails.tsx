@@ -8,19 +8,21 @@ import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, updateD
 import toast from "react-hot-toast";
 
 interface Note { id: string; text: string; timestamp: unknown; }
-interface Order { id: string; consecutiveOrderNumber: number; producto: string; estatus: string; precio: number; createdAt?: { _seconds: number }; }
+interface Order { id: string; consecutiveOrderNumber: number; producto: string; estatus: string; precio: number; createdAt?: string | null; }
 
 interface ContactDetailsProps {
   contact: Contact;
   onClose: () => void;
+  onNewOrder?: () => void;
+  onStatusChange?: (orderId: string, newStatus: string) => void;
 }
 
-function formatOrderDate(createdAt?: { _seconds: number }): string {
+function formatOrderDate(createdAt?: string | null): string {
   if (!createdAt) return "";
-  return new Date(createdAt._seconds * 1000).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
+  return new Date(createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
-export default function ContactDetails({ contact, onClose }: ContactDetailsProps) {
+export default function ContactDetails({ contact, onClose, onNewOrder, onStatusChange }: ContactDetailsProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [newNote, setNewNote] = useState("");
@@ -123,9 +125,20 @@ export default function ContactDetails({ contact, onClose }: ContactDetailsProps
                   </div>
                   <p className="text-xs text-on-surface">{order.producto}</p>
                   <div className="flex items-center justify-between mt-1.5">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant">
-                      {order.estatus}
-                    </span>
+                    <button
+                      onClick={(e) => {
+                        if (onStatusChange) {
+                          // Simple status cycle for now
+                          const statuses = ["Sin estatus", "Foto enviada", "Esperando pago", "Pagado", "Diseñado", "Fabricar", "Corregir", "Corregido", "Mns Amenazador", "Cancelado"];
+                          const idx = statuses.indexOf(order.estatus);
+                          const next = statuses[(idx + 1) % statuses.length];
+                          onStatusChange(order.id, next);
+                        }
+                      }}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer"
+                    >
+                      {order.estatus} <span className="text-on-surface-variant/40">&#9662;</span>
+                    </button>
                     {order.precio > 0 && (
                       <span className="text-xs font-bold text-on-surface">${order.precio.toLocaleString()}</span>
                     )}
@@ -204,6 +217,13 @@ export default function ContactDetails({ contact, onClose }: ContactDetailsProps
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>smart_toy</span>
           {contact.botActive ? "Desactivar IA" : "Activar IA"}
         </button>
+        {onNewOrder && (
+          <button onClick={onNewOrder}
+            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-all">
+            <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add_circle</span>
+            Registrar Nuevo Pedido
+          </button>
+        )}
       </div>
     </aside>
   );
