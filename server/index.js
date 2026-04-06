@@ -45,17 +45,39 @@ app.use('/api/jt-guias', jtGuiasRouter);
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
-// --- NUEVA APP NEXT.JS (Pedidos Redesign) ---
-// Servir archivos estáticos de Next.js desde /pedidos-new/
-app.use('/pedidos-new/_next', express.static(path.join(__dirname, '..', 'public', 'pedidos-new', '_next')));
-app.get('/pedidos-new', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+// --- NUEVA APP NEXT.JS ---
+const nextjsDir = path.join(__dirname, '..', 'public', 'nextjs');
+
+// Servir _next assets (JS/CSS bundles)
+app.use('/_next', express.static(path.join(nextjsDir, '_next')));
+
+// Legacy /pedidos-new routes (redirect to new paths)
+app.get('/pedidos-new', (req, res) => res.redirect('/pedidos'));
+app.get('/pedidos-new/pedidos', (req, res) => res.redirect('/pedidos'));
+app.get('/pedidos-new/login', (req, res) => res.redirect('/login'));
+
+// Next.js page routes
+app.get('/pedidos', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'pedidos.html'));
 });
-app.get('/pedidos-new/login', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'login.html'));
+app.get('/login', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'login.html'));
 });
-app.get('/pedidos-new/pedidos', (req, res) => {
-    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+
+// CRM routes — serve HTML for each section
+app.get('/crm', (req, res) => {
+    res.sendFile(path.join(nextjsDir, 'crm.html'));
+});
+const crmSections = [
+    'chats', 'clientes', 'pipeline', 'difusion', 'contactos',
+    'departamentos', 'reglas-ads', 'etiquetas', 'campanas',
+    'campana-imagen', 'mensajes-ads', 'respuestas-rapidas',
+    'entrenamiento-ia', 'simulador-ia', 'metricas', 'ajustes'
+];
+crmSections.forEach(section => {
+    app.get(`/crm/${section}`, (req, res) => {
+        res.sendFile(path.join(nextjsDir, 'crm', `${section}.html`));
+    });
 });
 
 // --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---

@@ -7,7 +7,6 @@ const nextConfig: NextConfig = {
   ...(isProd && {
     output: "export",
     distDir: "out",
-    basePath: "/pedidos-new",
   }),
 
   // Proxy API calls to Express backend during development only
