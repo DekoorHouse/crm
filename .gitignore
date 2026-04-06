@@ -6,3 +6,6 @@ serviceAccountKey.json
 
 # Dependencias
 node_modules/
+
+# Build de Next.js (generado por scripts/build-nextjs.js durante el deploy)
+public/nextjs/
