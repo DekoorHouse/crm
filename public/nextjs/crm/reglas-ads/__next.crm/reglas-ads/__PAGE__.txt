@@ -1,6 +1,9 @@
 1:"$Sreact.fragment"
-2:I[66117,["/_next/static/chunks/0ckd2x~2qonmr.js","/_next/static/chunks/0z74~j_3fu8b9.js","/_next/static/chunks/15rujfq8pmlv4.js","/_next/static/chunks/04u9c--gic3h~.js","/_next/static/chunks/00oucjhw53v~-.js"],"default"]
-3:I[5575,["/_next/static/chunks/0ckd2x~2qonmr.js","/_next/static/chunks/0z74~j_3fu8b9.js","/_next/static/chunks/15rujfq8pmlv4.js"],"OutletBoundary"]
-4:"$Sreact.suspense"
-0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"icon":"alt_route","title":"Reglas de Ads"}],[["$","script","script-0",{"src":"/_next/static/chunks/00oucjhw53v~-.js","async":true}]],["$","$L3",null,{"children":["$","$4",null,{"name":"Next.MetadataOutlet","children":"$@5"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"zfXr8-sj8I9MSxu7Angxj"}
-5:null
+2:I[65033,["/_next/static/chunks/0j2w4953-0fpd.js","/_next/static/chunks/0z74~j_3fu8b9.js","/_next/static/chunks/15rujfq8pmlv4.js"],"ClientPageRoot"]
+3:I[11223,["/_next/static/chunks/0j2w4953-0fpd.js","/_next/static/chunks/0z74~j_3fu8b9.js","/_next/static/chunks/15rujfq8pmlv4.js","/_next/static/chunks/04u9c--gic3h~.js","/_next/static/chunks/120w33kr8vxf3.js"],"default"]
+6:I[5575,["/_next/static/chunks/0j2w4953-0fpd.js","/_next/static/chunks/0z74~j_3fu8b9.js","/_next/static/chunks/15rujfq8pmlv4.js"],"OutletBoundary"]
+7:"$Sreact.suspense"
+0:{"rsc":["$","$1","c",{"children":[["$","$L2",null,{"Component":"$3","serverProvidedParams":{"searchParams":{},"params":{},"promises":["$@4","$@5"]}}],[["$","script","script-0",{"src":"/_next/static/chunks/120w33kr8vxf3.js","async":true}]],["$","$L6",null,{"children":["$","$7",null,{"name":"Next.MetadataOutlet","children":"$@8"}]}]]}],"isPartial":false,"staleTime":300,"varyParams":null,"buildId":"VKwYw6iyP4qxcK1z9Lh4O"}
+4:{}
+5:"$0:rsc:props:children:0:props:serverProvidedParams:params"
+8:null
