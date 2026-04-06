@@ -31,9 +31,28 @@ function StatusIcon({ status }: { status: string }) {
 
 function AudioPlayer({ src }: { src: string }) {
   const audioRef = useRef<HTMLAudioElement>(null);
+  const rafRef = useRef<number>(0);
+  const barRef = useRef<HTMLDivElement>(null);
+  const timeRef = useRef<HTMLSpanElement>(null);
   const [playing, setPlaying] = useState(false);
-  const [progress, setProgress] = useState(0);
   const [duration, setDuration] = useState(0);
+
+  // Smooth animation loop using RAF + direct DOM manipulation
+  useEffect(() => {
+    function tick() {
+      if (audioRef.current && barRef.current && timeRef.current) {
+        const cur = audioRef.current.currentTime;
+        const dur = audioRef.current.duration || 1;
+        barRef.current.style.width = `${(cur / dur) * 100}%`;
+        const m = Math.floor(cur / 60);
+        const s = Math.floor(cur % 60);
+        timeRef.current.textContent = `${m}:${s.toString().padStart(2, "0")}`;
+      }
+      rafRef.current = requestAnimationFrame(tick);
+    }
+    if (playing) { rafRef.current = requestAnimationFrame(tick); }
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [playing]);
 
   function toggle() {
     if (!audioRef.current) return;
@@ -55,8 +74,7 @@ function AudioPlayer({ src }: { src: string }) {
         ref={audioRef}
         src={src}
         onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
-        onTimeUpdate={() => setProgress(audioRef.current?.currentTime ?? 0)}
-        onEnded={() => { setPlaying(false); setProgress(0); }}
+        onEnded={() => { setPlaying(false); if (barRef.current) barRef.current.style.width = "0%"; if (timeRef.current) timeRef.current.textContent = "0:00"; }}
       />
       <button onClick={toggle} className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all">
         <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>
@@ -71,13 +89,12 @@ function AudioPlayer({ src }: { src: string }) {
             const rect = e.currentTarget.getBoundingClientRect();
             const pct = (e.clientX - rect.left) / rect.width;
             audioRef.current.currentTime = pct * duration;
-            setProgress(pct * duration);
           }}
         >
-          <div className="h-full bg-primary rounded-full transition-all" style={{ width: duration ? `${(progress / duration) * 100}%` : "0%" }} />
+          <div ref={barRef} className="h-full bg-primary rounded-full" style={{ width: "0%" }} />
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-[9px] text-on-surface-variant/60">{formatSec(progress)}</span>
+          <span ref={timeRef} className="text-[9px] text-on-surface-variant/60">0:00</span>
           <span className="text-[9px] text-on-surface-variant/60">{formatSec(duration)}</span>
         </div>
       </div>
