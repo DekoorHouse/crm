@@ -81,10 +81,10 @@ export default function PedidosPage() {
   const defaultDateFilter =
     user?.email === "alex@dekoor.com" ? "hoy" : "ultimos-10-dias";
 
-  // Minimum 5-second splash screen
+  // Minimum 3-second splash screen
   const [splashDone, setSplashDone] = useState(false);
   useEffect(() => {
-    const timer = setTimeout(() => setSplashDone(true), 5000);
+    const timer = setTimeout(() => setSplashDone(true), 3000);
     return () => clearTimeout(timer);
   }, []);
 
