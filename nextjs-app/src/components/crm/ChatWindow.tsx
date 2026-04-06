@@ -32,11 +32,16 @@ export default function ChatWindow({
   useEffect(() => {
     if (messages.length === 0) return;
     if (isInitialLoad.current) {
-      // First load for this contact — instant scroll, no animation
       messagesEndRef.current?.scrollIntoView();
       isInitialLoad.current = false;
+      // Re-scroll after images load
+      const imgs = containerRef.current?.querySelectorAll("img");
+      imgs?.forEach((img) => {
+        if (!img.complete) {
+          img.addEventListener("load", () => messagesEndRef.current?.scrollIntoView(), { once: true });
+        }
+      });
     } else if (messages.length > prevMessageCount.current) {
-      // New message arrived — smooth scroll
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
     prevMessageCount.current = messages.length;
