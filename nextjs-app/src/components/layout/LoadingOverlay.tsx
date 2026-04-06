@@ -6,7 +6,7 @@ export default function LoadingOverlay() {
       <div className="text-center">
         <div className="relative mb-6">
           <div className="w-16 h-16 border-4 border-surface-container-high rounded-full" />
-          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin" />
+          <div className="absolute top-0 left-0 w-16 h-16 border-4 border-transparent border-t-primary rounded-full animate-spin" />
         </div>
         <h2 className="text-lg font-bold font-headline text-primary mb-1">Dekoor</h2>
         <p className="text-sm text-on-surface-variant">Cargando workspace...</p>
