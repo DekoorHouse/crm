@@ -81,6 +81,13 @@ export default function PedidosPage() {
   const defaultDateFilter =
     user?.email === "alex@dekoor.com" ? "hoy" : "ultimos-10-dias";
 
+  // Minimum 5-second splash screen
+  const [splashDone, setSplashDone] = useState(false);
+  useEffect(() => {
+    const timer = setTimeout(() => setSplashDone(true), 5000);
+    return () => clearTimeout(timer);
+  }, []);
+
   // Refresh today count when user is authenticated
   useEffect(() => {
     if (user) {
@@ -130,11 +137,7 @@ export default function PedidosPage() {
     }
   }
 
-  if (authLoading) {
-    return <LoadingOverlay />;
-  }
-
-  if (!user) {
+  if (authLoading || !user || !splashDone) {
     return <LoadingOverlay />;
   }
 
