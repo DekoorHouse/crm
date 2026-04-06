@@ -113,7 +113,9 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           </a>
         )}
 
-        {message.text && <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>}
+        {message.text && !(hasMedia && message.text.toLowerCase() === "imagen") && (
+          <p className="text-[13px] leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+        )}
 
         {/* Reaction badge */}
         {message.reaction && (
