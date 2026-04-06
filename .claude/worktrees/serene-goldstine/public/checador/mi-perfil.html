@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Perfil | Checador Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { align-items: flex-start; padding: 20px; }
+        .profile-container { width: 100%; max-width: 600px; margin: 0 auto; }
+        .profile-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+        .profile-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        .profile-header h2 { font-size: 1.4rem; }
+        .back-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .back-link:hover { color: var(--primary); }
+        .employee-banner {
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .avatar-wrapper {
+            position: relative;
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 10px;
+            cursor: pointer;
+        }
+        .avatar-wrapper:hover .avatar-overlay {
+            opacity: 1;
+        }
+        .employee-banner .emp-avatar {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.8rem;
+            font-weight: 700;
+            border: 3px solid rgba(255,255,255,0.3);
+            overflow: hidden;
+            object-fit: cover;
+        }
+        .emp-avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .avatar-overlay {
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background: rgba(0,0,0,0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.2s;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 0.5px;
+        }
+        .avatar-uploading {
+            opacity: 1 !important;
+        }
+        .employee-banner .emp-name {
+            font-size: 1.5rem;
+            font-weight: 700;
+        }
+        .employee-banner .emp-subtitle {
+            font-size: 0.85rem;
+            opacity: 0.85;
+            margin-top: 4px;
+        }
+        .info-section {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 16px;
+            padding: 18px;
+            margin-bottom: 20px;
+        }
+        .info-title {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 12px;
+            font-weight: 600;
+        }
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+        .info-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 16px 12px;
+            text-align: center;
+        }
+        .stat-card .stat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+        .stat-card .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .week-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .week-nav button {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .week-nav button:hover { background: rgba(255,255,255,0.2); }
+        .week-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .week-nav span {
+            font-size: 0.9rem;
+            font-weight: 600;
+            min-width: 200px;
+            text-align: center;
+        }
+        .day-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-bottom: 6px;
+            background: rgba(255,255,255,0.03);
+            font-size: 0.9rem;
+        }
+        .day-row .day-name { font-weight: 600; min-width: 90px; }
+        .day-row .day-hours { color: var(--text-muted); }
+        .day-row .day-detail { font-size: 0.75rem; color: var(--text-muted); }
+        .day-row.has-data { border-left: 3px solid var(--success); }
+        .day-row.no-data { border-left: 3px solid transparent; opacity: 0.4; }
+        .day-row.today { background: rgba(251, 140, 0, 0.1); border-left-color: var(--primary); }
+        .logout-profile {
+            margin-top: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- PIN Login -->
+    <div id="pin-login-view" style="position:fixed; inset:0; z-index:9999; background:var(--bg-dark); display:flex; align-items:center; justify-content:center; padding:20px;">
+        <div class="card" style="max-width:400px; width:100%;">
+            <div class="logo"><img src="logo.png" alt="Dekoor House Logo"></div>
+            <h3 style="margin-bottom:8px; color:var(--primary);">Mi Perfil</h3>
+            <p style="font-size:0.8rem; margin-bottom:20px; color:var(--text-muted);">Ingresa tu nombre y PIN para ver tu informacion</p>
+            <div class="input-group" style="margin-bottom:15px;">
+                <label for="emp-name-input">Nombre</label>
+                <input type="text" id="emp-name-input" placeholder="Tu nombre" autocomplete="new-password" readonly onfocus="this.removeAttribute('readonly')">
+            </div>
+            <div class="input-group" style="margin-bottom:15px;">
+                <label for="emp-pin-input">PIN</label>
+                <input type="tel" id="emp-pin-input" placeholder="****" maxlength="4" autocomplete="new-password" inputmode="numeric" readonly onfocus="this.removeAttribute('readonly'); this.value=''" style="text-align:center; font-size:1.5rem; letter-spacing:8px;">
+            </div>
+            <div id="login-error" style="color:var(--danger); font-size:0.85rem; margin-bottom:15px; min-height:1.2em;"></div>
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button id="pin-login-btn" class="btn btn-in" style="padding:14px 40px; font-size:1rem;">Entrar</button>
+                <a href="/checador/" class="btn btn-out" style="padding:14px 20px; text-decoration:none; text-align:center; font-size:0.9rem;">Volver</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Profile Content -->
+    <div id="profile-content" class="profile-container" style="display:none;">
+        <div class="profile-card">
+            <div class="profile-header">
+                <h2>Mi Perfil</h2>
+                <a href="/checador/" class="back-link">&larr; Volver al Checador</a>
+            </div>
+
+            <div class="employee-banner">
+                <div class="avatar-wrapper" id="avatar-wrapper" title="Cambiar foto de perfil">
+                    <div class="emp-avatar" id="profile-avatar">?</div>
+                    <div class="avatar-overlay" id="avatar-overlay">CAMBIAR</div>
+                </div>
+                <input type="file" id="avatar-input" accept="image/*" style="display:none;">
+                <div class="emp-name" id="profile-name">—</div>
+                <div class="emp-subtitle" id="profile-subtitle">Dekoor House</div>
+            </div>
+
+            <!-- Info personal -->
+            <div class="info-section">
+                <div class="info-title">Informacion Personal</div>
+                <div class="info-row">
+                    <span class="info-label">Nombre</span>
+                    <span class="info-value" id="info-name">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">WhatsApp</span>
+                    <span class="info-value" id="info-phone">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">ID</span>
+                    <span class="info-value" id="info-id">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Estado</span>
+                    <span class="info-value" id="info-status">—</span>
+                </div>
+            </div>
+
+            <!-- Vacaciones -->
+            <div id="vacation-section" class="info-section" style="display:none; border-color:rgba(245,158,11,0.3); background:rgba(245,158,11,0.05);">
+                <div class="info-title" style="color:#f59e0b;">🏖 Vacaciones</div>
+                <div class="info-row">
+                    <span class="info-label">Desde</span>
+                    <span class="info-value" id="vac-desde-label">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Hasta</span>
+                    <span class="info-value" id="vac-hasta-label">—</span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Horario</span>
+                    <span class="info-value" style="font-size:0.8rem;">L-V 9am-3pm · Sáb 9am-1pm</span>
+                </div>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-days">0</div>
+                    <div class="stat-label">Dias esta semana</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-hours">0h</div>
+                    <div class="stat-label">Horas esta semana</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-pay">$0</div>
+                    <div class="stat-label">Pago estimado</div>
+                </div>
+            </div>
+
+            <div class="week-nav">
+                <button id="prev-week">&laquo; Anterior</button>
+                <span id="week-label">Cargando...</span>
+                <button id="next-week">Siguiente &raquo;</button>
+            </div>
+
+            <div id="days-list"></div>
+
+            <div id="adj-section" style="display:none; margin-top:16px;"></div>
+
+            <div class="logout-profile">
+                <button id="logout-btn" class="link-btn" style="color:var(--danger);">Cerrar Sesion</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification">OK</div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="mi-perfil.js"></script>
+</body>
+</html>

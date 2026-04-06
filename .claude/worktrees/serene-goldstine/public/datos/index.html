@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Datos Para Envío - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/formulario/style.css">
+</head>
+<body>
+
+<div class="main-container" style="max-width: 560px; padding: 20px 10px;">
+    <div id="form-container" class="content-box">
+        <div class="text-center mb-6">
+            <img src="/favicon.png" alt="Logo" class="mx-auto mb-4" style="width: 60px; height: 60px; border-radius: 50%;">
+            <h1 style="color: var(--color-primary);">Datos Para Envío</h1>
+            <p style="color: var(--color-text-light);">Completa tus datos para coordinar la entrega de tu pedido.</p>
+        </div>
+        <form id="datosForm">
+            <div>
+                <label for="numeroPedido">Número de pedido proporcionado por Dekoor House <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="numeroPedido" required placeholder="Ej: DK-001">
+            </div>
+            <div>
+                <label for="nombreCompleto">Nombre Completo (Sin acentos) <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="nombreCompleto" required placeholder="Ej: Maria Garcia Lopez" maxlength="30">
+            </div>
+            <div>
+                <label for="telefono">Teléfono (Sin espacios) <span style="color:var(--color-primary)">*</span></label>
+                <input type="tel" id="telefono" required placeholder="Ej: 6181234567" maxlength="10" pattern="\d{10}">
+            </div>
+            <div>
+                <label for="direccion">Calle, Número y Entre calles (Sin acentos ni signos) <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="direccion" required placeholder="Ej: Av Insurgentes 123 entre Calle 5 y Calle 6">
+            </div>
+            <div>
+                <label for="numInterior">Número Interior (Opcional)</label>
+                <input type="text" id="numInterior" placeholder="Ej: Depto 4B" maxlength="10">
+            </div>
+            <div>
+                <label for="colonia">Colonia <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="colonia" required placeholder="Ej: Centro">
+            </div>
+            <div>
+                <label for="estado">Estado <span style="color:var(--color-primary)">*</span></label>
+                <select id="estado" required>
+                    <option value="" disabled selected>Selecciona tu estado</option>
+                    <option>Aguascalientes</option>
+                    <option>Baja California</option>
+                    <option>Baja California Sur</option>
+                    <option>Campeche</option>
+                    <option>Chiapas</option>
+                    <option>Chihuahua</option>
+                    <option>Ciudad de Mexico</option>
+                    <option>Coahuila</option>
+                    <option>Colima</option>
+                    <option>Durango</option>
+                    <option>Guanajuato</option>
+                    <option>Guerrero</option>
+                    <option>Hidalgo</option>
+                    <option>Jalisco</option>
+                    <option>Mexico</option>
+                    <option>Michoacan</option>
+                    <option>Morelos</option>
+                    <option>Nayarit</option>
+                    <option>Nuevo Leon</option>
+                    <option>Oaxaca</option>
+                    <option>Puebla</option>
+                    <option>Queretaro</option>
+                    <option>Quintana Roo</option>
+                    <option>San Luis Potosi</option>
+                    <option>Sinaloa</option>
+                    <option>Sonora</option>
+                    <option>Tabasco</option>
+                    <option>Tamaulipas</option>
+                    <option>Tlaxcala</option>
+                    <option>Veracruz</option>
+                    <option>Yucatan</option>
+                    <option>Zacatecas</option>
+                </select>
+            </div>
+            <div>
+                <label for="ciudad">Ciudad (Municipio) <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="ciudad" required placeholder="Ej: Durango">
+            </div>
+            <div>
+                <label for="codigoPostal">Código Postal <span style="color:var(--color-primary)">*</span></label>
+                <input type="text" id="codigoPostal" required placeholder="Ej: 34000" maxlength="5" pattern="\d{5}">
+            </div>
+            <div>
+                <label for="referencia">Referencia del domicilio (Sin acentos ni signos, Opcional)</label>
+                <input type="text" id="referencia" placeholder="Ej: Casa color beige con portón negro" maxlength="20">
+            </div>
+            <div id="mensajeFormulario"></div>
+            <button type="submit" id="submitBtn"><i class="fas fa-paper-plane"></i> Enviar Datos</button>
+        </form>
+    </div>
+
+    <div id="confirmation-container" class="content-box text-center" style="display: none;">
+        <h1 style="color: var(--color-secondary);"><i class="fas fa-check-circle"></i> ¡Datos Enviados!</h1>
+        <p>Tus datos de envío han sido registrados correctamente.</p>
+        <p>Nos pondremos en contacto contigo para coordinar la entrega.</p>
+        <p style="font-size: 0.9em; color: var(--color-text-light);">Ya puedes cerrar esta ventana.</p>
+    </div>
+</div>
+
+<script src="/env-config.js"></script>
+<script type="module" src="/datos/script.js"></script>
+
+</body>
+</html>

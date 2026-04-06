@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mockups AI | Dekoor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ========== LOGIN ========== -->
+    <div id="login-view" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center;">
+        <div class="login-card">
+            <h1 class="login-title">
+                <i class="fas fa-wand-magic-sparkles" style="color: var(--primary);"></i> Mockups AI
+            </h1>
+            <p class="login-subtitle">Ingresa tus credenciales para continuar.</p>
+            <form id="login-form">
+                <div style="margin-bottom: 20px;">
+                    <label class="input-label">Correo</label>
+                    <input type="email" id="login-email" required placeholder="admin@tienda.com" class="input-field">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label class="input-label">Contrasena</label>
+                    <input type="password" id="login-password" required placeholder="********" class="input-field">
+                </div>
+                <div id="login-error" class="login-error"></div>
+                <button type="submit" id="login-btn" class="btn btn-primary" style="width: 100%; margin-top: 24px;">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== MAIN APP ========== -->
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h1 class="app-title"><i class="fas fa-wand-magic-sparkles"></i> Mockups AI</h1>
+                <span class="model-badge-inline">Nano Banana Pro <span class="model-cost-inline">$0.134/img</span></span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="dark-mode-toggle" class="btn btn-icon" title="Cambiar tema">
+                    <i class="fas fa-moon"></i>
+                </button>
+                <button id="logout-btn" class="btn btn-outline">Salir <i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Cost Tracker -->
+        <div class="cost-tracker">
+            <div class="cost-item">
+                <span class="cost-label">Sesion</span>
+                <span class="cost-value" id="session-cost">$0.0000</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Imagenes</span>
+                <span class="cost-value" id="session-images">0</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Tokens In</span>
+                <span class="cost-value" id="session-tokens-in">0</span>
+            </div>
+            <div class="cost-item">
+                <span class="cost-label">Tokens Out</span>
+                <span class="cost-value" id="session-tokens-out">0</span>
+            </div>
+        </div>
+
+        <!-- Prompt Area -->
+        <div class="prompt-section">
+            <!-- Batch Mode Toggle -->
+            <div class="batch-toggle-row">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="batch-mode-toggle">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="batch-toggle-label">Modo Lote</span>
+            </div>
+
+            <!-- Single Mode -->
+            <div id="single-mode">
+                <div class="prompt-row">
+                    <textarea id="prompt-input" class="prompt-textarea" placeholder="Describe la imagen que quieres generar..." rows="3"></textarea>
+                </div>
+                <div class="upload-area">
+                    <div id="upload-dropzone" class="upload-dropzone">
+                        <input type="file" id="image-upload" accept="image/*" multiple style="display:none;">
+                        <div class="upload-placeholder">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <span>Arrastra imagenes o <strong>haz click</strong> para subir referencias</span>
+                        </div>
+                    </div>
+                    <div id="upload-previews" class="upload-previews"></div>
+                </div>
+            </div>
+
+            <!-- Batch Mode -->
+            <div id="batch-mode" style="display:none;">
+                <div class="prompt-row">
+                    <textarea id="batch-prompt" class="prompt-textarea batch-prompt-readonly" rows="3" readonly>Cambia el nombre de la lámpara por el de la imagen negra. Respeta la tipografía. Incluye todo el texto de la imagen negra. Y que el nuevo nombre se integre bien para que parezca completamente realista. Que todo el texto esté del mismo lado. De ser necesario ajusta el tamaño del texto para que quepa.</textarea>
+                </div>
+                <div class="batch-names-area">
+                    <label class="control-label">Nombres (uno por linea)</label>
+                    <textarea id="batch-names" class="prompt-textarea" rows="5" placeholder="Lampara Luna&#10;Lampara Sol&#10;Lampara Estrella"></textarea>
+                </div>
+                <div class="batch-uploads">
+                    <div class="batch-upload-slot">
+                        <label class="control-label">Imagen del producto</label>
+                        <div id="batch-product-dropzone" class="upload-dropzone">
+                            <input type="file" id="batch-product-input" accept="image/*" style="display:none;">
+                            <div class="upload-placeholder">
+                                <i class="fas fa-image"></i>
+                                <span>Foto de la lampara</span>
+                            </div>
+                        </div>
+                        <div id="batch-product-preview" class="upload-previews"></div>
+                    </div>
+                    <div class="batch-upload-slot">
+                        <label class="control-label">Imagenes de nombres</label>
+                        <div id="batch-names-dropzone" class="upload-dropzone">
+                            <input type="file" id="batch-names-input" accept="image/*" multiple style="display:none;">
+                            <div class="upload-placeholder">
+                                <i class="fas fa-font"></i>
+                                <span>PNGs exportados del editor</span>
+                            </div>
+                        </div>
+                        <div id="batch-names-previews" class="upload-previews"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Controls (shared) -->
+            <div class="prompt-controls">
+                <div class="control-group">
+                    <label class="control-label">Aspecto</label>
+                    <select id="aspect-ratio" class="control-select">
+                        <option value="1:1">1:1</option>
+                        <option value="16:9">16:9</option>
+                        <option value="9:16">9:16</option>
+                        <option value="4:3">4:3</option>
+                        <option value="3:4" selected>3:4</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label class="control-label">Resolucion</label>
+                    <select id="resolution" class="control-select">
+                        <option value="1K" selected>1K (1024px)</option>
+                        <option value="2K">2K (2048px)</option>
+                    </select>
+                </div>
+                <button id="generate-btn" class="btn btn-primary btn-generate">
+                    <i class="fas fa-bolt"></i> Generar
+                </button>
+            </div>
+        </div>
+
+        <!-- Batch Progress -->
+        <div id="batch-progress" class="batch-progress" style="display:none;">
+            <div class="batch-progress-header">
+                <span id="batch-progress-text">Generando 0/0...</span>
+                <span id="batch-progress-pct">0%</span>
+            </div>
+            <div class="batch-progress-bar">
+                <div id="batch-progress-fill" class="batch-progress-fill" style="width:0%"></div>
+            </div>
+        </div>
+
+        <!-- Loading -->
+        <div id="loading-state" class="loading-state" style="display: none;">
+            <div class="loading-spinner"></div>
+            <p>Generando imagen...</p>
+        </div>
+
+        <!-- Error -->
+        <div id="error-state" class="error-state" style="display: none;">
+            <i class="fas fa-exclamation-triangle"></i>
+            <p id="error-message"></p>
+        </div>
+
+        <!-- Last Result -->
+        <div id="results-section" class="results-section" style="display: none;">
+            <div class="results-header">
+                <div class="section-title" style="margin-bottom:0;">Resultado</div>
+                <div class="result-meta">
+                    <span id="result-tokens-in"></span>
+                    <span id="result-tokens-out"></span>
+                    <span id="result-cost" class="result-cost-badge"></span>
+                </div>
+            </div>
+            <div id="results-grid" class="results-grid"></div>
+        </div>
+
+        <!-- Gallery -->
+        <div class="gallery-section">
+            <div class="section-title">Galeria</div>
+            <div id="gallery-grid" class="gallery-grid">
+                <div id="gallery-empty" class="gallery-empty">
+                    <i class="fas fa-images"></i>
+                    <p>Las imagenes generadas apareceran aqui</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Lightbox -->
+    <div id="lightbox" class="lightbox" style="display: none;">
+        <button class="lightbox-close" id="lightbox-close"><i class="fas fa-times"></i></button>
+        <img id="lightbox-img" src="" alt="Preview">
+        <div class="lightbox-info">
+            <p id="lightbox-prompt" class="lightbox-prompt"></p>
+            <div class="lightbox-actions">
+                <button class="btn lightbox-download" id="lightbox-download"><i class="fas fa-download"></i> Descargar</button>
+                <button class="btn lightbox-delete" id="lightbox-delete"><i class="fas fa-trash"></i> Eliminar</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/env-config.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

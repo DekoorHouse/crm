@@ -1,0 +1,96 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // --- Funciones auxiliares ---
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // --- Colecciones públicas (solo lectura) ---
+    // Productos, referencias aprobadas, contadores visibles al sitio público
+    match /productos/{docId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /referencias/{docId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /counters/{docId} {
+      allow read: if true;
+      allow write: if isAuthenticated();
+    }
+
+    match /crm_settings/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    // --- Colecciones privadas (requieren autenticación) ---
+    match /contacts/{contactId} {
+      allow read, write: if isAuthenticated();
+
+      match /messages/{messageId} {
+        allow read, write: if isAuthenticated();
+      }
+    }
+
+    match /pedidos/{orderId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /conekta_orders/{orderId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated();
+    }
+
+    match /departments/{deptId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /ad-routing-rules/{ruleId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /tags/{tagId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /quick-replies/{replyId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /ad-responses/{responseId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /ai_knowledge_base/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /adminNotifications/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /autopost/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /expenses/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    // --- Catch-all: denegar por defecto ---
+    match /{document=**} {
+      allow read, write: if isAuthenticated();
+    }
+  }
+}

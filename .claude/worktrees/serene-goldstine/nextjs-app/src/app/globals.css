@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+/* ============================================= */
+/* DEKOOR CRM - Design System from Google Stitch */
+/* ============================================= */
+
+/* --- Light Theme (Default) --- */
+:root {
+  /* Primary palette */
+  --color-primary: #386753;
+  --color-primary-container: #81b29a;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #134532;
+
+  /* Secondary palette */
+  --color-secondary: #9a442d;
+  --color-secondary-container: #fc9174;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #742814;
+
+  /* Tertiary / Accent palette */
+  --color-tertiary: #765a28;
+  --color-tertiary-container: #c5a269;
+  --color-accent: #f2cc8f;
+
+  /* Surface / Background */
+  --color-background: #fbf8fe;
+  --color-surface: #fbf8fe;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f6f2f8;
+  --color-surface-container: #f0edf3;
+  --color-surface-container-high: #eae7ed;
+  --color-surface-container-highest: #e4e1e7;
+  --color-surface-dim: #dcd9df;
+
+  /* Text */
+  --color-on-surface: #1b1b1f;
+  --color-on-surface-variant: #414944;
+
+  /* Outline / Borders */
+  --color-outline: #717973;
+  --color-outline-variant: #c0c9c2;
+
+  /* Error */
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #93000a;
+
+  /* Inverse */
+  --color-inverse-surface: #303034;
+  --color-inverse-on-surface: #f3eff5;
+  --color-inverse-primary: #9fd1b8;
+
+  /* Status colors */
+  --color-status-sin-estatus: #6c757d;
+  --color-status-foto-enviada: #007bff;
+  --color-status-esperando-pago: #ffc107;
+  --color-status-pagado: #28a745;
+  --color-status-disenado: #6f42c1;
+  --color-status-fabricar: #17a2b8;
+  --color-status-corregir: #fd7e14;
+  --color-status-corregido: #20c997;
+  --color-status-mns-amenazador: #dc3545;
+  --color-status-cancelado: #6c757d;
+}
+
+/* --- Dark Theme (Tokyo Night) --- */
+.dark {
+  --color-primary: #7aa2f7;
+  --color-primary-container: #24283b;
+  --color-on-primary: #ffffff;
+  --color-on-primary-container: #7aa2f7;
+
+  --color-secondary: #bb9af7;
+  --color-secondary-container: #3b4261;
+  --color-on-secondary: #ffffff;
+  --color-on-secondary-container: #bb9af7;
+
+  --color-tertiary: #e0af68;
+  --color-tertiary-container: #414868;
+  --color-accent: #e0af68;
+
+  --color-background: #1a1b26;
+  --color-surface: #24283b;
+  --color-surface-container-lowest: #1a1b26;
+  --color-surface-container-low: #1f2335;
+  --color-surface-container: #24283b;
+  --color-surface-container-high: #292e42;
+  --color-surface-container-highest: #3b4261;
+  --color-surface-dim: #1a1b26;
+
+  --color-on-surface: #ffffff;
+  --color-on-surface-variant: #9aa5ce;
+
+  --color-outline: #565f89;
+  --color-outline-variant: #414868;
+
+  --color-error: #f7768e;
+  --color-error-container: #44192b;
+  --color-on-error: #ffffff;
+  --color-on-error-container: #f7768e;
+
+  --color-inverse-surface: #e4e1e7;
+  --color-inverse-on-surface: #1a1b26;
+  --color-inverse-primary: #386753;
+}
+
+/* --- Tailwind v4 Theme Integration --- */
+@theme inline {
+  --color-primary: var(--color-primary);
+  --color-primary-container: var(--color-primary-container);
+  --color-on-primary: var(--color-on-primary);
+  --color-on-primary-container: var(--color-on-primary-container);
+
+  --color-secondary: var(--color-secondary);
+  --color-secondary-container: var(--color-secondary-container);
+  --color-on-secondary: var(--color-on-secondary);
+
+  --color-tertiary: var(--color-tertiary);
+  --color-accent: var(--color-accent);
+
+  --color-background: var(--color-background);
+  --color-surface: var(--color-surface);
+  --color-surface-container-lowest: var(--color-surface-container-lowest);
+  --color-surface-container-low: var(--color-surface-container-low);
+  --color-surface-container: var(--color-surface-container);
+  --color-surface-container-high: var(--color-surface-container-high);
+  --color-surface-container-highest: var(--color-surface-container-highest);
+
+  --color-on-surface: var(--color-on-surface);
+  --color-on-surface-variant: var(--color-on-surface-variant);
+
+  --color-outline: var(--color-outline);
+  --color-outline-variant: var(--color-outline-variant);
+
+  --color-error: var(--color-error);
+  --color-error-container: var(--color-error-container);
+  --color-on-error-container: var(--color-on-error-container);
+
+  --color-inverse-surface: var(--color-inverse-surface);
+  --color-inverse-on-surface: var(--color-inverse-on-surface);
+
+  --font-headline: "Plus Jakarta Sans", sans-serif;
+  --font-body: "Manrope", sans-serif;
+}
+
+/* --- Base Styles --- */
+body {
+  background: var(--color-background);
+  color: var(--color-on-surface);
+  font-family: var(--font-body);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-headline);
+}
+
+/* --- Kanban scrollbar --- */
+.kanban-scroll::-webkit-scrollbar { height: 8px; }
+.kanban-scroll::-webkit-scrollbar-track { background: var(--color-surface-container-low); }
+.kanban-scroll::-webkit-scrollbar-thumb { background: var(--color-outline-variant); border-radius: 10px; }
+
+/* --- Smooth transitions for theme switch --- */
+* {
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}

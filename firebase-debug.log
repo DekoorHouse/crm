@@ -1,0 +1,69 @@
+[debug] [2026-03-30T22:01:25.506Z] ----------------------------------------------------------------------
+[debug] [2026-03-30T22:01:25.509Z] Command:       C:\Program Files\nodejs\node.exe C:\Users\dekoo\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\firebase.js deploy --only storage
+[debug] [2026-03-30T22:01:25.510Z] CLI Version:   15.11.0
+[debug] [2026-03-30T22:01:25.510Z] Platform:      win32
+[debug] [2026-03-30T22:01:25.510Z] Node Version:  v24.14.0
+[debug] [2026-03-30T22:01:25.510Z] Time:          Mon Mar 30 2026 16:01:25 GMT-0600 (hora estándar central)
+[debug] [2026-03-30T22:01:25.510Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-03-30T22:01:26.995Z] > command requires scopes: ["email","openid","https://www.googleapis.com/auth/cloudplatformprojects.readonly","https://www.googleapis.com/auth/firebase","https://www.googleapis.com/auth/cloud-platform"]
+[debug] [2026-03-30T22:01:26.996Z] > authorizing via signed-in user (dekoorhouse.work@gmail.com)
+[debug] [2026-03-30T22:01:26.996Z] [iam] checking project pedidos-con-gemini for permissions ["firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]
+[debug] [2026-03-30T22:01:26.997Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:26.997Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:26.998Z] >>> [apiv2][query] POST https://cloudresourcemanager.googleapis.com/v1/projects/pedidos-con-gemini:testIamPermissions [none]
+[debug] [2026-03-30T22:01:26.998Z] >>> [apiv2][(partial)header] POST https://cloudresourcemanager.googleapis.com/v1/projects/pedidos-con-gemini:testIamPermissions  x-goog-user-project=pedidos-con-gemini
+[debug] [2026-03-30T22:01:26.998Z] >>> [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/pedidos-con-gemini:testIamPermissions {"permissions":["firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[debug] [2026-03-30T22:01:27.352Z] <<< [apiv2][status] POST https://cloudresourcemanager.googleapis.com/v1/projects/pedidos-con-gemini:testIamPermissions 200
+[debug] [2026-03-30T22:01:27.352Z] <<< [apiv2][body] POST https://cloudresourcemanager.googleapis.com/v1/projects/pedidos-con-gemini:testIamPermissions {"permissions":["firebase.projects.get","firebaserules.releases.create","firebaserules.releases.update","firebaserules.rulesets.create"]}
+[info] 
+[info] === Deploying to 'pedidos-con-gemini'...
+[info] 
+[info] i  deploying storage 
+[info] i  storage: ensuring required API firebasestorage.googleapis.com is enabled... 
+[debug] [2026-03-30T22:01:27.355Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.355Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.355Z] >>> [apiv2][query] GET https://firebasestorage.googleapis.com/v1alpha/projects/pedidos-con-gemini/defaultBucket [none]
+[debug] [2026-03-30T22:01:27.570Z] <<< [apiv2][status] GET https://firebasestorage.googleapis.com/v1alpha/projects/pedidos-con-gemini/defaultBucket 200
+[debug] [2026-03-30T22:01:27.570Z] <<< [apiv2][body] GET https://firebasestorage.googleapis.com/v1alpha/projects/pedidos-con-gemini/defaultBucket {"name":"projects/pedidos-con-gemini/defaultBucket","location":"US-CENTRAL1","bucket":{"name":"projects/pedidos-con-gemini/buckets/pedidos-con-gemini.firebasestorage.app"},"storageClass":"REGIONAL"}
+[info] i  firebase.storage: checking storage.rules for compilation errors... 
+[debug] [2026-03-30T22:01:27.572Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.572Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.572Z] >>> [apiv2][query] POST https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini:test [none]
+[debug] [2026-03-30T22:01:27.572Z] >>> [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini:test [omitted]
+[debug] [2026-03-30T22:01:27.731Z] <<< [apiv2][status] POST https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini:test 200
+[debug] [2026-03-30T22:01:27.731Z] <<< [apiv2][body] POST https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini:test {}
+[info] +  firebase.storage: rules file storage.rules compiled successfully 
+[debug] [2026-03-30T22:01:27.733Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.733Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.733Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases pageSize=10&pageToken=
+[debug] [2026-03-30T22:01:27.823Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases 200
+[debug] [2026-03-30T22:01:27.823Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases {"releases":[{"name":"projects/pedidos-con-gemini/releases/cloud.firestore","rulesetName":"projects/pedidos-con-gemini/rulesets/de995926-2f50-44ff-88ff-8ea269cd9971","createTime":"2025-05-04T18:57:49.554153Z","updateTime":"2026-03-23T15:32:33.155358Z"},{"name":"projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app","rulesetName":"projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39","createTime":"2025-05-04T19:00:41.699990Z","updateTime":"2026-03-30T22:01:23.612889Z"}]}
+[debug] [2026-03-30T22:01:27.836Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.837Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.837Z] >>> [apiv2][query] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39 [none]
+[debug] [2026-03-30T22:01:27.948Z] <<< [apiv2][status] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39 200
+[debug] [2026-03-30T22:01:27.948Z] <<< [apiv2][body] GET https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39 [omitted]
+[info] i  storage: latest version of storage.rules already up to date, skipping upload... 
+[debug] [2026-03-30T22:01:27.950Z] [rules] releasing firebase.storage/pedidos-con-gemini.firebasestorage.app with ruleset projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39
+[debug] [2026-03-30T22:01:27.951Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.951Z] Checked if tokens are valid: true, expires at: 1774911680242
+[debug] [2026-03-30T22:01:27.951Z] >>> [apiv2][query] PATCH https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app [none]
+[debug] [2026-03-30T22:01:27.951Z] >>> [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app {"release":{"name":"projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app","rulesetName":"projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39"}}
+[debug] [2026-03-30T22:01:28.103Z] <<< [apiv2][status] PATCH https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app 200
+[debug] [2026-03-30T22:01:28.103Z] <<< [apiv2][body] PATCH https://firebaserules.googleapis.com/v1/projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app {"name":"projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app","rulesetName":"projects/pedidos-con-gemini/rulesets/5ae17a3f-84f9-4c26-833a-867377737c39","createTime":"2025-05-04T19:00:41.699990Z","updateTime":"2026-03-30T22:01:28.346738Z"}
+[debug] [2026-03-30T22:01:28.104Z] [rules] updated release projects/pedidos-con-gemini/releases/firebase.storage/pedidos-con-gemini.firebasestorage.app
+[info] +  storage: released rules storage.rules to firebase.storage 
+[info] 
+[info] +  Deploy complete! 
+[info] 
+[info] Project Console: https://console.firebase.google.com/project/pedidos-con-gemini/overview
+[debug] [2026-03-30T22:01:29.171Z] Error: EBUSY: resource busy or locked, unlink 'C:\Users\dekoo\Documents\crm\firebase-debug.log'
+    at Object.unlinkSync (node:fs:1931:11)
+    at process.<anonymous> (C:\Users\dekoo\AppData\Roaming\npm\node_modules\firebase-tools\lib\bin\cli.js:44:16)
+    at process.emit (node:events:520:35)
+    at process.exit (node:internal/process/per_thread:236:15)
+    at C:\Users\dekoo\AppData\Roaming\npm\node_modules\firebase-tools\lib\command.js:131:25
+    at process.processTicksAndRejections (node:internal/process/task_queues:104:5)
+[error] 
+[error] Error: An unexpected error has occurred.

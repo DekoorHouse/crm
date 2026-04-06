@@ -1,0 +1,1080 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Editor - Dekoor</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/opentype.js@1.3.4/dist/opentype.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/kilobtye/potrace/potrace.js"></script>
+    <style>
+        @font-face { font-family: 'Rows of Sunflowers'; src: url('/editor/fonts/RowsOfSunflowers.ttf') format('truetype'); }
+    </style>
+</head>
+<body>
+    <!-- Login Screen -->
+    <div id="editor-login" class="editor-login">
+        <div class="editor-login-card">
+            <div class="editor-login-brand">
+                <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/>
+                    <line x1="12" y1="22" x2="12" y2="15.5"/>
+                    <polyline points="22 8.5 12 15.5 2 8.5"/>
+                    <polyline points="2 15.5 12 8.5 22 15.5"/>
+                    <line x1="12" y1="2" x2="12" y2="8.5"/>
+                </svg>
+                <span>Dekoor Editor</span>
+            </div>
+            <form id="editor-login-form">
+                <input type="email" id="editor-login-email" required placeholder="Correo electr&#xF3;nico">
+                <input type="password" id="editor-login-password" required placeholder="Contrase&#xF1;a">
+                <div id="editor-login-error"></div>
+                <button type="submit" id="editor-login-btn">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="app" style="display:none">
+        <!-- Header -->
+        <header id="header">
+            <div class="header-left">
+                <button id="mobile-menu-btn" class="mobile-menu-btn">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+                </button>
+                <div class="brand">
+                    <span class="brand-icon">
+                        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5"/>
+                            <line x1="12" y1="22" x2="12" y2="15.5"/>
+                            <polyline points="22 8.5 12 15.5 2 8.5"/>
+                            <polyline points="2 15.5 12 8.5 22 15.5"/>
+                            <line x1="12" y1="2" x2="12" y2="8.5"/>
+                        </svg>
+                    </span>
+                    <span class="brand-name">Dekoor <span class="brand-sub">Editor</span></span>
+                </div>
+                <div class="header-divider"></div>
+                <div class="menu-group">
+                    <div class="menu-trigger" data-menu="file">Archivo</div>
+                    <div class="menu-dropdown" id="menu-file">
+                        <div class="menu-option" data-action="import-svg">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7l4-4 4 4M7 3v10"/><path d="M13 3h4v14h-4"/></svg>
+                            Importar SVG <span class="menu-shortcut">Ctrl+I</span>
+                        </div>
+                        <div class="menu-option" data-action="export-svg">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13l4 4 4-4M7 17V7"/><path d="M13 3h4v14h-4"/></svg>
+                            Exportar SVG <span class="menu-shortcut">Ctrl+E</span>
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="save-file">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar <span class="menu-shortcut">Ctrl+S</span>
+                        </div>
+                        <div class="menu-option" data-action="save-file-as">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar como...
+                        </div>
+                        <div class="menu-option" data-action="open-file">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1"/><path d="M3 7h14l-1.5 8H4.5L3 7z"/></svg>
+                            Abrir... <span class="menu-shortcut">Ctrl+O</span>
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="import-names">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3h14v14H3z"/><path d="M7 8h6M7 11h4"/></svg>
+                            Importar nombres
+                        </div>
+                        <div class="menu-option" data-action="export-mockups">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h5v5H4zM11 4h5v5h-5zM4 11h5v5H4zM11 11h5v5h-5z"/></svg>
+                            Exportar a Mockups
+                        </div>
+                        <div class="menu-option" data-action="bmp-converter">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h16v12H2z"/><circle cx="7" cy="9" r="2"/><path d="M2 14l4-4 3 3 4-5 5 6"/></svg>
+                            Convertir a BMP l&aacute;ser...
+                        </div>
+                        <div class="menu-option" data-action="bg-removal">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h16v12H2z"/><path d="M6 10a4 4 0 1 1 8 0 4 4 0 0 1-8 0z" stroke-dasharray="2 1.5"/><path d="M10 6v-2M10 16v-2M6 10H4M16 10h-2"/></svg>
+                            Quitar fondo...
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="clear-all">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
+                            Limpiar todo
+                        </div>
+                    </div>
+                </div>
+                <div class="menu-group">
+                    <div class="menu-trigger" data-menu="page">P&aacute;gina</div>
+                    <div class="menu-dropdown" id="menu-page">
+                        <div class="menu-option" data-action="page-size">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="1"/><path d="M9 3v14M3 9h14"/></svg>
+                            Tama&ntilde;o de p&aacute;gina...
+                        </div>
+                        <div class="menu-option" data-action="fit-page">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V4a1 1 0 0 1 1-1h3M13 3h3a1 1 0 0 1 1 1v3M17 13v3a1 1 0 0 1-1 1h-3M7 17H4a1 1 0 0 1-1-1v-3"/></svg>
+                            Ajustar vista
+                        </div>
+                    </div>
+                </div>
+                <div class="menu-group">
+                    <div class="menu-trigger" data-menu="edit">Editar</div>
+                    <div class="menu-dropdown" id="menu-edit">
+                        <div class="menu-option" data-action="group">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="8" height="8" rx="1"/><rect x="11" y="11" width="8" height="8" rx="1"/><path d="M5 9v2a2 2 0 0 0 2 2h2M15 9V7a2 2 0 0 0-2-2h-2"/></svg>
+                            Agrupar &nbsp;<span class="menu-shortcut">Ctrl+G</span>
+                        </div>
+                        <div class="menu-option" data-action="ungroup">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="8" height="8" rx="1"/><rect x="11" y="11" width="8" height="8" rx="1"/></svg>
+                            Desagrupar &nbsp;<span class="menu-shortcut">Ctrl+U</span>
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="join-nodes">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16L10 4L16 16Z"/><circle cx="4" cy="16" r="1.5"/><circle cx="10" cy="4" r="1.5"/><circle cx="16" cy="16" r="1.5"/></svg>
+                            Unir nodos &nbsp;<span class="menu-shortcut">Ctrl+J</span>
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="grid-fill">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="5" height="5" rx=".5"/><rect x="8" y="1" width="5" height="5" rx=".5"/><rect x="15" y="1" width="4" height="5" rx=".5"/><rect x="1" y="8" width="5" height="5" rx=".5"/><rect x="8" y="8" width="5" height="5" rx=".5"/><rect x="15" y="8" width="4" height="5" rx=".5"/><rect x="1" y="15" width="5" height="4" rx=".5"/><rect x="8" y="15" width="5" height="4" rx=".5"/><rect x="15" y="15" width="4" height="4" rx=".5"/></svg>
+                            Llenar cuadrícula...
+                        </div>
+                        <div class="menu-separator"></div>
+                        <div class="menu-option" data-action="vectorize-image">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16C8 2 12 18 16 4"/><rect x="2" y="2" width="16" height="16" rx="2" stroke-dasharray="2 1.5"/></svg>
+                            Vectorizar imagen...
+                        </div>
+                    </div>
+                </div>
+                <div class="menu-group">
+                    <div class="menu-trigger" data-menu="ai">IA</div>
+                    <div class="menu-dropdown" id="menu-ai">
+                        <div class="menu-option" data-action="ai-instructions">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h12v12H4z" rx="2"/><path d="M7 8h6M7 11h4"/></svg>
+                            Instrucciones de IA...
+                        </div>
+                        <div class="menu-option" data-action="ai-toggle-chat">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h14v10H8l-3 3v-3H3z" rx="1"/></svg>
+                            Abrir chat de IA
+                        </div>
+                    </div>
+                </div>
+                <div class="header-divider"></div>
+                <span id="current-file-name" class="file-name-indicator" style="display:none;"></span>
+            </div>
+            <div class="header-right">
+                <button id="theme-toggle" class="theme-btn" title="Cambiar tema">
+                    <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+                    <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z"/></svg>
+                </button>
+                <div class="header-divider"></div>
+                <div class="prop-group">
+                    <label>Grosor</label>
+                    <input type="number" id="stroke-width" value="2" min="0.5" max="50" step="0.5">
+                </div>
+                <div class="header-divider"></div>
+                <div class="prop-group">
+                    <label>Relleno</label>
+                    <div class="color-swatch" id="fill-swatch" title="Color de relleno">
+                        <div class="swatch-inner" style="background:#FFFFFF;"></div>
+                    </div>
+                </div>
+                <div class="prop-group">
+                    <label>L&iacute;nea</label>
+                    <div class="color-swatch" id="stroke-swatch" title="Color de l&iacute;nea">
+                        <div class="swatch-inner" style="background:#000000;"></div>
+                    </div>
+                </div>
+                <div class="header-divider"></div>
+                <div class="prop-group">
+                    <label>Fuente</label>
+                    <select id="font-select" class="header-select">
+                        <option value="Inter">Inter</option>
+                        <option value="Arial">Arial</option>
+                        <option value="Georgia">Georgia</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                        <option value="Courier New">Courier New</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Rows of Sunflowers">Rows of Sunflowers</option>
+                    </select>
+                </div>
+                <div class="prop-group">
+                    <label>Tam</label>
+                    <input type="number" id="font-size" value="32" min="6" max="500" step="1" style="width:48px">
+                </div>
+                <div class="prop-group text-align-group">
+                    <button class="align-btn active" data-align="left" title="Alinear a la izquierda">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg>
+                    </button>
+                    <button class="align-btn" data-align="center" title="Centrar">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
+                    </button>
+                    <button class="align-btn" data-align="right" title="Alinear a la derecha">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg>
+                    </button>
+                </div>
+                <div class="header-divider"></div>
+                <div class="prop-group">
+                    <label>Desp.</label>
+                    <input type="number" id="nudge-distance" class="header-input" value="1" min="0.1" step="0.5" style="width:50px" title="Distancia de desplazamiento con flechas">
+                </div>
+                <div class="header-divider"></div>
+                <div class="prop-group">
+                    <label>Unidad</label>
+                    <select id="unit-select" class="header-select">
+                        <option value="px">px</option>
+                        <option value="mm" selected>mm</option>
+                        <option value="cm">cm</option>
+                        <option value="in">in</option>
+                    </select>
+                </div>
+            </div>
+        </header>
+
+        <!-- Workspace -->
+        <div id="workspace">
+            <!-- Recent Files Sidebar -->
+            <div id="files-sidebar" class="files-sidebar">
+                <div class="sidebar-header">
+                    <div class="sidebar-tabs">
+                        <button class="sidebar-tab active" data-tab="files">Archivos</button>
+                        <button class="sidebar-tab" data-tab="templates">Plantillas</button>
+                    </div>
+                    <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Ocultar panel">
+                        <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M13 4l-6 6 6 6"/></svg>
+                    </button>
+                </div>
+                <!-- Files Tab -->
+                <div id="sidebar-tab-files" class="sidebar-tab-content">
+                    <div class="sidebar-actions">
+                        <button id="sidebar-new-btn" class="sidebar-action-btn" title="Nuevo archivo">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12"/></svg>
+                            Nuevo
+                        </button>
+                        <button id="sidebar-save-btn" class="sidebar-action-btn" title="Guardar">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 17H5a2 2 0 01-2-2V5a2 2 0 012-2h7l5 5v7a2 2 0 01-2 2z"/><path d="M13 17v-5H7v5M7 3v4h5"/></svg>
+                            Guardar
+                        </button>
+                    </div>
+                    <div id="sidebar-file-list" class="sidebar-file-list">
+                        <div class="sidebar-list-empty">Sin archivos</div>
+                    </div>
+                </div>
+                <!-- Templates Tab -->
+                <div id="sidebar-tab-templates" class="sidebar-tab-content" style="display:none;">
+                    <div class="sidebar-actions">
+                        <button id="sidebar-save-template-btn" class="sidebar-action-btn" title="Guardar como plantilla">
+                            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 4v12M4 10h12"/></svg>
+                            Guardar plantilla
+                        </button>
+                    </div>
+                    <div id="sidebar-template-list" class="sidebar-file-list">
+                        <div class="sidebar-list-empty">Sin plantillas</div>
+                    </div>
+                </div>
+            </div>
+            <div id="sidebar-scrim" class="sidebar-scrim"></div>
+            <div id="canvas-wrapper">
+            <!-- Tab Bar (floating) -->
+            <div id="tab-bar">
+                <div id="tab-list"></div>
+            </div>
+            <button id="sidebar-open-btn" class="sidebar-open-btn" title="Mostrar archivos">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V5a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1"/><path d="M3 7h14l-1.5 8H4.5L3 7z"/></svg>
+            </button>
+            <!-- PowerClip Edit Banner -->
+            <div id="pc-edit-banner" class="hidden">
+                <span>Editando contenido del PowerClip</span>
+                <button id="pc-edit-finish">Finalizar</button>
+            </div>
+            <!-- Floating Toolbar -->
+            <div id="toolbar">
+                <button class="tool-btn active" data-tool="select" title="Seleccionar (V)">
+                    <svg viewBox="0 0 24 24" width="20" height="20"><path d="M5 3v16l4.5-4.5 3 7 2.5-1-3-7H18z" fill="currentColor"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="rect" title="Rect&aacute;ngulo (R)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="1"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="ellipse" title="Elipse (E)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><ellipse cx="12" cy="12" rx="9" ry="7"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="line" title="L&iacute;nea (L)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="19" x2="19" y2="5"/><circle cx="5" cy="19" r="1.5" fill="currentColor" stroke="none"/><circle cx="19" cy="5" r="1.5" fill="currentColor" stroke="none"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="bspline" title="B-Spline (B)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 18C8 2 16 22 20 6"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="text" title="Texto (T)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none"><text x="5" y="18" font-size="16" font-weight="700" font-family="serif">T</text></svg>
+                </button>
+                <button class="tool-btn" data-tool="vsdelete" title="Eliminar Segmento Virtual (X)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><line x1="5" y1="5" x2="19" y2="19"/><line x1="19" y1="5" x2="5" y2="19"/><line x1="2" y1="12" x2="9" y2="12" stroke-dasharray="2 2"/><line x1="15" y1="12" x2="22" y2="12" stroke-dasharray="2 2"/></svg>
+                </button>
+                <button class="tool-btn" data-tool="crop" title="Recortar imagen (C)">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M6 2v16h16"/><path d="M2 6h16v16"/></svg>
+                </button>
+                <button id="mobile-palette-toggle" class="tool-btn mobile-palette-toggle" title="Colores">
+                    <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/><circle cx="9" cy="9" r="1.5" fill="currentColor"/><circle cx="15" cy="9" r="1.5" fill="currentColor"/><circle cx="7.5" cy="13" r="1.5" fill="currentColor"/><circle cx="12" cy="15" r="1.5" fill="currentColor"/></svg>
+                </button>
+            </div>
+
+            <!-- Properties Panel -->
+            <div id="props-panel" class="hidden">
+                <div class="props-title">PROPIEDADES</div>
+                <div class="props-row props-size-row">
+                    <div class="props-field">
+                        <label>AN</label>
+                        <input type="number" id="prop-w" step="any" min="0.1">
+                    </div>
+                    <button id="lock-aspect" class="lock-btn active" title="Bloquear proporci&oacute;n">
+                        <svg class="icon-locked" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        <svg class="icon-unlocked" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/></svg>
+                    </button>
+                    <div class="props-field">
+                        <label>AL</label>
+                        <input type="number" id="prop-h" step="any" min="0.1">
+                    </div>
+                </div>
+                <div class="props-sep"></div>
+                <div class="props-row">
+                    <div class="props-field">
+                        <label>ROT&deg;</label>
+                        <input type="number" id="prop-rotation" step="1" value="0">
+                    </div>
+                </div>
+                <div class="props-sep"></div>
+                <div class="props-row" style="gap:6px;">
+                    <button id="flip-h-btn" class="flip-btn" title="Reflejar horizontalmente">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v18"/><polyline points="16 7 20 12 16 17"/><polyline points="8 7 4 12 8 17"/></svg>
+                    </button>
+                    <button id="flip-v-btn" class="flip-btn" title="Reflejar verticalmente">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h18"/><polyline points="7 8 12 4 17 8"/><polyline points="7 16 12 20 17 16"/></svg>
+                    </button>
+                </div>
+                <div class="props-unit" id="props-unit-label">px</div>
+                <input type="hidden" id="prop-x" value="0">
+                <input type="hidden" id="prop-y" value="0">
+            </div>
+
+            <!-- SVG Canvas -->
+            <svg id="canvas" xmlns="http://www.w3.org/2000/svg">
+                <rect id="page-shadow-1" fill="#3d2e5c" opacity="0.06" rx="4"/>
+                <rect id="page-shadow-2" fill="#3d2e5c" opacity="0.04" rx="6"/>
+                <rect id="page" fill="#f7f7f5" rx="2"/>
+                <g id="objects-layer"></g>
+                <g id="selection-layer"></g>
+                <g id="snap-layer"></g>
+                <g id="preview-layer"></g>
+            </svg>
+            </div><!-- /canvas-wrapper -->
+        </div>
+
+        <!-- Color Palette -->
+        <div id="color-palette">
+            <div class="palette-special">
+                <div class="palette-color no-color" data-color="none" title="Sin color">
+                    <svg viewBox="0 0 14 14" width="10" height="10"><line x1="2" y1="2" x2="12" y2="12" stroke="#c44" stroke-width="2" stroke-linecap="round"/></svg>
+                </div>
+            </div>
+            <div class="palette-divider"></div>
+            <div id="palette-colors"></div>
+        </div>
+
+        <!-- Status Bar -->
+        <div id="statusbar">
+            <span id="status-tool">Seleccionar</span>
+            <span class="status-dot"></span>
+            <span id="status-page"></span>
+            <span class="status-dot"></span>
+            <span id="status-zoom">100%</span>
+            <span class="status-spacer"></span>
+            <span id="status-coords">X: 0  Y: 0</span>
+        </div>
+    </div>
+
+    <!-- Text Input Overlay -->
+    <textarea id="text-input-overlay" class="text-input-overlay hidden" rows="1" spellcheck="false"></textarea>
+
+    <!-- PowerClip Floating Menu -->
+    <div id="powerclip-menu" class="powerclip-menu hidden">
+        <button class="pc-btn" data-pc="edit" title="Editar contenido">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4l5 5-9 9H2v-5z"/></svg>
+            Editar
+        </button>
+        <button class="pc-btn" data-pc="extract" title="Sacar contenido">
+            <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10 3v10M6 9l4-4 4 4"/><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/></svg>
+            Sacar
+        </button>
+    </div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="context-menu hidden">
+        <div class="ctx-option" data-ctx="make-powerclip">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><rect x="5" y="5" width="10" height="10" rx="1" stroke-dasharray="2 1"/></svg>
+            Crear PowerClip
+        </div>
+        <div class="ctx-option" data-ctx="add-to-powerclip">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><path d="M10 6v8M6 10h8"/></svg>
+            Meter en PowerClip...
+        </div>
+        <div class="ctx-option" data-ctx="convert-to-curves">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16C8 2 12 18 16 4"/><circle cx="4" cy="16" r="1.5"/><circle cx="16" cy="4" r="1.5"/></svg>
+            Convertir a curvas
+        </div>
+        <div class="ctx-option" data-ctx="bg-removal" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h16v12H2z"/><path d="M6 10a4 4 0 1 1 8 0 4 4 0 0 1-8 0z" stroke-dasharray="2 1.5"/><path d="M10 6v-2M10 16v-2M6 10H4M16 10h-2"/></svg>
+            Quitar fondo
+        </div>
+        <div class="ctx-option" data-ctx="convert-to-bitmap" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2"/><path d="M2 13l4-4 3 3 4-5 5 6"/><circle cx="7" cy="7" r="1.5"/></svg>
+            Convertir a mapa de bits
+        </div>
+        <div class="ctx-option" data-ctx="invert-colors" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="10" cy="10" r="8"/><path d="M10 2a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+            Invertir colores
+        </div>
+        <div class="ctx-option" data-ctx="vectorize-image" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16C8 2 12 18 16 4"/><rect x="2" y="2" width="16" height="16" rx="2" stroke-dasharray="2 1.5"/></svg>
+            Vectorizar imagen
+        </div>
+        <div class="ctx-option" data-ctx="crop-image" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M5 2v13h13"/><path d="M2 5h13v13"/></svg>
+            Recortar imagen
+        </div>
+        <div class="ctx-option" data-ctx="toggle-ref-area" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2" stroke-dasharray="3 2"/><path d="M5 13h6M5 10h10M5 7h8" opacity="0.4"/></svg>
+            &Aacute;rea de referencia
+        </div>
+        <div class="ctx-option" data-ctx="add-to-ref-area" style="display:none">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="2" width="16" height="16" rx="2" stroke-dasharray="3 2"/><path d="M10 6v8M6 10h8"/></svg>
+            Meter en &aacute;rea de referencia
+        </div>
+        <div class="ctx-separator"></div>
+        <div class="ctx-option" data-ctx="bring-to-front">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="9" height="9" rx="1" fill="currentColor" opacity="0.15"/><rect x="8" y="8" width="9" height="9" rx="1"/></svg>
+            Enviar al frente <span style="opacity:.5;margin-left:auto">Ctrl+Inicio</span>
+        </div>
+        <div class="ctx-option" data-ctx="send-to-back">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="8" y="8" width="9" height="9" rx="1" fill="currentColor" opacity="0.15"/><rect x="3" y="3" width="9" height="9" rx="1"/></svg>
+            Enviar al fondo <span style="opacity:.5;margin-left:auto">Ctrl+Fin</span>
+        </div>
+        <div class="ctx-separator"></div>
+        <div class="ctx-option" data-ctx="delete">
+            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 5h12M7 5V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1M9 8v6M11 8v6"/><path d="M5 5l1 11a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1l1-11"/></svg>
+            Eliminar
+        </div>
+    </div>
+
+    <!-- Page Size Modal -->
+    <div id="page-size-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Tama&ntilde;o de p&aacute;gina</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Preset</label>
+                    <select id="page-preset">
+                        <option value="custom">Personalizado</option>
+                        <option value="a4-portrait">A4 Vertical (210 &times; 297 mm)</option>
+                        <option value="a4-landscape">A4 Horizontal (297 &times; 210 mm)</option>
+                        <option value="a3-portrait">A3 Vertical (297 &times; 420 mm)</option>
+                        <option value="a3-landscape">A3 Horizontal (420 &times; 297 mm)</option>
+                        <option value="letter-portrait">Carta Vertical (216 &times; 279 mm)</option>
+                        <option value="letter-landscape">Carta Horizontal (279 &times; 216 mm)</option>
+                        <option value="1920x1080">Full HD (1920 &times; 1080)</option>
+                        <option value="1080x1080">Instagram (1080 &times; 1080)</option>
+                        <option value="800x600">800 &times; 600</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Unidad</label>
+                    <select id="page-unit-select">
+                        <option value="px">px</option>
+                        <option value="mm">mm</option>
+                        <option value="cm">cm</option>
+                        <option value="in">in</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label id="page-width-label">Ancho (px)</label>
+                        <input type="number" id="page-width-input" value="800" min="1" step="any">
+                    </div>
+                    <div class="form-group">
+                        <label id="page-height-label">Alto (px)</label>
+                        <input type="number" id="page-height-input" value="600" min="1" step="any">
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="apply">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import Names Modal -->
+    <div id="import-names-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Importar nombres</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Escribe un nombre por l&iacute;nea:</label>
+                    <textarea id="names-input" rows="10" style="width:100%;font-family:inherit;font-size:14px;resize:vertical;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;background:var(--surface);color:var(--text);" placeholder="Juan P&eacute;rez&#10;Mar&iacute;a Garc&iacute;a&#10;Carlos L&oacute;pez"></textarea>
+                </div>
+                <p style="font-size:12px;color:var(--text-muted);margin:8px 0 0;">Se usar&aacute; el rect&aacute;ngulo del dise&ntilde;o como plantilla. Cada nombre se escalar&aacute; para llenar el rect&aacute;ngulo.</p>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="import">Generar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- BMP Laser Converter Modal -->
+    <div id="bmp-converter-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content bmp-modal-content">
+            <div class="modal-header">
+                <h3>Convertir a BMP l&aacute;ser</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body bmp-modal-body">
+                <!-- Image source -->
+                <div class="bmp-source-row">
+                    <label class="btn btn-ghost bmp-upload-btn" id="bmp-upload-label">
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 7l4-4 4 4"/></svg>
+                        Subir imagen
+                        <input type="file" id="bmp-file-input" accept="image/*" style="display:none">
+                    </label>
+                    <button class="btn btn-ghost bmp-use-selected-btn" id="bmp-use-selected" disabled>
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 10l2 2 4-4"/></svg>
+                        Usar imagen seleccionada
+                    </button>
+                </div>
+
+                <!-- Preview toolbar -->
+                <div class="bmp-preview-toolbar">
+                    <div class="bmp-view-toggle">
+                        <button class="bmp-view-btn active" id="bmp-view-processed" title="Procesado">Procesado</button>
+                        <button class="bmp-view-btn" id="bmp-view-original" title="Original">Original</button>
+                    </div>
+                    <div class="bmp-zoom-row">
+                        <button class="btn btn-ghost bmp-zoom-btn" id="bmp-zoom-out" title="Alejar">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/><path d="M6 9h6"/></svg>
+                        </button>
+                        <span class="bmp-zoom-value" id="bmp-zoom-val">Ajustar</span>
+                        <button class="btn btn-ghost bmp-zoom-btn" id="bmp-zoom-in" title="Acercar">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="6"/><path d="M14 14l4 4"/><path d="M6 9h6M9 6v6"/></svg>
+                        </button>
+                        <button class="btn btn-ghost bmp-zoom-btn" id="bmp-zoom-fit" title="Ajustar a ventana">
+                            <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 7V4a1 1 0 011-1h3M13 3h3a1 1 0 011 1v3M17 13v3a1 1 0 01-1 1h-3M7 17H4a1 1 0 01-1-1v-3"/></svg>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Single preview area -->
+                <div class="bmp-preview-single" id="bmp-preview-single">
+                    <div class="bmp-preview-container" id="bmp-orig-container" style="display:none">
+                        <canvas id="bmp-preview-original"></canvas>
+                    </div>
+                    <div class="bmp-preview-container" id="bmp-proc-container">
+                        <canvas id="bmp-preview-processed"></canvas>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="bmp-controls">
+                    <div class="bmp-controls-row">
+                        <div class="form-group bmp-control-half">
+                            <label>Algoritmo</label>
+                            <select id="bmp-algorithm">
+                                <option value="threshold">Umbral</option>
+                                <option value="floyd-steinberg" selected>Floyd-Steinberg</option>
+                                <option value="atkinson">Atkinson</option>
+                                <option value="stucki">Stucki</option>
+                                <option value="jarvis">Jarvis-Judice-Ninke</option>
+                                <option value="bayer4">Bayer 4&times;4</option>
+                                <option value="bayer8">Bayer 8&times;8</option>
+                            </select>
+                        </div>
+                        <div class="form-group bmp-control-quarter">
+                            <label>DPI</label>
+                            <input type="number" id="bmp-dpi" value="300" min="72" max="2400" step="1">
+                        </div>
+                        <div class="form-group bmp-control-quarter bmp-invert-group">
+                            <label>Invertir</label>
+                            <label class="bmp-checkbox-wrap">
+                                <input type="checkbox" id="bmp-invert">
+                                <span class="bmp-checkbox-visual"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="bmp-sliders">
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Brillo</label>
+                                <span class="bmp-slider-value" id="bmp-brightness-val">0</span>
+                            </div>
+                            <input type="range" id="bmp-brightness" min="-100" max="100" value="0">
+                        </div>
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Contraste</label>
+                                <span class="bmp-slider-value" id="bmp-contrast-val">0</span>
+                            </div>
+                            <input type="range" id="bmp-contrast" min="-100" max="100" value="0">
+                        </div>
+                        <div class="bmp-slider-group">
+                            <div class="bmp-slider-header">
+                                <label>Gamma</label>
+                                <span class="bmp-slider-value" id="bmp-gamma-val">1.0</span>
+                            </div>
+                            <input type="range" id="bmp-gamma" min="0.1" max="3.0" value="1.0" step="0.1">
+                        </div>
+                        <div class="bmp-slider-group" id="bmp-threshold-group">
+                            <div class="bmp-slider-header">
+                                <label>Umbral</label>
+                                <span class="bmp-slider-value" id="bmp-threshold-val">128</span>
+                            </div>
+                            <input type="range" id="bmp-threshold" min="0" max="255" value="128">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cerrar</button>
+                <button class="btn btn-primary" id="bmp-apply-editor-btn" disabled style="display:none">
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10l4 4 8-8"/></svg>
+                    Aplicar al editor
+                </button>
+                <button class="btn btn-primary" id="bmp-download-btn" disabled>
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 9l4 4 4-4"/></svg>
+                    Descargar BMP
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Background Removal Modal -->
+    <div id="bg-removal-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content bg-modal-content">
+            <div class="modal-header">
+                <h3>Quitar fondo</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body bg-modal-body">
+                <!-- Image source -->
+                <div class="bg-source-row">
+                    <label class="btn btn-ghost bg-upload-btn" id="bg-upload-label">
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 7l4-4 4 4"/></svg>
+                        Subir imagen
+                        <input type="file" id="bg-file-input" accept="image/*" style="display:none">
+                    </label>
+                    <button class="btn btn-ghost bg-use-selected-btn" id="bg-use-selected" disabled>
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 10l2 2 4-4"/></svg>
+                        Usar imagen seleccionada
+                    </button>
+                </div>
+
+                <!-- Preview toolbar -->
+                <div class="bg-preview-toolbar">
+                    <div class="bg-view-toggle">
+                        <button class="bg-view-btn active" id="bg-view-result" title="Sin fondo">Sin fondo</button>
+                        <button class="bg-view-btn" id="bg-view-original" title="Original">Original</button>
+                    </div>
+                </div>
+
+                <!-- Single preview area -->
+                <div class="bg-preview-single" id="bg-preview-single">
+                    <div class="bg-preview-container bg-checkerboard" id="bg-result-container">
+                        <img id="bg-preview-result" class="bg-preview-img" style="display:none" alt="Resultado">
+                        <div class="bg-placeholder" id="bg-placeholder">
+                            <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><rect x="6" y="6" width="36" height="36" rx="4"/><path d="M6 34l10-10 8 8 6-6 12 12"/><circle cx="18" cy="18" r="4"/></svg>
+                            <span>Sube o selecciona una imagen para quitar el fondo</span>
+                        </div>
+                    </div>
+                    <div class="bg-preview-container" id="bg-orig-container" style="display:none">
+                        <img id="bg-preview-original" class="bg-preview-img" style="display:none" alt="Original">
+                    </div>
+                </div>
+
+                <!-- Progress -->
+                <div class="bg-progress-section" id="bg-progress-section" style="display:none">
+                    <div class="bg-progress-track">
+                        <div class="bg-progress-bar" id="bg-progress-bar"></div>
+                    </div>
+                    <div class="bg-status" id="bg-status">Preparando...</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cerrar</button>
+                <button class="btn btn-primary" id="bg-apply-btn" disabled>
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 10l2 2 4-4"/></svg>
+                    Aplicar al canvas
+                </button>
+                <button class="btn btn-primary" id="bg-download-btn" disabled>
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 9l4 4 4-4"/></svg>
+                    Descargar PNG
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vectorize Modal -->
+    <div id="vectorize-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content vect-modal-content">
+            <div class="modal-header">
+                <h3>Vectorizar imagen</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body vect-modal-body">
+                <div class="vect-source-row" id="vect-source-row">
+                    <label class="btn btn-ghost">
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 13v3a1 1 0 001 1h12a1 1 0 001-1v-3"/><path d="M10 3v10M6 7l4-4 4 4"/></svg>
+                        Subir imagen
+                        <input type="file" id="vect-file-input" accept="image/*" style="display:none">
+                    </label>
+                    <button class="btn btn-ghost" id="vect-use-selected" disabled>
+                        <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="14" height="14" rx="2"/><path d="M7 10l2 2 4-4"/></svg>
+                        Usar imagen seleccionada
+                    </button>
+                </div>
+                <div class="vect-mode-row">
+                    <button class="vect-mode-btn active" data-mode="lineart">Arte lineal</button>
+                    <button class="vect-mode-btn" data-mode="detailed">Detallado</button>
+                    <button class="vect-mode-btn" data-mode="color">Color</button>
+                </div>
+                <div class="vect-preview-toolbar">
+                    <div class="vect-view-toggle">
+                        <button class="vect-view-btn active" id="vect-view-result">Vectorizado</button>
+                        <button class="vect-view-btn" id="vect-view-original">Original</button>
+                    </div>
+                    <div class="vect-info-row" id="vect-info-row"></div>
+                </div>
+                <div class="vect-preview-area" id="vect-preview-area">
+                    <div class="vect-result-container" id="vect-result-container">
+                        <div class="vect-placeholder" id="vect-placeholder">
+                            <svg viewBox="0 0 48 48" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" opacity="0.3"><path d="M8 40C16 4 24 36 32 8"/><rect x="6" y="6" width="36" height="36" rx="4" stroke-dasharray="3 2"/></svg>
+                            <span>Sube o selecciona una imagen para vectorizar</span>
+                        </div>
+                    </div>
+                    <div class="vect-orig-container" id="vect-orig-container" style="display:none"></div>
+                </div>
+                <div class="vect-controls">
+                    <div class="vect-sliders">
+                        <div class="vect-slider-group" id="vect-threshold-group">
+                            <label>Umbral <span id="vect-threshold-val">128</span></label>
+                            <input type="range" id="vect-threshold" min="0" max="255" value="128">
+                        </div>
+                        <div class="vect-slider-group" id="vect-colors-group" style="display:none">
+                            <label>Colores <span id="vect-colors-val">8</span></label>
+                            <input type="range" id="vect-colors" min="2" max="64" value="8">
+                        </div>
+                        <div class="vect-slider-group">
+                            <label>Detalle <span id="vect-detail-val">1</span></label>
+                            <input type="range" id="vect-detail" min="0.5" max="10" step="0.5" value="1">
+                        </div>
+                        <div class="vect-slider-group">
+                            <label>Suavizado <span id="vect-smooth-val">1</span></label>
+                            <input type="range" id="vect-smooth" min="0.5" max="10" step="0.5" value="1">
+                        </div>
+                        <div class="vect-slider-group">
+                            <label>Despeckle <span id="vect-despeckle-val">8</span></label>
+                            <input type="range" id="vect-despeckle" min="0" max="50" value="8">
+                        </div>
+                        <div class="vect-slider-group">
+                            <label>Desenfoque <span id="vect-blur-val">0</span></label>
+                            <input type="range" id="vect-blur" min="0" max="5" value="0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <label class="vect-keep-original"><input type="checkbox" id="vect-keep-original"> Mantener imagen original</label>
+                <button class="btn btn-ghost" data-action="cancel">Cerrar</button>
+                <button class="btn btn-primary" id="vect-apply-btn" disabled>
+                    <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 16C8 2 12 18 16 4"/></svg>
+                    Aplicar al canvas
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Save File Modal -->
+    <div id="save-file-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Guardar archivo</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Nombre del archivo</label>
+                    <input type="text" id="save-file-name" placeholder="Mi dise&ntilde;o" autocomplete="off">
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="save">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Open File Modal -->
+    <div id="open-file-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content open-files-modal-content">
+            <div class="modal-header">
+                <h3>Abrir archivo</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="open-file-list" class="file-list">
+                    <div class="file-list-loading">Cargando archivos...</div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Instructions Modal -->
+    <div id="ai-instructions-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Instrucciones de IA</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Instrucciones para el asistente de IA del editor</label>
+                    <textarea id="ai-instructions-text" rows="8" placeholder="Ej: Eres un asistente de dise&ntilde;o gr&aacute;fico. Ayuda al usuario con el editor..."></textarea>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="save">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Grid Fill Modal -->
+    <div id="grid-fill-modal" class="modal hidden">
+        <div class="modal-overlay"></div>
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Llenar cuadrícula</h3>
+                <button class="modal-close" data-action="cancel">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Separación entre elementos</label>
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <input type="number" id="grid-gap" step="any" min="0" value="3" style="width:100px;">
+                        <span id="grid-gap-unit">mm</span>
+                    </div>
+                </div>
+                <div id="grid-preview" style="color:var(--text-secondary);font-size:13px;margin-top:4px;"></div>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-ghost" data-action="cancel">Cancelar</button>
+                <button class="btn btn-primary" data-action="apply">Aplicar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI Voice Overlay -->
+    <div id="ai-voice-overlay" class="ai-voice-overlay hidden">
+        <div class="ai-voice-content">
+            <canvas id="ai-voice-canvas" width="220" height="220"></canvas>
+            <div id="ai-voice-status" class="ai-voice-status">Escuchando...</div>
+            <button id="ai-voice-stop" class="ai-voice-stop" title="Enviar">
+                <svg viewBox="0 0 24 24" width="28" height="28" fill="currentColor" stroke="none"><path d="M5 3l14 9-14 9V3z"/></svg>
+            </button>
+            <div class="ai-voice-hint">Toca para enviar</div>
+        </div>
+    </div>
+
+    <!-- AI Chat Bubble -->
+    <button id="ai-chat-bubble" class="ai-chat-bubble" title="Andrea">
+        <div class="ai-bubble-icon">
+            <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/>
+            </svg>
+        </div>
+        <div class="ai-bubble-pulse"></div>
+    </button>
+
+    <!-- AI Chat Panel -->
+    <div id="ai-chat-panel" class="ai-chat-panel hidden">
+        <div class="ai-chat-header">
+            <div class="ai-chat-header-left">
+                <div class="ai-avatar">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L14.5 9.5 22 12 14.5 14.5 12 22 9.5 14.5 2 12 9.5 9.5z"/></svg>
+                </div>
+                <div class="ai-chat-header-info">
+                    <span class="ai-chat-title">Andrea</span>
+                    <span class="ai-chat-status" id="ai-chat-status">en linea</span>
+                </div>
+            </div>
+            <button id="ai-chat-close" class="ai-chat-close">&times;</button>
+        </div>
+        <div id="ai-chat-messages" class="ai-chat-messages"></div>
+        <div class="ai-chat-input-area">
+            <textarea id="ai-chat-input" placeholder="Escribe un mensaje..." rows="1"></textarea>
+            <button id="ai-mic-btn" class="ai-mic-btn" title="Hablar">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3zm-1-9c0-.55.45-1 1-1s1 .45 1 1v6c0 .55-.45 1-1 1s-1-.45-1-1V5zm6 6c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/></svg>
+            </button>
+            <button id="ai-chat-send" class="ai-chat-send-btn">
+                <svg viewBox="0 0 20 20" width="16" height="16" fill="currentColor"><path d="M2.5 17.5L18.5 10 2.5 2.5v6l10 1.5-10 1.5z"/></svg>
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getFirestore, collection, doc, addDoc, getDocs, updateDoc, deleteDoc, serverTimestamp, query, orderBy }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getStorage, ref, uploadBytes, getDownloadURL, deleteObject }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-storage.js";
+        import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
+            from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+            authDomain: "pedidos-con-gemini.firebaseapp.com",
+            projectId: "pedidos-con-gemini",
+            storageBucket: "pedidos-con-gemini.firebasestorage.app",
+            messagingSenderId: "300825194175",
+            appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+        };
+
+        const app = initializeApp(firebaseConfig, 'editor');
+        const db = getFirestore(app);
+        const storage = getStorage(app);
+        const auth = getAuth(app);
+
+        // --- AUTH: Login form ---
+        const loginForm = document.getElementById('editor-login-form');
+        const loginError = document.getElementById('editor-login-error');
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loginError.textContent = '';
+            const email = document.getElementById('editor-login-email').value;
+            const password = document.getElementById('editor-login-password').value;
+            const btn = document.getElementById('editor-login-btn');
+            btn.disabled = true; btn.textContent = 'Ingresando...';
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+            } catch (err) {
+                loginError.textContent = err.code === 'auth/invalid-email'
+                    ? 'El formato del correo es incorrecto.'
+                    : 'Correo o contrase\u00f1a incorrectos.';
+                btn.disabled = false; btn.textContent = 'Ingresar';
+            }
+        });
+
+        // --- AUTH: State listener ---
+        let _editorInitialized = false;
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                document.getElementById('editor-login').style.display = 'none';
+                document.getElementById('app').style.display = '';
+                // Initialize editor only after app is visible (first login)
+                if (!_editorInitialized) {
+                    _editorInitialized = true;
+                    requestAnimationFrame(() => { init(); preloadFonts(); });
+                }
+            } else {
+                document.getElementById('editor-login').style.display = '';
+                document.getElementById('app').style.display = 'none';
+            }
+        });
+
+        window.editorSignOut = () => signOut(auth);
+
+        // Upload a base64 data URL to Firebase Storage, returns download URL
+        window.fbUploadImage = async (dataUrl, path) => {
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            const storageRef = ref(storage, path);
+            await uploadBytes(storageRef, blob);
+            return await getDownloadURL(storageRef);
+        };
+
+        // Delete an image from Firebase Storage
+        window.fbDeleteImage = async (path) => {
+            try { await deleteObject(ref(storage, path)); } catch(e) {}
+        };
+
+        window.firebaseReady = true;
+
+        window.fbSaveNewFile = async (name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            const docRef = await addDoc(collection(db, "editor_files"), data);
+            return docRef.id;
+        };
+
+        window.fbUpdateFile = async (docId, name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            await updateDoc(doc(db, "editor_files", docId), data);
+        };
+
+        window.fbListFiles = async () => {
+            const q = query(collection(db, "editor_files"), orderBy("updatedAt", "desc"));
+            const snap = await getDocs(q);
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        };
+
+        window.fbDeleteFile = async (docId) => {
+            await deleteDoc(doc(db, "editor_files", docId));
+        };
+
+        // Templates
+        window.fbSaveTemplate = async (name, stateJson, pageWidth, pageHeight, thumbnail) => {
+            const data = { name, stateJson, pageWidth, pageHeight, createdAt: serverTimestamp(), updatedAt: serverTimestamp() };
+            if (thumbnail) data.thumbnail = thumbnail;
+            const docRef = await addDoc(collection(db, "editor_templates"), data);
+            return docRef.id;
+        };
+        window.fbListTemplates = async () => {
+            const q = query(collection(db, "editor_templates"), orderBy("updatedAt", "desc"));
+            const snap = await getDocs(q);
+            return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        };
+        window.fbUpdateTemplate = async (docId, name) => {
+            await updateDoc(doc(db, "editor_templates", docId), { name, updatedAt: serverTimestamp() });
+        };
+
+        // AI Instructions (stored in crm_settings/editor_bot)
+        const { getDoc, setDoc } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js");
+        window.fbGetAIInstructions = async () => {
+            const snap = await getDoc(doc(db, "crm_settings", "editor_bot"));
+            return snap.exists() ? snap.data().instructions || '' : '';
+        };
+        window.fbSaveAIInstructions = async (instructions) => {
+            await setDoc(doc(db, "crm_settings", "editor_bot"), { instructions }, { merge: true });
+        };
+        window.fbDeleteTemplate = async (docId) => {
+            await deleteDoc(doc(db, "editor_templates", docId));
+        };
+    </script>
+</body>
+</html>

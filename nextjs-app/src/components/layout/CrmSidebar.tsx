@@ -17,22 +17,17 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
     items: [
       { href: "/crm/chats", icon: "chat", label: "Chats" },
       { href: "/crm/clientes", icon: "people", label: "Clientes" },
-      { href: "/crm/pipeline", icon: "view_kanban", label: "Pipeline" },
     ],
   },
   {
     label: "Marketing",
     items: [
-      { href: "/crm/difusion", icon: "campaign", label: "Difusion Masiva" },
-      { href: "/crm/campanas", icon: "send", label: "Campanas" },
-      { href: "/crm/campana-imagen", icon: "image", label: "Campana Imagen" },
       { href: "/crm/mensajes-ads", icon: "chat_bubble", label: "Mensajes Ads" },
     ],
   },
   {
     label: "Gestion",
     items: [
-      { href: "/crm/contactos", icon: "contacts", label: "Contactos" },
       { href: "/crm/departamentos", icon: "corporate_fare", label: "Departamentos" },
       { href: "/crm/reglas-ads", icon: "alt_route", label: "Reglas de Ads" },
       { href: "/crm/etiquetas", icon: "label", label: "Etiquetas" },
@@ -40,11 +35,10 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "IA & Datos",
+    label: "IA",
     items: [
       { href: "/crm/entrenamiento-ia", icon: "school", label: "Entrenamiento IA" },
       { href: "/crm/simulador-ia", icon: "smart_toy", label: "Simulador IA" },
-      { href: "/crm/metricas", icon: "analytics", label: "Metricas" },
     ],
   },
   {

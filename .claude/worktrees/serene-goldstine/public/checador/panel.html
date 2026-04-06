@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Panel Administrativo | Checador Pro</title>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { align-items: flex-start; padding: 20px; }
+        .panel-container { width: 100%; max-width: 960px; margin: 0 auto; }
+        .panel-card {
+            background: var(--card-bg);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 30px;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+        }
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        .panel-header h2 { font-size: 1.5rem; }
+        .back-link {
+            color: var(--text-muted);
+            text-decoration: none;
+            font-size: 0.85rem;
+        }
+        .back-link:hover { color: var(--primary); }
+        .week-nav {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .week-nav button {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid var(--glass-border);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 10px;
+            cursor: pointer;
+            font-size: 0.85rem;
+        }
+        .week-nav button:hover { background: rgba(255,255,255,0.2); }
+        .week-nav button:disabled { opacity: 0.3; cursor: not-allowed; }
+        .week-nav span {
+            font-size: 0.9rem;
+            font-weight: 600;
+            min-width: 220px;
+            text-align: center;
+        }
+        .tab-content { height: auto; overflow: visible; }
+        .table-container { overflow-x: auto; }
+    </style>
+</head>
+<body>
+
+    <!-- PIN Login -->
+    <div id="pin-view" style="position:fixed; inset:0; z-index:9999; background:var(--bg-dark); display:flex; align-items:center; justify-content:center; padding:20px;">
+        <div class="card" style="max-width:400px; width:100%;">
+            <div class="logo"><img src="logo.png" alt="Dekoor House Logo"></div>
+            <h3 style="margin-bottom:15px; color:var(--primary);">Acceso Administrativo</h3>
+            <p style="font-size:0.8rem; margin-bottom:15px; color:var(--text-muted);">Ingresa el PIN de administrador</p>
+            <input type="password" id="admin-pin" placeholder="PIN" autocomplete="off" style="text-align:center; margin-bottom:20px;">
+            <div style="display:flex; gap:10px; justify-content:center;">
+                <button id="pin-submit" class="btn btn-in" style="padding:12px 30px;">Entrar</button>
+                <a href="/checador/" class="btn btn-out" style="padding:12px 30px; text-decoration:none; text-align:center;">Volver</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panel Content -->
+    <div id="panel-content" class="panel-container" style="display:none;">
+        <div class="panel-card">
+            <div class="panel-header">
+                <h2>Panel Administrativo</h2>
+                <a href="/checador/" class="back-link">&larr; Volver al Checador</a>
+            </div>
+
+            <div class="admin-tabs">
+                <button class="tab-btn active" data-tab="tab-records">Asistencia</button>
+                <button class="tab-btn" data-tab="tab-employees">Equipo</button>
+                <button class="tab-btn" data-tab="tab-resumen">Resumen</button>
+            </div>
+
+            <!-- Tab: Asistencia -->
+            <div id="tab-records" class="tab-content active">
+                <div class="admin-actions" style="justify-content:space-between; flex-wrap:wrap;">
+                    <div style="display:flex; gap:10px;">
+                        <button id="export-csv" class="btn-small">Descargar Excel (CSV)</button>
+                        <button id="clear-all-logs" class="btn-small btn-danger">Borrar Todo</button>
+                    </div>
+                    <button id="send-week-whatsapp" class="btn-small" style="background:linear-gradient(135deg,#25D366,#128C7E); color:white; border:none; display:flex; align-items:center; gap:5px;">
+                        📲 Enviar reporte semanal
+                    </button>
+                </div>
+
+                <div class="week-nav">
+                    <button id="prev-week">&laquo; Anterior</button>
+                    <span id="week-label">Cargando...</span>
+                    <button id="next-week">Siguiente &raquo;</button>
+                </div>
+
+                <div class="table-container">
+                    <table id="admin-table">
+                        <thead></thead>
+                        <tbody id="admin-logs-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab: Equipo -->
+            <div id="tab-employees" class="tab-content">
+                <div class="add-employee-form">
+                    <input type="text" id="new-emp-name" placeholder="Nombre completo">
+                    <input type="tel" id="new-emp-phone" placeholder="WhatsApp (ej: +526141234567)">
+                    <button id="add-employee-btn" class="btn-in" style="padding: 10px;">Añadir</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>WhatsApp</th>
+                                <th>PIN</th>
+                                <th>Vacaciones</th>
+                                <th>Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admin-employees-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Tab: Resumen -->
+            <div id="tab-resumen" class="tab-content">
+                <div class="admin-actions" style="align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+                    <div style="display:flex; gap:6px;">
+                        <button class="btn-small period-btn active" data-period="semanal">Semanal</button>
+                        <button class="btn-small period-btn" data-period="mensual">Mensual</button>
+                        <button class="btn-small period-btn" data-period="anual">Anual</button>
+                    </div>
+                    <button id="send-whatsapp-btn" class="btn-small" style="background:linear-gradient(135deg,#25D366,#128C7E); color:white; border:none; display:flex; align-items:center; gap:5px;">
+                        📲 Enviar por WhatsApp
+                    </button>
+                </div>
+                <span id="resumen-period-label" style="font-size:0.78rem; color:var(--text-muted); display:block; margin-bottom:8px;"></span>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Dias</th>
+                                <th>Total Horas</th>
+                                <th>Pago Horas</th>
+                                <th>Ajustes</th>
+                                <th>Pago Final</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resumen-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal de Edición -->
+    <div id="edit-log-modal" class="admin-overlay">
+        <div class="admin-modal" style="max-width:480px; height:auto; max-height:85vh;">
+            <div class="admin-header">
+                <h2 id="edit-log-title">Editar Registros</h2>
+                <button id="close-edit-log" class="close-btn">&times;</button>
+            </div>
+            <div id="edit-log-entries" style="overflow-y:auto; flex:1; padding-right:4px;"></div>
+            <div style="display:flex; gap:10px; margin-top:16px; padding-top:16px; border-top:1px solid var(--glass-border);">
+                <button id="add-log-in" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:10px;">+ ENTRADA</button>
+                <button id="add-log-out" class="btn-small" style="flex:1; padding:10px; background:linear-gradient(135deg,#f59e0b,#d97706); color:white; border:none; border-radius:10px;">+ SALIDA</button>
+            </div>
+            <button id="save-edit-log" class="btn-in" style="width:100%; margin-top:10px; padding:14px; font-size:1rem;">Guardar Cambios</button>
+        </div>
+    </div>
+
+    <!-- Modal Bono/Descuento -->
+    <div id="adj-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#1e293b; width:92%; max-width:400px; border-radius:24px; padding:28px; animation:zoomIn 0.3s ease-out;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 id="adj-modal-title" style="font-size:1.1rem;">Agregar ajuste</h2>
+                <button id="adj-modal-close" class="close-btn">&times;</button>
+            </div>
+            <div style="display:flex; gap:8px; margin-bottom:16px;">
+                <button class="adj-type-btn btn-small active" data-type="bono" style="flex:1; padding:10px; font-size:0.85rem; text-align:center; background:linear-gradient(135deg,#10b981,#059669); color:white; border:none; border-radius:10px; cursor:pointer;">+ Bono</button>
+                <button class="adj-type-btn btn-small" data-type="descuento" style="flex:1; padding:10px; font-size:0.85rem; text-align:center; background:rgba(255,255,255,0.1); color:white; border:1px solid var(--glass-border); border-radius:10px; cursor:pointer;">- Descuento</button>
+            </div>
+            <div class="input-group" style="margin-bottom:14px;">
+                <label style="font-size:0.8rem;">Monto ($)</label>
+                <input type="number" id="adj-amount" placeholder="0" min="0" step="1" style="font-size:1.2rem; text-align:center;">
+            </div>
+            <div class="input-group" style="margin-bottom:18px;">
+                <label style="font-size:0.8rem;">Concepto</label>
+                <input type="text" id="adj-concept" placeholder="Ej: Bono puntualidad, Falta, Prestamo..." style="font-size:0.9rem;">
+            </div>
+            <!-- Ajustes existentes -->
+            <div id="adj-existing" style="margin-bottom:14px;"></div>
+            <button id="adj-save-btn" class="btn-in" style="width:100%; padding:14px; font-size:1rem;">Guardar</button>
+        </div>
+    </div>
+
+    <!-- Modal WhatsApp -->
+    <div id="wa-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#1e293b; width:92%; max-width:420px; border-radius:24px; padding:28px; animation:zoomIn 0.3s ease-out; max-height:85vh; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+                <h2 style="font-size:1.2rem;">📲 Enviar reporte</h2>
+                <button id="wa-modal-close" class="close-btn">&times;</button>
+            </div>
+            <p id="wa-modal-week" style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;"></p>
+            <label style="display:flex; align-items:center; gap:10px; padding:10px 12px; background:rgba(255,255,255,0.06); border-radius:10px; cursor:pointer; margin-bottom:10px; font-weight:600; font-size:0.9rem;">
+                <input type="checkbox" id="wa-select-all" style="width:18px; height:18px; accent-color:var(--primary); cursor:pointer;">
+                Seleccionar todos
+            </label>
+            <div id="wa-checklist" style="overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:6px;"></div>
+            <button id="wa-send-btn" class="btn-in" style="width:100%; margin-top:16px; padding:14px; font-size:1rem;">Enviar</button>
+        </div>
+    </div>
+
+    <!-- Modal Vacaciones -->
+    <div id="vac-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:2000;">
+        <div style="background:#1e293b; width:92%; max-width:400px; border-radius:24px; padding:28px; animation:zoomIn 0.3s ease-out;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                <h2 id="vac-modal-title" style="font-size:1.1rem;">🏖 Vacaciones</h2>
+                <button id="vac-modal-close" class="close-btn">&times;</button>
+            </div>
+            <div class="input-group" style="margin-bottom:14px;">
+                <label style="font-size:0.8rem;">Fecha inicio</label>
+                <input type="date" id="vac-desde" style="font-size:1rem;">
+            </div>
+            <div class="input-group" style="margin-bottom:18px;">
+                <label style="font-size:0.8rem;">Fecha fin</label>
+                <input type="date" id="vac-hasta" style="font-size:1rem;">
+            </div>
+            <p style="font-size:0.75rem; color:var(--text-muted); margin-bottom:16px;">Horario vacaciones: L-V 9am-3pm (6h), Sáb 9am-1pm (4h) a $70/hr</p>
+            <div style="display:flex; gap:10px;">
+                <button id="vac-save-btn" class="btn-in" style="flex:1; padding:14px; font-size:1rem;">Guardar</button>
+                <button id="vac-remove-btn" class="btn-small btn-danger" style="padding:14px 20px; font-size:0.9rem; display:none;">Quitar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="notification" class="notification">OK</div>
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-functions.js"></script>
+    <script src="panel.js"></script>
+</body>
+</html>

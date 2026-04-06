@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-9LPWQEBBGG"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-9LPWQEBBGG');</script>
+
+    <title>Colección de Regalos Personalizados | Dekoor</title>
+    <meta name="description" content="Explora nuestra colección de regalos personalizados con grabado láser. Lámparas 3D, cuadros con foto, letreros y más. Envío a todo México.">
+    <meta name="keywords" content="colección regalos personalizados, lámparas 3D, cuadros con foto, grabado láser, Dekoor México">
+    <link rel="canonical" href="https://app.dekoormx.com/sitio/coleccion/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Colección de Regalos Personalizados | Dekoor">
+    <meta property="og:description" content="Explora nuestra colección de regalos personalizados con grabado láser.">
+    <meta property="og:image" content="https://app.dekoormx.com/jt-rastreo/logo.png">
+    <meta property="og:url" content="https://app.dekoormx.com/sitio/coleccion/">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="es_MX">
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon.png">
+    <meta name="theme-color" content="#1B4D5C">
+
+    <!-- Preload -->
+    <link rel="preload" href="/sitio/style.css" as="style">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .collection-hero {
+            padding: calc(var(--nav-height, 80px) + 2rem) 0 2rem;
+            text-align: center;
+        }
+        .collection-hero h1 {
+            font-size: clamp(1.8rem, 4vw, 2.8rem);
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.5rem;
+        }
+        .collection-hero p {
+            color: var(--text-medium);
+            font-size: 1.05rem;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        .collection-hero .collection-badge {
+            display: inline-block;
+            background: var(--primary-light);
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.8rem;
+            padding: 6px 16px;
+            border-radius: 100px;
+            margin-bottom: 1rem;
+            letter-spacing: 0.5px;
+        }
+
+        .products-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            padding: 2rem 0 4rem;
+        }
+
+        .product-card {
+            background: var(--white);
+            border: 1px solid var(--border);
+            border-radius: var(--radius-lg);
+            overflow: hidden;
+            transition: var(--transition);
+        }
+        .product-card:hover {
+            transform: translateY(-6px);
+            box-shadow: var(--shadow-lg);
+            border-color: var(--primary);
+        }
+
+        .product-card-img {
+            width: 100%;
+            aspect-ratio: 1;
+            overflow: hidden;
+            background: var(--cream-dark);
+        }
+        .product-card-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+        }
+        .product-card:hover .product-card-img img {
+            transform: scale(1.05);
+        }
+
+        .product-card-body {
+            padding: 1.25rem;
+        }
+        .product-card-name {
+            font-weight: 700;
+            font-size: 1rem;
+            color: var(--text-dark);
+            margin-bottom: 0.25rem;
+        }
+        .product-card-desc {
+            color: var(--text-medium);
+            font-size: 0.85rem;
+            line-height: 1.5;
+            margin-bottom: 1rem;
+        }
+        .product-card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .product-card-pricing {
+            margin-bottom: 1rem;
+        }
+        .price-row {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+        }
+        .price-original {
+            font-size: 1rem;
+            color: var(--text-medium);
+            text-decoration: line-through;
+            font-weight: 500;
+        }
+        .price-current {
+            font-weight: 800;
+            font-size: 1.4rem;
+            color: var(--primary);
+        }
+        .price-current small {
+            font-size: 0.75rem;
+            font-weight: 500;
+            color: var(--text-medium);
+        }
+        .price-shipping {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: #10b981;
+        }
+        .product-card-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            background: var(--primary);
+            color: var(--white);
+            padding: 10px 20px;
+            border-radius: 9999px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-decoration: none;
+            transition: var(--transition);
+            border: none;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .product-card-btn:hover {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+        }
+
+        .empty-products {
+            text-align: center;
+            padding: 4rem 2rem;
+            color: var(--text-medium);
+            grid-column: 1 / -1;
+        }
+        .empty-products i {
+            font-size: 3rem;
+            color: var(--border);
+            margin-bottom: 1rem;
+        }
+        .empty-products p {
+            font-size: 1.1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--teal);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+            transition: var(--transition);
+        }
+        .back-link:hover { color: var(--primary); }
+
+        /* Shipping options */
+        .checkout-shipping-options {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            margin-bottom: 1rem;
+        }
+        .shipping-option {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: border-color 0.2s;
+        }
+        .shipping-option:hover, .shipping-option.selected {
+            border-color: var(--primary);
+        }
+        .shipping-option input[type="radio"] {
+            accent-color: var(--primary);
+            width: 18px;
+            height: 18px;
+            margin: 0;
+            flex-shrink: 0;
+        }
+        .shipping-option-content {
+            flex: 1;
+        }
+        .shipping-option-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .shipping-name {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .shipping-price {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .shipping-price.free {
+            color: #10b981;
+        }
+        .shipping-time {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+        }
+        .checkout-total {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 800;
+            font-size: 1.15rem;
+            color: var(--text-dark);
+            padding: 1rem 0;
+            border-top: 2px solid var(--border);
+            margin-bottom: 1rem;
+        }
+        .checkout-total #totalAmount {
+            color: var(--primary);
+            font-size: 1.3rem;
+        }
+
+        @media (max-width: 768px) {
+            .products-grid { grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+        }
+        .product-card-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .product-card-btn.secondary {
+            background: transparent;
+            color: var(--primary);
+            border: 2px solid var(--primary);
+        }
+        .product-card-btn.secondary:hover {
+            background: var(--primary-light);
+        }
+
+        /* Checkout Modal */
+        .checkout-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .checkout-overlay.active { display: flex; }
+        .checkout-modal {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            max-width: 440px;
+            width: 100%;
+            padding: 2rem;
+            position: relative;
+            box-shadow: var(--shadow-lg);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .checkout-close {
+            position: absolute;
+            top: 12px;
+            right: 16px;
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-medium);
+            line-height: 1;
+        }
+        .checkout-modal h2 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.25rem;
+        }
+        .checkout-modal .checkout-subtitle {
+            color: var(--text-medium);
+            font-size: 0.9rem;
+            margin-bottom: 1.25rem;
+        }
+        .checkout-product {
+            display: flex;
+            gap: 12px;
+            background: var(--cream);
+            border-radius: var(--radius);
+            padding: 12px;
+            margin-bottom: 1.25rem;
+        }
+        .checkout-product img {
+            width: 60px;
+            height: 60px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        .checkout-product-info {
+            flex: 1;
+        }
+        .checkout-product-info .name {
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .checkout-product-info .price {
+            font-weight: 800;
+            color: var(--primary);
+            font-size: 1.1rem;
+        }
+        .checkout-field {
+            margin-bottom: 1rem;
+        }
+        .checkout-field label {
+            display: block;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            margin-bottom: 4px;
+        }
+        .checkout-field input {
+            width: 100%;
+            padding: 10px 14px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            font-size: 0.95rem;
+            font-family: inherit;
+            transition: border-color 0.2s;
+            box-sizing: border-box;
+        }
+        .checkout-field input:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+        .checkout-submit {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 1rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        .checkout-submit:hover { background: var(--primary-hover); }
+        .checkout-submit:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .checkout-methods {
+            display: flex;
+            justify-content: center;
+            gap: 1.5rem;
+            margin-top: 1rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .checkout-methods span {
+            font-size: 0.75rem;
+            color: var(--text-medium);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        @media (max-width: 480px) {
+            .products-grid { grid-template-columns: 1fr; max-width: 400px; margin: 0 auto; }
+            .product-card-footer { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+            .product-card-btn { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Banner -->
+<div class="ticker-banner">
+    <div class="ticker-track">
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">★</span>
+    </div>
+</div>
+
+<!-- Shared Navbar -->
+<nav class="navbar scrolled" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="logo-full">
+        </a>
+        <div class="nav-links">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link active">Colecciones</a>
+
+            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="/referencias/" class="nav-link">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito de compras"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link active"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<main>
+    <div class="container">
+        <div class="collection-hero">
+            <!-- Breadcrumb nav -->
+            <nav aria-label="Breadcrumb" style="margin-bottom:1rem;">
+                <ol style="list-style:none;display:flex;gap:6px;font-size:0.85rem;color:var(--text-medium);flex-wrap:wrap;">
+                    <li><a href="/sitio/" style="color:var(--teal);text-decoration:none;">Inicio</a></li>
+                    <li>/</li>
+                    <li><a href="/sitio/#colecciones" style="color:var(--teal);text-decoration:none;">Colecciones</a></li>
+                    <li>/</li>
+                    <li id="breadcrumbCurrent" style="color:var(--text-dark);font-weight:600;">Cargando...</li>
+                </ol>
+            </nav>
+            <a href="/sitio/#colecciones" class="back-link"><i class="fas fa-arrow-left"></i> Todas las colecciones</a>
+            <div class="collection-badge" id="collectionBadge">COLECCIÓN</div>
+            <h1 id="collectionTitle">Cargando...</h1>
+            <p id="collectionDesc"></p>
+        </div>
+
+        <!-- Buscador de productos -->
+        <div style="max-width:500px;margin:0 auto 1.5rem;">
+            <div style="position:relative;">
+                <input type="search" id="productSearch" placeholder="Buscar productos..." aria-label="Buscar productos"
+                    style="width:100%;padding:12px 14px 12px 42px;border:2px solid var(--border);border-radius:9999px;font-size:0.95rem;font-family:inherit;outline:none;transition:border-color 0.2s;background:var(--white);"
+                    onfocus="this.style.borderColor='var(--primary)'" onblur="this.style.borderColor='var(--border)'">
+                <i class="fas fa-search" style="position:absolute;left:16px;top:50%;transform:translateY(-50%);color:var(--text-medium);"></i>
+            </div>
+        </div>
+
+        <div class="products-grid" id="productsGrid">
+            <div class="empty-products">
+                <div class="spinner" style="margin:0 auto 1rem;width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--primary);border-radius:50%;animation:spin 0.8s linear infinite;"></div>
+                <p>Cargando productos...</p>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Checkout Modal -->
+<div class="checkout-overlay" id="checkoutOverlay">
+    <div class="checkout-modal">
+        <button class="checkout-close" id="checkoutClose">&times;</button>
+        <h2>Completa tu pedido</h2>
+        <p class="checkout-subtitle">Llena tus datos y paga de forma segura</p>
+        <div class="checkout-product" id="checkoutProduct"></div>
+        <form id="checkoutForm">
+            <div class="checkout-field">
+                <label for="ckName">Nombre completo *</label>
+                <input type="text" id="ckName" required placeholder="Tu nombre">
+            </div>
+            <div class="checkout-field">
+                <label for="ckPhone">WhatsApp (10 digitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+            </div>
+            <div class="checkout-field">
+                <label for="ckEmail">Email *</label>
+                <input type="email" id="ckEmail" required placeholder="tu@email.com">
+            </div>
+
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div class="checkout-field">
+                <label for="ckStreet">Calle y numero *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+            </div>
+            <div class="checkout-field">
+                <label for="ckColonia">Colonia *</label>
+                <input type="text" id="ckColonia" required placeholder="Centro">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div class="checkout-field">
+                    <label for="ckCity">Ciudad *</label>
+                    <input type="text" id="ckCity" required placeholder="Durango">
+                </div>
+                <div class="checkout-field">
+                    <label for="ckState">Estado *</label>
+                    <input type="text" id="ckState" required placeholder="Durango">
+                </div>
+            </div>
+            <div class="checkout-field">
+                <label for="ckZip">Codigo postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+            </div>
+
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div class="checkout-shipping-options">
+                <label class="shipping-option selected">
+                    <input type="radio" name="shipping" value="jt" checked>
+                    <div class="shipping-option-content">
+                        <div class="shipping-option-top">
+                            <span class="shipping-name">J&T Express</span>
+                            <span class="shipping-price free">Gratis</span>
+                        </div>
+                        <span class="shipping-time">5-7 dias habiles</span>
+                    </div>
+                </label>
+                <label class="shipping-option">
+                    <input type="radio" name="shipping" value="dhl">
+                    <div class="shipping-option-content">
+                        <div class="shipping-option-top">
+                            <span class="shipping-name">DHL Express</span>
+                            <span class="shipping-price">+$160 MXN</span>
+                        </div>
+                        <span class="shipping-time">2-3 dias habiles</span>
+                    </div>
+                </label>
+            </div>
+
+            <div class="checkout-total" id="checkoutTotal">
+                <span>Total:</span>
+                <span id="totalAmount">$650 MXN</span>
+            </div>
+
+            <button type="submit" class="checkout-submit" id="checkoutBtn">
+                <i class="fas fa-lock"></i> Continuar al pago
+            </button>
+        </form>
+        <div class="checkout-methods">
+            <span><i class="far fa-credit-card"></i> Tarjeta</span>
+            <span><i class="fas fa-store"></i> OXXO</span>
+            <span><i class="fas fa-university"></i> SPEI</span>
+        </div>
+    </div>
+</div>
+
+<!-- WhatsApp FAB -->
+<a href="https://wa.me/5216181333519?text=Hola%20Dekoor" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+</a>
+
+<script src="/sitio/cart.js"></script>
+<script src="/env-config.js"></script>
+<script>
+const WA = '5216181333519';
+const API = window.API_BASE_URL || '';
+
+const COLLECTIONS = {
+    ninos: {
+        title: 'Niños',
+        desc: 'Lámparas 3D mágicas para los más pequeños del hogar. Personalizadas con su nombre y personaje favorito.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D',
+        productDesc: 'Lámpara LED personalizada con grabado láser, base negra, control remoto con 16 colores.',
+        folder: 'Ninos'
+    },
+    pareja: {
+        title: 'Pareja',
+        desc: 'Regalos románticos personalizados con tu foto y mensaje especial. El detalle perfecto para esa persona.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D',
+        productDesc: 'Lámpara LED personalizada con foto de pareja, nombre y fecha especial. 16 colores con control remoto.',
+        folder: 'Pareja'
+    },
+    empresas: {
+        title: 'Empresas',
+        desc: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D Corporativa',
+        productDesc: 'Lámpara LED con logo o diseño personalizado. Ideal para reconocimientos, premios y merchandising.',
+        folder: 'Empresas'
+    },
+    familia: {
+        title: 'Familia',
+        desc: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D Familiar',
+        productDesc: 'Lámpara LED con foto familiar, nombre de mascota o retrato grupal. 16 colores con control remoto.',
+        folder: 'Familia'
+    },
+    memorial: {
+        title: 'Memorial',
+        desc: 'Un tributo luminoso para honrar la memoria de tus seres queridos. Un recuerdo que siempre brilla.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D Memorial',
+        productDesc: 'Lámpara LED con foto y mensaje dedicado. Un homenaje luminoso que mantiene viva su memoria.',
+        folder: 'Memorial'
+    },
+    religiosas: {
+        title: 'Religiosas',
+        desc: 'Lámparas con imágenes religiosas personalizadas. Vírgenes, santos y mensajes de fe grabados con láser.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Lámpara 3D Religiosa',
+        productDesc: 'Lámpara LED con imagen religiosa personalizada, nombre y mensaje de fe. 16 colores con control remoto.',
+        folder: 'Religiosas'
+    },
+    otros: {
+        title: 'Otros Regalos',
+        desc: 'Cuadros, llaveros, letreros y más regalos personalizados con grabado láser para cualquier ocasión.',
+        price: '$650', originalPrice: '$780',
+        productName: 'Regalo Personalizado',
+        productDesc: 'Producto personalizado con grabado láser. Diseño único hecho a tu medida.',
+        folder: 'Otros'
+    }
+};
+
+// Get collection from URL
+const params = new URLSearchParams(window.location.search);
+const colId = params.get('id') || 'ninos';
+const col = COLLECTIONS[colId];
+
+if (!col) {
+    window.location.href = '/sitio/#colecciones';
+}
+
+// Set page info
+document.title = `${col.title} | Dekoor`;
+document.getElementById('collectionBadge').textContent = `COLECCIÓN ${col.title.toUpperCase()}`;
+document.getElementById('collectionTitle').textContent = col.title;
+document.getElementById('collectionDesc').textContent = col.desc;
+
+// Inject Product + BreadcrumbList schema
+const productSchema = {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": `${col.productName} - Colección ${col.title}`,
+    "description": col.productDesc,
+    "image": `https://app.dekoormx.com/sitio/img/lamp-${colId === 'ninos' ? 'ariel' : colId === 'otros' ? 'otros' : colId}.webp`,
+    "brand": { "@type": "Brand", "name": "Dekoor" },
+    "offers": {
+        "@type": "Offer",
+        "price": "650",
+        "priceCurrency": "MXN",
+        "availability": "https://schema.org/InStock",
+        "url": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}`,
+        "seller": { "@type": "Organization", "name": "Dekoor" },
+        "shippingDetails": {
+            "@type": "OfferShippingDetails",
+            "shippingRate": { "@type": "MonetaryAmount", "value": "0", "currency": "MXN" },
+            "deliveryTime": { "@type": "ShippingDeliveryTime", "handlingTime": { "@type": "QuantitativeValue", "minValue": 1, "maxValue": 3, "unitCode": "DAY" }, "transitTime": { "@type": "QuantitativeValue", "minValue": 5, "maxValue": 7, "unitCode": "DAY" } },
+            "shippingDestination": { "@type": "DefinedRegion", "addressCountry": "MX" }
+        }
+    },
+    "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "5000",
+        "bestRating": "5"
+    }
+};
+const breadcrumbSchema = {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+        { "@type": "ListItem", "position": 1, "name": "Inicio", "item": "https://app.dekoormx.com/sitio/" },
+        { "@type": "ListItem", "position": 2, "name": "Colecciones", "item": "https://app.dekoormx.com/sitio/#colecciones" },
+        { "@type": "ListItem", "position": 3, "name": col.title, "item": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}` }
+    ]
+};
+[productSchema, breadcrumbSchema].forEach(schema => {
+    const el = document.createElement('script');
+    el.type = 'application/ld+json';
+    el.textContent = JSON.stringify(schema);
+    document.head.appendChild(el);
+});
+
+// Fotos estáticas por colección
+const PHOTOS = {
+    ninos: ["05362bc1-cbd9-4544-9942-a8e4dca17e0f.webp","064355fb-6395-4117-b23b-37437d4df249.webp","476210b4-377e-4bfd-a2ca-5482a7d18e66.webp","844daad1-9e38-4c93-88d7-1d4ec7cb02e7.webp","b6fec1a0-b953-4766-80a4-5aefa79e9cc0.webp","ecf5f6d6-b1ac-4802-9dd7-63ecf62e9492.webp"],
+    pareja: ["34b30e1c-d3e8-40d2-8630-d018fa69ac3b.webp","c10bc838-f275-4556-bf5f-9dba0748ebaa.webp"],
+    empresas: ["3f53f9ad-2ba8-49d1-9e50-fa29b435b24e.jpg","77ea673d-9f5b-488c-b683-61485a96ce5a.jpg","e19f9060-fabc-467d-a1c7-f3e8df6f0a33.webp","unnamed (5).webp"],
+    familia: ["460b38b0-4d38-4127-b508-bbb03e55660b.webp","559ea191-b2b9-41ce-8af3-cfde8c193065.webp","75626782-dc3b-4e3d-ba26-9bad0ad5e49d.webp"],
+    memorial: ["9058f734-a4d3-4806-bef6-40e646a1617c.webp"],
+    religiosas: [],
+    otros: []
+};
+
+function loadProducts() {
+    const grid = document.getElementById('productsGrid');
+    const photos = PHOTOS[colId] || [];
+
+    if (!photos.length) {
+        grid.innerHTML = `
+            <div class="empty-products">
+                <i class="fas fa-camera"></i>
+                <p>Próximamente nuevos productos en esta colección</p>
+                <a href="https://wa.me/${WA}?text=Hola%20Dekoor%2C%20me%20interesa%20la%20colección%20${encodeURIComponent(col.title)}" target="_blank" rel="noopener" class="btn btn-primary">
+                    <i class="fab fa-whatsapp"></i> Preguntar por esta colección
+                </a>
+            </div>`;
+        return;
+    }
+
+    grid.innerHTML = photos.map(filename => {
+        const url = `/sitio/img/col/${colId}/${encodeURIComponent(filename)}`;
+        const waMsg = encodeURIComponent(`Hola Dekoor, me interesa este producto de la colección ${col.title}`);
+        return `
+            <div class="product-card">
+                <div class="product-card-img">
+                    <img src="${url}" alt="${col.productName} - ${col.title}" loading="lazy">
+                </div>
+                <div class="product-card-body">
+                    <div class="product-card-name">${col.productName}</div>
+                    <div class="product-card-desc">${col.productDesc}</div>
+                    <div class="product-card-pricing">
+                        <div class="price-row">
+                            <span class="price-original">${col.originalPrice}</span>
+                            <span class="price-current">${col.price} <small>MXN</small></span>
+                        </div>
+                        <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
+                    </div>
+                    <div class="product-card-buttons">
+                        <button onclick="addToCart('${url}', '${col.productName}')" class="product-card-btn" style="width:100%;justify-content:center;">
+                            <i class="fas fa-cart-plus"></i> Agregar al carrito
+                        </button>
+                        <button onclick="openCheckout('${url}', '${col.productName}')" class="product-card-btn secondary" style="width:100%;justify-content:center;">
+                            <i class="fas fa-credit-card"></i> Pagar en linea
+                        </button>
+                    </div>
+                </div>
+            </div>`;
+    }).join('');
+}
+
+loadProducts();
+
+// Update breadcrumb
+document.getElementById('breadcrumbCurrent').textContent = col.title;
+
+// Product search
+document.getElementById('productSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase().trim();
+    const cards = document.querySelectorAll('.product-card');
+    cards.forEach(card => {
+        const name = card.querySelector('.product-card-name')?.textContent.toLowerCase() || '';
+        const desc = card.querySelector('.product-card-desc')?.textContent.toLowerCase() || '';
+        card.style.display = (name.includes(q) || desc.includes(q) || !q) ? '' : 'none';
+    });
+});
+
+// Add to cart
+function addToCart(imgUrl, productName) {
+    DekoorCart.add({
+        name: productName,
+        collection: col.title,
+        collectionId: colId,
+        price: 650,
+        originalPrice: 780,
+        img: imgUrl
+    });
+    DekoorCart.toast('Producto agregado al carrito');
+}
+
+// Checkout modal
+let currentProductImg = '';
+let currentProductName = '';
+
+function openCheckout(imgUrl, productName) {
+    currentProductImg = imgUrl;
+    currentProductName = productName;
+    document.getElementById('checkoutProduct').innerHTML = `
+        <img src="${imgUrl}" alt="${productName}">
+        <div class="checkout-product-info">
+            <div class="name">${productName} - ${col.title}</div>
+            <div class="price">$650 <small style="font-weight:400;color:var(--text-medium)">MXN</small></div>
+        </div>`;
+    document.getElementById('checkoutOverlay').classList.add('active');
+}
+
+document.getElementById('checkoutClose').addEventListener('click', () => {
+    document.getElementById('checkoutOverlay').classList.remove('active');
+});
+document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+});
+
+// Shipping option toggle
+document.querySelectorAll('input[name="shipping"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.shipping-option').forEach(el => el.classList.remove('selected'));
+        radio.closest('.shipping-option').classList.add('selected');
+        const isDHL = radio.value === 'dhl';
+        document.getElementById('totalAmount').textContent = isDHL ? '$810 MXN' : '$650 MXN';
+    });
+});
+
+document.getElementById('checkoutForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const shipping = document.querySelector('input[name="shipping"]:checked').value;
+    const params = new URLSearchParams({
+        name: document.getElementById('ckName').value.trim(),
+        phone: document.getElementById('ckPhone').value.trim(),
+        email: document.getElementById('ckEmail').value.trim(),
+        street: document.getElementById('ckStreet').value.trim(),
+        colonia: document.getElementById('ckColonia').value.trim(),
+        city: document.getElementById('ckCity').value.trim(),
+        state: document.getElementById('ckState').value.trim(),
+        zip: document.getElementById('ckZip').value.trim(),
+        shipping,
+        product: currentProductName,
+        collection: col.title,
+        img: currentProductImg
+    });
+    window.location.href = '/sitio/checkout/?' + params.toString();
+});
+
+// Mobile menu
+var hamburgerBtn = document.getElementById('hamburgerBtn');
+var mobileMenu = document.getElementById('mobileMenu');
+hamburgerBtn.addEventListener('click', function() { mobileMenu.classList.toggle('hidden'); });
+mobileMenu.querySelector('.mobile-menu-overlay').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+mobileMenu.querySelector('.mobile-menu-close').addEventListener('click', function() { mobileMenu.classList.add('hidden'); });
+</script>
+
+<!-- Cookie Banner (LFPDPPP) -->
+<div id="cookieBanner" style="display:none;position:fixed;bottom:0;left:0;right:0;background:#1B4D5C;color:#fff;padding:1rem 1.5rem;z-index:9999;font-size:0.9rem;box-shadow:0 -4px 20px rgba(0,0,0,0.15);">
+    <div style="max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;">
+        <p style="margin:0;flex:1;min-width:200px;">Usamos cookies para mejorar tu experiencia. Al continuar, aceptas nuestra <a href="/privacidad/" style="color:#D4722C;text-decoration:underline;">Política de Privacidad</a>.</p>
+        <div style="display:flex;gap:0.75rem;">
+            <button onclick="localStorage.setItem('cookie_consent','accepted');this.closest('#cookieBanner').style.display='none'" style="background:#D4722C;color:#fff;border:none;padding:8px 24px;border-radius:9999px;font-weight:600;cursor:pointer;font-family:inherit;font-size:0.85rem;">Aceptar</button>
+            <button onclick="localStorage.setItem('cookie_consent','rejected');this.closest('#cookieBanner').style.display='none';window['ga-disable-G-9LPWQEBBGG']=true" style="background:transparent;color:#fff;border:1px solid rgba(255,255,255,0.3);padding:8px 18px;border-radius:9999px;font-weight:600;cursor:pointer;font-family:inherit;font-size:0.85rem;">Rechazar</button>
+        </div>
+    </div>
+</div>
+<script>
+if(!localStorage.getItem('cookie_consent'))document.getElementById('cookieBanner').style.display='block';
+if(localStorage.getItem('cookie_consent')==='rejected')window['ga-disable-G-9LPWQEBBGG']=true;
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
+</body>
+</html>

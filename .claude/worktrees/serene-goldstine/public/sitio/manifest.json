@@ -1,0 +1,20 @@
+{
+  "name": "Dekoor - Regalos Personalizados",
+  "short_name": "Dekoor",
+  "description": "Regalos personalizados con grabado láser. Lámparas 3D, cuadros y más. Envío a todo México.",
+  "start_url": "/sitio/",
+  "display": "standalone",
+  "background_color": "#FAF0E6",
+  "theme_color": "#1B4D5C",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["shopping", "lifestyle"],
+  "lang": "es-MX"
+}

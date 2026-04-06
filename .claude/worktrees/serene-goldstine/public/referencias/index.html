@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <!-- Google Analytics 4 -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-9LPWQEBBGG"></script>
+    <script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments)}gtag('js',new Date());gtag('config','G-9LPWQEBBGG');</script>
+
+    <title>Referencias de Clientes | Dekoor - Opiniones Reales</title>
+    <meta name="description" content="Opiniones reales de clientes que ya probaron los productos de Dekoor. Lee referencias, ve fotos de entregas y comparte tu experiencia.">
+    <meta name="keywords" content="opiniones Dekoor, referencias clientes, reseñas regalos personalizados, experiencias Dekoor México">
+    <link rel="canonical" href="https://app.dekoormx.com/referencias/">
+
+    <!-- Open Graph -->
+    <meta property="og:title" content="Referencias de Clientes | Dekoor">
+    <meta property="og:description" content="Opiniones reales de clientes que ya probaron los productos de Dekoor.">
+    <meta property="og:image" content="https://app.dekoormx.com/jt-rastreo/logo.png">
+    <meta property="og:url" content="https://app.dekoormx.com/referencias/">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="es_MX">
+
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <link rel="stylesheet" href="/referencias/style.css">
+</head>
+<body>
+
+<!-- Banner -->
+<div class="ticker-banner">
+    <div class="ticker-track">
+        <span class="ticker-item"><i class="fas fa-star"></i> +5,000 ENTREGAS EN TODO MEXICO</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-heart"></i> CLIENTES 100% SATISFECHOS</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-star"></i> +5,000 ENTREGAS EN TODO MEXICO</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-heart"></i> CLIENTES 100% SATISFECHOS</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-star"></i> +5,000 ENTREGAS EN TODO MEXICO</span>
+        <span class="ticker-sep">★</span>
+        <span class="ticker-item"><i class="fas fa-heart"></i> CLIENTES 100% SATISFECHOS</span>
+        <span class="ticker-sep">★</span>
+    </div>
+</div>
+
+<!-- Shared Navbar -->
+<nav class="navbar scrolled" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="logo-full">
+        </a>
+        <div class="nav-links">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
+
+            <a href="/sitio/#como-funciona" class="nav-link">Cómo Funciona</a>
+            <a href="/referencias/" class="nav-link active">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito de compras"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menú">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<!-- Mobile Menu -->
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/referencias/" class="mobile-link active"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox()">
+    <img id="lightboxImg" src="" alt="Foto ampliada">
+</div>
+
+<div id="customModal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal()">
+    <div class="modal-content">
+        <div class="modal-icon">
+            <i class="fas fa-check"></i>
+        </div>
+        <p id="modalMsg"></p>
+        <button class="btn btn-primary" onclick="closeModal()" style="width:100%;justify-content:center;">ACEPTAR</button>
+    </div>
+</div>
+
+<div class="container" style="padding-top: var(--nav-height, 80px);">
+
+    <section class="hero">
+        <h1>Lo que dicen nuestros clientes</h1>
+        <p>Opiniones reales de personas que ya probaron nuestros productos</p>
+    </section>
+
+    <div class="ref-stats">
+        <div class="ref-stat">
+            <div class="stat-num" id="statTotal">0</div>
+            <div class="stat-label">Referencias</div>
+        </div>
+        <div class="ref-stat">
+            <div class="stat-num" id="statAvg">0</div>
+            <div class="stat-label">Promedio</div>
+        </div>
+        <div class="ref-stat">
+            <div class="stat-num" id="stat5">0</div>
+            <div class="stat-label"><i class="fas fa-star" style="color:#f59e0b;font-size:0.75rem;"></i> 5 estrellas</div>
+        </div>
+    </div>
+
+    <!-- Mapa de entregas -->
+    <div class="map-section">
+        <h2 class="map-title"><i class="fas fa-map-marked-alt"></i> Nuestras entregas</h2>
+        <p class="map-subtitle">Hemos llegado a todo México</p>
+        <div id="deliveryMap" class="delivery-map"></div>
+        <div id="mapStats" class="map-stats"></div>
+    </div>
+
+    <div class="ref-cta">
+        <button class="btn btn-primary" onclick="toggleForm()">
+            <i class="fas fa-pen"></i> Escribir mi referencia
+        </button>
+    </div>
+
+    <div id="refFormCard" class="ref-form-card hidden">
+        <h2><i class="fas fa-edit"></i> Comparte tu experiencia</h2>
+
+        <form id="refForm" onsubmit="submitReferencia(event)">
+            <div class="form-row">
+                <div>
+                    <label for="refNombre">Tu nombre</label>
+                    <input type="text" id="refNombre" placeholder="Ej: María López" required>
+                </div>
+                <div>
+                    <label for="refCiudad">Ciudad</label>
+                    <input type="text" id="refCiudad" placeholder="Ej: Guadalajara, Jal." required>
+                </div>
+            </div>
+
+            <label>Calificación</label>
+            <div class="rating-stars" id="ratingStars">
+                <i class="fas fa-star" data-val="1"></i>
+                <i class="fas fa-star" data-val="2"></i>
+                <i class="fas fa-star" data-val="3"></i>
+                <i class="fas fa-star" data-val="4"></i>
+                <i class="fas fa-star" data-val="5"></i>
+            </div>
+
+            <label for="refTexto">Tu opinión</label>
+            <textarea id="refTexto" placeholder="Cuéntanos tu experiencia con nuestros productos..." required></textarea>
+
+            <label>Fotos del producto (opcional, máx. 5)</label>
+            <div class="photo-upload-area" id="photoUploadArea" onclick="document.getElementById('photoInput').click()">
+                <i class="fas fa-camera"></i>
+                <p>Toca para subir fotos</p>
+                <p style="font-size:0.8rem;color:var(--text-gray);margin-top:4px;">Máximo 5 fotos</p>
+                <input type="file" id="photoInput" accept="image/*" multiple style="display:none" onchange="addPhotos(this)">
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-subtle" onclick="toggleForm()">Cancelar</button>
+                <button type="submit" class="btn btn-primary" id="btnSubmit">
+                    <i class="fas fa-paper-plane"></i> Publicar referencia
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <div id="refLoading" class="ref-loading">
+        <div class="spinner"></div>
+        <p>Cargando referencias...</p>
+    </div>
+
+    <div id="refGrid" class="ref-grid"></div>
+
+    <div id="refEmpty" class="ref-empty hidden">
+        <i class="fas fa-comments"></i>
+        <p>Aún no hay referencias. ¡Sé el primero en compartir tu opinión!</p>
+    </div>
+
+    <div id="loadMore" class="ref-loading hidden">
+        <div class="spinner"></div>
+    </div>
+
+    <div class="ref-footer">
+        <p>DEKOOR</p>
+    </div>
+
+</div>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="/sitio/cart.js"></script>
+<script src="/env-config.js"></script>
+<script src="/referencias/script.js"></script>
+
+</body>
+</html>

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PS Editor | Dekoor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css"/>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- ========== LOGIN ========== -->
+    <div id="login-view" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center;">
+        <div class="login-card">
+            <h1 class="login-title"><i class="fas fa-magic" style="color: var(--primary);"></i> PS Editor</h1>
+            <p class="login-subtitle">Ingresa tus credenciales para continuar.</p>
+            <form id="login-form">
+                <div style="margin-bottom: 20px;">
+                    <label class="input-label">Correo</label>
+                    <input type="email" id="login-email" required placeholder="admin@tienda.com" class="input-field">
+                </div>
+                <div style="margin-bottom: 8px;">
+                    <label class="input-label">Contrasena</label>
+                    <input type="password" id="login-password" required placeholder="********" class="input-field">
+                </div>
+                <div id="login-error" class="login-error"></div>
+                <button type="submit" class="btn btn-primary" style="width: 100%; margin-top: 24px;">Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ========== MAIN APP ========== -->
+    <div id="app" class="app-container" style="display: none;">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div style="display: flex; align-items: center; gap: 12px;">
+                <h1 class="app-title"><i class="fas fa-magic"></i> PS Editor</h1>
+                <span class="model-badge">Lamparas</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button id="dark-mode-toggle" class="btn btn-icon" title="Cambiar tema"><i class="fas fa-moon"></i></button>
+                <button id="logout-btn" class="btn btn-outline">Salir <i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <!-- Toolbar -->
+        <div class="toolbar">
+            <div class="toolbar-group">
+                <label class="upload-btn btn btn-primary">
+                    <i class="fas fa-image"></i> Subir foto
+                    <input type="file" id="image-input" accept="image/*" style="display:none;">
+                </label>
+            </div>
+            <div class="toolbar-separator"></div>
+            <div class="toolbar-group">
+                <button id="tool-brush" class="btn btn-tool active" title="Borrador (pintar fondo)"><i class="fas fa-eraser"></i></button>
+                <button id="tool-text" class="btn btn-tool" title="Texto"><i class="fas fa-font"></i></button>
+                <button id="tool-move" class="btn btn-tool" title="Mover texto"><i class="fas fa-arrows-alt"></i></button>
+            </div>
+            <div class="toolbar-separator"></div>
+            <!-- Brush options -->
+            <div id="brush-options" class="toolbar-group">
+                <label class="toolbar-label">Tamano</label>
+                <input type="range" id="brush-size" min="0.5" max="200" value="30" step="0.5" class="toolbar-range">
+                <input type="number" id="brush-size-val" class="toolbar-val-input" value="30" min="0.5" max="200" step="0.5">
+                <label class="toolbar-label" style="margin-left:12px;">Color</label>
+                <input type="color" id="brush-color" value="#0a0a2e" class="toolbar-color">
+                <button id="pick-color" class="btn btn-tool" title="Tomar color de la imagen"><i class="fas fa-eye-dropper"></i></button>
+            </div>
+            <!-- Text options -->
+            <div id="text-options" class="toolbar-group" style="display:none;">
+                <label class="toolbar-label">Fuente</label>
+                <select id="font-family" class="toolbar-select">
+                    <option value="Inter">Inter</option>
+                    <option value="Arial">Arial</option>
+                    <option value="Georgia">Georgia</option>
+                    <option value="Verdana">Verdana</option>
+                    <option value="Courier New">Courier New</option>
+                    <option value="Rows of Sunflowers">Rows of Sunflowers</option>
+                </select>
+                <label class="upload-font-btn btn btn-tool" title="Subir fuente TTF/OTF/WOFF">
+                    <i class="fas fa-plus"></i>
+                    <input type="file" id="font-upload" accept=".ttf,.otf,.woff,.woff2" style="display:none;">
+                </label>
+                <div class="toolbar-group" style="margin-left:8px; gap:2px;">
+                    <button id="align-left" class="btn btn-tool active" title="Alinear izquierda"><i class="fas fa-align-left"></i></button>
+                    <button id="align-center" class="btn btn-tool" title="Alinear centro"><i class="fas fa-align-center"></i></button>
+                    <button id="align-right" class="btn btn-tool" title="Alinear derecha"><i class="fas fa-align-right"></i></button>
+                </div>
+                <label class="toolbar-label" style="margin-left:12px;">Tamano</label>
+                <input type="range" id="font-size" min="1" max="500" value="48" step="0.5" class="toolbar-range">
+                <input type="number" id="font-size-val" class="toolbar-val-input" value="48" min="1" max="500" step="0.5">
+                <label class="toolbar-label" style="margin-left:12px;">Color</label>
+                <input type="color" id="font-color" value="#ffffff" class="toolbar-color">
+                <label class="toolbar-label" style="margin-left:12px;">Glow</label>
+                <input type="range" id="glow-strength" min="0" max="50" value="8" step="0.5" class="toolbar-range">
+                <input type="number" id="glow-val" class="toolbar-val-input" value="8" min="0" max="50" step="0.5">
+                <input type="color" id="glow-color" value="#4488ff" class="toolbar-color">
+                <label class="toolbar-label" style="margin-left:12px;">Contorno</label>
+                <input type="range" id="stroke-width" min="0" max="20" value="0" step="0.01" class="toolbar-range">
+                <input type="number" id="stroke-width-val" class="toolbar-val-input" value="0" min="0" max="20" step="0.01">
+                <input type="color" id="stroke-color" value="#0066ff" class="toolbar-color">
+                <select id="stroke-dir" class="toolbar-select" title="Dirección del contorno">
+                    <option value="center">Uniforme</option>
+                    <option value="top-right">↗</option>
+                    <option value="top">↑</option>
+                    <option value="top-left">↖</option>
+                    <option value="right">→</option>
+                    <option value="left">←</option>
+                    <option value="bottom-right">↘</option>
+                    <option value="bottom">↓</option>
+                    <option value="bottom-left">↙</option>
+                </select>
+                <label class="toolbar-label" style="margin-left:12px;">Suavizado</label>
+                <input type="range" id="text-quality" min="1" max="4" value="1" step="0.5" class="toolbar-range">
+                <input type="number" id="text-quality-val" class="toolbar-val-input" value="1" min="1" max="4" step="0.5">
+                <div class="toolbar-separator"></div>
+                <button id="toggle-ref-area" class="btn btn-tool" title="Definir area de referencia para auto-ajuste de texto"><i class="fas fa-vector-square"></i> Ref</button>
+                <button id="clear-ref-area" class="btn btn-tool" title="Quitar area de referencia" style="display:none;"><i class="fas fa-times"></i></button>
+            </div>
+            <div style="margin-left:auto; display:flex; gap:8px;">
+                <button id="undo-btn" class="btn btn-tool" title="Deshacer"><i class="fas fa-undo"></i></button>
+                <button id="redo-btn" class="btn btn-tool" title="Rehacer"><i class="fas fa-redo"></i></button>
+                <div class="toolbar-separator"></div>
+                <button id="save-project-btn" class="btn btn-tool" title="Guardar proyecto (Ctrl+S)"><i class="fas fa-save"></i></button>
+                <button id="open-projects-btn" class="btn btn-tool" title="Mis proyectos"><i class="fas fa-folder-open"></i></button>
+                <div class="toolbar-separator"></div>
+                <button id="export-btn" class="btn btn-primary"><i class="fas fa-download"></i> Exportar</button>
+            </div>
+        </div>
+
+        <!-- Workspace: sidebar + main content -->
+        <div id="workspace">
+            <!-- Projects Sidebar -->
+            <div id="projects-sidebar" class="projects-sidebar collapsed">
+                <div class="sidebar-header">
+                    <h2 class="sidebar-title"><i class="fas fa-folder-open"></i> Proyectos</h2>
+                    <button id="close-sidebar-btn" class="btn btn-icon btn-sm" title="Cerrar panel"><i class="fas fa-chevron-left"></i></button>
+                </div>
+                <div id="projects-list" class="projects-sidebar-grid"></div>
+                <div id="projects-empty" class="projects-empty" style="display:none;">
+                    <i class="fas fa-inbox"></i>
+                    <p>No hay proyectos guardados</p>
+                </div>
+            </div>
+            <div id="sidebar-scrim" class="sidebar-scrim"></div>
+            <button id="sidebar-open-btn" class="sidebar-open-btn visible" title="Mis proyectos"><i class="fas fa-folder-open"></i></button>
+
+            <!-- Main Content -->
+            <div id="main-content">
+                <div id="canvas-container" class="canvas-container">
+                    <div id="canvas-placeholder" class="canvas-placeholder">
+                        <i class="fas fa-image"></i>
+                        <p>Sube una foto o pega con Ctrl+V</p>
+                    </div>
+                    <canvas id="canvas" style="display:none;"></canvas>
+                    <div id="zoom-indicator" class="zoom-indicator">100%</div>
+                    <div id="text-overlay" style="display:none;"></div>
+                    <div id="ref-area-overlay">
+                        <span class="ref-area-hint">Dibuja un rectangulo para el area de referencia</span>
+                    </div>
+                </div>
+
+                <div id="text-input-panel" class="text-input-panel" style="display:none;">
+                    <input type="text" id="text-content" placeholder="Escribe el nombre..." class="text-input-field">
+                </div>
+
+                <div class="batch-section">
+                    <div class="batch-toggle-row">
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="batch-toggle">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span class="batch-toggle-label">Modo Lote</span>
+                    </div>
+                    <div id="batch-panel" style="display:none;">
+                        <textarea id="batch-names" class="batch-textarea" rows="4" placeholder="Un nombre por linea..."></textarea>
+                        <button id="batch-export" class="btn btn-primary" style="margin-top:8px;"><i class="fas fa-download"></i> Exportar lote</button>
+                        <div id="batch-progress" class="batch-progress" style="display:none;">
+                            <span id="batch-progress-text">0/0</span>
+                            <div class="batch-progress-bar"><div id="batch-progress-fill" class="batch-progress-fill"></div></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/env-config.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
+    <script src="script.js"></script>
+</body>
+</html>

@@ -1,0 +1,210 @@
+const express = require('express');
+const router = express.Router();
+const { db } = require('../config');
+const jtService = require('./jtService');
+
+// GET /api/jt-guias/status — Verificar si J&T está configurado
+router.get('/status', (req, res) => {
+    res.json({ configured: jtService.isConfigured() });
+});
+
+// POST /api/jt-guias/crear — Crear guía de envío J&T
+router.post('/crear', async (req, res) => {
+    try {
+        const {
+            orderNumber, receiverName, receiverPhone,
+            street, colonia, city, state, zip,
+            reference, productName, weight, quantity, itemValue
+        } = req.body;
+
+        // Validaciones
+        if (!orderNumber || !receiverName || !receiverPhone || !street || !colonia || !city || !state || !zip) {
+            return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
+        }
+
+        if (!/^\d{10}$/.test(receiverPhone)) {
+            return res.status(400).json({ success: false, message: 'El teléfono debe tener 10 dígitos.' });
+        }
+
+        if (!/^\d{5}$/.test(zip)) {
+            return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
+        }
+
+        // Verificar que no exista ya una guía para este pedido
+        const existingSnap = await db.collection('guias_jt')
+            .where('orderNumber', '==', orderNumber)
+            .where('status', '!=', 'cancelled')
+            .limit(1)
+            .get();
+
+        if (!existingSnap.empty) {
+            const existing = existingSnap.docs[0].data();
+            return res.status(409).json({
+                success: false,
+                message: `Ya existe una guía para el pedido ${orderNumber}: ${existing.waybillNo}`,
+                waybillNo: existing.waybillNo,
+            });
+        }
+
+        // Crear guía en J&T
+        const result = await jtService.createOrder({
+            orderNumber, receiverName, receiverPhone,
+            street, colonia, city, state, zip,
+            reference, productName, weight, quantity, itemValue
+        });
+
+        if (result.success) {
+            // Guardar en Firestore
+            await db.collection('guias_jt').add({
+                orderNumber,
+                waybillNo: result.waybillNo,
+                receiverName,
+                receiverPhone,
+                address: `${street}, ${colonia}, ${city}, ${state} C.P. ${zip}`,
+                reference: reference || '',
+                productName: productName || 'Lámpara 3D Personalizada',
+                status: 'created',
+                createdAt: new Date(),
+            });
+
+            // Actualizar el pedido si existe
+            try {
+                const pedidoRef = db.collection('pedidos').doc(orderNumber);
+                const pedidoDoc = await pedidoRef.get();
+                if (pedidoDoc.exists) {
+                    await pedidoRef.update({
+                        guiaJT: result.waybillNo,
+                        guiaCreatedAt: new Date(),
+                    });
+                }
+            } catch (e) {
+                console.warn(`[J&T] No se pudo actualizar pedido ${orderNumber}:`, e.message);
+            }
+
+            console.log(`[J&T] Guía creada: ${result.waybillNo} para pedido ${orderNumber}`);
+        }
+
+        res.status(result.success ? 201 : 400).json(result);
+
+    } catch (error) {
+        console.error('[J&T] Error creando guía:', error.message);
+        res.status(500).json({
+            success: false,
+            message: 'Error interno al crear la guía de J&T.',
+            error: error.message,
+        });
+    }
+});
+
+// GET /api/jt-guias — Listar guías creadas
+router.get('/', async (req, res) => {
+    try {
+        const snapshot = await db.collection('guias_jt').orderBy('createdAt', 'desc').get();
+        const guias = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        res.json({ success: true, data: guias });
+    } catch (error) {
+        console.error('[J&T] Error listando guías:', error.message);
+        res.status(500).json({ success: false, message: 'Error al obtener las guías.' });
+    }
+});
+
+// DELETE /api/jt-guias/:id — Cancelar/eliminar guía
+router.delete('/:id', async (req, res) => {
+    try {
+        const docRef = db.collection('guias_jt').doc(req.params.id);
+        const doc = await docRef.get();
+
+        if (!doc.exists) {
+            return res.status(404).json({ success: false, message: 'Guía no encontrada.' });
+        }
+
+        const guia = doc.data();
+
+        // Intentar cancelar en J&T
+        try {
+            await jtService.cancelOrder(guia.orderNumber);
+        } catch (e) {
+            console.warn(`[J&T] No se pudo cancelar en J&T (${guia.orderNumber}):`, e.message);
+        }
+
+        await docRef.update({ status: 'cancelled', cancelledAt: new Date() });
+        res.json({ success: true, message: 'Guía cancelada.' });
+    } catch (error) {
+        console.error('[J&T] Error cancelando guía:', error.message);
+        res.status(500).json({ success: false, message: 'Error al cancelar la guía.' });
+    }
+});
+
+// POST /api/jt-guias/desde-pedido/:orderNumber — Crear guía desde datos de un pedido existente
+router.post('/desde-pedido/:orderNumber', async (req, res) => {
+    try {
+        const { orderNumber } = req.params;
+
+        // Buscar datos de envío del pedido
+        const envioSnap = await db.collection('datos_envio')
+            .where('numeroPedido', '==', orderNumber)
+            .limit(1)
+            .get();
+
+        if (envioSnap.empty) {
+            return res.status(404).json({
+                success: false,
+                message: `No se encontraron datos de envío para el pedido ${orderNumber}.`,
+            });
+        }
+
+        const envio = envioSnap.docs[0].data();
+
+        // Buscar info del pedido para nombre del producto
+        let productName = 'Lámpara 3D Personalizada';
+        try {
+            const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
+            if (pedidoDoc.exists) {
+                productName = pedidoDoc.data().producto || productName;
+            }
+        } catch (e) { /* usar default */ }
+
+        // Crear guía con los datos encontrados
+        const result = await jtService.createOrder({
+            orderNumber,
+            receiverName: envio.nombreCompleto,
+            receiverPhone: envio.telefono,
+            street: envio.direccion,
+            colonia: envio.colonia,
+            city: envio.ciudad,
+            state: envio.estado,
+            zip: envio.codigoPostal,
+            reference: envio.referencia || '',
+            productName,
+        });
+
+        if (result.success) {
+            await db.collection('guias_jt').add({
+                orderNumber,
+                waybillNo: result.waybillNo,
+                receiverName: envio.nombreCompleto,
+                receiverPhone: envio.telefono,
+                address: `${envio.direccion}, ${envio.colonia}, ${envio.ciudad}, ${envio.estado} C.P. ${envio.codigoPostal}`,
+                reference: envio.referencia || '',
+                productName,
+                status: 'created',
+                createdAt: new Date(),
+            });
+
+            try {
+                await db.collection('pedidos').doc(orderNumber).update({
+                    guiaJT: result.waybillNo,
+                    guiaCreatedAt: new Date(),
+                });
+            } catch (e) { /* ignore */ }
+        }
+
+        res.status(result.success ? 201 : 400).json(result);
+
+    } catch (error) {
+        console.error('[J&T] Error creando guía desde pedido:', error.message);
+        res.status(500).json({ success: false, message: 'Error al crear la guía.', error: error.message });
+    }
+});
+
+module.exports = router;

@@ -1,0 +1,912 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ventas de Hoy | Dekoor Ads</title>
+    <!-- Librerías Externas -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    
+    <!-- Estilos del CRM -->
+    <link rel="stylesheet" href="/style.css">
+
+    <!-- Litepicker Date Picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
+    <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
+    
+    <style>
+        body { 
+            overflow: auto !important; /* Permitir scroll en esta vista */
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            min-height: 100vh;
+        }
+        .ads-container { max-width: 1100px; margin: 40px auto; padding: 0 20px; }
+        
+        .table-card { 
+            background: var(--color-container-bg); 
+            border-radius: var(--border-radius-lg); 
+            border: 1px solid var(--color-border);
+            box-shadow: 0 4px 20px var(--color-shadow);
+            overflow: hidden; 
+        }
+        
+        table { width: 100%; border-collapse: collapse; }
+        th { 
+            background: var(--color-subtle-bg); 
+            text-align: left; 
+            padding: 16px; 
+            font-weight: 700; 
+            color: var(--color-text-light); 
+            text-transform: uppercase; 
+            font-size: 0.7rem; 
+            letter-spacing: 0.05em;
+        }
+        td { 
+            padding: 18px 16px; 
+            border-bottom: 1px solid var(--color-border); 
+            color: var(--color-text); 
+            font-size: 0.9rem; 
+        }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background-color: var(--color-subtle-hover-bg); }
+        
+        .badge-source { 
+            background: var(--color-primary); 
+            color: white; 
+            padding: 4px 12px; 
+            border-radius: 9999px; 
+            font-weight: 700; 
+            font-size: 0.75rem; 
+            display: inline-block;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        body.dark-mode .badge-source {
+            color: #1a1b26;
+            box-shadow: 0 0 10px rgba(122, 162, 247, 0.4);
+        }
+        
+        .total-amount { font-weight: 800; color: var(--color-success); font-size: 1.1rem; }
+        .empty-state { text-align: center; padding: 80px 20px; color: var(--color-text-light); }
+        
+        .header-stats {
+            background: var(--color-container-bg);
+            padding: 16px 12px;
+            border-radius: var(--border-radius-lg);
+            border: 1px solid var(--color-border);
+            box-shadow: 0 2px 10px var(--color-shadow);
+            display: flex;
+            align-items: center;
+        }
+
+        .stat-icon {
+            width: 48px;
+            min-width: 48px;
+            height: 48px;
+            flex-shrink: 0;
+            background: var(--color-primary);
+            color: white;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            box-shadow: 0 4px 12px rgba(129, 178, 154, 0.3);
+        }
+        body.dark-mode .stat-icon {
+            color: #1a1b26;
+            box-shadow: 0 4px 12px rgba(122, 162, 247, 0.3);
+        }
+        
+        .dark-mode-toggle {
+            padding: 12px;
+            border-radius: 50%;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: var(--color-container-bg);
+            color: var(--color-text);
+            border: 1px solid var(--color-border);
+            box-shadow: 0 2px 5px var(--color-shadow);
+        }
+        .dark-mode-toggle:hover { 
+            transform: scale(1.1);
+            background: var(--color-subtle-bg); 
+        }
+
+        .refresh-btn {
+            background: var(--color-container-bg);
+            color: var(--color-text-light);
+            border: 1px solid var(--color-border);
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .refresh-btn:hover { background: var(--color-subtle-bg); color: var(--color-primary); transform: rotate(180deg); }
+
+        #desktop-toggle-group { display: none; }
+        @media (min-width: 1280px) { #desktop-toggle-group { display: flex; } }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="ads-container">
+        <header class="flex flex-col xl:flex-row items-center justify-between gap-8 mb-10">
+            <div class="w-full xl:w-auto flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-black text-primary flex items-center gap-3" style="color: var(--color-primary)">
+                        <i class="fab fa-whatsapp"></i> Dekoor Ads
+                    </h1>
+                    <p class="text-gray-500 font-medium mt-1">Monitoreo de ventas en tiempo real</p>
+                </div>
+                <div class="flex xl:hidden items-center gap-2">
+                    <button onclick="handleRefreshClick()" class="refresh-btn">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button onclick="saveSnapshot()" class="refresh-btn" title="Congelar snapshot" style="background: var(--color-success); color: white; border-color: var(--color-success);">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                    <button onclick="toggleDarkMode()" class="dark-mode-toggle">
+                        <i id="mode-icon-mobile" class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-center xl:justify-end gap-6 w-full xl:w-auto">
+                <!-- Selector de Fecha Principal -->
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col">
+                        <span class="text-[0.6rem] uppercase font-black opacity-30 mb-1">Vista Principal</span>
+                        <div class="relative min-w-[160px]">
+                            <input type="text" id="datepicker" class="w-full bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-primary outline-none cursor-pointer shadow-sm transition-all text-gray-600 dark:text-gray-300 pr-10" readonly>
+                            <i class="fas fa-calendar-alt absolute right-4 top-1/2 -translate-y-1/2 text-primary opacity-50 pointer-events-none text-sm"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Snapshot Histórico -->
+                <div class="flex items-center gap-3">
+                    <div class="flex flex-col">
+                        <span class="text-[0.6rem] uppercase font-black text-orange-400 mb-1">Snapshot Comparativo</span>
+                        <div class="flex gap-2">
+                            <div class="relative min-w-[150px]">
+                                <input type="text" id="snapshot-datepicker" class="w-full bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300 pr-10" readonly placeholder="FECHA SNAPSHOT">
+                                <i class="fas fa-history absolute right-4 top-1/2 -translate-y-1/2 text-orange-400 opacity-50 pointer-events-none text-sm"></i>
+                            </div>
+                            <input type="time" id="snapshot-time" class="bg-orange-50 dark:bg-orange-900/10 border border-orange-100 dark:border-orange-800/30 px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest focus:ring-2 focus:ring-orange-400 outline-none cursor-pointer shadow-sm transition-all text-orange-600 dark:text-orange-300">
+                        </div>
+                    </div>
+                </div>
+
+                <div class="items-center gap-2" id="desktop-toggle-group">
+                    <button id="refresh-btn-el" onclick="handleRefreshClick()" class="refresh-btn" title="Actualizar Datos">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <button id="save-snapshot-btn" onclick="saveSnapshot()" class="refresh-btn" title="Congelar snapshot del día seleccionado" style="background: var(--color-success); color: white; border-color: var(--color-success);">
+                        <i class="fas fa-camera"></i>
+                    </button>
+                    <button onclick="toggleDarkMode()" class="dark-mode-toggle" title="Alternar Modo Oscuro">
+                        <i id="mode-icon" class="fas fa-moon"></i>
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6 mb-12">
+            <!-- Stats: Proyectado -->
+            <div class="header-stats">
+                <div class="text-center flex-1">
+                    <p id="total-label" class="text-[0.6rem] text-gray-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-chart-line mr-1"></i>Venta Proyectada</p>
+                    <p id="total-today" class="text-2xl font-black text-gray-500">$0.00</p>
+                    <p id="snapshot-total" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
+                </div>
+            </div>
+
+            <!-- Stats: Real -->
+            <div class="header-stats border-green-500/20 bg-green-50/30 dark:bg-green-900/5">
+                <div class="text-center flex-1">
+                    <p id="confirmed-label" class="text-[0.6rem] text-green-600 dark:text-green-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-cash-register mr-1"></i>Venta Real</p>
+                    <p id="confirmed-total" class="text-2xl font-black text-green-600 dark:text-green-400">$0.00</p>
+                    <p id="snapshot-confirmed" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: $0.00</p>
+                </div>
+            </div>
+
+            <!-- Stats: Fabricar -->
+            <div class="header-stats border-purple-500/20 bg-purple-50/30 dark:bg-purple-900/5">
+                <div class="text-center flex-1">
+                    <p id="fabricar-label" class="text-[0.6rem] text-purple-600 dark:text-purple-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-gem mr-1"></i>Fabricar Hoy</p>
+                    <p id="fabricar-total" class="text-2xl font-black text-purple-600 dark:text-purple-400">$0.00</p>
+                    <p id="fabricar-count" class="text-[11px] font-bold text-purple-400 mt-1">0 pedidos</p>
+                </div>
+            </div>
+
+            <!-- Stats: Efectividad -->
+            <div class="header-stats border-blue-500/20 bg-blue-50/30 dark:bg-blue-900/5">
+                <div class="text-center flex-1">
+                    <p class="text-[0.6rem] text-blue-600 dark:text-blue-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-bullseye mr-1"></i>Efectividad</p>
+                    <div class="flex flex-col items-center leading-none gap-1.5">
+                        <p id="orders-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">PEDIDOS</span></p>
+                        <p id="revenue-conv-pct" class="text-base font-black text-blue-600 dark:text-blue-400">0% <span class="text-[10px] opacity-70">DINERO</span></p>
+                        <p id="roas-val" class="font-black text-blue-500">0.0 <span class="text-[10px] opacity-70">ROAS</span></p>
+                        <p id="snapshot-conv" class="text-[11px] font-bold text-orange-400 mt-1 opacity-0 transition-opacity">Snap: 0% / 0.0 ROAS</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Stats: Gasto -->
+            <div class="header-stats border-orange-500/20 bg-orange-50/30 dark:bg-orange-900/5">
+                <div class="text-center flex-1">
+                    <p id="ad-spend-label" class="text-[0.6rem] text-orange-600 dark:text-orange-400 uppercase font-black tracking-widest mb-1"><i class="fas fa-ad mr-1"></i>Inversión Ads</p>
+                    <p id="ad-spend-total" class="text-2xl font-black text-orange-600 dark:text-orange-400">$0.00</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progresión de Cobro -->
+        <div class="table-card mb-12" id="progression-section" style="display:none;">
+            <div class="flex items-center justify-between mb-4 px-2">
+                <h2 class="text-sm font-black uppercase tracking-widest" style="color: var(--color-primary)">
+                    <i class="fas fa-chart-bar mr-2"></i>Progresión de Cobro
+                </h2>
+                <div id="progression-summary" class="text-xs font-bold text-gray-400"></div>
+            </div>
+            <div class="overflow-x-auto">
+                <table style="width:100%; border-collapse: collapse;">
+                    <thead>
+                        <tr>
+                            <th class="text-left text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Día</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Cobrado ese día</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Pedidos</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Acumulado</th>
+                            <th class="text-left text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4" style="min-width:200px;">Progreso</th>
+                        </tr>
+                    </thead>
+                    <tbody id="progression-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-card mb-12" id="campaigns-section" style="display:none;">
+            <div class="flex items-center justify-between mb-4 px-2">
+                <h2 class="text-sm font-black uppercase tracking-widest" style="color: var(--color-primary)">
+                    <i class="fas fa-bullhorn mr-2"></i>Desglose por Campaña
+                </h2>
+                <div id="campaigns-summary" class="text-xs font-bold text-gray-400"></div>
+            </div>
+            <div class="overflow-x-auto">
+                <table style="width:100%; border-collapse: collapse;">
+                    <thead>
+                        <tr>
+                            <th class="text-left text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Campaña</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Gasto</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Impresiones</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Clics</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CTR</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">CPC</th>
+                            <th class="text-right text-[10px] uppercase font-black tracking-widest text-gray-400 pb-3 px-4">Cobrado / ROAS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="campaigns-body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="table-card">
+            <table id="orders-table">
+                <thead>
+                    <tr>
+                        <th>Cliente / Pedido</th>
+                        <th>Hora</th>
+                        <th>Producto</th>
+                        <th>Venta Bruta</th>
+                        <th>Ingreso Real</th>
+                        <th>Origen</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-body">
+                    <!-- Filas dinámicas -->
+                </tbody>
+            </table>
+            <div id="loading-state" class="p-20 text-center text-gray-400 flex flex-col items-center gap-5">
+                <div class="relative">
+                    <i class="fas fa-circle-notch fa-spin text-5xl text-primary" style="color: var(--color-primary)"></i>
+                </div>
+                <div class="space-y-1">
+                    <p class="font-bold text-gray-600 dark:text-gray-300">Sincronizando con Firestore</p>
+                    <p class="text-xs">Obteniendo los pedidos más recientes de hoy...</p>
+                </div>
+            </div>
+        </div>
+        
+        <footer class="mt-12 text-center">
+            <div class="inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shadow-sm">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-[10px] text-gray-400 font-black uppercase tracking-tighter">Live Dashboard Active</span>
+            </div>
+            <p class="mt-4 text-[10px] text-gray-400 font-bold uppercase tracking-widest opacity-50">Dekoor CRM &copy; 2024</p>
+        </footer>
+    </div>
+
+    <!-- Configuración Dinámica -->
+    <script src="/env-config.js"></script>
+
+    <script>
+        // Obtener la URL base dinámicamente
+        const API_BASE = window.API_BASE_URL || '';
+
+        // Lógica de Modo Oscuro
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark-mode');
+            const isDark = document.body.classList.contains('dark-mode');
+            localStorage.setItem('darkMode', isDark);
+            updateModeIcon(isDark);
+        }
+
+        function updateModeIcon(isDark) {
+            const icon = document.getElementById('mode-icon');
+            const iconMobile = document.getElementById('mode-icon-mobile');
+            const iconClass = isDark ? 'fas fa-sun' : 'fas fa-moon';
+            if (icon) icon.className = iconClass;
+            if (iconMobile) iconMobile.className = iconClass;
+        }
+
+        // Cargar preferencia
+        if (localStorage.getItem('darkMode') === 'true') {
+            document.body.classList.add('dark-mode');
+            updateModeIcon(true);
+        }
+
+        let currentSelectedDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+        let snapshotSelectedDate = '';
+        let snapshotSelectedTime = '';
+        let refreshInterval = null;
+
+        function handleRefreshClick() {
+            fetchOrders(currentSelectedDate);
+        }
+
+        async function fetchSnapshot() {
+            if (!snapshotSelectedDate) return;
+
+            const snapTotalText = document.getElementById('snapshot-total');
+            const snapConfirmedText = document.getElementById('snapshot-confirmed');
+            const snapConvText = document.getElementById('snapshot-conv');
+            const timeInput = document.getElementById('snapshot-time');
+
+            // Mostrar cargando
+            snapTotalText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+            snapConfirmedText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+            snapConvText.innerHTML = 'Snap: <i class="fas fa-spinner fa-spin"></i>';
+
+            snapTotalText.classList.remove('opacity-0');
+            snapConfirmedText.classList.remove('opacity-0');
+            snapConvText.classList.remove('opacity-0');
+
+            try {
+                // Intentar obtener snapshot guardado
+                const snapRes = await fetch(`${API_BASE}/api/snapshots/daily?date=${snapshotSelectedDate}`);
+                const snapData = await snapRes.json();
+
+                if (snapData.success && snapData.source === 'snapshot') {
+                    // Snapshot congelado — mostrar directo, ignorar time picker
+                    const s = snapData.snapshot;
+                    timeInput.style.display = 'none';
+                    snapTotalText.textContent = `\u{1F512} Snap: $${s.proyectado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{1F512} Snap: $${s.real.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{1F512} Snap: ${s.efectividadPedidos.toFixed(1)}% / ${s.roas.toFixed(1)} ROAS`;
+                    return;
+                }
+
+                // Fallback en vivo — permitir filtro por hora
+                timeInput.style.display = '';
+                if (!snapshotSelectedTime) {
+                    // Sin hora, mostrar snapshot en vivo del día completo
+                    const s = snapData.snapshot;
+                    snapTotalText.textContent = `\u{26A1} Snap: $${s.proyectado.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{26A1} Snap: $${s.real.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{26A1} Snap: ${s.efectividadPedidos.toFixed(1)}% / ${s.roas.toFixed(1)} ROAS`;
+                    return;
+                }
+
+                // Con hora seleccionada — consulta en vivo filtrada por hora (comportamiento original)
+                let adSpend = 0;
+                const kpiRes = await fetch(`${API_BASE}/api/kpi/daily?date=${snapshotSelectedDate}`);
+                const kpiData = await kpiRes.json();
+                if (kpiData.success) adSpend = kpiData.spend || 0;
+
+                const endpoint = `/api/orders/history?date=${snapshotSelectedDate}&time=${snapshotSelectedTime}`;
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                if (!response.ok) throw new Error('Error al obtener snapshot');
+
+                const data = await response.json();
+                if (data.success && Array.isArray(data.orders)) {
+                    let totalSum = 0;
+                    let confirmedSum = 0;
+                    let confirmedCount = 0;
+                    const totalCount = data.orders.length;
+
+                    data.orders.forEach(order => {
+                        const amount = parseFloat(order.total) || 0;
+                        totalSum += amount;
+                        const rawStatus = (order.estatus || order.status || '').toLowerCase();
+                        if (rawStatus.includes('fabricar') || rawStatus.includes('pagado')) {
+                            confirmedSum += amount;
+                            confirmedCount++;
+                        }
+                    });
+
+                    const orderPct = totalCount > 0 ? (confirmedCount / totalCount) * 100 : 0;
+                    const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
+
+                    snapTotalText.textContent = `\u{26A1} Snap: $${totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConfirmedText.textContent = `\u{26A1} Snap: $${confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 })}`;
+                    snapConvText.textContent = `\u{26A1} Snap: ${orderPct.toFixed(1)}% / ${roas.toFixed(1)} ROAS`;
+                }
+            } catch (e) {
+                console.error("Snapshot error:", e);
+                snapTotalText.textContent = 'Error Snap';
+            }
+        }
+
+        async function saveSnapshot() {
+            if (!confirm(`\u00BFCongelar snapshot inmutable para ${currentSelectedDate}?\n\nUna vez guardado, los valores de ese d\u00EDa no cambiar\u00E1n aunque se modifiquen pedidos.`)) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/snapshots/daily`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ date: currentSelectedDate })
+                });
+                const data = await res.json();
+                if (data.success) {
+                    alert(`Snapshot guardado para ${currentSelectedDate}`);
+                    // Si el snapshot comparativo es la misma fecha, refrescar
+                    if (snapshotSelectedDate === currentSelectedDate) fetchSnapshot();
+                } else {
+                    alert(data.message);
+                }
+            } catch (e) {
+                alert('Error al guardar snapshot: ' + e.message);
+            }
+        }
+
+        async function fetchProgression(dateISO) {
+            const section = document.getElementById('progression-section');
+            const body = document.getElementById('progression-body');
+            const summary = document.getElementById('progression-summary');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/orders/cohort-progression?date=${dateISO}`);
+                const data = await response.json();
+
+                if (!data.success || data.progression.length === 0) {
+                    section.style.display = 'none';
+                    return;
+                }
+
+                section.style.display = '';
+                const pct = data.proyectado > 0 ? ((data.totalConfirmed / data.proyectado) * 100).toFixed(1) : 0;
+                summary.textContent = `$${data.totalConfirmed.toLocaleString('es-MX', {minimumFractionDigits:2})} / $${data.proyectado.toLocaleString('es-MX', {minimumFractionDigits:2})} (${pct}%) — ${data.totalConfirmedOrders}/${data.totalOrders} pedidos`;
+
+                body.innerHTML = data.progression.map((row, i) => {
+                    const barPct = data.proyectado > 0 ? Math.min((row.cumAmount / data.proyectado) * 100, 100) : 0;
+                    const dayLabel = row.date === dateISO ? 'Mismo día' : `Día ${i + 1}`;
+                    return `
+                        <tr style="border-top: 1px solid var(--color-border);">
+                            <td class="py-3 px-4">
+                                <div class="font-black text-xs">${dayLabel}</div>
+                                <div class="text-[10px] text-gray-400">${row.date}</div>
+                            </td>
+                            <td class="py-3 px-4 text-right font-bold text-green-500 text-sm">+$${row.dayAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">+${row.dayCount}</td>
+                            <td class="py-3 px-4 text-right font-black text-sm" style="color: var(--color-primary)">$${row.cumAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                            <td class="py-3 px-4">
+                                <div style="background: var(--color-border); border-radius: 999px; height: 8px; overflow: hidden;">
+                                    <div style="background: var(--color-success); height: 100%; width: ${barPct}%; border-radius: 999px; transition: width 0.5s;"></div>
+                                </div>
+                                <div class="text-[10px] text-gray-400 mt-1">${barPct.toFixed(1)}%</div>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            } catch (e) {
+                console.error('Error fetching progression:', e);
+                section.style.display = 'none';
+            }
+        }
+
+        async function fetchCampaignBreakdown(dateISO) {
+            const section = document.getElementById('campaigns-section');
+            const body = document.getElementById('campaigns-body');
+            const summary = document.getElementById('campaigns-summary');
+            try {
+                // Fetch campañas de Meta y pagos en paralelo
+                const [metaRes, paymentsRes] = await Promise.all([
+                    fetch(`${API_BASE}/api/meta-ads/campaigns?accountId=1890131678412987&date_from=${dateISO}&date_to=${dateISO}`),
+                    fetch(`${API_BASE}/api/campaigns/payments?date=${dateISO}`)
+                ]);
+                const metaData = await metaRes.json();
+                const paymentsData = await paymentsRes.json();
+
+                if (!metaData.data || metaData.data.length === 0) { section.style.display = 'none'; return; }
+
+                // Mapear pagos por campaign_id para cruzar con campañas de Meta
+                const paymentsByCampaignId = {};
+                let organicPayments = null;
+                if (paymentsData.success) {
+                    paymentsData.campaigns.forEach(c => {
+                        if (c.campaignId === 'organic') { organicPayments = c; }
+                        else { paymentsByCampaignId[c.campaignId] = c; }
+                    });
+                }
+
+                const campaigns = metaData.data
+                    .map(c => {
+                        const ins = c.insights?.data?.[0] || {};
+                        const pmts = paymentsByCampaignId[c.id] || null;
+                        return {
+                            id: c.id,
+                            name: c.name,
+                            spend: parseFloat(ins.spend || 0),
+                            impressions: parseInt(ins.impressions || 0),
+                            clicks: parseInt(ins.clicks || 0),
+                            ctr: parseFloat(ins.ctr || 0),
+                            cpc: parseFloat(ins.cpc || 0),
+                            cpm: parseFloat(ins.cpm || 0),
+                            payments: pmts ? pmts.payments : [],
+                            totalPayments: pmts ? pmts.totalAmount : 0,
+                            adNames: pmts ? pmts.name : ''
+                        };
+                    })
+                    .filter(c => c.spend > 0)
+                    .sort((a, b) => b.spend - a.spend);
+
+                if (campaigns.length === 0) { section.style.display = 'none'; return; }
+
+                const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
+                const totalPaid = campaigns.reduce((s, c) => s + c.totalPayments, 0) + (organicPayments ? organicPayments.totalAmount : 0);
+                summary.innerHTML = `${campaigns.length} campañas — Gasto: $${totalSpend.toLocaleString('es-MX', {minimumFractionDigits:2})} — <span class="text-green-500">Cobrado: $${totalPaid.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>`;
+
+                let paymentIdx = 0;
+                body.innerHTML = campaigns.map(c => {
+                    const pct = totalSpend > 0 ? ((c.spend / totalSpend) * 100).toFixed(1) : 0;
+                    const roas = c.spend > 0 ? (c.totalPayments / c.spend).toFixed(1) : '—';
+                    const hasPayments = c.payments.length > 0;
+                    const idx = paymentIdx++;
+
+                    const paymentRows = hasPayments ? c.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-${idx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8" colspan="5">
+                                <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName} — ${p.producto}</div>
+                            </td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500" colspan="2">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                        </tr>
+                    `).join('') : '';
+
+                    const expandIcon = hasPayments ? `<i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${idx}" style="color:var(--color-text-light);"></i>` : '';
+                    const clickAttr = hasPayments ? `style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${idx})"` : `style="border-top: 1px solid var(--color-border);"`;
+
+                    return `
+                    <tr ${clickAttr}>
+                        <td class="py-3 px-4">
+                            ${expandIcon}<span class="font-bold text-xs" style="color: var(--color-text);">${c.name}</span>
+                            <div class="text-[10px] text-gray-400 ${hasPayments ? 'ml-4' : ''}">${pct}% del gasto${hasPayments ? ` · ${c.payments.length} pago(s) · Anuncios: ${c.adNames}` : ''}</div>
+                        </td>
+                        <td class="py-3 px-4 text-right font-black text-sm text-orange-500">$${c.spend.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.impressions.toLocaleString('es-MX')}</td>
+                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.clicks.toLocaleString('es-MX')}</td>
+                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">${c.ctr.toFixed(2)}%</td>
+                        <td class="py-3 px-4 text-right font-bold text-xs text-gray-400">$${c.cpc.toFixed(2)}</td>
+                        <td class="py-3 px-4 text-right">
+                            <span class="font-bold text-xs text-green-500">$${c.totalPayments.toLocaleString('es-MX', {minimumFractionDigits:2})}</span>
+                            <div class="text-[10px] text-gray-400">ROAS ${roas}</div>
+                        </td>
+                    </tr>
+                    ${paymentRows}`;
+                }).join('');
+
+                // Orgánico / Directo
+                if (organicPayments) {
+                    const orgIdx = paymentIdx++;
+                    const orgRows = organicPayments.payments.map(p => `
+                        <tr class="campaign-payments campaign-payments-${orgIdx}" style="display:none; border-top: 1px solid var(--color-border); background: var(--color-subtle-bg);">
+                            <td class="py-2 px-4 pl-8" colspan="5">
+                                <div class="text-[11px] text-gray-400"><i class="fas fa-receipt mr-1"></i>DH${p.orderNumber} — ${p.clientName} — ${p.producto}</div>
+                            </td>
+                            <td class="py-2 px-4 text-right font-bold text-xs text-green-500" colspan="2">$${p.amount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                        </tr>
+                    `).join('');
+                    body.innerHTML += `
+                    <tr style="cursor:pointer; border-top: 1px solid var(--color-border);" onclick="toggleCampaignPayments(${orgIdx})">
+                        <td class="py-3 px-4" colspan="6">
+                            <i class="fas fa-chevron-right text-[8px] mr-2 transition-transform campaign-chevron-${orgIdx}" style="color:var(--color-text-light);"></i>
+                            <span class="font-bold text-xs" style="color: var(--color-text);">Orgánico / Directo</span>
+                            <span class="text-[10px] text-gray-400 ml-2">${organicPayments.payments.length} pago(s)</span>
+                        </td>
+                        <td class="py-3 px-4 text-right font-bold text-sm text-green-500">$${organicPayments.totalAmount.toLocaleString('es-MX', {minimumFractionDigits:2})}</td>
+                    </tr>
+                    ${orgRows}`;
+                }
+
+                section.style.display = 'block';
+            } catch (e) {
+                console.error('Error fetching campaign breakdown:', e);
+                section.style.display = 'none';
+            }
+        }
+
+        function toggleCampaignPayments(idx) {
+            const rows = document.querySelectorAll(`.campaign-payments-${idx}`);
+            const chevron = document.querySelector(`.campaign-chevron-${idx}`);
+            const isVisible = rows[0]?.style.display !== 'none';
+            rows.forEach(r => r.style.display = isVisible ? 'none' : 'table-row');
+            if (chevron) chevron.style.transform = isVisible ? '' : 'rotate(90deg)';
+        }
+
+        async function fetchOrders(dateISO) {
+            try {
+                const isToday = dateISO === new Date().toISOString().split('T')[0];
+                console.log(`Iniciando fetch de pedidos para la fecha: ${dateISO} (Hoy: ${isToday})`);
+                
+                const body = document.getElementById('orders-body');
+                const loading = document.getElementById('loading-state');
+                const refreshBtn = document.querySelector('.refresh-btn i');
+                const totalText = document.getElementById('total-today');
+                const confirmedText = document.getElementById('confirmed-total');
+                const totalLabel = document.getElementById('total-label');
+                const confirmedLabel = document.getElementById('confirmed-label');
+                const ordersConvText = document.getElementById('orders-conv-pct');
+                const revenueConvText = document.getElementById('revenue-conv-pct');
+                const adSpendText = document.getElementById('ad-spend-total');
+                const adSpendLabel = document.getElementById('ad-spend-label');
+                const roasText = document.getElementById('roas-val');
+                
+                // Asegurar que el estado de carga tenga el HTML original si fue reemplazado por error
+                if (loading.querySelector('.bg-red-50')) {
+                    loading.innerHTML = `
+                        <div class="relative"><i class="fas fa-circle-notch fa-spin text-5xl text-primary" style="color: var(--color-primary)"></i></div>
+                        <div class="space-y-1">
+                            <p class="font-bold text-gray-600 dark:text-gray-300">Sincronizando con Firestore</p>
+                            <p class="text-xs">Obteniendo los pedidos...</p>
+                        </div>
+                    `;
+                }
+                const loadingText = loading.querySelector('p.font-bold');
+                
+                if (refreshBtn) refreshBtn.classList.add('fa-spin');
+                
+                // Mostrar cargando en las tarjetas
+                const statLoader = '<i class="fas fa-circle-notch fa-spin opacity-40"></i>';
+                const fabricarText = document.getElementById('fabricar-total');
+                const fabricarCount = document.getElementById('fabricar-count');
+                const fabricarLabel = document.getElementById('fabricar-label');
+                totalText.innerHTML = statLoader;
+                confirmedText.innerHTML = statLoader;
+                adSpendText.innerHTML = statLoader;
+                ordersConvText.innerHTML = statLoader;
+                revenueConvText.innerHTML = statLoader;
+                roasText.innerHTML = statLoader;
+                fabricarText.innerHTML = statLoader;
+
+                // Actualizar labels según la fecha
+                if (isToday) {
+                    totalLabel.textContent = 'Venta Proyectada (Hoy)';
+                    confirmedLabel.textContent = 'Venta Real (Hoy)';
+                    fabricarLabel.textContent = 'Fabricar Hoy';
+                    if (loadingText) loadingText.textContent = 'Sincronizando con Firestore';
+                } else {
+                    totalLabel.textContent = `Proyectado (${dateISO})`;
+                    confirmedLabel.textContent = `Real (${dateISO})`;
+                    adSpendLabel.textContent = `Ads (${dateISO})`;
+                    fabricarLabel.textContent = `Fabricar (${dateISO})`;
+                    if (loadingText) loadingText.textContent = `Cargando histórico del ${dateISO}`;
+                }
+
+                // --- Obtener gasto publicitario y pedidos Fabricar en paralelo ---
+                let adSpend = 0;
+                try {
+                    const [kpiRes, fabricarRes] = await Promise.all([
+                        fetch(`${API_BASE}/api/kpi/daily?date=${dateISO}`),
+                        fetch(`${API_BASE}/api/orders/confirmed-today?date=${dateISO}`)
+                    ]);
+                    const kpiData = await kpiRes.json();
+                    if (kpiData.success) {
+                        adSpend = kpiData.spend || 0;
+                    }
+                    const fabricarData = await fabricarRes.json();
+                    if (fabricarData.success) {
+                        fabricarText.textContent = '$' + fabricarData.totalAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                        fabricarCount.textContent = `${fabricarData.count} pedido${fabricarData.count !== 1 ? 's' : ''}`;
+                    } else {
+                        fabricarText.textContent = '$0.00';
+                        fabricarCount.textContent = '0 pedidos';
+                    }
+                } catch (e) {
+                    console.error("Error fetching KPI/Fabricar:", e);
+                    fabricarText.textContent = '$0.00';
+                    fabricarCount.textContent = '0 pedidos';
+                }
+                adSpendText.textContent = '$' + adSpend.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+
+                // Determinar URL según si es hoy o histórico
+                const endpoint = isToday ? '/api/orders/today' : `/api/orders/history?date=${dateISO}`;
+                const response = await fetch(`${API_BASE}${endpoint}`);
+                
+                if (!response.ok) {
+                    throw new Error(`Error en el servidor: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                
+                if (refreshBtn) refreshBtn.classList.remove('fa-spin');
+                
+                loading.classList.add('hidden');
+                body.innerHTML = '';
+                
+                if (data.success && Array.isArray(data.orders) && data.orders.length > 0) {
+                    let totalSum = 0;
+                    let confirmedSum = 0;
+                    let confirmedCount = 0;
+                    const totalCount = data.orders.length;
+
+                    data.orders.forEach((order) => {
+                        const amount = parseFloat(order.total) || 0;
+                        totalSum += amount;
+                        
+                        // Lógica de Venta Real (Fabricar o Pagado) - Más robusta
+                        const rawStatus = (order.estatus || order.status || '').toLowerCase();
+                        const isConfirmed = rawStatus.includes('fabricar') || rawStatus.includes('pagado');
+                        let confirmedAmount = 0;
+                        if (isConfirmed) {
+                            confirmedAmount = amount;
+                            confirmedSum += amount;
+                            confirmedCount++;
+                        }
+
+                        const date = order.createdAt ? new Date(order.createdAt) : new Date();
+                        const timeStr = isNaN(date.getTime()) ? '--:--' : date.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', hour12: true });
+                        
+                        const row = `
+                            <tr class="animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                <td>
+                                    <div class="flex items-center gap-4">
+                                        <div class="bg-primary/10 dark:bg-primary/20 w-10 h-10 rounded-xl flex items-center justify-center text-primary" style="background-color: var(--color-subtle-bg); color: var(--color-primary)">
+                                            <i class="fas fa-user-tag"></i>
+                                        </div>
+                                        <div>
+                                            <div class="font-black text-gray-800 dark:text-white text-base">DH${order.consecutiveOrderNumber || '????'}</div>
+                                            <div class="text-[0.65rem] text-gray-400 font-black uppercase tracking-wider">${order.clientName || 'Cliente desconocido'}</div>
+                                        </div>
+                                    </div>
+                                </td>
+                                <td class="font-bold text-gray-500 text-xs uppercase tracking-tighter">${timeStr}</td>
+                                <td class="text-gray-600 dark:text-gray-300 font-semibold italic text-xs">${order.producto || 'Sin descripción'}</td>
+                                <td class="text-gray-400 font-bold">$${amount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td class="font-black ${isConfirmed ? 'text-green-600' : 'text-gray-300'}" title="Estatus: ${order.estatus || order.status || 'N/A'}">$${confirmedAmount.toLocaleString('es-MX', { minimumFractionDigits: 2 })}</td>
+                                <td><span class="badge-source">${order.adSource || 'Orgánico / Directo'}</span></td>
+                            </tr>
+                        `;
+                        body.insertAdjacentHTML('beforeend', row);
+                    });
+                    totalText.textContent = '$' + totalSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+                    confirmedText.textContent = '$' + confirmedSum.toLocaleString('es-MX', { minimumFractionDigits: 2 });
+
+                    // Calcular porcentajes de conversión y ROAS
+                    const orderPct = (confirmedCount / totalCount) * 100;
+                    const revenuePct = totalSum > 0 ? (confirmedSum / totalSum) * 100 : 0;
+                    const roas = adSpend > 0 ? (confirmedSum / adSpend) : 0;
+                    
+                    ordersConvText.innerHTML = `${orderPct.toFixed(1)}% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    revenueConvText.innerHTML = `${revenuePct.toFixed(1)}% <span class="text-[10px] opacity-70">DINERO</span>`;
+                    roasText.innerHTML = `${roas.toFixed(1)} <span class="text-[10px] opacity-70">ROAS</span>`;
+                } else {
+                    body.innerHTML = `
+                        <tr>
+                            <td colspan="6" class="empty-state">
+                                <div class="opacity-10 mb-6 text-7xl"><i class="fas fa-shopping-basket"></i></div>
+                                <p class="text-xl font-black text-gray-400 uppercase tracking-tighter">Sin actividad detectada</p>
+                                <p class="text-xs font-bold text-gray-400 mt-2 uppercase">No se encontraron pedidos para el día seleccionado.</p>
+                            </td>
+                        </tr>
+                    `;
+                    totalText.textContent = '$0.00';
+                    confirmedText.textContent = '$0.00';
+                    adSpendText.textContent = '$0.00';
+                    ordersConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">PEDIDOS</span>`;
+                    revenueConvText.innerHTML = `0.0% <span class="text-[10px] opacity-70">DINERO</span>`;
+                    roasText.innerHTML = `0.0 <span class="text-[10px] opacity-70">ROAS</span>`;
+                }
+
+                // Manejar auto-refresh
+                if (isToday) {
+                    if (!refreshInterval) {
+                        refreshInterval = setInterval(() => fetchOrders(currentSelectedDate), 3 * 60 * 1000);
+                        console.log("Auto-refresh activado (cada 3 min)");
+                    }
+                } else {
+                    if (refreshInterval) {
+                        clearInterval(refreshInterval);
+                        refreshInterval = null;
+                        console.log("Auto-refresh desactivado (viendo histórico)");
+                    }
+                }
+
+                // Cargar progresión de cobro y desglose de campañas
+                fetchProgression(dateISO);
+                fetchCampaignBreakdown(dateISO);
+
+            } catch (error) {
+                console.error('Error detallado en fetchOrders:', error);
+                const loadingState = document.getElementById('loading-state');
+                if (loadingState) {
+                    loadingState.innerHTML = `
+                        <div class="bg-red-50 dark:bg-red-900/20 p-6 rounded-2xl border border-red-100 dark:border-red-900/30 w-full max-w-md">
+                            <i class="fas fa-exclamation-triangle text-red-500 text-3xl mb-3"></i>
+                            <p class="text-red-500 font-black uppercase tracking-tighter">Error de Aplicación</p>
+                            <p class="text-xs text-red-400 mt-1">${error.message}</p>
+                            <button onclick="handleRefreshClick()" class="mt-4 px-6 py-2 bg-red-500 text-white rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-red-600 transition-colors">Reintentar Ahora</button>
+                        </div>
+                    `;
+                    loadingState.classList.remove('hidden');
+                }
+            }
+        }
+
+        // Inicializar DatePicker
+        document.addEventListener('DOMContentLoaded', () => {
+            const picker = new Litepicker({
+                element: document.getElementById('datepicker'),
+                format: 'YYYY-MM-DD',
+                singleMode: true,
+                numberOfMonths: 1,
+                numberOfColumns: 1,
+                maxDate: new Date(),
+                lang: 'es-ES',
+                setup: (picker) => {
+                    picker.on('selected', (date) => {
+                        const dateISO = date.format('YYYY-MM-DD');
+                        currentSelectedDate = dateISO;
+                        document.getElementById('loading-state').classList.remove('hidden');
+                        document.getElementById('orders-body').innerHTML = '';
+                        fetchOrders(dateISO);
+                    });
+                },
+            });
+
+            // Picker para Snapshot
+            const snapshotPicker = new Litepicker({
+                element: document.getElementById('snapshot-datepicker'),
+                format: 'YYYY-MM-DD',
+                singleMode: true,
+                numberOfMonths: 1,
+                numberOfColumns: 1,
+                maxDate: new Date(),
+                lang: 'es-ES',
+                setup: (picker) => {
+                    picker.on('selected', (date) => {
+                        snapshotSelectedDate = date.format('YYYY-MM-DD');
+                        fetchSnapshot();
+                    });
+                },
+            });
+
+            // Listener para el input de tiempo del snapshot
+            document.getElementById('snapshot-time').addEventListener('change', (e) => {
+                snapshotSelectedTime = e.target.value;
+                fetchSnapshot();
+            });
+
+            // Establecer fecha inicial (hoy)
+            picker.setDate(new Date());
+            fetchOrders(currentSelectedDate);
+        });
+    </script>
+</body>
+</html>

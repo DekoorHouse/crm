@@ -1,0 +1,240 @@
+const { app } = require('./config');
+const { router: whatsappRouter } = require('./whatsappHandler');
+const apiRouter = require('./apiRoutes');
+const autoPostRouter = require('./autopost/autoPostRoutes');
+const waGroupRouter = require('./autopost/whatsappGroupRoutes');
+const fbGroupRouter = require('./autopost/fbGroupRoutes');
+const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
+const metaAdsRouter = require('./meta/metaAdsRoutes');
+const mockupsRouter = require('./mockups/mockupsRoutes');
+const conektaRouter = require('./conekta/conektaRoutes');
+const jtGuiasRouter = require('./jt/jtRoutes');
+const { startScheduler } = require('./autopost/autoPostScheduler');
+const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
+const path = require('path');
+const express = require('express');
+const { WebSocketServer } = require('ws');
+
+const PORT = process.env.PORT || 3000;
+
+// --- MONTAJE DE RUTAS ---
+// Messenger ANTES de WhatsApp porque '/webhook' capturaría '/webhook/messenger'
+const { router: messengerRouter } = require('./messengerHandler');
+app.use('/webhook/messenger', messengerRouter);
+
+app.use('/webhook', whatsappRouter);
+
+// Endpoint para servir variables de entorno al frontend de forma segura
+app.get('/env-config.js', (req, res) => {
+    res.type('application/javascript');
+    // Si no hay API_URL definida, vacía para que use rutas relativas (mismo dominio)
+    res.send(`window.API_BASE_URL = "${process.env.API_URL || ''}";`);
+});
+
+// IMPORTANTE: Definir el router de la API antes que los archivos estáticos
+app.use('/api', apiRouter);
+app.use('/api/autopost', autoPostRouter);
+app.use('/api/wa-group', waGroupRouter);
+app.use('/api/fb-group', fbGroupRouter);
+app.use('/api/laser', laserRouter);
+app.use('/api/meta-ads', metaAdsRouter);
+app.use('/api/mockups', mockupsRouter);
+app.use('/api/conekta', conektaRouter);
+app.use('/api/jt-guias', jtGuiasRouter);
+
+// --- SERVIR ARCHIVOS ESTÁTICOS ---
+app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// --- NUEVA APP NEXT.JS (Pedidos Redesign) ---
+// Servir archivos estáticos de Next.js desde /pedidos-new/
+app.use('/pedidos-new/_next', express.static(path.join(__dirname, '..', 'public', 'pedidos-new', '_next')));
+app.get('/pedidos-new', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+});
+app.get('/pedidos-new/login', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'login.html'));
+});
+app.get('/pedidos-new/pedidos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'pedidos-new', 'pedidos.html'));
+});
+
+// --- RUTAS PARA SERVIR LA APLICACIÓN FRONTEND ---
+app.get('/ads', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'ads', 'index.html'));
+});
+
+app.get('/editor', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'editor', 'index.html'));
+});
+
+app.get('/datos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'datos', 'index.html'));
+});
+
+
+app.get('/autopost', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'autopost', 'index.html'));
+});
+
+app.get('/wa-group', (req, res) => {
+    res.redirect('/autopost?tab=wa');
+});
+
+app.get('/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'panel.html'));
+});
+
+app.get('/checador/panel', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'panel.html'));
+});
+
+app.get('/checador/mi-perfil', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'checador', 'mi-perfil.html'));
+});
+
+app.get('/laser', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'laser', 'index.html'));
+});
+
+app.get('/envios', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'envios', 'index.html'));
+});
+
+app.get('/guias', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'guias', 'index.html'));
+});
+
+app.get('/referencias', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'referencias', 'index.html'));
+});
+
+app.get('/referencias/moderacion', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'referencias', 'moderacion.html'));
+});
+
+app.get('/meta', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'meta', 'index.html'));
+});
+
+app.get('/mockups', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'mockups', 'index.html'));
+});
+
+app.get('/ps', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'ps', 'index.html'));
+});
+
+app.get('/terminos', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'terminos', 'index.html'));
+});
+
+app.get('/sitio/checkout', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'checkout', 'index.html'));
+});
+
+app.get('/sitio/pago-exitoso', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-exitoso', 'index.html'));
+});
+
+app.get('/sitio/pago-fallido', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-fallido', 'index.html'));
+});
+
+// --- SITEMAP DINÁMICO ---
+app.get('/sitemap.xml', (req, res) => {
+    const baseUrl = 'https://app.dekoormx.com';
+    const collections = ['ninos', 'pareja', 'empresas', 'familia', 'memorial', 'otros'];
+    const today = new Date().toISOString().split('T')[0];
+
+    let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+    xml += '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n';
+
+    // Páginas estáticas
+    const pages = [
+        { loc: '/sitio/', changefreq: 'weekly', priority: '1.0' },
+        { loc: '/sitio/coleccion/', changefreq: 'weekly', priority: '0.9' },
+        { loc: '/referencias/', changefreq: 'weekly', priority: '0.8' },
+        { loc: '/jt-rastreo/', changefreq: 'monthly', priority: '0.6' },
+        { loc: '/privacidad/', changefreq: 'yearly', priority: '0.3' },
+        { loc: '/terminos/', changefreq: 'yearly', priority: '0.3' },
+    ];
+
+    pages.forEach(p => {
+        xml += `  <url>\n    <loc>${baseUrl}${p.loc}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>${p.changefreq}</changefreq>\n    <priority>${p.priority}</priority>\n  </url>\n`;
+    });
+
+    // Colecciones dinámicas
+    collections.forEach(col => {
+        xml += `  <url>\n    <loc>${baseUrl}/sitio/coleccion/?id=${col}</loc>\n    <lastmod>${today}</lastmod>\n    <changefreq>weekly</changefreq>\n    <priority>0.8</priority>\n  </url>\n`;
+    });
+
+    xml += '</urlset>';
+    res.header('Content-Type', 'application/xml');
+    res.send(xml);
+});
+
+// --- PÁGINA 404 para rutas del sitio público ---
+app.get('/sitio/*', (req, res) => {
+    res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
+});
+
+// Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
+app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+});
+
+// --- INICIO DEL SERVIDOR ---
+const server = app.listen(PORT, () => {
+  console.log(`Servidor escuchando en el puerto ${PORT}`);
+  // Iniciar scheduler de auto-publicacion Google Photos -> Facebook
+  startScheduler();
+  // Iniciar scheduler de WhatsApp Group
+  startWhatsAppScheduler();
+  // Conectar bridge TCP a MeerK40t
+  laserBridge.connect();
+});
+
+// --- WebSocket para Laser ---
+const wss = new WebSocketServer({ server, path: '/ws/laser' });
+
+wss.on('connection', (ws) => {
+    // Send current connection status
+    ws.send(JSON.stringify({ type: 'status', connected: laserBridge.connected }));
+
+    // Forward MeerK40t output to this client
+    const onOutput = (text) => {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'output', text }));
+        }
+    };
+    const onConnected = () => {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'status', connected: true }));
+        }
+    };
+    const onDisconnected = () => {
+        if (ws.readyState === ws.OPEN) {
+            ws.send(JSON.stringify({ type: 'status', connected: false }));
+        }
+    };
+
+    laserBridge.on('output', onOutput);
+    laserBridge.on('connected', onConnected);
+    laserBridge.on('disconnected', onDisconnected);
+
+    // Receive commands from client
+    ws.on('message', (raw) => {
+        try {
+            const msg = JSON.parse(raw);
+            if (msg.type === 'command' && msg.cmd) {
+                laserBridge.send(msg.cmd);
+            }
+        } catch (e) { /* ignore bad messages */ }
+    });
+
+    ws.on('close', () => {
+        laserBridge.off('output', onOutput);
+        laserBridge.off('connected', onConnected);
+        laserBridge.off('disconnected', onDisconnected);
+    });
+});

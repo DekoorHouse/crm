@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lista de Envíos - Dekoor</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/envios/style.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+    <div class="content-box">
+        <div class="page-header">
+            <h1><i class="fas fa-shipping-fast"></i> Lista de Envíos</h1>
+            <div class="header-actions">
+                <span id="contadorEnvios" class="counter-badge">0 registros</span>
+                <button id="btnExportCSV" class="btn btn-secondary" title="Exportar CSV"><i class="fas fa-file-csv"></i> Exportar</button>
+                <button id="btnRecargar" class="btn btn-secondary" title="Recargar"><i class="fas fa-sync-alt"></i></button>
+            </div>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="table" id="tablaEnvios">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Fecha</th>
+                        <th>No. Pedido</th>
+                        <th>Nombre Completo</th>
+                        <th>Teléfono</th>
+                        <th>Dirección</th>
+                        <th>Num. Int.</th>
+                        <th>Colonia</th>
+                        <th>Ciudad</th>
+                        <th>C.P.</th>
+                        <th>Estado</th>
+                        <th>Referencia</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody id="cuerpoTablaEnvios">
+                    <tr><td colspan="13" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando datos...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script src="/env-config.js"></script>
+<script type="module" src="/envios/script.js"></script>
+
+</body>
+</html>

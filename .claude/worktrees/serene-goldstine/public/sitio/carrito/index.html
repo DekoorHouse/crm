@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+
+    <title>Carrito | Dekoor</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .cart-page {
+            min-height: 100vh;
+            background: var(--cream);
+            padding-top: calc(var(--nav-height, 80px) + 32px + 1.5rem);
+        }
+        .cart-layout {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 1.5rem;
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 2rem;
+            align-items: start;
+        }
+        .cart-panel {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            box-shadow: var(--shadow);
+        }
+        .cart-panel h1 {
+            font-size: 1.3rem;
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .cart-panel h1 .cart-count-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-medium);
+        }
+
+        /* Cart items */
+        .cart-item {
+            display: flex;
+            gap: 16px;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+        .cart-item:first-child { padding-top: 0; }
+        .cart-item:last-child { border-bottom: none; }
+        .cart-item-img {
+            width: 100px;
+            height: 100px;
+            border-radius: var(--radius);
+            overflow: hidden;
+            flex-shrink: 0;
+            background: var(--cream-dark);
+        }
+        .cart-item-img img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .cart-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .cart-item-name {
+            font-weight: 700;
+            color: var(--text-dark);
+            font-size: 1rem;
+            margin-bottom: 2px;
+        }
+        .cart-item-collection {
+            font-size: 0.82rem;
+            color: var(--text-medium);
+            margin-bottom: 8px;
+        }
+        .cart-item-pricing {
+            display: flex;
+            align-items: baseline;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+        .cart-item-pricing .original {
+            font-size: 0.85rem;
+            color: var(--text-medium);
+            text-decoration: line-through;
+        }
+        .cart-item-pricing .current {
+            font-weight: 800;
+            color: var(--primary);
+            font-size: 1.15rem;
+        }
+        .cart-item-actions {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .qty-control {
+            display: inline-flex;
+            align-items: center;
+            border: 2px solid var(--border);
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+        .qty-btn {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 1rem;
+            color: var(--teal);
+            transition: background 0.2s;
+        }
+        .qty-btn:hover { background: var(--cream); }
+        .qty-value {
+            width: 32px;
+            text-align: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+            color: var(--text-dark);
+        }
+        .remove-btn {
+            background: none;
+            border: none;
+            color: var(--text-light);
+            cursor: pointer;
+            font-size: 0.82rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            transition: color 0.2s;
+            font-family: inherit;
+        }
+        .remove-btn:hover { color: #dc2626; }
+
+        /* Empty cart */
+        .cart-empty {
+            text-align: center;
+            padding: 3rem 1rem;
+        }
+        .cart-empty i {
+            font-size: 3.5rem;
+            color: var(--border);
+            margin-bottom: 1rem;
+        }
+        .cart-empty h2 {
+            font-size: 1.2rem;
+            color: var(--text-dark);
+            margin-bottom: 0.5rem;
+        }
+        .cart-empty p {
+            color: var(--text-medium);
+            margin-bottom: 1.5rem;
+        }
+
+        /* Summary sidebar */
+        .cart-summary {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            padding: 2rem;
+            box-shadow: var(--shadow);
+            position: sticky;
+            top: calc(var(--nav-height, 80px) + 32px + 1.5rem);
+        }
+        .cart-summary h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--teal);
+            margin-bottom: 1.25rem;
+        }
+        .summary-line {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-medium);
+            margin-bottom: 0.5rem;
+        }
+        .summary-line.total {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: var(--text-dark);
+            padding-top: 0.75rem;
+            border-top: 2px solid var(--border);
+            margin-top: 0.5rem;
+            margin-bottom: 1.25rem;
+        }
+        .summary-line.total span:last-child {
+            color: var(--primary);
+        }
+        .summary-shipping {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            color: #10b981;
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-bottom: 1.25rem;
+        }
+        .checkout-btn {
+            width: 100%;
+            padding: 14px;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 1rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+        }
+        .checkout-btn:hover { background: var(--primary-hover); color: white; }
+        .wa-checkout-btn {
+            width: 100%;
+            padding: 12px;
+            background: #25D366;
+            color: white;
+            border: none;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 0.9rem;
+            font-family: inherit;
+            cursor: pointer;
+            transition: var(--transition);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            text-decoration: none;
+            margin-top: 10px;
+        }
+        .wa-checkout-btn:hover { background: #1da851; color: white; }
+        .summary-trust {
+            margin-top: 1.25rem;
+            padding-top: 1rem;
+            border-top: 1px solid var(--border);
+        }
+        .summary-trust-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-medium);
+        }
+        .summary-trust-item i {
+            color: var(--primary);
+            width: 16px;
+            text-align: center;
+        }
+        .summary-methods {
+            display: flex;
+            justify-content: center;
+            gap: 1rem;
+            margin-top: 1rem;
+            padding-top: 0.75rem;
+            border-top: 1px solid var(--border);
+        }
+        .summary-methods span {
+            font-size: 0.75rem;
+            color: var(--text-medium);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .continue-shopping {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            color: var(--teal);
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 0.85rem;
+            margin-top: 1rem;
+            transition: color 0.2s;
+        }
+        .continue-shopping:hover { color: var(--primary); }
+
+        @media (max-width: 768px) {
+            .cart-layout {
+                grid-template-columns: 1fr;
+                gap: 1rem;
+                padding: 1rem;
+            }
+            .cart-summary { position: static; }
+            .cart-item-img { width: 80px; height: 80px; }
+        }
+
+        @media (max-width: 480px) {
+            .cart-item { flex-direction: column; gap: 10px; }
+            .cart-item-img { width: 100%; height: 200px; }
+        }
+
+        /* Checkout Modal */
+        .checkout-overlay {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+            z-index: 9999; display: none; align-items: center; justify-content: center; padding: 1rem;
+        }
+        .checkout-overlay.active { display: flex; }
+        .checkout-modal {
+            background: var(--white); border-radius: var(--radius-lg); max-width: 440px;
+            width: 100%; padding: 2rem; position: relative; box-shadow: var(--shadow-lg);
+            max-height: 90vh; overflow-y: auto;
+        }
+        .checkout-modal h2 { font-size: 1.3rem; font-weight: 800; color: var(--teal); margin-bottom: 0.25rem; }
+        .checkout-subtitle { color: var(--text-medium); font-size: 0.9rem; margin-bottom: 1.25rem; }
+        .checkout-close {
+            position: absolute; top: 12px; right: 16px; background: none;
+            border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-medium); line-height: 1;
+        }
+        .ck-field { margin-bottom: 1rem; }
+        .ck-field label { display: block; font-weight: 600; font-size: 0.85rem; color: var(--text-dark); margin-bottom: 4px; }
+        .ck-field input {
+            width: 100%; padding: 10px 14px; border: 2px solid var(--border); border-radius: var(--radius);
+            font-size: 0.95rem; font-family: inherit; transition: border-color 0.2s; box-sizing: border-box;
+        }
+        .ck-field input:focus { outline: none; border-color: var(--primary); }
+        .ck-shipping-options { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1rem; }
+        .ck-shipping {
+            display: flex; align-items: center; gap: 10px; border: 2px solid var(--border);
+            border-radius: var(--radius); padding: 12px 14px; cursor: pointer; transition: border-color 0.2s;
+        }
+        .ck-shipping:hover, .ck-shipping.selected { border-color: var(--primary); }
+        .ck-shipping input[type="radio"] { accent-color: var(--primary); width: 18px; height: 18px; margin: 0; flex-shrink: 0; }
+    </style>
+</head>
+<body>
+
+<!-- Banner -->
+<div class="ticker-banner">
+    <div class="ticker-track">
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-credit-card"></i> PAGA CON TARJETA, OXXO O TRANSFERENCIA</span>
+        <span class="ticker-sep">&#9733;</span>
+    </div>
+</div>
+
+<!-- Navbar -->
+<nav class="navbar scrolled" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="logo-full" width="140" height="40">
+        </a>
+        <div class="nav-links">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
+            <a href="/sitio/#como-funciona" class="nav-link">Como Funciona</a>
+            <a href="/referencias/" class="nav-link">Referencias</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn" aria-label="Rastrear pedido"><i class="fas fa-search"></i></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn" aria-label="Carrito"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge" style="display:none;">0</span></a>
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor" target="_blank" rel="noopener" class="nav-icon-btn" aria-label="WhatsApp"><i class="fab fa-whatsapp"></i></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn" aria-label="Menu">
+            <i class="fas fa-bars"></i>
+        </button>
+    </div>
+</nav>
+
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link"><i class="fas fa-layer-group"></i> Colecciones</a>
+        <a href="/referencias/" class="mobile-link"><i class="fas fa-star"></i> Referencias</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-truck"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<main class="cart-page">
+    <div class="cart-layout">
+        <!-- Left: Cart Items -->
+        <div class="cart-panel">
+            <h1><i class="fas fa-shopping-cart"></i> Mi carrito <span class="cart-count-label" id="cartCountLabel"></span></h1>
+            <div id="cartItems"></div>
+            <a href="/sitio/#colecciones" class="continue-shopping"><i class="fas fa-arrow-left"></i> Seguir comprando</a>
+        </div>
+
+        <!-- Right: Summary -->
+        <div class="cart-summary" id="cartSummary">
+            <h2>Resumen del pedido</h2>
+            <div id="summaryLines"></div>
+            <div class="summary-shipping"><i class="fas fa-truck"></i> Envio gratis a todo Mexico</div>
+            <a href="#" id="checkoutLink" class="checkout-btn" onclick="goToCheckout(event)">
+                <i class="fas fa-lock"></i> Proceder al pago
+            </a>
+            <a href="#" id="waCheckoutLink" class="wa-checkout-btn" target="_blank" rel="noopener">
+                <i class="fab fa-whatsapp"></i> Pedir por WhatsApp
+            </a>
+            <div class="summary-trust">
+                <div class="summary-trust-item"><i class="fas fa-lock"></i> Pago 100% seguro con Conekta</div>
+                <div class="summary-trust-item"><i class="fas fa-camera"></i> Paga hasta ver tu pedido terminado</div>
+                <div class="summary-trust-item"><i class="fas fa-shield-alt"></i> Garantia de satisfaccion</div>
+            </div>
+            <div class="summary-methods">
+                <span><i class="far fa-credit-card"></i> Tarjeta</span>
+                <span><i class="fas fa-store"></i> OXXO</span>
+                <span><i class="fas fa-university"></i> SPEI</span>
+            </div>
+        </div>
+    </div>
+</main>
+
+<!-- Checkout Modal -->
+<div class="checkout-overlay" id="checkoutOverlay">
+    <div class="checkout-modal">
+        <button class="checkout-close" id="checkoutClose">&times;</button>
+        <h2>Completa tu pedido</h2>
+        <p class="checkout-subtitle">Llena tus datos y paga de forma segura</p>
+        <div id="checkoutProduct" style="background:var(--cream);border-radius:var(--radius);padding:12px;margin-bottom:1.25rem;font-size:0.9rem;color:var(--text-dark);"></div>
+        <form id="checkoutForm">
+            <div class="ck-field">
+                <label for="ckName">Nombre completo *</label>
+                <input type="text" id="ckName" required placeholder="Tu nombre">
+            </div>
+            <div class="ck-field">
+                <label for="ckPhone">WhatsApp (10 digitos) *</label>
+                <input type="tel" id="ckPhone" required placeholder="618 123 4567" maxlength="15">
+            </div>
+            <div class="ck-field">
+                <label for="ckEmail">Email *</label>
+                <input type="email" id="ckEmail" required placeholder="tu@email.com">
+            </div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+            <div class="ck-field">
+                <label for="ckStreet">Calle y numero *</label>
+                <input type="text" id="ckStreet" required placeholder="Av. Juarez #123">
+            </div>
+            <div class="ck-field">
+                <label for="ckColonia">Colonia *</label>
+                <input type="text" id="ckColonia" required placeholder="Centro">
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div class="ck-field">
+                    <label for="ckCity">Ciudad *</label>
+                    <input type="text" id="ckCity" required placeholder="Durango">
+                </div>
+                <div class="ck-field">
+                    <label for="ckState">Estado *</label>
+                    <input type="text" id="ckState" required placeholder="Durango">
+                </div>
+            </div>
+            <div class="ck-field">
+                <label for="ckZip">Codigo postal *</label>
+                <input type="text" id="ckZip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+            </div>
+            <div style="font-weight:700;font-size:0.9rem;color:var(--teal);margin:1.25rem 0 0.5rem;"><i class="fas fa-truck"></i> Metodo de envio</div>
+            <div class="ck-shipping-options">
+                <label class="ck-shipping selected">
+                    <input type="radio" name="shipping" value="jt" checked>
+                    <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">J&T Express</span><span style="font-weight:700;font-size:0.9rem;color:#10b981;">Gratis</span></div>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">5-7 dias habiles</span>
+                    </div>
+                </label>
+                <label class="ck-shipping">
+                    <input type="radio" name="shipping" value="dhl">
+                    <div style="flex:1;">
+                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">DHL Express</span><span style="font-weight:700;font-size:0.9rem;">+$160 MXN</span></div>
+                        <span style="font-size:0.8rem;color:var(--text-medium);">2-3 dias habiles</span>
+                    </div>
+                </label>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-weight:800;font-size:1.15rem;padding:1rem 0;border-top:2px solid var(--border);margin:1rem 0;">
+                <span>Total:</span>
+                <span id="ckTotal" style="color:var(--primary);font-size:1.3rem;">$0 MXN</span>
+            </div>
+            <button type="submit" class="checkout-btn"><i class="fas fa-lock"></i> Continuar al pago</button>
+        </form>
+    </div>
+</div>
+
+<!-- WhatsApp FAB -->
+<a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20me%20interesan%20sus%20productos" class="whatsapp-fab" target="_blank" rel="noopener" aria-label="Contactar por WhatsApp">
+    <i class="fab fa-whatsapp"></i>
+</a>
+
+<script src="/sitio/cart.js"></script>
+<script>
+const WA = '5216181333519';
+
+function renderCart() {
+    const cart = DekoorCart.get();
+    const itemsEl = document.getElementById('cartItems');
+    const summaryEl = document.getElementById('summaryLines');
+    const summaryPanel = document.getElementById('cartSummary');
+    const countLabel = document.getElementById('cartCountLabel');
+
+    if (!cart.length) {
+        itemsEl.innerHTML = `
+            <div class="cart-empty">
+                <i class="fas fa-shopping-cart"></i>
+                <h2>Tu carrito esta vacio</h2>
+                <p>Agrega productos de nuestras colecciones para comenzar</p>
+                <a href="/sitio/#colecciones" class="checkout-btn" style="max-width:280px;margin:0 auto;">
+                    <i class="fas fa-gift"></i> Ver colecciones
+                </a>
+            </div>`;
+        summaryPanel.style.display = 'none';
+        countLabel.textContent = '';
+        return;
+    }
+
+    summaryPanel.style.display = '';
+    const totalCount = DekoorCart.count();
+    countLabel.textContent = `(${totalCount} ${totalCount === 1 ? 'producto' : 'productos'})`;
+
+    itemsEl.innerHTML = cart.map(item => `
+        <div class="cart-item" data-id="${item.id}">
+            <div class="cart-item-img">
+                <img src="${escapeAttr(item.img)}" alt="${escapeAttr(item.name)}" loading="lazy">
+            </div>
+            <div class="cart-item-info">
+                <div class="cart-item-name">${esc(item.name)}</div>
+                <div class="cart-item-collection">Coleccion ${esc(item.collection)}</div>
+                <div class="cart-item-pricing">
+                    <span class="original">$${item.originalPrice}</span>
+                    <span class="current">$${item.price} MXN</span>
+                </div>
+                <div class="cart-item-actions">
+                    <div class="qty-control">
+                        <button class="qty-btn" onclick="changeQty('${item.id}', -1)">-</button>
+                        <span class="qty-value">${item.qty}</span>
+                        <button class="qty-btn" onclick="changeQty('${item.id}', 1)">+</button>
+                    </div>
+                    <button class="remove-btn" onclick="removeItem('${item.id}')"><i class="fas fa-trash-alt"></i> Eliminar</button>
+                </div>
+            </div>
+        </div>`).join('');
+
+    // Summary
+    const subtotal = DekoorCart.subtotal();
+    summaryEl.innerHTML = `
+        <div class="summary-line">
+            <span>Subtotal (${totalCount} ${totalCount === 1 ? 'producto' : 'productos'})</span>
+            <span>$${subtotal.toLocaleString('en')} MXN</span>
+        </div>
+        <div class="summary-line">
+            <span>Envio</span>
+            <span style="color:#10b981;font-weight:600;">Gratis</span>
+        </div>
+        <div class="summary-line total">
+            <span>Total</span>
+            <span>$${subtotal.toLocaleString('en')} MXN</span>
+        </div>`;
+
+    // WhatsApp link
+    const items = cart.map(i => `- ${i.name} (${i.collection}) x${i.qty}`).join('\n');
+    const waMsg = encodeURIComponent(`Hola Dekoor, quiero hacer un pedido:\n\n${items}\n\nTotal: $${subtotal} MXN`);
+    document.getElementById('waCheckoutLink').href = `https://wa.me/${WA}?text=${waMsg}`;
+}
+
+function changeQty(id, delta) {
+    const cart = DekoorCart.get();
+    const item = cart.find(i => i.id === id);
+    if (!item) return;
+    const newQty = item.qty + delta;
+    if (newQty < 1) {
+        removeItem(id);
+        return;
+    }
+    DekoorCart.updateQty(id, newQty);
+    renderCart();
+}
+
+function removeItem(id) {
+    DekoorCart.remove(id);
+    renderCart();
+}
+
+function goToCheckout(e) {
+    e.preventDefault();
+    const cart = DekoorCart.get();
+    if (!cart.length) return;
+
+    const subtotal = DekoorCart.subtotal();
+    const totalCount = DekoorCart.count();
+    const firstItem = cart[0];
+
+    // Show product summary in modal
+    document.getElementById('checkoutProduct').innerHTML =
+        `<strong>${totalCount} ${totalCount === 1 ? 'producto' : 'productos'}</strong> — ` +
+        cart.map(i => `${i.name} (${i.collection})${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ') +
+        `<br><span style="font-weight:800;color:var(--primary);font-size:1.1rem;">$${subtotal.toLocaleString('en')} MXN</span>`;
+
+    updateCheckoutTotal();
+    document.getElementById('checkoutOverlay').classList.add('active');
+}
+
+function updateCheckoutTotal() {
+    const subtotal = DekoorCart.subtotal();
+    const isDHL = document.querySelector('input[name="shipping"]:checked')?.value === 'dhl';
+    const total = subtotal + (isDHL ? 160 : 0);
+    document.getElementById('ckTotal').textContent = `$${total.toLocaleString('en')} MXN`;
+}
+
+// Checkout modal events
+document.getElementById('checkoutClose').addEventListener('click', () => {
+    document.getElementById('checkoutOverlay').classList.remove('active');
+});
+document.getElementById('checkoutOverlay').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('active');
+});
+
+// Shipping toggle
+document.querySelectorAll('input[name="shipping"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        document.querySelectorAll('.ck-shipping').forEach(el => el.classList.remove('selected'));
+        radio.closest('.ck-shipping').classList.add('selected');
+        updateCheckoutTotal();
+    });
+});
+
+// Form submit → redirect to Conekta checkout
+document.getElementById('checkoutForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const cart = DekoorCart.get();
+    if (!cart.length) return;
+    const firstItem = cart[0];
+    const shipping = document.querySelector('input[name="shipping"]:checked').value;
+    const subtotal = DekoorCart.subtotal();
+    const totalQty = DekoorCart.count();
+    const itemsSummary = cart.map(i => `${i.name} (${i.collection})${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ');
+    const params = new URLSearchParams({
+        name: document.getElementById('ckName').value.trim(),
+        phone: document.getElementById('ckPhone').value.trim(),
+        email: document.getElementById('ckEmail').value.trim(),
+        street: document.getElementById('ckStreet').value.trim(),
+        colonia: document.getElementById('ckColonia').value.trim(),
+        city: document.getElementById('ckCity').value.trim(),
+        state: document.getElementById('ckState').value.trim(),
+        zip: document.getElementById('ckZip').value.trim(),
+        shipping,
+        product: itemsSummary,
+        collection: firstItem.collection,
+        img: firstItem.img,
+        subtotal: subtotal,
+        qty: totalQty
+    });
+    window.location.href = '/sitio/checkout/?' + params.toString();
+});
+
+function esc(str) {
+    const d = document.createElement('div');
+    d.textContent = str || '';
+    return d.innerHTML;
+}
+
+function escapeAttr(str) {
+    return (str || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+renderCart();
+
+// Mobile menu
+document.getElementById('hamburgerBtn').addEventListener('click', function() {
+    document.getElementById('mobileMenu').classList.toggle('hidden');
+});
+document.querySelector('.mobile-menu-overlay')?.addEventListener('click', function() {
+    document.getElementById('mobileMenu').classList.add('hidden');
+});
+document.querySelector('.mobile-menu-close')?.addEventListener('click', function() {
+    document.getElementById('mobileMenu').classList.add('hidden');
+});
+</script>
+</body>
+</html>

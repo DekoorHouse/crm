@@ -69,10 +69,9 @@ app.get('/crm', (req, res) => {
     res.sendFile(path.join(nextjsDir, 'crm.html'));
 });
 const crmSections = [
-    'chats', 'clientes', 'pipeline', 'difusion', 'contactos',
-    'departamentos', 'reglas-ads', 'etiquetas', 'campanas',
-    'campana-imagen', 'mensajes-ads', 'respuestas-rapidas',
-    'entrenamiento-ia', 'simulador-ia', 'metricas', 'ajustes'
+    'chats', 'clientes', 'departamentos', 'reglas-ads', 'etiquetas',
+    'mensajes-ads', 'respuestas-rapidas', 'entrenamiento-ia',
+    'simulador-ia', 'ajustes'
 ];
 crmSections.forEach(section => {
     app.get(`/crm/${section}`, (req, res) => {
