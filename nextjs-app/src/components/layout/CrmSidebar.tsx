@@ -134,18 +134,6 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
 
       {/* Footer */}
       <div className={`pb-4 space-y-1 ${collapsed ? "px-2" : "px-3"}`}>
-        {/* Pedidos link */}
-        <Link
-          href="/pedidos"
-          title={collapsed ? "Pedidos" : undefined}
-          className={`flex items-center rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all ${
-            collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
-          }`}
-        >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>receipt_long</span>
-          {!collapsed && "Pedidos"}
-        </Link>
-
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
