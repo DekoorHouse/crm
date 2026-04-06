@@ -5,6 +5,9 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
 import { useTheme } from "@/lib/hooks/useTheme";
 import { signOut } from "@/lib/firebase/auth";
+import { useState, useEffect } from "react";
+import { db } from "@/lib/firebase/config";
+import { collection, query, where, Timestamp, onSnapshot, orderBy, limit, getCountFromServer } from "firebase/firestore";
 
 interface NavItem {
   href: string;
@@ -61,6 +64,29 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
     ? user.email.split("@")[0].charAt(0).toUpperCase() + user.email.split("@")[0].slice(1)
     : "Usuario";
 
+  const [todayOrders, setTodayOrders] = useState(0);
+
+  // Real-time today orders count
+  useEffect(() => {
+    const mexicoDate = new Date().toLocaleDateString("en-CA", { timeZone: "America/Mexico_City" });
+    const start = Timestamp.fromDate(new Date(mexicoDate + "T00:00:00-06:00"));
+    const end = Timestamp.fromDate(new Date(mexicoDate + "T23:59:59.999-06:00"));
+    const pedidosRef = collection(db, "pedidos");
+    const countQ = query(pedidosRef, where("createdAt", ">=", start), where("createdAt", "<", end));
+
+    // Initial count
+    getCountFromServer(countQ).then((snap) => setTodayOrders(snap.data().count)).catch(() => {});
+
+    // Listener for changes
+    const listenerQ = query(pedidosRef, where("createdAt", ">=", start), where("createdAt", "<", end), orderBy("createdAt", "desc"), limit(1));
+    let isFirst = true;
+    const unsub = onSnapshot(listenerQ, () => {
+      if (isFirst) { isFirst = false; return; }
+      getCountFromServer(countQ).then((snap) => setTodayOrders(snap.data().count)).catch(() => {});
+    });
+    return unsub;
+  }, []);
+
   return (
     <aside
       className={`h-screen flex flex-col bg-surface-container-lowest border-r border-outline-variant/15 flex-shrink-0 transition-all duration-200 ${
@@ -79,9 +105,17 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
           </span>
         </button>
         {!collapsed && (
-          <div>
+          <div className="flex-1">
             <h1 className="text-sm font-extrabold font-headline text-on-surface leading-none">Dekoor</h1>
             <p className="text-[10px] text-on-surface-variant font-medium">CRM Workspace</p>
+          </div>
+        )}
+        {/* Today orders badge */}
+        {todayOrders > 0 && (
+          <div className={`flex items-center justify-center rounded-full bg-primary text-on-primary font-bold flex-shrink-0 ${
+            collapsed ? "w-6 h-6 text-[10px]" : "min-w-[24px] h-6 px-1.5 text-[11px]"
+          }`} title={`${todayOrders} pedidos hoy`}>
+            {todayOrders}
           </div>
         )}
       </div>
