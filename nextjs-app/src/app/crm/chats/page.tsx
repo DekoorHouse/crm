@@ -8,6 +8,7 @@ import { markContactUnread } from "@/lib/api/contacts";
 import ContactList from "@/components/crm/ContactList";
 import ChatWindow from "@/components/crm/ChatWindow";
 import ContactDetails from "@/components/crm/ContactDetails";
+import ConversationPreview from "@/components/crm/ConversationPreview";
 import OrderModal from "@/components/pedidos/OrderModal";
 import toast from "react-hot-toast";
 
@@ -26,6 +27,7 @@ export default function ChatsPage() {
   const [designReview, setDesignReview] = useState(false);
   const [pendingAi, setPendingAi] = useState(false);
   const [orderModalOpen, setOrderModalOpen] = useState(false);
+  const [previewId, setPreviewId] = useState<string | null>(null);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
 
@@ -75,7 +77,7 @@ export default function ChatsPage() {
         activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
         designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
         pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
-        onPreview={(id) => setSelectedId(id)}
+        onPreview={(id) => setPreviewId(id)}
         onMarkUnread={(id) => { markContactUnread(id).then(() => toast.success("Marcado como no leido")).catch(() => {}); }}
       />
       <ChatWindow
@@ -106,6 +108,19 @@ export default function ChatsPage() {
           onSaved={() => setOrderModalOpen(false)}
         />
       )}
+
+      {/* Conversation preview */}
+      {previewId && (() => {
+        const previewContact = contacts.find((c) => c.id === previewId);
+        if (!previewContact) return null;
+        return (
+          <ConversationPreview
+            contact={previewContact}
+            onClose={() => setPreviewId(null)}
+            onOpenChat={() => { setSelectedId(previewId); setPreviewId(null); }}
+          />
+        );
+      })()}
     </div>
   );
 }
