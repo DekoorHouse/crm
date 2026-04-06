@@ -31,8 +31,19 @@ export default function ContactItem({ contact, isActive, onClick }: ContactItemP
       }`}
     >
       {/* Avatar */}
-      <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm flex-shrink-0">
-        {(contact.name || contact.id).charAt(0).toUpperCase()}
+      <div className="relative flex-shrink-0">
+        <div className="w-10 h-10 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm">
+          {(contact.name || contact.id).charAt(0).toUpperCase()}
+        </div>
+        {contact.purchaseStatus && (
+          <div className={`absolute -top-0.5 -right-0.5 w-4.5 h-4.5 rounded-full flex items-center justify-center ${
+            contact.purchaseStatus === "completed" ? "bg-primary" : "bg-surface-container-high"
+          }`} style={{ width: 18, height: 18 }}>
+            <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 11, fontVariationSettings: "'FILL' 1" }}>
+              workspace_premium
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Content */}
