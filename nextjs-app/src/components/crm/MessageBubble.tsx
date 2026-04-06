@@ -29,6 +29,63 @@ function StatusIcon({ status }: { status: string }) {
   }
 }
 
+function AudioPlayer({ src }: { src: string }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [duration, setDuration] = useState(0);
+
+  function toggle() {
+    if (!audioRef.current) return;
+    if (playing) { audioRef.current.pause(); }
+    else { audioRef.current.play(); }
+    setPlaying(!playing);
+  }
+
+  function formatSec(s: number) {
+    if (!s || !isFinite(s)) return "0:00";
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 bg-surface-container rounded-2xl px-3 py-2 mb-1 min-w-[240px]">
+      <audio
+        ref={audioRef}
+        src={src}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration ?? 0)}
+        onTimeUpdate={() => setProgress(audioRef.current?.currentTime ?? 0)}
+        onEnded={() => { setPlaying(false); setProgress(0); }}
+      />
+      <button onClick={toggle} className="w-8 h-8 rounded-full bg-primary flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all">
+        <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 18, fontVariationSettings: "'FILL' 1" }}>
+          {playing ? "pause" : "play_arrow"}
+        </span>
+      </button>
+      <div className="flex-1 min-w-0">
+        <div
+          className="h-1.5 bg-surface-container-high rounded-full cursor-pointer relative overflow-hidden"
+          onClick={(e) => {
+            if (!audioRef.current || !duration) return;
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            audioRef.current.currentTime = pct * duration;
+            setProgress(pct * duration);
+          }}
+        >
+          <div className="h-full bg-primary rounded-full transition-all" style={{ width: duration ? `${(progress / duration) * 100}%` : "0%" }} />
+        </div>
+        <div className="flex justify-between mt-1">
+          <span className="text-[9px] text-on-surface-variant/60">{formatSec(progress)}</span>
+          <span className="text-[9px] text-on-surface-variant/60">{formatSec(duration)}</span>
+        </div>
+      </div>
+      <span className="material-symbols-outlined text-primary/60 flex-shrink-0" style={{ fontSize: 16 }}>mic</span>
+    </div>
+  );
+}
+
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 export default function MessageBubble({ message, isSent, onReply, onReact, allMessages }: MessageBubbleProps) {
@@ -98,12 +155,7 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           </>
         )}
         {hasMedia && isVideo && <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />}
-        {hasMedia && isAudio && (
-          <div className="flex items-center gap-2 bg-surface-container rounded-xl px-3 py-2 mb-1 min-w-[220px]">
-            <span className="material-symbols-outlined text-primary" style={{ fontSize: 18 }}>mic</span>
-            <audio src={message.fileUrl} controls className="flex-1 h-8 [&::-webkit-media-controls-panel]:bg-transparent" />
-          </div>
-        )}
+        {hasMedia && isAudio && <AudioPlayer src={message.fileUrl!} />}
         {hasMedia && !isImage && !isVideo && !isAudio && (
           <a href={message.fileUrl} target="_blank" rel="noopener noreferrer" className={`flex items-center gap-2 mb-1 ${isSent ? "text-primary" : "text-primary"}`}>
             <span className="material-symbols-outlined" style={{ fontSize: 18 }}>attach_file</span>
