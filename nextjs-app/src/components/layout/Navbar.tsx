@@ -35,14 +35,6 @@ export default function Navbar({ viewMode, onViewModeChange, onNewOrder, onExpor
           </span>
         </nav>
 
-        {/* Search trigger */}
-        <button
-          onClick={onSearchClick}
-          className="relative hidden lg:flex items-center gap-2 pl-3 pr-4 py-2 bg-surface-container-low rounded-xl text-sm text-on-surface-variant/50 hover:bg-surface-container transition-colors w-64 cursor-text"
-        >
-          <span className="material-symbols-outlined text-lg">search</span>
-          <span>Buscar pedido...</span>
-        </button>
       </div>
 
       {/* Right side */}
