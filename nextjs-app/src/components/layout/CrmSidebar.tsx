@@ -16,7 +16,6 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
   {
     items: [
       { href: "/crm/chats", icon: "chat", label: "Chats" },
-      { href: "/crm/clientes", icon: "people", label: "Clientes" },
     ],
   },
   {
