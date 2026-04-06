@@ -112,5 +112,9 @@ export function useContacts() {
     return () => unsubscribeRef.current?.();
   }, []);
 
-  return { contacts, loading, hasMore, searchQuery, filters, loadContacts, loadMore, search, applyFilters };
+  const updateContactLocal = useCallback((contactId: string, fields: Partial<Contact>) => {
+    setContacts((prev) => prev.map((c) => c.id === contactId ? { ...c, ...fields } : c));
+  }, []);
+
+  return { contacts, loading, hasMore, searchQuery, filters, loadContacts, loadMore, search, applyFilters, updateContactLocal };
 }

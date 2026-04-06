@@ -16,6 +16,7 @@ interface ContactDetailsProps {
   onClose: () => void;
   onNewOrder?: () => void;
   onStatusChange?: (orderId: string, newStatus: string) => void;
+  onContactUpdated?: () => void;
 }
 
 function formatOrderDate(createdAt?: string | null): string {
@@ -23,7 +24,7 @@ function formatOrderDate(createdAt?: string | null): string {
   return new Date(createdAt).toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
-export default function ContactDetails({ contact, onClose, onNewOrder, onStatusChange }: ContactDetailsProps) {
+export default function ContactDetails({ contact, onClose, onNewOrder, onStatusChange, onContactUpdated }: ContactDetailsProps) {
   const [notes, setNotes] = useState<Note[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [newNote, setNewNote] = useState("");
@@ -65,6 +66,7 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
       const newVal = !contact.botActive;
       await updateDoc(doc(db, "contacts_whatsapp", contact.id), { botActive: newVal });
       toast.success(newVal ? "IA activada" : "IA desactivada");
+      onContactUpdated?.();
     } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
   }
 

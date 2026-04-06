@@ -13,7 +13,7 @@ import OrderModal from "@/components/pedidos/OrderModal";
 import toast from "react-hot-toast";
 
 export default function ChatsPage() {
-  const { contacts, loading, hasMore, loadContacts, loadMore, searchQuery, search, filters, applyFilters } = useContacts();
+  const { contacts, loading, hasMore, loadContacts, loadMore, searchQuery, search, filters, applyFilters, updateContactLocal } = useContacts();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { messages, loading: messagesLoading, sessionExpired, replyTo, setReplyTo, send, loadOlder } = useMessages(selectedId);
   const [showDetails, setShowDetails] = useState(() => {
@@ -97,6 +97,9 @@ export default function ChatsPage() {
             } catch (err) {
               toast.error(err instanceof Error ? err.message : "Error");
             }
+          }}
+          onContactUpdated={() => {
+            if (selectedId) updateContactLocal(selectedId, { botActive: !selectedContact.botActive });
           }}
         />
       )}
