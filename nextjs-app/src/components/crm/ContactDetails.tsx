@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import type { Contact } from "@/lib/api/contacts";
 import { skipAi, cancelAi, markAsPurchase, fetchContactOrders } from "@/lib/api/contacts";
+import StatusPicker from "@/components/pedidos/StatusPicker";
 import { db } from "@/lib/firebase/config";
 import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import toast from "react-hot-toast";
@@ -28,6 +29,7 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
   const [newNote, setNewNote] = useState("");
   const [editingNote, setEditingNote] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
+  const [statusPicker, setStatusPicker] = useState<{ orderId: string; currentStatus: string; rect: DOMRect } | null>(null);
   const unsubNotes = useRef<(() => void) | null>(null);
 
   useEffect(() => {
@@ -127,13 +129,8 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
                   <div className="flex items-center justify-between mt-1.5">
                     <button
                       onClick={(e) => {
-                        if (onStatusChange) {
-                          // Simple status cycle for now
-                          const statuses = ["Sin estatus", "Foto enviada", "Esperando pago", "Pagado", "Diseñado", "Fabricar", "Corregir", "Corregido", "Mns Amenazador", "Cancelado"];
-                          const idx = statuses.indexOf(order.estatus);
-                          const next = statuses[(idx + 1) % statuses.length];
-                          onStatusChange(order.id, next);
-                        }
+                        const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                        setStatusPicker({ orderId: order.id, currentStatus: order.estatus, rect });
                       }}
                       className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-surface-container-high text-on-surface-variant hover:bg-surface-container-highest transition-colors cursor-pointer"
                     >
@@ -225,6 +222,19 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           </button>
         )}
       </div>
+
+      {/* Status Picker */}
+      {statusPicker && (
+        <StatusPicker
+          currentStatus={statusPicker.currentStatus}
+          anchorRect={statusPicker.rect}
+          onSelect={(newStatus) => {
+            if (onStatusChange) onStatusChange(statusPicker.orderId, newStatus);
+            setStatusPicker(null);
+          }}
+          onClose={() => setStatusPicker(null)}
+        />
+      )}
     </aside>
   );
 }
