@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { Contact } from "@/lib/api/contacts";
-import { skipAi, cancelAi, markAsPurchase, fetchContactOrders } from "@/lib/api/contacts";
+import { markAsPurchase, fetchContactOrders } from "@/lib/api/contacts";
 import StatusPicker from "@/components/pedidos/StatusPicker";
 import { db } from "@/lib/firebase/config";
 import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -62,8 +62,9 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
 
   async function toggleBot() {
     try {
-      if (contact.botActive) { await cancelAi(contact.id); toast.success("IA desactivada"); }
-      else { await skipAi(contact.id); toast.success("IA activada"); }
+      const newVal = !contact.botActive;
+      await updateDoc(doc(db, "contacts_whatsapp", contact.id), { botActive: newVal });
+      toast.success(newVal ? "IA activada" : "IA desactivada");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
   }
 

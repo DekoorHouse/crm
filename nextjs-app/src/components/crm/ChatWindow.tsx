@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useState } from "react";
 import type { Contact, Message } from "@/lib/api/contacts";
 import { reactToMessage } from "@/lib/api/contacts";
 import MessageBubble from "./MessageBubble";
 import MessageComposer from "./MessageComposer";
-import TransferModal from "./TransferModal";
 
 interface ChatWindowProps {
   contact: Contact | null;
@@ -28,7 +26,6 @@ export default function ChatWindow({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevMessageCount = useRef(0);
-  const [showTransfer, setShowTransfer] = useState(false);
 
   useEffect(() => {
     if (messages.length > prevMessageCount.current) {
@@ -86,10 +83,6 @@ export default function ChatWindow({
               IA
             </span>
           )}
-          <button onClick={() => setShowTransfer(true)}
-            className="p-1.5 rounded-lg text-on-surface-variant hover:text-on-surface transition-all" title="Transferir chat">
-            <span className="material-symbols-outlined" style={{ fontSize: 20 }}>swap_horiz</span>
-          </button>
           <button onClick={onToggleDetails}
             className={`p-1.5 rounded-lg transition-all ${showDetails ? "bg-primary/10 text-primary" : "text-on-surface-variant hover:text-on-surface"}`}
             title="Detalles del contacto">
@@ -149,10 +142,6 @@ export default function ChatWindow({
         onCancelReply={() => onSetReplyTo(null)}
       />
 
-      {/* Transfer modal */}
-      {showTransfer && (
-        <TransferModal contactId={contact.id} contactName={contact.name || contact.id} onClose={() => setShowTransfer(false)} />
-      )}
     </div>
   );
 }
