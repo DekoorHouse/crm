@@ -168,8 +168,12 @@ export default function PedidosPage() {
               isLoadingMore={pagination.isLoadingMore}
               onLoadMore={loadMore}
               onStatusClick={(order, event) => {
-                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-                setStatusPicker({ order, rect });
+                if (statusPicker?.order.id === order.id) {
+                  setStatusPicker(null);
+                } else {
+                  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                  setStatusPicker({ order, rect });
+                }
               }}
               onEdit={handleEditOrder}
               onDelete={(order) => setDeleteTarget(order)}

@@ -27,11 +27,11 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
     }
     setTimeout(() => {
       document.addEventListener("keydown", handleKey);
-      document.addEventListener("click", handleClick);
+      document.addEventListener("mousedown", handleClick);
     }, 0);
     return () => {
       document.removeEventListener("keydown", handleKey);
-      document.removeEventListener("click", handleClick);
+      document.removeEventListener("mousedown", handleClick);
     };
   }, [onClose]);
 
@@ -67,10 +67,10 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
         transition: "opacity 0.2s ease, transform 0.2s ease",
       }}
     >
-      <div className="bg-white rounded-xl shadow-2xl border border-gray-100 overflow-hidden">
+      <div className="bg-surface-container-lowest rounded-xl shadow-2xl border border-outline-variant/20 overflow-hidden">
         {/* Header */}
         <div className="px-4 pt-3 pb-2">
-          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">
             Cambiar estado
           </p>
         </div>
@@ -86,12 +86,13 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
                 className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg cursor-pointer transition-all duration-150 text-left group ${
                   isActive
                     ? "ring-2 ring-offset-1"
-                    : "hover:bg-gray-50 active:scale-[0.97]"
+                    : "hover:bg-surface-container-low active:scale-[0.97]"
                 }`}
                 style={{
                   backgroundColor: isActive ? `${status.color}12` : undefined,
                   // @ts-expect-error -- Tailwind ring-color via CSS variable
                   "--tw-ring-color": isActive ? status.color : undefined,
+                  "--tw-ring-offset-color": "var(--color-surface-container-lowest)",
                   boxShadow: isActive ? `0 0 0 2px ${status.color}30` : undefined,
                   opacity: mounted ? 1 : 0,
                   transform: mounted ? "translateY(0)" : "translateY(6px)",
@@ -119,7 +120,7 @@ export default function StatusPicker({ currentStatus, anchorRect, onSelect, onCl
                 {/* Label */}
                 <span
                   className={`text-xs leading-tight font-medium ${
-                    isActive ? "font-bold" : "text-gray-700"
+                    isActive ? "font-bold" : "text-on-surface-variant"
                   }`}
                   style={isActive ? { color: status.color } : undefined}
                 >
