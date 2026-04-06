@@ -33,6 +33,7 @@ const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 export default function MessageBubble({ message, isSent, onReply, onReact, allMessages }: MessageBubbleProps) {
   const [showReactions, setShowReactions] = useState(false);
+  const [showImage, setShowImage] = useState(false);
   const reactRef = useRef<HTMLDivElement>(null);
   const hasMedia = !!message.fileUrl;
   const isImage = message.fileType?.startsWith("image/") || message.type === "image" || message.type === "sticker";
@@ -83,7 +84,19 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
         )}
 
         {/* Media */}
-        {hasMedia && isImage && <img src={message.fileUrl} alt="" className="rounded-xl max-w-full max-h-60 object-cover mb-1" loading="lazy" />}
+        {hasMedia && isImage && (
+          <>
+            <img src={message.fileUrl} alt="" className="rounded-xl max-w-full max-h-60 object-cover mb-1 cursor-pointer" loading="lazy" onClick={(e) => { e.stopPropagation(); setShowImage(true); }} />
+            {showImage && (
+              <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/80" onClick={() => setShowImage(false)}>
+                <button className="absolute top-4 right-4 p-2 text-white/70 hover:text-white" onClick={() => setShowImage(false)}>
+                  <span className="material-symbols-outlined" style={{ fontSize: 28 }}>close</span>
+                </button>
+                <img src={message.fileUrl} alt="" className="max-w-[90vw] max-h-[90vh] object-contain rounded-lg" onClick={(e) => e.stopPropagation()} />
+              </div>
+            )}
+          </>
+        )}
         {hasMedia && isVideo && <video src={message.fileUrl} controls className="rounded-xl max-w-full max-h-60 mb-1" />}
         {hasMedia && isAudio && <audio src={message.fileUrl} controls className="max-w-full mb-1" />}
         {hasMedia && !isImage && !isVideo && !isAudio && (
