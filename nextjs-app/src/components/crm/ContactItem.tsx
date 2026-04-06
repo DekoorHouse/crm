@@ -10,16 +10,20 @@ interface ContactItemProps {
   onMarkUnread?: (contactId: string) => void;
 }
 
-function timeAgo(ts: { _seconds: number } | null): string {
+function formatMessageTime(ts: { _seconds: number } | null): string {
   if (!ts) return "";
-  const diff = Date.now() - ts._seconds * 1000;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "ahora";
-  if (mins < 60) return `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d`;
+  const date = new Date(ts._seconds * 1000);
+  const now = new Date();
+  const isToday = date.toDateString() === now.toDateString();
+  if (isToday) {
+    return date.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" });
+  }
+  const yesterday = new Date(now);
+  yesterday.setDate(yesterday.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) {
+    return "Ayer";
+  }
+  return date.toLocaleDateString("es-MX", { day: "numeric", month: "short" });
 }
 
 export default function ContactItem({ contact, isActive, onClick, onPreview, onMarkUnread }: ContactItemProps) {
@@ -27,7 +31,7 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
     <div
       className={`relative w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer group ${
         isActive ? "bg-primary/10" : "hover:bg-surface-container-low"
-      }`}
+      } ${contact.botActive ? "border-l-2 border-primary" : ""}`}
       onClick={onClick}
     >
       {/* Avatar */}
@@ -58,7 +62,7 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
             {contact.name || contact.id}
           </span>
           <span className="text-[10px] text-on-surface-variant flex-shrink-0 group-hover:hidden">
-            {timeAgo(contact.lastMessageTimestamp)}
+            {formatMessageTime(contact.lastMessageTimestamp)}
           </span>
           {/* Hover actions — replace time */}
           <div className="hidden group-hover:flex items-center gap-0.5 flex-shrink-0">
