@@ -8,6 +8,8 @@ import { collection, orderBy, query, onSnapshot } from "firebase/firestore";
 
 interface Tag { id: string; label: string; color: string; key: string; }
 
+interface Dept { id: string; name: string; color: string; }
+
 interface ContactListProps {
   contacts: Contact[];
   loading: boolean;
@@ -21,22 +23,28 @@ interface ContactListProps {
   onTagFilter: (tag: string) => void;
   unreadOnly: boolean;
   onToggleUnread: () => void;
+  activeDept: string;
+  onDeptFilter: (dept: string) => void;
 }
 
 export default function ContactList({
   contacts, loading, selectedId, onSelect, onLoadMore, hasMore,
   searchQuery, onSearch, activeTag, onTagFilter, unreadOnly, onToggleUnread,
+  activeDept, onDeptFilter,
 }: ContactListProps) {
   const [tags, setTags] = useState<Tag[]>([]);
+  const [depts, setDepts] = useState<Dept[]>([]);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Load tags from Firestore
+  // Load tags and departments from Firestore
   useEffect(() => {
-    const q = query(collection(db, "crm_tags"), orderBy("order"));
-    const unsub = onSnapshot(q, (snap) => {
+    const unsub1 = onSnapshot(query(collection(db, "crm_tags"), orderBy("order")), (snap) => {
       setTags(snap.docs.map((d) => ({ id: d.id, label: d.data().label || "", color: d.data().color || "#6c757d", key: d.data().key || "" })));
     });
-    return unsub;
+    const unsub2 = onSnapshot(query(collection(db, "departments"), orderBy("createdAt")), (snap) => {
+      setDepts(snap.docs.map((d) => ({ id: d.id, name: d.data().name || "", color: d.data().color || "#6c757d" })));
+    });
+    return () => { unsub1(); unsub2(); };
   }, []);
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
@@ -67,16 +75,28 @@ export default function ContactList({
               </button>
             )}
           </div>
-          <button
-            onClick={onToggleUnread}
-            title="Solo no leidos"
-            className={`p-1.5 rounded-lg transition-all ${unreadOnly ? "bg-primary/10 text-primary" : "text-on-surface-variant/50 hover:text-on-surface"}`}
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>
-              {unreadOnly ? "mark_email_unread" : "mail"}
-            </span>
+          <button onClick={onToggleUnread} title="Solo no leidos"
+            className={`p-1.5 rounded-lg transition-all ${unreadOnly ? "bg-primary/10 text-primary" : "text-on-surface-variant/50 hover:text-on-surface"}`}>
+            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>{unreadOnly ? "mark_email_unread" : "mail"}</span>
           </button>
         </div>
+
+        {/* Department filter */}
+        {depts.length > 0 && !searchQuery && (
+          <div className="flex gap-1 overflow-x-auto scrollbar-none">
+            <button onClick={() => onDeptFilter("")}
+              className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${!activeDept ? "bg-on-surface text-surface" : "bg-surface-container-low text-on-surface-variant"}`}>
+              Todos
+            </button>
+            {depts.map((d) => (
+              <button key={d.id} onClick={() => onDeptFilter(d.id)}
+                className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all whitespace-nowrap"
+                style={{ backgroundColor: activeDept === d.id ? d.color : `${d.color}15`, color: activeDept === d.id ? "#fff" : d.color }}>
+                {d.name}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Tag filters */}
         {tags.length > 0 && !searchQuery && (

@@ -13,6 +13,7 @@ export default function ChatsPage() {
   const { messages, loading: messagesLoading, sessionExpired, replyTo, setReplyTo, send, loadOlder } = useMessages(selectedId);
   const [showDetails, setShowDetails] = useState(false);
   const [activeTag, setActiveTag] = useState("");
+  const [activeDept, setActiveDept] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
@@ -27,6 +28,11 @@ export default function ChatsPage() {
     applyFilters({ ...filters, tag: tag || undefined });
   }, [applyFilters, filters]);
 
+  const handleDeptFilter = useCallback((dept: string) => {
+    setActiveDept(dept);
+    applyFilters({ ...filters, departmentId: dept || undefined });
+  }, [applyFilters, filters]);
+
   const handleToggleUnread = useCallback(() => {
     const next = !unreadOnly;
     setUnreadOnly(next);
@@ -36,36 +42,18 @@ export default function ChatsPage() {
   return (
     <div className="flex h-full">
       <ContactList
-        contacts={contacts}
-        loading={loading}
-        selectedId={selectedId}
-        onSelect={setSelectedId}
-        onLoadMore={loadMore}
-        hasMore={hasMore}
-        searchQuery={searchQuery}
-        onSearch={search}
-        activeTag={activeTag}
-        onTagFilter={handleTagFilter}
-        unreadOnly={unreadOnly}
-        onToggleUnread={handleToggleUnread}
+        contacts={contacts} loading={loading} selectedId={selectedId} onSelect={setSelectedId}
+        onLoadMore={loadMore} hasMore={hasMore} searchQuery={searchQuery} onSearch={search}
+        activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
+        activeDept={activeDept} onDeptFilter={handleDeptFilter}
       />
       <ChatWindow
-        contact={selectedContact}
-        messages={messages}
-        loading={messagesLoading}
-        sessionExpired={sessionExpired}
-        onSend={send}
-        replyTo={replyTo}
-        onSetReplyTo={setReplyTo}
-        onLoadOlder={loadOlder}
-        onToggleDetails={() => setShowDetails(!showDetails)}
-        showDetails={showDetails}
+        contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}
+        onSend={send} replyTo={replyTo} onSetReplyTo={setReplyTo} onLoadOlder={loadOlder}
+        onToggleDetails={() => setShowDetails(!showDetails)} showDetails={showDetails}
       />
       {showDetails && selectedContact && (
-        <ContactDetails
-          contact={selectedContact}
-          onClose={() => setShowDetails(false)}
-        />
+        <ContactDetails contact={selectedContact} onClose={() => setShowDetails(false)} />
       )}
     </div>
   );
