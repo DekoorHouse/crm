@@ -124,7 +124,7 @@ export default function OrdersTable({
 
       {/* Desktop table layout */}
       <div className="hidden md:block overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-[13px]">
           <thead>
             <tr className="bg-surface-container-low/50 border-b border-outline-variant/10">
               <th className="text-left px-4 py-3 text-[10px] font-black uppercase tracking-widest text-on-surface-variant">
@@ -172,25 +172,25 @@ export default function OrdersTable({
               >
                 {/* #Pedido */}
                 <td className="px-4 py-3">
-                  <span className="font-bold text-primary text-xs">
+                  <span className="font-bold text-primary text-sm">
                     DH{order.consecutiveOrderNumber ?? "--"}
                   </span>
                 </td>
 
                 {/* Fecha */}
-                <td className="px-4 py-3 text-xs text-on-surface-variant whitespace-nowrap">
+                <td className="px-4 py-3 text-sm text-on-surface-variant whitespace-nowrap">
                   {formatDate(order.createdAt)}
                 </td>
 
                 {/* Vendedor */}
-                <td className="px-4 py-3 text-xs font-medium">
+                <td className="px-4 py-3 text-sm font-medium">
                   {order.vendedor || "--"}
                 </td>
 
                 {/* Teléfono */}
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-medium">{order.telefono || "--"}</span>
+                    <span className="text-sm font-medium">{order.telefono || "--"}</span>
                     {order.telefono && (
                       <button
                         onClick={() => copyToClipboard(order.telefono)}
@@ -222,14 +222,14 @@ export default function OrdersTable({
 
                 {/* Comentarios */}
                 <td className="px-4 py-3 max-w-[150px]">
-                  <p className="text-xs text-on-surface-variant truncate" title={order.comentarios}>
+                  <p className="text-sm text-on-surface-variant truncate" title={order.comentarios}>
                     {order.comentarios || "--"}
                   </p>
                 </td>
 
                 {/* Producto */}
                 <td className="px-4 py-3">
-                  <span className="text-xs font-medium">{order.producto || "--"}</span>
+                  <span className="text-sm font-medium">{order.producto || "--"}</span>
                 </td>
 
                 {/* Datos Producto */}
@@ -249,7 +249,7 @@ export default function OrdersTable({
                         />
                       </button>
                     )}
-                    <p className="text-xs text-on-surface-variant truncate max-w-[100px]" title={order.datosProducto}>
+                    <p className="text-sm text-on-surface-variant truncate max-w-[100px]" title={order.datosProducto}>
                       {order.datosProducto || "--"}
                     </p>
                   </div>
@@ -276,7 +276,7 @@ export default function OrdersTable({
                         />
                       </button>
                     )}
-                    <p className="text-xs text-on-surface-variant truncate max-w-[100px]" title={order.datosPromocion}>
+                    <p className="text-sm text-on-surface-variant truncate max-w-[100px]" title={order.datosPromocion}>
                       {order.datosPromocion || "--"}
                     </p>
                   </div>
@@ -284,7 +284,7 @@ export default function OrdersTable({
 
                 {/* Precio */}
                 <td className="px-4 py-3 text-right">
-                  <span className="text-xs font-bold text-primary">
+                  <span className="text-sm font-bold text-primary">
                     {order.precio ? formatCurrency(order.precio) : "--"}
                   </span>
                 </td>
