@@ -45,9 +45,13 @@ export function useMessages(contactId: string | null) {
       setMessages(msgs);
       setLoading(false);
 
+      // Check session expiration: 24h since last message FROM the contact
       const lastFromContact = msgs.filter((m) => m.from === contactId).pop();
       if (lastFromContact?.timestamp) {
         setSessionExpired((Date.now() - lastFromContact.timestamp.seconds * 1000) / 3600000 > 24);
+      } else if (msgs.length > 0) {
+        // There are messages but none from the contact — session expired
+        setSessionExpired(true);
       }
     });
 
