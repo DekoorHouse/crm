@@ -5,12 +5,24 @@ import type { OrderFilters } from "@/lib/api/types";
 import { PRODUCT_OPTIONS } from "@/lib/utils/productConfig";
 import { STATUS_OPTIONS } from "@/lib/utils/statusConfig";
 import { formatCurrency } from "@/lib/utils/format";
+import Select from "@/components/ui/Select";
+import type { SelectOption } from "@/components/ui/Select";
 
-const DATE_OPTIONS = [
+const DATE_OPTIONS: SelectOption[] = [
   { value: "ultimos-10-dias", label: "Últimos 10 días" },
   { value: "hoy", label: "Hoy" },
   { value: "ayer", label: "Ayer" },
   { value: "este-mes", label: "Este mes" },
+];
+
+const PRODUCT_SELECT_OPTIONS: SelectOption[] = [
+  { value: "", label: "Todos los productos" },
+  ...PRODUCT_OPTIONS.map((p) => ({ value: p, label: p })),
+];
+
+const STATUS_SELECT_OPTIONS: SelectOption[] = [
+  { value: "", label: "Todos" },
+  ...STATUS_OPTIONS.map((s) => ({ value: s.label, label: s.label })),
 ];
 
 interface FilterBarProps {
@@ -65,18 +77,12 @@ export default function FilterBar({
             <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
               Productos
             </label>
-            <select
+            <Select
               value={producto}
-              onChange={(e) => setProducto(e.target.value)}
-              className="block w-48 bg-surface-container-low border-none rounded-xl text-sm font-medium text-on-surface focus:ring-primary/20"
-            >
-              <option value="">Todos los productos</option>
-              {PRODUCT_OPTIONS.map((p) => (
-                <option key={p} value={p}>
-                  {p}
-                </option>
-              ))}
-            </select>
+              onChange={setProducto}
+              options={PRODUCT_SELECT_OPTIONS}
+              className="w-48"
+            />
           </div>
 
           {/* Date */}
@@ -84,17 +90,12 @@ export default function FilterBar({
             <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
               Rango de Fecha
             </label>
-            <select
+            <Select
               value={dateFilter}
-              onChange={(e) => setDateFilter(e.target.value)}
-              className="block w-48 bg-surface-container-low border-none rounded-xl text-sm font-medium text-on-surface focus:ring-primary/20"
-            >
-              {DATE_OPTIONS.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
+              onChange={setDateFilter}
+              options={DATE_OPTIONS}
+              className="w-48"
+            />
           </div>
 
           {/* Status */}
@@ -102,18 +103,12 @@ export default function FilterBar({
             <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">
               Estatus
             </label>
-            <select
+            <Select
               value={estatus}
-              onChange={(e) => setEstatus(e.target.value)}
-              className="block w-40 bg-surface-container-low border-none rounded-xl text-sm font-medium text-on-surface focus:ring-primary/20"
-            >
-              <option value="">Todos</option>
-              {STATUS_OPTIONS.map((s) => (
-                <option key={s.id} value={s.label}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
+              onChange={setEstatus}
+              options={STATUS_SELECT_OPTIONS}
+              className="w-40"
+            />
           </div>
 
           {/* Buttons */}
