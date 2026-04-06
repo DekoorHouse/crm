@@ -47,7 +47,12 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
   },
 ];
 
-export default function CrmSidebar() {
+interface CrmSidebarProps {
+  collapsed: boolean;
+  onToggle: () => void;
+}
+
+export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
@@ -57,28 +62,41 @@ export default function CrmSidebar() {
     : "Usuario";
 
   return (
-    <aside className="w-60 h-screen flex flex-col bg-surface-container-lowest border-r border-outline-variant/15 flex-shrink-0">
-      {/* Brand */}
-      <div className="px-5 py-5 flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
+    <aside
+      className={`h-screen flex flex-col bg-surface-container-lowest border-r border-outline-variant/15 flex-shrink-0 transition-all duration-200 ${
+        collapsed ? "w-16" : "w-60"
+      }`}
+    >
+      {/* Brand + toggle */}
+      <div className={`py-4 flex items-center ${collapsed ? "px-3 justify-center" : "px-5 gap-3"}`}>
+        <button
+          onClick={onToggle}
+          className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all"
+          title={collapsed ? "Expandir menu" : "Colapsar menu"}
+        >
           <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 18 }}>
-            storefront
+            {collapsed ? "menu" : "menu_open"}
           </span>
-        </div>
-        <div>
-          <h1 className="text-sm font-extrabold font-headline text-on-surface leading-none">Dekoor</h1>
-          <p className="text-[10px] text-on-surface-variant font-medium">CRM Workspace</p>
-        </div>
+        </button>
+        {!collapsed && (
+          <div>
+            <h1 className="text-sm font-extrabold font-headline text-on-surface leading-none">Dekoor</h1>
+            <p className="text-[10px] text-on-surface-variant font-medium">CRM Workspace</p>
+          </div>
+        )}
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 overflow-y-auto px-3 pb-3 space-y-4">
+      <nav className={`flex-1 overflow-y-auto pb-3 space-y-4 ${collapsed ? "px-2" : "px-3"}`}>
         {NAV_SECTIONS.map((section, sIdx) => (
           <div key={sIdx}>
-            {section.label && (
+            {section.label && !collapsed && (
               <p className="text-[9px] font-black uppercase tracking-widest text-on-surface-variant/50 px-2 mb-1">
                 {section.label}
               </p>
+            )}
+            {section.label && collapsed && (
+              <div className="border-t border-outline-variant/10 my-2" />
             )}
             <div className="space-y-0.5">
               {section.items.map((item) => {
@@ -87,7 +105,10 @@ export default function CrmSidebar() {
                   <Link
                     key={item.href}
                     href={item.href}
-                    className={`flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium transition-all duration-150 ${
+                    title={collapsed ? item.label : undefined}
+                    className={`flex items-center rounded-xl text-[13px] font-medium transition-all duration-150 ${
+                      collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
+                    } ${
                       isActive
                         ? "bg-primary/10 text-primary font-semibold"
                         : "text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface"
@@ -102,7 +123,7 @@ export default function CrmSidebar() {
                     >
                       {item.icon}
                     </span>
-                    {item.label}
+                    {!collapsed && item.label}
                   </Link>
                 );
               })}
@@ -112,45 +133,55 @@ export default function CrmSidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="px-3 pb-4 space-y-2">
+      <div className={`pb-4 space-y-1 ${collapsed ? "px-2" : "px-3"}`}>
         {/* Pedidos link */}
         <Link
           href="/pedidos"
-          className="flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all"
+          title={collapsed ? "Pedidos" : undefined}
+          className={`flex items-center rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low hover:text-on-surface transition-all ${
+            collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
+          }`}
         >
-          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
-            receipt_long
-          </span>
-          Pedidos
+          <span className="material-symbols-outlined" style={{ fontSize: 20 }}>receipt_long</span>
+          {!collapsed && "Pedidos"}
         </Link>
 
         {/* Theme toggle */}
         <button
           onClick={toggleTheme}
-          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low transition-all"
+          title={collapsed ? (isDark ? "Modo claro" : "Modo oscuro") : undefined}
+          className={`w-full flex items-center rounded-xl text-[13px] font-medium text-on-surface-variant hover:bg-surface-container-low transition-all ${
+            collapsed ? "justify-center px-0 py-2" : "gap-3 px-3 py-2"
+          }`}
         >
           <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
             {isDark ? "light_mode" : "dark_mode"}
           </span>
-          {isDark ? "Modo claro" : "Modo oscuro"}
+          {!collapsed && (isDark ? "Modo claro" : "Modo oscuro")}
         </button>
 
         {/* User + logout */}
-        <div className="flex items-center gap-3 px-3 py-2 border-t border-outline-variant/15 pt-3">
+        <div className={`flex items-center border-t border-outline-variant/15 pt-3 ${
+          collapsed ? "justify-center px-0 py-1" : "gap-3 px-3 py-2"
+        }`}>
           <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs flex-shrink-0">
             {userName.charAt(0).toUpperCase()}
           </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-xs font-bold text-on-surface truncate">{userName}</p>
-            <p className="text-[10px] text-on-surface-variant truncate">{user?.email}</p>
-          </div>
-          <button
-            onClick={() => signOut()}
-            className="p-1.5 text-on-surface-variant hover:text-error rounded-lg transition-colors"
-            title="Cerrar sesion"
-          >
-            <span className="material-symbols-outlined" style={{ fontSize: 18 }}>logout</span>
-          </button>
+          {!collapsed && (
+            <>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold text-on-surface truncate">{userName}</p>
+                <p className="text-[10px] text-on-surface-variant truncate">{user?.email}</p>
+              </div>
+              <button
+                onClick={() => signOut()}
+                className="p-1.5 text-on-surface-variant hover:text-error rounded-lg transition-colors"
+                title="Cerrar sesion"
+              >
+                <span className="material-symbols-outlined" style={{ fontSize: 18 }}>logout</span>
+              </button>
+            </>
+          )}
         </div>
       </div>
     </aside>

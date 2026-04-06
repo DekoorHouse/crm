@@ -2,13 +2,14 @@
 
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/hooks/useAuth";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import CrmSidebar from "@/components/layout/CrmSidebar";
 import LoadingOverlay from "@/components/layout/LoadingOverlay";
 
 export default function CrmLayout({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     if (!loading && !user) {
@@ -22,7 +23,7 @@ export default function CrmLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
-      <CrmSidebar />
+      <CrmSidebar collapsed={!sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
       <main className="flex-1 overflow-auto">
         {children}
       </main>
