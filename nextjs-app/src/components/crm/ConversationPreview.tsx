@@ -31,6 +31,7 @@ export default function ConversationPreview({ contact, onClose, onOpenChat }: Co
   const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const oldestTimestamp = useRef<Timestamp | null>(null);
+  const isLoadingRef = useRef(false);
 
   // Initial load
   useEffect(() => {
@@ -52,20 +53,32 @@ export default function ConversationPreview({ contact, onClose, onOpenChat }: Co
 
   // Load older messages
   const loadOlder = useCallback(async () => {
-    if (loadingMore || !hasMore || !oldestTimestamp.current) return;
+    if (isLoadingRef.current || !hasMore || !oldestTimestamp.current) return;
+    isLoadingRef.current = true;
     setLoadingMore(true);
-    const messagesRef = collection(db, "contacts_whatsapp", contact.id, "messages");
-    const q = query(messagesRef, orderBy("timestamp", "desc"), startAfter(oldestTimestamp.current), limit(20));
-    const snap = await getDocs(q);
-    const older = snap.docs.map(mapDoc);
-    if (snap.docs.length > 0) {
-      oldestTimestamp.current = snap.docs[snap.docs.length - 1].data().timestamp;
+    try {
+      const prevScrollHeight = scrollRef.current?.scrollHeight ?? 0;
+      const messagesRef = collection(db, "contacts_whatsapp", contact.id, "messages");
+      const q = query(messagesRef, orderBy("timestamp", "desc"), startAfter(oldestTimestamp.current), limit(20));
+      const snap = await getDocs(q);
+      const older = snap.docs.map(mapDoc);
+      if (snap.docs.length > 0) {
+        oldestTimestamp.current = snap.docs[snap.docs.length - 1].data().timestamp;
+      }
+      setHasMore(snap.docs.length >= 20);
+      older.reverse();
+      setMessages((prev) => [...older, ...prev]);
+      // Maintain scroll position after prepending
+      requestAnimationFrame(() => {
+        if (scrollRef.current) {
+          scrollRef.current.scrollTop = scrollRef.current.scrollHeight - prevScrollHeight;
+        }
+      });
+    } finally {
+      setLoadingMore(false);
+      isLoadingRef.current = false;
     }
-    setHasMore(snap.docs.length >= 20);
-    older.reverse();
-    setMessages((prev) => [...older, ...prev]);
-    setLoadingMore(false);
-  }, [contact.id, loadingMore, hasMore]);
+  }, [contact.id, hasMore]);
 
   // Scroll to top → load older
   function handleScroll() {
