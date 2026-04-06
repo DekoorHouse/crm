@@ -147,7 +147,7 @@ export default function SearchBar({ visible, onClose, onLoadAll, tableRef }: Sea
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Buscar en pedidos..."
-        className="bg-transparent border-none text-sm text-on-surface focus:ring-0 w-48 placeholder:text-on-surface-variant/50"
+        className="bg-surface-container-low rounded-lg border-none text-sm text-on-surface focus:ring-0 focus:outline-none w-52 px-3 py-1.5 placeholder:text-on-surface-variant/50"
       />
 
       {query && (
