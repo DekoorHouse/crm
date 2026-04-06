@@ -11,12 +11,22 @@ export default function ChatsPage() {
   const { contacts, loading, hasMore, loadContacts, loadMore, searchQuery, search, filters, applyFilters } = useContacts();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const { messages, loading: messagesLoading, sessionExpired, replyTo, setReplyTo, send, loadOlder } = useMessages(selectedId);
-  const [showDetails, setShowDetails] = useState(false);
+  const [showDetails, setShowDetails] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("dekoor-chat-details") !== "false";
+    }
+    return true;
+  });
   const [activeTag, setActiveTag] = useState("");
   const [activeDept, setActiveDept] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
+
+  // Persist details panel preference
+  useEffect(() => {
+    localStorage.setItem("dekoor-chat-details", String(showDetails));
+  }, [showDetails]);
 
   const selectedContact = useMemo(
     () => contacts.find((c) => c.id === selectedId) ?? null,

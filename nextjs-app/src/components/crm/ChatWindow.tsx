@@ -64,18 +64,20 @@ export default function ChatWindow({
     <div className="flex-1 flex flex-col bg-background min-w-0">
       {/* Header */}
       <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-3 bg-surface-container-lowest">
-        <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm flex-shrink-0">
-          {(contact.name || contact.id).charAt(0).toUpperCase()}
-        </div>
-        <div className="flex-1 min-w-0">
-          <h3 className="text-sm font-bold text-on-surface truncate">{contact.name || contact.id}</h3>
-          <div className="flex items-center gap-2">
-            <span className="text-[11px] text-on-surface-variant">{contact.id}</span>
-            {contact.status && (
-              <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{contact.status}</span>
-            )}
+        <button onClick={onToggleDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer hover:opacity-80 transition-opacity">
+          <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm flex-shrink-0">
+            {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
-        </div>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-on-surface truncate">{contact.name || contact.id}</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-on-surface-variant">{contact.id}</span>
+              {contact.status && (
+                <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{contact.status}</span>
+              )}
+            </div>
+          </div>
+        </button>
         <div className="flex items-center gap-1">
           {contact.botActive && (
             <span className="text-[10px] font-bold text-primary bg-primary/10 px-2 py-1 rounded-full flex items-center gap-1">
