@@ -8,8 +8,6 @@ import { collection, orderBy, query, onSnapshot } from "firebase/firestore";
 
 interface Tag { id: string; label: string; color: string; key: string; }
 
-interface Dept { id: string; name: string; color: string; }
-
 interface ContactListProps {
   contacts: Contact[];
   loading: boolean;
@@ -23,34 +21,50 @@ interface ContactListProps {
   onTagFilter: (tag: string) => void;
   unreadOnly: boolean;
   onToggleUnread: () => void;
-  activeDept: string;
-  onDeptFilter: (dept: string) => void;
 }
 
 export default function ContactList({
   contacts, loading, selectedId, onSelect, onLoadMore, hasMore,
   searchQuery, onSearch, activeTag, onTagFilter, unreadOnly, onToggleUnread,
-  activeDept, onDeptFilter,
 }: ContactListProps) {
   const [tags, setTags] = useState<Tag[]>([]);
-  const [depts, setDepts] = useState<Dept[]>([]);
+  const [showTagMenu, setShowTagMenu] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
+  const tagMenuRef = useRef<HTMLDivElement>(null);
 
-  // Load tags and departments from Firestore
   useEffect(() => {
-    const unsub1 = onSnapshot(query(collection(db, "crm_tags"), orderBy("order")), (snap) => {
+    const unsub = onSnapshot(query(collection(db, "crm_tags"), orderBy("order")), (snap) => {
       setTags(snap.docs.map((d) => ({ id: d.id, label: d.data().label || "", color: d.data().color || "#6c757d", key: d.data().key || "" })));
     });
-    const unsub2 = onSnapshot(query(collection(db, "departments"), orderBy("createdAt")), (snap) => {
-      setDepts(snap.docs.map((d) => ({ id: d.id, name: d.data().name || "", color: d.data().color || "#6c757d" })));
-    });
-    return () => { unsub1(); unsub2(); };
+    return unsub;
   }, []);
+
+  // Close tag menu on click outside
+  useEffect(() => {
+    if (!showTagMenu) return;
+    function handleClick(e: MouseEvent) {
+      if (tagMenuRef.current && !tagMenuRef.current.contains(e.target as Node)) setShowTagMenu(false);
+    }
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setShowTagMenu(false);
+    }
+    setTimeout(() => {
+      document.addEventListener("mousedown", handleClick);
+      document.addEventListener("keydown", handleKey);
+    }, 0);
+    return () => {
+      document.removeEventListener("mousedown", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [showTagMenu]);
 
   function handleScroll(e: React.UIEvent<HTMLDivElement>) {
     const el = e.currentTarget;
     if (el.scrollHeight - el.scrollTop - el.clientHeight < 200 && hasMore) onLoadMore();
   }
+
+  // Find the active tag object for display
+  const activeTagObj = tags.find((t) => t.key === activeTag);
 
   return (
     <aside className="w-80 h-full flex flex-col border-r border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
@@ -81,49 +95,62 @@ export default function ContactList({
           </button>
         </div>
 
-        {/* Department filter */}
-        {depts.length > 0 && !searchQuery && (
-          <div className="flex gap-1 overflow-x-auto scrollbar-none">
-            <button onClick={() => onDeptFilter("")}
-              className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${!activeDept ? "bg-on-surface text-surface" : "bg-surface-container-low text-on-surface-variant"}`}>
-              Todos
-            </button>
-            {depts.map((d) => (
-              <button key={d.id} onClick={() => onDeptFilter(d.id)}
-                className="flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all whitespace-nowrap"
-                style={{ backgroundColor: activeDept === d.id ? d.color : `${d.color}15`, color: activeDept === d.id ? "#fff" : d.color }}>
-                {d.name}
-              </button>
-            ))}
-          </div>
-        )}
-
-        {/* Tag filters */}
-        {tags.length > 0 && !searchQuery && (
-          <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-none">
+        {/* Tag filter: "Todos" + active tag + "..." menu */}
+        {!searchQuery && (
+          <div className="flex items-center gap-1.5 relative">
             <button
-              onClick={() => onTagFilter("")}
-              className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all ${
+              onClick={() => { onTagFilter(""); setShowTagMenu(false); }}
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
                 !activeTag ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
               }`}
             >
               Todos
             </button>
-            {tags.map((tag) => (
+
+            {/* Show active tag chip if one is selected */}
+            {activeTagObj && (
               <button
-                key={tag.id}
-                onClick={() => onTagFilter(tag.key)}
-                className={`flex-shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold transition-all whitespace-nowrap ${
-                  activeTag === tag.key ? "text-white" : "text-on-surface-variant hover:text-on-surface"
-                }`}
-                style={{
-                  backgroundColor: activeTag === tag.key ? tag.color : `${tag.color}15`,
-                  ...(activeTag !== tag.key && { color: tag.color }),
-                }}
+                onClick={() => onTagFilter("")}
+                className="flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold text-white flex items-center gap-1"
+                style={{ backgroundColor: activeTagObj.color }}
               >
-                {tag.label}
+                {activeTagObj.label}
+                <span className="material-symbols-outlined" style={{ fontSize: 12 }}>close</span>
               </button>
-            ))}
+            )}
+
+            {/* More tags button */}
+            {tags.length > 0 && (
+              <div ref={tagMenuRef} className="relative">
+                <button
+                  onClick={() => setShowTagMenu(!showTagMenu)}
+                  className={`p-1 rounded-lg transition-all ${showTagMenu ? "bg-primary/10 text-primary" : "text-on-surface-variant/50 hover:text-on-surface"}`}
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 18 }}>more_horiz</span>
+                </button>
+
+                {/* Dropdown menu */}
+                {showTagMenu && (
+                  <div className="absolute top-full left-0 mt-1 z-50 bg-surface-container-lowest rounded-xl shadow-2xl dark:shadow-[0_0_20px_rgba(122,162,247,0.15)] border border-outline-variant/20 py-1 w-48 max-h-64 overflow-y-auto">
+                    {tags.map((tag) => (
+                      <button
+                        key={tag.id}
+                        onClick={() => { onTagFilter(tag.key === activeTag ? "" : tag.key); setShowTagMenu(false); }}
+                        className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${
+                          activeTag === tag.key ? "bg-primary/10" : "hover:bg-surface-container-low"
+                        }`}
+                      >
+                        <div className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: tag.color }} />
+                        <span className="text-xs font-medium text-on-surface">{tag.label}</span>
+                        {activeTag === tag.key && (
+                          <span className="material-symbols-outlined ml-auto text-primary" style={{ fontSize: 14 }}>check</span>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

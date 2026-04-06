@@ -18,12 +18,10 @@ export default function ChatsPage() {
     return true;
   });
   const [activeTag, setActiveTag] = useState("");
-  const [activeDept, setActiveDept] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
 
-  // Persist details panel preference
   useEffect(() => {
     localStorage.setItem("dekoor-chat-details", String(showDetails));
   }, [showDetails]);
@@ -38,11 +36,6 @@ export default function ChatsPage() {
     applyFilters({ ...filters, tag: tag || undefined });
   }, [applyFilters, filters]);
 
-  const handleDeptFilter = useCallback((dept: string) => {
-    setActiveDept(dept);
-    applyFilters({ ...filters, departmentId: dept || undefined });
-  }, [applyFilters, filters]);
-
   const handleToggleUnread = useCallback(() => {
     const next = !unreadOnly;
     setUnreadOnly(next);
@@ -55,7 +48,6 @@ export default function ChatsPage() {
         contacts={contacts} loading={loading} selectedId={selectedId} onSelect={setSelectedId}
         onLoadMore={loadMore} hasMore={hasMore} searchQuery={searchQuery} onSearch={search}
         activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
-        activeDept={activeDept} onDeptFilter={handleDeptFilter}
       />
       <ChatWindow
         contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}
