@@ -26,18 +26,26 @@ export default function ChatWindow({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const prevMessageCount = useRef(0);
+  const isInitialLoad = useRef(true);
 
+  // Scroll to bottom when messages change
   useEffect(() => {
-    if (messages.length > prevMessageCount.current) {
+    if (messages.length === 0) return;
+    if (isInitialLoad.current) {
+      // First load for this contact — instant scroll, no animation
+      messagesEndRef.current?.scrollIntoView();
+      isInitialLoad.current = false;
+    } else if (messages.length > prevMessageCount.current) {
+      // New message arrived — smooth scroll
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
     prevMessageCount.current = messages.length;
-  }, [messages.length]);
+  }, [messages]);
 
+  // Reset on contact change
   useEffect(() => {
-    if (contact) {
-      setTimeout(() => messagesEndRef.current?.scrollIntoView(), 100);
-    }
+    isInitialLoad.current = true;
+    prevMessageCount.current = 0;
   }, [contact?.id]);
 
   // Load older messages on scroll to top
