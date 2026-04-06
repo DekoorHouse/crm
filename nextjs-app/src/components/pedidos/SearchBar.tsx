@@ -81,7 +81,7 @@ export default function SearchBar({ visible, onClose, onLoadAll, tableRef }: Sea
         if (regex.test(part)) {
           regex.lastIndex = 0;
           const mark = document.createElement("mark");
-          mark.className = "search-highlight bg-yellow-300 dark:bg-yellow-600/50 text-on-surface rounded-sm px-0.5";
+          mark.className = "search-highlight bg-primary/20 text-primary font-semibold rounded px-0.5";
           mark.textContent = part;
           mark.dataset.matchIndex = String(count);
           count++;
