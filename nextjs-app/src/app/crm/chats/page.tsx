@@ -19,6 +19,8 @@ export default function ChatsPage() {
   });
   const [activeTag, setActiveTag] = useState("");
   const [unreadOnly, setUnreadOnly] = useState(false);
+  const [designReview, setDesignReview] = useState(false);
+  const [pendingAi, setPendingAi] = useState(false);
 
   useEffect(() => { loadContacts(); }, [loadContacts]);
 
@@ -33,8 +35,10 @@ export default function ChatsPage() {
 
   const handleTagFilter = useCallback((tag: string) => {
     setActiveTag(tag);
-    applyFilters({ ...filters, tag: tag || undefined });
-  }, [applyFilters, filters]);
+    setDesignReview(false);
+    setPendingAi(false);
+    applyFilters({ tag: tag || undefined });
+  }, [applyFilters]);
 
   const handleToggleUnread = useCallback(() => {
     const next = !unreadOnly;
@@ -42,12 +46,30 @@ export default function ChatsPage() {
     applyFilters({ ...filters, unreadOnly: next || undefined });
   }, [applyFilters, filters, unreadOnly]);
 
+  const handleToggleDesignReview = useCallback(() => {
+    const next = !designReview;
+    setDesignReview(next);
+    setPendingAi(false);
+    setActiveTag("");
+    applyFilters({ designReview: next || undefined });
+  }, [applyFilters, designReview]);
+
+  const handleTogglePendingAi = useCallback(() => {
+    const next = !pendingAi;
+    setPendingAi(next);
+    setDesignReview(false);
+    setActiveTag(next ? "pendientes_ia" : "");
+    applyFilters({ tag: next ? "pendientes_ia" : undefined });
+  }, [applyFilters, pendingAi]);
+
   return (
     <div className="flex h-full">
       <ContactList
         contacts={contacts} loading={loading} selectedId={selectedId} onSelect={setSelectedId}
         onLoadMore={loadMore} hasMore={hasMore} searchQuery={searchQuery} onSearch={search}
         activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
+        designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
+        pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
       />
       <ChatWindow
         contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}

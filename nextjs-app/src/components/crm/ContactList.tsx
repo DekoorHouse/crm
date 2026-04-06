@@ -21,11 +21,16 @@ interface ContactListProps {
   onTagFilter: (tag: string) => void;
   unreadOnly: boolean;
   onToggleUnread: () => void;
+  designReview: boolean;
+  onToggleDesignReview: () => void;
+  pendingAi: boolean;
+  onTogglePendingAi: () => void;
 }
 
 export default function ContactList({
   contacts, loading, selectedId, onSelect, onLoadMore, hasMore,
   searchQuery, onSearch, activeTag, onTagFilter, unreadOnly, onToggleUnread,
+  designReview, onToggleDesignReview, pendingAi, onTogglePendingAi,
 }: ContactListProps) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -95,16 +100,38 @@ export default function ContactList({
           </button>
         </div>
 
-        {/* Tag filter: "Todos" + active tag + "..." menu */}
+        {/* Filters row */}
         {!searchQuery && (
           <div className="flex items-center gap-1.5 relative">
             <button
               onClick={() => { onTagFilter(""); setShowTagMenu(false); }}
               className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                !activeTag ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+                !activeTag && !designReview && !pendingAi ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
               }`}
             >
               Todos
+            </button>
+
+            {/* Design review filter */}
+            <button
+              onClick={onToggleDesignReview}
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
+                designReview ? "bg-secondary/15 text-secondary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 12 }}>palette</span>
+              Diseno
+            </button>
+
+            {/* Pending AI filter */}
+            <button
+              onClick={onTogglePendingAi}
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
+                pendingAi ? "bg-primary/15 text-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+              }`}
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
+              Pend. IA
             </button>
 
             {/* Show active tag chip if one is selected */}
