@@ -139,12 +139,11 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
   }
 
   return (
-    <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1 group`}>
+    <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1 group cursor-pointer`} onDoubleClick={handleDoubleClick}>
       <div
         className={`max-w-[75%] rounded-2xl px-3 py-2 relative ${
           isSent ? "bg-primary/30 text-on-surface rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
         }`}
-        onDoubleClick={handleDoubleClick}
       >
         {/* Reply context */}
         {repliedMsg && (
