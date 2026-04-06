@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import type { Contact, Message } from "@/lib/api/contacts";
 import { db } from "@/lib/firebase/config";
-import { collection, query, orderBy, limit, getDocs } from "firebase/firestore";
+import { collection, query, orderBy, limit, getDocs, startAfter, Timestamp } from "firebase/firestore";
 import MessageBubble from "./MessageBubble";
 
 interface ConversationPreviewProps {
@@ -12,33 +12,67 @@ interface ConversationPreviewProps {
   onOpenChat: () => void;
 }
 
+function mapDoc(doc: any): Message {
+  const d = doc.data();
+  return {
+    docId: doc.id, id: d.id || doc.id, from: d.from || "", text: d.text || "",
+    timestamp: d.timestamp ? { seconds: d.timestamp.seconds, nanoseconds: d.timestamp.nanoseconds } : null,
+    status: d.status || "sent", fileUrl: d.fileUrl, fileType: d.fileType, type: d.type,
+    reaction: d.reaction, context: d.context, location: d.location,
+  };
+}
+
 export default function ConversationPreview({ contact, onClose, onOpenChat }: ConversationPreviewProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const ref = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const oldestTimestamp = useRef<Timestamp | null>(null);
 
-  // Load last 15 messages (one-time, no listener — don't mark as read)
+  // Initial load
   useEffect(() => {
     setLoading(true);
     const messagesRef = collection(db, "contacts_whatsapp", contact.id, "messages");
-    const q = query(messagesRef, orderBy("timestamp", "desc"), limit(15));
+    const q = query(messagesRef, orderBy("timestamp", "desc"), limit(20));
     getDocs(q).then((snap) => {
-      const msgs: Message[] = snap.docs.map((doc) => {
-        const d = doc.data();
-        return {
-          docId: doc.id, id: d.id || doc.id, from: d.from || "", text: d.text || "",
-          timestamp: d.timestamp ? { seconds: d.timestamp.seconds, nanoseconds: d.timestamp.nanoseconds } : null,
-          status: d.status || "sent", fileUrl: d.fileUrl, fileType: d.fileType, type: d.type,
-          reaction: d.reaction, context: d.context, location: d.location,
-        };
-      });
+      const msgs = snap.docs.map(mapDoc);
+      if (snap.docs.length > 0) {
+        oldestTimestamp.current = snap.docs[snap.docs.length - 1].data().timestamp;
+      }
+      setHasMore(snap.docs.length >= 20);
       msgs.reverse();
       setMessages(msgs);
       setLoading(false);
       setTimeout(() => endRef.current?.scrollIntoView(), 50);
     }).catch(() => setLoading(false));
   }, [contact.id]);
+
+  // Load older messages
+  const loadOlder = useCallback(async () => {
+    if (loadingMore || !hasMore || !oldestTimestamp.current) return;
+    setLoadingMore(true);
+    const messagesRef = collection(db, "contacts_whatsapp", contact.id, "messages");
+    const q = query(messagesRef, orderBy("timestamp", "desc"), startAfter(oldestTimestamp.current), limit(20));
+    const snap = await getDocs(q);
+    const older = snap.docs.map(mapDoc);
+    if (snap.docs.length > 0) {
+      oldestTimestamp.current = snap.docs[snap.docs.length - 1].data().timestamp;
+    }
+    setHasMore(snap.docs.length >= 20);
+    older.reverse();
+    setMessages((prev) => [...older, ...prev]);
+    setLoadingMore(false);
+  }, [contact.id, loadingMore, hasMore]);
+
+  // Scroll to top → load older
+  function handleScroll() {
+    if (scrollRef.current && scrollRef.current.scrollTop < 50 && hasMore && !loadingMore) {
+      loadOlder();
+    }
+  }
 
   // Close on click outside or Escape
   useEffect(() => {
@@ -61,7 +95,7 @@ export default function ConversationPreview({ contact, onClose, onOpenChat }: Co
   return (
     <div className="fixed inset-0 z-[75] flex items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
-      <div ref={ref} className="relative bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/15 w-full max-w-lg mx-4 flex flex-col" style={{ maxHeight: "70vh" }}>
+      <div ref={ref} className="relative bg-surface-container-lowest rounded-2xl shadow-2xl border border-outline-variant/15 w-full max-w-lg mx-4 flex flex-col" style={{ maxHeight: "75vh" }}>
         {/* Header */}
         <div className="flex items-center gap-3 px-5 py-3 border-b border-outline-variant/10">
           <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm flex-shrink-0">
@@ -80,7 +114,12 @@ export default function ConversationPreview({ contact, onClose, onOpenChat }: Co
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3" onScroll={handleScroll}>
+          {loadingMore && (
+            <div className="flex justify-center py-2">
+              <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+            </div>
+          )}
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
