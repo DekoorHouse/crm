@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from "react";
 import type { Message } from "@/lib/api/contacts";
+import Twemoji from "@/components/Twemoji";
 
 interface MessageBubbleProps {
   message: Message;
@@ -160,7 +161,7 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
             isSent ? "bg-primary/10 border-primary/30" : "bg-primary/5 border-primary"
           }`}>
             <p className={`text-[10px] truncate ${isSent ? "text-on-surface-variant" : "text-on-surface-variant"}`}>
-              {repliedMsg.text || "[archivo]"}
+              <Twemoji>{repliedMsg.text || "[archivo]"}</Twemoji>
             </p>
           </div>
         )}
@@ -196,7 +197,9 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
         )}
 
         {message.text && !(hasMedia && (message.text.toLowerCase() === "imagen" || message.text.toLowerCase() === "mensaje de voz" || message.text.toLowerCase() === "audio" || message.text.toLowerCase() === "video" || message.text.toLowerCase() === "sticker" || message.text.toLowerCase() === "documento")) && (
-          <p className="text-[13px] font-bold leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+          <p className="text-[13px] font-bold leading-relaxed whitespace-pre-wrap break-words">
+            <Twemoji>{message.text}</Twemoji>
+          </p>
         )}
 
         {/* Reaction badge */}

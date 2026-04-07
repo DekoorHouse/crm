@@ -176,3 +176,12 @@ h1, h2, h3, h4, h5, h6 {
     transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
   }
 }
+
+/* --- Twemoji: render emojis estilo WhatsApp/Apple via SVG inline --- */
+.twemoji {
+  height: 1.2em;
+  width: 1.2em;
+  margin: 0 0.05em;
+  vertical-align: -0.2em;
+  display: inline-block;
+}

@@ -1,6 +1,7 @@
 "use client";
 
 import type { Contact } from "@/lib/api/contacts";
+import Twemoji from "@/components/Twemoji";
 
 interface ContactItemProps {
   contact: Contact;
@@ -59,7 +60,7 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className={`text-sm font-semibold truncate ${isActive ? "text-primary" : "text-on-surface"}`}>
-            {contact.name || contact.id}
+            <Twemoji>{contact.name || contact.id}</Twemoji>
           </span>
           <span className="text-[10px] text-on-surface-variant flex-shrink-0 group-hover:hidden">
             {formatMessageTime(contact.lastMessageTimestamp)}
@@ -88,7 +89,7 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
         </div>
         <div className="flex items-center justify-between gap-2 mt-0.5">
           <p className="text-xs text-on-surface-variant truncate">
-            {contact.lastMessage || "Sin mensajes"}
+            <Twemoji>{contact.lastMessage || "Sin mensajes"}</Twemoji>
           </p>
           {contact.unreadCount > 0 && (
             <span className="bg-primary text-on-primary text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">

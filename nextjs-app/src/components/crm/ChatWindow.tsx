@@ -5,6 +5,7 @@ import type { Contact, Message } from "@/lib/api/contacts";
 import { reactToMessage } from "@/lib/api/contacts";
 import MessageBubble from "./MessageBubble";
 import MessageComposer from "./MessageComposer";
+import Twemoji from "@/components/Twemoji";
 
 interface ChatWindowProps {
   contact: Contact | null;
@@ -81,7 +82,9 @@ export default function ChatWindow({
             {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h3 className="text-sm font-bold text-on-surface truncate">{contact.name || contact.id}</h3>
+            <h3 className="text-sm font-bold text-on-surface truncate">
+              <Twemoji>{contact.name || contact.id}</Twemoji>
+            </h3>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-on-surface-variant">{contact.id}</span>
               {contact.status && (
