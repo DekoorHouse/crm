@@ -8,6 +8,35 @@ router.get('/status', (req, res) => {
     res.json({ configured: jtService.isConfigured() });
 });
 
+// GET /api/jt-guias/diagnostic — Verificar qué variables tiene cargadas el server (enmascaradas)
+router.get('/diagnostic', (req, res) => {
+    const mask = (val) => {
+        if (!val) return null;
+        if (val.length <= 4) return '***';
+        return val.substring(0, 4) + '***' + val.substring(val.length - 2);
+    };
+    res.json({
+        configured: jtService.isConfigured(),
+        env: {
+            JT_API_ACCOUNT: mask(process.env.JT_API_ACCOUNT),
+            JT_PRIVATE_KEY: mask(process.env.JT_PRIVATE_KEY),
+            JT_CUSTOMER_CODE: mask(process.env.JT_CUSTOMER_CODE),
+            JT_PASSWORD: mask(process.env.JT_PASSWORD),
+            JT_SENDER_ADDRESS: process.env.JT_SENDER_ADDRESS || null,
+            JT_USE_TEST: process.env.JT_USE_TEST || null,
+            JT_SENDER_NAME: process.env.JT_SENDER_NAME || '(default: Dekoor MX)',
+            JT_SENDER_PHONE: process.env.JT_SENDER_PHONE || '(default: 6181333519)',
+            JT_SENDER_STATE: process.env.JT_SENDER_STATE || '(default: Durango)',
+            JT_SENDER_CITY: process.env.JT_SENDER_CITY || '(default: Durango)',
+            JT_SENDER_AREA: process.env.JT_SENDER_AREA || '(default: Durango)',
+            JT_SENDER_ZIP: process.env.JT_SENDER_ZIP || '(default: 34000)',
+        },
+        targetUrl: process.env.JT_USE_TEST === 'true'
+            ? 'https://demoopenapi.jtjms-mx.com/webopenplatformapi/api'
+            : 'https://openapi.jtjms-mx.com/webopenplatformapi/api',
+    });
+});
+
 // POST /api/jt-guias/crear — Crear guía de envío J&T
 router.post('/crear', async (req, res) => {
     try {
