@@ -187,7 +187,7 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
         )}
 
         {message.text && !(hasMedia && (message.text.toLowerCase() === "imagen" || message.text.toLowerCase() === "mensaje de voz" || message.text.toLowerCase() === "audio" || message.text.toLowerCase() === "video" || message.text.toLowerCase() === "sticker" || message.text.toLowerCase() === "documento")) && (
-          <p className="text-[13px] font-medium leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
+          <p className="text-[13px] font-bold leading-relaxed whitespace-pre-wrap break-words">{message.text}</p>
         )}
 
         {/* Reaction badge */}
