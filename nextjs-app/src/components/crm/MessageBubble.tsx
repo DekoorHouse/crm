@@ -20,6 +20,15 @@ function StatusIcon({ status }: { status: string }) {
   const base = "material-symbols-outlined";
   const s = { fontSize: 14 };
   switch (status) {
+    case "sending":
+      return (
+        <span
+          className="inline-block w-3 h-3 border border-primary/60 border-t-transparent rounded-full animate-spin"
+          aria-label="Enviando"
+        />
+      );
+    case "failed":
+      return <span className={`${base} text-error`} style={s}>error</span>;
     case "pending": return <span className={`${base} text-on-surface-variant/40`} style={s}>schedule</span>;
     case "queued": return <span className={`${base} text-primary/60`} style={s}>schedule</span>;
     case "sent": return <span className={`${base} text-on-surface-variant/40`} style={s}>check</span>;

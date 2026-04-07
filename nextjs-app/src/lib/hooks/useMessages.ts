@@ -1,12 +1,29 @@
 "use client";
 
-import { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import type { Message } from "../api/contacts";
 import { db } from "../firebase/config";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 
+// Quita los pendings que ya tienen un mensaje real correspondiente en `msgs`.
+// Match: mensaje saliente (from !== contactId) con mismo texto/fileUrl y timestamp
+// >= pendingTimestamp - 5s (tolerancia por desfase de relojes).
+function pruneMatchedPending(pending: Message[], msgs: Message[], contactId: string): Message[] {
+  return pending.filter((p) => {
+    const matched = msgs.some((m) => {
+      if (m.from === contactId) return false; // entrante
+      if (!m.timestamp || !p.timestamp) return false;
+      if (m.timestamp.seconds < p.timestamp.seconds - 5) return false;
+      if (p.fileUrl) return m.fileUrl === p.fileUrl;
+      return m.text === p.text;
+    });
+    return !matched;
+  });
+}
+
 export function useMessages(contactId: string | null) {
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [realMessages, setRealMessages] = useState<Message[]>([]);
+  const [pendingMessages, setPendingMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -20,7 +37,8 @@ export function useMessages(contactId: string | null) {
 
   useEffect(() => {
     cleanup();
-    setMessages([]);
+    setRealMessages([]);
+    setPendingMessages([]);
     setSessionExpired(false);
     setReplyTo(null);
     msgLimit.current = 50;
@@ -42,7 +60,8 @@ export function useMessages(contactId: string | null) {
         };
       });
       msgs.reverse();
-      setMessages(msgs);
+      setRealMessages(msgs);
+      setPendingMessages((prev) => pruneMatchedPending(prev, msgs, contactId));
       setLoading(false);
 
       // Check session expiration: 24h since last message FROM the contact
@@ -57,6 +76,16 @@ export function useMessages(contactId: string | null) {
 
     return cleanup;
   }, [contactId, cleanup]);
+
+  // Lista combinada: reales + pendings ordenados por timestamp
+  const messages = useMemo(() => {
+    if (pendingMessages.length === 0) return realMessages;
+    return [...realMessages, ...pendingMessages].sort((a, b) => {
+      const ta = a.timestamp?.seconds ?? 0;
+      const tb = b.timestamp?.seconds ?? 0;
+      return ta - tb;
+    });
+  }, [realMessages, pendingMessages]);
 
   // Load older messages
   const loadOlder = useCallback(() => {
@@ -76,18 +105,46 @@ export function useMessages(contactId: string | null) {
         };
       });
       msgs.reverse();
-      setMessages(msgs);
+      setRealMessages(msgs);
+      setPendingMessages((prev) => pruneMatchedPending(prev, msgs, contactId));
     });
   }, [contactId, cleanup]);
 
   const send = useCallback(async (opts: { text?: string; fileUrl?: string; fileType?: string }) => {
     if (!contactId) return;
-    const { sendMessage } = await import("../api/contacts");
-    await sendMessage(contactId, {
-      ...opts,
-      reply_to_wamid: replyTo?.id,
-    });
+
+    // Optimistic: agregar mensaje pendiente con spinner antes de llamar al API
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const optimistic: Message = {
+      docId: tempId,
+      id: tempId,
+      from: "", // saliente: from !== contactId asi MessageBubble lo trata como enviado
+      text: opts.text || "",
+      timestamp: { seconds: nowSec, nanoseconds: 0 },
+      status: "sending",
+      fileUrl: opts.fileUrl,
+      fileType: opts.fileType,
+      context: replyTo?.id ? { id: replyTo.id } : undefined,
+    };
+    setPendingMessages((prev) => [...prev, optimistic]);
+    const replyToSnapshot = replyTo;
     setReplyTo(null);
+
+    try {
+      const { sendMessage } = await import("../api/contacts");
+      await sendMessage(contactId, {
+        ...opts,
+        reply_to_wamid: replyToSnapshot?.id,
+      });
+      // El listener traera el mensaje real y pruneMatchedPending lo limpiara
+    } catch (err) {
+      // Marca el pending como fallido para que el spinner deje de girar
+      setPendingMessages((prev) =>
+        prev.map((p) => (p.docId === tempId ? { ...p, status: "failed" } : p))
+      );
+      throw err;
+    }
   }, [contactId, replyTo]);
 
   return { messages, loading, sessionExpired, replyTo, setReplyTo, send, loadOlder };
