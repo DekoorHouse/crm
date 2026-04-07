@@ -54,23 +54,47 @@ async function jtRequest(endpoint, bizContent) {
     const bizContentJson = JSON.stringify(bizContent);
     const headerDigest = generateHeaderDigest(bizContentJson);
     const baseUrl = JT_USE_TEST ? JT_API_BASE_TEST : JT_API_BASE;
+    const fullUrl = `${baseUrl}${endpoint}`;
 
-    const response = await axios.post(
-        `${baseUrl}${endpoint}`,
-        `bizContent=${encodeURIComponent(bizContentJson)}`,
-        {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'apiAccount': JT_API_ACCOUNT,
-                'digest': headerDigest,
-                'timestamp': String(Date.now()),
-                'timezone': 'GMT-6',
-            },
-            timeout: 15000,
+    console.log(`[J&T REQUEST] POST ${fullUrl}`);
+    console.log(`[J&T REQUEST] Headers: apiAccount=${JT_API_ACCOUNT}, digest=${headerDigest}, timezone=GMT-6`);
+    console.log(`[J&T REQUEST] bizContent: ${bizContentJson}`);
+
+    try {
+        const response = await axios.post(
+            fullUrl,
+            `bizContent=${encodeURIComponent(bizContentJson)}`,
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'apiAccount': JT_API_ACCOUNT,
+                    'digest': headerDigest,
+                    'timestamp': String(Date.now()),
+                    'timezone': 'GMT-6',
+                },
+                timeout: 15000,
+                validateStatus: () => true,  // Aceptar cualquier código HTTP para parsearlo
+            }
+        );
+
+        console.log(`[J&T RESPONSE] Status: ${response.status}`);
+        console.log(`[J&T RESPONSE] Body:`, JSON.stringify(response.data));
+
+        return response.data;
+    } catch (err) {
+        console.error(`[J&T ERROR] ${err.message}`);
+        if (err.response) {
+            console.error(`[J&T ERROR] Status: ${err.response.status}, Body:`, JSON.stringify(err.response.data));
+            return {
+                code: '0',
+                msg: `HTTP ${err.response.status}: ${JSON.stringify(err.response.data)}`,
+            };
         }
-    );
-
-    return response.data;
+        return {
+            code: '0',
+            msg: `Network error: ${err.message}`,
+        };
+    }
 }
 
 /**

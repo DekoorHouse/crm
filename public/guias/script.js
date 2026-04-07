@@ -142,7 +142,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('weight').value = '1';
                 cargarGuias();
             } else {
-                showAlert('error', result.message || 'Error al crear la guía.');
+                const detail = result.error || result.code ? ` (código: ${result.code || 'N/A'})` : '';
+                const fullMsg = `${result.message || 'Error al crear la guía.'}${detail}${result.error ? '<br><small>' + result.error + '</small>' : ''}`;
+                showAlert('error', fullMsg);
+                console.error('[Guías] Error completo:', result);
             }
         } catch (error) {
             showAlert('error', 'Error de conexión al servidor.');
