@@ -668,6 +668,7 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // Prioridad: prompt por anuncio → prompt por departamento → prompt general
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
         let promptResolved = false;
+        let departmentReferenceImages = []; // Imágenes estáticas del departamento como contexto
 
         // 1) Prompt por Ad ID
         const adId = contactData.adReferral?.source_id;
@@ -682,15 +683,22 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
         }
 
-        // 2) Prompt por departamento (producto)
+        // 2) Prompt por departamento (producto) + imágenes de referencia
         if (!promptResolved) {
             const departmentId = contactData.assignedDepartmentId;
             if (departmentId) {
                 const deptPromptDoc = await db.collection('ai_department_prompts').doc(departmentId).get();
-                if (deptPromptDoc.exists && deptPromptDoc.data().prompt) {
-                    botInstructions = deptPromptDoc.data().prompt;
-                    console.log(`[AI] Usando prompt específico para Departamento: ${departmentId}`);
-                    promptResolved = true;
+                if (deptPromptDoc.exists) {
+                    const deptData = deptPromptDoc.data();
+                    if (deptData.prompt) {
+                        botInstructions = deptData.prompt;
+                        console.log(`[AI] Usando prompt específico para Departamento: ${departmentId}`);
+                        promptResolved = true;
+                    }
+                    if (Array.isArray(deptData.images) && deptData.images.length > 0) {
+                        departmentReferenceImages = deptData.images;
+                        console.log(`[AI] Departamento ${departmentId} tiene ${deptData.images.length} imágenes de referencia.`);
+                    }
                 } else {
                     console.log(`[AI] No se encontró prompt para Departamento: ${departmentId}. Usando instrucciones generales.`);
                 }
@@ -723,6 +731,24 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 
         // Descargar multimedia para Gemini (en Base64)
         const mediaParts = [];
+
+        // Primero: imágenes de referencia del departamento (contexto estático)
+        for (const refImage of departmentReferenceImages) {
+            if (refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http')) {
+                try {
+                    const response = await fetch(refImage.url);
+                    const buffer = Buffer.from(await response.arrayBuffer());
+                    if (buffer.length > 0) {
+                        mediaParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: refImage.mimeType || 'image/jpeg' } });
+                        console.log(`[AI] Imagen de referencia del departamento cargada (${refImage.mimeType || 'image/jpeg'}).`);
+                    }
+                } catch (e) {
+                    console.warn('[AI] Error descargando imagen de referencia del departamento:', e.message);
+                }
+            }
+        }
+
+        // Después: multimedia de la conversación
         for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
             if (media.url.startsWith('http')) {
                 try {
@@ -750,7 +776,11 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             }
         }
 
-        const dynamicPrompt = `${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos o audios, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+        const deptImagesNote = departmentReferenceImages.length > 0
+            ? `\n\n**Imágenes de referencia del producto/departamento:**\nLas primeras ${departmentReferenceImages.length} ${departmentReferenceImages.length === 1 ? 'imagen adjunta es una referencia visual' : 'imágenes adjuntas son referencias visuales'} del producto o catálogo del departamento. Úsalas para describir, comparar o responder preguntas del cliente. Las imágenes posteriores (si las hay) son las que el cliente envió en la conversación.`
+            : '';
+
+        const dynamicPrompt = `${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si detectas que el cliente pregunta por envío o paquetería y tienes cotización disponible, comparte las mejores opciones. Si el número de 5 dígitos NO parece un código postal (es un pedido, monto, etc.), no menciones envíos. Si el cliente envió fotos o audios, analízalos cuidadosamente para ayudarle en lo que necesita. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
 
         // --- Intentar usar Context Caching ---
         let aiResult;

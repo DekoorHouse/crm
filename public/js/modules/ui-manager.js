@@ -748,12 +748,16 @@ async function loadDepartmentPrompts() {
         const results = await Promise.all(
             departments.map(d =>
                 db.collection('ai_department_prompts').doc(d.id).get()
-                    .then(snap => ({ id: d.id, prompt: (snap.exists && snap.data().prompt) || '' }))
-                    .catch(() => ({ id: d.id, prompt: '' }))
+                    .then(snap => ({
+                        id: d.id,
+                        prompt: (snap.exists && snap.data().prompt) || '',
+                        images: (snap.exists && Array.isArray(snap.data().images)) ? snap.data().images : []
+                    }))
+                    .catch(() => ({ id: d.id, prompt: '', images: [] }))
             )
         );
         state.aiDepartmentPrompts = {};
-        results.forEach(r => { state.aiDepartmentPrompts[r.id] = r.prompt; });
+        results.forEach(r => { state.aiDepartmentPrompts[r.id] = { prompt: r.prompt, images: r.images }; });
     } catch (error) {
         console.error('Error cargando prompts por departamento:', error);
     }
@@ -767,11 +771,27 @@ function renderDepartmentPrompts() {
     const departments = state.departments || [];
 
     container.innerHTML = departments.map(dept => {
-        const prompt = state.aiDepartmentPrompts[dept.id] || '';
-        const hasPrompt = !!prompt.trim();
+        const data = state.aiDepartmentPrompts[dept.id] || { prompt: '', images: [] };
+        const prompt = data.prompt || '';
+        const images = Array.isArray(data.images) ? data.images : [];
+        const hasPrompt = !!prompt.trim() || images.length > 0;
         const deptId = dept.id;
         const color = dept.color || '#6c757d';
         const name = escapeHtml(dept.name || 'Sin nombre');
+
+        const thumbnailsHtml = images.map((img, idx) => `
+            <div class="relative group w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50 flex-shrink-0">
+                <img src="${escapeHtml(img.url || '')}" alt="ref ${idx + 1}" class="w-full h-full object-cover" loading="lazy" />
+                <button
+                    type="button"
+                    onclick="handleDeleteDepartmentPromptImage('${deptId}', ${idx})"
+                    class="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600"
+                    title="Eliminar"
+                >
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `).join('');
 
         return `
             <div class="mb-4 border border-gray-200 rounded-lg overflow-hidden" data-dept-prompt-card="${deptId}">
@@ -780,6 +800,7 @@ function renderDepartmentPrompts() {
                         <div class="w-4 h-4 rounded" style="background-color: ${color};"></div>
                         <span class="font-semibold text-gray-800">${name}</span>
                         ${hasPrompt ? '<span class="text-[10px] font-bold uppercase tracking-wider text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Configurado</span>' : ''}
+                        ${images.length > 0 ? `<span class="text-[10px] font-bold uppercase tracking-wider text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">${images.length} ${images.length === 1 ? 'imagen' : 'imágenes'}</span>` : ''}
                     </div>
                 </div>
                 <div class="p-4">
@@ -789,7 +810,33 @@ function renderDepartmentPrompts() {
                         class="w-full p-3 border border-gray-300 rounded-lg text-sm font-mono"
                         placeholder="Instrucciones del bot para &quot;${name}&quot;..."
                     >${escapeHtml(prompt)}</textarea>
-                    <div class="flex justify-end mt-3">
+
+                    <div class="mt-4">
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-xs font-bold uppercase tracking-wider text-gray-500">Imágenes de referencia</label>
+                            <button
+                                type="button"
+                                class="btn btn-secondary text-xs"
+                                onclick="document.getElementById('dept-prompt-image-input-${deptId}').click()"
+                            >
+                                <i class="fas fa-image mr-1"></i>Subir imagen
+                            </button>
+                            <input
+                                type="file"
+                                id="dept-prompt-image-input-${deptId}"
+                                accept="image/*"
+                                multiple
+                                class="hidden"
+                                onchange="handleDepartmentPromptImageUpload('${deptId}', event)"
+                            />
+                        </div>
+                        <p class="text-[11px] text-gray-500 mb-3">La IA podrá ver estas imágenes como referencia cada vez que responda a un contacto de este departamento.</p>
+                        <div id="dept-prompt-thumbs-${deptId}" class="flex flex-wrap gap-2">
+                            ${thumbnailsHtml || '<p class="text-xs text-gray-400 italic">Sin imágenes</p>'}
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end mt-4">
                         <button
                             id="save-dept-prompt-btn-${deptId}"
                             class="btn btn-primary"
@@ -819,7 +866,8 @@ async function handleSaveDepartmentPrompt(deptId) {
             { prompt, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
             { merge: true }
         );
-        state.aiDepartmentPrompts[deptId] = prompt;
+        if (!state.aiDepartmentPrompts[deptId]) state.aiDepartmentPrompts[deptId] = { prompt: '', images: [] };
+        state.aiDepartmentPrompts[deptId].prompt = prompt;
         btn.innerHTML = '<i class="fas fa-check mr-2"></i>¡Guardado!';
         showError('Instrucciones del departamento guardadas.', 'success');
         // Re-renderizar solo la tarjeta del departamento para actualizar el badge "Configurado"
@@ -834,8 +882,104 @@ async function handleSaveDepartmentPrompt(deptId) {
     }
 }
 
-// Exponer en window para el onclick inline
+async function handleDepartmentPromptImageUpload(deptId, event) {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
+
+    // Reset input para que el mismo archivo pueda re-seleccionarse después
+    event.target.value = '';
+
+    const thumbsContainer = document.getElementById(`dept-prompt-thumbs-${deptId}`);
+    if (thumbsContainer) {
+        thumbsContainer.insertAdjacentHTML('beforeend',
+            `<div id="dept-prompt-upload-progress-${deptId}" class="text-xs text-gray-500 flex items-center gap-2"><i class="fas fa-spinner fa-spin"></i> Subiendo ${files.length} ${files.length === 1 ? 'imagen' : 'imágenes'}...</div>`
+        );
+    }
+
+    try {
+        const uploadedImages = [];
+        for (const file of files) {
+            if (!file.type.startsWith('image/')) {
+                console.warn(`[DEPT PROMPT] Archivo ignorado (no es imagen): ${file.name}`);
+                continue;
+            }
+            const path = `ai_department_prompts/${deptId}/${Date.now()}_${file.name}`;
+            const fileRef = storage.ref(path);
+            const uploadTask = await fileRef.put(file, { contentType: file.type });
+            const url = await uploadTask.ref.getDownloadURL();
+            uploadedImages.push({ url, path, mimeType: file.type, name: file.name });
+        }
+
+        if (uploadedImages.length === 0) {
+            showError('No se subió ninguna imagen válida.');
+            renderDepartmentPrompts();
+            return;
+        }
+
+        // Agregar al array existente en Firestore
+        const docRef = db.collection('ai_department_prompts').doc(deptId);
+        await docRef.set(
+            {
+                images: firebase.firestore.FieldValue.arrayUnion(...uploadedImages),
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            },
+            { merge: true }
+        );
+
+        // Actualizar estado local
+        if (!state.aiDepartmentPrompts[deptId]) state.aiDepartmentPrompts[deptId] = { prompt: '', images: [] };
+        state.aiDepartmentPrompts[deptId].images = [
+            ...(state.aiDepartmentPrompts[deptId].images || []),
+            ...uploadedImages
+        ];
+
+        showError(`${uploadedImages.length} ${uploadedImages.length === 1 ? 'imagen agregada' : 'imágenes agregadas'} al departamento.`, 'success');
+        renderDepartmentPrompts();
+    } catch (error) {
+        console.error('Error al subir imagen de departamento:', error);
+        showError('Falló la subida de imagen: ' + error.message);
+        renderDepartmentPrompts();
+    }
+}
+
+async function handleDeleteDepartmentPromptImage(deptId, imageIndex) {
+    const data = state.aiDepartmentPrompts[deptId];
+    if (!data || !Array.isArray(data.images) || !data.images[imageIndex]) return;
+    if (!confirm('¿Eliminar esta imagen de referencia?')) return;
+
+    const image = data.images[imageIndex];
+    const newImages = data.images.filter((_, idx) => idx !== imageIndex);
+
+    try {
+        // Actualizar Firestore con el array filtrado
+        await db.collection('ai_department_prompts').doc(deptId).set(
+            { images: newImages, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+            { merge: true }
+        );
+
+        // Best-effort: borrar el archivo de Storage
+        if (image.path) {
+            try {
+                await storage.ref(image.path).delete();
+            } catch (storageErr) {
+                console.warn('[DEPT PROMPT] No se pudo eliminar el archivo de Storage:', storageErr.message);
+            }
+        }
+
+        // Actualizar estado local y re-renderizar
+        state.aiDepartmentPrompts[deptId].images = newImages;
+        renderDepartmentPrompts();
+        showError('Imagen eliminada.', 'success');
+    } catch (error) {
+        console.error('Error al eliminar imagen de departamento:', error);
+        showError('No se pudo eliminar la imagen.');
+    }
+}
+
+// Exponer en window para los onclick inline
 window.handleSaveDepartmentPrompt = handleSaveDepartmentPrompt;
+window.handleDepartmentPromptImageUpload = handleDepartmentPromptImageUpload;
+window.handleDeleteDepartmentPromptImage = handleDeleteDepartmentPromptImage;
 
 async function handleSaveBotInstructions() {
     const textarea = document.getElementById('ai-bot-instructions');
