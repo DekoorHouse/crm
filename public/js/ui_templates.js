@@ -1298,6 +1298,7 @@ const NewOrderModalTemplate = () => `
                                 <option value="Rex">Rex</option>
                                 <option value="Guerreras">Guerreras</option>
                                 <option value="Muerto">Muerto</option>
+                                <option value="Corazón">Corazón</option>
                                 <option value="Especial">Especial</option>
                              </select>
                          </div>
@@ -1471,6 +1472,7 @@ const OrderEditModalTemplate = (order) => `
                                 <option value="Rex">Rex</option>
                                 <option value="Guerreras">Guerreras</option>
                                 <option value="Muerto">Muerto</option>
+                                <option value="Corazón">Corazón</option>
                                 <option value="Especial">Especial</option>
                              </select>
                          </div>

@@ -3,6 +3,7 @@ export const PRODUCT_OPTIONS = [
   "Rex",
   "Guerreras",
   "Muerto",
+  "Corazón",
   "Especial",
 ] as const;
 
