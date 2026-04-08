@@ -434,12 +434,15 @@ async function buildStaticContext(botInstructions) {
 /**
  * Crea o renueva el caché de contexto en la API de Gemini.
  * Solo se recrea si el contenido cambió o el TTL ha expirado.
+ * @param {string} botInstructions - Instrucciones del bot (personalizadas por dept/ad o generales)
+ * @param {Array<{inlineData: {data: string, mimeType: string}}>} departmentImageParts - Imágenes estáticas a cachear como parte del contexto
+ * @param {string} imagesHashInput - String determinista con identificadores de las imágenes (para el hash del caché)
  */
-async function getOrCreateCache(botInstructions) {
+async function getOrCreateCache(botInstructions, departmentImageParts = [], imagesHashInput = '') {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
 
     const { systemText, referenceText } = await buildStaticContext(botInstructions);
-    const currentHash = simpleHash(systemText + referenceText);
+    const currentHash = simpleHash(systemText + referenceText + '|imgs:' + imagesHashInput);
     const now = Date.now();
     const cacheExpired = (now - geminiCache.createdAt) > geminiCache.ttlMs;
 
@@ -462,12 +465,14 @@ async function getOrCreateCache(botInstructions) {
     // Crear un nuevo caché
     // Las instrucciones del bot van en systemInstruction para que Gemini las trate como directivas,
     // no como un mensaje del usuario al que debe "responder".
-    // El material de referencia (knowledge base, quick replies) va en contents.
-    console.log(`[CACHE] Creando nuevo caché de contexto (hash: ${currentHash})...`);
+    // El material de referencia (knowledge base, quick replies) va en contents, junto con las imágenes
+    // estáticas del departamento (si las hay).
+    console.log(`[CACHE] Creando nuevo caché de contexto (hash: ${currentHash}, ${departmentImageParts.length} imgs).`);
+    const contentParts = [{ text: referenceText }, ...departmentImageParts];
     const cachePayload = {
         model: `models/${GEMINI_MODEL}`,
         contents: [{
-            parts: [{ text: referenceText }],
+            parts: contentParts,
             role: 'user'
         }],
         systemInstruction: {
@@ -729,17 +734,17 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
             return `${fromLabel}: ${d.text}`;
         }).reverse().join('\n');
 
-        // Descargar multimedia para Gemini (en Base64)
-        const mediaParts = [];
-
-        // Primero: imágenes de referencia del departamento (contexto estático)
+        // --- Descargar imágenes de referencia del departamento (contexto estático → van al caché) ---
+        const departmentImageParts = [];
+        const departmentImageIds = []; // Para el hash del caché
         for (const refImage of departmentReferenceImages) {
             if (refImage && refImage.url && typeof refImage.url === 'string' && refImage.url.startsWith('http')) {
                 try {
                     const response = await fetch(refImage.url);
                     const buffer = Buffer.from(await response.arrayBuffer());
                     if (buffer.length > 0) {
-                        mediaParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: refImage.mimeType || 'image/jpeg' } });
+                        departmentImageParts.push({ inlineData: { data: buffer.toString('base64'), mimeType: refImage.mimeType || 'image/jpeg' } });
+                        departmentImageIds.push(refImage.path || refImage.url);
                         console.log(`[AI] Imagen de referencia del departamento cargada (${refImage.mimeType || 'image/jpeg'}).`);
                     }
                 } catch (e) {
@@ -747,8 +752,10 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 }
             }
         }
+        const departmentImagesHashInput = departmentImageIds.sort().join(';');
 
-        // Después: multimedia de la conversación
+        // --- Descargar multimedia de la conversación (dinámico) ---
+        const mediaParts = [];
         for (const media of downloadedMedia.reverse()) { // Voltear para mantener orden cronológico
             if (media.url.startsWith('http')) {
                 try {
@@ -785,20 +792,25 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         // --- Intentar usar Context Caching ---
         let aiResult;
         try {
-            const cacheName = await getOrCreateCache(botInstructions);
+            // Las imágenes del departamento van al caché (contexto estático)
+            const cacheName = await getOrCreateCache(botInstructions, departmentImageParts, departmentImagesHashInput);
             if (cacheName) {
-                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (Con ${mediaParts.length} archivos multimedia adjuntos)`);
+                console.log(`[AI] Generando respuesta con Context Caching para ${contactId}. (${mediaParts.length} multimedia de conversación + ${departmentImageParts.length} imgs dept cacheadas)`);
+                // Solo se envían en cada petición los mediaParts dinámicos (conversación)
                 aiResult = await generateGeminiResponseWithCache(cacheName, dynamicPrompt, mediaParts);
                 console.log(`[AI] 💰 Tokens cacheados: ${aiResult.cachedTokens}, Tokens nuevos de entrada: ${aiResult.inputTokens}, Salida: ${aiResult.outputTokens}`);
             } else {
                 throw new Error('Caché no disponible, usando fallback.');
             }
         } catch (cacheError) {
-            // Fallback: si el caching falla por cualquier razón, usar el método tradicional con systemInstruction
+            // Fallback: si el caching falla por cualquier razón, usar el método tradicional con systemInstruction.
+            // En este caso las imágenes del departamento NO están cacheadas, así que las incluimos en mediaParts.
             console.warn(`[AI] ⚠️ Caché falló (${cacheError.message}). Usando método sin caché.`);
             const { systemText: fallbackSystem, referenceText: fallbackRef } = await buildStaticContext(botInstructions);
-            const fullPrompt = `${fallbackRef}${shippingInfo}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió archivos multimedia, estúdialos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
-            aiResult = await generateGeminiResponse(fullPrompt, mediaParts, fallbackSystem);
+            const fullPrompt = `${fallbackRef}${shippingInfo}${deptImagesNote}\n\n**Historial de la Conversación Reciente:**\n${conversationHistory}\n\n**Tarea:**\nBasado en las instrucciones y el historial, responde al ÚLTIMO mensaje del cliente de manera concisa y útil. No repitas información si ya fue dada. Si el cliente envió archivos multimedia, estúdialos. Si no sabes la respuesta, indica que un agente humano lo atenderá pronto.`;
+            // Prepend dept images a mediaParts solo en el fallback
+            const fallbackMediaParts = [...departmentImageParts, ...mediaParts];
+            aiResult = await generateGeminiResponse(fullPrompt, fallbackMediaParts, fallbackSystem);
         }
 
         const aiResponse = aiResult.text;
