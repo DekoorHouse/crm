@@ -116,7 +116,10 @@ export function renderTable(expenses) {
         
         let categoryHtml;
         if (expense.splits && expense.splits.length > 0) {
-            categoryHtml = expense.splits.map(s => `<div style="font-size:12px;">${s.category}: ${formatCurrency(s.amount)}</div>`).join('');
+            categoryHtml = expense.splits.map(s => {
+                const subTxt = s.subcategory ? ` <span style="opacity:0.7;">(${s.subcategory})</span>` : '';
+                return `<div style="font-size:12px;">${s.category}${subTxt}: ${formatCurrency(s.amount)}</div>`;
+            }).join('');
         } else if (displayCategory === 'SinCategorizar') {
             const allCategories = getAllCategories();
             const categoryOptions = allCategories.map(cat => `<option value="${cat}" ${cat === 'SinCategorizar' ? 'selected' : ''}>${cat}</option>`).join('');
@@ -341,19 +344,44 @@ export function showPromptModal({ title, placeholder = '', confirmText = 'Acepta
   
 export function openSplitModal(expense) {
     const total = parseFloat(expense.charge) || 0;
-    const existingSplits = expense.splits && expense.splits.length > 0 ? expense.splits : [{ amount: total, category: expense.category || 'SinCategorizar' }];
+    const existingSplits = expense.splits && expense.splits.length > 0
+        ? expense.splits
+        : [{ amount: total, category: expense.category || 'SinCategorizar', subcategory: expense.subcategory || '' }];
     const categories = getAllCategories();
+    const categoriesWithoutSubcategory = ['Alex', 'Chris', 'Publicidad'];
 
-    const renderSplitRows = (splits) => {
-        return splits.map((s, i) => {
-            const catOptions = categories.map(cat => `<option value="${cat}" ${s.category === cat ? 'selected' : ''}>${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
-            return `<div class="split-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                <input type="number" step="0.01" class="modal-input split-amount" value="${s.amount}" style="width:120px;" placeholder="$0.00">
-                <select class="modal-input split-category">${catOptions}</select>
-                ${splits.length > 1 ? `<button type="button" class="btn btn-sm remove-split-btn" style="color:var(--danger);padding:4px 8px;"><i class="fas fa-times"></i></button>` : ''}
-            </div>`;
-        }).join('');
+    const buildCategoryOptions = (selectedCat) => {
+        return categories.map(cat => `<option value="${cat}" ${selectedCat === cat ? 'selected' : ''}>${cat}</option>`).join('')
+            + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
     };
+
+    const buildSubcategoryOptions = (category, selectedSub) => {
+        if (!category || category === 'SinCategorizar' || categoriesWithoutSubcategory.includes(category)) {
+            return null;
+        }
+        const available = state.subcategories[category] || [];
+        let html = '<option value="">-- Seleccionar --</option>';
+        html += available.map(sub => `<option value="${sub}" ${selectedSub === sub ? 'selected' : ''}>${sub}</option>`).join('');
+        html += '<option value="" disabled>──────────</option>';
+        html += '<option value="__add_new__">+ Crear nueva...</option>';
+        return html;
+    };
+
+    const buildRowHtml = (s, isOnly) => {
+        const catOptions = buildCategoryOptions(s.category);
+        const subOptionsHtml = buildSubcategoryOptions(s.category, s.subcategory);
+        const subSelectHtml = subOptionsHtml
+            ? `<select class="modal-input split-subcategory" data-category="${s.category}">${subOptionsHtml}</select>`
+            : `<select class="modal-input split-subcategory" data-category="${s.category || ''}" style="display:none;"></select>`;
+        return `<div class="split-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+            <input type="number" step="0.01" class="modal-input split-amount" value="${s.amount}" style="width:110px;" placeholder="$0.00">
+            <select class="modal-input split-category" style="flex:1;min-width:140px;">${catOptions}</select>
+            ${subSelectHtml}
+            ${!isOnly ? `<button type="button" class="btn btn-sm remove-split-btn" style="color:var(--danger);padding:4px 8px;"><i class="fas fa-times"></i></button>` : ''}
+        </div>`;
+    };
+
+    const renderSplitRows = (splits) => splits.map(s => buildRowHtml(s, splits.length === 1)).join('');
 
     showModal({
         title: `Dividir: ${formatCurrency(total)}`,
@@ -370,7 +398,9 @@ export function openSplitModal(expense) {
             rows.forEach(row => {
                 const amount = parseFloat(row.querySelector('.split-amount').value) || 0;
                 const category = row.querySelector('.split-category').value;
-                if (amount > 0 && category) splits.push({ amount, category });
+                const subSelect = row.querySelector('.split-subcategory');
+                const subcategory = subSelect && subSelect.style.display !== 'none' ? (subSelect.value || '') : '';
+                if (amount > 0 && category) splits.push({ amount, category, subcategory });
             });
             const sumSplits = splits.reduce((s, p) => s + p.amount, 0);
             if (Math.abs(sumSplits - total) > 0.02) {
@@ -379,7 +409,13 @@ export function openSplitModal(expense) {
             }
             if (splits.length < 2) {
                 // Si queda una sola parte, quitar splits y restaurar categoría normal
-                services.saveExpense({ ...expense, splits: null, category: splits[0]?.category || expense.category }, expense.category);
+                const only = splits[0];
+                services.saveExpense({
+                    ...expense,
+                    splits: null,
+                    category: only?.category || expense.category,
+                    subcategory: only?.subcategory || ''
+                }, expense.category);
             } else {
                 services.saveExpense({ ...expense, splits }, expense.category);
             }
@@ -396,6 +432,22 @@ export function openSplitModal(expense) {
                 remainingEl.style.color = Math.abs(diff) < 0.02 ? 'var(--success)' : 'var(--danger)';
             };
 
+            const refreshSubcategorySelect = (row) => {
+                const catSelect = row.querySelector('.split-category');
+                const subSelect = row.querySelector('.split-subcategory');
+                const category = catSelect.value;
+                const subOptions = buildSubcategoryOptions(category, subSelect.value);
+                if (subOptions) {
+                    subSelect.innerHTML = subOptions;
+                    subSelect.dataset.category = category;
+                    subSelect.style.display = '';
+                } else {
+                    subSelect.innerHTML = '';
+                    subSelect.dataset.category = category || '';
+                    subSelect.style.display = 'none';
+                }
+            };
+
             container.addEventListener('input', updateRemaining);
 
             container.addEventListener('click', (e) => {
@@ -406,32 +458,60 @@ export function openSplitModal(expense) {
             });
 
             document.getElementById('add-split-btn').addEventListener('click', () => {
-                const catOptions = categories.map(cat => `<option value="${cat}">${cat}</option>`).join('') + '<option value="" disabled>──────────</option><option value="__add_new_category__">+ Nueva categoría...</option>';
-                container.insertAdjacentHTML('beforeend', `<div class="split-row" style="display:flex;gap:8px;align-items:center;margin-bottom:8px;">
-                    <input type="number" step="0.01" class="modal-input split-amount" value="" style="width:120px;" placeholder="$0.00">
-                    <select class="modal-input split-category">${catOptions}</select>
-                    <button type="button" class="btn btn-sm remove-split-btn" style="color:var(--danger);padding:4px 8px;"><i class="fas fa-times"></i></button>
-                </div>`);
+                container.insertAdjacentHTML('beforeend', buildRowHtml({ amount: '', category: 'SinCategorizar', subcategory: '' }, false));
                 updateRemaining();
             });
 
-            // Handle new category from split dropdowns
+            // Handle category / subcategory changes (incl. "+ Nueva..." entries)
             container.addEventListener('change', async (e) => {
-                if (e.target.classList.contains('split-category') && e.target.value === '__add_new_category__') {
-                    const newName = await showPromptModal({ title: 'Nueva categoría', placeholder: 'Nombre', confirmText: 'Crear' });
-                    if (newName && newName.trim()) {
-                        const trimmed = newName.trim();
-                        await services.saveNewCategory(trimmed);
-                        // Add to all split category selects
-                        container.querySelectorAll('.split-category').forEach(sel => {
-                            const opt = document.createElement('option');
-                            opt.value = trimmed;
-                            opt.textContent = trimmed;
-                            sel.insertBefore(opt, sel.querySelector('option[disabled]'));
-                        });
+                const row = e.target.closest('.split-row');
+                if (!row) return;
+
+                if (e.target.classList.contains('split-category')) {
+                    if (e.target.value === '__add_new_category__') {
+                        const newName = await showPromptModal({ title: 'Nueva categoría', placeholder: 'Nombre', confirmText: 'Crear' });
+                        if (newName && newName.trim()) {
+                            const trimmed = newName.trim();
+                            await services.saveNewCategory(trimmed);
+                            if (!state.customCategories.includes(trimmed)) {
+                                state.customCategories.push(trimmed);
+                                state.customCategories.sort();
+                            }
+                            // Add to all split category selects
+                            container.querySelectorAll('.split-category').forEach(sel => {
+                                const opt = document.createElement('option');
+                                opt.value = trimmed;
+                                opt.textContent = trimmed;
+                                sel.insertBefore(opt, sel.querySelector('option[disabled]'));
+                            });
+                            e.target.value = trimmed;
+                        } else {
+                            e.target.value = 'SinCategorizar';
+                        }
+                    }
+                    refreshSubcategorySelect(row);
+                    return;
+                }
+
+                if (e.target.classList.contains('split-subcategory') && e.target.value === '__add_new__') {
+                    const parentCategory = e.target.dataset.category;
+                    const newSubName = await showPromptModal({
+                        title: `Nueva subcategoría para "${parentCategory}"`,
+                        placeholder: 'Nombre de la subcategoría',
+                        confirmText: 'Crear'
+                    });
+                    if (newSubName && newSubName.trim()) {
+                        const trimmed = newSubName.trim();
+                        await services.saveNewSubcategory(trimmed, parentCategory);
+                        if (!state.subcategories[parentCategory]) state.subcategories[parentCategory] = [];
+                        if (!state.subcategories[parentCategory].includes(trimmed)) {
+                            state.subcategories[parentCategory].push(trimmed);
+                            state.subcategories[parentCategory].sort();
+                        }
+                        refreshSubcategorySelect(row);
                         e.target.value = trimmed;
                     } else {
-                        e.target.value = 'SinCategorizar';
+                        e.target.value = '';
                     }
                 }
             });

@@ -21,11 +21,11 @@ export function getAllCategories() {
  */
 export function getExpenseParts(expense) {
     if (expense.splits && expense.splits.length > 0) {
-        return expense.splits.map(s => ({ category: s.category, amount: s.amount }));
+        return expense.splits.map(s => ({ category: s.category, subcategory: s.subcategory || '', amount: s.amount }));
     }
     const charge = parseFloat(expense.charge) || 0;
     if (charge > 0) {
-        return [{ category: expense.category || 'SinCategorizar', amount: charge }];
+        return [{ category: expense.category || 'SinCategorizar', subcategory: expense.subcategory || '', amount: charge }];
     }
     return [];
 }
