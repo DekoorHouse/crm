@@ -32,17 +32,16 @@ function generateHeaderDigest(bizContentJson) {
 }
 
 /**
- * Genera el digest dentro del bizContent:
- * 1. cyphertext = MD5(password + "jadada236t2") → uppercase hex
- * 2. digest = Base64(MD5(customerCode + cyphertext + privateKey))
+ * Genera el digest dentro del bizContent.
+ * Verificado contra la herramienta oficial Signature Tool de J&T:
+ *   digest = base64(MD5(customerCode + password + privateKey))
+ *
+ * Nota: la documentación menciona un cyphertext intermedio
+ * (MD5(password + "jadada236t2")), pero la herramienta oficial
+ * NO lo usa — utiliza la contraseña en texto plano directamente.
  */
 function generateBizDigest() {
-    const cyphertext = crypto.createHash('md5')
-        .update(JT_PASSWORD + 'jadada236t2')
-        .digest('hex')
-        .toUpperCase();
-
-    const raw = JT_CUSTOMER_CODE + cyphertext + JT_PRIVATE_KEY;
+    const raw = JT_CUSTOMER_CODE + JT_PASSWORD + JT_PRIVATE_KEY;
     const md5Bytes = crypto.createHash('md5').update(raw).digest();
     return md5Bytes.toString('base64');
 }
