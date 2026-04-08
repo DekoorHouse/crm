@@ -195,20 +195,33 @@ async function handleSaveOrder(event) {
     }
 
     // --- 1. Recolectar datos del formulario ---
-    let productoFinal = document.getElementById('pedidoProductoSelect').value;
     const telefono = document.getElementById('pedidoTelefono').value.trim();
     if (!telefono) { // Validar teléfono
         errorMessageEl.textContent = 'El número de teléfono es obligatorio.';
         return;
     }
 
-    // Crear objeto con los datos del pedido
+    // Recolectar items (multi-producto)
+    const itemRows = document.querySelectorAll('#order-items-container .order-item-row');
+    const items = Array.from(itemRows).map(row => ({
+        producto: row.querySelector('.order-item-product').value,
+        precio: Number(row.querySelector('.order-item-price').value) || 0,
+        datosProducto: row.querySelector('.order-item-details').value.trim()
+    }));
+
+    if (items.length === 0) {
+        errorMessageEl.textContent = 'Debe haber al menos un producto.';
+        return;
+    }
+
+    // Crear objeto con los datos del pedido (compat: el primer producto también se expone como producto/precio/datosProducto para backend legacy)
     const orderData = {
         contactId: state.selectedContactId, // ID del contacto actual
-        producto: productoFinal,
+        items: items,
+        producto: items[0].producto,
         telefono: telefono,
-        precio: Number(document.getElementById('pedidoPrecio').value) || 0,
-        datosProducto: document.getElementById('pedidoDatosProducto').value.trim(),
+        precio: items[0].precio,
+        datosProducto: items[0].datosProducto,
         datosPromocion: document.getElementById('pedidoDatosPromocion').value.trim(),
         comentarios: document.getElementById('pedidoComentarios').value.trim(),
         // Los arrays de fotos se manejarán después
@@ -262,11 +275,15 @@ async function handleSaveOrder(event) {
 
         // --- 5. Manejar éxito ---
         cerrarModalPedido(); // Cierra el modal de entrada
-        
-        // Renderiza el modal de confirmación unificado
+
+        // Renderiza el modal de confirmación unificado.
+        // Si el backend devolvió múltiples números, los pasamos como array.
         const confirmationContainer = document.getElementById('order-confirmation-modal-container');
         if (confirmationContainer) {
-            confirmationContainer.innerHTML = OrderConfirmationModalTemplate(result.orderNumber);
+            const toShow = (Array.isArray(result.orderNumbers) && result.orderNumbers.length > 1)
+                ? result.orderNumbers
+                : result.orderNumber;
+            confirmationContainer.innerHTML = OrderConfirmationModalTemplate(toShow);
         }
 
     } catch (error) {

@@ -1743,6 +1743,32 @@ let orderPhotosManager = []; // Array para fotos del pedido
 let promoPhotosManager = []; // Array para fotos de la promoción
 let editOrderPhotosManager = []; // Array para fotos del pedido en edición
 let editPromoPhotosManager = []; // Array para fotos de la promoción en edición
+let orderItemsNextIndex = 1; // Contador global para generar índices únicos al agregar productos
+
+// --- Multi-producto: agregar/quitar filas de producto en el modal de nuevo pedido ---
+window.addOrderItem = function() {
+    const container = document.getElementById('order-items-container');
+    if (!container) return;
+    const index = orderItemsNextIndex++;
+    container.insertAdjacentHTML('beforeend', NewOrderItemRowTemplate(index, false));
+    updateOrderItemNumbering();
+};
+
+window.removeOrderItem = function(index) {
+    const row = document.querySelector(`.order-item-row[data-item-index="${index}"]`);
+    if (row) row.remove();
+    updateOrderItemNumbering();
+};
+
+function updateOrderItemNumbering() {
+    const rows = document.querySelectorAll('#order-items-container .order-item-row');
+    rows.forEach((row, i) => {
+        const numberEl = row.querySelector('.order-item-number');
+        if (numberEl) numberEl.textContent = `Producto ${i + 1}`;
+        const removeBtn = row.querySelector('.order-item-remove-btn');
+        if (removeBtn) removeBtn.style.display = rows.length > 1 ? '' : 'none';
+    });
+}
 /**
  * Abre el modal para registrar un nuevo pedido, pre-rellenando datos si es posible.
  * Unificado con la lgica de Lista de Pedidos (pedidos.html / logica.js).
@@ -1768,6 +1794,7 @@ function abrirModalPedido(contactData = null) {
 
     orderPhotosManager = [];
     promoPhotosManager = [];
+    orderItemsNextIndex = 1; // El primer producto ya usa index 0
 
     // Configura listeners para el modal recin creado
     document.getElementById('formularioNuevoPedido').addEventListener('submit', handleSaveOrder);

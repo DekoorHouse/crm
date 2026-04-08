@@ -1283,6 +1283,38 @@ const DateSeparatorTemplate = (dateString) => {
     return `<div class="date-separator date-separator-anchor">${dateString}</div>`;
 };
 
+const NewOrderItemRowTemplate = (index, isFirst = false) => `
+    <div class="order-item-row" data-item-index="${index}">
+        <div class="order-item-header">
+            <span class="order-item-number">Producto ${index + 1}</span>
+            <button type="button" class="order-item-remove-btn" onclick="removeOrderItem(${index})" style="${isFirst ? 'display:none;' : ''}">
+                <i class="fas fa-times"></i> Quitar
+            </button>
+        </div>
+        <div class="order-item-fields">
+            <div class="form-item">
+                <label>Producto (*):</label>
+                <select class="order-item-product" required>
+                    <option value="Spiderman">Spiderman</option>
+                    <option value="Rex">Rex</option>
+                    <option value="Guerreras">Guerreras</option>
+                    <option value="Muerto">Muerto</option>
+                    <option value="Corazón">Corazón</option>
+                    <option value="Especial">Especial</option>
+                </select>
+            </div>
+            <div class="form-item">
+                <label>Precio (MXN):</label>
+                <input type="number" class="order-item-price" step="0.01" placeholder="Ej: 650.00" value="650">
+            </div>
+            <div class="form-item form-item-full">
+                <label>Detalles del Producto:</label>
+                <textarea class="order-item-details" placeholder="Describe los detalles específicos (nombre, color, etc.)..."></textarea>
+            </div>
+        </div>
+    </div>
+`;
+
 const NewOrderModalTemplate = () => `
     <div id="new-order-modal" class="modal-overlay">
         <div class="modal-content" id="modalContentNuevoPedido">
@@ -1292,24 +1324,18 @@ const NewOrderModalTemplate = () => `
                  <form id="formularioNuevoPedido">
                      <div class="form-grid">
                          <div class="form-item">
-                             <label for="pedidoProductoSelect">Producto (*):</label>
-                             <select id="pedidoProductoSelect" required>
-                                <option value="Spiderman">Spiderman</option>
-                                <option value="Rex">Rex</option>
-                                <option value="Guerreras">Guerreras</option>
-                                <option value="Muerto">Muerto</option>
-                                <option value="Corazón">Corazón</option>
-                                <option value="Especial">Especial</option>
-                             </select>
-                         </div>
-                         <div class="form-item">
                              <label for="pedidoTelefono">Teléfono (*):</label>
                              <input type="tel" id="pedidoTelefono" placeholder="Ej: 521..." required>
                          </div>
-                         <div class="form-item">
-                              <label for="pedidoPrecio">Precio (MXN):</label>
-                              <input type="number" id="pedidoPrecio" step="0.01" placeholder="Ej: 650.00" value="650">
-                          </div>
+
+                         <div class="form-item form-item-full">
+                             <div id="order-items-container">
+                                ${NewOrderItemRowTemplate(0, true)}
+                             </div>
+                             <button type="button" id="add-order-item-btn" class="add-order-item-btn" onclick="addOrderItem()">
+                                <i class="fas fa-plus"></i> Agregar otro producto
+                             </button>
+                         </div>
 
                           <div class="form-item form-item-full">
                                <label for="pedidoFotoFile">Fotos del Pedido (Clic derecho o Ctrl+C para copiar):</label>
@@ -1325,10 +1351,6 @@ const NewOrderModalTemplate = () => `
                                        </div>
                                </div>
                           </div>
-                         <div class="form-item form-item-full">
-                             <label for="pedidoDatosProducto">Detalles del Producto:</label>
-                             <textarea id="pedidoDatosProducto" placeholder="Describe los detalles específicos del producto solicitado..."></textarea>
-                         </div>
 
                          <div class="form-item form-item-full">
                             <label for="pedidoFotoPromocionFile">Fotos de la Promoción (Clic derecho o Ctrl+C para copiar):</label>
@@ -1372,28 +1394,50 @@ const NewOrderModalTemplate = () => `
     </div>
 `;
 
-const OrderConfirmationModalTemplate = (orderNumber) => `
+const OrderConfirmationModalTemplate = (orderNumberOrList) => {
+    // Soporte para string (legacy / single) o array (multi)
+    const list = Array.isArray(orderNumberOrList) ? orderNumberOrList : [orderNumberOrList];
+    const normalized = list.map(n => {
+        const s = String(n);
+        return s.startsWith('DH') ? s : `DH${s}`;
+    });
+    const multi = normalized.length > 1;
+    const title = multi ? '¡Pedidos Registrados!' : '¡Pedido Registrado!';
+    const subtitle = multi
+        ? `Se guardaron ${normalized.length} pedidos exitosamente:`
+        : 'El pedido ha sido guardado exitosamente con el número:';
+    const copyPayload = normalized.join(', ');
+
+    const numbersHtml = multi
+        ? `<div class="flex flex-col gap-2 bg-slate-100 p-4 rounded-2xl mb-8 cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('${copyPayload}', this)">
+               ${normalized.map(n => `<span class="text-2xl font-black text-primary tracking-wider text-center">${n}</span>`).join('')}
+               <div class="flex justify-center mt-1 text-gray-400 text-xs"><i class="fas fa-copy mr-1"></i> Copiar todos</div>
+           </div>`
+        : `<div class="flex items-center justify-center gap-3 bg-slate-100 p-4 rounded-2xl mb-8 group cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('${normalized[0]}', this)">
+               <span id="numeroPedidoConfirmacion" class="text-3xl font-black text-primary tracking-wider">${normalized[0]}</span>
+               <div class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 group-hover:text-primary transition-colors">
+                   <i class="fas fa-copy"></i>
+               </div>
+           </div>`;
+
+    return `
     <div id="order-confirmation-modal" class="modal-backdrop">
         <div class="modal-content !max-w-md !p-8 text-center">
             <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-6">
                 <i class="fas fa-check-circle"></i>
             </div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">¡Pedido Registrado!</h2>
-            <p class="text-gray-600 mb-8">El pedido ha sido guardado exitosamente con el número:</p>
-            
-            <div class="flex items-center justify-center gap-3 bg-slate-100 p-4 rounded-2xl mb-8 group cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('DH${orderNumber}', this)">
-                <span id="numeroPedidoConfirmacion" class="text-3xl font-black text-primary tracking-wider">DH${orderNumber}</span>
-                <div class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 group-hover:text-primary transition-colors">
-                    <i class="fas fa-copy"></i>
-                </div>
-            </div>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">${title}</h2>
+            <p class="text-gray-600 mb-8">${subtitle}</p>
+
+            ${numbersHtml}
 
             <button onclick="closeOrderConfirmationModal()" class="w-full py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-all active:scale-95 shadow-lg">
                 Cerrar
             </button>
         </div>
     </div>
-`;
+    `;
+};
 
 const ConversationPreviewModalTemplate = (contact) => `
     <div id="conversation-preview-modal" class="modal-backdrop" onclick="closeConversationPreviewModal()">

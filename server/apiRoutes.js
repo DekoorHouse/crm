@@ -3311,12 +3311,33 @@ router.post('/orders', async (req, res) => {
         datosPromocion,
         comentarios,
         fotoUrls, // Array de URLs de GCS para fotos del producto
-        fotoPromocionUrls // Array de URLs de GCS para fotos de la promoción
+        fotoPromocionUrls, // Array de URLs de GCS para fotos de la promoción
+        items // Array opcional de productos: [{ producto, precio, datosProducto }]
     } = req.body;
 
+    // Normalizar items: si viene el array, úsalo; si no, construir uno desde los campos legacy
+    let itemsToCreate;
+    if (Array.isArray(items) && items.length > 0) {
+        itemsToCreate = items
+            .filter(it => it && it.producto)
+            .map(it => ({
+                producto: String(it.producto),
+                precio: Number(it.precio) || 0,
+                datosProducto: it.datosProducto || ''
+            }));
+    } else if (producto) {
+        itemsToCreate = [{
+            producto: String(producto),
+            precio: Number(precio) || 0,
+            datosProducto: datosProducto || ''
+        }];
+    } else {
+        itemsToCreate = [];
+    }
+
     // Validaciones básicas
-    if (!contactId || !producto || !telefono) {
-        return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: contactId, producto y teléfono.' });
+    if (!contactId || itemsToCreate.length === 0 || !telefono) {
+        return res.status(400).json({ success: false, message: 'Faltan datos obligatorios: contactId, producto(s) y teléfono.' });
     }
 
     try {
@@ -3324,38 +3345,22 @@ router.post('/orders', async (req, res) => {
         // Referencia al contador de pedidos en Firestore
         const orderCounterRef = db.collection('counters').doc('orders');
 
-        // --- Generar número de pedido consecutivo usando una transacción ---
-        const newOrderNumber = await db.runTransaction(async (transaction) => {
+        // --- Reservar N números consecutivos en una transacción ---
+        const count = itemsToCreate.length;
+        const startNumber = await db.runTransaction(async (transaction) => {
             const counterDoc = await transaction.get(orderCounterRef);
             let currentCounter = counterDoc.exists ? counterDoc.data().lastOrderNumber || 0 : 0;
             // Asegurar que el contador empiece en 1001 si es menor
-            const nextOrderNumber = (currentCounter < 1000) ? 1001 : currentCounter + 1;
-            // Actualizar el contador dentro de la transacción
-            transaction.set(orderCounterRef, { lastOrderNumber: nextOrderNumber }, { merge: true });
-            return nextOrderNumber;
+            const first = (currentCounter < 1000) ? 1001 : currentCounter + 1;
+            const last = first + count - 1;
+            transaction.set(orderCounterRef, { lastOrderNumber: last }, { merge: true });
+            return first;
         });
 
-        // Crear objeto del nuevo pedido
-        const nuevoPedido = {
-            contactId, // Guardar ID del contacto asociado
-            producto,
-            telefono,
-            precio: precio || 0,
-            datosProducto: datosProducto || '',
-            datosPromocion: datosPromocion || '',
-            comentarios: comentarios || '',
-            fotoUrls: fotoUrls || [], // Guardar array de URLs
-            fotoPromocionUrls: fotoPromocionUrls || [], // Guardar array de URLs
-            consecutiveOrderNumber: newOrderNumber, // Número consecutivo
-            createdAt: admin.firestore.FieldValue.serverTimestamp(), // Fecha de creación
-            estatus: "Sin estatus", // Estatus inicial
-            telefonoVerificado: false, // Checkbox inicial
-            estatusVerificado: false // Checkbox inicial
-            // createdBy: userId (si se implementa autenticación de usuarios del CRM)
-        };
-
-        // Hacer públicas las fotos para que se vean en la lista de pedidos
-        const allUrls = [...(fotoUrls || []), ...(fotoPromocionUrls || [])];
+        // Hacer públicas las fotos COMPARTIDAS (una sola vez, evitamos repetir la llamada por item)
+        const sharedFotoUrls = fotoUrls || [];
+        const sharedFotoPromocionUrls = fotoPromocionUrls || [];
+        const allUrls = [...sharedFotoUrls, ...sharedFotoPromocionUrls];
         for (const url of allUrls) {
             if (url && url.includes(bucket.name)) {
                 try {
@@ -3369,18 +3374,60 @@ router.post('/orders', async (req, res) => {
             }
         }
 
-        // Añadir el nuevo pedido a la colección 'pedidos'
-        const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
+        // Batch ID compartido para agrupar los pedidos del mismo registro (útil para futuros reportes)
+        const batchId = count > 1 ? db.collection('pedidos').doc().id : null;
+        const createdAt = admin.firestore.FieldValue.serverTimestamp();
+
+        // Crear los N pedidos en una batched write
+        const batch = db.batch();
+        const orderNumbers = [];
+        let totalValue = 0;
+        itemsToCreate.forEach((item, idx) => {
+            const orderNum = startNumber + idx;
+            orderNumbers.push(orderNum);
+            totalValue += item.precio || 0;
+
+            const nuevoPedido = {
+                contactId,
+                producto: item.producto,
+                telefono,
+                precio: item.precio,
+                datosProducto: item.datosProducto,
+                datosPromocion: datosPromocion || '',
+                comentarios: comentarios || '',
+                fotoUrls: sharedFotoUrls,
+                fotoPromocionUrls: sharedFotoPromocionUrls,
+                consecutiveOrderNumber: orderNum,
+                createdAt,
+                estatus: 'Sin estatus',
+                telefonoVerificado: false,
+                estatusVerificado: false
+            };
+            if (batchId) {
+                nuevoPedido.batchId = batchId;
+                nuevoPedido.batchIndex = idx;
+                nuevoPedido.batchCount = count;
+            }
+
+            const newDocRef = db.collection('pedidos').doc();
+            batch.set(newDocRef, nuevoPedido);
+        });
+        await batch.commit();
+
+        const lastOrderNumber = orderNumbers[orderNumbers.length - 1];
 
         // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
         // El evento Purchase a Meta se envía cuando el estatus cambie a "Fabricar" (corona zafiro)
         await contactRef.update({
-            lastOrderNumber: newOrderNumber,
-            lastOrderDate: nuevoPedido.createdAt,
+            lastOrderNumber,
+            lastOrderDate: createdAt,
             purchaseStatus: 'registered', // Corona plateada — se cambiará a 'completed' (zafiro) al cambiar a Fabricar
-            purchaseValue: parseFloat(precio) || 0,
+            purchaseValue: totalValue,
             purchaseDate: admin.firestore.FieldValue.serverTimestamp()
         });
+
+        // Alias para compatibilidad con el código de respuesta y recurrente
+        const newOrderNumber = lastOrderNumber;
 
         // --- Detección automática de cliente recurrente ---
         // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
@@ -3433,11 +3480,15 @@ router.post('/orders', async (req, res) => {
             }
         }
 
-        // Devolver éxito y el número de pedido generado
+        // Devolver éxito y los números de pedido generados
         res.status(201).json({
             success: true,
-            message: 'Pedido registrado con éxito.',
-            orderNumber: `DH${newOrderNumber}` // Formato DHxxxx
+            message: orderNumbers.length > 1
+                ? `${orderNumbers.length} pedidos registrados con éxito.`
+                : 'Pedido registrado con éxito.',
+            orderNumber: `DH${newOrderNumber}`, // Formato DHxxxx (backward compat: el ÚLTIMO)
+            orderNumbers: orderNumbers.map(n => `DH${n}`), // Lista completa
+            firstOrderNumber: `DH${orderNumbers[0]}`
         });
 
     } catch (error) {
