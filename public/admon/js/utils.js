@@ -158,7 +158,7 @@ export function autoCategorizeWithRulesOnly(concept) {
     const lowerConcept = String(concept).toLowerCase();
     const rules = {
         Ganancia: ['xciento'],
-        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167'], 
+        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera'],
         Alex: ['alex', 'bolt'], 
         Publicidad: ['facebook'],
         Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre'],
