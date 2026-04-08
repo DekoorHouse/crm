@@ -665,19 +665,40 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
         }
 
         // --- Obtener instrucciones del bot ---
+        // Prioridad: prompt por anuncio → prompt por departamento → prompt general
         let botInstructions = 'Eres un asistente virtual amigable y servicial.';
+        let promptResolved = false;
+
+        // 1) Prompt por Ad ID
         const adId = contactData.adReferral?.source_id;
         if (adId) {
             const adPromptSnapshot = await db.collection('ai_ad_prompts').where('adId', '==', adId).limit(1).get();
             if (!adPromptSnapshot.empty) {
                 botInstructions = adPromptSnapshot.docs[0].data().prompt;
                 console.log(`[AI] Usando prompt específico para Ad ID: ${adId}`);
+                promptResolved = true;
             } else {
-                console.log(`[AI] No se encontró prompt para Ad ID: ${adId}. Usando instrucciones generales.`);
-                const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
-                if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
+                console.log(`[AI] No se encontró prompt para Ad ID: ${adId}. Intentando por departamento.`);
             }
-        } else {
+        }
+
+        // 2) Prompt por departamento (producto)
+        if (!promptResolved) {
+            const departmentId = contactData.assignedDepartmentId;
+            if (departmentId) {
+                const deptPromptDoc = await db.collection('ai_department_prompts').doc(departmentId).get();
+                if (deptPromptDoc.exists && deptPromptDoc.data().prompt) {
+                    botInstructions = deptPromptDoc.data().prompt;
+                    console.log(`[AI] Usando prompt específico para Departamento: ${departmentId}`);
+                    promptResolved = true;
+                } else {
+                    console.log(`[AI] No se encontró prompt para Departamento: ${departmentId}. Usando instrucciones generales.`);
+                }
+            }
+        }
+
+        // 3) Fallback: prompt general
+        if (!promptResolved) {
             const botSettingsDoc = await db.collection('crm_settings').doc('bot').get();
             if (botSettingsDoc.exists) botInstructions = botSettingsDoc.data().instructions;
         }
