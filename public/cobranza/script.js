@@ -109,10 +109,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
             if (!res.ok) throw new Error(data.message);
 
-            // Excluir pedidos que no requieren cobranza
-            const excluidos = new Set(['pagado', 'fabricar', 'cancelado', 'corregido', 'corregir']);
+            // Excluir pedidos que no requieren cobranza (incluye "Diseñado" y los que no tienen estatus)
+            const excluidos = new Set(['pagado', 'fabricar', 'cancelado', 'corregido', 'corregir', 'diseñado']);
             pedidosEncontrados = data.orders.filter(p => {
-                return !excluidos.has((p.estatus || '').toLowerCase());
+                const estatus = (p.estatus || '').toLowerCase().trim();
+                if (!estatus) return false; // "Sin estatus"
+                return !excluidos.has(estatus);
             });
             renderPedidos();
         } catch (e) {
