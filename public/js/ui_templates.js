@@ -445,6 +445,17 @@ const AITrainingViewTemplate = () => `
                 </div>
             </div>
 
+            <!-- Sección: Instrucciones por Departamento / Producto -->
+            <div class="settings-card">
+                <h2 class="text-xl font-bold mb-2">🏢 Instrucciones del Bot por Departamento</h2>
+                <p class="text-sm text-gray-500 mb-4">Define instrucciones específicas para cada producto o departamento. El bot las usará cuando el contacto esté asignado al departamento correspondiente, en lugar de las instrucciones generales de arriba.</p>
+                <div id="department-prompts-container">
+                    <div class="flex items-center justify-center py-8 text-gray-400">
+                        <i class="fas fa-spinner fa-spin mr-2"></i> Cargando departamentos...
+                    </div>
+                </div>
+            </div>
+
             <!-- Sección: Base de Conocimiento -->
             <div class="settings-card">
                 <h2 class="text-xl font-bold mb-2">📚 Base de Conocimiento</h2>

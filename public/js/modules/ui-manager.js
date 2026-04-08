@@ -716,7 +716,126 @@ async function renderAITrainingView() {
 
     // 5. Cargar estadísticas de uso de tokens
     loadAIUsageStats();
+
+    // 6. Cargar y renderizar instrucciones por departamento
+    loadDepartmentPrompts();
 }
+
+function escapeHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+async function loadDepartmentPrompts() {
+    const container = document.getElementById('department-prompts-container');
+    if (!container) return;
+
+    const departments = state.departments || [];
+    if (departments.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-sm text-gray-500">
+                No hay departamentos. Crea uno en <a href="#" onclick="navigateTo('departamentos'); return false;" class="text-blue-600 font-semibold hover:underline">Departamentos</a>.
+            </div>`;
+        return;
+    }
+
+    // Cargar prompts existentes desde Firestore en paralelo
+    try {
+        const results = await Promise.all(
+            departments.map(d =>
+                db.collection('ai_department_prompts').doc(d.id).get()
+                    .then(snap => ({ id: d.id, prompt: (snap.exists && snap.data().prompt) || '' }))
+                    .catch(() => ({ id: d.id, prompt: '' }))
+            )
+        );
+        state.aiDepartmentPrompts = {};
+        results.forEach(r => { state.aiDepartmentPrompts[r.id] = r.prompt; });
+    } catch (error) {
+        console.error('Error cargando prompts por departamento:', error);
+    }
+
+    renderDepartmentPrompts();
+}
+
+function renderDepartmentPrompts() {
+    const container = document.getElementById('department-prompts-container');
+    if (!container) return;
+    const departments = state.departments || [];
+
+    container.innerHTML = departments.map(dept => {
+        const prompt = state.aiDepartmentPrompts[dept.id] || '';
+        const hasPrompt = !!prompt.trim();
+        const deptId = dept.id;
+        const color = dept.color || '#6c757d';
+        const name = escapeHtml(dept.name || 'Sin nombre');
+
+        return `
+            <div class="mb-4 border border-gray-200 rounded-lg overflow-hidden" data-dept-prompt-card="${deptId}">
+                <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-b border-gray-200">
+                    <div class="flex items-center gap-3">
+                        <div class="w-4 h-4 rounded" style="background-color: ${color};"></div>
+                        <span class="font-semibold text-gray-800">${name}</span>
+                        ${hasPrompt ? '<span class="text-[10px] font-bold uppercase tracking-wider text-green-700 bg-green-100 px-2 py-0.5 rounded-full">Configurado</span>' : ''}
+                    </div>
+                </div>
+                <div class="p-4">
+                    <textarea
+                        id="dept-prompt-textarea-${deptId}"
+                        rows="6"
+                        class="w-full p-3 border border-gray-300 rounded-lg text-sm font-mono"
+                        placeholder="Instrucciones del bot para &quot;${name}&quot;..."
+                    >${escapeHtml(prompt)}</textarea>
+                    <div class="flex justify-end mt-3">
+                        <button
+                            id="save-dept-prompt-btn-${deptId}"
+                            class="btn btn-primary"
+                            onclick="handleSaveDepartmentPrompt('${deptId}')"
+                        >
+                            <i class="fas fa-save mr-2"></i>Guardar Instrucciones
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+async function handleSaveDepartmentPrompt(deptId) {
+    const textarea = document.getElementById(`dept-prompt-textarea-${deptId}`);
+    const btn = document.getElementById(`save-dept-prompt-btn-${deptId}`);
+    if (!textarea || !btn) return;
+
+    const prompt = textarea.value.trim();
+    const originalHtml = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Guardando...';
+
+    try {
+        await db.collection('ai_department_prompts').doc(deptId).set(
+            { prompt, updatedAt: firebase.firestore.FieldValue.serverTimestamp() },
+            { merge: true }
+        );
+        state.aiDepartmentPrompts[deptId] = prompt;
+        btn.innerHTML = '<i class="fas fa-check mr-2"></i>¡Guardado!';
+        showError('Instrucciones del departamento guardadas.', 'success');
+        // Re-renderizar solo la tarjeta del departamento para actualizar el badge "Configurado"
+        setTimeout(() => {
+            renderDepartmentPrompts();
+        }, 1500);
+    } catch (error) {
+        console.error('Error al guardar prompt de departamento:', error);
+        showError('No se pudieron guardar las instrucciones del departamento.');
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
+// Exponer en window para el onclick inline
+window.handleSaveDepartmentPrompt = handleSaveDepartmentPrompt;
 
 async function handleSaveBotInstructions() {
     const textarea = document.getElementById('ai-bot-instructions');

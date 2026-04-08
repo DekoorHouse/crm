@@ -96,6 +96,7 @@ let state = {
     // --- NUEVO: Estado para Entrenamiento de IA ---
     aiKnowledgeBase: [], // Documentos de la base de conocimiento
     aiBotInstructions: '', // Instrucciones generales del bot
+    aiDepartmentPrompts: {}, // Instrucciones del bot por departamento (map: deptId -> prompt)
 
     // --- NUEVO: Cola de Mensajes ---
     messageQueue: [], // Cola de mensajes pendientes de envío
