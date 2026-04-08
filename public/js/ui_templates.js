@@ -1394,42 +1394,25 @@ const NewOrderModalTemplate = () => `
     </div>
 `;
 
-const OrderConfirmationModalTemplate = (orderNumberOrList) => {
-    // Soporte para string (legacy / single) o array (multi)
-    const list = Array.isArray(orderNumberOrList) ? orderNumberOrList : [orderNumberOrList];
-    const normalized = list.map(n => {
-        const s = String(n);
-        return s.startsWith('DH') ? s : `DH${s}`;
-    });
-    const multi = normalized.length > 1;
-    const title = multi ? '¡Pedidos Registrados!' : '¡Pedido Registrado!';
-    const subtitle = multi
-        ? `Se guardaron ${normalized.length} pedidos exitosamente:`
-        : 'El pedido ha sido guardado exitosamente con el número:';
-    const copyPayload = normalized.join(', ');
-
-    const numbersHtml = multi
-        ? `<div class="flex flex-col gap-2 bg-slate-100 p-4 rounded-2xl mb-8 cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('${copyPayload}', this)">
-               ${normalized.map(n => `<span class="text-2xl font-black text-primary tracking-wider text-center">${n}</span>`).join('')}
-               <div class="flex justify-center mt-1 text-gray-400 text-xs"><i class="fas fa-copy mr-1"></i> Copiar todos</div>
-           </div>`
-        : `<div class="flex items-center justify-center gap-3 bg-slate-100 p-4 rounded-2xl mb-8 group cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('${normalized[0]}', this)">
-               <span id="numeroPedidoConfirmacion" class="text-3xl font-black text-primary tracking-wider">${normalized[0]}</span>
-               <div class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 group-hover:text-primary transition-colors">
-                   <i class="fas fa-copy"></i>
-               </div>
-           </div>`;
-
+const OrderConfirmationModalTemplate = (orderNumber) => {
+    // Normalizar: acepta 'DH1234' o '1234'
+    const raw = String(orderNumber || '');
+    const label = raw.startsWith('DH') ? raw : `DH${raw}`;
     return `
     <div id="order-confirmation-modal" class="modal-backdrop">
         <div class="modal-content !max-w-md !p-8 text-center">
             <div class="w-20 h-20 bg-green-100 text-green-600 rounded-full flex items-center justify-center text-4xl mx-auto mb-6">
                 <i class="fas fa-check-circle"></i>
             </div>
-            <h2 class="text-2xl font-bold text-gray-800 mb-4">${title}</h2>
-            <p class="text-gray-600 mb-8">${subtitle}</p>
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">¡Pedido Registrado!</h2>
+            <p class="text-gray-600 mb-8">El pedido ha sido guardado exitosamente con el número:</p>
 
-            ${numbersHtml}
+            <div class="flex items-center justify-center gap-3 bg-slate-100 p-4 rounded-2xl mb-8 group cursor-pointer hover:bg-slate-200 transition-colors" onclick="copyOrderNumber('${label}', this)">
+                <span id="numeroPedidoConfirmacion" class="text-3xl font-black text-primary tracking-wider">${label}</span>
+                <div class="w-10 h-10 bg-white rounded-xl shadow-sm flex items-center justify-center text-gray-400 group-hover:text-primary transition-colors">
+                    <i class="fas fa-copy"></i>
+                </div>
+            </div>
 
             <button onclick="closeOrderConfirmationModal()" class="w-full py-3 bg-gray-800 text-white rounded-xl font-bold hover:bg-gray-900 transition-all active:scale-95 shadow-lg">
                 Cerrar
@@ -1476,6 +1459,22 @@ const OrderHistoryItemTemplate = (order) => {
 
     const currentStatusStyle = state.orderStatuses.find(s => s.key === estatus) || { color: '#e9ecef' };
 
+    // Soportar pedidos con múltiples productos (items embebidos)
+    let productoDisplay;
+    let productoTitle;
+    if (Array.isArray(order.items) && order.items.length > 1) {
+        // Resumir: "Rex + Guerreras" o "3 productos" si son muchos
+        if (order.items.length <= 3) {
+            productoDisplay = order.items.map(it => it.producto).join(' + ');
+        } else {
+            productoDisplay = `${order.items.length} productos`;
+        }
+        productoTitle = order.items.map(it => `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`).join(', ');
+    } else {
+        productoDisplay = order.producto || '';
+        productoTitle = order.producto || '';
+    }
+
     return `
         <div class="order-history-item">
             <div class="order-history-row">
@@ -1485,7 +1484,7 @@ const OrderHistoryItemTemplate = (order) => {
                 <span class="order-date">${orderDate}</span>
             </div>
             <div class="order-history-row">
-                <span class="order-product" title="${order.producto}">${order.producto}</span>
+                <span class="order-product" title="${productoTitle}">${productoDisplay}</span>
             </div>
             <div class="order-history-row">
                 <select
@@ -1501,6 +1500,35 @@ const OrderHistoryItemTemplate = (order) => {
     `;
 };
 
+const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
+    const productos = ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Especial'];
+    const options = productos.map(p => `<option value="${p}" ${item.producto === p ? 'selected' : ''}>${p}</option>`).join('');
+    return `
+    <div class="order-item-row" data-item-index="${index}">
+        <div class="order-item-header">
+            <span class="order-item-number">Producto ${index + 1}</span>
+            <button type="button" class="order-item-remove-btn" onclick="removeEditOrderItem(${index})" style="${isFirst ? 'display:none;' : ''}">
+                <i class="fas fa-times"></i> Quitar
+            </button>
+        </div>
+        <div class="order-item-fields">
+            <div class="form-item">
+                <label>Producto (*):</label>
+                <select class="edit-order-item-product" required>${options}</select>
+            </div>
+            <div class="form-item">
+                <label>Precio (MXN):</label>
+                <input type="number" class="edit-order-item-price" step="0.01" placeholder="Ej: 275.00" value="${item.precio ?? ''}">
+            </div>
+            <div class="form-item form-item-full">
+                <label>Detalles del Producto:</label>
+                <textarea class="edit-order-item-details" placeholder="Describe los detalles específicos...">${(item.datosProducto || '').replace(/</g, '&lt;')}</textarea>
+            </div>
+        </div>
+    </div>
+    `;
+};
+
 const OrderEditModalTemplate = (order) => `
     <div id="order-edit-modal" class="modal-overlay" onclick="closeOrderEditModal()">
         <div class="modal-content" onclick="event.stopPropagation()">
@@ -1510,24 +1538,16 @@ const OrderEditModalTemplate = (order) => `
                  <form id="edit-order-form">
                      <div class="form-grid">
                          <div class="form-item">
-                             <label for="edit-order-product-select">Producto (*):</label>
-                             <select id="edit-order-product-select" required>
-                                <option value="Spiderman">Spiderman</option>
-                                <option value="Rex">Rex</option>
-                                <option value="Guerreras">Guerreras</option>
-                                <option value="Muerto">Muerto</option>
-                                <option value="Corazón">Corazón</option>
-                                <option value="Especial">Especial</option>
-                             </select>
-                         </div>
-                         <div class="form-item">
                              <label for="edit-order-phone">Teléfono (*):</label>
                              <input type="tel" id="edit-order-phone" placeholder="Ej: 521..." required>
                          </div>
-                         <div class="form-item">
-                              <label for="edit-order-price">Precio (MXN):</label>
-                              <input type="number" id="edit-order-price" step="0.01" placeholder="Ej: 275.00">
-                          </div>
+
+                         <div class="form-item form-item-full">
+                             <div id="edit-order-items-container"></div>
+                             <button type="button" id="add-edit-order-item-btn" class="add-order-item-btn" onclick="addEditOrderItem()">
+                                <i class="fas fa-plus"></i> Agregar otro producto
+                             </button>
+                         </div>
 
                           <div class="form-item form-item-full">
                                <label for="edit-order-photo-file">Fotos del Pedido (Arrastra o pega imágenes):</label>
@@ -1542,10 +1562,6 @@ const OrderEditModalTemplate = (order) => `
                                    <div class="previews-container" id="edit-order-photos-preview-container"></div>
                                </div>
                           </div>
-                         <div class="form-item form-item-full">
-                             <label for="edit-order-product-details">Detalles del Producto:</label>
-                             <textarea id="edit-order-product-details" placeholder="Describe los detalles específicos del producto solicitado..."></textarea>
-                         </div>
 
                          <div class="form-item form-item-full">
                             <label for="edit-order-promo-photo-file">Fotos de la Promoción:</label>

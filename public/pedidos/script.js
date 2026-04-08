@@ -743,7 +743,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const telefonoOriginal = pedido.telefono || '-';
         const estatus = pedido.estatus || 'Sin estatus';
         const comentarios = pedido.comentarios || '-';
-        const productoNombre = pedido.producto || '<em>N/A</em>';
+        // Soportar pedidos con múltiples items embebidos
+        let productoNombre;
+        if (Array.isArray(pedido.items) && pedido.items.length > 1) {
+            if (pedido.items.length <= 3) {
+                productoNombre = pedido.items.map(it => it.producto).join(' + ');
+            } else {
+                productoNombre = `${pedido.items.length} productos`;
+            }
+        } else {
+            productoNombre = pedido.producto || '<em>N/A</em>';
+        }
         const datosProductoTexto = pedido.datosProducto || '-';
         const datosPromocionTexto = pedido.datosPromocion || '-';
 

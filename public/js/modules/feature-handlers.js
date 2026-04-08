@@ -276,14 +276,10 @@ async function handleSaveOrder(event) {
         // --- 5. Manejar éxito ---
         cerrarModalPedido(); // Cierra el modal de entrada
 
-        // Renderiza el modal de confirmación unificado.
-        // Si el backend devolvió múltiples números, los pasamos como array.
+        // Renderiza el modal de confirmación unificado (un solo número de pedido)
         const confirmationContainer = document.getElementById('order-confirmation-modal-container');
         if (confirmationContainer) {
-            const toShow = (Array.isArray(result.orderNumbers) && result.orderNumbers.length > 1)
-                ? result.orderNumbers
-                : result.orderNumber;
-            confirmationContainer.innerHTML = OrderConfirmationModalTemplate(toShow);
+            confirmationContainer.innerHTML = OrderConfirmationModalTemplate(result.orderNumber);
         }
 
     } catch (error) {
@@ -306,15 +302,23 @@ async function handleUpdateExistingOrder(event, orderId) {
     const saveButton = document.getElementById('order-update-btn');
     const errorMessageEl = document.getElementById('edit-order-error-message');
 
-    // Recolecta datos del formulario (similar a handleSaveOrder)
-    let productoFinal = document.getElementById('edit-order-product-select').value;
+    // Recolectar items (multi-producto) del modal de edición
+    const itemRows = document.querySelectorAll('#edit-order-items-container .order-item-row');
+    const items = Array.from(itemRows).map(row => ({
+        producto: row.querySelector('.edit-order-item-product').value,
+        precio: Number(row.querySelector('.edit-order-item-price').value) || 0,
+        datosProducto: row.querySelector('.edit-order-item-details').value.trim()
+    }));
 
-    // Objeto con los datos a actualizar
+    if (items.length === 0) {
+        errorMessageEl.textContent = 'Debe haber al menos un producto.';
+        return;
+    }
+
+    // Objeto con los datos a actualizar. El backend normaliza items y re-deriva producto/precio/datosProducto.
     const updateData = {
-        producto: productoFinal,
+        items: items,
         telefono: document.getElementById('edit-order-phone').value.trim(),
-        precio: Number(document.getElementById('edit-order-price').value) || 0,
-        datosProducto: document.getElementById('edit-order-product-details').value.trim(),
         datosPromocion: document.getElementById('edit-order-promo-details').value.trim(),
         comentarios: document.getElementById('edit-order-comments').value.trim(),
         // Los arrays de fotos se manejan después

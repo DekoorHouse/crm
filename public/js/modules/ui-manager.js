@@ -2009,20 +2009,48 @@ function openOrderEditModal(orderId) {
         return;
     }
 
-    // Asumimos que existe una plantilla OrderEditModalTemplate similar a NewOrderModalTemplate
-    // y que esta plantilla ya incluye los IDs correctos para los campos del formulario.
     modalContainer.innerHTML = OrderEditModalTemplate(order);
 
-    // Configurar los manejadores de fotos para la edición
-    // (Asumimos que estas variables globales existen y son usadas por el modal de edición)
+    // --- Poblar campos compartidos ---
+    const phoneInput = document.getElementById('edit-order-phone');
+    if (phoneInput) phoneInput.value = order.telefono || '';
+    const promoDetails = document.getElementById('edit-order-promo-details');
+    if (promoDetails) promoDetails.value = order.datosPromocion || '';
+    const comments = document.getElementById('edit-order-comments');
+    if (comments) comments.value = order.comentarios || '';
+
+    // --- Poblar items (multi-producto) ---
+    // Si el pedido ya tiene items embebidos, usarlos. Si no, construir un item desde los campos legacy.
+    const itemsToRender = (Array.isArray(order.items) && order.items.length > 0)
+        ? order.items
+        : [{ producto: order.producto || 'Spiderman', precio: order.precio || 0, datosProducto: order.datosProducto || '' }];
+
+    editOrderItemsNextIndex = itemsToRender.length;
+    const itemsContainer = document.getElementById('edit-order-items-container');
+    if (itemsContainer) {
+        itemsContainer.innerHTML = itemsToRender.map((item, idx) => EditOrderItemRowTemplate(idx, item, idx === 0)).join('');
+        updateEditOrderItemNumbering();
+    }
+
+    // --- Configurar managers de fotos ---
     editOrderPhotosManager = order.fotoUrls ? order.fotoUrls.map(url => ({ file: null, url, isNew: false })) : [];
     editPromoPhotosManager = order.fotoPromocionUrls ? order.fotoPromocionUrls.map(url => ({ file: null, url, isNew: false })) : [];
 
-    // Aquí iría la lógica para renderizar las vistas previas de las fotos,
-    // similar a como se hace en openNewOrderModal, pero para los contenedores de edición.
-    // Ejemplo:
-    // const editOrderPreviewContainer = document.getElementById('edit-order-photos-preview-container');
-    // renderPhotoPreviews(editOrderPreviewContainer, editOrderPhotosManager, 'edit-order');
+    const editOrderPhotoContainer = document.getElementById('edit-order-file-input-container-product');
+    const editOrderPhotoInput = document.getElementById('edit-order-photo-file');
+    const editOrderPreviewContainer = document.getElementById('edit-order-photos-preview-container');
+    if (editOrderPhotoContainer && editOrderPhotoInput && editOrderPreviewContainer) {
+        setupPhotoManager(editOrderPhotoContainer, editOrderPhotoInput, editOrderPreviewContainer, editOrderPhotosManager, 'edit-order');
+        renderPhotoPreviews(editOrderPreviewContainer, editOrderPhotosManager, 'edit-order');
+    }
+
+    const editPromoPhotoContainer = document.getElementById('edit-order-file-input-container-promo');
+    const editPromoPhotoInput = document.getElementById('edit-order-promo-photo-file');
+    const editPromoPreviewContainer = document.getElementById('edit-order-promo-photos-preview-container');
+    if (editPromoPhotoContainer && editPromoPhotoInput && editPromoPreviewContainer) {
+        setupPhotoManager(editPromoPhotoContainer, editPromoPhotoInput, editPromoPreviewContainer, editPromoPhotosManager, 'edit-promo');
+        renderPhotoPreviews(editPromoPreviewContainer, editPromoPhotosManager, 'edit-promo');
+    }
 
     // Añadir el listener para el envío del formulario de edición
     const form = document.getElementById('edit-order-form');
@@ -2031,6 +2059,33 @@ function openOrderEditModal(orderId) {
     } else {
         console.error("El formulario de edición de pedido ('edit-order-form') no se encontró en la plantilla.");
     }
+}
+
+// --- Multi-producto en modal de edición ---
+let editOrderItemsNextIndex = 1;
+
+window.addEditOrderItem = function() {
+    const container = document.getElementById('edit-order-items-container');
+    if (!container) return;
+    const index = editOrderItemsNextIndex++;
+    container.insertAdjacentHTML('beforeend', EditOrderItemRowTemplate(index, { producto: 'Spiderman', precio: 650, datosProducto: '' }, false));
+    updateEditOrderItemNumbering();
+};
+
+window.removeEditOrderItem = function(index) {
+    const row = document.querySelector(`#edit-order-items-container .order-item-row[data-item-index="${index}"]`);
+    if (row) row.remove();
+    updateEditOrderItemNumbering();
+};
+
+function updateEditOrderItemNumbering() {
+    const rows = document.querySelectorAll('#edit-order-items-container .order-item-row');
+    rows.forEach((row, i) => {
+        const numberEl = row.querySelector('.order-item-number');
+        if (numberEl) numberEl.textContent = `Producto ${i + 1}`;
+        const removeBtn = row.querySelector('.order-item-remove-btn');
+        if (removeBtn) removeBtn.style.display = rows.length > 1 ? '' : 'none';
+    });
 }
 // --- FIN DE MODIFICACIÓN ---
 
