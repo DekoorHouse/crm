@@ -5957,6 +5957,17 @@ router.post('/cobranza/enviar', async (req, res) => {
             .limit(50)
             .get();
 
+        // 2.1 Si la conversación tiene mensajes de hoy (cualquier dirección), no cobrar
+        const hasMessagesToday = messagesSnapshot.docs.some(d => {
+            const ts = d.data().timestamp?.toDate();
+            if (!ts) return false;
+            const msgDateMx = ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+            return msgDateMx === todayMx;
+        });
+        if (hasMessagesToday) {
+            return res.json({ success: false, skipped: true, reason: 'Tiene conversación hoy' });
+        }
+
         // Detectar ventana de 24h: buscar último mensaje ENTRANTE del cliente
         const lastInboundMsg = messagesSnapshot.docs.find(d => d.data().from === contactId);
         const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
