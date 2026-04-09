@@ -6100,12 +6100,16 @@ ${templatesContext || '(ninguna disponible)'}
 --- ESTADO DEL CHAT ---
 ${windowStatus}
 
+--- FECHA DE HOY ---
+Hoy es ${todayMx} (zona horaria America/Mexico_City, formato YYYY-MM-DD).
+
 --- FORMATO DE RESPUESTA ---
 - Para enviar una respuesta rápida: responde SOLAMENTE con el shortcut, ej: /a3
 - Para enviar una plantilla (chat cerrado): responde con [TEMPLATE:nombre_plantilla]
 - Para enviar un mensaje personalizado (chat abierto): escribe solo el mensaje
 - Si necesitas cambiar el estatus del pedido, agrega al final: [ESTATUS:NuevoEstatus]
   Valores válidos: Foto enviada, Esperando pago, Pagado, Mns Amenazador, Cancelado
+- Si el cliente YA DIJO una fecha específica en la que va a pagar y esa fecha es POSTERIOR a hoy (${todayMx}): responde SOLAMENTE con [FUTURE:YYYY-MM-DD] usando la fecha prometida en formato ISO. NO envíes ningún mensaje. Si la fecha prometida es hoy o ya pasó, NO uses [FUTURE] y continúa con el flujo normal de cobranza.
 - Si el cobro ya se resolvió o ya pagó: responde SKIP
 - No incluyas "Asistente:" ni etiquetas extra.`;
 
@@ -6130,6 +6134,21 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
             requestCount: admin.firestore.FieldValue.increment(1),
             date: today
         }, { merge: true });
+
+        // 9. FUTURE - el cliente ya dio una fecha futura de pago
+        const futureMatch = responseText.match(/\[FUTURE:(\d{4}-\d{2}-\d{2})\]/i);
+        if (futureMatch) {
+            const futureDate = futureMatch[1];
+            if (futureDate > todayMx) {
+                return res.json({
+                    success: false,
+                    skipped: true,
+                    reason: `Cobranza futura (${futureDate})`
+                });
+            }
+            // Si la fecha no es realmente futura, removemos la etiqueta y continuamos
+            responseText = responseText.replace(/\[FUTURE:.+?\]/i, '').trim();
+        }
 
         // 9. SKIP
         if (responseText.toUpperCase().includes('SKIP')) {
