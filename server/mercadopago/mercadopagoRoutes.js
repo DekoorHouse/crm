@@ -89,30 +89,10 @@ router.post('/checkout', async (req, res) => {
         const firstName = nameParts[0] || customerName;
         const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
 
-        // En sandbox NO enviamos payer.email porque MP valida contra el TESTUSER logueado
-        // y bloquea el boton Pagar si no coinciden. El cliente lo pone en la pagina de MP.
-        const payer = MP_SANDBOX
-            ? {
-                name: firstName,
-                surname: lastName,
-                phone: { area_code: areaCode, number: phoneNumber }
-            }
-            : {
-                name: firstName,
-                surname: lastName,
-                email: customerEmail || `${phone}@dekoor.mx`,
-                phone: { area_code: areaCode, number: phoneNumber },
-                identification: { type: 'RFC', number: 'XAXX010101000' },
-                address: {
-                    zip_code: address?.zip || '',
-                    street_name: address?.street || '',
-                    street_number: ''
-                }
-            };
-
+        // En sandbox NO enviamos payer porque MP valida contra el TESTUSER logueado
+        // y bloquea el boton Pagar si no coinciden. El cliente entra su email en MP.
         const preferencePayload = {
             items,
-            payer,
             back_urls: {
                 success: `${BASE_URL}/sitio/pago-exitoso`,
                 failure: `${BASE_URL}/sitio/pago-fallido`,
@@ -130,6 +110,7 @@ router.post('/checkout', async (req, res) => {
                 source: 'sitio_web',
                 customer_phone: phone,
                 customer_name: customerName,
+                customer_email: customerEmail || '',
                 address_street: address?.street || '',
                 address_colonia: address?.colonia || '',
                 address_city: address?.city || '',
@@ -137,6 +118,22 @@ router.post('/checkout', async (req, res) => {
                 address_zip: address?.zip || ''
             }
         };
+
+        // En produccion agregamos payer info para mejor UX (autorelleno del cliente)
+        if (!MP_SANDBOX) {
+            preferencePayload.payer = {
+                name: firstName,
+                surname: lastName,
+                email: customerEmail || `${phone}@dekoor.mx`,
+                phone: { area_code: areaCode, number: phoneNumber },
+                identification: { type: 'RFC', number: 'XAXX010101000' },
+                address: {
+                    zip_code: address?.zip || '',
+                    street_name: address?.street || '',
+                    street_number: ''
+                }
+            };
+        }
 
         console.log('[MP] Creating preference for', customerName, 'total:', total);
 
