@@ -126,6 +126,48 @@
             </div>
         </div>
     </div>
-    <script></script>
+    <script src="/env-config.js"></script>
+    <script>
+    // MP redirige aqui con query params como external_reference, payment_id, status
+    const params = new URLSearchParams(window.location.search);
+    const externalRef = params.get('external_reference');
+    const API = window.API_BASE_URL || '';
+
+    const orderInfoEl = document.getElementById('orderInfo');
+    const orderNumberEl = document.getElementById('orderNumber');
+    const waLink = document.querySelector('.result-btn.primary');
+
+    async function fetchOrder(ref) {
+        try {
+            const res = await fetch(API + '/api/mercadopago/order/' + encodeURIComponent(ref));
+            if (!res.ok) return null;
+            return await res.json();
+        } catch {
+            return null;
+        }
+    }
+
+    async function pollForOrderNumber() {
+        if (!externalRef) return;
+        // El webhook puede tardar unos segundos en crear el pedido interno.
+        // Reintentamos hasta 5 veces con 2s de espera.
+        for (let i = 0; i < 5; i++) {
+            const data = await fetchOrder(externalRef);
+            if (data && data.orderNumber) {
+                orderNumberEl.textContent = data.orderNumber;
+                orderInfoEl.style.display = '';
+                // Personalizar el link de WhatsApp con el numero de pedido
+                if (waLink) {
+                    const msg = `Hola Dekoor, acabo de pagar mi pedido ${data.orderNumber} y quiero enviarles la foto para mi lampara`;
+                    waLink.href = `https://wa.me/5216181333519?text=${encodeURIComponent(msg)}`;
+                }
+                return;
+            }
+            await new Promise(r => setTimeout(r, 2000));
+        }
+    }
+
+    pollForOrderNumber();
+    </script>
 </body>
 </html>

@@ -51,6 +51,12 @@ router.post('/checkout', async (req, res) => {
             return res.status(400).json({ error: 'Nombre y teléfono son requeridos' });
         }
 
+        // Email obligatorio (MP lo necesita para enviar comprobante OXXO/SPEI)
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!customerEmail || !emailRegex.test(customerEmail.trim())) {
+            return res.status(400).json({ error: 'Email valido es requerido' });
+        }
+
         // Calculo de precios AUTORITATIVO en servidor (no confiar en el cliente)
         const qty = Math.max(1, Math.min(MAX_QTY, parseInt(qtyRaw) || 1));
         const isDHL = shipping === 'dhl';
@@ -132,7 +138,7 @@ router.post('/checkout', async (req, res) => {
             preferencePayload.payer = {
                 name: firstName,
                 surname: lastName,
-                email: customerEmail || `${phone}@dekoor.mx`,
+                email: customerEmail.trim(),
                 phone: { area_code: areaCode, number: phoneNumber },
                 identification: { type: 'RFC', number: 'XAXX010101000' },
                 address: {
@@ -289,6 +295,12 @@ router.post('/webhook', async (req, res) => {
 
         if (!externalReference) {
             console.error('[MP WEBHOOK] No external_reference in payment');
+            await db.collection('mp_webhook_errors').add({
+                reason: 'no_external_reference',
+                paymentId,
+                payment,
+                createdAt: new Date()
+            }).catch(() => {});
             return;
         }
 
@@ -297,6 +309,15 @@ router.post('/webhook', async (req, res) => {
 
         if (!mpDoc.exists) {
             console.error(`[MP WEBHOOK] Order ${externalReference} not found in Firestore`);
+            await db.collection('mp_webhook_errors').add({
+                reason: 'order_not_found',
+                externalReference,
+                paymentId,
+                status,
+                amount: payment.transaction_amount || null,
+                payerEmail: payment.payer?.email || null,
+                createdAt: new Date()
+            }).catch(() => {});
             return;
         }
 
@@ -368,6 +389,13 @@ router.post('/webhook', async (req, res) => {
 
     } catch (error) {
         console.error('[MP WEBHOOK] Error:', error.response?.data || error.message);
+        await db.collection('mp_webhook_errors').add({
+            reason: 'unhandled_exception',
+            error: error.message || String(error),
+            details: error.response?.data || null,
+            stack: error.stack || null,
+            createdAt: new Date()
+        }).catch(() => {});
     }
 });
 
