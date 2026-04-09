@@ -22,7 +22,16 @@
       "Bash(mkdir -p clientes)",
       "Bash(mv clientes.html clientes/index.html)",
       "Bash(cp estilos/estilos.css clientes/style.css)",
-      "Bash(mv js/clientes.js clientes/script.js)"
+      "Bash(mv js/clientes.js clientes/script.js)",
+      "Bash(where gh:*)",
+      "Read(//c/Program Files/**)",
+      "Read(//c/Program Files \\(x86\\)/**)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3500/)",
+      "Bash(export JAVA_HOME=\"/c/Program Files/Android/Android Studio/jbr\")",
+      "Bash(./gradlew assembleDebug)",
+      "Bash(git pull:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
     ]
   }
 }

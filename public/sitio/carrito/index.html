@@ -423,7 +423,7 @@
                 <i class="fab fa-whatsapp"></i> Pedir por WhatsApp
             </a>
             <div class="summary-trust">
-                <div class="summary-trust-item"><i class="fas fa-lock"></i> Pago 100% seguro con Conekta</div>
+                <div class="summary-trust-item"><i class="fas fa-lock"></i> Pago 100% seguro con Mercado Pago</div>
                 <div class="summary-trust-item"><i class="fas fa-camera"></i> Paga hasta ver tu pedido terminado</div>
                 <div class="summary-trust-item"><i class="fas fa-shield-alt"></i> Garantia de satisfaccion</div>
             </div>
@@ -646,7 +646,7 @@ document.querySelectorAll('input[name="shipping"]').forEach(radio => {
     });
 });
 
-// Form submit → redirect to Conekta checkout
+// Form submit → redirect to Mercado Pago checkout
 document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     e.preventDefault();
     const cart = DekoorCart.get();

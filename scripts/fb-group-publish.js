@@ -19,7 +19,7 @@ const CHROME_PATH = process.env.FBG_CHROME_PATH || 'C:/Program Files/Google/Chro
 const CHROME_USER_DATA = process.env.FBG_CHROME_USER_DATA || path.join(os.homedir(), 'AppData/Local/Google/Chrome/User Data');
 const CHROME_PROFILE = process.env.FBG_CHROME_PROFILE || 'Profile 1';
 const PHOTOS_FOLDER = process.env.FBG_PHOTOS_FOLDER || 'C:/Users/chris/Pictures/IA AQ/Grupo';
-const FB_GROUP_URL = process.env.FBG_GROUP_URL || 'https://www.facebook.com/groups/mulojer';
+const FB_GROUP_URL = process.env.FBG_GROUP_URL || 'https://www.facebook.com/groups/2280805615341135';
 const FB_PAGE_NAME = process.env.FBG_PAGE_NAME || 'AQ Decoraciones';
 
 let browser = null;
@@ -57,43 +57,25 @@ async function generateCaption(imagePath) {
 }
 
 // --- Paso 3: Automatizar Facebook ---
-const TEMP_PROFILE_DIR = path.join(os.tmpdir(), 'fb-group-chrome-profile');
+const { extractFacebookCookies } = require('./chrome-cookies');
+const AUTO_PROFILE_DIR = path.join(os.homedir(), '.fb-autopost-profile');
 
 async function launchBrowser() {
-    console.log(`[FB-GROUP] Preparando perfil de Chrome (${CHROME_PROFILE})...`);
+    console.log(`[FB-GROUP] Abriendo Chrome...`);
 
-    try {
-        const { execSync } = require('child_process');
-        execSync('taskkill /F /IM chrome.exe', { stdio: 'ignore' });
-        await delay(2000);
-    } catch (e) {}
+    // Extraer cookies de Facebook del perfil original (NO cierra Chrome)
+    console.log('[FB-GROUP] Extrayendo cookies de Facebook...');
+    const fbCookies = extractFacebookCookies(CHROME_USER_DATA, CHROME_PROFILE);
+    if (!fbCookies.length) throw new Error('No se encontraron cookies de Facebook. Inicia sesion en Chrome.');
 
-    const srcProfile = path.join(CHROME_USER_DATA, CHROME_PROFILE);
-    const destProfile = path.join(TEMP_PROFILE_DIR, 'Default');
-
-    if (fs.existsSync(TEMP_PROFILE_DIR)) {
-        fs.rmSync(TEMP_PROFILE_DIR, { recursive: true, force: true });
-    }
-    fs.mkdirSync(destProfile, { recursive: true });
-
-    const essentialDirs = ['IndexedDB', 'Local Storage', 'Session Storage', 'databases', 'Network'];
-    const essentialFiles = ['Cookies', 'Cookies-journal', 'Preferences', 'Secure Preferences', 'Login Data', 'Login Data-journal', 'Web Data', 'Web Data-journal'];
-
-    for (const dir of essentialDirs) {
-        const src = path.join(srcProfile, dir);
-        if (fs.existsSync(src)) copyDirSync(src, path.join(destProfile, dir));
-    }
-    for (const file of essentialFiles) {
-        const src = path.join(srcProfile, file);
-        if (fs.existsSync(src)) {
-            try { fs.copyFileSync(src, path.join(destProfile, file)); } catch (e) {}
-        }
+    // Usar perfil separado para automatizacion (no conflicta con Chrome abierto)
+    if (!fs.existsSync(AUTO_PROFILE_DIR)) {
+        fs.mkdirSync(AUTO_PROFILE_DIR, { recursive: true });
     }
 
-    console.log('[FB-GROUP] Abriendo Chrome...');
     browser = await puppeteer.launch({
         executablePath: CHROME_PATH,
-        userDataDir: TEMP_PROFILE_DIR,
+        userDataDir: AUTO_PROFILE_DIR,
         headless: false,
         defaultViewport: null,
         args: ['--no-first-run', '--disable-default-apps', '--start-maximized'],
@@ -101,6 +83,11 @@ async function launchBrowser() {
     });
     const pages = await browser.pages();
     page = pages[0] || await browser.newPage();
+
+    // Inyectar cookies de Facebook
+    console.log(`[FB-GROUP] Inyectando ${fbCookies.length} cookies...`);
+    await page.setCookie(...fbCookies);
+    console.log('[FB-GROUP] Cookies inyectadas');
 }
 
 function copyDirSync(src, dest) {
@@ -133,20 +120,38 @@ async function createPostWithPhoto(imagePath, caption) {
     console.log('[FB-GROUP] Creando publicacion...');
 
     // 1. Click en "Escribe algo..." para abrir el compositor
+    // Debug: screenshot y textos disponibles
+    const ssGroup = path.join(os.tmpdir(), 'fb-group-loaded.png');
+    await page.screenshot({ path: ssGroup, fullPage: false });
+
     const composerClicked = await page.evaluate(() => {
-        // Buscar el area de "Escribe algo" o "What's on your mind"
+        const candidates = [];
         const spans = document.querySelectorAll('span');
         for (const s of spans) {
             const text = s.textContent?.trim().toLowerCase();
-            if (text?.includes('escribe algo') || text?.includes('write something') || text?.includes('comparte una idea')) {
+            if (text && (text.includes('escribe') || text.includes('write') || text.includes('comparte') || text.includes('qué estás pensando') || text.includes('publica algo'))) {
+                candidates.push(text);
                 s.click();
-                return true;
+                return { clicked: true, text };
             }
         }
-        return false;
+        // Fallback: buscar el area de publicacion por aria-label
+        const composers = document.querySelectorAll('[aria-label*="Crea una publicación"], [aria-label*="Create a post"], [role="button"]');
+        for (const c of composers) {
+            const text = c.textContent?.trim();
+            if (text && (text.includes('Escribe') || text.includes('pensando') || text.includes('Publica'))) {
+                c.click();
+                return { clicked: true, text };
+            }
+        }
+        return { clicked: false, candidates };
     });
-    if (!composerClicked) throw new Error('No se encontro el compositor de publicacion');
-    console.log('[FB-GROUP] Compositor abierto');
+    if (!composerClicked.clicked) {
+        console.log('[FB-GROUP] DEBUG: No se encontro compositor');
+        console.log(`[FB-GROUP] Screenshot: ${ssGroup}`);
+        throw new Error('No se encontro el compositor de publicacion');
+    }
+    console.log(`[FB-GROUP] Compositor abierto: "${composerClicked.text}"`);
     await delay(3000);
 
     // 2. Verificar/cambiar identidad a la pagina AQ Decoraciones
@@ -342,6 +347,35 @@ async function main() {
     const arg = process.argv[2];
     const isAuto = arg === '--auto';
     const isTest = arg === '--test';
+    const isSetup = arg === '--setup';
+
+    // Modo setup: abre Chrome en Facebook para que inicies sesion
+    if (isSetup) {
+        console.log('[FB-GROUP] Modo setup: verificando perfil de Chrome...');
+        try {
+            const { execSync } = require('child_process');
+            if (!fs.existsSync(CHROME_SYMLINK)) {
+                execSync(`mklink /J "${CHROME_SYMLINK}" "${CHROME_USER_DATA}"`, { stdio: 'ignore' });
+            }
+            const b = await puppeteer.launch({
+                executablePath: CHROME_PATH,
+                userDataDir: CHROME_SYMLINK,
+                headless: false,
+                defaultViewport: null,
+                args: [`--profile-directory=${CHROME_PROFILE}`, '--no-first-run', '--start-maximized'],
+                ignoreDefaultArgs: ['--enable-automation']
+            });
+            const p = (await b.pages())[0];
+            await p.goto('https://www.facebook.com', { waitUntil: 'networkidle2' });
+            console.log('[FB-GROUP] Chrome abierto en Facebook. Inicia sesion con la cuenta de Christian.');
+            console.log('[FB-GROUP] Cuando termines, cierra Chrome y el setup se completa.');
+            await b.waitForTarget(() => false, { timeout: 0 }).catch(() => {});
+        } catch (e) {
+            if (!e.message.includes('Target closed')) console.error('[FB-GROUP] Error:', e.message);
+        }
+        console.log('[FB-GROUP] Setup completado. Ahora puedes usar: node scripts/fb-group-publish.js --test');
+        return;
+    }
     const RETRY_INTERVAL = 60 * 60 * 1000;
     const MAX_RETRIES = 12;
 

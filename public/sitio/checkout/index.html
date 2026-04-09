@@ -16,7 +16,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
     <link rel="stylesheet" href="/sitio/style.css">
-    <script crossorigin src="https://pay.conekta.com/v1.0/js/conekta-checkout.min.js"></script>
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
     <style>
         .checkout-page {
             min-height: 100vh;
@@ -170,10 +170,58 @@
             color: var(--text-medium);
             margin-bottom: 1.25rem;
         }
-        #conektaIframeContainer {
+        #mpBrickContainer {
             min-height: 500px;
             border-radius: var(--radius);
         }
+        .mp-cta {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+        .mp-cta-logo {
+            width: 140px;
+            margin-bottom: 1.5rem;
+        }
+        .mp-cta-text {
+            color: var(--text-medium);
+            margin-bottom: 1.5rem;
+            line-height: 1.6;
+        }
+        .mp-cta-btn {
+            background: linear-gradient(135deg, #009ee3, #0084c7);
+            color: #fff;
+            border: none;
+            padding: 16px 32px;
+            border-radius: 9999px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            box-shadow: 0 6px 20px rgba(0, 158, 227, 0.35);
+            transition: all 0.2s ease;
+            font-family: inherit;
+            width: 100%;
+            justify-content: center;
+            max-width: 360px;
+        }
+        .mp-cta-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(0, 158, 227, 0.45); }
+        .mp-cta-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
+        .mp-methods {
+            display: flex;
+            gap: 1.5rem;
+            justify-content: center;
+            margin-top: 1.5rem;
+            flex-wrap: wrap;
+            font-size: 0.8rem;
+            color: var(--text-medium);
+        }
+        .mp-methods span { display: flex; align-items: center; gap: 5px; }
+        .mp-methods i { color: var(--primary); }
 
         /* Loading state */
         .checkout-loading {
@@ -290,7 +338,7 @@
             </div>
             <div class="order-trust">
                 <div class="order-trust-item">
-                    <i class="fas fa-lock"></i> Pago 100% seguro con Conekta
+                    <i class="fas fa-lock"></i> Pago 100% seguro con Mercado Pago
                 </div>
                 <div class="order-trust-item">
                     <i class="fas fa-camera"></i> Paga hasta que veas tu pedido terminado
@@ -301,11 +349,23 @@
             </div>
         </div>
 
-        <!-- Right: Conekta Component -->
+        <!-- Right: Mercado Pago CTA -->
         <div class="payment-section">
             <h2><i class="fas fa-credit-card"></i> Metodo de pago</h2>
-            <p class="payment-subtitle">Elige como quieres pagar. Todos los metodos son seguros.</p>
-            <div id="conektaIframeContainer"></div>
+            <p class="payment-subtitle">Sera redirigido a Mercado Pago para completar tu compra de forma segura.</p>
+            <div class="mp-cta">
+                <img src="https://http2.mlstatic.com/storage/logos-api-admin/a5f047d0-9be0-11ec-aad4-c3381f368aaf-m.svg" alt="Mercado Pago" class="mp-cta-logo">
+                <p class="mp-cta-text">Acepta tarjetas de credito/debito, OXXO, SPEI, Mercado Pago, MSI y cuotas sin tarjeta.</p>
+                <button id="mpPayBtn" class="mp-cta-btn">
+                    <i class="fas fa-lock"></i> Pagar $<span id="btnTotal">650</span> MXN
+                </button>
+                <div class="mp-methods">
+                    <span><i class="far fa-credit-card"></i> Tarjeta</span>
+                    <span><i class="fas fa-store"></i> OXXO</span>
+                    <span><i class="fas fa-university"></i> SPEI</span>
+                    <span><i class="fas fa-mobile-alt"></i> Mercado Pago</span>
+                </div>
+            </div>
         </div>
     </div>
 </main>
@@ -314,7 +374,6 @@
 <script src="/env-config.js"></script>
 <script>
 const API = window.API_BASE_URL || '';
-const CONEKTA_PUBLIC_KEY = 'key_cQne8QhSwly8RpcWAJvGSU4';
 
 // Read params from URL
 const params = new URLSearchParams(window.location.search);
@@ -359,6 +418,7 @@ if (isDHL) {
     document.getElementById('shippingMethod').innerHTML = '<i class="fas fa-bolt"></i> DHL Express - 2-3 dias habiles';
 }
 document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total.toLocaleString('en')}.00 MXN</span>`;
+document.getElementById('btnTotal').textContent = total.toLocaleString('en');
 
 // Show product info
 const originalTotal = qty * 780;
@@ -373,68 +433,51 @@ document.getElementById('orderProduct').innerHTML = `
         </div>
     </div>`;
 
-// Create checkout session and init Conekta Component
-async function initCheckout() {
+// Show layout immediately (no need to wait for MP preference)
+document.getElementById('checkoutLoading').style.display = 'none';
+document.getElementById('checkoutLayout').style.display = '';
+
+// Click handler: Create MP preference and redirect to Checkout Pro
+document.getElementById('mpPayBtn').addEventListener('click', async function() {
+    const btn = this;
+    const original = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Creando sesion de pago...';
+
     try {
-        const res = await fetch(API + '/api/conekta/checkout', {
+        const res = await fetch(API + '/api/mercadopago/checkout', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ customerName, customerPhone, customerEmail, productName, collection, imageUrl, shipping, qty, subtotal: subtotalParam, total, address: { street, colonia, city, state, zip } })
+            body: JSON.stringify({
+                customerName,
+                customerPhone,
+                customerEmail,
+                productName,
+                collection,
+                imageUrl,
+                shipping,
+                qty,
+                subtotal: subtotalParam,
+                total,
+                address: { street, colonia, city, state, zip }
+            })
         });
         const data = await res.json();
 
-        if (!data.checkoutRequestId) {
+        if (!data.init_point) {
             throw new Error(data.error || 'No se pudo crear la sesion de pago');
         }
 
-        // Hide loading, show layout
-        document.getElementById('checkoutLoading').style.display = 'none';
-        document.getElementById('checkoutLayout').style.display = '';
-
-        // Init Conekta Component
-        const options = {
-            backgroundMode: 'lightMode',
-            colorPrimary: '#D4722C',
-            colorText: '#1B4D5C',
-            colorLabel: '#5a6c7d',
-            inputType: 'minimalMode',
-            autoResize: true
-        };
-
-        const config = {
-            locale: 'es',
-            publicKey: CONEKTA_PUBLIC_KEY,
-            targetIFrame: '#conektaIframeContainer',
-            checkoutRequestId: data.checkoutRequestId
-        };
-
-        const callbacks = {
-            onGetInfoSuccess: function(info) {
-                console.log('[CONEKTA] Component loaded:', info.initLoadTime, 'ms');
-            },
-            onFinalizePayment: function(order) {
-                console.log('[CONEKTA] Payment success:', order);
-                window.location.href = '/sitio/pago-exitoso';
-            },
-            onErrorPayment: function(error) {
-                console.error('[CONEKTA] Payment error:', error);
-                alert('Hubo un error con tu pago. Intenta de nuevo o elige otro metodo de pago.');
-            }
-        };
-
-        window.ConektaCheckoutComponents.Integration({ config, callbacks, options });
+        // Redirect to Mercado Pago Checkout Pro
+        window.location.href = data.init_point;
 
     } catch (err) {
         console.error('[CHECKOUT] Error:', err);
-        document.getElementById('checkoutLoading').innerHTML =
-            `<i class="fas fa-exclamation-circle" style="font-size:2.5rem;color:#dc2626;margin-bottom:1rem;"></i>
-             <p style="color:var(--text-dark);font-weight:600;">Error al cargar el checkout</p>
-             <p style="color:var(--text-medium);margin-bottom:1.5rem;">${err.message}</p>
-             <a href="javascript:history.back()" style="color:var(--primary);font-weight:600;">Volver a intentar</a>`;
+        btn.disabled = false;
+        btn.innerHTML = original;
+        alert('Error al crear la sesion de pago: ' + err.message + '\nIntenta de nuevo o contactanos por WhatsApp.');
     }
-}
-
-initCheckout();
+});
 
 // Mobile menu
 document.getElementById('hamburgerBtn').addEventListener('click', function() {

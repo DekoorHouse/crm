@@ -7,7 +7,7 @@ const fbGroupRouter = require('./autopost/fbGroupRoutes');
 const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoutes');
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
-const conektaRouter = require('./conekta/conektaRoutes');
+const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
@@ -39,7 +39,7 @@ app.use('/api/fb-group', fbGroupRouter);
 app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
-app.use('/api/conekta', conektaRouter);
+app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
