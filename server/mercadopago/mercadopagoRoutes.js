@@ -82,12 +82,24 @@ router.post('/checkout', async (req, res) => {
         // Build preference
         const externalReference = `dekoor_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
+        // Split first/last name for MP
+        const nameParts = customerName.trim().split(' ');
+        const firstName = nameParts[0] || customerName;
+        const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
+
         const preferencePayload = {
             items,
             payer: {
-                name: customerName,
+                name: firstName,
+                surname: lastName,
                 email: customerEmail || `${phone}@dekoor.mx`,
-                phone: { area_code: areaCode, number: phoneNumber }
+                phone: { area_code: areaCode, number: phoneNumber },
+                identification: { type: 'RFC', number: 'XAXX010101000' },
+                address: {
+                    zip_code: address?.zip || '',
+                    street_name: address?.street || '',
+                    street_number: ''
+                }
             },
             back_urls: {
                 success: `${BASE_URL}/sitio/pago-exitoso`,
@@ -95,6 +107,7 @@ router.post('/checkout', async (req, res) => {
                 pending: `${BASE_URL}/sitio/pago-pendiente`
             },
             auto_return: 'approved',
+            binary_mode: false,
             statement_descriptor: 'DEKOOR',
             external_reference: externalReference,
             notification_url: `${BASE_URL}/api/mercadopago/webhook`,

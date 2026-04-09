@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+
+    <title>Pago Pendiente | Dekoor</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .result-page {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            background: var(--cream);
+        }
+        .result-card {
+            background: var(--white);
+            border-radius: var(--radius-lg);
+            box-shadow: var(--shadow-lg);
+            padding: 3rem 2rem;
+            max-width: 520px;
+            width: 100%;
+            text-align: center;
+        }
+        .result-icon {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #fbbf24, #f59e0b);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            color: #fff;
+            font-size: 3rem;
+            box-shadow: 0 10px 30px rgba(245, 158, 11, 0.3);
+        }
+        .result-card h1 {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--teal);
+            margin-bottom: 0.75rem;
+        }
+        .result-card p {
+            color: var(--text-medium);
+            font-size: 1rem;
+            line-height: 1.6;
+            margin-bottom: 1rem;
+        }
+        .result-info {
+            background: #fef3c7;
+            border: 1px solid #fbbf24;
+            border-radius: var(--radius);
+            padding: 1.25rem;
+            margin: 1.5rem 0;
+            text-align: left;
+        }
+        .result-info strong {
+            color: #92400e;
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .result-info ul {
+            margin: 0;
+            padding-left: 1.25rem;
+            color: #78350f;
+            font-size: 0.9rem;
+            line-height: 1.6;
+        }
+        .result-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            margin-top: 1.5rem;
+        }
+        .btn-primary, .btn-secondary {
+            padding: 14px 28px;
+            border-radius: 9999px;
+            font-weight: 700;
+            font-size: 0.95rem;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+        }
+        .btn-primary:hover { background: var(--primary-hover); transform: translateY(-2px); }
+        .btn-secondary {
+            background: transparent;
+            color: var(--teal);
+            border: 2px solid var(--teal);
+        }
+        .btn-secondary:hover { background: var(--teal); color: #fff; }
+    </style>
+</head>
+<body>
+
+<main class="result-page">
+    <div class="result-card">
+        <div class="result-icon"><i class="fas fa-clock"></i></div>
+        <h1>Tu pago esta pendiente</h1>
+        <p>Recibimos tu pedido y estamos esperando la confirmacion del pago.</p>
+
+        <div class="result-info">
+            <strong><i class="fas fa-info-circle"></i> Que sigue?</strong>
+            <ul>
+                <li>Si elegiste <strong>OXXO</strong>: revisa tu correo, te llegaran las instrucciones para pagar en cualquier OXXO en las proximas 24-48 horas.</li>
+                <li>Si elegiste <strong>SPEI</strong>: realiza la transferencia con los datos que recibiste por correo.</li>
+                <li>Una vez confirmado el pago, te contactaremos por WhatsApp para empezar a fabricar tu pedido.</li>
+            </ul>
+        </div>
+
+        <p style="font-size: 0.85rem;">Si tienes dudas, contactanos por WhatsApp.</p>
+
+        <div class="result-actions">
+            <a href="https://wa.me/5216181333519?text=Hola%20Dekoor%2C%20acabo%20de%20generar%20un%20pago%20pendiente%20y%20quiero%20confirmar%20que%20todo%20este%20bien" target="_blank" rel="noopener" class="btn-primary">
+                <i class="fab fa-whatsapp"></i> Contactar por WhatsApp
+            </a>
+            <a href="/sitio/" class="btn-secondary">
+                <i class="fas fa-home"></i> Volver al inicio
+            </a>
+        </div>
+    </div>
+</main>
+
+</body>
+</html>
