@@ -161,6 +161,10 @@ app.get('/sitio/pago-fallido', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-fallido', 'index.html'));
 });
 
+app.get('/sitio/pago-pendiente', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'sitio', 'pago-pendiente', 'index.html'));
+});
+
 // --- SITEMAP DINÁMICO ---
 app.get('/sitemap.xml', (req, res) => {
     const baseUrl = 'https://app.dekoormx.com';

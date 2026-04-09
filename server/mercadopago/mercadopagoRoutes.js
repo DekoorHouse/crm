@@ -3,6 +3,8 @@ const axios = require('axios');
 const router = express.Router();
 const { db } = require('../config');
 
+const crypto = require('crypto');
+
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_API = 'https://api.mercadopago.com';
 const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET || '';
@@ -10,6 +12,13 @@ const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET || '';
 const MP_SANDBOX = process.env.MP_SANDBOX === 'true';
 
 const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
+
+// --- PRECIOS AUTORITATIVOS DEL SERVIDOR ---
+// El cliente NO puede modificar estos precios; siempre se calculan aquí.
+const PRODUCT_UNIT_PRICE = 650; // MXN por lampara
+const SHIPPING_DHL_COST = 160;  // MXN
+const SHIPPING_JT_COST = 0;     // MXN (gratis)
+const MAX_QTY = 50;             // limite anti-abuso
 
 function mpHeaders() {
     return {
@@ -35,8 +44,6 @@ router.post('/checkout', async (req, res) => {
             imageUrl,
             shipping,
             qty: qtyRaw,
-            subtotal: subtotalRaw,
-            total: totalRaw,
             address
         } = req.body;
 
@@ -44,12 +51,13 @@ router.post('/checkout', async (req, res) => {
             return res.status(400).json({ error: 'Nombre y teléfono son requeridos' });
         }
 
-        const qty = parseInt(qtyRaw) || 1;
-        const subtotal = parseInt(subtotalRaw) || (650 * qty);
-        const total = parseInt(totalRaw) || subtotal;
+        // Calculo de precios AUTORITATIVO en servidor (no confiar en el cliente)
+        const qty = Math.max(1, Math.min(MAX_QTY, parseInt(qtyRaw) || 1));
         const isDHL = shipping === 'dhl';
-        const shippingCost = isDHL ? 160 : 0;
-        const unitPrice = subtotal / qty;
+        const shippingCost = isDHL ? SHIPPING_DHL_COST : SHIPPING_JT_COST;
+        const unitPrice = PRODUCT_UNIT_PRICE;
+        const subtotal = unitPrice * qty;
+        const total = subtotal + shippingCost;
 
         // Clean phone: ensure 10 digits + area code
         let phone = (customerPhone || '').replace(/\D/g, '');
@@ -185,9 +193,71 @@ router.post('/checkout', async (req, res) => {
     }
 });
 
+// Verifica la firma HMAC del webhook segun el protocolo de Mercado Pago.
+// Docs: https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
+function verifyMpSignature(req) {
+    if (!MP_WEBHOOK_SECRET) {
+        // Si no hay secret configurado, no podemos validar — log y dejar pasar.
+        // En produccion DEBE estar seteado.
+        console.warn('[MP WEBHOOK] MP_WEBHOOK_SECRET no configurado, omitiendo validacion de firma');
+        return true;
+    }
+
+    const xSignature = req.headers['x-signature'];
+    const xRequestId = req.headers['x-request-id'];
+    if (!xSignature || !xRequestId) {
+        console.error('[MP WEBHOOK] Headers x-signature o x-request-id ausentes');
+        return false;
+    }
+
+    // x-signature tiene formato: "ts=1704908010,v1=618c85345248dd820d5fd456117c2ab2ef8eda45a0282ff693eac24131a5e839"
+    const parts = String(xSignature).split(',').reduce((acc, p) => {
+        const [k, v] = p.split('=').map(s => s && s.trim());
+        if (k && v) acc[k] = v;
+        return acc;
+    }, {});
+
+    const ts = parts.ts;
+    const v1 = parts.v1;
+    if (!ts || !v1) {
+        console.error('[MP WEBHOOK] x-signature mal formado');
+        return false;
+    }
+
+    // El "data.id" puede venir en query (?data.id=) o en el body
+    const dataId = (req.query && (req.query['data.id'] || req.query.id)) ||
+                   (req.body && req.body.data && req.body.data.id) || '';
+    if (!dataId) {
+        console.error('[MP WEBHOOK] No se encontro data.id para validar firma');
+        return false;
+    }
+
+    // Manifest exacto que MP firma: "id:<data.id>;request-id:<x-request-id>;ts:<ts>;"
+    const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
+    const expected = crypto
+        .createHmac('sha256', MP_WEBHOOK_SECRET)
+        .update(manifest)
+        .digest('hex');
+
+    try {
+        const a = Buffer.from(expected, 'hex');
+        const b = Buffer.from(v1, 'hex');
+        if (a.length !== b.length) return false;
+        return crypto.timingSafeEqual(a, b);
+    } catch {
+        return false;
+    }
+}
+
 // POST /api/mercadopago/webhook — Receive Mercado Pago payment notifications
 router.post('/webhook', async (req, res) => {
-    // Always respond 200 immediately to MP
+    // Validar firma ANTES de procesar para evitar abuso
+    if (!verifyMpSignature(req)) {
+        console.error('[MP WEBHOOK] Firma invalida, rechazando');
+        return res.status(401).send('invalid signature');
+    }
+
+    // Responder 200 rapido a MP, procesamos en background
     res.sendStatus(200);
 
     try {
