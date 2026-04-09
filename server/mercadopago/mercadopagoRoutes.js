@@ -89,9 +89,15 @@ router.post('/checkout', async (req, res) => {
         const firstName = nameParts[0] || customerName;
         const lastName = nameParts.slice(1).join(' ') || nameParts[0] || '';
 
-        const preferencePayload = {
-            items,
-            payer: {
+        // En sandbox NO enviamos payer.email porque MP valida contra el TESTUSER logueado
+        // y bloquea el boton Pagar si no coinciden. El cliente lo pone en la pagina de MP.
+        const payer = MP_SANDBOX
+            ? {
+                name: firstName,
+                surname: lastName,
+                phone: { area_code: areaCode, number: phoneNumber }
+            }
+            : {
                 name: firstName,
                 surname: lastName,
                 email: customerEmail || `${phone}@dekoor.mx`,
@@ -102,7 +108,11 @@ router.post('/checkout', async (req, res) => {
                     street_name: address?.street || '',
                     street_number: ''
                 }
-            },
+            };
+
+        const preferencePayload = {
+            items,
+            payer,
             back_urls: {
                 success: `${BASE_URL}/sitio/pago-exitoso`,
                 failure: `${BASE_URL}/sitio/pago-fallido`,
