@@ -6,6 +6,8 @@ const { db } = require('../config');
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_API = 'https://api.mercadopago.com';
 const MP_WEBHOOK_SECRET = process.env.MP_WEBHOOK_SECRET || '';
+// MP_SANDBOX=true cuando se usen credenciales de prueba (TESTUSER + APP_USR de test)
+const MP_SANDBOX = process.env.MP_SANDBOX === 'true';
 
 const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
 
@@ -156,11 +158,13 @@ router.post('/checkout', async (req, res) => {
             imageUrl: imageUrl || null
         });
 
-        console.log(`[MP] Preference created: ${pref.id} (ext: ${externalReference})`);
+        console.log(`[MP] Preference created: ${pref.id} (ext: ${externalReference}) sandbox=${MP_SANDBOX}`);
 
-        // Always use init_point - works for both test and production credentials
+        // En modo sandbox usar sandbox_init_point para que el TESTUSER pueda completar el pago
+        const checkoutUrl = MP_SANDBOX ? pref.sandbox_init_point : pref.init_point;
+
         res.json({
-            init_point: pref.init_point,
+            init_point: checkoutUrl,
             preference_id: pref.id,
             external_reference: externalReference
         });
