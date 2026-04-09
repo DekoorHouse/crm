@@ -145,12 +145,9 @@ router.post('/checkout', async (req, res) => {
 
         console.log(`[MP] Preference created: ${pref.id} (ext: ${externalReference})`);
 
-        // Use init_point for production, sandbox_init_point for testing
-        const isTest = MP_ACCESS_TOKEN.startsWith('TEST-');
-        const checkoutUrl = isTest ? pref.sandbox_init_point : pref.init_point;
-
+        // Always use init_point - works for both test and production credentials
         res.json({
-            init_point: checkoutUrl,
+            init_point: pref.init_point,
             preference_id: pref.id,
             external_reference: externalReference
         });
