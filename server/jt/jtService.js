@@ -33,15 +33,18 @@ function generateHeaderDigest(bizContentJson) {
 
 /**
  * Genera el digest dentro del bizContent.
- * Verificado contra la herramienta oficial Signature Tool de J&T:
- *   digest = base64(MD5(customerCode + password + privateKey))
- *
- * Nota: la documentación menciona un cyphertext intermedio
- * (MD5(password + "jadada236t2")), pero la herramienta oficial
- * NO lo usa — utiliza la contraseña en texto plano directamente.
+ * Según el manual oficial de J&T México:
+ *   1. cyphertext = MD5(plaintext_password + "jadada236t2") → hex uppercase
+ *   2. digest = Base64(MD5(customerCode + cyphertext + privateKey))
  */
 function generateBizDigest() {
-    const raw = JT_CUSTOMER_CODE + JT_PASSWORD + JT_PRIVATE_KEY;
+    // Paso 1: generar cyphertext del password
+    const cyphertext = crypto.createHash('md5')
+        .update(JT_PASSWORD + 'jadada236t2')
+        .digest('hex')
+        .toUpperCase();
+    // Paso 2: digest = Base64(MD5(customerCode + cyphertext + privateKey))
+    const raw = JT_CUSTOMER_CODE + cyphertext + JT_PRIVATE_KEY;
     const md5Bytes = crypto.createHash('md5').update(raw).digest();
     return md5Bytes.toString('base64');
 }
@@ -191,7 +194,7 @@ async function createOrder(params) {
 /**
  * Cancela una orden/guía en J&T Express.
  */
-async function cancelOrder(orderNumber) {
+async function cancelOrder(orderNumber, reason = 'Cancelación solicitada por el cliente') {
     if (!JT_API_ACCOUNT || !JT_PRIVATE_KEY || !JT_CUSTOMER_CODE || !JT_PASSWORD) {
         throw new Error('Credenciales de J&T no configuradas.');
     }
@@ -201,6 +204,7 @@ async function cancelOrder(orderNumber) {
         digest: generateBizDigest(),
         txlogisticId: orderNumber,
         orderType: '2',
+        reason,
     };
 
     console.log(`[J&T CANCEL] Cancelando guía para pedido ${orderNumber}`);
