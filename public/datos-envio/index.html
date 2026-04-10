@@ -759,9 +759,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.results && data.results.length > 0) {
                 resultadosDiv.innerHTML = data.results.map(r =>
-                    `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}">
+                    `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}" data-municipio="${r.municipio || ''}">
                         <div class="col-name">${r.colonia}</div>
-                        <div class="col-cp">C.P. ${r.codigoPostal} - ${r.estado}</div>
+                        <div class="col-cp">C.P. ${r.codigoPostal}${r.municipio ? ' - ' + r.municipio : ''}, ${r.estado}</div>
                     </div>`
                 ).join('');
 
@@ -770,9 +770,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         const cp = item.dataset.cp;
                         const col = item.dataset.colonia;
                         const est = item.dataset.estado;
+                        const mun = item.dataset.municipio;
 
                         zipInput.value = cp;
                         stateInput.value = est === 'Distrito Federal' ? 'Ciudad de Mexico' : est;
+
+                        if (mun) document.getElementById('city').value = mun;
 
                         // Disparar búsqueda de colonias del CP para llenar el dropdown
                         zipInput.dispatchEvent(new Event('input'));

@@ -4738,11 +4738,34 @@ router.get('/buscar-cp', async (req, res) => {
             `https://api.zippopotam.us/mx/${encodeURIComponent(estado)}/${encodeURIComponent(colonia)}`,
             { timeout: 5000 }
         );
-        const results = (response.data.places || []).map(p => ({
+        const places = response.data.places || [];
+        // Obtener municipio de cada resultado usando coordenadas únicas
+        const coordMap = new Map();
+        places.forEach(p => {
+            const key = `${p.latitude},${p.longitude}`;
+            if (!coordMap.has(key)) coordMap.set(key, { lat: p.latitude, lon: p.longitude });
+        });
+
+        // Buscar municipios en paralelo (Nominatim/OpenStreetMap)
+        const municipios = {};
+        await Promise.all([...coordMap.entries()].map(async ([key, { lat, lon }]) => {
+            try {
+                const geo = await axios.get(
+                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`,
+                    { timeout: 4000, headers: { 'User-Agent': 'Dekoor-CRM/1.0' } }
+                );
+                const addr = geo.data.address || {};
+                municipios[key] = addr.city || addr.town || addr.county || addr.municipality || '';
+            } catch { municipios[key] = ''; }
+        }));
+
+        const results = places.map(p => ({
             colonia: p['place name'],
             codigoPostal: p['post code'],
             estado: response.data.state || estado,
+            municipio: municipios[`${p.latitude},${p.longitude}`] || '',
         }));
+
         res.json({ success: true, results });
     } catch (err) {
         if (err.response?.status === 404) {
