@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Dekoor",
+    "slug": "dekoor-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "scheme": "dekoor",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1B4D5C"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.dekoor.app"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B4D5C"
+      },
+      "edgeToEdgeEnabled": true,
+      "package": "com.dekoor.app"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}
