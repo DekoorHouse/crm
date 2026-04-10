@@ -234,6 +234,13 @@
             color: var(--text-medium, #4a6274);
         }
 
+        .resultado-item .col-vecinos {
+            font-size: 0.75rem;
+            color: var(--text-light, #7a9aab);
+            font-style: italic;
+            margin-top: 0.15rem;
+        }
+
         .resultados-msg {
             font-size: 0.82rem;
             color: var(--text-medium, #4a6274);
@@ -758,24 +765,24 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (data.results && data.results.length > 0) {
-                resultadosDiv.innerHTML = data.results.map(r =>
-                    `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}" data-municipio="${r.municipio || ''}">
+                resultadosDiv.innerHTML = data.results.map(r => {
+                    const vecinosTxt = r.vecinos && r.vecinos.length > 0
+                        ? `<div class="col-vecinos">Cerca de: ${r.vecinos.join(', ')}</div>` : '';
+                    return `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}">
                         <div class="col-name">${r.colonia}</div>
-                        <div class="col-cp">C.P. ${r.codigoPostal}${r.municipio ? ' - ' + r.municipio : ''}, ${r.estado}</div>
-                    </div>`
-                ).join('');
+                        <div class="col-cp">C.P. ${r.codigoPostal} - ${r.estado}</div>
+                        ${vecinosTxt}
+                    </div>`;
+                }).join('');
 
                 resultadosDiv.querySelectorAll('.resultado-item').forEach(item => {
                     item.addEventListener('click', () => {
                         const cp = item.dataset.cp;
                         const col = item.dataset.colonia;
                         const est = item.dataset.estado;
-                        const mun = item.dataset.municipio;
 
                         zipInput.value = cp;
                         stateInput.value = est === 'Distrito Federal' ? 'Ciudad de Mexico' : est;
-
-                        if (mun) document.getElementById('city').value = mun;
 
                         // Disparar búsqueda de colonias del CP para llenar el dropdown
                         zipInput.dispatchEvent(new Event('input'));

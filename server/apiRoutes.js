@@ -4739,32 +4739,33 @@ router.get('/buscar-cp', async (req, res) => {
             { timeout: 5000 }
         );
         const places = response.data.places || [];
-        // Obtener municipio de cada resultado usando coordenadas únicas
-        const coordMap = new Map();
+
+        // Agrupar por CP para obtener colonias vecinas
+        const cpGroups = {};
         places.forEach(p => {
-            const key = `${p.latitude},${p.longitude}`;
-            if (!coordMap.has(key)) coordMap.set(key, { lat: p.latitude, lon: p.longitude });
+            if (!cpGroups[p['post code']]) cpGroups[p['post code']] = [];
+            cpGroups[p['post code']].push(p['place name']);
         });
 
-        // Buscar municipios en paralelo (Nominatim/OpenStreetMap)
-        const municipios = {};
-        await Promise.all([...coordMap.entries()].map(async ([key, { lat, lon }]) => {
+        // Buscar colonias vecinas para cada CP (las que comparten el mismo CP)
+        const vecinosCache = {};
+        await Promise.all(Object.keys(cpGroups).map(async (cp) => {
             try {
-                const geo = await axios.get(
-                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&zoom=10`,
-                    { timeout: 4000, headers: { 'User-Agent': 'Dekoor-CRM/1.0' } }
-                );
-                const addr = geo.data.address || {};
-                municipios[key] = addr.city || addr.town || addr.county || addr.municipality || '';
-            } catch { municipios[key] = ''; }
+                const cpRes = await axios.get(`https://api.zippopotam.us/mx/${cp}`, { timeout: 4000 });
+                vecinosCache[cp] = (cpRes.data.places || []).map(p => p['place name']);
+            } catch { vecinosCache[cp] = cpGroups[cp]; }
         }));
 
-        const results = places.map(p => ({
-            colonia: p['place name'],
-            codigoPostal: p['post code'],
-            estado: response.data.state || estado,
-            municipio: municipios[`${p.latitude},${p.longitude}`] || '',
-        }));
+        const results = places.map(p => {
+            const cp = p['post code'];
+            const vecinos = (vecinosCache[cp] || []).filter(v => v !== p['place name']).slice(0, 3);
+            return {
+                colonia: p['place name'],
+                codigoPostal: cp,
+                estado: response.data.state || estado,
+                vecinos,
+            };
+        });
 
         res.json({ success: true, results });
     } catch (err) {
