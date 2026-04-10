@@ -26,7 +26,7 @@ function run(cmd, cwd, env = process.env) {
 // Install incluyendo devDependencies (tailwind/postcss/typescript son necesarios para el build).
 // No pasamos NODE_ENV=production aqui porque eso hace que npm omita devDependencies.
 console.log("==> Installing nextjs-app dependencies");
-run("npm install --include=dev", NEXTJS_DIR);
+run("npm ci --include=dev", NEXTJS_DIR);
 
 // El next.config.ts solo activa output:export cuando NODE_ENV=production
 console.log("\n==> Building Next.js (static export)");
