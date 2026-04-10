@@ -112,62 +112,6 @@
             gap: 0.75rem;
         }
 
-        .pedido-lookup {
-            background: var(--primary-light, #f5e0cf);
-            border-radius: 12px;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-        }
-
-        .pedido-lookup label {
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: var(--teal, #1B4D5C);
-            margin-bottom: 0.4rem;
-            display: block;
-        }
-
-        .pedido-lookup .lookup-row {
-            display: flex;
-            gap: 0.5rem;
-        }
-
-        .pedido-lookup input {
-            flex: 1;
-            padding: 0.6rem 0.9rem;
-            border: 2px solid rgba(27,77,92,0.12);
-            border-radius: 10px;
-            font-size: 0.92rem;
-            font-family: 'Outfit', sans-serif;
-            background: #fff;
-        }
-
-        .pedido-lookup input:focus {
-            outline: none;
-            border-color: var(--primary, #D4722C);
-        }
-
-        .btn-lookup {
-            background: var(--primary, #D4722C);
-            color: #fff;
-            border: none;
-            border-radius: 10px;
-            width: 44px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background 0.2s;
-        }
-
-        .btn-lookup:hover {
-            background: var(--primary-hover, #bf5f1e);
-        }
-
-        .pedido-lookup .hint {
-            font-size: 0.75rem;
-            color: var(--text-medium, #4a6274);
-            margin-top: 0.3rem;
-        }
-
         .btn-submit {
             width: 100%;
             padding: 0.85rem;
@@ -247,18 +191,6 @@
             font-size: 1.2rem;
             color: var(--teal, #1B4D5C);
             margin: 0 0 0.5rem;
-        }
-
-        .result-card .waybill-number {
-            display: inline-block;
-            background: var(--primary, #D4722C);
-            color: #fff;
-            padding: 0.5rem 1.2rem;
-            border-radius: 10px;
-            font-size: 1.1rem;
-            font-weight: 700;
-            letter-spacing: 0.03em;
-            margin: 0.75rem 0;
         }
 
         .result-card p {
@@ -399,7 +331,7 @@
             <div class="envio-header">
                 <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor">
                 <h1>Datos de envio</h1>
-                <p>Ingresa tus datos para generar tu guia de envio</p>
+                <p>Ingresa tus datos para que podamos enviarte tu pedido</p>
             </div>
 
             <!-- Alert -->
@@ -407,16 +339,6 @@
 
             <!-- Formulario -->
             <div id="formSection">
-                <!-- Buscar pedido -->
-                <div class="pedido-lookup">
-                    <label><i class="fas fa-search"></i> Numero de pedido</label>
-                    <div class="lookup-row">
-                        <input type="text" id="autofillPedido" placeholder="Ej: DH1042">
-                        <button type="button" id="btnLookup" class="btn-lookup"><i class="fas fa-arrow-right"></i></button>
-                    </div>
-                    <p class="hint">Ingresa tu numero de pedido para auto-llenar los datos</p>
-                </div>
-
                 <form id="envioForm">
                     <!-- Pedido -->
                     <div class="form-group">
@@ -473,7 +395,7 @@
                     </div>
 
                     <button type="submit" id="btnSubmit" class="btn-submit">
-                        <i class="fas fa-shipping-fast"></i> Generar guia de envio
+                        <i class="fas fa-paper-plane"></i> Enviar datos
                     </button>
                 </form>
 
@@ -485,16 +407,15 @@
             <!-- Resultado exitoso -->
             <div id="resultSection" class="result-card">
                 <div class="check-icon"><i class="fas fa-check"></i></div>
-                <h2>Guia generada exitosamente</h2>
-                <div class="waybill-number" id="resultWaybill"></div>
-                <p>Tu pedido <strong id="resultOrder"></strong> sera enviado pronto.</p>
-                <p>Puedes rastrear tu envio con el numero de guia.</p>
-                <a id="btnTrack" href="#" class="btn-track" target="_blank">
-                    <i class="fas fa-search-location"></i> Rastrear envio
+                <h2>Datos recibidos</h2>
+                <p>Tus datos de envio para el pedido <strong id="resultOrder"></strong> han sido registrados correctamente.</p>
+                <p>Te notificaremos cuando tu paquete sea enviado.</p>
+                <a href="/jt-rastreo/" class="btn-track">
+                    <i class="fas fa-search-location"></i> Rastrear un envio
                 </a>
                 <br>
                 <button id="btnNew" class="btn-new">
-                    <i class="fas fa-plus"></i> Registrar otro envio
+                    <i class="fas fa-plus"></i> Registrar otro pedido
                 </button>
             </div>
 
@@ -534,8 +455,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const form = document.getElementById('envioForm');
     const alertEl = document.getElementById('formAlert');
     const btnSubmit = document.getElementById('btnSubmit');
-    const btnLookup = document.getElementById('btnLookup');
-    const autofillInput = document.getElementById('autofillPedido');
     const formSection = document.getElementById('formSection');
     const resultSection = document.getElementById('resultSection');
 
@@ -555,82 +474,42 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'success') setTimeout(() => alertEl.style.display = 'none', 6000);
     }
 
-    // Auto-fill
-    btnLookup.addEventListener('click', async () => {
-        const pedido = autofillInput.value.trim();
-        if (!pedido) return;
-
-        btnLookup.disabled = true;
-        btnLookup.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-
-        try {
-            const res = await fetch(`${API}/api/datos-envio`);
-            const data = await res.json();
-            if (data.success && data.data.length > 0) {
-                const envio = data.data.find(e => e.numeroPedido === pedido);
-                if (envio) {
-                    document.getElementById('orderNumber').value = envio.numeroPedido;
-                    document.getElementById('receiverName').value = envio.nombreCompleto || '';
-                    document.getElementById('receiverPhone').value = envio.telefono || '';
-                    document.getElementById('street').value = envio.direccion || '';
-                    document.getElementById('colonia').value = envio.colonia || '';
-                    document.getElementById('city').value = envio.ciudad || '';
-                    document.getElementById('state').value = envio.estado || '';
-                    document.getElementById('zip').value = envio.codigoPostal || '';
-                    document.getElementById('reference').value = envio.referencia || '';
-                    showAlert('success', `Datos cargados para ${pedido}`);
-                } else {
-                    showAlert('error', `No se encontraron datos para el pedido ${pedido}`);
-                }
-            }
-        } catch (e) {
-            showAlert('error', 'Error al buscar datos del pedido');
-        } finally {
-            btnLookup.disabled = false;
-            btnLookup.innerHTML = '<i class="fas fa-arrow-right"></i>';
-        }
-    });
-
-    autofillInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); btnLookup.click(); }
-    });
-
-    // Enviar formulario
+    // Enviar formulario — guarda en datos_envio (NO crea guia)
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         alertEl.style.display = 'none';
 
         const payload = {
-            orderNumber: document.getElementById('orderNumber').value.trim(),
-            receiverName: document.getElementById('receiverName').value.trim(),
-            receiverPhone: document.getElementById('receiverPhone').value.trim(),
-            street: document.getElementById('street').value.trim(),
+            numeroPedido: document.getElementById('orderNumber').value.trim(),
+            nombreCompleto: document.getElementById('receiverName').value.trim(),
+            telefono: document.getElementById('receiverPhone').value.trim(),
+            direccion: document.getElementById('street').value.trim(),
             colonia: document.getElementById('colonia').value.trim(),
-            city: document.getElementById('city').value.trim(),
-            state: document.getElementById('state').value.trim(),
-            zip: document.getElementById('zip').value.trim(),
-            reference: document.getElementById('reference').value.trim(),
+            ciudad: document.getElementById('city').value.trim(),
+            estado: document.getElementById('state').value.trim(),
+            codigoPostal: document.getElementById('zip').value.trim(),
+            referencia: document.getElementById('reference').value.trim(),
         };
 
-        if (!payload.orderNumber || !payload.receiverName || !payload.receiverPhone ||
-            !payload.street || !payload.colonia || !payload.city || !payload.state || !payload.zip) {
+        if (!payload.numeroPedido || !payload.nombreCompleto || !payload.telefono ||
+            !payload.direccion || !payload.colonia || !payload.ciudad || !payload.estado || !payload.codigoPostal) {
             showAlert('error', 'Completa todos los campos obligatorios.');
             return;
         }
-        if (!/^\d{10}$/.test(payload.receiverPhone)) {
+        if (!/^\d{10}$/.test(payload.telefono)) {
             showAlert('error', 'El telefono debe tener 10 digitos.');
             return;
         }
-        if (!/^\d{5}$/.test(payload.zip)) {
+        if (!/^\d{5}$/.test(payload.codigoPostal)) {
             showAlert('error', 'El codigo postal debe tener 5 digitos.');
             return;
         }
 
         btnSubmit.disabled = true;
-        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando guia...';
+        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
 
         try {
-            const res = await fetch(`${API}/api/jt-guias/crear`, {
+            const res = await fetch(`${API}/api/datos-envio`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -638,19 +517,17 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
 
             if (result.success) {
-                document.getElementById('resultWaybill').textContent = result.waybillNo;
-                document.getElementById('resultOrder').textContent = result.orderId;
-                document.getElementById('btnTrack').href = `/jt-rastreo/?waybill=${result.waybillNo}`;
+                document.getElementById('resultOrder').textContent = payload.numeroPedido;
                 formSection.style.display = 'none';
                 resultSection.style.display = 'block';
             } else {
-                showAlert('error', result.message || 'Error al generar la guia de envio.');
+                showAlert('error', result.message || 'Error al guardar los datos.');
             }
         } catch (error) {
             showAlert('error', 'Error de conexion. Intenta de nuevo.');
         } finally {
             btnSubmit.disabled = false;
-            btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
+            btnSubmit.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar datos';
         }
     });
 
