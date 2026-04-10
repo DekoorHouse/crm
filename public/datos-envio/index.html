@@ -15,8 +15,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="/sitio/style.css">
     <style>
         .envio-page {
@@ -251,21 +249,8 @@
         }
 
         .mapa-busqueda {
-            height: 200px;
+            height: 220px;
             width: 100%;
-        }
-
-        .marker-label {
-            background: var(--primary, #D4722C);
-            color: #fff;
-            padding: 2px 8px;
-            border-radius: 6px;
-            font-size: 0.75rem;
-            font-weight: 700;
-            font-family: 'Outfit', sans-serif;
-            white-space: nowrap;
-            border: 2px solid #fff;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
         }
 
         .resultado-item .col-num {
@@ -822,47 +807,55 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>`;
                 }).join('');
 
-                // Mostrar mapa si hay coordenadas
-                const withCoords = data.results.filter(r => r.lat && r.lon);
+                // Mostrar mapa con Google Maps + Geocoding
                 const mapaContainer = document.getElementById('mapaContainer');
-                if (withCoords.length > 0) {
+                if (window.GOOGLE_MAPS_KEY && data.results.length > 0) {
                     mapaContainer.style.display = 'block';
-                    const mapDiv = document.getElementById('mapaBuscador');
-                    mapDiv.innerHTML = '';
-                    mapDiv.id = 'mapaBuscador';
 
-                    // Recrear el div para evitar problemas de Leaflet
-                    const newMapDiv = mapDiv.cloneNode(false);
-                    mapDiv.parentNode.replaceChild(newMapDiv, mapDiv);
-
-                    const map = L.map('mapaBuscador', { scrollWheelZoom: false });
-                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                        attribution: '&copy; OpenStreetMap',
-                        maxZoom: 18,
-                    }).addTo(map);
-
-                    const bounds = [];
-                    data.results.forEach((r, i) => {
-                        if (!r.lat || !r.lon) return;
-                        const marker = L.marker([r.lat, r.lon]).addTo(map);
-                        marker.bindTooltip(`<strong>${i + 1}. ${r.colonia}</strong><br>C.P. ${r.codigoPostal}`, {
-                            permanent: true,
-                            direction: 'top',
-                            className: 'marker-label',
-                            offset: [0, -10],
+                    // Cargar Google Maps si no está cargado
+                    if (!window.google?.maps) {
+                        await new Promise((resolve) => {
+                            const s = document.createElement('script');
+                            s.src = `https://maps.googleapis.com/maps/api/js?key=${window.GOOGLE_MAPS_KEY}`;
+                            s.onload = resolve;
+                            document.head.appendChild(s);
                         });
-                        marker.on('click', () => {
-                            const item = resultadosDiv.querySelector(`[data-idx="${i}"]`);
-                            if (item) item.click();
-                        });
-                        bounds.push([r.lat, r.lon]);
-                    });
-
-                    if (bounds.length > 1) {
-                        map.fitBounds(bounds, { padding: [30, 30] });
-                    } else {
-                        map.setView(bounds[0], 13);
                     }
+
+                    const mapDiv = document.getElementById('mapaBuscador');
+                    const gmap = new google.maps.Map(mapDiv, { zoom: 10, mapTypeControl: false, streetViewControl: false });
+                    const geocoder = new google.maps.Geocoder();
+                    const bounds = new google.maps.LatLngBounds();
+                    let markersReady = 0;
+
+                    data.results.forEach((r, i) => {
+                        const query = `${r.colonia}, C.P. ${r.codigoPostal}, ${r.estado}, Mexico`;
+                        geocoder.geocode({ address: query }, (results, status) => {
+                            markersReady++;
+                            if (status === 'OK' && results[0]) {
+                                const pos = results[0].geometry.location;
+                                const marker = new google.maps.Marker({
+                                    position: pos,
+                                    map: gmap,
+                                    label: { text: String(i + 1), color: '#fff', fontWeight: '700', fontSize: '12px' },
+                                    title: `${r.colonia} - C.P. ${r.codigoPostal}`,
+                                });
+                                const info = new google.maps.InfoWindow({
+                                    content: `<strong>${r.colonia}</strong><br>C.P. ${r.codigoPostal}`,
+                                });
+                                marker.addListener('click', () => {
+                                    info.open(gmap, marker);
+                                    const item = resultadosDiv.querySelector(`[data-idx="${i}"]`);
+                                    if (item) item.click();
+                                });
+                                bounds.extend(pos);
+                            }
+                            if (markersReady === data.results.length) {
+                                gmap.fitBounds(bounds);
+                                if (data.results.length === 1) gmap.setZoom(15);
+                            }
+                        });
+                    });
                 } else {
                     mapaContainer.style.display = 'none';
                 }

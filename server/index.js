@@ -28,7 +28,8 @@ app.use('/webhook', whatsappRouter);
 app.get('/env-config.js', (req, res) => {
     res.type('application/javascript');
     // Si no hay API_URL definida, vacía para que use rutas relativas (mismo dominio)
-    res.send(`window.API_BASE_URL = "${process.env.API_URL || ''}";`);
+    res.send(`window.API_BASE_URL = "${process.env.API_URL || ''}";
+window.GOOGLE_MAPS_KEY = "${process.env.GOOGLE_MAPS_KEY || ''}";`);
 });
 
 // IMPORTANTE: Definir el router de la API antes que los archivos estáticos
