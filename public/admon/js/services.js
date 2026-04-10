@@ -206,6 +206,27 @@ export function listenForSueldos(onDataChange) {
     }, (error) => console.error("Payroll Listener Error:", error));
 }
 
+export function listenForChecadorEmployees(onDataChange) {
+    return onSnapshot(collection(db, "checador_employees"), (snapshot) => {
+        state.checadorEmployees = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        onDataChange();
+    }, (error) => console.error("Checador Employees Listener Error:", error));
+}
+
+export function listenForChecadorLogs(onDataChange) {
+    return onSnapshot(collection(db, "checador_logs"), (snapshot) => {
+        state.checadorLogs = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+        onDataChange();
+    }, (error) => console.error("Checador Logs Listener Error:", error));
+}
+
+export function listenForChecadorAdjustments(onDataChange) {
+    return onSnapshot(collection(db, "checador_adjustments"), (snapshot) => {
+        state.checadorAdjustments = snapshot.docs.map(d => ({ docId: d.id, ...d.data() }));
+        onDataChange();
+    }, (error) => console.error("Checador Adjustments Listener Error:", error));
+}
+
 export function setupOrdersListener(onDataChange) {
     if (typeof ordersUnsubscribe === 'function') {
         ordersUnsubscribe();

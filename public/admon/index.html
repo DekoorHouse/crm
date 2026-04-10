@@ -188,32 +188,20 @@
         <!-- Tab Content: Sueldos -->
         <div class="tab-content" id="sueldos-tab">
            <div class="card-body">
-             <div class="btn-group" style="margin-bottom: 20px;">
-                <button id="add-employee-btn" class="btn"><i class="fas fa-user-plus"></i> Agregar Empleado</button>
-                <button id="sueldos-upload-btn" class="btn btn-outline"><i class="fas fa-upload"></i> Cargar Archivo de Sueldos</button>
-                 <button id="close-week-btn" class="btn btn-success"><i class="fas fa-calendar-check"></i> Cerrar Semana</button>
-                <button id="delete-sueldos-btn" class="btn btn-danger"><i class="fas fa-trash"></i> Borrar Datos de Sueldos</button>
-                <input type="file" class="file-upload-input" id="sueldos-file-upload-input" accept=".xlsx, .xls" />
-             </div>
-             
-             <div class="card" id="sueldos-filter-card" style="display: none; margin-top: 20px;">
-                <div class="card-body" style="padding: 15px;">
-                  <div class="filter-group" style="justify-content: space-between;">
-                      <div>
-                        <label for="sueldos-date-range-filter">Filtrar período de pago:</label>
-                        <input type="text" id="sueldos-date-range-filter" placeholder="Seleccionar rango de fechas..." readonly>
-                      </div>
-                      <button id="reset-sueldos-filter-btn" class="btn btn-sm btn-outline"><i class="fas fa-times"></i> Limpiar Filtro</button>
-                  </div>
+             <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;">
+                <div class="btn-group" id="sueldos-period-toggle">
+                    <button class="btn btn-sm active" data-period="semanal"><i class="fas fa-calendar-week"></i> Semanal</button>
+                    <button class="btn btn-sm btn-outline" data-period="mensual"><i class="fas fa-calendar-alt"></i> Mensual</button>
                 </div>
+                <span id="sueldos-period-label" style="font-size:14px;color:var(--text-secondary);font-weight:600;"></span>
              </div>
 
-             <div id="sueldos-empty-state" style="display: block; margin-top: 20px;">
-                <p>Cargando datos de sueldos o no hay datos guardados. Sube un archivo para comenzar.</p>
+             <div id="sueldos-empty-state" style="display: none; margin-top: 20px;">
+                <p>No hay registros de asistencia para este período.</p>
              </div>
-             
-             <div id="sueldos-table-container" style="margin-top: 20px;">
-                <!-- Employee cards will be rendered here -->
+
+             <div id="sueldos-table-container" style="margin-top: 10px;">
+                <!-- Payroll report table will be rendered here -->
              </div>
            </div>
         </div>

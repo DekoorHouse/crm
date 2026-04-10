@@ -31,6 +31,10 @@ export const state = {
   categoryFilter: 'all',
   sueldosData: [],
   sueldosDateFilter: { start: null, end: null },
+  checadorEmployees: [],
+  checadorLogs: [],
+  checadorAdjustments: [],
+  sueldosPeriod: 'semanal',
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],

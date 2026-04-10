@@ -255,53 +255,18 @@ export function initEventListeners() {
         }
     });
 
-    elements.addEmployeeBtn.addEventListener('click', () => ui.openAddEmployeeModal());
-    elements.sueldosUploadBtn.addEventListener('click', () => elements.sueldosUploadInput.click());
-    elements.sueldosUploadInput.addEventListener('change', handleSueldosFileUpload);
-    elements.resetSueldosFilterBtn.addEventListener('click', () => window.app.resetSueldosFilter()); // CORREGIDO: usar window.app
-    elements.closeWeekBtn.addEventListener('click', confirmCloseWeek);
-    elements.deleteSueldosBtn.addEventListener('click', confirmDeleteSueldosData);
-
-    elements.sueldosTableContainer.addEventListener('click', (e) => {
-        const employeeCard = e.target.closest('.employee-card');
-        if (!employeeCard) return;
-        const employeeId = employeeCard.dataset.employeeId;
-        const employee = state.sueldosData.find(emp => emp.id === employeeId);
-
-        if (e.target.closest('.add-bono-btn')) ui.openBonoModal(employeeId);
-        if (e.target.closest('.add-gasto-btn')) ui.openGastoModal(employeeId);
-        if (e.target.closest('.share-text-btn') && employee) sendWhatsAppMessage(employee);
-        if (e.target.closest('.download-pdf-btn') && employee) ui.generateReportPdf(employee);
-        if (e.target.closest('.delete-adjustment-btn')) {
-            const { adjustmentId, adjustmentType } = e.target.closest('.delete-adjustment-btn').dataset;
-            confirmDeleteAdjustment(employeeId, adjustmentId, adjustmentType);
-        }
-        if (e.target.closest('.delete-employee-btn')) {
-            confirmDeleteEmployee(employeeId);
-        }
-        if (e.target.closest('.toggle-details-btn')) {
-            toggleEmployeeCard(employeeCard);
-        }
-    });
-
-    elements.sueldosTableContainer.addEventListener('input', (e) => {
-        if (e.target.classList.contains('hourly-rate-input')) {
-            const employeeId = e.target.closest('.employee-card').dataset.employeeId;
-            updateEmployeeRate(employeeId, parseFloat(e.target.value));
-        }
-    });
-    
-    elements.sueldosTableContainer.addEventListener('blur', (e) => {
-        if (e.target.matches('td[contenteditable="true"]')) {
-            updateSchedule(e.target);
-        }
-    }, true);
-
-    elements.sueldosTableContainer.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter' && !e.shiftKey && e.target.matches('td[contenteditable="true"]')) {
-            e.preventDefault();
-            e.target.blur();
-        }
+    // Sueldos period toggle
+    elements.sueldosPeriodToggle.addEventListener('click', (e) => {
+        const btn = e.target.closest('button[data-period]');
+        if (!btn || btn.classList.contains('active')) return;
+        elements.sueldosPeriodToggle.querySelectorAll('button').forEach(b => {
+            b.classList.remove('active');
+            b.classList.add('btn-outline');
+        });
+        btn.classList.add('active');
+        btn.classList.remove('btn-outline');
+        state.sueldosPeriod = btn.dataset.period;
+        ui.renderSueldosData();
     });
 
     elements.resetHealthFilterBtn.addEventListener('click', () => {

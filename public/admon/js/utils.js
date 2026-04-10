@@ -207,6 +207,158 @@ export function recalculatePayment(employee) {
 }
 
 /**
+ * Calcula la nómina a partir de los datos del checador.
+ * @param {'semanal'|'mensual'} period
+ * @returns {Array} Datos de nómina por empleado.
+ */
+export function computePayrollFromChecador(period) {
+    const { start, end } = getChecadorPeriodRange(period);
+    const logs = state.checadorLogs;
+    const employees = state.checadorEmployees;
+    const adjustments = state.checadorAdjustments;
+
+    // Parse log date (DD/MM/YYYY) to Date
+    const parseLogDate = (dateStr) => {
+        if (!dateStr) return null;
+        const parts = dateStr.split('/');
+        if (parts.length !== 3) return null;
+        return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    };
+
+    // Resolve employee name (handle id-based names)
+    const resolveLogName = (log) => {
+        if (log.name) return log.name;
+        const emp = employees.find(e => e.id === log.id);
+        return emp ? emp.name : (log.id || 'Desconocido');
+    };
+
+    // Filter logs by period
+    const filtered = logs.filter(log => {
+        const d = parseLogDate(log.date);
+        return d && d >= start && d <= end;
+    });
+
+    // Group by employee-date
+    const dayGroups = {};
+    filtered.forEach(log => {
+        const name = resolveLogName(log);
+        const key = `${name.toLowerCase()}-${log.date}`;
+        if (!dayGroups[key]) dayGroups[key] = { name, events: [] };
+        dayGroups[key].events.push(log);
+    });
+
+    // Aggregate per employee
+    const byEmployee = {};
+    Object.values(dayGroups).forEach(group => {
+        const k = group.name.toLowerCase();
+        if (!byEmployee[k]) byEmployee[k] = { name: group.name, minutes: 0, days: 0 };
+        let mins = 0, lastIn = null, hasIn = false;
+        [...group.events].sort((a, b) => a.timestamp - b.timestamp).forEach(e => {
+            if (e.type === 'IN') { lastIn = e.timestamp; hasIn = true; }
+            else if (e.type === 'OUT' && lastIn) {
+                mins += Math.floor((e.timestamp - lastIn) / 60000);
+                lastIn = null;
+            }
+        });
+        // Active shift — only count if today
+        if (lastIn) {
+            const logDate = parseLogDate(group.events[0]?.date);
+            const today = new Date();
+            if (logDate && logDate.toDateString() === today.toDateString()) {
+                mins += Math.floor((Date.now() - lastIn) / 60000);
+            }
+        }
+        if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
+    });
+
+    // Add vacation days
+    const today = new Date(); today.setHours(23, 59, 59, 999);
+    employees.forEach(emp => {
+        if (!emp.vacaciones || !emp.vacacionesDesde || !emp.vacacionesHasta) return;
+        const k = emp.name.toLowerCase();
+        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
+        const cur = new Date(start);
+        while (cur <= end && cur <= today) {
+            const desde = new Date(emp.vacacionesDesde + 'T00:00:00');
+            const hasta = new Date(emp.vacacionesHasta + 'T23:59:59');
+            const check = new Date(cur); check.setHours(12, 0, 0, 0);
+            if (check >= desde && check <= hasta) {
+                const dayKey = `${k}-${cur.getDate()}/${cur.getMonth()+1}/${cur.getFullYear()}`;
+                if (!dayGroups[dayKey]) {
+                    const dow = cur.getDay();
+                    let vacMins = 0;
+                    if (dow >= 1 && dow <= 5) vacMins = 360;
+                    else if (dow === 6) vacMins = 240;
+                    if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+                }
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+    });
+
+    // Get rate per employee from checador_employees or sueldosData
+    const getRate = (name) => {
+        const sueldo = state.sueldosData.find(e => e.name.toLowerCase() === name.toLowerCase());
+        return (sueldo && sueldo.ratePerHour) || 70;
+    };
+
+    // Build result with adjustments
+    return Object.values(byEmployee).map(emp => {
+        const rate = getRate(emp.name);
+        const basePay = Math.round((emp.minutes / 60) * rate);
+        const empAdjs = adjustments.filter(a => {
+            if ((a.name || '').toLowerCase() !== emp.name.toLowerCase()) return false;
+            const d = a.timestamp ? new Date(a.timestamp) : null;
+            return d && d >= start && d <= end;
+        });
+        const adjSum = empAdjs.reduce((s, a) => s + (a.type === 'bono' ? a.amount : -a.amount), 0);
+        return {
+            name: emp.name,
+            days: emp.days,
+            minutes: emp.minutes,
+            totalStr: `${Math.floor(emp.minutes / 60)}h ${emp.minutes % 60}m`,
+            rate,
+            basePay,
+            adjustments: empAdjs,
+            adjSum,
+            finalPay: basePay + adjSum,
+        };
+    }).sort((a, b) => b.minutes - a.minutes);
+}
+
+/**
+ * Calcula rango de fechas para un período.
+ */
+export function getChecadorPeriodRange(period) {
+    const now = new Date();
+    let start, end;
+    if (period === 'semanal') {
+        const day = now.getDay();
+        const diff = (day === 0) ? -6 : 1 - day;
+        start = new Date(now);
+        start.setDate(now.getDate() + diff);
+        start.setHours(0, 0, 0, 0);
+        end = new Date(start);
+        end.setDate(start.getDate() + 5); // Lunes a Sábado
+        end.setHours(23, 59, 59, 999);
+    } else {
+        start = new Date(now.getFullYear(), now.getMonth(), 1);
+        end = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+    }
+    return { start, end };
+}
+
+/**
+ * Genera label legible para el período.
+ */
+export function getChecadorPeriodLabel(period) {
+    const { start, end } = getChecadorPeriodRange(period);
+    const fmt = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric' });
+    if (period === 'semanal') return `${fmt(start)} – ${fmt(end)}`;
+    return start.toLocaleDateString('es-MX', { month: 'long', year: 'numeric' });
+}
+
+/**
  * Parsea los datos de sueldos (asistencia).
  */
 export function parseSueldosData(jsonData) {

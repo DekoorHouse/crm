@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel } from './utils.js';
 import * as services from './services.js';
 
 /**
@@ -40,16 +40,10 @@ export function cacheElements() {
         incomeVsAdCost: document.getElementById("incomeVsAdCostChart")?.getContext("2d"),
     };
     
-    elements.addEmployeeBtn = document.getElementById('add-employee-btn');
-    elements.sueldosUploadBtn = document.getElementById('sueldos-upload-btn');
-    elements.sueldosUploadInput = document.getElementById('sueldos-file-upload-input');
     elements.sueldosTableContainer = document.getElementById('sueldos-table-container');
     elements.sueldosEmptyState = document.getElementById('sueldos-empty-state');
-    elements.sueldosFilterCard = document.getElementById('sueldos-filter-card');
-    elements.sueldosDateRangeFilter = document.getElementById('sueldos-date-range-filter');
-    elements.resetSueldosFilterBtn = document.getElementById('reset-sueldos-filter-btn');
-    elements.closeWeekBtn = document.getElementById('close-week-btn');
-    elements.deleteSueldosBtn = document.getElementById('delete-sueldos-btn');
+    elements.sueldosPeriodToggle = document.getElementById('sueldos-period-toggle');
+    elements.sueldosPeriodLabel = document.getElementById('sueldos-period-label');
 
     elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
     elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
@@ -813,118 +807,81 @@ export function initSueldosDateRangePicker(callback) {
     }
 }
 
-export function renderSueldosData(employees, isFiltered) {
-    elements.sueldosTableContainer.innerHTML = '';
-    if (employees.length === 0 && isFiltered) {
-        elements.sueldosTableContainer.innerHTML = '<p>No se encontraron registros para el rango de fechas seleccionado.</p>';
+export function renderSueldosData() {
+    const data = computePayrollFromChecador(state.sueldosPeriod);
+    const container = elements.sueldosTableContainer;
+    container.innerHTML = '';
+
+    // Update period label
+    if (elements.sueldosPeriodLabel) {
+        elements.sueldosPeriodLabel.textContent = getChecadorPeriodLabel(state.sueldosPeriod);
+    }
+
+    if (data.length === 0) {
+        elements.sueldosEmptyState.style.display = 'block';
         return;
     }
-    
-    employees.forEach(employee => {
-        const card = document.createElement('div');
-        card.className = 'employee-card';
-        card.dataset.employeeId = employee.id;
+    elements.sueldosEmptyState.style.display = 'none';
 
-        const bonosHtml = (employee.bonos || []).map((bono, index) => `
-            <div class="adjustment-item bono">
-                <span class="date">${bono.date || ''}</span>
-                <span class="concept">${bono.concept}</span>
-                <span class="amount">${formatCurrency(bono.amount)}</span>
-                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="bono" title="Eliminar">&times;</button>
-            </div>
-        `).join('');
+    let totalMins = 0, totalBasePay = 0, totalAdjSum = 0, totalFinal = 0;
 
-        const gastosHtml = (employee.descuentos || []).map((gasto, index) => `
-            <div class="adjustment-item gasto">
-                 <span class="date">${gasto.date || ''}</span>
-                <span class="concept">${gasto.concept}</span>
-                <span class="amount">-${formatCurrency(gasto.amount)}</span>
-                <button class="delete-adjustment-btn" data-adjustment-id="${index}" data-adjustment-type="gasto" title="Eliminar">&times;</button>
-            </div>
-        `).join('');
+    const rows = data.map(emp => {
+        totalMins += emp.minutes;
+        totalBasePay += emp.basePay;
+        totalAdjSum += emp.adjSum;
+        totalFinal += emp.finalPay;
 
-        const historyHtml = (employee.paymentHistory || []).map(p => `
-            <tr>
-                <td>${p.week}</td>
-                <td>${p.hours.toFixed(2)}</td>
-                <td>${formatCurrency(p.payment)}</td>
-            </tr>
-        `).join('');
+        const adjLabel = emp.adjSum !== 0
+            ? `<span style="color:${emp.adjSum > 0 ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${emp.adjSum > 0 ? '+' : ''}${formatCurrency(emp.adjSum)}</span>`
+            : '<span style="color:var(--text-secondary);">—</span>';
+        const adjDetail = emp.adjustments.length > 0
+            ? `<br><small style="color:var(--text-secondary);">${emp.adjustments.map(a => `${a.type === 'bono' ? '+' : '-'}$${a.amount} ${a.concept || ''}`).join(', ')}</small>`
+            : '';
 
-        card.innerHTML = `
-            <div class="employee-header">
-                <h3>${capitalize(employee.name)}</h3>
-                <div class="employee-header-rate">
-                    <div class="rate-input-wrapper">
-                        <span class="rate-input-symbol">$</span>
-                        <input type="number" class="hourly-rate-input" value="${employee.ratePerHour || 70}" min="0">
-                        <span>/hr</span>
-                    </div>
-                </div>
-                <button class="toggle-details-btn" aria-expanded="true">
-                    <i class="fas fa-chevron-up"></i>
-                </button>
-            </div>
-            <div class="employee-body">
-                <div class="table-container">
-                    <table>
-                        <thead><tr><th>Día</th><th>Entrada</th><th>Salida</th><th>Hrs</th></tr></thead>
-                        <tbody>
-                            ${['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'].map(day => {
-                                const registro = employee.registros?.find(r => r.day === day) || { entrada: '', salida: '', horas: '0.00' };
-                                return `
-                                    <tr>
-                                        <td>${day}</td>
-                                        <td contenteditable="true" data-type="entrada">${registro.entrada}</td>
-                                        <td contenteditable="true" data-type="salida">${registro.salida}</td>
-                                        <td>${registro.horas}</td>
-                                    </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-                <div class="payment-history-container">
-                    <h6>Historial de Pagos</h6>
-                    <div class="table-container" style="max-height: 200px;">
-                        <table>
-                            <thead><tr><th>Semana</th><th>Horas</th><th>Pago</th></tr></thead>
-                            <tbody>${historyHtml}</tbody>
-                        </table>
-                    </div>
-                </div>
-                <div>
-                    <div class="employee-payment-summary">
-                        <div class="payment-row"><span>Total Horas:</span><span class="payment-value-total-hours">${employee.totalHoursFormatted || '0.00'}</span></div>
-                        <div class="payment-row"><span>Subtotal:</span><span class="payment-value-subtotal">${formatCurrency(employee.subtotal || 0)}</span></div>
-                    </div>
-                    <div class="adjustments-list">
-                        <h6>Bonos</h6>
-                        <div class="adjustments-list-content">
-                            ${bonosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin bonos</p>'}
-                        </div>
-                    </div>
-                    <div class="adjustments-list">
-                        <h6>Gastos/Descuentos</h6>
-                        <div class="adjustments-list-content">
-                            ${gastosHtml || '<p style="text-align:center; font-size:12px; color:#9ca3af;">Sin gastos</p>'}
-                        </div>
-                    </div>
-                    <div class="employee-payment-summary">
-                         <div class="payment-row final-payment"><span>Pago Final:</span><span class="payment-value-final">${formatCurrency(employee.pago || 0)}</span></div>
-                    </div>
-                     <div class="btn-group" style="margin-top: 15px;">
-                        <button class="btn btn-sm add-bono-btn"><i class="fas fa-plus"></i> Bono</button>
-                        <button class="btn btn-sm add-gasto-btn"><i class="fas fa-minus"></i> Gasto</button>
-                        <button class="btn btn-sm btn-outline share-text-btn"><i class="fab fa-whatsapp"></i></button>
-                        <button class="btn btn-sm btn-outline download-pdf-btn"><i class="fas fa-file-pdf"></i></button>
-                        <button class="btn btn-sm btn-outline delete-employee-btn" style="color:var(--danger); border-color:var(--danger); margin-left: auto;" title="Eliminar Empleado"><i class="fas fa-trash"></i> Eliminar</button>
-                    </div>
-                </div>
-            </div>
-        `;
-        elements.sueldosTableContainer.appendChild(card);
-    });
+        return `<tr>
+            <td style="font-weight:600;">${capitalize(emp.name)}</td>
+            <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
+            <td style="font-weight:bold; color:var(--primary);">${emp.totalStr}</td>
+            <td style="font-size:12px;color:var(--text-secondary);">$${emp.rate}/hr</td>
+            <td>${formatCurrency(emp.basePay)}</td>
+            <td>${adjLabel}${adjDetail}</td>
+            <td style="font-weight:bold; color:var(--success);">${formatCurrency(emp.finalPay)}</td>
+        </tr>`;
+    }).join('');
+
+    const totalAdjLabel = totalAdjSum !== 0
+        ? `<span style="color:${totalAdjSum > 0 ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${totalAdjSum > 0 ? '+' : ''}${formatCurrency(totalAdjSum)}</span>`
+        : '—';
+
+    container.innerHTML = `
+        <div class="table-container">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Días</th>
+                        <th>Total Horas</th>
+                        <th>Tarifa</th>
+                        <th>Pago Horas</th>
+                        <th>Ajustes</th>
+                        <th>Pago Final</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+                <tfoot>
+                    <tr style="border-top:2px solid var(--border-color);">
+                        <td style="font-weight:bold; color:var(--text-secondary);">TOTAL</td>
+                        <td></td>
+                        <td style="font-weight:bold; color:var(--primary);">${Math.floor(totalMins / 60)}h ${totalMins % 60}m</td>
+                        <td></td>
+                        <td style="font-weight:600;">${formatCurrency(totalBasePay)}</td>
+                        <td>${totalAdjLabel}</td>
+                        <td style="font-weight:bold; color:var(--success);">${formatCurrency(totalFinal)}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    `;
 }
 
 export function renderKpisTable() {

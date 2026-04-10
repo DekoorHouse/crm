@@ -28,16 +28,7 @@ function initializeAppUI() {
         charts.updateAllCharts(utils.getFilteredExpenses);
         charts.updateFinancialHealthDashboard(utils.getFilteredExpenses);
 
-        if (state.sueldosData.length > 0) {
-             elements.sueldosEmptyState.style.display = 'none';
-             elements.sueldosFilterCard.style.display = 'block';
-             const filteredSueldos = utils.filterSueldos();
-             ui.renderSueldosData(filteredSueldos, !!(state.sueldosDateFilter.start && state.sueldosDateFilter.end));
-        } else {
-            elements.sueldosEmptyState.style.display = 'block';
-            elements.sueldosFilterCard.style.display = 'none';
-            ui.renderSueldosData([]);
-        }
+        ui.renderSueldosData();
 
         ui.renderKpisTable();
     };
@@ -47,6 +38,9 @@ function initializeAppUI() {
     services.listenForCustomCategories(onDataChange);
     services.listenForSubcategories(onDataChange);
     services.listenForSueldos(onDataChange);
+    services.listenForChecadorEmployees(onDataChange);
+    services.listenForChecadorLogs(onDataChange);
+    services.listenForChecadorAdjustments(onDataChange);
     services.listenForKpis(onDataChange);
     services.listenForMonthlyLeads(onDataChange);
     services.listenForMonthlyPaidLeads(onDataChange);
@@ -59,7 +53,6 @@ function initializeAppUI() {
     
     app.picker = ui.initDateRangePicker(() => app.handleDateFilterChange(app.picker));
     app.healthPicker = ui.initHealthDateRangePicker(() => app.handleHealthDateFilterChange(app.healthPicker));
-    app.sueldosPicker = ui.initSueldosDateRangePicker(() => app.handleSueldosDateFilterChange(app.sueldosPicker));
 
     onDataChange();
 }
@@ -67,7 +60,6 @@ function initializeAppUI() {
 const app = {
   picker: null,
   healthPicker: null,
-  sueldosPicker: null,
 
   init() {
     try {
@@ -133,20 +125,8 @@ const app = {
       services.setupOrdersListener(initializeAppUI);
   },
 
-  handleSueldosDateFilterChange(picker) {
-      const start = picker.getStartDate();
-      const end = picker.getEndDate();
-      if (start && end) {
-          state.sueldosDateFilter.start = new Date(Date.UTC(start.getFullYear(), start.getMonth(), start.getDate()));
-          state.sueldosDateFilter.end = new Date(Date.UTC(end.getFullYear(), end.getMonth(), end.getDate()));
-      }
-      initializeAppUI();
-  },
-
-  resetSueldosFilter() {
-      if (app.sueldosPicker) app.sueldosPicker.clearSelection();
-      state.sueldosDateFilter = { start: null, end: null };
-      initializeAppUI();
+  handleSueldosDateFilterChange() {
+      // No longer used - period toggle handles this
   }
 };
 
