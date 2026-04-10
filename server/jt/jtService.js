@@ -2,23 +2,26 @@ const axios = require('axios');
 const crypto = require('crypto');
 
 // --- Configuración J&T Open Platform Mexico ---
+// Soporta variable única JT_CONFIG_JSON o variables individuales
+const _jtConfig = process.env.JT_CONFIG_JSON ? JSON.parse(process.env.JT_CONFIG_JSON) : {};
 const JT_API_BASE = 'https://openapi.jtjms-mx.com/webopenplatformapi/api';
 const JT_API_BASE_TEST = 'https://demoopenapi.jtjms-mx.com/webopenplatformapi/api';
-const JT_API_ACCOUNT = process.env.JT_API_ACCOUNT || '';
-const JT_PRIVATE_KEY = process.env.JT_PRIVATE_KEY || '';
-const JT_CUSTOMER_CODE = process.env.JT_CUSTOMER_CODE || '';
-const JT_PASSWORD = process.env.JT_PASSWORD || '';  // Cleartext password del Open Platform
-const JT_USE_TEST = process.env.JT_USE_TEST === 'true';
+const JT_API_ACCOUNT = _jtConfig.apiAccount || process.env.JT_API_ACCOUNT || '';
+const JT_PRIVATE_KEY = _jtConfig.privateKey || process.env.JT_PRIVATE_KEY || '';
+const JT_CUSTOMER_CODE = _jtConfig.customerCode || process.env.JT_CUSTOMER_CODE || '';
+const JT_PASSWORD = _jtConfig.password || process.env.JT_PASSWORD || '';
+const JT_USE_TEST = (_jtConfig.useTest ?? process.env.JT_USE_TEST) === 'true';
 
 // Datos del remitente (Dekoor - Durango)
+const _sender = _jtConfig.sender || {};
 const SENDER_DEFAULTS = {
-    name: process.env.JT_SENDER_NAME || 'Dekoor MX',
-    phone: process.env.JT_SENDER_PHONE || '6181333519',
-    prov: process.env.JT_SENDER_STATE || 'Durango',
-    city: process.env.JT_SENDER_CITY || 'Durango',
-    area: process.env.JT_SENDER_AREA || 'Durango',
-    address: process.env.JT_SENDER_ADDRESS || '',
-    postCode: process.env.JT_SENDER_ZIP || '34000',
+    name: _sender.name || process.env.JT_SENDER_NAME || 'Dekoor MX',
+    phone: _sender.phone || process.env.JT_SENDER_PHONE || '6181333519',
+    prov: _sender.state || process.env.JT_SENDER_STATE || 'Durango',
+    city: _sender.city || process.env.JT_SENDER_CITY || 'Durango',
+    area: _sender.area || process.env.JT_SENDER_AREA || 'Durango',
+    address: _sender.address || process.env.JT_SENDER_ADDRESS || '',
+    postCode: _sender.zip || process.env.JT_SENDER_ZIP || '34000',
 };
 
 /**
