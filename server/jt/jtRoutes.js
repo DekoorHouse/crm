@@ -270,7 +270,7 @@ router.post('/cliente', async (req, res) => {
             source: 'cliente',
         });
 
-        // 2. Crear guía J&T
+        // 2. Crear guía J&T (peso fijo 1kg, remark = número de pedido)
         const result = await jtService.createOrder({
             orderNumber: numeroPedido,
             receiverName: nombreCompleto,
@@ -281,6 +281,8 @@ router.post('/cliente', async (req, res) => {
             state: estado,
             zip: codigoPostal,
             reference: referencia || '',
+            weight: 1,
+            remark: `Pedido ${numeroPedido}`,
         });
 
         if (!result.success) {

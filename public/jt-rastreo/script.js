@@ -258,6 +258,14 @@ document.addEventListener('DOMContentLoaded', () => {
     waybillInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') trackPackage();
     });
+
+    // Auto-rastrear si viene ?waybill= en la URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const waybillParam = urlParams.get('waybill');
+    if (waybillParam) {
+        waybillInput.value = waybillParam;
+        trackPackage();
+    }
 });
 
 /**

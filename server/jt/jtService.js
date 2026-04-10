@@ -124,6 +124,7 @@ async function createOrder(params) {
         weight = 1,
         quantity = 1,
         itemValue = 650,
+        remark = '',
     } = params;
 
     const bizContent = {
@@ -168,6 +169,7 @@ async function createOrder(params) {
             number: quantity,
             itemValue: String(itemValue),
         }],
+        remark: remark || `Pedido ${orderNumber}`,
         operateType: 1,             // 1 = Adding
     };
 
