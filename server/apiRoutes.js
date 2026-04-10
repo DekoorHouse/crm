@@ -4764,6 +4764,8 @@ router.get('/buscar-cp', async (req, res) => {
                 codigoPostal: cp,
                 estado: response.data.state || estado,
                 vecinos,
+                lat: parseFloat(p.latitude) || null,
+                lon: parseFloat(p.longitude) || null,
             };
         });
 

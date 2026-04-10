@@ -15,6 +15,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <link rel="stylesheet" href="/sitio/style.css">
     <style>
         .envio-page {
@@ -239,6 +241,46 @@
             color: var(--text-light, #7a9aab);
             font-style: italic;
             margin-top: 0.15rem;
+        }
+
+        .mapa-container {
+            margin-top: 0.75rem;
+            border-radius: 10px;
+            overflow: hidden;
+            border: 2px solid rgba(27,77,92,0.12);
+        }
+
+        .mapa-busqueda {
+            height: 200px;
+            width: 100%;
+        }
+
+        .marker-label {
+            background: var(--primary, #D4722C);
+            color: #fff;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            white-space: nowrap;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+
+        .resultado-item .col-num {
+            display: inline-block;
+            background: var(--primary, #D4722C);
+            color: #fff;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            text-align: center;
+            line-height: 20px;
+            font-size: 0.7rem;
+            font-weight: 700;
+            margin-right: 0.3rem;
+            vertical-align: middle;
         }
 
         .resultados-msg {
@@ -587,6 +629,9 @@
                         <button type="button" id="btnBuscarCP" class="btn-buscar-cp">
                             <i class="fas fa-search"></i> Buscar
                         </button>
+                        <div id="mapaContainer" class="mapa-container" style="display:none;">
+                            <div id="mapaBuscador" class="mapa-busqueda"></div>
+                        </div>
                         <div id="resultadosBusqueda" class="resultados-busqueda"></div>
                     </div>
 
@@ -747,6 +792,8 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         buscadorCP.style.display = 'none';
         btnNoSeCP.style.display = 'inline-block';
+        document.getElementById('mapaContainer').style.display = 'none';
+        resultadosDiv.innerHTML = '';
     });
 
     btnBuscarCP.addEventListener('click', async () => {
@@ -765,15 +812,60 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await res.json();
 
             if (data.results && data.results.length > 0) {
-                resultadosDiv.innerHTML = data.results.map(r => {
+                resultadosDiv.innerHTML = data.results.map((r, i) => {
                     const vecinosTxt = r.vecinos && r.vecinos.length > 0
                         ? `<div class="col-vecinos">Cerca de: ${r.vecinos.join(', ')}</div>` : '';
-                    return `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}">
-                        <div class="col-name">${r.colonia}</div>
+                    return `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}" data-idx="${i}">
+                        <div class="col-name"><span class="col-num">${i + 1}</span>${r.colonia}</div>
                         <div class="col-cp">C.P. ${r.codigoPostal} - ${r.estado}</div>
                         ${vecinosTxt}
                     </div>`;
                 }).join('');
+
+                // Mostrar mapa si hay coordenadas
+                const withCoords = data.results.filter(r => r.lat && r.lon);
+                const mapaContainer = document.getElementById('mapaContainer');
+                if (withCoords.length > 0) {
+                    mapaContainer.style.display = 'block';
+                    const mapDiv = document.getElementById('mapaBuscador');
+                    mapDiv.innerHTML = '';
+                    mapDiv.id = 'mapaBuscador';
+
+                    // Recrear el div para evitar problemas de Leaflet
+                    const newMapDiv = mapDiv.cloneNode(false);
+                    mapDiv.parentNode.replaceChild(newMapDiv, mapDiv);
+
+                    const map = L.map('mapaBuscador', { scrollWheelZoom: false });
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '&copy; OpenStreetMap',
+                        maxZoom: 18,
+                    }).addTo(map);
+
+                    const bounds = [];
+                    data.results.forEach((r, i) => {
+                        if (!r.lat || !r.lon) return;
+                        const marker = L.marker([r.lat, r.lon]).addTo(map);
+                        marker.bindTooltip(`<strong>${i + 1}. ${r.colonia}</strong><br>C.P. ${r.codigoPostal}`, {
+                            permanent: true,
+                            direction: 'top',
+                            className: 'marker-label',
+                            offset: [0, -10],
+                        });
+                        marker.on('click', () => {
+                            const item = resultadosDiv.querySelector(`[data-idx="${i}"]`);
+                            if (item) item.click();
+                        });
+                        bounds.push([r.lat, r.lon]);
+                    });
+
+                    if (bounds.length > 1) {
+                        map.fitBounds(bounds, { padding: [30, 30] });
+                    } else {
+                        map.setView(bounds[0], 13);
+                    }
+                } else {
+                    mapaContainer.style.display = 'none';
+                }
 
                 resultadosDiv.querySelectorAll('.resultado-item').forEach(item => {
                     item.addEventListener('click', () => {
