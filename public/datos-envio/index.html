@@ -535,11 +535,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     zipInput.addEventListener('input', async () => {
         const cp = zipInput.value.trim();
-        if (cp.length !== 5) {
+        if (cp.length < 5) {
             coloniaSelect.innerHTML = '<option value="">Ingresa tu C.P. primero</option>';
             stateInput.value = '';
-            cpHint.textContent = '';
-            cpHint.className = 'cp-hint';
+            cpHint.textContent = cp.length > 0 ? 'Ingresa los 5 digitos del codigo postal' : '';
+            cpHint.className = cp.length > 0 ? 'cp-hint error' : 'cp-hint';
+            return;
+        }
+        if (!/^\d{5}$/.test(cp)) {
+            coloniaSelect.innerHTML = '<option value="">Ingresa un C.P. valido</option>';
+            stateInput.value = '';
+            cpHint.textContent = 'El codigo postal debe tener 5 digitos numericos';
+            cpHint.className = 'cp-hint error';
             return;
         }
 
@@ -557,16 +564,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 cpHint.textContent = `${data.colonias.length} colonias encontradas`;
                 cpHint.className = 'cp-hint';
             } else {
-                coloniaSelect.innerHTML = '<option value="">No se encontraron colonias</option>';
-                cpHint.textContent = 'C.P. no encontrado. Escribe tu colonia manualmente.';
+                coloniaSelect.innerHTML = '<option value="">Ingresa un C.P. valido</option>';
+                stateInput.value = '';
+                cpHint.textContent = 'Codigo postal no encontrado. Verifica e intenta de nuevo.';
                 cpHint.className = 'cp-hint error';
-                // Cambiar a input si no se encontró
-                const input = document.createElement('input');
-                input.type = 'text';
-                input.id = 'colonia';
-                input.required = true;
-                input.placeholder = 'Escribe tu colonia';
-                coloniaSelect.replaceWith(input);
             }
         } catch (e) {
             cpHint.textContent = 'Error al buscar. Escribe tu colonia manualmente.';
