@@ -150,6 +150,97 @@
             color: #991b1b;
         }
 
+        .no-se-cp {
+            font-size: 0.78rem;
+            color: var(--primary, #D4722C);
+            text-decoration: underline;
+            cursor: pointer;
+            display: inline-block;
+            margin-top: 0.2rem;
+        }
+
+        .buscador-cp {
+            background: var(--primary-light, #f5e0cf);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+
+        .buscador-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--teal, #1B4D5C);
+        }
+
+        .buscador-close {
+            font-size: 1.3rem;
+            color: var(--text-medium, #4a6274);
+            text-decoration: none;
+            line-height: 1;
+        }
+
+        .btn-buscar-cp {
+            width: 100%;
+            padding: 0.6rem;
+            background: var(--primary, #D4722C);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            font-size: 0.88rem;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.4rem;
+            transition: background 0.2s;
+        }
+
+        .btn-buscar-cp:hover {
+            background: var(--primary-hover, #bf5f1e);
+        }
+
+        .resultados-busqueda {
+            margin-top: 0.75rem;
+        }
+
+        .resultado-item {
+            background: #fff;
+            border-radius: 8px;
+            padding: 0.6rem 0.8rem;
+            margin-bottom: 0.4rem;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 2px solid transparent;
+        }
+
+        .resultado-item:hover {
+            border-color: var(--primary, #D4722C);
+        }
+
+        .resultado-item .col-name {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--teal, #1B4D5C);
+        }
+
+        .resultado-item .col-cp {
+            font-size: 0.8rem;
+            color: var(--text-medium, #4a6274);
+        }
+
+        .resultados-msg {
+            font-size: 0.82rem;
+            color: var(--text-medium, #4a6274);
+            text-align: center;
+            padding: 0.5rem;
+        }
+
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -428,11 +519,68 @@
                             <label for="zip">Codigo Postal *</label>
                             <input type="text" id="zip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}" inputmode="numeric">
                             <p id="cpHint" class="cp-hint"></p>
+                            <a href="#" id="btnNoSeCP" class="no-se-cp">No se mi codigo postal</a>
                         </div>
                         <div class="form-group">
                             <label for="state">Estado *</label>
                             <input type="text" id="state" required placeholder="Durango" readonly>
                         </div>
+                    </div>
+
+                    <!-- Buscador de CP -->
+                    <div id="buscadorCP" class="buscador-cp" style="display:none;">
+                        <div class="buscador-header">
+                            <span><i class="fas fa-search"></i> Buscar por colonia</span>
+                            <a href="#" id="btnCerrarBuscador" class="buscador-close">&times;</a>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>Estado</label>
+                                <select id="buscarEstado">
+                                    <option value="">Selecciona</option>
+                                    <option value="AGU">Aguascalientes</option>
+                                    <option value="BCN">Baja California</option>
+                                    <option value="BCS">Baja California Sur</option>
+                                    <option value="CAM">Campeche</option>
+                                    <option value="CHP">Chiapas</option>
+                                    <option value="CHH">Chihuahua</option>
+                                    <option value="COA">Coahuila</option>
+                                    <option value="COL">Colima</option>
+                                    <option value="DIF">Ciudad de Mexico</option>
+                                    <option value="DUR">Durango</option>
+                                    <option value="GUA">Guanajuato</option>
+                                    <option value="GRO">Guerrero</option>
+                                    <option value="HID">Hidalgo</option>
+                                    <option value="JAL">Jalisco</option>
+                                    <option value="MEX">Estado de Mexico</option>
+                                    <option value="MIC">Michoacan</option>
+                                    <option value="MOR">Morelos</option>
+                                    <option value="NAY">Nayarit</option>
+                                    <option value="NLE">Nuevo Leon</option>
+                                    <option value="OAX">Oaxaca</option>
+                                    <option value="PUE">Puebla</option>
+                                    <option value="QUE">Queretaro</option>
+                                    <option value="ROO">Quintana Roo</option>
+                                    <option value="SLP">San Luis Potosi</option>
+                                    <option value="SIN">Sinaloa</option>
+                                    <option value="SON">Sonora</option>
+                                    <option value="TAB">Tabasco</option>
+                                    <option value="TAM">Tamaulipas</option>
+                                    <option value="TLA">Tlaxcala</option>
+                                    <option value="VER">Veracruz</option>
+                                    <option value="YUC">Yucatan</option>
+                                    <option value="ZAC">Zacatecas</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>Colonia o fraccionamiento</label>
+                                <input type="text" id="buscarColonia" placeholder="Ej: Lira, Centro, Reforma...">
+                            </div>
+                        </div>
+                        <button type="button" id="btnBuscarCP" class="btn-buscar-cp">
+                            <i class="fas fa-search"></i> Buscar
+                        </button>
+                        <div id="resultadosBusqueda" class="resultados-busqueda"></div>
                     </div>
 
                     <div class="form-group">
@@ -573,6 +721,90 @@ document.addEventListener('DOMContentLoaded', () => {
             cpHint.textContent = 'Error al buscar. Escribe tu colonia manualmente.';
             cpHint.className = 'cp-hint error';
         }
+    });
+
+    // Buscador de CP
+    const buscadorCP = document.getElementById('buscadorCP');
+    const btnNoSeCP = document.getElementById('btnNoSeCP');
+    const btnCerrarBuscador = document.getElementById('btnCerrarBuscador');
+    const btnBuscarCP = document.getElementById('btnBuscarCP');
+    const resultadosDiv = document.getElementById('resultadosBusqueda');
+
+    btnNoSeCP.addEventListener('click', (e) => {
+        e.preventDefault();
+        buscadorCP.style.display = 'block';
+        btnNoSeCP.style.display = 'none';
+    });
+
+    btnCerrarBuscador.addEventListener('click', (e) => {
+        e.preventDefault();
+        buscadorCP.style.display = 'none';
+        btnNoSeCP.style.display = 'inline-block';
+    });
+
+    btnBuscarCP.addEventListener('click', async () => {
+        const estado = document.getElementById('buscarEstado').value;
+        const colonia = document.getElementById('buscarColonia').value.trim();
+
+        if (!estado) { resultadosDiv.innerHTML = '<p class="resultados-msg">Selecciona un estado</p>'; return; }
+        if (colonia.length < 3) { resultadosDiv.innerHTML = '<p class="resultados-msg">Escribe al menos 3 letras de tu colonia</p>'; return; }
+
+        btnBuscarCP.disabled = true;
+        btnBuscarCP.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Buscando...';
+        resultadosDiv.innerHTML = '';
+
+        try {
+            const res = await fetch(`${API}/api/buscar-cp?estado=${estado}&colonia=${encodeURIComponent(colonia)}`);
+            const data = await res.json();
+
+            if (data.results && data.results.length > 0) {
+                resultadosDiv.innerHTML = data.results.map(r =>
+                    `<div class="resultado-item" data-cp="${r.codigoPostal}" data-colonia="${r.colonia}" data-estado="${r.estado}">
+                        <div class="col-name">${r.colonia}</div>
+                        <div class="col-cp">C.P. ${r.codigoPostal} - ${r.estado}</div>
+                    </div>`
+                ).join('');
+
+                resultadosDiv.querySelectorAll('.resultado-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const cp = item.dataset.cp;
+                        const col = item.dataset.colonia;
+                        const est = item.dataset.estado;
+
+                        zipInput.value = cp;
+                        stateInput.value = est === 'Distrito Federal' ? 'Ciudad de Mexico' : est;
+
+                        // Disparar búsqueda de colonias del CP para llenar el dropdown
+                        zipInput.dispatchEvent(new Event('input'));
+
+                        // Esperar a que carguen las colonias y seleccionar la correcta
+                        setTimeout(() => {
+                            const select = document.getElementById('colonia');
+                            if (select && select.tagName === 'SELECT') {
+                                for (const opt of select.options) {
+                                    if (opt.value === col) { opt.selected = true; break; }
+                                }
+                            }
+                        }, 1500);
+
+                        buscadorCP.style.display = 'none';
+                        btnNoSeCP.style.display = 'inline-block';
+                        resultadosDiv.innerHTML = '';
+                    });
+                });
+            } else {
+                resultadosDiv.innerHTML = '<p class="resultados-msg">No se encontraron resultados. Intenta con otro nombre.</p>';
+            }
+        } catch (e) {
+            resultadosDiv.innerHTML = '<p class="resultados-msg">Error al buscar. Intenta de nuevo.</p>';
+        } finally {
+            btnBuscarCP.disabled = false;
+            btnBuscarCP.innerHTML = '<i class="fas fa-search"></i> Buscar';
+        }
+    });
+
+    document.getElementById('buscarColonia').addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); btnBuscarCP.click(); }
     });
 
     function showAlert(type, message) {

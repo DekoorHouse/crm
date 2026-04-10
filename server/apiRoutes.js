@@ -4727,6 +4727,31 @@ router.get('/codigo-postal/:cp', async (req, res) => {
     }
 });
 
+// --- BUSCAR CP POR COLONIA ---
+router.get('/buscar-cp', async (req, res) => {
+    const { estado, colonia } = req.query;
+    if (!estado || !colonia || colonia.length < 3) {
+        return res.json({ success: false, message: 'Escribe al menos 3 letras de tu colonia.', results: [] });
+    }
+    try {
+        const response = await axios.get(
+            `https://api.zippopotam.us/mx/${encodeURIComponent(estado)}/${encodeURIComponent(colonia)}`,
+            { timeout: 5000 }
+        );
+        const results = (response.data.places || []).map(p => ({
+            colonia: p['place name'],
+            codigoPostal: p['post code'],
+            estado: response.data.state || estado,
+        }));
+        res.json({ success: true, results });
+    } catch (err) {
+        if (err.response?.status === 404) {
+            return res.json({ success: true, results: [], message: 'No se encontraron resultados.' });
+        }
+        res.json({ success: false, results: [], message: 'Error al buscar.' });
+    }
+});
+
 // --- DATOS PARA ENVÍO ---
 router.get('/datos-envio', async (req, res) => {
     try {
