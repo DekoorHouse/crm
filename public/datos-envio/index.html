@@ -111,6 +111,45 @@
             color: #b0bec5;
         }
 
+        .form-group select {
+            width: 100%;
+            padding: 0.7rem 0.9rem;
+            border: 2px solid rgba(27,77,92,0.12);
+            border-radius: 12px;
+            font-size: 0.92rem;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-dark, #1B3A4B);
+            background: #fff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+            cursor: pointer;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%234a6274' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.9rem center;
+            padding-right: 2.5rem;
+        }
+
+        .form-group select:focus {
+            outline: none;
+            border-color: var(--primary, #D4722C);
+            box-shadow: 0 0 0 3px rgba(212,114,44,0.1);
+        }
+
+        .cp-hint {
+            font-size: 0.75rem;
+            margin: 0.25rem 0 0;
+            color: var(--text-light, #7a9aab);
+        }
+
+        .cp-hint.loading {
+            color: var(--primary, #D4722C);
+        }
+
+        .cp-hint.error {
+            color: #991b1b;
+        }
+
         .form-row {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -384,26 +423,29 @@
                         <input type="text" id="street" required placeholder="Av. 20 de Noviembre #456">
                     </div>
 
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="zip">Codigo Postal *</label>
+                            <input type="text" id="zip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}" inputmode="numeric">
+                            <p id="cpHint" class="cp-hint"></p>
+                        </div>
+                        <div class="form-group">
+                            <label for="state">Estado *</label>
+                            <input type="text" id="state" required placeholder="Durango" readonly>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label for="colonia">Colonia *</label>
-                        <input type="text" id="colonia" required placeholder="Centro">
+                        <select id="colonia" required>
+                            <option value="">Ingresa tu C.P. primero</option>
+                        </select>
                     </div>
 
                     <div class="form-row">
                         <div class="form-group">
                             <label for="city">Ciudad *</label>
                             <input type="text" id="city" required placeholder="Durango">
-                        </div>
-                        <div class="form-group">
-                            <label for="state">Estado *</label>
-                            <input type="text" id="state" required placeholder="Durango">
-                        </div>
-                    </div>
-
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="zip">Codigo Postal *</label>
-                            <input type="text" id="zip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
                         </div>
                         <div class="form-group">
                             <label for="reference">Referencia</label>
@@ -484,6 +526,53 @@ document.addEventListener('DOMContentLoaded', () => {
         mobileMenu.querySelector('.mobile-menu-overlay')?.addEventListener('click', () => mobileMenu.classList.add('hidden'));
         mobileMenu.querySelector('.mobile-menu-close')?.addEventListener('click', () => mobileMenu.classList.add('hidden'));
     }
+
+    // Buscar colonias por código postal
+    const zipInput = document.getElementById('zip');
+    const coloniaSelect = document.getElementById('colonia');
+    const stateInput = document.getElementById('state');
+    const cpHint = document.getElementById('cpHint');
+
+    zipInput.addEventListener('input', async () => {
+        const cp = zipInput.value.trim();
+        if (cp.length !== 5) {
+            coloniaSelect.innerHTML = '<option value="">Ingresa tu C.P. primero</option>';
+            stateInput.value = '';
+            cpHint.textContent = '';
+            cpHint.className = 'cp-hint';
+            return;
+        }
+
+        cpHint.textContent = 'Buscando colonias...';
+        cpHint.className = 'cp-hint loading';
+
+        try {
+            const res = await fetch(`${API}/api/codigo-postal/${cp}`);
+            const data = await res.json();
+
+            if (data.success && data.colonias.length > 0) {
+                coloniaSelect.innerHTML = '<option value="">Selecciona tu colonia</option>'
+                    + data.colonias.map(c => `<option value="${c}">${c}</option>`).join('');
+                stateInput.value = data.estado || '';
+                cpHint.textContent = `${data.colonias.length} colonias encontradas`;
+                cpHint.className = 'cp-hint';
+            } else {
+                coloniaSelect.innerHTML = '<option value="">No se encontraron colonias</option>';
+                cpHint.textContent = 'C.P. no encontrado. Escribe tu colonia manualmente.';
+                cpHint.className = 'cp-hint error';
+                // Cambiar a input si no se encontró
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.id = 'colonia';
+                input.required = true;
+                input.placeholder = 'Escribe tu colonia';
+                coloniaSelect.replaceWith(input);
+            }
+        } catch (e) {
+            cpHint.textContent = 'Error al buscar. Escribe tu colonia manualmente.';
+            cpHint.className = 'cp-hint error';
+        }
+    });
 
     function showAlert(type, message) {
         alertEl.className = `alert ${type}`;

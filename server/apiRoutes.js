@@ -4701,6 +4701,32 @@ router.post('/snapshots/daily', async (req, res) => {
     }
 });
 
+// --- CONSULTA CÓDIGO POSTAL (SEPOMEX) ---
+router.get('/codigo-postal/:cp', async (req, res) => {
+    const { cp } = req.params;
+    if (!/^\d{5}$/.test(cp)) {
+        return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
+    }
+    try {
+        const response = await axios.get(`https://api.zippopotam.us/mx/${cp}`, { timeout: 5000 });
+        const data = response.data;
+        const colonias = (data.places || []).map(p => p['place name']);
+        const estado = data.places?.[0]?.state || '';
+        res.json({
+            success: true,
+            codigoPostal: cp,
+            estado: estado === 'Distrito Federal' ? 'Ciudad de Mexico' : estado,
+            colonias,
+        });
+    } catch (err) {
+        if (err.response?.status === 404) {
+            return res.json({ success: false, message: 'Código postal no encontrado.', colonias: [] });
+        }
+        console.warn(`[CP] Error consultando ${cp}:`, err.message);
+        res.json({ success: false, message: 'No se pudo consultar el código postal.', colonias: [] });
+    }
+});
+
 // --- DATOS PARA ENVÍO ---
 router.get('/datos-envio', async (req, res) => {
     try {
