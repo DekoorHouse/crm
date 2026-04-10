@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="robots" content="noindex, nofollow">
+    <title>Datos de Envio | Dekoor</title>
+    <link rel="icon" type="image/png" href="/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <link rel="stylesheet" href="/sitio/style.css">
+    <style>
+        .envio-page {
+            min-height: 100vh;
+            background: var(--cream);
+            padding-top: calc(var(--nav-height, 80px) + 2rem);
+            padding-bottom: 4rem;
+        }
+
+        .envio-container {
+            max-width: 560px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        .envio-card {
+            background: var(--white);
+            border-radius: var(--radius-lg, 24px);
+            padding: 2.5rem 2rem;
+            box-shadow: var(--shadow, 0 4px 24px rgba(27,77,92,0.08));
+        }
+
+        .envio-header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .envio-header img {
+            height: 48px;
+            margin-bottom: 1rem;
+        }
+
+        .envio-header h1 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            color: var(--teal, #1B4D5C);
+            margin: 0 0 0.4rem;
+        }
+
+        .envio-header p {
+            font-size: 0.9rem;
+            color: var(--text-medium, #4a6274);
+            margin: 0;
+        }
+
+        .envio-section-title {
+            font-size: 0.8rem;
+            font-weight: 700;
+            color: var(--primary, #D4722C);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin: 1.5rem 0 0.75rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .envio-section-title i {
+            font-size: 0.85rem;
+        }
+
+        .form-group {
+            margin-bottom: 1rem;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--teal, #1B4D5C);
+            margin-bottom: 0.3rem;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 0.7rem 0.9rem;
+            border: 2px solid rgba(27,77,92,0.12);
+            border-radius: 12px;
+            font-size: 0.92rem;
+            font-family: 'Outfit', sans-serif;
+            color: var(--text-dark, #1B3A4B);
+            background: #fff;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--primary, #D4722C);
+            box-shadow: 0 0 0 3px rgba(212,114,44,0.1);
+        }
+
+        .form-group input::placeholder {
+            color: #b0bec5;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.75rem;
+        }
+
+        .pedido-lookup {
+            background: var(--primary-light, #f5e0cf);
+            border-radius: 12px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .pedido-lookup label {
+            font-size: 0.82rem;
+            font-weight: 600;
+            color: var(--teal, #1B4D5C);
+            margin-bottom: 0.4rem;
+            display: block;
+        }
+
+        .pedido-lookup .lookup-row {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .pedido-lookup input {
+            flex: 1;
+            padding: 0.6rem 0.9rem;
+            border: 2px solid rgba(27,77,92,0.12);
+            border-radius: 10px;
+            font-size: 0.92rem;
+            font-family: 'Outfit', sans-serif;
+            background: #fff;
+        }
+
+        .pedido-lookup input:focus {
+            outline: none;
+            border-color: var(--primary, #D4722C);
+        }
+
+        .btn-lookup {
+            background: var(--primary, #D4722C);
+            color: #fff;
+            border: none;
+            border-radius: 10px;
+            width: 44px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.2s;
+        }
+
+        .btn-lookup:hover {
+            background: var(--primary-hover, #bf5f1e);
+        }
+
+        .pedido-lookup .hint {
+            font-size: 0.75rem;
+            color: var(--text-medium, #4a6274);
+            margin-top: 0.3rem;
+        }
+
+        .btn-submit {
+            width: 100%;
+            padding: 0.85rem;
+            background: var(--primary, #D4722C);
+            color: #fff;
+            border: none;
+            border-radius: 14px;
+            font-size: 1rem;
+            font-weight: 700;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .btn-submit:hover {
+            background: var(--primary-hover, #bf5f1e);
+        }
+
+        .btn-submit:active {
+            transform: scale(0.98);
+        }
+
+        .btn-submit:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .alert {
+            display: none;
+            padding: 0.8rem 1rem;
+            border-radius: 12px;
+            font-size: 0.88rem;
+            font-weight: 500;
+            align-items: center;
+            gap: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .alert.success {
+            background: #f0fdf4;
+            color: #166534;
+            border: 1px solid #bbf7d0;
+        }
+
+        .alert.error {
+            background: #fef2f2;
+            color: #991b1b;
+            border: 1px solid #fecaca;
+        }
+
+        /* Resultado exitoso */
+        .result-card {
+            display: none;
+            text-align: center;
+            padding: 2rem 1rem;
+        }
+
+        .result-card .check-icon {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
+            background: #f0fdf4;
+            color: #16a34a;
+            font-size: 1.8rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+        }
+
+        .result-card h2 {
+            font-size: 1.2rem;
+            color: var(--teal, #1B4D5C);
+            margin: 0 0 0.5rem;
+        }
+
+        .result-card .waybill-number {
+            display: inline-block;
+            background: var(--primary, #D4722C);
+            color: #fff;
+            padding: 0.5rem 1.2rem;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            margin: 0.75rem 0;
+        }
+
+        .result-card p {
+            font-size: 0.88rem;
+            color: var(--text-medium, #4a6274);
+            margin: 0.5rem 0;
+        }
+
+        .result-card .btn-track {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 1rem;
+            padding: 0.6rem 1.2rem;
+            background: var(--teal, #1B4D5C);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            text-decoration: none;
+            transition: background 0.2s;
+        }
+
+        .result-card .btn-track:hover {
+            background: #2a6b7e;
+        }
+
+        .result-card .btn-new {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.5rem;
+            padding: 0.5rem 1rem;
+            background: transparent;
+            color: var(--primary, #D4722C);
+            border: 2px solid var(--primary, #D4722C);
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            font-family: 'Outfit', sans-serif;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .result-card .btn-new:hover {
+            background: var(--primary-light, #f5e0cf);
+        }
+
+        .shipping-note {
+            text-align: center;
+            margin-top: 1.5rem;
+            padding-top: 1rem;
+            border-top: 1px solid rgba(27,77,92,0.08);
+        }
+
+        .shipping-note p {
+            font-size: 0.78rem;
+            color: var(--text-light, #7a9aab);
+            margin: 0;
+        }
+
+        .shipping-note i {
+            color: var(--primary, #D4722C);
+        }
+
+        @media (max-width: 600px) {
+            .envio-card {
+                padding: 1.5rem 1.25rem;
+                border-radius: 16px;
+            }
+            .envio-header h1 {
+                font-size: 1.2rem;
+            }
+            .form-row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navbar del sitio -->
+<div class="ticker-banner">
+    <div class="ticker-track">
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-gift"></i> REGALOS PERSONALIZADOS</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-shield-alt"></i> COMPRA SEGURA</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-truck"></i> ENVIO GRATIS A TODO MEXICO</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-gift"></i> REGALOS PERSONALIZADOS</span>
+        <span class="ticker-sep">&#9733;</span>
+        <span class="ticker-item"><i class="fas fa-shield-alt"></i> COMPRA SEGURA</span>
+    </div>
+</div>
+
+<nav class="navbar" id="navbar">
+    <div class="nav-container">
+        <a href="/sitio/" class="nav-logo">
+            <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="logo-full">
+        </a>
+        <div class="nav-links" id="navLinks">
+            <a href="/sitio/" class="nav-link">Inicio</a>
+            <a href="/sitio/#colecciones" class="nav-link">Colecciones</a>
+            <a href="/jt-rastreo/" class="nav-link">Rastreo</a>
+            <a href="/sitio/#contacto" class="nav-link">Contacto</a>
+        </div>
+        <div class="nav-actions">
+            <a href="/jt-rastreo/" class="nav-icon-btn"><i class="fas fa-search"></i></a>
+            <a href="/sitio/carrito/" class="nav-icon-btn cart-btn"><i class="fas fa-shopping-cart"></i><span class="cart-badge" id="cartBadge">0</span></a>
+        </div>
+        <button class="hamburger-btn" id="hamburgerBtn"><i class="fas fa-bars"></i></button>
+    </div>
+</nav>
+
+<div id="mobileMenu" class="mobile-menu hidden">
+    <div class="mobile-menu-overlay"></div>
+    <div class="mobile-menu-panel">
+        <button class="mobile-menu-close">&times;</button>
+        <a href="/sitio/" class="mobile-link"><i class="fas fa-home"></i> Inicio</a>
+        <a href="/sitio/#colecciones" class="mobile-link"><i class="fas fa-th-large"></i> Colecciones</a>
+        <a href="/jt-rastreo/" class="mobile-link"><i class="fas fa-search-location"></i> Rastreo</a>
+        <a href="/sitio/#contacto" class="mobile-link"><i class="fas fa-envelope"></i> Contacto</a>
+    </div>
+</div>
+
+<!-- Contenido -->
+<div class="envio-page">
+    <div class="envio-container">
+        <div class="envio-card">
+
+            <!-- Header -->
+            <div class="envio-header">
+                <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor">
+                <h1>Datos de envio</h1>
+                <p>Ingresa tus datos para generar tu guia de envio</p>
+            </div>
+
+            <!-- Alert -->
+            <div id="formAlert" class="alert"></div>
+
+            <!-- Formulario -->
+            <div id="formSection">
+                <!-- Buscar pedido -->
+                <div class="pedido-lookup">
+                    <label><i class="fas fa-search"></i> Numero de pedido</label>
+                    <div class="lookup-row">
+                        <input type="text" id="autofillPedido" placeholder="Ej: DH1042">
+                        <button type="button" id="btnLookup" class="btn-lookup"><i class="fas fa-arrow-right"></i></button>
+                    </div>
+                    <p class="hint">Ingresa tu numero de pedido para auto-llenar los datos</p>
+                </div>
+
+                <form id="envioForm">
+                    <!-- Pedido -->
+                    <div class="form-group">
+                        <label for="orderNumber">Numero de pedido *</label>
+                        <input type="text" id="orderNumber" required placeholder="DH1042">
+                    </div>
+
+                    <!-- Destinatario -->
+                    <div class="envio-section-title"><i class="fas fa-user"></i> Destinatario</div>
+
+                    <div class="form-group">
+                        <label for="receiverName">Nombre completo *</label>
+                        <input type="text" id="receiverName" required placeholder="Juan Perez Lopez">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="receiverPhone">Telefono (10 digitos) *</label>
+                        <input type="tel" id="receiverPhone" required placeholder="6181234567" maxlength="10" pattern="[0-9]{10}">
+                    </div>
+
+                    <!-- Direccion -->
+                    <div class="envio-section-title"><i class="fas fa-map-marker-alt"></i> Direccion de envio</div>
+
+                    <div class="form-group">
+                        <label for="street">Calle y numero *</label>
+                        <input type="text" id="street" required placeholder="Av. 20 de Noviembre #456">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="colonia">Colonia *</label>
+                        <input type="text" id="colonia" required placeholder="Centro">
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="city">Ciudad *</label>
+                            <input type="text" id="city" required placeholder="Durango">
+                        </div>
+                        <div class="form-group">
+                            <label for="state">Estado *</label>
+                            <input type="text" id="state" required placeholder="Durango">
+                        </div>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="zip">Codigo Postal *</label>
+                            <input type="text" id="zip" required placeholder="34000" maxlength="5" pattern="[0-9]{5}">
+                        </div>
+                        <div class="form-group">
+                            <label for="reference">Referencia</label>
+                            <input type="text" id="reference" placeholder="Entre calles, color de casa...">
+                        </div>
+                    </div>
+
+                    <button type="submit" id="btnSubmit" class="btn-submit">
+                        <i class="fas fa-shipping-fast"></i> Generar guia de envio
+                    </button>
+                </form>
+
+                <div class="shipping-note">
+                    <p><i class="fas fa-lock"></i> Tus datos estan protegidos y solo se usan para el envio</p>
+                </div>
+            </div>
+
+            <!-- Resultado exitoso -->
+            <div id="resultSection" class="result-card">
+                <div class="check-icon"><i class="fas fa-check"></i></div>
+                <h2>Guia generada exitosamente</h2>
+                <div class="waybill-number" id="resultWaybill"></div>
+                <p>Tu pedido <strong id="resultOrder"></strong> sera enviado pronto.</p>
+                <p>Puedes rastrear tu envio con el numero de guia.</p>
+                <a id="btnTrack" href="#" class="btn-track" target="_blank">
+                    <i class="fas fa-search-location"></i> Rastrear envio
+                </a>
+                <br>
+                <button id="btnNew" class="btn-new">
+                    <i class="fas fa-plus"></i> Registrar otro envio
+                </button>
+            </div>
+
+        </div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="footer">
+    <div class="container">
+        <div class="footer-grid">
+            <div class="footer-col">
+                <h4>Navegacion</h4>
+                <a href="/sitio/">Inicio</a>
+                <a href="/sitio/#colecciones">Colecciones</a>
+                <a href="/jt-rastreo/">Rastreo de pedidos</a>
+            </div>
+            <div class="footer-col footer-center">
+                <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor" class="footer-logo-full">
+            </div>
+            <div class="footer-col">
+                <h4>Contacto</h4>
+                <a href="https://wa.me/526181333519" target="_blank"><i class="fab fa-whatsapp"></i> WhatsApp</a>
+                <a href="https://www.instagram.com/dekoor_mx" target="_blank"><i class="fab fa-instagram"></i> @dekoor_mx</a>
+            </div>
+        </div>
+        <div class="footer-bottom">
+            <p>Contenido personalizado &copy; 2026 DEKOOR</p>
+        </div>
+    </div>
+</footer>
+
+<script src="/env-config.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    const API = window.API_BASE_URL || '';
+    const form = document.getElementById('envioForm');
+    const alertEl = document.getElementById('formAlert');
+    const btnSubmit = document.getElementById('btnSubmit');
+    const btnLookup = document.getElementById('btnLookup');
+    const autofillInput = document.getElementById('autofillPedido');
+    const formSection = document.getElementById('formSection');
+    const resultSection = document.getElementById('resultSection');
+
+    // Mobile menu
+    const hamburgerBtn = document.getElementById('hamburgerBtn');
+    const mobileMenu = document.getElementById('mobileMenu');
+    if (hamburgerBtn && mobileMenu) {
+        hamburgerBtn.addEventListener('click', () => mobileMenu.classList.toggle('hidden'));
+        mobileMenu.querySelector('.mobile-menu-overlay')?.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+        mobileMenu.querySelector('.mobile-menu-close')?.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+    }
+
+    function showAlert(type, message) {
+        alertEl.className = `alert ${type}`;
+        alertEl.innerHTML = `<i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-circle'}"></i> ${message}`;
+        alertEl.style.display = 'flex';
+        if (type === 'success') setTimeout(() => alertEl.style.display = 'none', 6000);
+    }
+
+    // Auto-fill
+    btnLookup.addEventListener('click', async () => {
+        const pedido = autofillInput.value.trim();
+        if (!pedido) return;
+
+        btnLookup.disabled = true;
+        btnLookup.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+
+        try {
+            const res = await fetch(`${API}/api/datos-envio`);
+            const data = await res.json();
+            if (data.success && data.data.length > 0) {
+                const envio = data.data.find(e => e.numeroPedido === pedido);
+                if (envio) {
+                    document.getElementById('orderNumber').value = envio.numeroPedido;
+                    document.getElementById('receiverName').value = envio.nombreCompleto || '';
+                    document.getElementById('receiverPhone').value = envio.telefono || '';
+                    document.getElementById('street').value = envio.direccion || '';
+                    document.getElementById('colonia').value = envio.colonia || '';
+                    document.getElementById('city').value = envio.ciudad || '';
+                    document.getElementById('state').value = envio.estado || '';
+                    document.getElementById('zip').value = envio.codigoPostal || '';
+                    document.getElementById('reference').value = envio.referencia || '';
+                    showAlert('success', `Datos cargados para ${pedido}`);
+                } else {
+                    showAlert('error', `No se encontraron datos para el pedido ${pedido}`);
+                }
+            }
+        } catch (e) {
+            showAlert('error', 'Error al buscar datos del pedido');
+        } finally {
+            btnLookup.disabled = false;
+            btnLookup.innerHTML = '<i class="fas fa-arrow-right"></i>';
+        }
+    });
+
+    autofillInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') { e.preventDefault(); btnLookup.click(); }
+    });
+
+    // Enviar formulario
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        alertEl.style.display = 'none';
+
+        const payload = {
+            orderNumber: document.getElementById('orderNumber').value.trim(),
+            receiverName: document.getElementById('receiverName').value.trim(),
+            receiverPhone: document.getElementById('receiverPhone').value.trim(),
+            street: document.getElementById('street').value.trim(),
+            colonia: document.getElementById('colonia').value.trim(),
+            city: document.getElementById('city').value.trim(),
+            state: document.getElementById('state').value.trim(),
+            zip: document.getElementById('zip').value.trim(),
+            reference: document.getElementById('reference').value.trim(),
+        };
+
+        if (!payload.orderNumber || !payload.receiverName || !payload.receiverPhone ||
+            !payload.street || !payload.colonia || !payload.city || !payload.state || !payload.zip) {
+            showAlert('error', 'Completa todos los campos obligatorios.');
+            return;
+        }
+        if (!/^\d{10}$/.test(payload.receiverPhone)) {
+            showAlert('error', 'El telefono debe tener 10 digitos.');
+            return;
+        }
+        if (!/^\d{5}$/.test(payload.zip)) {
+            showAlert('error', 'El codigo postal debe tener 5 digitos.');
+            return;
+        }
+
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando guia...';
+
+        try {
+            const res = await fetch(`${API}/api/jt-guias/crear`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const result = await res.json();
+
+            if (result.success) {
+                document.getElementById('resultWaybill').textContent = result.waybillNo;
+                document.getElementById('resultOrder').textContent = result.orderId;
+                document.getElementById('btnTrack').href = `/jt-rastreo/?waybill=${result.waybillNo}`;
+                formSection.style.display = 'none';
+                resultSection.style.display = 'block';
+            } else {
+                showAlert('error', result.message || 'Error al generar la guia de envio.');
+            }
+        } catch (error) {
+            showAlert('error', 'Error de conexion. Intenta de nuevo.');
+        } finally {
+            btnSubmit.disabled = false;
+            btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
+        }
+    });
+
+    // Boton nuevo envio
+    document.getElementById('btnNew').addEventListener('click', () => {
+        formSection.style.display = 'block';
+        resultSection.style.display = 'none';
+        form.reset();
+        alertEl.style.display = 'none';
+    });
+});
+</script>
+</body>
+</html>
