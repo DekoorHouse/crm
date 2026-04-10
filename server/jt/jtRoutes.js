@@ -314,22 +314,49 @@ router.post('/cliente', async (req, res) => {
             }
         } catch (e) { /* ignore */ }
 
-        // 3. Enviar WhatsApp al cliente
-        const trackUrl = `https://app.dekoormx.com/jt-rastreo/?waybill=${result.waybillNo}`;
-        const waMessage = `Hola ${nombreCompleto.split(' ')[0]}! 📦\n\n`
-            + `Tu guia de envio para el pedido *${numeroPedido}* ha sido creada.\n\n`
-            + `📋 *No. de guia:* ${result.waybillNo}\n`
-            + `🚚 *Paqueteria:* J&T Express\n\n`
-            + `Puedes rastrear tu envio aqui:\n${trackUrl}\n\n`
-            + `Gracias por tu compra! 🧡`;
-
+        // 3. Enviar WhatsApp al cliente (plantilla guia_envio_creada)
         try {
-            const { sendAdvancedWhatsAppMessage } = require('../services');
-            const waId = '52' + telefono; // Agregar código de país México
-            await sendAdvancedWhatsAppMessage(waId, { text: waMessage });
-            console.log(`[J&T] WhatsApp enviado a ${waId} para pedido ${numeroPedido}`);
+            const axios = require('axios');
+            const waId = '52' + telefono;
+            const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+            const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+
+            const templatePayload = {
+                messaging_product: 'whatsapp',
+                to: waId,
+                type: 'template',
+                template: {
+                    name: 'guia_envio_creada',
+                    language: { code: 'es_MX' },
+                    components: [
+                        {
+                            type: 'body',
+                            parameters: [
+                                { type: 'text', text: nombreCompleto.split(' ')[0] },  // {{1}} nombre
+                                { type: 'text', text: numeroPedido },                   // {{2}} pedido
+                                { type: 'text', text: result.waybillNo },               // {{3}} guia
+                            ],
+                        },
+                        {
+                            type: 'button',
+                            sub_type: 'url',
+                            index: '0',
+                            parameters: [
+                                { type: 'text', text: result.waybillNo },  // {{1}} del URL dinámico
+                            ],
+                        },
+                    ],
+                },
+            };
+
+            await axios.post(
+                `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                templatePayload,
+                { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+            );
+            console.log(`[J&T] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
         } catch (waErr) {
-            console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefono}:`, waErr.message);
+            console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);
         }
 
         res.status(201).json({
