@@ -193,6 +193,18 @@
             margin: 0 0 0.5rem;
         }
 
+        .result-card .waybill-number {
+            display: inline-block;
+            background: var(--primary, #D4722C);
+            color: #fff;
+            padding: 0.5rem 1.2rem;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            margin: 0.75rem 0;
+        }
+
         .result-card p {
             font-size: 0.88rem;
             color: var(--text-medium, #4a6274);
@@ -331,7 +343,7 @@
             <div class="envio-header">
                 <img src="/sitio/img/logo-dekoor.webp" alt="Dekoor">
                 <h1>Datos de envio</h1>
-                <p>Ingresa tus datos para que podamos enviarte tu pedido</p>
+                <p>Ingresa tus datos para generar tu guia de envio</p>
             </div>
 
             <!-- Alert -->
@@ -395,7 +407,7 @@
                     </div>
 
                     <button type="submit" id="btnSubmit" class="btn-submit">
-                        <i class="fas fa-paper-plane"></i> Enviar datos
+                        <i class="fas fa-shipping-fast"></i> Generar guia de envio
                     </button>
                 </form>
 
@@ -407,11 +419,12 @@
             <!-- Resultado exitoso -->
             <div id="resultSection" class="result-card">
                 <div class="check-icon"><i class="fas fa-check"></i></div>
-                <h2>Datos recibidos</h2>
-                <p>Tus datos de envio para el pedido <strong id="resultOrder"></strong> han sido registrados correctamente.</p>
-                <p>Te notificaremos cuando tu paquete sea enviado.</p>
-                <a href="/jt-rastreo/" class="btn-track">
-                    <i class="fas fa-search-location"></i> Rastrear un envio
+                <h2>Guia generada exitosamente</h2>
+                <div class="waybill-number" id="resultWaybill"></div>
+                <p>Tu pedido <strong id="resultOrder"></strong> sera enviado pronto.</p>
+                <p>Te enviamos los datos de rastreo por WhatsApp.</p>
+                <a id="btnTrack" href="#" class="btn-track" target="_blank">
+                    <i class="fas fa-search-location"></i> Rastrear envio
                 </a>
                 <br>
                 <button id="btnNew" class="btn-new">
@@ -474,7 +487,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (type === 'success') setTimeout(() => alertEl.style.display = 'none', 6000);
     }
 
-    // Enviar formulario — guarda en datos_envio (NO crea guia)
+    // Enviar formulario — guarda datos + crea guia + envia WhatsApp
     form.addEventListener('submit', async (e) => {
         e.preventDefault();
         alertEl.style.display = 'none';
@@ -506,10 +519,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         btnSubmit.disabled = true;
-        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+        btnSubmit.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando guia...';
 
         try {
-            const res = await fetch(`${API}/api/datos-envio`, {
+            const res = await fetch(`${API}/api/jt-guias/cliente`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
@@ -517,17 +530,19 @@ document.addEventListener('DOMContentLoaded', () => {
             const result = await res.json();
 
             if (result.success) {
-                document.getElementById('resultOrder').textContent = payload.numeroPedido;
+                document.getElementById('resultWaybill').textContent = result.waybillNo;
+                document.getElementById('resultOrder').textContent = result.orderId;
+                document.getElementById('btnTrack').href = `/jt-rastreo/?waybill=${result.waybillNo}`;
                 formSection.style.display = 'none';
                 resultSection.style.display = 'block';
             } else {
-                showAlert('error', result.message || 'Error al guardar los datos.');
+                showAlert('error', result.message || 'Error al generar la guia.');
             }
         } catch (error) {
             showAlert('error', 'Error de conexion. Intenta de nuevo.');
         } finally {
             btnSubmit.disabled = false;
-            btnSubmit.innerHTML = '<i class="fas fa-paper-plane"></i> Enviar datos';
+            btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
         }
     });
 

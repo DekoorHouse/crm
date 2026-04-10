@@ -236,4 +236,111 @@ router.post('/desde-pedido/:orderNumber', async (req, res) => {
     }
 });
 
+// POST /api/jt-guias/cliente — Flujo completo: guardar datos + crear guía + WhatsApp
+router.post('/cliente', async (req, res) => {
+    try {
+        const {
+            numeroPedido, nombreCompleto, telefono,
+            direccion, colonia, ciudad, estado, codigoPostal, referencia
+        } = req.body;
+
+        // Validaciones
+        if (!numeroPedido || !nombreCompleto || !telefono || !direccion || !colonia || !ciudad || !estado || !codigoPostal) {
+            return res.status(400).json({ success: false, message: 'Faltan campos obligatorios.' });
+        }
+        if (!/^\d{10}$/.test(telefono)) {
+            return res.status(400).json({ success: false, message: 'El telefono debe tener 10 digitos.' });
+        }
+        if (!/^\d{5}$/.test(codigoPostal)) {
+            return res.status(400).json({ success: false, message: 'El codigo postal debe tener 5 digitos.' });
+        }
+
+        // 1. Guardar datos de envío
+        await db.collection('datos_envio').add({
+            numeroPedido,
+            nombreCompleto,
+            telefono,
+            direccion,
+            colonia,
+            ciudad,
+            estado,
+            codigoPostal,
+            referencia: referencia || '',
+            createdAt: new Date(),
+            source: 'cliente',
+        });
+
+        // 2. Crear guía J&T
+        const result = await jtService.createOrder({
+            orderNumber: numeroPedido,
+            receiverName: nombreCompleto,
+            receiverPhone: telefono,
+            street: direccion,
+            colonia,
+            city: ciudad,
+            state: estado,
+            zip: codigoPostal,
+            reference: referencia || '',
+        });
+
+        if (!result.success) {
+            return res.status(400).json({
+                success: false,
+                message: result.message || 'Error al crear la guia en J&T.',
+                datosGuardados: true,
+            });
+        }
+
+        // Guardar guía en Firestore
+        await db.collection('guias_jt').add({
+            orderNumber: numeroPedido,
+            waybillNo: result.waybillNo,
+            receiverName: nombreCompleto,
+            receiverPhone: telefono,
+            address: `${direccion}, ${colonia}, ${ciudad}, ${estado} C.P. ${codigoPostal}`,
+            reference: referencia || '',
+            status: 'created',
+            createdAt: new Date(),
+        });
+
+        // Actualizar pedido si existe
+        try {
+            const pedidoRef = db.collection('pedidos').doc(numeroPedido);
+            const pedidoDoc = await pedidoRef.get();
+            if (pedidoDoc.exists) {
+                await pedidoRef.update({ guiaJT: result.waybillNo, guiaCreatedAt: new Date() });
+            }
+        } catch (e) { /* ignore */ }
+
+        // 3. Enviar WhatsApp al cliente
+        const trackUrl = `https://app.dekoormx.com/jt-rastreo/?waybill=${result.waybillNo}`;
+        const waMessage = `Hola ${nombreCompleto.split(' ')[0]}! 📦\n\n`
+            + `Tu guia de envio para el pedido *${numeroPedido}* ha sido creada.\n\n`
+            + `📋 *No. de guia:* ${result.waybillNo}\n`
+            + `🚚 *Paqueteria:* J&T Express\n\n`
+            + `Puedes rastrear tu envio aqui:\n${trackUrl}\n\n`
+            + `Gracias por tu compra! 🧡`;
+
+        try {
+            const { sendAdvancedWhatsAppMessage } = require('../services');
+            const waId = '52' + telefono; // Agregar código de país México
+            await sendAdvancedWhatsAppMessage(waId, { text: waMessage });
+            console.log(`[J&T] WhatsApp enviado a ${waId} para pedido ${numeroPedido}`);
+        } catch (waErr) {
+            console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefono}:`, waErr.message);
+        }
+
+        res.status(201).json({
+            success: true,
+            waybillNo: result.waybillNo,
+            orderId: numeroPedido,
+            message: 'Guia creada y datos registrados exitosamente.',
+        });
+
+    } catch (error) {
+        console.error('[J&T] Error en flujo cliente:', error.message);
+        res.status(500).json({ success: false, message: 'Error al procesar tu solicitud.', error: error.message });
+    }
+});
+
 module.exports = router;
