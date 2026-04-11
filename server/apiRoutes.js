@@ -4920,6 +4920,48 @@ router.post('/datos-envio', async (req, res) => {
 
                         console.log(`[DATOS-ENVIO] Guía J&T auto-creada: ${jtResult.waybillNo} para ${numeroPedido}`);
                         guiaResult = { success: true, waybillNo: jtResult.waybillNo };
+
+                        // Enviar WhatsApp al cliente (plantilla guia_envio_creada)
+                        try {
+                            const waId = '52' + telefono;
+                            const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+                            const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+                            const templatePayload = {
+                                messaging_product: 'whatsapp',
+                                to: waId,
+                                type: 'template',
+                                template: {
+                                    name: 'guia_envio_creada',
+                                    language: { code: 'es_MX' },
+                                    components: [
+                                        {
+                                            type: 'body',
+                                            parameters: [
+                                                { type: 'text', text: nombreCompleto.split(' ')[0] },
+                                                { type: 'text', text: numeroPedido },
+                                                { type: 'text', text: jtResult.waybillNo },
+                                            ],
+                                        },
+                                        {
+                                            type: 'button',
+                                            sub_type: 'url',
+                                            index: '0',
+                                            parameters: [
+                                                { type: 'text', text: jtResult.waybillNo },
+                                            ],
+                                        },
+                                    ],
+                                },
+                            };
+                            await axios.post(
+                                `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                                templatePayload,
+                                { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+                            );
+                            console.log(`[DATOS-ENVIO] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
+                        } catch (waErr) {
+                            console.warn(`[DATOS-ENVIO] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);
+                        }
                     } else {
                         console.warn(`[DATOS-ENVIO] No se pudo auto-crear guía J&T para ${numeroPedido}: ${jtResult.message}`);
                         guiaResult = { success: false, message: jtResult.message };
