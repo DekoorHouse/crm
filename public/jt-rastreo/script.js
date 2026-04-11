@@ -17,9 +17,15 @@ document.addEventListener('DOMContentLoaded', () => {
         ]
     };
 
+    const sanitizeWaybill = (raw) => {
+        if (!raw) return '';
+        return String(raw).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    };
+
     const trackPackage = async () => {
-        const waybill = waybillInput.value.trim().toUpperCase();
-        const phone = '7167'; 
+        const waybill = sanitizeWaybill(waybillInput.value);
+        waybillInput.value = waybill;
+        const phone = '7167';
         
         if (!waybill) {
             alert('Por favor, ingresa un número de guía válido.');
@@ -261,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auto-rastrear si viene ?waybill= en la URL
     const urlParams = new URLSearchParams(window.location.search);
-    const waybillParam = urlParams.get('waybill');
+    const waybillParam = sanitizeWaybill(urlParams.get('waybill'));
     if (waybillParam) {
         waybillInput.value = waybillParam;
         trackPackage();
