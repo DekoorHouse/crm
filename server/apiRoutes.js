@@ -4755,6 +4755,56 @@ router.get('/snapshots/daily', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/jt/debug-chat-messages ---
+// Diagnostico: lista los ultimos mensajes de un contacto (por telefono).
+router.get('/jt/debug-chat-messages', async (req, res) => {
+    try {
+        const { phone } = req.query;
+        if (!phone) return res.status(400).json({ success: false, message: 'Se requiere ?phone=' });
+        const digits = phone.toString().replace(/\D/g, '');
+        const last10 = digits.slice(-10);
+        const ids = ['521' + last10, '52' + last10, digits];
+        const seen = new Set();
+        const out = {};
+        for (const id of ids) {
+            if (!id || seen.has(id)) continue;
+            seen.add(id);
+            try {
+                const contactDoc = await db.collection('contacts_whatsapp').doc(id).get();
+                if (!contactDoc.exists) {
+                    out[id] = { exists: false };
+                    continue;
+                }
+                const data = contactDoc.data() || {};
+                const msgsSnap = await db.collection('contacts_whatsapp').doc(id)
+                    .collection('messages')
+                    .orderBy('timestamp', 'desc')
+                    .limit(5)
+                    .get();
+                out[id] = {
+                    exists: true,
+                    lastMessage: (data.lastMessage || '').substring(0, 200),
+                    lastMessageTimestamp: data.lastMessageTimestamp?.toDate?.()?.toISOString() || null,
+                    messages: msgsSnap.docs.map(d => {
+                        const m = d.data();
+                        return {
+                            docId: d.id,
+                            from: m.from,
+                            text: (m.text || '').substring(0, 200),
+                            timestamp: m.timestamp?.toDate?.()?.toISOString() || null,
+                        };
+                    }),
+                };
+            } catch (err) {
+                out[id] = { error: err.message };
+            }
+        }
+        res.json({ success: true, result: out });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // --- Endpoint POST /api/jt/resend-guia-whatsapp ---
 // Reenvia la plantilla guia_envio_creada para un arreglo de orderNumbers.
 router.post('/jt/resend-guia-whatsapp', async (req, res) => {
