@@ -113,7 +113,11 @@ async function registerAttendance(type) {
     const employee = employeesCache.find(e =>
         e.name.toLowerCase() === inputVal.toLowerCase()
     );
-    const displayName = employee ? employee.name : inputVal;
+    if (!employee) {
+        showNotification("Nombre no reconocido. Verifica que esté bien escrito.", "danger");
+        return;
+    }
+    const displayName = employee.name;
 
     if (!isAuthorized && displayName.toLowerCase() !== 'rosario') {
         showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
