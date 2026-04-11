@@ -12,7 +12,7 @@ const firebaseAuth = firebase.auth();
 const db = firebase.firestore();
 const functions = firebase.functions();
 
-const ADMIN_PIN = "1234";
+const ADMIN_PIN = "0809";
 
 let logsCache = [];
 let employeesCache = [];
