@@ -177,6 +177,26 @@ async function handleSendViewContent() {
     }
 }
 
+/**
+ * Envía la respuesta rápida "Pedir Datos de Envío" al cliente (J&T).
+ */
+async function handlePedirDatosEnvio() {
+    if (!state.selectedContactId) return;
+    if (!confirm("¿Enviar al cliente la solicitud de datos de envío para su último pedido?")) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/jt-guias/pedir-datos/${state.selectedContactId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
+        showError(`Solicitud enviada para pedido ${result.orderNumber || ''}`.trim(), 'success');
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
 // --- START: New Order Logic ---
 /**
  * Maneja el envío del formulario para crear un nuevo pedido.
@@ -1274,6 +1294,7 @@ window.handleGenerateReply = handleGenerateReply;
 window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;
+window.handlePedirDatosEnvio = handlePedirDatosEnvio;
 window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;
 window.handleSendCampaign = handleSendCampaign;
