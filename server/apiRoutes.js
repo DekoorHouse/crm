@@ -4600,13 +4600,32 @@ router.get('/jt/track', async (req, res) => {
     }
 
     try {
-        console.log(`[J&T TRACK] Consultando guía: ${waybill}, Verificación: ${phoneVerify || 'No proporcionada'}`);
-        
+        let effectivePhoneVerify = (phoneVerify || '').toString().replace(/\D/g, '').slice(-4);
+
+        if (!effectivePhoneVerify || effectivePhoneVerify.length < 4) {
+            try {
+                const guiaSnap = await db.collection('guias_jt')
+                    .where('waybillNo', '==', waybill)
+                    .limit(1)
+                    .get();
+                if (!guiaSnap.empty) {
+                    const rawPhone = (guiaSnap.docs[0].data().receiverPhone || '').toString().replace(/\D/g, '');
+                    if (rawPhone.length >= 4) {
+                        effectivePhoneVerify = rawPhone.slice(-4);
+                    }
+                }
+            } catch (lookupErr) {
+                console.warn('[J&T TRACK] No se pudo buscar phoneVerify en Firestore:', lookupErr.message);
+            }
+        }
+
+        console.log(`[J&T TRACK] Consultando guía: ${waybill}, Verificación: ${effectivePhoneVerify || 'No proporcionada'}`);
+
         const response = await axios.get('https://official.jtjms-mx.com/official/logisticsTracking/v3/getDetailByWaybillNo', {
             params: {
                 waybillNo: waybill,
-                langType: 'es', 
-                phoneVerify: phoneVerify || ''
+                langType: 'es',
+                phoneVerify: effectivePhoneVerify
             },
             headers: {
                 'Referer': 'https://www.jtexpress.mx/',
