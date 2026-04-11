@@ -268,20 +268,25 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
         }
 
         // Buscar el pedido y su teléfono
+        // Los pedidos tienen consecutiveOrderNumber como número (ej: 10952)
         let telefono = null;
-        const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
-        if (pedidoDoc.exists) {
-            telefono = pedidoDoc.data().telefono || null;
-        }
+        const orderNumInt = parseInt(orderNumber.replace(/^DH/i, ''), 10);
 
-        if (!telefono) {
-            // Intentar buscar por consecutiveOrderNumber u otros campos
+        if (!isNaN(orderNumInt)) {
             const byField = await db.collection('pedidos')
-                .where('consecutiveOrderNumber', '==', orderNumber)
+                .where('consecutiveOrderNumber', '==', orderNumInt)
                 .limit(1)
                 .get();
             if (!byField.empty) {
                 telefono = byField.docs[0].data().telefono || null;
+            }
+        }
+
+        // Fallback: buscar por doc ID
+        if (!telefono) {
+            const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
+            if (pedidoDoc.exists) {
+                telefono = pedidoDoc.data().telefono || null;
             }
         }
 
