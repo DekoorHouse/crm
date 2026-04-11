@@ -786,6 +786,13 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
     }
 
+    // Auto-llenar el número de pedido desde la URL si existe
+    const urlMatch = window.location.pathname.match(/\/datos-envio\/(DH\d+)/i);
+    if (urlMatch) {
+        orderInput.value = urlMatch[1].toUpperCase();
+        setTimeout(() => verificarPedido(orderInput.value), 300);
+    }
+
     // Autouppercase del prefijo DH
     orderInput.addEventListener('input', () => {
         const val = orderInput.value.trim();

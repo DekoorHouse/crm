@@ -236,6 +236,110 @@ router.post('/desde-pedido/:orderNumber', async (req, res) => {
     }
 });
 
+// POST /api/jt-guias/pedir-datos/:contactId — Envía respuesta rápida "Datos J&T" al cliente
+router.post('/pedir-datos/:contactId', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+        const { shortcut = 'datos' } = req.body || {};
+
+        // 1. Buscar el último pedido del contacto
+        const ordersSnap = await db.collection('pedidos')
+            .where('telefono', '==', contactId)
+            .get();
+
+        if (ordersSnap.empty) {
+            return res.status(404).json({
+                success: false,
+                message: 'Este contacto no tiene pedidos registrados.',
+            });
+        }
+
+        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(o => o.consecutiveOrderNumber)
+            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+
+        if (orders.length === 0) {
+            return res.status(404).json({
+                success: false,
+                message: 'Este contacto no tiene pedidos con número.',
+            });
+        }
+
+        const lastOrder = orders[0];
+        const orderNumber = `DH${lastOrder.consecutiveOrderNumber}`;
+
+        // 2. Buscar la respuesta rápida (primero por shortcut, luego por coincidencia parcial)
+        let qrSnap = await db.collection('quick_replies')
+            .where('shortcut', '==', shortcut)
+            .limit(1)
+            .get();
+
+        if (qrSnap.empty) {
+            // Buscar cualquier shortcut que contenga "datos"
+            const allQrs = await db.collection('quick_replies').get();
+            const found = allQrs.docs.find(d => {
+                const sc = (d.data().shortcut || '').toLowerCase();
+                return sc.includes('datos');
+            });
+            if (!found) {
+                return res.status(404).json({
+                    success: false,
+                    message: 'No se encontró la respuesta rápida "Datos J&T". Créala primero.',
+                });
+            }
+            qrSnap = { docs: [found], empty: false };
+        }
+
+        const qr = qrSnap.docs[0].data();
+
+        // 3. Reemplazar ** con el número de pedido en el mensaje
+        let messageText = qr.message || '';
+        messageText = messageText.replace(/\*\*/g, orderNumber);
+
+        // 4. Enviar el mensaje usando sendAdvancedWhatsAppMessage
+        const { sendAdvancedWhatsAppMessage } = require('../services');
+        const sentData = await sendAdvancedWhatsAppMessage(contactId, {
+            text: messageText,
+            fileUrl: qr.fileUrl || null,
+            fileType: qr.fileType || null,
+        });
+
+        // 5. Guardar en Firestore
+        const admin = require('firebase-admin');
+        const messageToSave = {
+            from: process.env.PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sentData?.id || null,
+            text: messageText,
+        };
+        if (qr.fileUrl) messageToSave.fileUrl = qr.fileUrl;
+        if (qr.fileType) messageToSave.fileType = qr.fileType;
+
+        await db.collection('contacts_whatsapp').doc(contactId)
+            .collection('messages').add(messageToSave);
+
+        await db.collection('contacts_whatsapp').doc(contactId).update({
+            lastMessage: messageText.substring(0, 100),
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            unreadCount: 0,
+        });
+
+        res.json({
+            success: true,
+            orderNumber,
+            message: 'Solicitud de datos enviada correctamente.',
+        });
+    } catch (error) {
+        console.error('[J&T] Error en pedir-datos:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error al enviar la solicitud de datos.',
+            error: error.message,
+        });
+    }
+});
+
 // GET /api/jt-guias/verificar-pedido/:orderNumber — Verifica pedido y devuelve teléfono
 router.get('/verificar-pedido/:orderNumber', async (req, res) => {
     try {

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type { Contact } from "@/lib/api/contacts";
-import { markAsPurchase, fetchContactOrders } from "@/lib/api/contacts";
+import { markAsPurchase, fetchContactOrders, pedirDatosEnvio } from "@/lib/api/contacts";
 import StatusPicker from "@/components/pedidos/StatusPicker";
 import { db } from "@/lib/firebase/config";
 import { collection, query, orderBy, onSnapshot, addDoc, deleteDoc, doc, updateDoc, serverTimestamp } from "firebase/firestore";
@@ -67,6 +67,15 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
       await markAsPurchase(contact.id, parseFloat(value));
       toast.success("Compra registrada y evento enviado a Meta");
     } catch (err) { toast.error(err instanceof Error ? err.message : "Error"); }
+  }
+
+  async function handlePedirDatos() {
+    const promise = pedirDatosEnvio(contact.id);
+    toast.promise(promise, {
+      loading: "Enviando solicitud de datos...",
+      success: (data) => `Solicitud enviada para pedido ${data.orderNumber}`,
+      error: (err) => err instanceof Error ? err.message : "Error",
+    });
   }
 
   return (
@@ -197,6 +206,12 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:opacity-90 transition-all">
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>shopping_cart</span>
           Registrar Compra (Meta)
+        </button>
+        <button onClick={handlePedirDatos}
+          disabled={orders.length === 0}
+          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-secondary-container text-on-secondary-container hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+          <span className="material-symbols-outlined" style={{ fontSize: 16 }}>local_shipping</span>
+          Pedir Datos de Envío
         </button>
         {onNewOrder && (
           <button onClick={onNewOrder}

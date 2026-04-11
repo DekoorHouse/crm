@@ -204,6 +204,11 @@ app.get('/sitio/*', (req, res) => {
     res.status(404).sendFile(path.join(__dirname, '..', 'public', '404.html'));
 });
 
+// --- Rutas dinámicas de /datos-envio/:pedido ---
+app.get('/datos-envio/:pedido', (req, res) => {
+    res.sendFile(path.join(__dirname, '..', 'public', 'datos-envio', 'index.html'));
+});
+
 // Esta ruta debe ir al final para no interferir con las rutas de la API y el webhook
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
