@@ -236,6 +236,81 @@ router.post('/desde-pedido/:orderNumber', async (req, res) => {
     }
 });
 
+// GET /api/jt-guias/verificar-pedido/:orderNumber — Verifica pedido y devuelve teléfono
+router.get('/verificar-pedido/:orderNumber', async (req, res) => {
+    try {
+        const { orderNumber } = req.params;
+
+        // Validar formato DH***
+        if (!/^DH\d+$/i.test(orderNumber)) {
+            return res.status(400).json({
+                success: false,
+                code: 'FORMATO_INVALIDO',
+                message: 'El número de pedido debe comenzar con DH seguido de números (ej: DH1042).',
+            });
+        }
+
+        // Verificar si ya existe guía para este pedido
+        const guiaSnap = await db.collection('guias_jt')
+            .where('orderNumber', '==', orderNumber)
+            .where('status', '!=', 'cancelled')
+            .limit(1)
+            .get();
+
+        if (!guiaSnap.empty) {
+            const existing = guiaSnap.docs[0].data();
+            return res.status(409).json({
+                success: false,
+                code: 'GUIA_EXISTENTE',
+                message: `Ya existe una guía de envío para el pedido ${orderNumber}. Si necesitas ayuda, contactanos por WhatsApp.`,
+                waybillNo: existing.waybillNo,
+            });
+        }
+
+        // Buscar el pedido y su teléfono
+        let telefono = null;
+        const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
+        if (pedidoDoc.exists) {
+            telefono = pedidoDoc.data().telefono || null;
+        }
+
+        if (!telefono) {
+            // Intentar buscar por consecutiveOrderNumber u otros campos
+            const byField = await db.collection('pedidos')
+                .where('consecutiveOrderNumber', '==', orderNumber)
+                .limit(1)
+                .get();
+            if (!byField.empty) {
+                telefono = byField.docs[0].data().telefono || null;
+            }
+        }
+
+        if (!telefono) {
+            return res.status(404).json({
+                success: false,
+                code: 'PEDIDO_NO_ENCONTRADO',
+                message: `No encontramos el pedido ${orderNumber}. Verifica que sea correcto o contactanos por WhatsApp.`,
+            });
+        }
+
+        // Enmascarar el teléfono para confirmación (mostrar solo últimos 4 dígitos)
+        const telefonoLimpio = String(telefono).replace(/\D/g, '').slice(-10);
+        const telefonoMasked = telefonoLimpio.length >= 4
+            ? `******${telefonoLimpio.slice(-4)}`
+            : '****';
+
+        res.json({
+            success: true,
+            orderNumber,
+            telefonoMasked,
+            telefonoCompleto: telefonoLimpio,
+        });
+    } catch (error) {
+        console.error('[J&T] Error verificando pedido:', error.message);
+        res.status(500).json({ success: false, message: 'Error al verificar el pedido.', error: error.message });
+    }
+});
+
 // POST /api/jt-guias/cliente — Flujo completo: guardar datos + crear guía + WhatsApp
 router.post('/cliente', async (req, res) => {
     try {
@@ -253,6 +328,30 @@ router.post('/cliente', async (req, res) => {
         }
         if (!/^\d{5}$/.test(codigoPostal)) {
             return res.status(400).json({ success: false, message: 'El codigo postal debe tener 5 digitos.' });
+        }
+
+        // Validar formato del número de pedido (DH seguido de números)
+        if (!/^DH\d+$/i.test(numeroPedido)) {
+            return res.status(400).json({
+                success: false,
+                message: 'El número de pedido debe comenzar con DH seguido de números (ej: DH1042).',
+            });
+        }
+
+        // Validar que no exista ya una guía activa para este pedido
+        const existingSnap = await db.collection('guias_jt')
+            .where('orderNumber', '==', numeroPedido)
+            .where('status', '!=', 'cancelled')
+            .limit(1)
+            .get();
+
+        if (!existingSnap.empty) {
+            const existing = existingSnap.docs[0].data();
+            return res.status(409).json({
+                success: false,
+                message: `Ya existe una guía de envío para el pedido ${numeroPedido}. Si necesitas ayuda, contactanos por WhatsApp.`,
+                waybillNo: existing.waybillNo,
+            });
         }
 
         // 1. Guardar datos de envío

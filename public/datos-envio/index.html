@@ -440,6 +440,61 @@
             color: var(--primary, #D4722C);
         }
 
+        .pedido-status {
+            font-size: 0.78rem;
+            margin-top: 0.3rem;
+            min-height: 1rem;
+        }
+        .pedido-status.loading { color: var(--primary, #D4722C); }
+        .pedido-status.success { color: #166534; }
+        .pedido-status.error { color: #991b1b; }
+
+        .tel-confirmacion {
+            background: #f0fdf4;
+            border: 2px solid #bbf7d0;
+            border-radius: 12px;
+            padding: 0.9rem;
+            margin-top: 0.75rem;
+            display: none;
+        }
+        .tel-confirmacion.show { display: block; }
+        .tel-confirmacion p {
+            margin: 0 0 0.6rem;
+            font-size: 0.88rem;
+            color: #166534;
+            font-weight: 600;
+        }
+        .tel-confirmacion .tel-masked {
+            display: inline-block;
+            background: #fff;
+            padding: 0.2rem 0.6rem;
+            border-radius: 6px;
+            font-weight: 700;
+            color: var(--teal, #1B4D5C);
+            font-family: monospace;
+            letter-spacing: 0.05em;
+        }
+        .tel-confirmacion .btns {
+            display: flex;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+        .tel-confirmacion button {
+            flex: 1;
+            padding: 0.5rem;
+            border-radius: 8px;
+            border: 2px solid transparent;
+            font-family: 'Outfit', sans-serif;
+            font-weight: 600;
+            font-size: 0.82rem;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+        .btn-tel-yes { background: #16a34a; color: #fff; }
+        .btn-tel-yes:hover { background: #15803d; }
+        .btn-tel-no { background: #fff; color: #991b1b; border-color: #fecaca; }
+        .btn-tel-no:hover { background: #fef2f2; }
+
         @media (max-width: 600px) {
             .envio-card {
                 padding: 1.5rem 1.25rem;
@@ -524,7 +579,16 @@
                     <!-- Pedido -->
                     <div class="form-group">
                         <label for="orderNumber">Numero de pedido *</label>
-                        <input type="text" id="orderNumber" required placeholder="DH1042">
+                        <input type="text" id="orderNumber" required placeholder="DH1042" pattern="DH\d+" autocomplete="off">
+                        <p id="pedidoStatus" class="pedido-status"></p>
+                        <div id="telConfirmacion" class="tel-confirmacion">
+                            <p>Tu pedido esta registrado con el numero: <span id="telMasked" class="tel-masked"></span></p>
+                            <p style="font-weight:400;">Es este el numero con el que hiciste tu compra?</p>
+                            <div class="btns">
+                                <button type="button" id="btnTelSi" class="btn-tel-yes">Si, es correcto</button>
+                                <button type="button" id="btnTelNo" class="btn-tel-no">No, quiero otro numero</button>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Destinatario -->
@@ -702,6 +766,86 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnSubmit = document.getElementById('btnSubmit');
     const formSection = document.getElementById('formSection');
     const resultSection = document.getElementById('resultSection');
+
+    // Verificación de pedido
+    const orderInput = document.getElementById('orderNumber');
+    const pedidoStatus = document.getElementById('pedidoStatus');
+    const telConfirmacion = document.getElementById('telConfirmacion');
+    const telMasked = document.getElementById('telMasked');
+    const phoneInput = document.getElementById('receiverPhone');
+    let pedidoVerificado = false;
+    let telefonoSugerido = '';
+    let verifyTimer = null;
+
+    // Autouppercase del prefijo DH
+    orderInput.addEventListener('input', () => {
+        const val = orderInput.value.trim();
+        orderInput.value = val.toUpperCase();
+        pedidoVerificado = false;
+        telConfirmacion.classList.remove('show');
+
+        clearTimeout(verifyTimer);
+        pedidoStatus.textContent = '';
+        pedidoStatus.className = 'pedido-status';
+
+        if (!val) return;
+
+        if (!/^DH\d+$/i.test(val)) {
+            pedidoStatus.textContent = 'El numero de pedido debe comenzar con DH seguido de numeros (ej: DH1042)';
+            pedidoStatus.className = 'pedido-status error';
+            return;
+        }
+
+        // Debounce: verificar después de que el usuario deje de escribir
+        verifyTimer = setTimeout(() => verificarPedido(val.toUpperCase()), 600);
+    });
+
+    async function verificarPedido(numeroPedido) {
+        pedidoStatus.textContent = 'Verificando pedido...';
+        pedidoStatus.className = 'pedido-status loading';
+        telConfirmacion.classList.remove('show');
+
+        try {
+            const res = await fetch(`${API}/api/jt-guias/verificar-pedido/${encodeURIComponent(numeroPedido)}`);
+            const data = await res.json();
+
+            if (data.success) {
+                pedidoVerificado = true;
+                telefonoSugerido = data.telefonoCompleto || '';
+                pedidoStatus.textContent = 'Pedido encontrado';
+                pedidoStatus.className = 'pedido-status success';
+                telMasked.textContent = data.telefonoMasked;
+                telConfirmacion.classList.add('show');
+            } else if (data.code === 'GUIA_EXISTENTE') {
+                pedidoStatus.textContent = data.message;
+                pedidoStatus.className = 'pedido-status error';
+            } else if (data.code === 'PEDIDO_NO_ENCONTRADO') {
+                pedidoStatus.textContent = data.message;
+                pedidoStatus.className = 'pedido-status error';
+            } else {
+                pedidoStatus.textContent = data.message || 'Error al verificar el pedido';
+                pedidoStatus.className = 'pedido-status error';
+            }
+        } catch (e) {
+            pedidoStatus.textContent = 'Error al verificar el pedido. Intenta de nuevo.';
+            pedidoStatus.className = 'pedido-status error';
+        }
+    }
+
+    // Confirmación de teléfono
+    document.getElementById('btnTelSi').addEventListener('click', () => {
+        if (telefonoSugerido) phoneInput.value = telefonoSugerido;
+        telConfirmacion.classList.remove('show');
+        pedidoStatus.textContent = 'Listo! Completa los demas datos';
+        pedidoStatus.className = 'pedido-status success';
+    });
+
+    document.getElementById('btnTelNo').addEventListener('click', () => {
+        telConfirmacion.classList.remove('show');
+        phoneInput.focus();
+        pedidoStatus.textContent = 'Ingresa el numero con el que quieres recibir notificaciones';
+        pedidoStatus.className = 'pedido-status';
+    });
 
     // Mobile menu
     const hamburgerBtn = document.getElementById('hamburgerBtn');
@@ -929,6 +1073,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!payload.numeroPedido || !payload.nombreCompleto || !payload.telefono ||
             !payload.direccion || !payload.colonia || !payload.ciudad || !payload.estado || !payload.codigoPostal) {
             showAlert('error', 'Completa todos los campos obligatorios.');
+            return;
+        }
+        if (!/^DH\d+$/i.test(payload.numeroPedido)) {
+            showAlert('error', 'El numero de pedido debe comenzar con DH seguido de numeros.');
+            return;
+        }
+        if (!pedidoVerificado) {
+            showAlert('error', 'Debes verificar tu numero de pedido primero.');
             return;
         }
         if (!/^\d{10}$/.test(payload.telefono)) {
