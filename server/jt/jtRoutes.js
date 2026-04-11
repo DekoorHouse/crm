@@ -634,7 +634,7 @@ router.post('/cliente', async (req, res) => {
                 const digits = waId.replace(/\D/g, '');
                 const last10 = digits.slice(-10);
                 const candidates = ['521' + last10, '52' + last10, digits];
-                let resolvedId = '52' + last10;
+                let resolvedId = '521' + last10;
                 const seen = new Set();
                 for (const c of candidates) {
                     if (!c || seen.has(c)) continue;

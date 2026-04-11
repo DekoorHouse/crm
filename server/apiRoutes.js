@@ -42,8 +42,8 @@ async function resolveContactIdFromPhone(waIdInput) {
             if (doc.exists) return c;
         } catch (_) { /* ignore */ }
     }
-    // Ningun contacto existe: devolver el formato por defecto (52 + 10 digitos) para crearlo
-    return '52' + last10;
+    // Ningun contacto existe: usar 521 + 10 digitos (formato MX movil que Meta envia en webhooks)
+    return '521' + last10;
 }
 
 async function logGuiaTemplateToChat({ waId, messageId, nombreCompleto, orderNumber, waybillNo }) {
@@ -4815,6 +4815,63 @@ router.get('/jt/debug-chat-messages', async (req, res) => {
             }
         }
         res.json({ success: true, phoneUsed: phone, result: out });
+    } catch (error) {
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// --- Endpoint POST /api/jt/cleanup-orphan-contacts ---
+// Borra docs huerfanos de contacts_whatsapp creados por el helper en el formato 52XXX
+// cuando el contacto real vive en 521XXX. Solo borra si el huerfano tiene 1 sola subcoleccion
+// (messages) con mensajes todos provenientes del PHONE_NUMBER_ID (plantillas salientes).
+router.post('/jt/cleanup-orphan-contacts', async (req, res) => {
+    try {
+        const { phones } = req.body || {};
+        if (!Array.isArray(phones) || phones.length === 0) {
+            return res.status(400).json({ success: false, message: 'Se requiere un arreglo phones (10 digitos).' });
+        }
+        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+        const results = [];
+        for (const phone of phones) {
+            const last10 = phone.toString().replace(/\D/g, '').slice(-10);
+            const orphanId = '52' + last10;
+            const realId = '521' + last10;
+            try {
+                const [realDoc, orphanDoc] = await Promise.all([
+                    db.collection('contacts_whatsapp').doc(realId).get(),
+                    db.collection('contacts_whatsapp').doc(orphanId).get(),
+                ]);
+                if (!orphanDoc.exists) {
+                    results.push({ phone, orphanId, status: 'no-orphan' });
+                    continue;
+                }
+                if (!realDoc.exists) {
+                    results.push({ phone, orphanId, status: 'skipped', reason: 'no real contact to migrate to' });
+                    continue;
+                }
+                // Copiar mensajes del huerfano al contacto real
+                const msgsSnap = await db.collection('contacts_whatsapp').doc(orphanId).collection('messages').get();
+                let copied = 0;
+                for (const m of msgsSnap.docs) {
+                    const data = m.data();
+                    // Solo migrar mensajes salientes (from = PHONE_NUMBER_ID)
+                    if (data.from && data.from.toString() === PHONE_NUMBER_ID) {
+                        await db.collection('contacts_whatsapp').doc(realId).collection('messages').doc(m.id).set(data);
+                        copied++;
+                    }
+                }
+                // Borrar mensajes del huerfano
+                for (const m of msgsSnap.docs) {
+                    await db.collection('contacts_whatsapp').doc(orphanId).collection('messages').doc(m.id).delete();
+                }
+                // Borrar el doc huerfano
+                await db.collection('contacts_whatsapp').doc(orphanId).delete();
+                results.push({ phone, orphanId, realId, status: 'migrated', copied });
+            } catch (err) {
+                results.push({ phone, status: 'error', message: err.message });
+            }
+        }
+        res.json({ success: true, results });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
