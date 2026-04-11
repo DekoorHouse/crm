@@ -557,11 +557,41 @@ router.post('/cliente', async (req, res) => {
                 },
             };
 
-            await axios.post(
+            const waResp = await axios.post(
                 `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
                 templatePayload,
                 { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
             );
+            const sentMessageId = waResp.data?.messages?.[0]?.id;
+
+            // Registrar envio en el historial del chat del CRM
+            try {
+                const admin = require('firebase-admin');
+                const firstName = (nombreCompleto || 'Cliente').split(' ')[0];
+                const previewText =
+                    `Hola ${firstName}! 📦\n\n` +
+                    `Tu guía de envío para el pedido ${numeroPedido} ha sido creada.\n\n` +
+                    `📋 No. de guía: ${result.waybillNo}\n` +
+                    `🚚 Paquetería: J&T Express\n\n` +
+                    `Puedes rastrear tu envío aquí:\n` +
+                    `https://app.dekoormx.com/jt-rastreo/?waybill=${result.waybillNo}\n\n` +
+                    `Gracias por tu compra! ❤️`;
+                const contactRef = db.collection('contacts_whatsapp').doc(waId);
+                await contactRef.collection('messages').doc().set({
+                    from: PHONE_NUMBER_ID,
+                    status: 'sent',
+                    timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                    id: sentMessageId,
+                    text: previewText,
+                });
+                await contactRef.set({
+                    lastMessage: previewText,
+                    lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+            } catch (logErr) {
+                console.warn(`[J&T] No se pudo registrar plantilla en historial de chat:`, logErr.message);
+            }
+
             console.log(`[J&T] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
         } catch (waErr) {
             console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);

@@ -21,6 +21,36 @@ const jtService = require('./jt/jtService');
 const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+// Helper: registra un envio de plantilla guia_envio_creada en el historial del chat del CRM.
+async function logGuiaTemplateToChat({ waId, messageId, nombreCompleto, orderNumber, waybillNo }) {
+    try {
+        const firstName = (nombreCompleto || 'Cliente').split(' ')[0];
+        const previewText =
+            `Hola ${firstName}! 📦\n\n` +
+            `Tu guía de envío para el pedido ${orderNumber} ha sido creada.\n\n` +
+            `📋 No. de guía: ${waybillNo}\n` +
+            `🚚 Paquetería: J&T Express\n\n` +
+            `Puedes rastrear tu envío aquí:\n` +
+            `https://app.dekoormx.com/jt-rastreo/?waybill=${waybillNo}\n\n` +
+            `Gracias por tu compra! ❤️`;
+
+        const contactRef = db.collection('contacts_whatsapp').doc(waId);
+        await contactRef.collection('messages').doc().set({
+            from: process.env.PHONE_NUMBER_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: messageId,
+            text: previewText,
+        });
+        await contactRef.set({
+            lastMessage: previewText,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        }, { merge: true });
+    } catch (err) {
+        console.warn('[JT LOG-CHAT] No se pudo registrar plantilla en historial:', err.message);
+    }
+}
+
 // --- Notificar nueva referencia por WhatsApp ---
 router.post('/referencias/notificar', async (req, res) => {
     try {
@@ -4697,14 +4727,14 @@ router.get('/snapshots/daily', async (req, res) => {
 // Reenvia la plantilla guia_envio_creada para un arreglo de orderNumbers.
 router.post('/jt/resend-guia-whatsapp', async (req, res) => {
     try {
-        const { orderNumbers } = req.body || {};
+        const { orderNumbers, logOnly } = req.body || {};
         if (!Array.isArray(orderNumbers) || orderNumbers.length === 0) {
             return res.status(400).json({ success: false, message: 'Se requiere un arreglo orderNumbers.' });
         }
 
         const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
         const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
-        if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
+        if (!logOnly && (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN)) {
             return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
         }
 
@@ -4780,14 +4810,26 @@ router.post('/jt/resend-guia-whatsapp', async (req, res) => {
                     },
                 };
 
-                await axios.post(
-                    `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
-                    templatePayload,
-                    { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
-                );
+                let sentMessageId = null;
+                if (!logOnly) {
+                    const waResp = await axios.post(
+                        `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                        templatePayload,
+                        { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+                    );
+                    sentMessageId = waResp.data?.messages?.[0]?.id;
+                }
 
-                console.log(`[JT RESEND] Plantilla enviada a ${waId} para ${orderNumber} (${guia.waybillNo})`);
-                results.push({ orderNumber, success: true, waybillNo: guia.waybillNo, to: waId });
+                await logGuiaTemplateToChat({
+                    waId,
+                    messageId: sentMessageId,
+                    nombreCompleto,
+                    orderNumber,
+                    waybillNo: guia.waybillNo,
+                });
+
+                console.log(`[JT RESEND] ${logOnly ? 'Log-only' : 'Plantilla enviada'} a ${waId} para ${orderNumber} (${guia.waybillNo})`);
+                results.push({ orderNumber, success: true, waybillNo: guia.waybillNo, to: waId, logOnly: !!logOnly });
             } catch (err) {
                 const errMsg = err.response?.data?.error?.message || err.message;
                 console.warn(`[JT RESEND] Error para ${orderNumber}:`, errMsg);
@@ -5068,11 +5110,19 @@ router.post('/datos-envio', async (req, res) => {
                                     ],
                                 },
                             };
-                            await axios.post(
+                            const waResp = await axios.post(
                                 `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
                                 templatePayload,
                                 { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
                             );
+                            const sentMessageId = waResp.data?.messages?.[0]?.id;
+                            await logGuiaTemplateToChat({
+                                waId,
+                                messageId: sentMessageId,
+                                nombreCompleto,
+                                orderNumber: numeroPedido,
+                                waybillNo: jtResult.waybillNo,
+                            });
                             console.log(`[DATOS-ENVIO] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
                         } catch (waErr) {
                             console.warn(`[DATOS-ENVIO] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);
