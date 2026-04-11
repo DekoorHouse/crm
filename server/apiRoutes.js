@@ -4759,8 +4759,23 @@ router.get('/snapshots/daily', async (req, res) => {
 // Diagnostico: lista los ultimos mensajes de un contacto (por telefono).
 router.get('/jt/debug-chat-messages', async (req, res) => {
     try {
-        const { phone } = req.query;
-        if (!phone) return res.status(400).json({ success: false, message: 'Se requiere ?phone=' });
+        let { phone, orderNumber } = req.query;
+        if (!phone && orderNumber) {
+            const guiaSnap = await db.collection('guias_jt')
+                .where('orderNumber', '==', orderNumber)
+                .limit(1)
+                .get();
+            if (!guiaSnap.empty) {
+                phone = guiaSnap.docs[0].data().receiverPhone;
+            } else {
+                const deSnap = await db.collection('datos_envio')
+                    .where('numeroPedido', '==', orderNumber)
+                    .limit(1)
+                    .get();
+                if (!deSnap.empty) phone = deSnap.docs[0].data().telefono;
+            }
+        }
+        if (!phone) return res.status(400).json({ success: false, message: 'Se requiere ?phone= o ?orderNumber=' });
         const digits = phone.toString().replace(/\D/g, '');
         const last10 = digits.slice(-10);
         const ids = ['521' + last10, '52' + last10, digits];
@@ -4799,7 +4814,7 @@ router.get('/jt/debug-chat-messages', async (req, res) => {
                 out[id] = { error: err.message };
             }
         }
-        res.json({ success: true, result: out });
+        res.json({ success: true, phoneUsed: phone, result: out });
     } catch (error) {
         res.status(500).json({ success: false, message: error.message });
     }
