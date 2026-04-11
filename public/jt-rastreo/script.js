@@ -19,7 +19,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const sanitizeWaybill = (raw) => {
         if (!raw) return '';
-        return String(raw).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const cleaned = String(raw).replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const match = cleaned.match(/[A-Z]+\d+/);
+        return match ? match[0] : cleaned;
     };
 
     const trackPackage = async () => {
