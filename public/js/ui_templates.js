@@ -1272,6 +1272,7 @@ const ContactDetailsSidebarTemplate = (contact) => {
                    <button onclick="handleMarkAsPurchase()" class="btn btn-secondary w-full btn-sm"><i class="fas fa-shopping-cart mr-2"></i>Registrar Compra (Meta)</button>
                    <button onclick="handleSendViewContent()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-eye mr-2"></i>Enviar 'Contenido Visto' (Meta)</button>
                    <button onclick="handlePedirDatosEnvio()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-truck mr-2"></i>Pedir Datos de Envío</button>
+                   <button onclick="handleCancelarGuiaEnvio()" class="btn btn-subtle w-full btn-sm"><i class="fas fa-ban mr-2"></i>Cancelar Guía de Envío</button>
                    <button onclick="abrirModalPedido()" class="btn btn-primary w-full btn-sm mt-4"><i class="fas fa-plus-circle mr-2"></i>Registrar Nuevo Pedido</button>
                 </div>
             </div>

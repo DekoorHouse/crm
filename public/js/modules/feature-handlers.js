@@ -197,6 +197,26 @@ async function handlePedirDatosEnvio() {
     }
 }
 
+/**
+ * Cancela la guía J&T activa del último pedido del contacto seleccionado.
+ */
+async function handleCancelarGuiaEnvio() {
+    if (!state.selectedContactId) return;
+    if (!confirm("¿Confirmas que quieres cancelar la guía de envío del último pedido de este contacto?")) return;
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/jt-guias/cancelar-por-contacto/${state.selectedContactId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) throw new Error(result.message || 'Error al cancelar la guía');
+        showError(result.message || 'Guía cancelada.', 'success');
+    } catch (error) {
+        showError(error.message);
+    }
+}
+
 // --- START: New Order Logic ---
 /**
  * Maneja el envío del formulario para crear un nuevo pedido.
@@ -1295,6 +1315,7 @@ window.handleMarkAsPurchase = handleMarkAsPurchase;
 window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún se usa
 window.handleSendViewContent = handleSendViewContent;
 window.handlePedirDatosEnvio = handlePedirDatosEnvio;
+window.handleCancelarGuiaEnvio = handleCancelarGuiaEnvio;
 window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;
 window.handleSendCampaign = handleSendCampaign;

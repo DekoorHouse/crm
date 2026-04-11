@@ -236,6 +236,59 @@ router.post('/desde-pedido/:orderNumber', async (req, res) => {
     }
 });
 
+// POST /api/jt-guias/cancelar-por-contacto/:contactId — Cancela la guía activa del último pedido del contacto
+router.post('/cancelar-por-contacto/:contactId', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+
+        // 1. Buscar el último pedido del contacto
+        const ordersSnap = await db.collection('pedidos')
+            .where('telefono', '==', contactId)
+            .get();
+
+        if (ordersSnap.empty) {
+            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos registrados.' });
+        }
+
+        const orders = ordersSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(o => o.consecutiveOrderNumber)
+            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+
+        if (orders.length === 0) {
+            return res.status(404).json({ success: false, message: 'Este contacto no tiene pedidos con número.' });
+        }
+
+        const orderNumber = `DH${orders[0].consecutiveOrderNumber}`;
+
+        // 2. Buscar guía activa para ese pedido
+        const guiaSnap = await db.collection('guias_jt')
+            .where('orderNumber', '==', orderNumber)
+            .where('status', '!=', 'cancelled')
+            .get();
+
+        if (guiaSnap.empty) {
+            return res.status(404).json({ success: false, message: `No hay guía activa para el pedido ${orderNumber}.` });
+        }
+
+        const docRef = guiaSnap.docs[0].ref;
+        const guia = guiaSnap.docs[0].data();
+
+        // 3. Intentar cancelar en J&T
+        try {
+            await jtService.cancelOrder(guia.orderNumber);
+        } catch (e) {
+            console.warn(`[J&T] No se pudo cancelar en J&T (${guia.orderNumber}):`, e.message);
+        }
+
+        await docRef.update({ status: 'cancelled', cancelledAt: new Date() });
+
+        res.json({ success: true, orderNumber, message: `Guía del pedido ${orderNumber} cancelada.` });
+    } catch (error) {
+        console.error('[J&T] Error en cancelar-por-contacto:', error);
+        res.status(500).json({ success: false, message: 'Error al cancelar la guía.', error: error.message });
+    }
+});
+
 // POST /api/jt-guias/pedir-datos/:contactId — Envía respuesta rápida "Datos J&T" al cliente
 router.post('/pedir-datos/:contactId', async (req, res) => {
     try {
