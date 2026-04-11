@@ -70,9 +70,6 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
         return false;
     }
 
-    // Login exitoso - guardar en cache del dispositivo
-    localStorage.setItem('checador_session', JSON.stringify({ name: match.name, pin: match.pin }));
-
     currentEmployee = match;
     document.getElementById('pin-login-view').style.display = 'none';
     document.getElementById('profile-content').style.display = 'block';
@@ -123,17 +120,8 @@ document.getElementById('pin-login-btn').addEventListener('click', () => {
     loginWithPin(nameInput, pinInput, false);
 });
 
-// Auto-login desde cache del dispositivo
-(async function autoLogin() {
-    try {
-        const saved = JSON.parse(localStorage.getItem('checador_session'));
-        if (saved && saved.name && saved.pin) {
-            await loginWithPin(saved.name, saved.pin, true);
-        }
-    } catch (e) {
-        localStorage.removeItem('checador_session');
-    }
-})();
+// Limpiar sesiones cacheadas de versiones anteriores
+localStorage.removeItem('checador_session');
 
 // =====================
 // LOGOUT
@@ -144,7 +132,6 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     if (unsubscribeAdj) { unsubscribeAdj(); unsubscribeAdj = null; }
     logsCache = [];
     adjustmentsCache = [];
-    localStorage.removeItem('checador_session');
     document.getElementById('profile-content').style.display = 'none';
     document.getElementById('pin-login-view').style.display = 'flex';
     document.getElementById('emp-name-input').value = '';
@@ -279,6 +266,8 @@ function renderProfile() {
 
         const hasData = dayLogs.length > 0 || isVacDay;
         const hoursStr = dayMins > 0 ? `${Math.floor(dayMins / 60)}h ${dayMins % 60}m` : (hasData ? '0h 0m' : '—');
+        const dayPay = Math.round((dayMins / 60) * 70);
+        const payStr = hasData ? `$${dayPay.toLocaleString()}` : '';
 
         const row = document.createElement('div');
         row.className = `day-row ${hasData ? 'has-data' : 'no-data'} ${isToday ? 'today' : ''}`;
@@ -286,7 +275,7 @@ function renderProfile() {
         row.innerHTML = `
             <span class="day-name">${dayNames[i]}</span>
             <span class="day-detail">${isVacDay ? '🏖 Vacaciones' : (dayLogs.length > 0 ? timeline.join(' &bull; ') : '')}</span>
-            <span class="day-hours">${hoursStr}</span>
+            <span class="day-hours">${hoursStr}${payStr ? `<br><small style="color:var(--primary); font-weight:600;">${payStr}</small>` : ''}</span>
         `;
         daysList.appendChild(row);
     });
