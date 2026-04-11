@@ -4600,53 +4600,61 @@ router.get('/jt/track', async (req, res) => {
     }
 
     try {
-        let effectivePhoneVerify = (phoneVerify || '').toString().replace(/\D/g, '').slice(-4);
+        const candidates = [];
+        const userSupplied = (phoneVerify || '').toString().replace(/\D/g, '').slice(-4);
+        if (userSupplied.length === 4) candidates.push(userSupplied);
 
-        if (!effectivePhoneVerify || effectivePhoneVerify.length < 4) {
-            try {
-                const guiaSnap = await db.collection('guias_jt')
-                    .where('waybillNo', '==', waybill)
-                    .limit(1)
-                    .get();
-                if (!guiaSnap.empty) {
-                    const rawPhone = (guiaSnap.docs[0].data().receiverPhone || '').toString().replace(/\D/g, '');
-                    if (rawPhone.length >= 4) {
-                        effectivePhoneVerify = rawPhone.slice(-4);
-                    }
-                }
-            } catch (lookupErr) {
-                console.warn('[J&T TRACK] No se pudo buscar phoneVerify en Firestore:', lookupErr.message);
+        try {
+            const guiaSnap = await db.collection('guias_jt')
+                .where('waybillNo', '==', waybill)
+                .limit(1)
+                .get();
+            if (!guiaSnap.empty) {
+                const rawPhone = (guiaSnap.docs[0].data().receiverPhone || '').toString().replace(/\D/g, '');
+                if (rawPhone.length >= 4) candidates.push(rawPhone.slice(-4));
             }
+        } catch (lookupErr) {
+            console.warn('[J&T TRACK] No se pudo buscar phoneVerify en Firestore:', lookupErr.message);
         }
 
-        console.log(`[J&T TRACK] Consultando guía: ${waybill}, Verificación: ${effectivePhoneVerify || 'No proporcionada'}`);
+        // Fallbacks conocidos (telefonos historicos de Dekoor)
+        candidates.push('3519', '7167');
 
-        const response = await axios.get('https://official.jtjms-mx.com/official/logisticsTracking/v3/getDetailByWaybillNo', {
-            params: {
-                waybillNo: waybill,
-                langType: 'es',
-                phoneVerify: effectivePhoneVerify
-            },
-            headers: {
-                'Referer': 'https://www.jtexpress.mx/',
-                'Origin': 'https://www.jtexpress.mx',
-                'langtype': 'es',
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            }
+        const seen = new Set();
+        const tryList = candidates.filter(c => {
+            if (!c || seen.has(c)) return false;
+            seen.add(c);
+            return true;
         });
 
+        const jtHeaders = {
+            'Referer': 'https://www.jtexpress.mx/',
+            'Origin': 'https://www.jtexpress.mx',
+            'langtype': 'es',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        };
 
+        let lastResponse = null;
+        for (const candidate of tryList) {
+            console.log(`[J&T TRACK] Consultando guía: ${waybill}, Verificación: ${candidate}`);
+            const response = await axios.get('https://official.jtjms-mx.com/official/logisticsTracking/v3/getDetailByWaybillNo', {
+                params: { waybillNo: waybill, langType: 'es', phoneVerify: candidate },
+                headers: jtHeaders
+            });
+            lastResponse = response;
+            if (response.data && response.data.succ) {
+                return res.status(200).json({ success: true, data: response.data.data });
+            }
+        }
 
-        if (response.data && response.data.succ) {
-            return res.status(200).json({ success: true, data: response.data.data });
-        } else {
-            // Manejar errores específicos de la API de J&T
-            return res.status(200).json({ 
-                success: false, 
-                message: response.data.msg || 'No se encontró información para esta guía.',
-                code: response.data.code 
+        if (lastResponse && lastResponse.data) {
+            return res.status(200).json({
+                success: false,
+                message: lastResponse.data.msg || 'No se encontró información para esta guía.',
+                code: lastResponse.data.code
             });
         }
+        return res.status(200).json({ success: false, message: 'No se encontró información para esta guía.' });
     } catch (error) {
         console.error('Error consultando J&T Tracking:', error.message);
         res.status(500).json({ success: false, message: 'Error interno conectando con el servidor de J&T.' });
