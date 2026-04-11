@@ -4693,6 +4693,121 @@ router.get('/snapshots/daily', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/jt/resend-guia-whatsapp ---
+// Reenvia la plantilla guia_envio_creada para un arreglo de orderNumbers.
+router.post('/jt/resend-guia-whatsapp', async (req, res) => {
+    try {
+        const { orderNumbers } = req.body || {};
+        if (!Array.isArray(orderNumbers) || orderNumbers.length === 0) {
+            return res.status(400).json({ success: false, message: 'Se requiere un arreglo orderNumbers.' });
+        }
+
+        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+        const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+        if (!PHONE_NUMBER_ID || !WHATSAPP_TOKEN) {
+            return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp en el servidor.' });
+        }
+
+        const results = [];
+        for (const orderNumber of orderNumbers) {
+            try {
+                const guiaSnap = await db.collection('guias_jt')
+                    .where('orderNumber', '==', orderNumber)
+                    .limit(1)
+                    .get();
+
+                if (guiaSnap.empty) {
+                    results.push({ orderNumber, success: false, message: 'Guia no encontrada en guias_jt' });
+                    continue;
+                }
+
+                const guia = guiaSnap.docs[0].data();
+                let telefono = (guia.receiverPhone || '').toString().replace(/\D/g, '');
+                let nombreCompleto = guia.receiverName || '';
+
+                // Fallback: buscar en datos_envio si falta telefono o nombre
+                if (!telefono || !nombreCompleto) {
+                    try {
+                        const deSnap = await db.collection('datos_envio')
+                            .where('numeroPedido', '==', orderNumber)
+                            .limit(1)
+                            .get();
+                        if (!deSnap.empty) {
+                            const de = deSnap.docs[0].data();
+                            telefono = telefono || (de.telefono || '').toString().replace(/\D/g, '');
+                            nombreCompleto = nombreCompleto || de.nombreCompleto || '';
+                        }
+                    } catch (_) { /* ignore */ }
+                }
+
+                if (!telefono || telefono.length < 10) {
+                    results.push({ orderNumber, success: false, message: 'Telefono invalido o faltante' });
+                    continue;
+                }
+                if (!guia.waybillNo) {
+                    results.push({ orderNumber, success: false, message: 'Guia sin waybillNo' });
+                    continue;
+                }
+
+                const waId = telefono.length === 10 ? '52' + telefono : telefono;
+                const firstName = (nombreCompleto || 'Cliente').split(' ')[0];
+
+                const templatePayload = {
+                    messaging_product: 'whatsapp',
+                    to: waId,
+                    type: 'template',
+                    template: {
+                        name: 'guia_envio_creada',
+                        language: { code: 'es_MX' },
+                        components: [
+                            {
+                                type: 'body',
+                                parameters: [
+                                    { type: 'text', text: firstName },
+                                    { type: 'text', text: orderNumber },
+                                    { type: 'text', text: guia.waybillNo },
+                                ],
+                            },
+                            {
+                                type: 'button',
+                                sub_type: 'url',
+                                index: '0',
+                                parameters: [
+                                    { type: 'text', text: guia.waybillNo },
+                                ],
+                            },
+                        ],
+                    },
+                };
+
+                await axios.post(
+                    `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                    templatePayload,
+                    { headers: { 'Authorization': `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+                );
+
+                console.log(`[JT RESEND] Plantilla enviada a ${waId} para ${orderNumber} (${guia.waybillNo})`);
+                results.push({ orderNumber, success: true, waybillNo: guia.waybillNo, to: waId });
+            } catch (err) {
+                const errMsg = err.response?.data?.error?.message || err.message;
+                console.warn(`[JT RESEND] Error para ${orderNumber}:`, errMsg);
+                results.push({ orderNumber, success: false, message: errMsg });
+            }
+        }
+
+        const okCount = results.filter(r => r.success).length;
+        return res.status(200).json({
+            success: true,
+            sent: okCount,
+            failed: results.length - okCount,
+            results,
+        });
+    } catch (error) {
+        console.error('[JT RESEND] Error general:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // --- Endpoint POST /api/snapshots/daily (Guardar snapshot inmutable) ---
 router.post('/snapshots/daily', async (req, res) => {
     try {
