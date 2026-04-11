@@ -22,6 +22,30 @@ const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
 // Helper: registra un envio de plantilla guia_envio_creada en el historial del chat del CRM.
+// Busca el contacto existente en contacts_whatsapp probando formatos MX (52XXX y 521XXX)
+// para garantizar que el mensaje aparezca en el chat correcto aunque el waId entrante no coincida.
+async function resolveContactIdFromPhone(waIdInput) {
+    if (!waIdInput) return null;
+    const digits = waIdInput.toString().replace(/\D/g, '');
+    const last10 = digits.slice(-10);
+    const candidates = [];
+    // Formatos MX comunes en Meta webhook
+    candidates.push('521' + last10); // movil historico
+    candidates.push('52' + last10);  // nuevo formato
+    candidates.push(digits);         // tal cual lo recibimos
+    const seen = new Set();
+    for (const c of candidates) {
+        if (!c || seen.has(c)) continue;
+        seen.add(c);
+        try {
+            const doc = await db.collection('contacts_whatsapp').doc(c).get();
+            if (doc.exists) return c;
+        } catch (_) { /* ignore */ }
+    }
+    // Ningun contacto existe: devolver el formato por defecto (52 + 10 digitos) para crearlo
+    return '52' + last10;
+}
+
 async function logGuiaTemplateToChat({ waId, messageId, nombreCompleto, orderNumber, waybillNo }) {
     try {
         const firstName = (nombreCompleto || 'Cliente').split(' ')[0];
@@ -34,20 +58,28 @@ async function logGuiaTemplateToChat({ waId, messageId, nombreCompleto, orderNum
             `https://app.dekoormx.com/jt-rastreo/?waybill=${waybillNo}\n\n` +
             `Gracias por tu compra! ❤️`;
 
-        const contactRef = db.collection('contacts_whatsapp').doc(waId);
-        await contactRef.collection('messages').doc().set({
+        const resolvedId = await resolveContactIdFromPhone(waId);
+        const contactRef = db.collection('contacts_whatsapp').doc(resolvedId);
+
+        const messageDoc = {
             from: process.env.PHONE_NUMBER_ID,
             status: 'sent',
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
-            id: messageId,
             text: previewText,
-        });
+        };
+        if (messageId) messageDoc.id = messageId;
+
+        await contactRef.collection('messages').doc().set(messageDoc);
         await contactRef.set({
             lastMessage: previewText,
             lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
+
+        console.log(`[JT LOG-CHAT] Mensaje registrado en contacto ${resolvedId} (input waId: ${waId}) para ${orderNumber}`);
+        return resolvedId;
     } catch (err) {
         console.warn('[JT LOG-CHAT] No se pudo registrar plantilla en historial:', err.message);
+        return null;
     }
 }
 
@@ -4820,7 +4852,7 @@ router.post('/jt/resend-guia-whatsapp', async (req, res) => {
                     sentMessageId = waResp.data?.messages?.[0]?.id;
                 }
 
-                await logGuiaTemplateToChat({
+                const resolvedContactId = await logGuiaTemplateToChat({
                     waId,
                     messageId: sentMessageId,
                     nombreCompleto,
@@ -4828,8 +4860,8 @@ router.post('/jt/resend-guia-whatsapp', async (req, res) => {
                     waybillNo: guia.waybillNo,
                 });
 
-                console.log(`[JT RESEND] ${logOnly ? 'Log-only' : 'Plantilla enviada'} a ${waId} para ${orderNumber} (${guia.waybillNo})`);
-                results.push({ orderNumber, success: true, waybillNo: guia.waybillNo, to: waId, logOnly: !!logOnly });
+                console.log(`[JT RESEND] ${logOnly ? 'Log-only' : 'Plantilla enviada'} a ${waId} (chat: ${resolvedContactId}) para ${orderNumber} (${guia.waybillNo})`);
+                results.push({ orderNumber, success: true, waybillNo: guia.waybillNo, to: waId, chatContactId: resolvedContactId, logOnly: !!logOnly });
             } catch (err) {
                 const errMsg = err.response?.data?.error?.message || err.message;
                 console.warn(`[JT RESEND] Error para ${orderNumber}:`, errMsg);

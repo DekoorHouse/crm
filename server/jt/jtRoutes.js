@@ -576,18 +576,36 @@ router.post('/cliente', async (req, res) => {
                     `Puedes rastrear tu envío aquí:\n` +
                     `https://app.dekoormx.com/jt-rastreo/?waybill=${result.waybillNo}\n\n` +
                     `Gracias por tu compra! ❤️`;
-                const contactRef = db.collection('contacts_whatsapp').doc(waId);
-                await contactRef.collection('messages').doc().set({
+
+                // Resolver id de contacto probando formatos MX 521XXX y 52XXX
+                const digits = waId.replace(/\D/g, '');
+                const last10 = digits.slice(-10);
+                const candidates = ['521' + last10, '52' + last10, digits];
+                let resolvedId = '52' + last10;
+                const seen = new Set();
+                for (const c of candidates) {
+                    if (!c || seen.has(c)) continue;
+                    seen.add(c);
+                    try {
+                        const doc = await db.collection('contacts_whatsapp').doc(c).get();
+                        if (doc.exists) { resolvedId = c; break; }
+                    } catch (_) { /* ignore */ }
+                }
+
+                const contactRef = db.collection('contacts_whatsapp').doc(resolvedId);
+                const messageDoc = {
                     from: PHONE_NUMBER_ID,
                     status: 'sent',
                     timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                    id: sentMessageId,
                     text: previewText,
-                });
+                };
+                if (sentMessageId) messageDoc.id = sentMessageId;
+                await contactRef.collection('messages').doc().set(messageDoc);
                 await contactRef.set({
                     lastMessage: previewText,
                     lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
                 }, { merge: true });
+                console.log(`[J&T] Mensaje registrado en contacto ${resolvedId} para ${numeroPedido}`);
             } catch (logErr) {
                 console.warn(`[J&T] No se pudo registrar plantilla en historial de chat:`, logErr.message);
             }
