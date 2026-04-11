@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let enviosData = [];
 
     async function cargarEnvios() {
-        cuerpoTabla.innerHTML = '<tr><td colspan="13" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando datos...</td></tr>';
+        cuerpoTabla.innerHTML = '<tr><td colspan="14" class="loading-cell"><i class="fas fa-spinner fa-spin"></i> Cargando datos...</td></tr>';
         try {
             const response = await fetch(`${API_BASE_URL}/api/datos-envio`);
             const result = await response.json();
@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         } catch (error) {
             console.error('Error cargando envíos:', error);
-            cuerpoTabla.innerHTML = `<tr><td colspan="13" class="loading-cell" style="color:var(--color-danger)"><i class="fas fa-exclamation-triangle"></i> ${error.message}</td></tr>`;
+            cuerpoTabla.innerHTML = `<tr><td colspan="14" class="loading-cell" style="color:var(--color-danger)"><i class="fas fa-exclamation-triangle"></i> ${error.message}</td></tr>`;
         } finally {
             if (loadingOverlay) {
                 loadingOverlay.style.opacity = '0';
@@ -42,9 +42,20 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    function renderEstatusGuia(envio) {
+        const status = envio.guiaStatus || 'sin_guia';
+        const map = {
+            sin_guia:  { label: 'Sin guía',  bg: '#f3f4f6', color: '#6b7280' },
+            active:    { label: 'Activa',    bg: '#dcfce7', color: '#166534' },
+            cancelled: { label: 'Cancelada', bg: '#fee2e2', color: '#991b1b' },
+        };
+        const s = map[status] || map.sin_guia;
+        return `<span style="display:inline-block;padding:2px 10px;border-radius:9999px;font-size:0.75rem;font-weight:600;background:${s.bg};color:${s.color};">${s.label}</span>`;
+    }
+
     function renderTabla(data) {
         if (data.length === 0) {
-            cuerpoTabla.innerHTML = '<tr><td colspan="13" class="loading-cell">No hay datos de envío registrados.</td></tr>';
+            cuerpoTabla.innerHTML = '<tr><td colspan="14" class="loading-cell">No hay datos de envío registrados.</td></tr>';
             return;
         }
         cuerpoTabla.innerHTML = data.map((envio, i) => `
@@ -61,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td>${envio.codigoPostal || '-'}</td>
                 <td>${envio.estado || '-'}</td>
                 <td>${envio.referencia || '-'}</td>
+                <td>${renderEstatusGuia(envio)}</td>
                 <td><button class="btn-delete" title="Eliminar" onclick="eliminarEnvio('${envio.id}')"><i class="fas fa-trash-alt"></i></button></td>
             </tr>
         `).join('');
@@ -80,7 +92,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function exportCSV() {
         if (enviosData.length === 0) return alert('No hay datos para exportar.');
-        const headers = ['Fecha', 'No. Pedido', 'Nombre Completo', 'Teléfono', 'Dirección', 'Num. Interior', 'Colonia', 'Ciudad', 'C.P.', 'Estado', 'Referencia'];
+        const headers = ['Fecha', 'No. Pedido', 'Nombre Completo', 'Teléfono', 'Dirección', 'Num. Interior', 'Colonia', 'Ciudad', 'C.P.', 'Estado', 'Referencia', 'Estatus Guía'];
+        const statusLabels = { sin_guia: 'Sin guía', active: 'Activa', cancelled: 'Cancelada' };
         const rows = enviosData.map(e => [
             formatDate(e.createdAt),
             e.numeroPedido || '',
@@ -92,7 +105,8 @@ document.addEventListener('DOMContentLoaded', () => {
             e.ciudad || '',
             e.codigoPostal || '',
             e.estado || '',
-            e.referencia || ''
+            e.referencia || '',
+            statusLabels[e.guiaStatus] || 'Sin guía'
         ].map(v => `"${String(v).replace(/"/g, '""')}"`).join(','));
 
         const csv = [headers.join(','), ...rows].join('\n');

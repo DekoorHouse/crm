@@ -4997,8 +4997,29 @@ router.get('/buscar-cp', async (req, res) => {
 // --- DATOS PARA ENVÍO ---
 router.get('/datos-envio', async (req, res) => {
     try {
-        const snapshot = await db.collection('datos_envio').orderBy('createdAt', 'desc').get();
-        const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const [snapshot, guiasSnap] = await Promise.all([
+            db.collection('datos_envio').orderBy('createdAt', 'desc').get(),
+            db.collection('guias_jt').get(),
+        ]);
+
+        // Map orderNumber -> latest guia status (prefer non-cancelled)
+        const guiaByOrder = new Map();
+        guiasSnap.docs.forEach(d => {
+            const g = d.data();
+            if (!g.orderNumber) return;
+            const existing = guiaByOrder.get(g.orderNumber);
+            if (!existing || (existing.status === 'cancelled' && g.status !== 'cancelled')) {
+                guiaByOrder.set(g.orderNumber, { status: g.status || 'active', waybillNo: g.waybillNo });
+            }
+        });
+
+        const data = snapshot.docs.map(doc => {
+            const d = { id: doc.id, ...doc.data() };
+            const guia = guiaByOrder.get(d.numeroPedido);
+            d.guiaStatus = guia ? guia.status : 'sin_guia';
+            d.waybillNo = guia ? guia.waybillNo : null;
+            return d;
+        });
         res.json({ success: true, data });
     } catch (error) {
         console.error('Error obteniendo datos de envío:', error);
