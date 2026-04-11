@@ -5002,20 +5002,24 @@ router.get('/datos-envio', async (req, res) => {
             db.collection('guias_jt').get(),
         ]);
 
-        // Map orderNumber -> latest guia status (prefer non-cancelled)
+        // Normalize order number to digits only (datos_envio is free-form input)
+        const normalizeOrder = (v) => String(v || '').replace(/\D/g, '');
+
+        // Map normalized orderNumber -> latest guia status (prefer non-cancelled)
         const guiaByOrder = new Map();
         guiasSnap.docs.forEach(d => {
             const g = d.data();
-            if (!g.orderNumber) return;
-            const existing = guiaByOrder.get(g.orderNumber);
+            const key = normalizeOrder(g.orderNumber);
+            if (!key) return;
+            const existing = guiaByOrder.get(key);
             if (!existing || (existing.status === 'cancelled' && g.status !== 'cancelled')) {
-                guiaByOrder.set(g.orderNumber, { status: g.status || 'active', waybillNo: g.waybillNo });
+                guiaByOrder.set(key, { status: g.status || 'active', waybillNo: g.waybillNo });
             }
         });
 
         const data = snapshot.docs.map(doc => {
             const d = { id: doc.id, ...doc.data() };
-            const guia = guiaByOrder.get(d.numeroPedido);
+            const guia = guiaByOrder.get(normalizeOrder(d.numeroPedido));
             d.guiaStatus = guia ? guia.status : 'sin_guia';
             d.waybillNo = guia ? guia.waybillNo : null;
             return d;
