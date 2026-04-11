@@ -774,8 +774,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const telMasked = document.getElementById('telMasked');
     const phoneInput = document.getElementById('receiverPhone');
     let pedidoVerificado = false;
+    let pedidoBloqueado = false;
     let telefonoSugerido = '';
     let verifyTimer = null;
+
+    function bloquearSubmit(razon) {
+        pedidoBloqueado = true;
+        btnSubmit.disabled = true;
+        btnSubmit.innerHTML = `<i class="fas fa-ban"></i> ${razon || 'No disponible'}`;
+    }
+    function desbloquearSubmit() {
+        pedidoBloqueado = false;
+        btnSubmit.disabled = false;
+        btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
+    }
 
     // Autouppercase del prefijo DH
     orderInput.addEventListener('input', () => {
@@ -783,6 +795,7 @@ document.addEventListener('DOMContentLoaded', () => {
         orderInput.value = val.toUpperCase();
         pedidoVerificado = false;
         telConfirmacion.classList.remove('show');
+        desbloquearSubmit();
 
         clearTimeout(verifyTimer);
         pedidoStatus.textContent = '';
@@ -811,6 +824,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (data.success) {
                 pedidoVerificado = true;
+                desbloquearSubmit();
                 telefonoSugerido = data.telefonoCompleto || '';
                 pedidoStatus.textContent = 'Pedido encontrado';
                 pedidoStatus.className = 'pedido-status success';
@@ -819,12 +833,15 @@ document.addEventListener('DOMContentLoaded', () => {
             } else if (data.code === 'GUIA_EXISTENTE') {
                 pedidoStatus.textContent = data.message;
                 pedidoStatus.className = 'pedido-status error';
+                bloquearSubmit('Guia ya existe para este pedido');
             } else if (data.code === 'PEDIDO_NO_ENCONTRADO') {
                 pedidoStatus.textContent = data.message;
                 pedidoStatus.className = 'pedido-status error';
+                bloquearSubmit('Pedido no encontrado');
             } else {
                 pedidoStatus.textContent = data.message || 'Error al verificar el pedido';
                 pedidoStatus.className = 'pedido-status error';
+                bloquearSubmit('Pedido invalido');
             }
         } catch (e) {
             pedidoStatus.textContent = 'Error al verificar el pedido. Intenta de nuevo.';
@@ -1058,6 +1075,11 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         alertEl.style.display = 'none';
 
+        if (pedidoBloqueado) {
+            showAlert('error', 'No se puede crear una nueva guia para este pedido.');
+            return;
+        }
+
         const payload = {
             numeroPedido: document.getElementById('orderNumber').value.trim(),
             nombreCompleto: document.getElementById('receiverName').value.trim(),
@@ -1111,12 +1133,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 resultSection.style.display = 'block';
             } else {
                 showAlert('error', result.message || 'Error al generar la guia.');
+                // Si el backend detecta guia duplicada, bloquear
+                if (res.status === 409) {
+                    bloquearSubmit('Guia ya existe para este pedido');
+                    return;
+                }
             }
         } catch (error) {
             showAlert('error', 'Error de conexion. Intenta de nuevo.');
         } finally {
-            btnSubmit.disabled = false;
-            btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
+            if (!pedidoBloqueado) {
+                btnSubmit.disabled = false;
+                btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
+            }
         }
     });
 
