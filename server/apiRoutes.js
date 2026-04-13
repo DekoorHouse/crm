@@ -1968,6 +1968,11 @@ router.get('/contacts', async (req, res) => {
             query = query.where('inDesignReview', '==', true);
         }
 
+        // Aplicar filtro de canal (whatsapp, messenger, instagram)
+        if (req.query.channel) {
+            query = query.where('channel', '==', req.query.channel);
+        }
+
         // --- INICIO: Filtro por Departamento ---
         // Si se proporciona departmentId, filtrar por 'assignedDepartmentId'
         if (departmentId && departmentId !== 'all') {
@@ -2296,10 +2301,10 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         const contactDoc = await contactRef.get();
         const channel = contactDoc.exists ? (contactDoc.data().channel || 'whatsapp') : 'whatsapp';
 
-        // === MESSENGER: Lógica de envío para Facebook Messenger ===
-        if (channel === 'messenger') {
-            const psid = contactDoc.data().psid || contactId.replace('fb_', '');
-            const sentData = await sendMessengerMessage(psid, { text, fileUrl, fileType });
+        // === MESSENGER / INSTAGRAM: Lógica de envío via Meta Send API ===
+        if (channel === 'messenger' || channel === 'instagram') {
+            const recipientId = contactDoc.data().psid || contactDoc.data().igsid || contactId.replace(/^(fb_|ig_)/, '');
+            const sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType });
 
             // Guardar cada mensaje enviado en Firestore
             let lastMessageToSave;
@@ -2322,7 +2327,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 unreadCount: 0
             });
 
-            return res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s) por Messenger.' });
+            const channelName = channel === 'instagram' ? 'Instagram' : 'Messenger';
+            return res.status(200).json({ success: true, message: `Mensaje(s) enviado(s) por ${channelName}.` });
         }
 
         // === WHATSAPP: Lógica existente de envío ===
@@ -4909,6 +4915,18 @@ router.post('/jt/resend-guia-whatsapp', async (req, res) => {
                 let telefono = (guia.receiverPhone || '').toString().replace(/\D/g, '');
                 let nombreCompleto = guia.receiverName || '';
 
+                // Prioridad: usar el teléfono registrado en el pedido (donde chatea el cliente)
+                try {
+                    const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
+                    if (pedidoDoc.exists) {
+                        const pedidoData = pedidoDoc.data();
+                        const rawPhone = pedidoData.contactId || pedidoData.telefono;
+                        if (rawPhone) {
+                            telefono = rawPhone.toString().replace(/\D/g, '').slice(-10);
+                        }
+                    }
+                } catch (_) { /* ignore */ }
+
                 // Fallback: buscar en datos_envio si falta telefono o nombre
                 if (!telefono || !nombreCompleto) {
                     try {
@@ -5205,12 +5223,19 @@ router.post('/datos-envio', async (req, res) => {
                     .get();
 
                 if (existingSnap.empty) {
-                    // Buscar nombre de producto en pedidos
+                    // Buscar datos del pedido (producto y teléfono registrado)
                     let productName = 'Lámpara 3D Personalizada';
+                    let telefonoPedido = null;
                     try {
                         const pedidoDoc = await db.collection('pedidos').doc(numeroPedido).get();
                         if (pedidoDoc.exists) {
-                            productName = pedidoDoc.data().producto || productName;
+                            const pedidoData = pedidoDoc.data();
+                            productName = pedidoData.producto || productName;
+                            // Usar el teléfono registrado en el pedido (contactId o telefono) para enviar WhatsApp
+                            const rawPhone = pedidoData.contactId || pedidoData.telefono;
+                            if (rawPhone) {
+                                telefonoPedido = rawPhone.toString().replace(/\D/g, '').slice(-10);
+                            }
                         }
                     } catch (_) { /* usar default */ }
 
@@ -5257,9 +5282,10 @@ router.post('/datos-envio', async (req, res) => {
                         console.log(`[DATOS-ENVIO] Guía J&T auto-creada: ${jtResult.waybillNo} para ${numeroPedido}`);
                         guiaResult = { success: true, waybillNo: jtResult.waybillNo };
 
-                        // Enviar WhatsApp al cliente (plantilla guia_envio_creada)
+                        // Enviar WhatsApp al teléfono registrado en el pedido (no el de datos de envío)
                         try {
-                            const waId = '52' + telefono;
+                            const telefonoDestino = telefonoPedido || telefono;
+                            const waId = '52' + telefonoDestino;
                             const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
                             const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
                             const templatePayload = {
@@ -5302,9 +5328,9 @@ router.post('/datos-envio', async (req, res) => {
                                 orderNumber: numeroPedido,
                                 waybillNo: jtResult.waybillNo,
                             });
-                            console.log(`[DATOS-ENVIO] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
+                            console.log(`[DATOS-ENVIO] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}` + (telefonoPedido && telefonoPedido !== telefono ? ` (tel pedido: ${telefonoPedido}, tel envío: ${telefono})` : ''));
                         } catch (waErr) {
-                            console.warn(`[DATOS-ENVIO] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);
+                            console.warn(`[DATOS-ENVIO] No se pudo enviar WhatsApp a ${telefonoDestino}:`, waErr.response?.data || waErr.message);
                         }
                     } else {
                         console.warn(`[DATOS-ENVIO] No se pudo auto-crear guía J&T para ${numeroPedido}: ${jtResult.message}`);
