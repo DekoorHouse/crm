@@ -7,6 +7,7 @@ const META_PIXEL_ID = process.env.META_PIXEL_ID;
 const META_CAPI_ACCESS_TOKEN = process.env.META_CAPI_ACCESS_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
+const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
 const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
@@ -235,10 +236,11 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
 async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel }) {
     // Instagram usa endpoint diferente: /{ig-user-id}/messages en vez de /me/messages
     const isInstagram = channel === 'instagram';
+    const accessToken = isInstagram ? (IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN) : FB_PAGE_ACCESS_TOKEN;
     const url = isInstagram
         ? `https://graph.facebook.com/v19.0/${recipientId}/messages`
         : `https://graph.facebook.com/v19.0/me/messages`;
-    const params = { access_token: FB_PAGE_ACCESS_TOKEN };
+    const params = { access_token: accessToken };
     const logPrefix = isInstagram ? 'INSTAGRAM SEND' : 'MESSENGER SEND';
     const sentMessages = [];
 

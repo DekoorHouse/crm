@@ -8,6 +8,7 @@ const router = express.Router();
 // --- CONSTANTES ---
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const FB_PAGE_ACCESS_TOKEN = process.env.FB_PAGE_ACCESS_TOKEN;
+const IG_ACCESS_TOKEN = process.env.IG_ACCESS_TOKEN;
 const FB_PAGE_ID = process.env.FB_PAGE_ID;
 
 // --- HORARIO Y MENSAJES AUTOMÁTICOS (reutilizados de WhatsApp) ---
@@ -67,7 +68,7 @@ async function getInstagramUserProfile(igsid) {
         const response = await axios.get(`https://graph.facebook.com/v19.0/${igsid}`, {
             params: {
                 fields: 'name,username,profile_pic',
-                access_token: FB_PAGE_ACCESS_TOKEN
+                access_token: IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN
             }
         });
         const name = response.data.name || response.data.username || `IG User (${igsid.slice(-4)})`;
