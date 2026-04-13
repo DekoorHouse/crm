@@ -321,29 +321,27 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
         const lastOrder = orders[0];
         const orderNumber = `DH${lastOrder.consecutiveOrderNumber}`;
 
-        // 2. Buscar la respuesta rápida (primero por shortcut, luego por coincidencia parcial)
-        let qrSnap = await db.collection('quick_replies')
-            .where('shortcut', '==', shortcut)
-            .limit(1)
-            .get();
-
-        if (qrSnap.empty) {
-            // Buscar cualquier shortcut que contenga "datos"
-            const allQrs = await db.collection('quick_replies').get();
-            const found = allQrs.docs.find(d => {
+        // 2. Buscar la respuesta rápida "Datos J&T"
+        const allQrs = await db.collection('quick_replies').get();
+        const target = shortcut.toLowerCase();
+        // Primero intentar match exacto (case-insensitive)
+        let found = allQrs.docs.find(d =>
+            (d.data().shortcut || '').toLowerCase() === target
+        );
+        // Fallback: buscar shortcut que contenga "datos" Y "j&t"
+        if (!found) {
+            found = allQrs.docs.find(d => {
                 const sc = (d.data().shortcut || '').toLowerCase();
-                return sc.includes('datos');
+                return sc.includes('datos') && sc.includes('j&t');
             });
-            if (!found) {
-                return res.status(404).json({
-                    success: false,
-                    message: 'No se encontró la respuesta rápida "Datos J&T". Créala primero.',
-                });
-            }
-            qrSnap = { docs: [found], empty: false };
         }
-
-        const qr = qrSnap.docs[0].data();
+        if (!found) {
+            return res.status(404).json({
+                success: false,
+                message: 'No se encontró la respuesta rápida "Datos J&T". Créala primero.',
+            });
+        }
+        const qr = found.data();
 
         // 3. Reemplazar ** con el número de pedido en el mensaje
         let messageText = qr.message || '';
