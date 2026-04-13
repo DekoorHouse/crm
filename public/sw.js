@@ -1,4 +1,4 @@
-const CACHE_NAME = 'dekoor-v2';
+const CACHE_NAME = 'dekoor-v3';
 const STATIC_ASSETS = [
     '/sitio/',
     '/sitio/style.css',
@@ -40,8 +40,8 @@ self.addEventListener('fetch', event => {
         url.pathname.startsWith('/env-config') ||
         url.origin !== self.location.origin) return;
 
-    // Static assets (images, CSS, JS, fonts): Cache first
-    if (url.pathname.match(/\.(css|js|webp|png|jpg|jpeg|gif|svg|ico|woff|woff2)$/)) {
+    // Images, fonts: Cache first (rarely change)
+    if (url.pathname.match(/\.(webp|png|jpg|jpeg|gif|svg|ico|woff|woff2)$/)) {
         event.respondWith(
             caches.match(event.request).then(cached => {
                 if (cached) return cached;
@@ -52,6 +52,23 @@ self.addEventListener('fetch', event => {
                     }
                     return response;
                 });
+            })
+        );
+        return;
+    }
+
+    // CSS, JS: Stale-while-revalidate (fast load + background update)
+    if (url.pathname.match(/\.(css|js)$/)) {
+        event.respondWith(
+            caches.match(event.request).then(cached => {
+                const fetchPromise = fetch(event.request).then(response => {
+                    if (response.ok) {
+                        const clone = response.clone();
+                        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+                    }
+                    return response;
+                });
+                return cached || fetchPromise;
             })
         );
         return;
