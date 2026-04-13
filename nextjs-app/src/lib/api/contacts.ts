@@ -146,7 +146,7 @@ export async function pedirDatosEnvio(contactId: string): Promise<{ orderNumber:
   const res = await fetch(`/api/jt-guias/pedir-datos/${contactId}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({}),
+    body: JSON.stringify({ shortcut: "Datos J&T" }),
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || "Error al enviar solicitud de datos");
