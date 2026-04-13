@@ -77,7 +77,7 @@ export default function ContactList({
   return (
     <aside className="w-80 h-full flex flex-col border-r border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
       {/* Header + Search */}
-      <div className="px-3 pt-3 pb-2 space-y-2 border-b border-outline-variant/10">
+      <div className="px-3 pt-3 pb-2 space-y-2.5 border-b border-outline-variant/10">
         <div className="flex items-center gap-2">
           <div className="flex-1 relative">
             <span className="absolute inset-y-0 left-2.5 flex items-center text-on-surface-variant/50">
@@ -89,7 +89,7 @@ export default function ContactList({
               value={searchQuery}
               onChange={(e) => onSearch(e.target.value)}
               placeholder="Buscar..."
-              className="w-full pl-8 pr-3 py-1.5 bg-surface-container-low rounded-lg text-xs text-on-surface border-none focus:ring-0 focus:outline-none placeholder:text-on-surface-variant/50"
+              className="w-full pl-8 pr-3 py-2 bg-surface-container-low rounded-xl text-xs text-on-surface border border-outline-variant/10 focus:border-primary/30 focus:ring-0 focus:outline-none placeholder:text-on-surface-variant/50 transition-colors"
             />
             {searchQuery && (
               <button onClick={() => onSearch("")} className="absolute inset-y-0 right-2 flex items-center text-on-surface-variant/50 hover:text-on-surface">
@@ -108,8 +108,8 @@ export default function ContactList({
           <div className="flex items-center gap-1.5 relative">
             <button
               onClick={() => { onTagFilter(""); setShowTagMenu(false); }}
-              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all ${
-                !activeTag && !designReview && !pendingAi ? "bg-primary text-on-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                !activeTag && !designReview && !pendingAi ? "bg-primary text-on-primary border-primary shadow-sm" : "bg-surface-container-low text-on-surface-variant border-outline-variant/15 hover:text-on-surface hover:border-outline-variant/30"
               }`}
             >
               Todos
@@ -118,8 +118,8 @@ export default function ContactList({
             {/* Design review filter */}
             <button
               onClick={onToggleDesignReview}
-              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
-                designReview ? "bg-secondary/15 text-secondary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 border ${
+                designReview ? "bg-secondary/15 text-secondary border-secondary/25 shadow-sm" : "bg-surface-container-low text-on-surface-variant border-outline-variant/15 hover:text-on-surface hover:border-outline-variant/30"
               }`}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 12 }}>palette</span>
@@ -129,8 +129,8 @@ export default function ContactList({
             {/* Pending AI filter */}
             <button
               onClick={onTogglePendingAi}
-              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 ${
-                pendingAi ? "bg-primary/15 text-primary" : "bg-surface-container-low text-on-surface-variant hover:text-on-surface"
+              className={`flex-shrink-0 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all flex items-center gap-1 border ${
+                pendingAi ? "bg-primary/15 text-primary border-primary/25 shadow-sm" : "bg-surface-container-low text-on-surface-variant border-outline-variant/15 hover:text-on-surface hover:border-outline-variant/30"
               }`}
             >
               <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
@@ -161,7 +161,7 @@ export default function ContactList({
 
                 {/* Dropdown menu */}
                 {showTagMenu && (
-                  <div className="absolute top-full left-0 mt-1 z-50 bg-surface-container-lowest rounded-xl shadow-2xl dark:shadow-[0_0_20px_rgba(122,162,247,0.15)] border border-outline-variant/20 py-1 w-48 max-h-64 overflow-y-auto">
+                  <div className="absolute top-full left-0 mt-1.5 z-50 bg-surface-container-lowest rounded-xl shadow-2xl dark:shadow-[0_0_20px_rgba(122,162,247,0.15)] border border-outline-variant/20 py-1.5 w-48 max-h-64 overflow-y-auto">
                     {tags.map((tag) => (
                       <button
                         key={tag.id}

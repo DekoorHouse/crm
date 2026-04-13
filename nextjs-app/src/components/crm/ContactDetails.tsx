@@ -81,9 +81,9 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
   return (
     <aside className="w-80 h-full flex flex-col border-l border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-outline-variant/10 flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-outline-variant/10 flex items-center justify-between glass-header">
         <h3 className="text-sm font-bold text-on-surface">Detalles del contacto</h3>
-        <button onClick={onClose} className="p-1 text-on-surface-variant hover:text-on-surface rounded-lg">
+        <button onClick={onClose} className="p-1.5 text-on-surface-variant hover:text-on-surface hover:bg-surface-container-low rounded-lg transition-colors">
           <span className="material-symbols-outlined" style={{ fontSize: 18 }}>close</span>
         </button>
       </div>
@@ -93,7 +93,7 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
         {/* Avatar + name */}
         <div className="px-4 py-5 text-center border-b border-outline-variant/10">
           <div className="relative inline-block mb-3">
-            <div className="w-16 h-16 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-2xl mx-auto">
+            <div className="w-16 h-16 rounded-full avatar-gradient flex items-center justify-center text-white font-bold text-2xl mx-auto shadow-md">
               {(contact.name || contact.id).charAt(0).toUpperCase()}
             </div>
             {/* Purchase crown */}
@@ -122,7 +122,7 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
           ) : (
             <div className="space-y-2">
               {orders.map((order) => (
-                <div key={order.id} className="bg-surface-container-low/50 rounded-xl p-3">
+                <div key={order.id} className="bg-surface-container-low/50 rounded-xl p-3 card-shadow hover:bg-surface-container-low transition-colors">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-primary">DH{order.consecutiveOrderNumber}</span>
                     <span className="text-[10px] text-on-surface-variant">{formatOrderDate(order.createdAt)}</span>
@@ -203,19 +203,19 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
       {/* Action buttons (fixed at bottom) */}
       <div className="px-3 py-3 border-t border-outline-variant/10 space-y-1.5">
         <button onClick={handleMarkPurchase}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-primary text-on-primary hover:opacity-90 transition-all">
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-primary text-on-primary hover:opacity-90 transition-all shadow-sm">
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>shopping_cart</span>
           Registrar Compra (Meta)
         </button>
         <button onClick={handlePedirDatos}
           disabled={orders.length === 0}
-          className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-secondary-container text-on-secondary-container hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed">
+          className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-secondary-container text-on-secondary-container hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm">
           <span className="material-symbols-outlined" style={{ fontSize: 16 }}>local_shipping</span>
           Pedir Datos de Envío
         </button>
         {onNewOrder && (
           <button onClick={onNewOrder}
-            className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-all">
+            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold bg-primary/10 text-primary hover:bg-primary/20 transition-all border border-primary/15">
             <span className="material-symbols-outlined" style={{ fontSize: 16 }}>add_circle</span>
             Registrar Nuevo Pedido
           </button>

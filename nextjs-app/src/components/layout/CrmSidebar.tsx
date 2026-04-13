@@ -97,10 +97,10 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
       <div className={`py-4 flex items-center ${collapsed ? "px-3 justify-center" : "px-5 gap-3"}`}>
         <button
           onClick={onToggle}
-          className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all"
+          className="w-8 h-8 rounded-xl avatar-gradient flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all shadow-sm"
           title={collapsed ? "Expandir menu" : "Colapsar menu"}
         >
-          <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 18 }}>
+          <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>
             {collapsed ? "menu" : "menu_open"}
           </span>
         </button>
@@ -188,7 +188,7 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
         <div className={`flex items-center border-t border-outline-variant/15 pt-3 ${
           collapsed ? "justify-center px-0 py-1" : "gap-3 px-3 py-2"
         }`}>
-          <div className="w-8 h-8 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-xs flex-shrink-0">
+          <div className="w-8 h-8 rounded-full avatar-gradient flex items-center justify-center text-white font-bold text-xs flex-shrink-0 shadow-sm">
             {userName.charAt(0).toUpperCase()}
           </div>
           {!collapsed && (

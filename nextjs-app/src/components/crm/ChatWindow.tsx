@@ -76,9 +76,9 @@ export default function ChatWindow({
   return (
     <div className="flex-1 flex flex-col bg-background min-w-0">
       {/* Header */}
-      <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-3 bg-surface-container-lowest">
+      <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-3 glass-header z-10">
         <button onClick={onToggleDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer hover:opacity-80 transition-opacity">
-          <div className="w-9 h-9 rounded-full bg-primary-container flex items-center justify-center text-on-primary-container font-bold text-sm flex-shrink-0">
+          <div className="w-9 h-9 rounded-full avatar-gradient flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm">
             {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
@@ -97,10 +97,10 @@ export default function ChatWindow({
           <button
             onClick={onToggleBot}
             title={contact.botActive ? "Desactivar IA" : "Activar IA"}
-            className={`text-[10px] font-bold px-2 py-1 rounded-full flex items-center gap-1 transition-all ${
+            className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 transition-all border ${
               contact.botActive
-                ? "text-primary bg-primary/10 hover:bg-primary/20"
-                : "text-on-surface-variant bg-surface-container-high hover:bg-surface-container-highest"
+                ? "text-primary bg-primary/10 border-primary/20 hover:bg-primary/20 shadow-sm"
+                : "text-on-surface-variant bg-surface-container-high border-transparent hover:bg-surface-container-highest"
             }`}
           >
             <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
@@ -110,7 +110,7 @@ export default function ChatWindow({
       </div>
 
       {/* Messages */}
-      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3" onScroll={handleScroll}>
+      <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 chat-bg" onScroll={handleScroll}>
         {loading ? (
           <div className="flex items-center justify-center h-full">
             <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
@@ -130,8 +130,8 @@ export default function ChatWindow({
               return (
                 <div key={msg.docId}>
                   {showDate && (
-                    <div className="flex justify-center my-3">
-                      <span className="text-[10px] font-bold text-on-surface-variant/50 bg-surface-container-low px-3 py-1 rounded-full capitalize">
+                    <div className="flex justify-center my-4">
+                      <span className="text-[10px] font-bold text-on-surface-variant/60 bg-surface-container-lowest px-4 py-1.5 rounded-full capitalize shadow-sm">
                         {msgDate}
                       </span>
                     </div>

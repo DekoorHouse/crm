@@ -108,7 +108,7 @@ export default function MessageComposer({ onSend, disabled, disabledReason, repl
   }
 
   return (
-    <div className="border-t border-outline-variant/10 bg-surface-container-lowest">
+    <div className="border-t border-outline-variant/10 glass-header">
       {/* Reply-to preview */}
       {replyTo && (
         <div className="px-4 pt-2 flex items-center gap-2">
@@ -163,11 +163,11 @@ export default function MessageComposer({ onSend, disabled, disabledReason, repl
 
           <textarea ref={textareaRef} value={text} onChange={(e) => handleTextChange(e.target.value)}
             onKeyDown={handleKeyDown} onPaste={handlePaste} placeholder="Escribe un mensaje... (/ para atajos)"
-            rows={1} className="flex-1 bg-surface-container-low rounded-xl px-4 py-2.5 text-sm text-on-surface resize-none border-none focus:ring-0 focus:outline-none placeholder:text-on-surface-variant/50 max-h-32"
+            rows={1} className="flex-1 bg-surface-container-low rounded-2xl px-4 py-2.5 text-sm text-on-surface resize-none border border-outline-variant/10 focus:border-primary/30 focus:ring-0 focus:outline-none placeholder:text-on-surface-variant/50 max-h-32 transition-colors"
             style={{ minHeight: 40 }} />
 
           <button onClick={handleSend} disabled={(!text.trim() && !stagedFile) || sending || uploading}
-            className="p-2.5 bg-primary text-on-primary rounded-xl disabled:opacity-40 hover:opacity-90 transition-all flex-shrink-0">
+            className="p-2.5 bg-primary text-on-primary rounded-2xl disabled:opacity-40 hover:opacity-90 transition-all flex-shrink-0 shadow-sm">
             <span className="material-symbols-outlined" style={{ fontSize: 20 }}>
               {uploading ? "cloud_upload" : sending ? "hourglass_empty" : "send"}
             </span>

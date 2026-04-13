@@ -30,27 +30,27 @@ function formatMessageTime(ts: { _seconds: number } | null): string {
 export default function ContactItem({ contact, isActive, onClick, onPreview, onMarkUnread }: ContactItemProps) {
   return (
     <div
-      className={`relative w-full flex items-start gap-3 px-4 py-3 text-left transition-colors cursor-pointer group ${
-        isActive ? "bg-primary/10" : "hover:bg-surface-container-low"
-      } ${contact.botActive ? "border-l-2 border-primary" : ""}`}
+      className={`relative w-full flex items-start gap-3 px-4 py-3 text-left transition-all duration-150 cursor-pointer group ${
+        isActive ? "bg-primary/8 border-l-3 border-primary" : "hover:bg-surface-container-low border-l-3 border-transparent"
+      } ${contact.botActive && !isActive ? "border-l-3 border-primary/40" : ""}`}
       onClick={onClick}
     >
       {/* Avatar */}
       <div className="flex-shrink-0">
         {contact.purchaseStatus === "completed" ? (
-          <div className="w-10 h-10 rounded-full bg-primary flex items-center justify-center">
-            <span className="material-symbols-outlined text-on-primary" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
+          <div className="w-10 h-10 rounded-full avatar-gradient flex items-center justify-center shadow-sm">
+            <span className="material-symbols-outlined text-white" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
               workspace_premium
             </span>
           </div>
         ) : contact.purchaseStatus === "registered" ? (
-          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center">
+          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center shadow-sm">
             <span className="material-symbols-outlined text-on-surface-variant" style={{ fontSize: 22, fontVariationSettings: "'FILL' 1" }}>
               workspace_premium
             </span>
           </div>
         ) : (
-          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-sm">
+          <div className="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center text-on-surface-variant font-bold text-sm shadow-sm">
             {(contact.name || contact.id).charAt(0).toUpperCase()}
           </div>
         )}
@@ -92,7 +92,7 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
             <Twemoji>{contact.lastMessage || "Sin mensajes"}</Twemoji>
           </p>
           {contact.unreadCount > 0 && (
-            <span className="bg-primary text-on-primary text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0">
+            <span className="bg-primary text-on-primary text-[10px] font-bold rounded-full min-w-[18px] h-[18px] flex items-center justify-center px-1 flex-shrink-0 shadow-sm">
               {contact.unreadCount}
             </span>
           )}

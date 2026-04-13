@@ -185,3 +185,44 @@ h1, h2, h3, h4, h5, h6 {
   vertical-align: -0.2em;
   display: inline-block;
 }
+
+/* --- Chat background pattern (WhatsApp-style) --- */
+.chat-bg {
+  background-color: var(--color-surface-container-low);
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23717973' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+.dark .chat-bg {
+  background-color: var(--color-surface-container-lowest);
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23565f89' fill-opacity='0.06'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+/* --- Glass header effect --- */
+.glass-header {
+  backdrop-filter: blur(12px) saturate(1.5);
+  -webkit-backdrop-filter: blur(12px) saturate(1.5);
+  background-color: color-mix(in srgb, var(--color-surface-container-lowest) 85%, transparent);
+}
+
+/* --- Avatar gradient --- */
+.avatar-gradient {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-container) 100%);
+}
+
+/* --- Sent bubble gradient --- */
+.bubble-sent {
+  background: linear-gradient(135deg, color-mix(in srgb, var(--color-primary) 12%, transparent) 0%, color-mix(in srgb, var(--color-primary) 6%, transparent) 100%);
+}
+
+/* --- Subtle card shadow --- */
+.card-shadow {
+  box-shadow: 0 1px 3px color-mix(in srgb, var(--color-on-surface) 6%, transparent),
+              0 1px 2px color-mix(in srgb, var(--color-on-surface) 4%, transparent);
+}
+
+/* --- Section divider with fade --- */
+.section-divider {
+  border: none;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--color-outline-variant), transparent);
+  opacity: 0.2;
+}

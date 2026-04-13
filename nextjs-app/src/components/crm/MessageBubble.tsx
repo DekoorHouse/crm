@@ -79,7 +79,7 @@ function AudioPlayer({ src }: { src: string }) {
   }
 
   return (
-    <div className="flex items-center gap-2.5 bg-surface-container rounded-2xl px-3 py-2 mb-1 min-w-[240px]">
+    <div className="flex items-center gap-2.5 bg-surface-container-low rounded-2xl px-3.5 py-2.5 mb-1 min-w-[240px] shadow-sm">
       <audio
         ref={audioRef}
         src={src}
@@ -149,10 +149,10 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
   }
 
   return (
-    <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1 group cursor-pointer`} onDoubleClick={handleDoubleClick}>
+    <div className={`flex ${isSent ? "justify-end" : "justify-start"} mb-1.5 group cursor-pointer`} onDoubleClick={handleDoubleClick}>
       <div
-        className={`max-w-[75%] rounded-2xl px-3 py-2 relative ${
-          isSent ? "bg-primary/10 text-primary rounded-br-md" : "bg-surface-container-low text-on-surface rounded-bl-md"
+        className={`max-w-[70%] rounded-2xl px-3.5 py-2 relative shadow-sm ${
+          isSent ? "bubble-sent text-primary rounded-br-md" : "bg-surface-container-lowest text-on-surface rounded-bl-md"
         }`}
       >
         {/* Reply context */}
