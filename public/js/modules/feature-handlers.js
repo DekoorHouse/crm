@@ -2,10 +2,33 @@
 // Este archivo agrupa los manejadores de eventos para las funcionalidades
 // que no son el chat principal, como campañas, etiquetas, ajustes, etc.
 
-// --- INICIO DE MODIFICACIÓN ---
-// Importar funciones de ui-manager si es necesario (o hacerlas globales)
-// import { loadAdIdMetrics, clearAdIdMetricsFilter } from './ui-manager.js';
-// --- FIN DE MODIFICACIÓN ---
+/**
+ * Modal de confirmación que reemplaza confirm() nativo.
+ * Retorna una Promise<boolean>.
+ */
+function showConfirmModal(message, { icon = 'help', confirmText = 'Aceptar', cancelText = 'Cancelar' } = {}) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.45);';
+        const card = document.createElement('div');
+        card.style.cssText = 'background:var(--color-surface-container-lowest,#fff);border-radius:16px;padding:24px;width:340px;max-width:90vw;box-shadow:0 8px 32px rgba(0,0,0,.25);text-align:center;font-family:Manrope,sans-serif;';
+        card.innerHTML = `
+            <div style="width:44px;height:44px;border-radius:50%;background:var(--color-primary-container,#81b29a);display:flex;align-items:center;justify-content:center;margin:0 auto 12px">
+                <span class="material-symbols-outlined" style="font-size:24px;color:var(--color-on-primary-container,#134532)">${icon}</span>
+            </div>
+            <p style="font-size:14px;color:var(--color-on-surface,#1b1b1f);margin:0 0 20px;line-height:1.5">${message}</p>
+            <div style="display:flex;gap:8px">
+                <button id="_cm_cancel" style="flex:1;padding:10px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:var(--color-surface-container-low,#f6f2f8);color:var(--color-on-surface-variant,#414944);transition:background .15s">${cancelText}</button>
+                <button id="_cm_ok" style="flex:1;padding:10px;border-radius:12px;border:none;font-size:13px;font-weight:700;cursor:pointer;background:var(--color-primary,#386753);color:var(--color-on-primary,#fff);box-shadow:0 1px 3px rgba(0,0,0,.15);transition:opacity .15s">${confirmText}</button>
+            </div>`;
+        overlay.appendChild(card);
+        document.body.appendChild(overlay);
+        function close(val) { overlay.remove(); resolve(val); }
+        card.querySelector('#_cm_ok').addEventListener('click', () => close(true));
+        card.querySelector('#_cm_cancel').addEventListener('click', () => close(false));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+    });
+}
 
 
 /**
@@ -182,12 +205,13 @@ async function handleSendViewContent() {
  */
 async function handlePedirDatosEnvio() {
     if (!state.selectedContactId) return;
-    if (!confirm("¿Enviar al cliente la solicitud de datos de envío para su último pedido?")) return;
+    const ok = await showConfirmModal("¿Enviar al cliente la solicitud de datos de envío para su último pedido?", { icon: 'local_shipping', confirmText: 'Enviar' });
+    if (!ok) return;
     try {
         const response = await fetch(`${API_BASE_URL}/api/jt-guias/pedir-datos/${state.selectedContactId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({})
+            body: JSON.stringify({ shortcut: "Datos J&T" })
         });
         const result = await response.json();
         if (!response.ok || !result.success) throw new Error(result.message || 'Error al enviar solicitud');
@@ -202,7 +226,8 @@ async function handlePedirDatosEnvio() {
  */
 async function handleCancelarGuiaEnvio() {
     if (!state.selectedContactId) return;
-    if (!confirm("¿Confirmas que quieres cancelar la guía de envío del último pedido de este contacto?")) return;
+    const ok = await showConfirmModal("¿Confirmas que quieres cancelar la guía de envío del último pedido de este contacto?", { icon: 'cancel', confirmText: 'Cancelar guía' });
+    if (!ok) return;
     try {
         const response = await fetch(`${API_BASE_URL}/api/jt-guias/cancelar-por-contacto/${state.selectedContactId}`, {
             method: 'POST',
