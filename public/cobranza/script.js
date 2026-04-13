@@ -110,7 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error(data.message);
 
             // Excluir pedidos que no requieren cobranza (incluye "Diseñado" y los que no tienen estatus)
-            const excluidos = new Set(['pagado', 'fabricar', 'cancelado', 'corregido', 'corregir', 'diseñado']);
+            const excluidos = new Set(['pagado', 'fabricar', 'cancelado', 'corregido', 'corregir', 'diseñado', 'sin estatus']);
             pedidosEncontrados = data.orders.filter(p => {
                 const estatus = (p.estatus || '').toLowerCase().trim();
                 if (!estatus) return false; // "Sin estatus"
