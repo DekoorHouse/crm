@@ -752,7 +752,9 @@ async function handleSendMessage(event) {
 
     if (!text && filesToSend.length === 0 && !remoteFileToSend) return;
 
-    const isExpired = state.isSessionExpired;
+    // Instagram y Messenger no tienen ventana de 24h
+    const selectedContact = state.contacts.find(c => c.id === state.selectedContactId);
+    const isExpired = (selectedContact && (selectedContact.channel === 'messenger' || selectedContact.channel === 'instagram')) ? false : state.isSessionExpired;
     const tempId = `temp_${Date.now()}`;
 
     // --- Definir el texto del mensaje temporal ---
