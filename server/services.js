@@ -232,9 +232,14 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
  * @param {object} options { text, fileUrl, fileType }
  * @returns {Promise<{messages: Array<{id, textForDb, fileUrlForDb, fileTypeForDb}>, lastTextForDb: string}>}
  */
-async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
-    const url = `https://graph.facebook.com/v19.0/me/messages`;
+async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel }) {
+    // Instagram usa endpoint diferente: /{ig-user-id}/messages en vez de /me/messages
+    const isInstagram = channel === 'instagram';
+    const url = isInstagram
+        ? `https://graph.facebook.com/v19.0/${recipientId}/messages`
+        : `https://graph.facebook.com/v19.0/me/messages`;
     const params = { access_token: FB_PAGE_ACCESS_TOKEN };
+    const logPrefix = isInstagram ? 'INSTAGRAM SEND' : 'MESSENGER SEND';
     const sentMessages = [];
 
     // Send media first if present
@@ -243,18 +248,12 @@ async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
                                fileType.startsWith('video/') ? 'video' :
                                fileType.startsWith('audio/') ? 'audio' : 'file';
 
-        const mediaPayload = {
-            recipient: { id: psid },
-            message: {
-                attachment: {
-                    type: attachmentType,
-                    payload: { url: fileUrl, is_reusable: true }
-                }
-            }
-        };
+        const mediaPayload = isInstagram
+            ? { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: fileUrl } } } }
+            : { recipient: { id: recipientId }, message: { attachment: { type: attachmentType, payload: { url: fileUrl, is_reusable: true } } } };
 
         try {
-            console.log(`[MESSENGER SEND] Enviando ${attachmentType} a ${psid}`);
+            console.log(`[${logPrefix}] Enviando ${attachmentType} a ${recipientId}`);
             const response = await axios.post(url, mediaPayload, { params });
             const fallbackTexts = { image: '📷 Imagen', video: '🎥 Video', audio: '🎵 Audio', file: '📄 Documento' };
             sentMessages.push({
@@ -264,7 +263,7 @@ async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
                 fileTypeForDb: fileType
             });
         } catch (error) {
-            console.error(`❌ [MESSENGER SEND] Error al enviar media a ${psid}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            console.error(`❌ [${logPrefix}] Error al enviar media a ${recipientId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
             throw error;
         }
 
@@ -277,12 +276,12 @@ async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
     // Send text if present
     if (text) {
         const textPayload = {
-            recipient: { id: psid },
+            recipient: { id: recipientId },
             message: { text: text }
         };
 
         try {
-            console.log(`[MESSENGER SEND] Enviando texto a ${psid}`);
+            console.log(`[${logPrefix}] Enviando texto a ${recipientId}`);
             const response = await axios.post(url, textPayload, { params });
             sentMessages.push({
                 id: response.data.message_id,
@@ -291,13 +290,13 @@ async function sendMessengerMessage(psid, { text, fileUrl, fileType }) {
                 fileTypeForDb: null
             });
         } catch (error) {
-            console.error(`❌ [MESSENGER SEND] Error al enviar texto a ${psid}:`, error.response ? JSON.stringify(error.response.data) : error.message);
+            console.error(`❌ [${logPrefix}] Error al enviar texto a ${recipientId}:`, error.response ? JSON.stringify(error.response.data) : error.message);
             throw error;
         }
     }
 
     if (sentMessages.length === 0) {
-        throw new Error("Se requiere texto o un archivo para enviar un mensaje de Messenger.");
+        throw new Error("Se requiere texto o un archivo para enviar un mensaje.");
     }
 
     const lastMessage = sentMessages[sentMessages.length - 1];
@@ -868,8 +867,8 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
 
             if (contactChannel === 'messenger' || contactChannel === 'instagram') {
                 const recipientId = contactData.psid || contactData.igsid || contactId.replace(/^(fb_|ig_)/, '');
-                const result = await sendMessengerMessage(recipientId, { text: msgText });
-                sentMessageData = { id: result[0]?.id || null, textForDb: msgText };
+                const result = await sendMessengerMessage(recipientId, { text: msgText, channel: contactChannel });
+                sentMessageData = { id: result.messages?.[0]?.id || null, textForDb: msgText };
             } else {
                 const sendOptions = { text: msgText };
                 if (shouldQuote && message.id) {

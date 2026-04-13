@@ -2304,7 +2304,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
         // === MESSENGER / INSTAGRAM: Lógica de envío via Meta Send API ===
         if (channel === 'messenger' || channel === 'instagram') {
             const recipientId = contactDoc.data().psid || contactDoc.data().igsid || contactId.replace(/^(fb_|ig_)/, '');
-            const sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType });
+            const sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel });
 
             // Guardar cada mensaje enviado en Firestore
             let lastMessageToSave;

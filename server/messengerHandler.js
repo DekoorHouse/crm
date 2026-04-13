@@ -127,8 +127,9 @@ async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     try {
         const contactDoc = await contactRef.get();
         const data = contactDoc.data();
-        const psid = data.psid || data.igsid;
-        const sentMessageData = await sendMessengerMessage(psid, { text, fileUrl, fileType });
+        const recipientId = data.psid || data.igsid;
+        const channel = data.channel || 'messenger';
+        const sentMessageData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel });
 
         // Save sent message(s) to Firestore
         for (const msg of sentMessageData.messages) {
