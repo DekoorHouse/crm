@@ -59,8 +59,10 @@ export default function ContactItem({ contact, isActive, onClick, onPreview, onM
       {/* Content */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
-          <span className={`text-sm font-semibold truncate ${isActive ? "text-primary" : "text-on-surface"}`}>
+          <span className={`text-sm font-semibold truncate ${isActive ? "text-primary" : "text-on-surface"} flex items-center gap-1`}>
             <Twemoji>{contact.name || contact.id}</Twemoji>
+            {contact.channel === "messenger" && <span className="text-[9px] font-bold text-blue-500 bg-blue-500/10 px-1 rounded flex-shrink-0">FB</span>}
+            {contact.channel === "instagram" && <span className="text-[9px] font-bold text-pink-500 bg-pink-500/10 px-1 rounded flex-shrink-0">IG</span>}
           </span>
           <span className="text-[10px] text-on-surface-variant flex-shrink-0 group-hover:hidden">
             {formatMessageTime(contact.lastMessageTimestamp)}

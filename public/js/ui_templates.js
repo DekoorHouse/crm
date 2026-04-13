@@ -751,7 +751,7 @@ const ContactItemTemplate = (contact, isSelected, vsStyle = '') => {
         <div class="flex-grow overflow-hidden ml-2">
             <div class="flex justify-between items-center">
                 <h3 class="font-semibold text-sm truncate">
-                    <i class="${contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
+                    <i class="${contact.channel === 'instagram' ? 'fab fa-instagram text-pink-500' : contact.channel === 'messenger' ? 'fab fa-facebook-messenger text-blue-500' : 'fab fa-whatsapp text-green-500'} mr-1 text-[10px]"></i>
                     ${contact.name || 'Desconocido'}
                     ${contact.botActive ? '<i class="fas fa-robot text-green-500 ml-1 text-[10px]" title="IA Activa"></i>' : ''}
                     ${contact.inDesignReview ? '<i class="fas fa-paint-brush text-purple-500 ml-1 text-[10px]" title="En diseño"></i>' : ''}

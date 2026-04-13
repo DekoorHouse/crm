@@ -87,6 +87,8 @@ export default function ChatWindow({
             </h3>
             <div className="flex items-center gap-2">
               <span className="text-[11px] text-on-surface-variant">{contact.id}</span>
+              {contact.channel === "messenger" && <span className="text-[10px] font-bold text-blue-500 bg-blue-500/10 px-1.5 py-0.5 rounded">Messenger</span>}
+              {contact.channel === "instagram" && <span className="text-[10px] font-bold text-pink-500 bg-pink-500/10 px-1.5 py-0.5 rounded">Instagram</span>}
               {contact.status && (
                 <span className="text-[10px] font-bold text-primary bg-primary/10 px-1.5 py-0.5 rounded">{contact.status}</span>
               )}

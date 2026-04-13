@@ -18,9 +18,10 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 
 // --- MONTAJE DE RUTAS ---
-// Messenger ANTES de WhatsApp porque '/webhook' capturaría '/webhook/messenger'
+// Messenger e Instagram ANTES de WhatsApp porque '/webhook' capturaría sub-rutas
 const { router: messengerRouter } = require('./messengerHandler');
 app.use('/webhook/messenger', messengerRouter);
+app.use('/webhook/instagram', messengerRouter); // Mismo handler, diferencia por object: 'instagram'
 
 app.use('/webhook', whatsappRouter);
 

@@ -863,17 +863,26 @@ async function processAutoReplyAI(contactId, message, contactRef, passedContactD
                 msgText = msgText.replace(/\[CITA\]/ig, '').trim();
             }
 
-            const sendOptions = { text: msgText };
-            if (shouldQuote && message.id) {
-                sendOptions.reply_to_wamid = message.id;
+            const contactChannel = contactData.channel || 'whatsapp';
+            let sentMessageData;
+
+            if (contactChannel === 'messenger' || contactChannel === 'instagram') {
+                const recipientId = contactData.psid || contactData.igsid || contactId.replace(/^(fb_|ig_)/, '');
+                const result = await sendMessengerMessage(recipientId, { text: msgText });
+                sentMessageData = { id: result[0]?.id || null, textForDb: msgText };
+            } else {
+                const sendOptions = { text: msgText };
+                if (shouldQuote && message.id) {
+                    sendOptions.reply_to_wamid = message.id;
+                }
+                sentMessageData = await sendAdvancedWhatsAppMessage(contactId, sendOptions);
             }
 
-            const sentMessageData = await sendAdvancedWhatsAppMessage(contactId, sendOptions);
-            
+            const fromId = (contactChannel === 'messenger' || contactChannel === 'instagram') ? FB_PAGE_ID : PHONE_NUMBER_ID;
             await contactRef.collection('messages').add({
-                from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                from: fromId, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: sentMessageData.id, text: sentMessageData.textForDb, isAutoReply: true,
-                context: { id: message.id }
+                context: { id: message.id }, channel: contactChannel,
             });
             lastText = sentMessageData.textForDb;
 

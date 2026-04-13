@@ -28,6 +28,7 @@ export default function ChatsPage() {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [designReview, setDesignReview] = useState(false);
   const [pendingAi, setPendingAi] = useState(false);
+  const [channelFilter, setChannelFilter] = useState("");
   const [orderModalOpen, setOrderModalOpen] = useState(false);
   const [previewId, setPreviewId] = useState<string | null>(null);
 
@@ -68,8 +69,14 @@ export default function ChatsPage() {
     setPendingAi(next);
     setDesignReview(false);
     setActiveTag(next ? "pendientes_ia" : "");
+    setChannelFilter("");
     applyFilters({ tag: next ? "pendientes_ia" : undefined });
   }, [applyFilters, pendingAi]);
+
+  const handleChannelFilter = useCallback((ch: string) => {
+    setChannelFilter(ch);
+    applyFilters({ ...filters, channel: ch || undefined });
+  }, [applyFilters, filters]);
 
   const handleToggleBot = useCallback(async () => {
     if (!selectedContact) return;
@@ -92,6 +99,7 @@ export default function ChatsPage() {
         activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
         designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
         pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
+        channelFilter={channelFilter} onChannelFilter={handleChannelFilter}
         onPreview={(id) => setPreviewId(id)}
         onMarkUnread={(id) => { markContactUnread(id).then(() => toast.success("Marcado como no leido")).catch(() => {}); }}
       />

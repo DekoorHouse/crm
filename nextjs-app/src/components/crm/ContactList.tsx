@@ -25,6 +25,8 @@ interface ContactListProps {
   onToggleDesignReview: () => void;
   pendingAi: boolean;
   onTogglePendingAi: () => void;
+  channelFilter: string;
+  onChannelFilter: (channel: string) => void;
   onPreview?: (contactId: string) => void;
   onMarkUnread?: (contactId: string) => void;
 }
@@ -33,7 +35,7 @@ export default function ContactList({
   contacts, loading, selectedId, onSelect, onLoadMore, hasMore,
   searchQuery, onSearch, activeTag, onTagFilter, unreadOnly, onToggleUnread,
   designReview, onToggleDesignReview, pendingAi, onTogglePendingAi,
-  onPreview, onMarkUnread,
+  channelFilter, onChannelFilter, onPreview, onMarkUnread,
 }: ContactListProps) {
   const [tags, setTags] = useState<Tag[]>([]);
   const [showTagMenu, setShowTagMenu] = useState(false);
@@ -135,6 +137,24 @@ export default function ContactList({
             >
               <span className="material-symbols-outlined" style={{ fontSize: 12 }}>smart_toy</span>
               Pend. IA
+            </button>
+
+            {/* Channel filters */}
+            <button
+              onClick={() => onChannelFilter(channelFilter === "messenger" ? "" : "messenger")}
+              className={`flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                channelFilter === "messenger" ? "bg-blue-500/15 text-blue-600 border-blue-500/25 shadow-sm" : "bg-surface-container-low text-on-surface-variant border-outline-variant/15 hover:text-on-surface hover:border-outline-variant/30"
+              }`}
+            >
+              FB
+            </button>
+            <button
+              onClick={() => onChannelFilter(channelFilter === "instagram" ? "" : "instagram")}
+              className={`flex-shrink-0 px-2 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                channelFilter === "instagram" ? "bg-pink-500/15 text-pink-600 border-pink-500/25 shadow-sm" : "bg-surface-container-low text-on-surface-variant border-outline-variant/15 hover:text-on-surface hover:border-outline-variant/30"
+              }`}
+            >
+              IG
             </button>
 
             {/* Show active tag chip if one is selected */}

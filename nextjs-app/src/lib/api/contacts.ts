@@ -50,6 +50,7 @@ export async function fetchContacts(
     departmentId?: string;
     purchaseStatus?: string;
     designReview?: boolean;
+    channel?: string;
   } = {}
 ): Promise<ContactsResponse> {
   const params = new URLSearchParams();
@@ -60,6 +61,7 @@ export async function fetchContacts(
   if (opts.departmentId) params.set("departmentId", opts.departmentId);
   if (opts.purchaseStatus) params.set("purchaseStatus", opts.purchaseStatus);
   if (opts.designReview) params.set("designReview", "true");
+  if (opts.channel) params.set("channel", opts.channel);
   const res = await fetch(`/api/contacts?${params.toString()}`);
   const data = await res.json();
   if (!data.success) throw new Error(data.message || "Error fetching contacts");

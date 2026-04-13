@@ -462,9 +462,9 @@ async function handleSelectContact(contactId) {
             // Guardar estado previo para detectar cambios y decidir qué renderizar
             const wasExpired = state.isSessionExpired;
 
-            // Messenger no tiene ventana de 24h, nunca expira
+            // Messenger e Instagram no tienen ventana de 24h, nunca expira
             const selectedContact = state.contacts.find(c => c.id === contactId);
-            if (selectedContact && selectedContact.channel === 'messenger') {
+            if (selectedContact && (selectedContact.channel === 'messenger' || selectedContact.channel === 'instagram')) {
                 state.isSessionExpired = false;
             } else {
                 // Recalcular el estado de la sesión cada vez que llegan mensajes
@@ -643,7 +643,7 @@ function loadMoreMessages() {
             
             const wasExpired = state.isSessionExpired;
             const selectedContactPag = state.contacts.find(c => c.id === contactId);
-            if (selectedContactPag && selectedContactPag.channel === 'messenger') {
+            if (selectedContactPag && (selectedContactPag.channel === 'messenger' || selectedContactPag.channel === 'instagram')) {
                 state.isSessionExpired = false;
             } else {
                 const lastUserMessage = state.messages.slice().reverse().find(m => m.from === contactId);

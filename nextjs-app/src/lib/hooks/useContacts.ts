@@ -12,6 +12,7 @@ interface ContactFilters {
   departmentId?: string;
   purchaseStatus?: string;
   designReview?: boolean;
+  channel?: string;
 }
 
 export function useContacts() {

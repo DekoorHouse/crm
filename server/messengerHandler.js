@@ -35,7 +35,7 @@ function isWithinBusinessHours() {
 }
 
 /**
- * Fetches user profile info from Facebook Graph API.
+ * Fetches user profile info from Facebook Graph API (Messenger).
  * @param {string} psid The Page-Scoped User ID.
  * @returns {Promise<{name: string, profileImageUrl: string|null}>}
  */
@@ -54,6 +54,31 @@ async function getUserProfile(psid) {
     } catch (error) {
         console.error(`[MESSENGER] Error al obtener perfil de ${psid}:`, error.message);
         return { name: `Facebook User (${psid.slice(-4)})`, profileImageUrl: null };
+    }
+}
+
+/**
+ * Fetches user profile info from Instagram Graph API.
+ * @param {string} igsid The Instagram-Scoped User ID.
+ * @returns {Promise<{name: string, profileImageUrl: string|null}>}
+ */
+async function getInstagramUserProfile(igsid) {
+    try {
+        const response = await axios.get(`https://graph.facebook.com/v19.0/${igsid}`, {
+            params: {
+                fields: 'name,username,profile_pic',
+                access_token: FB_PAGE_ACCESS_TOKEN
+            }
+        });
+        const name = response.data.name || response.data.username || `IG User (${igsid.slice(-4)})`;
+        return {
+            name,
+            username: response.data.username || null,
+            profileImageUrl: response.data.profile_pic || null
+        };
+    } catch (error) {
+        console.error(`[INSTAGRAM] Error al obtener perfil de ${igsid}:`, error.message);
+        return { name: `IG User (${igsid.slice(-4)})`, username: null, profileImageUrl: null };
     }
 }
 
@@ -101,7 +126,8 @@ async function downloadAndUploadMessengerMedia(url, psid, messageId) {
 async function sendAutoMessage(contactRef, { text, fileUrl, fileType }) {
     try {
         const contactDoc = await contactRef.get();
-        const psid = contactDoc.data().psid;
+        const data = contactDoc.data();
+        const psid = data.psid || data.igsid;
         const sentMessageData = await sendMessengerMessage(psid, { text, fileUrl, fileType });
 
         // Save sent message(s) to Firestore
@@ -145,14 +171,17 @@ router.get('/', (req, res) => {
     }
 });
 
-// Message handling endpoint
+// Message handling endpoint (handles both Messenger and Instagram DMs)
 router.post('/', async (req, res) => {
     try {
-        console.log('[MESSENGER WEBHOOK] Payload recibido:', JSON.stringify(req.body, null, 2));
+        const objectType = req.body.object; // 'page' for Messenger, 'instagram' for IG DMs
+        const channel = objectType === 'instagram' ? 'instagram' : 'messenger';
+        const logPrefix = channel === 'instagram' ? 'INSTAGRAM' : 'MESSENGER';
 
-        // Messenger webhooks always have object === 'page'
-        if (req.body.object !== 'page') {
-            console.log('[MESSENGER] Objeto no es page, ignorando.');
+        console.log(`[${logPrefix} WEBHOOK] Payload recibido:`, JSON.stringify(req.body, null, 2));
+
+        if (objectType !== 'page' && objectType !== 'instagram') {
+            console.log(`[${logPrefix}] Objeto no es page ni instagram, ignorando.`);
             return res.sendStatus(404);
         }
 
@@ -162,38 +191,38 @@ router.post('/', async (req, res) => {
             const messagingEvents = entry.messaging || [];
 
             for (const event of messagingEvents) {
-                const senderPsid = event.sender?.id;
+                const senderId = event.sender?.id;
 
                 // Ignore messages sent by the page itself
-                if (!senderPsid || senderPsid === FB_PAGE_ID) {
+                if (!senderId || senderId === FB_PAGE_ID) {
                     continue;
                 }
 
                 // Handle delivery receipts
                 if (event.delivery) {
-                    await handleDeliveryReceipt(event.delivery);
+                    await handleDeliveryReceipt(event.delivery, channel);
                     continue;
                 }
 
                 // Handle read receipts
                 if (event.read) {
-                    await handleReadReceipt(senderPsid, event.read);
+                    await handleReadReceipt(senderId, event.read, channel);
                     continue;
                 }
 
                 // Handle incoming messages
                 if (event.message) {
-                    await handleIncomingMessage(senderPsid, event.message, event.timestamp);
+                    await handleIncomingMessage(senderId, event.message, event.timestamp, channel);
                 }
 
-                // Handle postbacks (button clicks)
-                if (event.postback) {
-                    await handlePostback(senderPsid, event.postback, event.timestamp);
+                // Handle postbacks (Messenger only, IG doesn't support them)
+                if (event.postback && channel === 'messenger') {
+                    await handlePostback(senderId, event.postback, event.timestamp);
                 }
             }
         }
     } catch (error) {
-        console.error('❌ [MESSENGER] ERROR CRÍTICO EN EL WEBHOOK:', error);
+        console.error('❌ [WEBHOOK] ERROR CRÍTICO:', error);
     } finally {
         if (!res.headersSent) {
             res.sendStatus(200);
@@ -202,10 +231,16 @@ router.post('/', async (req, res) => {
 });
 
 /**
- * Handles an incoming Messenger message.
+ * Handles an incoming Messenger or Instagram DM message.
+ * @param {string} senderId PSID (Messenger) or IGSID (Instagram)
+ * @param {object} message The message payload from Meta
+ * @param {number} eventTimestamp
+ * @param {'messenger'|'instagram'} channel
  */
-async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
-    const contactId = `fb_${senderPsid}`;
+async function handleIncomingMessage(senderId, message, eventTimestamp, channel = 'messenger') {
+    const prefix = channel === 'instagram' ? 'ig' : 'fb';
+    const logPrefix = channel === 'instagram' ? 'INSTAGRAM' : 'MESSENGER';
+    const contactId = `${prefix}_${senderId}`;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
     // Duplicate prevention
@@ -229,8 +264,16 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
         from: contactId,
         status: 'received',
         id: message.mid,
-        channel: 'messenger'
+        channel
     };
+
+    // Instagram story replies and mentions
+    if (channel === 'instagram' && message.reply_to?.story) {
+        messageData.storyReply = {
+            url: message.reply_to.story.url,
+            id: message.reply_to.story.id
+        };
+    }
 
     // Process text
     if (message.text) {
@@ -251,7 +294,7 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
         } else if (['image', 'video', 'audio', 'file'].includes(attachType) && attachment.payload?.url) {
             try {
                 const { publicUrl, mimeType } = await downloadAndUploadMessengerMedia(
-                    attachment.payload.url, senderPsid, message.mid
+                    attachment.payload.url, senderId, message.mid
                 );
                 messageData.fileUrl = publicUrl;
                 messageData.fileType = mimeType;
@@ -282,7 +325,7 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
 
     // Save message to Firestore
     await contactRef.collection('messages').add(messageData);
-    console.log(`[MESSENGER] Mensaje de fb_${senderPsid} guardado en Firestore.`);
+    console.log(`[${logPrefix}] Mensaje de ${contactId} guardado en Firestore.`);
 
     // --- Incrementar métricas diarias pre-agregadas ---
     const contactDoc = await contactRef.get();
@@ -299,18 +342,22 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
 
     let contactUpdateData;
     if (isNewContact) {
-        // Fetch profile for new contacts
-        const profile = await getUserProfile(senderPsid);
+        // Fetch profile — different API for Instagram vs Messenger
+        const profile = channel === 'instagram'
+            ? await getInstagramUserProfile(senderId)
+            : await getUserProfile(senderId);
+
         contactUpdateData = {
             name: profile.name,
             name_lowercase: profile.name.toLowerCase(),
-            channel: 'messenger',
-            psid: senderPsid,
+            channel,
+            [channel === 'instagram' ? 'igsid' : 'psid']: senderId,
             profileImageUrl: profile.profileImageUrl,
             lastMessage: messageData.text,
             lastMessageTimestamp: messageData.timestamp,
             unreadCount: 1
         };
+        if (profile.username) contactUpdateData.igUsername = profile.username;
     } else {
         contactUpdateData = {
             lastMessage: messageData.text,
@@ -325,14 +372,14 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
     }
 
     await contactRef.set(contactUpdateData, { merge: true });
-    console.log(`[MESSENGER] Contacto fb_${senderPsid} actualizado/creado.`);
+    console.log(`[${logPrefix}] Contacto ${contactId} actualizado/creado.`);
 
     // --- Department assignment for new contacts ---
     if (isNewContact) {
         const generalDeptQuery = await db.collection('departments').where('name', '==', 'General').limit(1).get();
         if (!generalDeptQuery.empty) {
             await contactRef.update({ assignedDepartmentId: generalDeptQuery.docs[0].id });
-            console.log(`[MESSENGER ROUTING] Contacto fb_${senderPsid} asignado al departamento General.`);
+            console.log(`[${logPrefix} ROUTING] Contacto ${contactId} asignado al departamento General.`);
         }
     }
 
@@ -362,7 +409,7 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
 
         if (shouldSendAway) {
             await sendAutoMessage(contactRef, { text: AWAY_MESSAGE });
-            console.log(`[MESSENGER AWAY] Mensaje de ausencia enviado a fb_${senderPsid}.`);
+            console.log(`[${logPrefix} AWAY] Mensaje de ausencia enviado a ${contactId}.`);
             return;
         }
     }
@@ -376,11 +423,11 @@ async function handleIncomingMessage(senderPsid, message, eventTimestamp) {
 
     // AI auto-reply
     if (updatedContactData.botActive) {
-        const messengerMessage = { type: 'text', text: { body: messageData.text } };
+        const incomingMsg = { type: 'text', text: { body: messageData.text } };
         const delay = 20000;
-        console.log(`[MESSENGER AI] Programando respuesta de IA para fb_${senderPsid} en ${delay/1000}s`);
-        triggerAutoReplyAI(messengerMessage, contactRef, updatedContactData, delay).catch(err => {
-            console.error('[MESSENGER] Error asíncrono en respuesta de IA:', err);
+        console.log(`[${logPrefix} AI] Programando respuesta de IA para ${contactId} en ${delay/1000}s`);
+        triggerAutoReplyAI(incomingMsg, contactRef, updatedContactData, delay).catch(err => {
+            console.error(`[${logPrefix}] Error asíncrono en respuesta de IA:`, err);
         });
     }
 }
@@ -408,7 +455,7 @@ async function handlePostback(senderPsid, postback, eventTimestamp) {
 /**
  * Handles delivery receipts from Messenger.
  */
-async function handleDeliveryReceipt(delivery) {
+async function handleDeliveryReceipt(delivery, channel = 'messenger') {
     if (!delivery.mids || delivery.mids.length === 0) return;
 
     for (const mid of delivery.mids) {
@@ -431,9 +478,10 @@ async function handleDeliveryReceipt(delivery) {
 /**
  * Handles read receipts from Messenger.
  */
-async function handleReadReceipt(senderPsid, readEvent) {
+async function handleReadReceipt(senderId, readEvent, channel = 'messenger') {
     const watermark = readEvent.watermark;
-    const contactId = `fb_${senderPsid}`;
+    const prefix = channel === 'instagram' ? 'ig' : 'fb';
+    const contactId = `${prefix}_${senderId}`;
     const contactRef = db.collection('contacts_whatsapp').doc(contactId);
 
     try {
@@ -452,10 +500,10 @@ async function handleReadReceipt(senderPsid, readEvent) {
         await batch.commit();
 
         if (!messagesQuery.empty) {
-            console.log(`[MESSENGER STATUS] ${messagesQuery.docs.length} mensajes marcados como read para fb_${senderPsid}.`);
+            console.log(`[${channel.toUpperCase()} STATUS] ${messagesQuery.docs.length} mensajes marcados como read para ${contactId}.`);
         }
     } catch (error) {
-        console.error(`[MESSENGER STATUS] Error actualizando read receipts para fb_${senderPsid}:`, error.message);
+        console.error(`[${channel.toUpperCase()} STATUS] Error actualizando read receipts para ${contactId}:`, error.message);
     }
 }
 
