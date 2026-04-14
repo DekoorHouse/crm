@@ -2303,8 +2303,50 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         // === MESSENGER / INSTAGRAM: Lógica de envío via Meta Send API ===
         if (channel === 'messenger' || channel === 'instagram') {
+            const channelName = channel === 'instagram' ? 'Instagram' : 'Messenger';
             const recipientId = contactDoc.data().psid || contactDoc.data().igsid || contactId.replace(/^(fb_|ig_)/, '');
-            const sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel });
+
+            let sentData;
+            try {
+                sentData = await sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel });
+            } catch (sendErr) {
+                const metaErr = sendErr.response?.data?.error || {};
+                const code = metaErr.code;
+                const subcode = metaErr.error_subcode;
+
+                // Error específico: app pendiente de revisión de Meta (acceso estándar)
+                if (code === 10 && /pages_messaging.*revise/i.test(metaErr.message || '')) {
+                    return res.status(400).json({
+                        success: false,
+                        code: 'APP_PENDING_REVIEW',
+                        message: `No se puede enviar a este contacto de ${channelName}. La app está pendiente de revisión por Meta y solo puede enviar a administradores/evaluadores de la app. Agrega al contacto como tester o espera la aprobación de Meta.`
+                    });
+                }
+                if (code === 200 && /acceso avanzado|advanced access/i.test(metaErr.message || '')) {
+                    return res.status(400).json({
+                        success: false,
+                        code: 'APP_PENDING_REVIEW',
+                        message: `No se puede enviar a este contacto de ${channelName}. La app no tiene acceso avanzado al permiso y el destinatario no es tester de la app. Espera la aprobación de Meta.`
+                    });
+                }
+                // Error de ventana 24h de Messenger
+                if (code === 10 && subcode === 2018278) {
+                    return res.status(400).json({
+                        success: false,
+                        code: 'OUT_OF_24H_WINDOW',
+                        message: `No se puede enviar a este contacto de Messenger. Han pasado más de 24h desde el último mensaje del cliente. Solo se permiten etiquetas de mensaje o plantillas fuera de la ventana.`
+                    });
+                }
+
+                // Otros errores de Meta: devolver mensaje descriptivo
+                return res.status(500).json({
+                    success: false,
+                    code: 'META_SEND_ERROR',
+                    message: metaErr.message || sendErr.message || 'Error al enviar el mensaje.',
+                    meta_code: code || null,
+                    meta_subcode: subcode || null
+                });
+            }
 
             // Guardar cada mensaje enviado en Firestore
             let lastMessageToSave;
@@ -2327,7 +2369,6 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 unreadCount: 0
             });
 
-            const channelName = channel === 'instagram' ? 'Instagram' : 'Messenger';
             return res.status(200).json({ success: true, message: `Mensaje(s) enviado(s) por ${channelName}.` });
         }
 
