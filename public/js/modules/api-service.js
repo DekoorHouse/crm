@@ -504,7 +504,7 @@ function listenForContactUpdates() {
                 }
             }
 
-            // --- INICIO NUEVA VALIDACIÓN DE FILTROS (TAG Y NO LEÍDOS) ---
+            // --- INICIO NUEVA VALIDACIÓN DE FILTROS (TAG, NO LEÍDOS, CANAL, DISEÑO, COMPRA) ---
             if (isAllowed) {
                 // Filtro de etiquetas (status)
                 if (state.activeFilter !== 'all') {
@@ -512,11 +512,36 @@ function listenForContactUpdates() {
                         isAllowed = false;
                     }
                 }
-                
+
                 // Filtro de no leídos
-                if (state.unreadOnly) {
+                if (isAllowed && state.unreadOnly) {
                     if (!updatedContactData.unreadCount || updatedContactData.unreadCount <= 0) {
                         isAllowed = false;
+                    }
+                }
+
+                // Filtro por canal (whatsapp/messenger/instagram)
+                if (isAllowed && state.channelFilter) {
+                    const contactChannel = updatedContactData.channel || 'whatsapp';
+                    if (contactChannel !== state.channelFilter) {
+                        isAllowed = false;
+                    }
+                }
+
+                // Filtro por revisión de diseño
+                if (isAllowed && state.designReviewFilter) {
+                    if (!updatedContactData.inDesignReview) {
+                        isAllowed = false;
+                    }
+                }
+
+                // Filtro por estado de compra
+                if (isAllowed && state.purchaseFilter) {
+                    const ps = updatedContactData.purchaseStatus;
+                    if (state.purchaseFilter === 'both') {
+                        if (ps !== 'registered' && ps !== 'completed') isAllowed = false;
+                    } else {
+                        if (ps !== state.purchaseFilter) isAllowed = false;
                     }
                 }
             }
