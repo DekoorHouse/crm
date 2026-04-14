@@ -43,6 +43,7 @@ app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
+app.use('/api/messenger-import', require('./messengerImport'));
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
