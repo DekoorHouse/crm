@@ -81,6 +81,9 @@ async function importConversation(conversationId, channel, stats) {
             contactData.unreadCount = 0;
             contactData.lastMessage = '';
             contactData.lastMessageTimestamp = admin.firestore.Timestamp.fromDate(new Date(convRes.data.updated_time));
+            // Asignar al departamento General si existe
+            const deptSnap = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+            if (!deptSnap.empty) contactData.assignedDepartmentId = deptSnap.docs[0].id;
             await contactRef.set(contactData);
             stats.contactsCreated++;
             console.log(`[IMPORT] Contacto creado: ${contactId} (${finalName})`);
@@ -289,6 +292,53 @@ router.post('/update-names', async (req, res) => {
         console.log(`[IMPORT NAMES] Actualizados: ${updated} contactos`);
     } catch (error) {
         console.error('[IMPORT NAMES] Error:', error.message);
+    }
+});
+
+// POST /api/messenger-import/assign-department — Asignar departamento General a contactos FB/IG sin dept
+router.post('/assign-department', async (req, res) => {
+    res.json({ success: true, message: 'Asignando departamento General en segundo plano.' });
+
+    try {
+        // 1. Buscar el departamento "General"
+        const deptSnap = await db.collection('departments').where('name', '==', 'General').limit(1).get();
+        if (deptSnap.empty) {
+            console.error('[IMPORT DEPT] No se encontró el departamento "General"');
+            return;
+        }
+        const generalDeptId = deptSnap.docs[0].id;
+        console.log(`[IMPORT DEPT] Departamento General: ${generalDeptId}`);
+
+        // 2. Buscar contactos FB/IG sin departamento
+        const snap = await db.collection('contacts_whatsapp')
+            .where('channel', 'in', ['messenger', 'instagram'])
+            .get();
+
+        let updated = 0;
+        const batchSize = 400;
+        let batch = db.batch();
+        let batchCount = 0;
+
+        for (const doc of snap.docs) {
+            const data = doc.data();
+            if (data.assignedDepartmentId) continue; // Ya tiene departamento
+
+            batch.update(doc.ref, { assignedDepartmentId: generalDeptId });
+            batchCount++;
+            updated++;
+
+            if (batchCount >= batchSize) {
+                await batch.commit();
+                batch = db.batch();
+                batchCount = 0;
+                console.log(`[IMPORT DEPT] ${updated} contactos asignados...`);
+            }
+        }
+
+        if (batchCount > 0) await batch.commit();
+        console.log(`[IMPORT DEPT] Total asignados: ${updated} contactos al departamento General`);
+    } catch (error) {
+        console.error('[IMPORT DEPT] Error:', error.message);
     }
 });
 
