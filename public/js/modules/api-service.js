@@ -121,6 +121,10 @@ async function fetchInitialContacts() {
             url += `&designReview=true`;
         }
 
+        if (state.channelFilter) {
+            url += `&channel=${state.channelFilter}`;
+        }
+
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---
         let departmentIdParam = null;
         const profile = state.currentUserProfile;
@@ -332,6 +336,10 @@ async function fetchMoreContacts() {
 
         if (state.designReviewFilter) {
             url += `&designReview=true`;
+        }
+
+        if (state.channelFilter) {
+            url += `&channel=${state.channelFilter}`;
         }
 
         // --- INICIO: Lógica de filtrado de departamento por perfil de usuario ---

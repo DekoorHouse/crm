@@ -1050,6 +1050,15 @@ function toggleDesignFilter() {
 }
 window.toggleDesignFilter = toggleDesignFilter;
 
+function toggleChannelFilter(channel) {
+    // Si ya está activo, desactivar (volver a "todos los canales")
+    state.channelFilter = state.channelFilter === channel ? null : channel;
+    renderTagFilters();
+    state.contacts = [];
+    fetchInitialContacts();
+}
+window.toggleChannelFilter = toggleChannelFilter;
+
 async function handleDesignToggle(contactId, inDesign) {
     try {
         const contactIndex = state.contacts.findIndex(c => c.id === contactId);

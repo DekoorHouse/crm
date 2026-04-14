@@ -165,6 +165,14 @@ function renderTagFilters() {
     // Botón "En diseño" (revisión de diseño)
     buttonsHtml += `<button id="filter-design" class="filter-btn ${state.designReviewFilter ? 'active' : ''}" onclick="toggleDesignFilter()" title="En revisión de diseño"><i class="fas fa-paint-brush text-xs mr-1" style="color: ${state.designReviewFilter ? 'white' : '#a855f7'};"></i></button>`;
 
+    // Botones de canal (WhatsApp / Messenger / Instagram)
+    const waActive = state.channelFilter === 'whatsapp';
+    buttonsHtml += `<button id="filter-channel-wa" class="filter-btn ${waActive ? 'active' : ''}" onclick="toggleChannelFilter('whatsapp')" title="Solo WhatsApp"><i class="fab fa-whatsapp text-xs" style="color: ${waActive ? 'white' : '#25D366'};"></i></button>`;
+    const fbActive = state.channelFilter === 'messenger';
+    buttonsHtml += `<button id="filter-channel-fb" class="filter-btn ${fbActive ? 'active' : ''}" onclick="toggleChannelFilter('messenger')" title="Solo Messenger"><i class="fab fa-facebook-messenger text-xs" style="color: ${fbActive ? 'white' : '#0084FF'};"></i></button>`;
+    const igActive = state.channelFilter === 'instagram';
+    buttonsHtml += `<button id="filter-channel-ig" class="filter-btn ${igActive ? 'active' : ''}" onclick="toggleChannelFilter('instagram')" title="Solo Instagram"><i class="fab fa-instagram text-xs" style="color: ${igActive ? 'white' : '#E1306C'};"></i></button>`;
+
     // Menú desplegable de tres puntos con los demás filtros (etiquetas)
     let dropdownItems = '';
     state.tags.forEach(tag => {
@@ -471,7 +479,9 @@ function renderContactsView() {
                     <span class="px-2 py-1 text-xs rounded-full text-white" style="background-color: ${tag.color};">${tag.label}</span>
                 </td>
                 <td class="actions-cell">
-                    <a href="https://wa.me/${contact.id}" target="_blank" class="p-2"><i class="fab fa-whatsapp"></i></a>
+                    ${contact.channel === 'messenger' ? '<span class="p-2" title="Messenger"><i class="fab fa-facebook-messenger" style="color:#0084FF"></i></span>'
+                    : contact.channel === 'instagram' ? '<span class="p-2" title="Instagram"><i class="fab fa-instagram" style="color:#E1306C"></i></span>'
+                    : `<a href="https://wa.me/${contact.id}" target="_blank" class="p-2" title="WhatsApp"><i class="fab fa-whatsapp" style="color:#25D366"></i></a>`}
                     <button onclick="openEditContactModal('${contact.id}')" class="p-2"><i class="fas fa-pencil-alt"></i></button>
                     <button onclick="handleDeleteContact('${contact.id}')" class="p-2"><i class="fas fa-trash-alt"></i></button>
                 </td>
