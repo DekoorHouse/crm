@@ -235,13 +235,11 @@ async function sendAdvancedWhatsAppMessage(to, { text, fileUrl, fileType, reply_
  * @returns {Promise<{messages: Array<{id, textForDb, fileUrlForDb, fileTypeForDb}>, lastTextForDb: string}>}
  */
 async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, channel }) {
-    // Instagram usa endpoint /{IG_BUSINESS_ID}/messages (el ID de la cuenta Business de IG, no el recipiente)
-    // Messenger usa /me/messages
+    // Instagram y Messenger usan el mismo endpoint /me/messages via Messenger Platform
+    // El Page Access Token con permisos de IG enruta automáticamente por canal
     const isInstagram = channel === 'instagram';
     const accessToken = isInstagram ? (IG_ACCESS_TOKEN || FB_PAGE_ACCESS_TOKEN) : FB_PAGE_ACCESS_TOKEN;
-    const url = isInstagram
-        ? `https://graph.facebook.com/v19.0/${IG_BUSINESS_ID}/messages`
-        : `https://graph.facebook.com/v19.0/me/messages`;
+    const url = `https://graph.facebook.com/v19.0/me/messages`;
     const params = { access_token: accessToken };
     const logPrefix = isInstagram ? 'INSTAGRAM SEND' : 'MESSENGER SEND';
     const sentMessages = [];
