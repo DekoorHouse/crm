@@ -15,7 +15,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 const jtService = require('./jt/jtService');
 
 const router = express.Router();
@@ -2281,6 +2281,59 @@ router.get('/contacts/:contactId/orders', async (req, res) => {
     } catch (error) {
         console.error(`Error al obtener el historial de pedidos para ${req.params.contactId}:`, error);
         res.status(500).json({ success: false, message: 'Error del servidor al obtener el historial de pedidos.' });
+    }
+});
+
+// --- Endpoint POST /api/contacts/:contactId/utility-message ---
+// Envia una actualizacion de pedido/cuenta fuera de la ventana de 24h
+// usando message tags (pages_utility_messaging). Solo Messenger.
+router.post('/contacts/:contactId/utility-message', async (req, res) => {
+    const { contactId } = req.params;
+    const { text, tag } = req.body || {};
+    const validTags = ['POST_PURCHASE_UPDATE', 'CONFIRMED_EVENT_UPDATE', 'ACCOUNT_UPDATE'];
+    const chosenTag = validTags.includes(tag) ? tag : 'POST_PURCHASE_UPDATE';
+
+    if (!text || !text.trim()) {
+        return res.status(400).json({ success: false, message: 'Texto requerido' });
+    }
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Contacto no encontrado' });
+        }
+        const data = contactDoc.data();
+        if (data.channel !== 'messenger') {
+            return res.status(400).json({ success: false, message: 'Solo disponible para contactos de Messenger' });
+        }
+        const psid = data.psid || contactId.replace(/^fb_/, '');
+
+        const sent = await sendMessengerUtilityMessage(psid, text, chosenTag);
+
+        const messageToSave = {
+            from: process.env.FB_PAGE_ID,
+            status: 'sent',
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            id: sent.messageId,
+            text: `[${chosenTag}] ${text}`,
+            messagingType: 'MESSAGE_TAG',
+            tag: chosenTag,
+        };
+        await contactRef.collection('messages').doc().set(messageToSave);
+        await contactRef.update({
+            lastMessage: text,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+        });
+
+        res.json({ success: true, messageId: sent.messageId, tag: chosenTag });
+    } catch (err) {
+        const metaErr = err.response?.data?.error;
+        console.error('[UTILITY MSG] error:', metaErr || err.message);
+        res.status(500).json({
+            success: false,
+            message: metaErr?.message || err.message,
+        });
     }
 });
 

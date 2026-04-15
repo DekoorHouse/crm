@@ -306,6 +306,31 @@ async function sendMessengerMessage(recipientId, { text, fileUrl, fileType, chan
     return { messages: sentMessages, lastTextForDb: lastMessage.textForDb };
 }
 
+/**
+ * Envia un mensaje de utilidad fuera de la ventana de 24h usando
+ * message tags (pages_utility_messaging + MESSAGE_TAG).
+ * Casos de uso validos por Meta: actualizaciones post-compra, confirmaciones
+ * de cita/evento, actualizaciones de cuenta.
+ * @param {string} recipientId PSID del cliente
+ * @param {string} text Texto a enviar
+ * @param {string} tag Tag de Messenger: POST_PURCHASE_UPDATE | CONFIRMED_EVENT_UPDATE | ACCOUNT_UPDATE
+ */
+async function sendMessengerUtilityMessage(recipientId, text, tag = 'POST_PURCHASE_UPDATE') {
+    const FB_PAGE_ID_LOCAL = process.env.FB_PAGE_ID;
+    const url = `https://graph.facebook.com/v19.0/${FB_PAGE_ID_LOCAL}/messages`;
+    const payload = {
+        recipient: { id: recipientId },
+        message: { text },
+        messaging_type: 'MESSAGE_TAG',
+        tag,
+    };
+    console.log(`[MESSENGER UTILITY] Enviando ${tag} a ${recipientId}`);
+    const response = await axios.post(url, payload, {
+        params: { access_token: FB_PAGE_ACCESS_TOKEN },
+    });
+    return { messageId: response.data.message_id };
+}
+
 // =================================================================
 // === SERVICIOS DE SKYDROPX (COTIZACIÓN DE ENVÍOS) =================
 // =================================================================
@@ -976,6 +1001,7 @@ module.exports = {
     sendConversionEvent,
     sendAdvancedWhatsAppMessage,
     sendMessengerMessage,
+    sendMessengerUtilityMessage,
     invalidateGeminiCache,
     getMetaSpend
 };

@@ -182,6 +182,20 @@ export async function markContactUnread(contactId: string): Promise<void> {
   await updateDoc(doc(db, "contacts_whatsapp", contactId), { unreadCount: 1 });
 }
 
+export async function sendUtilityMessage(
+  contactId: string,
+  text: string,
+  tag: "POST_PURCHASE_UPDATE" | "CONFIRMED_EVENT_UPDATE" | "ACCOUNT_UPDATE" = "POST_PURCHASE_UPDATE",
+): Promise<void> {
+  const res = await fetch(`/api/contacts/${contactId}/utility-message`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text, tag }),
+  });
+  const data = await res.json();
+  if (!data.success) throw new Error(data.message || "Error enviando actualizacion");
+}
+
 export async function reactToMessage(contactId: string, messageDocId: string, emoji: string): Promise<void> {
   const res = await fetch(`/api/contacts/${contactId}/messages/${messageDocId}/react`, {
     method: "POST",

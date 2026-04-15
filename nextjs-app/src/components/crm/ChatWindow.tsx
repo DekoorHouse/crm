@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Contact, Message } from "@/lib/api/contacts";
-import { reactToMessage } from "@/lib/api/contacts";
+import { reactToMessage, sendUtilityMessage } from "@/lib/api/contacts";
 import MessageBubble from "./MessageBubble";
 import MessageComposer from "./MessageComposer";
 import Twemoji from "@/components/Twemoji";
+import toast from "react-hot-toast";
 
 interface ChatWindowProps {
   contact: Contact | null;
@@ -29,6 +30,25 @@ export default function ChatWindow({
   const containerRef = useRef<HTMLDivElement>(null);
   const prevMessageCount = useRef(0);
   const isInitialLoad = useRef(true);
+  const [utilityOpen, setUtilityOpen] = useState(false);
+  const [utilityText, setUtilityText] = useState("");
+  const [utilityTag, setUtilityTag] = useState<"POST_PURCHASE_UPDATE" | "CONFIRMED_EVENT_UPDATE" | "ACCOUNT_UPDATE">("POST_PURCHASE_UPDATE");
+  const [utilitySending, setUtilitySending] = useState(false);
+
+  async function handleSendUtility() {
+    if (!contact || !utilityText.trim()) return;
+    setUtilitySending(true);
+    try {
+      await sendUtilityMessage(contact.id, utilityText.trim(), utilityTag);
+      toast.success("Actualizacion enviada al cliente");
+      setUtilityText("");
+      setUtilityOpen(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error");
+    } finally {
+      setUtilitySending(false);
+    }
+  }
 
   // Scroll to bottom when messages change
   useEffect(() => {
@@ -96,6 +116,16 @@ export default function ChatWindow({
           </div>
         </button>
         <div className="flex items-center gap-1">
+          {contact.channel === "messenger" && (
+            <button
+              onClick={() => setUtilityOpen((v) => !v)}
+              title="Enviar actualizacion de pedido (fuera de 24h)"
+              className="text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 transition-all border text-blue-600 bg-blue-500/10 border-blue-500/20 hover:bg-blue-500/20"
+            >
+              <span className="material-symbols-outlined" style={{ fontSize: 12 }}>local_shipping</span>
+              Actualizar pedido
+            </button>
+          )}
           <button
             onClick={onToggleBot}
             title={contact.botActive ? "Desactivar IA" : "Activar IA"}
@@ -110,6 +140,41 @@ export default function ChatWindow({
           </button>
         </div>
       </div>
+
+      {/* Utility messaging panel (fuera de 24h con MESSAGE_TAG) */}
+      {utilityOpen && contact.channel === "messenger" && (
+        <div className="px-5 py-3 border-b border-outline-variant/10 bg-blue-500/5">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold text-on-surface">Enviar actualizacion fuera de 24h</h4>
+            <button onClick={() => setUtilityOpen(false)} className="text-xs text-on-surface-variant hover:text-on-surface">Cerrar</button>
+          </div>
+          <p className="text-[11px] text-on-surface-variant mb-2">
+            Usa esta funcion solo para notificar al cliente sobre un pedido, evento confirmado o cambio en su cuenta.
+            Meta prohibe usarla con fines promocionales.
+          </p>
+          <div className="flex gap-2 mb-2">
+            <select value={utilityTag} onChange={(e) => setUtilityTag(e.target.value as typeof utilityTag)}
+              className="text-xs bg-surface-container-low rounded-lg px-2 py-1.5 border border-outline-variant/20">
+              <option value="POST_PURCHASE_UPDATE">Actualizacion de pedido</option>
+              <option value="CONFIRMED_EVENT_UPDATE">Recordatorio de evento/cita</option>
+              <option value="ACCOUNT_UPDATE">Cambio en cuenta</option>
+            </select>
+          </div>
+          <textarea
+            value={utilityText}
+            onChange={(e) => setUtilityText(e.target.value)}
+            placeholder="Ej: Tu pedido #1234 salio del almacen. Numero de guia: ABC123..."
+            rows={2}
+            className="w-full bg-surface-container-lowest rounded-lg px-3 py-2 text-xs border border-outline-variant/20 resize-none focus:outline-none focus:border-primary"
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            <button onClick={handleSendUtility} disabled={utilitySending || !utilityText.trim()}
+              className="px-3 py-1.5 text-xs font-bold text-on-primary bg-primary rounded-lg hover:opacity-90 disabled:opacity-40">
+              {utilitySending ? "Enviando..." : "Enviar actualizacion"}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Messages */}
       <div ref={containerRef} className="flex-1 overflow-y-auto px-4 py-3 chat-bg" onScroll={handleScroll}>
