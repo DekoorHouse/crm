@@ -45,6 +45,9 @@ app.use('/api/mercadopago', mercadopagoRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
+// --- Facebook Login for Business (OAuth para App Review) ---
+app.use('/auth/facebook', require('./facebookAuth'));
+
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
