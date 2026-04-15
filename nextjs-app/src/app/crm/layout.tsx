@@ -13,7 +13,8 @@ export default function CrmLayout({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!loading && !user) {
-      router.push("/login");
+      const current = window.location.pathname + window.location.search;
+      router.push(`/login?redirect=${encodeURIComponent(current)}`);
     }
   }, [user, loading, router]);
 
