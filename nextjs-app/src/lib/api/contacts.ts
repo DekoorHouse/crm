@@ -28,6 +28,8 @@ export interface Message {
   reaction?: string;
   context?: { id: string };
   location?: { latitude: number; longitude: number; name?: string; address?: string };
+  messagingType?: string;
+  tag?: string;
 }
 
 interface ContactsResponse {

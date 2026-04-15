@@ -2316,7 +2316,7 @@ router.post('/contacts/:contactId/utility-message', async (req, res) => {
             status: 'sent',
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             id: sent.messageId,
-            text: `[${chosenTag}] ${text}`,
+            text,
             messagingType: 'MESSAGE_TAG',
             tag: chosenTag,
         };

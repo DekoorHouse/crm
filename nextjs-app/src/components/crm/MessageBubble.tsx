@@ -196,9 +196,18 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           </a>
         )}
 
+        {message.tag && (
+          <div className="mb-1 inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wide text-blue-600 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+            <span className="material-symbols-outlined" style={{ fontSize: 10 }}>local_shipping</span>
+            {message.tag === "POST_PURCHASE_UPDATE" ? "Actualizacion de pedido" :
+             message.tag === "CONFIRMED_EVENT_UPDATE" ? "Recordatorio de evento" :
+             message.tag === "ACCOUNT_UPDATE" ? "Cambio en cuenta" : message.tag}
+          </div>
+        )}
+
         {message.text && !(hasMedia && (message.text.toLowerCase() === "imagen" || message.text.toLowerCase() === "mensaje de voz" || message.text.toLowerCase() === "audio" || message.text.toLowerCase() === "video" || message.text.toLowerCase() === "sticker" || message.text.toLowerCase() === "documento")) && (
           <p className="text-[13px] font-bold leading-relaxed whitespace-pre-wrap break-words">
-            <Twemoji>{message.text}</Twemoji>
+            <Twemoji>{message.text.replace(/^\[(POST_PURCHASE_UPDATE|CONFIRMED_EVENT_UPDATE|ACCOUNT_UPDATE)\]\s*/, "")}</Twemoji>
           </p>
         )}
 
