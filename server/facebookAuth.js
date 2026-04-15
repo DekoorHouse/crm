@@ -255,6 +255,29 @@ router.post('/send-test-message', express.json(), async (req, res) => {
     }
 });
 
+// 6b) Listar Business Managers del usuario (business_management)
+router.get('/businesses', async (req, res) => {
+    const decoded = await verifyFirebaseToken(req);
+    if (!decoded) return res.status(401).json({ success: false, message: 'No autorizado' });
+    try {
+        const snap = await db.collection('users').doc(decoded.uid)
+            .collection('integrations').doc('facebook').get();
+        const token = snap.data()?.userAccessToken;
+        if (!token) return res.status(404).json({ success: false, message: 'No conectado' });
+
+        const r = await axios.get(`${GRAPH_BASE}/me/businesses`, {
+            params: {
+                fields: 'id,name,verification_status,created_time',
+                access_token: token,
+            },
+        });
+        res.json({ success: true, businesses: r.data.data || [] });
+    } catch (err) {
+        const msg = err.response?.data?.error?.message || err.message;
+        res.status(500).json({ success: false, message: msg });
+    }
+});
+
 // 6) Insights basicos de la pagina (pages_read_engagement)
 router.get('/page-insights/:pageId', async (req, res) => {
     const decoded = await verifyFirebaseToken(req);

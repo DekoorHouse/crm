@@ -113,6 +113,22 @@ export default function AjustesPage() {
     }
   }
 
+  async function handleListBusinesses() {
+    setFbLoading(true);
+    try {
+      const headers = await authHeaders();
+      const r = await fetch("/auth/facebook/businesses", { headers });
+      const data = await r.json();
+      if (!data.success) throw new Error(data.message || "Error");
+      const names = (data.businesses || []).map((b: { name: string }) => b.name).join(", ");
+      toast.success(names ? `Business Managers: ${names}` : "No se encontraron Business Managers");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Error");
+    } finally {
+      setFbLoading(false);
+    }
+  }
+
   async function handleViewInsights(pageId: string) {
     setFbLoading(true);
     try {
@@ -239,10 +255,16 @@ export default function AjustesPage() {
 
           {fbStatus.connected && (
             <>
-              <div className="bg-surface-container-low rounded-xl p-3 mb-3 text-xs">
-                <span className="text-on-surface-variant">Conectado como </span>
-                <span className="font-bold text-on-surface">{fbStatus.userName}</span>
-                {fbStatus.userEmail && <span className="text-on-surface-variant"> ({fbStatus.userEmail})</span>}
+              <div className="bg-surface-container-low rounded-xl p-3 mb-3 text-xs flex items-center justify-between gap-2">
+                <div>
+                  <span className="text-on-surface-variant">Conectado como </span>
+                  <span className="font-bold text-on-surface">{fbStatus.userName}</span>
+                  {fbStatus.userEmail && <span className="text-on-surface-variant"> ({fbStatus.userEmail})</span>}
+                </div>
+                <button onClick={handleListBusinesses} disabled={fbLoading}
+                  className="px-3 py-1.5 text-xs font-bold text-on-surface bg-surface-container-high rounded-lg hover:opacity-90 disabled:opacity-40 whitespace-nowrap">
+                  Ver Business Managers
+                </button>
               </div>
 
               <h4 className="text-xs font-bold text-on-surface-variant uppercase tracking-wide mb-2">
