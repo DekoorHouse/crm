@@ -1287,6 +1287,50 @@ router.get('/kpi/monthly', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/kpi/revenue-history (Revenue mensual de los últimos N meses) ---
+router.get('/kpi/revenue-history', async (req, res) => {
+    try {
+        const months = Math.min(parseInt(req.query.months) || 12, 24);
+        const now = new Date();
+        const mexicoDate = new Date(now.toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+        const results = [];
+
+        for (let i = months - 1; i >= 0; i--) {
+            const d = new Date(mexicoDate.getFullYear(), mexicoDate.getMonth() - i, 1);
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const startDate = `${year}-${month}-01`;
+            const endDate = `${year}-${month}-31`;
+
+            // Revenue from expenses (credits = income)
+            const expSnap = await db.collection('expenses')
+                .where('date', '>=', startDate)
+                .where('date', '<=', endDate)
+                .get();
+
+            let totalCredits = 0;
+            expSnap.docs.forEach(doc => {
+                const data = doc.data();
+                const credit = parseFloat(data.credit) || 0;
+                const isOperational = data.type === 'operativo' || !data.type;
+                if (credit > 0 && isOperational) totalCredits += credit;
+            });
+
+            results.push({
+                month: `${year}-${month}`,
+                label: d.toLocaleString('es-MX', { month: 'short', year: '2-digit' }),
+                revenue: Math.round(totalCredits),
+                isCurrent: i === 0
+            });
+        }
+
+        res.status(200).json({ success: true, data: results });
+    } catch (error) {
+        console.error('Error fetching revenue history:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener historial de revenue.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
 router.get('/kpi/daily', async (req, res) => {
     try {
