@@ -563,6 +563,59 @@ router.get('/referencias/mapa', async (req, res) => {
     }
 });
 
+// --- PEDIDOS RECIENTES (público, para feed en referencias) ---
+let pedidosRecientesCache = { data: null, timestamp: 0 };
+
+router.get('/pedidos-recientes', async (req, res) => {
+    try {
+        // Cache 5 minutos
+        if (pedidosRecientesCache.data && Date.now() - pedidosRecientesCache.timestamp < 5 * 60 * 1000) {
+            return res.json(pedidosRecientesCache.data);
+        }
+
+        const snapshot = await db.collection('datos_envio')
+            .orderBy('createdAt', 'desc')
+            .limit(20)
+            .get();
+
+        if (snapshot.empty) return res.json([]);
+
+        // Buscar producto en pedidos (doc ID = numeroPedido)
+        const pedidoIds = snapshot.docs.map(d => d.data().numeroPedido).filter(Boolean);
+        const pedidosMap = {};
+        const chunks = [];
+        for (let i = 0; i < pedidoIds.length; i += 10) {
+            chunks.push(pedidoIds.slice(i, i + 10));
+        }
+        await Promise.all(chunks.map(async (chunk) => {
+            const promises = chunk.map(id => db.collection('pedidos').doc(id).get());
+            const docs = await Promise.all(promises);
+            docs.forEach(doc => {
+                if (doc.exists) pedidosMap[doc.id] = doc.data();
+            });
+        }));
+
+        const result = snapshot.docs.map(doc => {
+            const d = doc.data();
+            const primerNombre = (d.nombreCompleto || '').split(' ')[0];
+            const pedido = pedidosMap[d.numeroPedido] || {};
+            return {
+                nombre: primerNombre,
+                ciudad: d.ciudad || '',
+                estado: d.estado || '',
+                producto: pedido.producto || '',
+                fecha: d.createdAt ? d.createdAt.toDate().toISOString() : null,
+            };
+        }).filter(d => d.nombre && d.ciudad && d.estado && d.fecha);
+
+        pedidosRecientesCache = { data: result, timestamp: Date.now() };
+        res.json(result);
+    } catch (error) {
+        console.error('Error pedidos recientes:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Helper para procesar pedidos y adjuntar info de contacto/anuncio ---
 async function processOrdersData(ordersSnapshot) {
     // Recopilar IDs de contacto únicos
