@@ -60,7 +60,14 @@ export function initFirebase(onLoginSuccess) {
         loginError.textContent = '';
 
         try {
-            await signInWithEmailAndPassword(auth, loginEmail.value, loginPassword.value);
+            const cred = await signInWithEmailAndPassword(auth, loginEmail.value, loginPassword.value);
+            // Crear session cookie en el servidor para protección server-side
+            const idToken = await cred.user.getIdToken();
+            await fetch('/api/admin/session-login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ idToken })
+            });
             // onAuthStateChanged se encargará del resto
         } catch (error) {
             console.error("Error de inicio de sesión:", error.code, error.message);
@@ -74,7 +81,10 @@ export function initFirebase(onLoginSuccess) {
     if(logoutBtn) {
         logoutBtn.addEventListener('click', async () => {
             try {
+                // Limpiar session cookie server-side
+                await fetch('/api/admin/session-logout', { method: 'POST' });
                 await signOut(auth);
+                window.location.href = '/admon/';
             } catch (error) {
                 console.error("Error al cerrar sesión:", error);
             }

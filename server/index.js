@@ -1,4 +1,4 @@
-const { app } = require('./config');
+const { app, admin } = require('./config');
 const { router: whatsappRouter } = require('./whatsappHandler');
 const apiRouter = require('./apiRoutes');
 const autoPostRouter = require('./autopost/autoPostRoutes');
@@ -14,6 +14,7 @@ const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
+const cookieParser = require('cookie-parser');
 
 const PORT = process.env.PORT || 3000;
 
@@ -47,6 +48,58 @@ app.use('/api/messenger-import', require('./messengerImport'));
 
 // --- Facebook Login for Business (OAuth para App Review) ---
 app.use('/auth/facebook', require('./facebookAuth'));
+
+// --- COOKIE PARSER ---
+app.use(cookieParser());
+
+// --- SESSION AUTH PARA /admon/ ---
+// Crear session cookie a partir de Firebase ID token
+app.post('/api/admin/session-login', async (req, res) => {
+    const idToken = req.body.idToken;
+    if (!idToken) return res.status(400).json({ error: 'Token requerido' });
+    try {
+        // Verificar el token y crear session cookie (5 días)
+        const expiresIn = 5 * 24 * 60 * 60 * 1000;
+        const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
+        res.cookie('__session', sessionCookie, {
+            maxAge: expiresIn,
+            httpOnly: true,
+            secure: true,
+            sameSite: 'strict',
+            path: '/'
+        });
+        res.json({ ok: true });
+    } catch (error) {
+        console.error('Error creando session cookie:', error.message);
+        res.status(401).json({ error: 'Token inválido' });
+    }
+});
+
+// Cerrar sesión server-side
+app.post('/api/admin/session-logout', (req, res) => {
+    res.clearCookie('__session', { path: '/' });
+    res.json({ ok: true });
+});
+
+// Middleware: proteger /admon/ con session cookie
+app.use('/admon', async (req, res, next) => {
+    // Permitir archivos estáticos de JS/CSS (necesarios para el login form)
+    if (req.path.match(/\.(js|css|png|ico|webp|json|svg|woff|woff2)$/)) {
+        return next();
+    }
+    const sessionCookie = req.cookies?.__session || '';
+    if (!sessionCookie) {
+        // Sin cookie → servir la página de login standalone
+        return res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'login.html'));
+    }
+    try {
+        await admin.auth().verifySessionCookie(sessionCookie, true);
+        next(); // Cookie válida → continuar
+    } catch (error) {
+        res.clearCookie('__session', { path: '/' });
+        return res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'login.html'));
+    }
+});
 
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));

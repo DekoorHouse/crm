@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Login - Gestor de Negocio</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css" />
+
+  <link rel="stylesheet" href="style.css" />
+  <style>
+    .login-container {
+      background: radial-gradient(circle at top right, rgba(99, 102, 241, 0.1), transparent),
+                  radial-gradient(circle at bottom left, rgba(244, 63, 94, 0.05), transparent);
+    }
+    .login-card {
+      background: var(--bg-glass);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .login-logo {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
+      letter-spacing: -0.05em;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-container" style="display: flex; height: 100vh; width: 100vw; align-items: center; justify-content: center;">
+    <div class="login-card" style="padding: 48px; border-radius: var(--radius-xl); box-shadow: var(--shadow-xl); max-width: 440px; width: 100%; text-align: center;">
+      <h1 class="login-logo" style="font-size: 32px; margin-bottom: 8px;">CRM Administrativo</h1>
+      <p style="color: var(--text-secondary); margin-bottom: 32px; font-weight: 500;">Bienvenido de nuevo. Ingresa tus credenciales.</p>
+      <form id="login-form">
+        <div style="margin-bottom: 20px;">
+          <label for="login-email" style="display: block; text-align: left; margin-bottom: 8px; font-weight: 600; font-size: 14px; color: var(--text-secondary);">CORREO ELECTR&Oacute;NICO</label>
+          <input type="email" id="login-email" required placeholder="admin@tienda.com" class="modal-input" style="width: 100%;">
+        </div>
+        <div style="margin-bottom: 8px;">
+          <label for="login-password" style="display: block; text-align: left; margin-bottom: 8px; font-weight: 600; font-size: 14px; color: var(--text-secondary);">CONTRASE&Ntilde;A</label>
+          <input type="password" id="login-password" required placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;" class="modal-input" style="width: 100%;">
+        </div>
+        <div id="login-error-message" style="color: var(--danger); margin-top: 12px; font-size: 13px; font-weight: 500; min-height: 1.2em;"></div>
+        <button type="submit" id="login-button" class="btn" style="width: 100%; margin-top: 24px; padding: 14px;">Ingresar al Panel <i class="fas fa-arrow-right" style="margin-left: 8px;"></i></button>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+      authDomain: "pedidos-con-gemini.firebaseapp.com",
+      projectId: "pedidos-con-gemini",
+      storageBucket: "pedidos-con-gemini.firebasestorage.app",
+      messagingSenderId: "300825194175",
+      appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+
+    const form = document.getElementById('login-form');
+    const emailInput = document.getElementById('login-email');
+    const passwordInput = document.getElementById('login-password');
+    const loginBtn = document.getElementById('login-button');
+    const errorMsg = document.getElementById('login-error-message');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      loginBtn.disabled = true;
+      errorMsg.textContent = '';
+
+      try {
+        const cred = await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
+        const idToken = await cred.user.getIdToken();
+
+        // Crear session cookie en el servidor
+        const res = await fetch('/api/admin/session-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ idToken })
+        });
+
+        if (!res.ok) throw new Error('Error de sesión');
+
+        // Redirigir al panel admin
+        window.location.href = '/admon/';
+      } catch (error) {
+        console.error('Login error:', error.code || error.message);
+        errorMsg.textContent = 'Correo o contraseña incorrectos.';
+      } finally {
+        loginBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
