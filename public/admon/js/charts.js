@@ -5,18 +5,13 @@ import { formatCurrency, getExpenseParts } from './utils.js';
  * @file Módulo de gestión de gráficas.
  */
 
-// Valor de ajuste solicitado para visualización de ingresos
-const INCOME_ADJUSTMENT = 19183.22;
-
 /**
  * Actualiza todas las gráficas principales de la aplicación.
  */
 export function updateAllCharts(getFilteredExpenses) {
     const expenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     
-    // AJUSTE: Reflejar la resta en el total usado para porcentajes en gráficas
-    const totalIncomeRaw = expenses.reduce((acc, exp) => acc + (parseFloat(exp.credit) || 0), 0);
-    const totalIncomeAdjusted = Math.max(0, totalIncomeRaw - INCOME_ADJUSTMENT);
+    const totalIncomeAdjusted = expenses.reduce((acc, exp) => acc + (parseFloat(exp.credit) || 0), 0);
 
     const categories = {};
     expenses.forEach(expense => {
@@ -122,8 +117,7 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
     });
 
     const totalRawRevenue = incomeTransactions.reduce((acc, exp) => acc + exp.credit, 0);
-    // AJUSTE: Restar visualmente en el Dashboard de Salud Financiera
-    const totalAccountingRevenue = Math.max(0, totalRawRevenue - INCOME_ADJUSTMENT);
+    const totalAccountingRevenue = totalRawRevenue;
     
     let ownerDraw = 0;
     let cogs = 0;
@@ -286,9 +280,7 @@ export function updateIncomeVsAdCostChart() {
         const rawRevenue = state.monthlyPaidRevenue[date] || 0;
         // AJUSTE: Podríamos restar el ajuste proporcionalmente o dejarlo igual.
         // Por consistencia visual, aquí también aplicamos la resta si es el total.
-        // Como este gráfico suele ser por día, la resta global aquí no se aplica directamente
-        // pero podemos restar el INCOME_ADJUSTMENT si es la vista de resumen mensual.
-        return Math.max(0, rawRevenue); 
+        return Math.max(0, rawRevenue);
     });
 
     const adCostData = sortedLabels.map(date => {

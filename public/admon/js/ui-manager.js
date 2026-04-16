@@ -6,8 +6,6 @@ import * as services from './services.js';
  * @file Módulo de gestión de la interfaz de usuario (UI).
  */
 
-// Valor de ajuste solicitado para visualización de ingresos
-const INCOME_ADJUSTMENT = 19183.22;
 
 export function cacheElements() {
     elements.uploadBtn = document.getElementById('upload-btn');
@@ -196,15 +194,11 @@ export function updateSummary(getFilteredExpenses) {
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
 
-    // AJUSTE: Aplicar resta de visualización a Ingresos Operativos
-    summaryData.TotalIngresos = Math.max(0, summaryData.TotalIngresos - INCOME_ADJUSTMENT);
-    
     const allOperationalExpenses = state.expenses.filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     const totalOverallIncome = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
     const totalOverallCharges = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
-    
-    // AJUSTE: El Neto también debe reflejar la resta para ser coherente
-    summaryData.TotalNeto = (totalOverallIncome - INCOME_ADJUSTMENT) - totalOverallCharges;
+
+    summaryData.TotalNeto = totalOverallIncome - totalOverallCharges;
     
     elements.summarySection.innerHTML = '';
     const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
@@ -994,8 +988,7 @@ function calculateAndDisplayAverages(data) {
     if (elements.kpiTotalPaidLeads) elements.kpiTotalPaidLeads.textContent = totals.paidLeads;
     if (elements.kpiTotalCancelledLeads) elements.kpiTotalCancelledLeads.textContent = totals.cancelledLeads;
     
-    // AJUSTE: Restar visualmente en KPIs si aplica (coherencia con dashboard contable)
-    if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(Math.max(0, totals.revenue - INCOME_ADJUSTMENT));
+    if (elements.kpiTotalRevenueKpis) elements.kpiTotalRevenueKpis.textContent = formatCurrency(totals.revenue);
     if (elements.kpiTotalAdCost) elements.kpiTotalAdCost.textContent = formatCurrency(totals.adCost);
 
     if (elements.kpiAvgCpl) elements.kpiAvgCpl.textContent = formatCurrency(avgCpl);

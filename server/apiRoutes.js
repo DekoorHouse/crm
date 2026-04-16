@@ -1101,7 +1101,6 @@ router.get('/expenses/summary', async (req, res) => {
             .get();
 
         // Un solo recorrido — replica EXACTAMENTE la lógica del gestor (charts.js)
-        const INCOME_ADJUSTMENT = 19183.22;
         const drawCategories = ['Alex', 'Chris'];
         const cogsCategories = ['Material', 'Sueldos'];
         const categories = {};
@@ -1147,7 +1146,7 @@ router.get('/expenses/summary', async (req, res) => {
             }
         });
 
-        const adjustedCredits = Math.max(0, totalCredits - INCOME_ADJUSTMENT);
+        const adjustedCredits = totalCredits;
 
         const sorted = Object.entries(categories)
             .sort(([,a], [,b]) => b - a)
