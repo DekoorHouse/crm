@@ -188,9 +188,118 @@
                 justify-content: center;
             }
         }
+
+        /* --- Login Screen --- */
+        .login-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: var(--bg-color, #1a1a2e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-overlay.hidden { display: none; }
+
+        .login-box {
+            background: var(--glass-background, rgba(255,255,255,0.05));
+            border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+            border-radius: 20px;
+            padding: 40px;
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+        }
+        .login-box .logo-img {
+            width: 80px;
+            margin-bottom: 20px;
+        }
+        .login-box h2 {
+            margin: 0 0 8px;
+            font-size: 1.4rem;
+        }
+        .login-box p {
+            color: var(--text-gray, #999);
+            font-size: 0.85rem;
+            margin: 0 0 24px;
+        }
+        .login-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border-radius: 10px;
+            border: 1px solid var(--glass-border, rgba(255,255,255,0.1));
+            background: rgba(255,255,255,0.05);
+            color: var(--text-color, #fff);
+            font-size: 0.9rem;
+            margin-bottom: 12px;
+            outline: none;
+            box-sizing: border-box;
+        }
+        .login-box input:focus {
+            border-color: var(--primary-color, #FF8E41);
+        }
+        .login-box .btn-login {
+            width: 100%;
+            padding: 12px;
+            border-radius: 10px;
+            border: none;
+            background: var(--primary-color, #FF8E41);
+            color: #fff;
+            font-weight: 700;
+            font-size: 0.95rem;
+            cursor: pointer;
+            margin-top: 4px;
+            transition: opacity 0.2s;
+        }
+        .login-box .btn-login:hover { opacity: 0.9; }
+        .login-box .btn-login:disabled { opacity: 0.5; cursor: not-allowed; }
+        .login-error {
+            color: #ef4444;
+            font-size: 0.8rem;
+            margin-top: 10px;
+            min-height: 1.2em;
+        }
+
+        /* Hide main content until auth */
+        .app-content { display: none; }
+        .app-content.visible { display: block; }
+
+        /* Loading state */
+        .auth-loading {
+            position: fixed;
+            inset: 0;
+            z-index: 10000;
+            background: var(--bg-color, #1a1a2e);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-gray, #999);
+            font-size: 0.9rem;
+        }
+        .auth-loading.hidden { display: none; }
     </style>
 </head>
 <body>
+
+<div class="auth-loading" id="authLoading">
+    <i class="fas fa-spinner fa-spin" style="margin-right:8px;"></i> Verificando sesión...
+</div>
+
+<div class="login-overlay" id="loginOverlay">
+    <div class="login-box">
+        <img src="/jt-rastreo/logo.png" alt="Dekoor" class="logo-img">
+        <h2>Iniciar Sesión</h2>
+        <p>Acceso restringido a moderadores</p>
+        <form id="loginForm" onsubmit="handleLogin(event)">
+            <input type="email" id="loginEmail" placeholder="Correo electrónico" required autocomplete="email">
+            <input type="password" id="loginPassword" placeholder="Contraseña" required autocomplete="current-password">
+            <button type="submit" class="btn-login" id="loginBtn">Entrar</button>
+        </form>
+        <div class="login-error" id="loginError"></div>
+    </div>
+</div>
+
+<div class="app-content" id="appContent">
 
 <div class="bg-gradient"></div>
 
@@ -229,9 +338,12 @@
 
 </div>
 
+</div><!-- /app-content -->
+
 <!-- Firebase -->
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
 <script src="/env-config.js"></script>
 
 <script>
@@ -246,6 +358,54 @@ const firebaseConfig = {
 };
 firebase.initializeApp(firebaseConfig);
 var db = firebase.firestore();
+var auth = firebase.auth();
+
+// --- Auth Gate ---
+firebase.auth().onAuthStateChanged(function(user) {
+    document.getElementById('authLoading').classList.add('hidden');
+    if (user) {
+        document.getElementById('loginOverlay').classList.add('hidden');
+        document.getElementById('appContent').classList.add('visible');
+        initApp();
+    } else {
+        document.getElementById('loginOverlay').classList.remove('hidden');
+        document.getElementById('appContent').classList.remove('visible');
+    }
+});
+
+function handleLogin(e) {
+    e.preventDefault();
+    var email = document.getElementById('loginEmail').value;
+    var password = document.getElementById('loginPassword').value;
+    var btn = document.getElementById('loginBtn');
+    var errorEl = document.getElementById('loginError');
+    errorEl.textContent = '';
+    btn.disabled = true;
+    btn.textContent = 'Entrando...';
+
+    firebase.auth().signInWithEmailAndPassword(email, password)
+        .catch(function(err) {
+            var msg = 'Error al iniciar sesión';
+            if (err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password' || err.code === 'auth/invalid-credential') {
+                msg = 'Correo o contraseña incorrectos';
+            } else if (err.code === 'auth/too-many-requests') {
+                msg = 'Demasiados intentos. Intenta más tarde.';
+            }
+            errorEl.textContent = msg;
+        })
+        .finally(function() {
+            btn.disabled = false;
+            btn.textContent = 'Entrar';
+        });
+}
+
+// --- App Init (runs only after auth) ---
+var appInitialized = false;
+function initApp() {
+    if (appInitialized) return;
+    appInitialized = true;
+    loadRefs();
+}
 
 var currentTab = 'pendientes';
 var allRefs = [];
@@ -259,18 +419,20 @@ function switchTab(tab) {
 }
 
 // --- Cargar todas las referencias ---
-db.collection('referencias')
-    .orderBy('fecha', 'desc')
-    .onSnapshot(function(snapshot) {
-        allRefs = [];
-        snapshot.forEach(function(doc) {
-            var data = doc.data();
-            data.id = doc.id;
-            allRefs.push(data);
+function loadRefs() {
+    db.collection('referencias')
+        .orderBy('fecha', 'desc')
+        .onSnapshot(function(snapshot) {
+            allRefs = [];
+            snapshot.forEach(function(doc) {
+                var data = doc.data();
+                data.id = doc.id;
+                allRefs.push(data);
+            });
+            updateCounts();
+            renderRefs();
         });
-        updateCounts();
-        renderRefs();
-    });
+}
 
 function updateCounts() {
     var pendientes = allRefs.filter(function(r) { return r.aprobado !== true; });
