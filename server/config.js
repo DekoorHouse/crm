@@ -85,7 +85,7 @@ app.use((req, res, next) => {
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; " +
         "img-src 'self' data: blob: https: http:; " +
         "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
-        "connect-src 'self' data: blob: https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://api.mercadopago.com https://sdk.mercadopago.com https://www.gstatic.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://graph.facebook.com https://cdn.jsdelivr.net https://api64.ipify.org https://maps.googleapis.com; " +
+        "connect-src 'self' data: blob: https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://api.mercadopago.com https://sdk.mercadopago.com https://www.gstatic.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://graph.facebook.com https://cdn.jsdelivr.net https://api64.ipify.org https://maps.googleapis.com; " +
         "media-src 'self' https: blob:; " +
         "frame-src https://www.mercadopago.com.mx https://www.mercadopago.com; " +
         "object-src 'none'; " +
