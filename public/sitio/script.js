@@ -458,7 +458,7 @@ function loadPedidosRecientes() {
                 return `<div class="feed-item-home">
                     <div class="feed-icon-home"><i class="fas fa-box"></i></div>
                     <div class="feed-content-home">
-                        <div class="feed-text-home"><strong>${nombre}</strong> acaba de pedir ${producto} hasta <span class="feed-location-home">${ciudad}, ${estado}</span></div>
+                        <div class="feed-text-home"><strong>${nombre}</strong> acaba de hacer ${producto} hasta <span class="feed-location-home">${ciudad}, ${estado}</span></div>
                         <div class="feed-time-home"><i class="fas fa-clock"></i> ${tiempo}</div>
                     </div>
                 </div>`;
