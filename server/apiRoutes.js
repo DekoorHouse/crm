@@ -1178,6 +1178,49 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/recategorize (Recategorizar movimientos por concepto) ---
+router.post('/expenses/recategorize', async (req, res) => {
+    try {
+        const rules = [
+            { match: 'minisuper natalia', category: 'Chris' },
+            { match: 'temu', category: 'Chris' },
+            { match: 'alsuper plus mezquital', category: 'Chris' },
+            { match: 'alsuper plus d arrieta', category: 'Chris' },
+            { match: 'fruteria alvarez', category: 'Chris' },
+            { match: 'psa computo', category: 'Material' },
+        ];
+
+        const snapshot = await db.collection('expenses').get();
+        const batch = db.batch();
+        const changes = [];
+
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const concept = (data.concept || '').toLowerCase();
+            for (const rule of rules) {
+                if (concept.includes(rule.match)) {
+                    const oldCat = data.category || 'SinCategorizar';
+                    if (oldCat !== rule.category) {
+                        batch.update(doc.ref, { category: rule.category });
+                        changes.push({ concept: data.concept, from: oldCat, to: rule.category });
+                    }
+                    break;
+                }
+            }
+        });
+
+        if (changes.length === 0) {
+            return res.json({ success: true, message: 'No se encontraron movimientos para recategorizar.', changes: [] });
+        }
+
+        await batch.commit();
+        res.json({ success: true, message: `${changes.length} movimientos recategorizados.`, changes });
+    } catch (error) {
+        console.error('Error recategorizando:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/monthly (KPIs del mes actual: revenue, ticket, pedidos pagados) ---
 router.get('/kpi/monthly', async (req, res) => {
     try {
