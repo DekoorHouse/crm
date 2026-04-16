@@ -1896,4 +1896,134 @@ body {
         flex-direction: column;
         text-align: center;
     }
+
+    .pedidos-feed-home {
+        max-height: 360px;
+    }
+
+    .feed-item-home {
+        padding: 12px 14px;
+        gap: 10px;
+        border-radius: 12px;
+    }
+
+    .feed-icon-home {
+        width: 36px;
+        height: 36px;
+        font-size: 0.95rem;
+    }
+
+    .feed-text-home {
+        font-size: 0.85rem;
+    }
+}
+
+/* ============================================================
+   PEDIDOS FEED (Homepage)
+   ============================================================ */
+.pedidos-feed-wrapper {
+    max-width: 700px;
+    margin: 0 auto;
+}
+
+.pedidos-feed-home {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 480px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.pedidos-feed-home::-webkit-scrollbar {
+    width: 4px;
+}
+
+.pedidos-feed-home::-webkit-scrollbar-thumb {
+    background: rgba(27, 77, 92, 0.15);
+    border-radius: 4px;
+}
+
+.feed-item-home {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--white);
+    border: 1px solid rgba(27, 77, 92, 0.1);
+    border-radius: 16px;
+    padding: 14px 18px;
+    animation: feedSlideInHome 0.4s ease-out;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.feed-item-home:hover {
+    transform: translateX(4px);
+    box-shadow: 0 4px 16px rgba(27, 77, 92, 0.08);
+}
+
+.feed-icon-home {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(212, 114, 44, 0.1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 1.1rem;
+    color: var(--primary);
+}
+
+.feed-content-home {
+    flex: 1;
+    min-width: 0;
+}
+
+.feed-text-home {
+    font-size: 0.92rem;
+    color: var(--text-dark);
+    line-height: 1.4;
+}
+
+.feed-text-home strong {
+    color: var(--primary);
+    font-weight: 700;
+}
+
+.feed-text-home .feed-location-home {
+    color: #1B4D5C;
+    font-weight: 600;
+}
+
+.feed-time-home {
+    font-size: 0.75rem;
+    color: var(--text-medium);
+    margin-top: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.feed-time-home i {
+    font-size: 0.65rem;
+}
+
+.feed-loading-home {
+    text-align: center;
+    padding: 24px;
+}
+
+.spinner-home {
+    width: 28px;
+    height: 28px;
+    border: 3px solid rgba(27, 77, 92, 0.15);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin: 0 auto;
+}
+
+@keyframes feedSlideInHome {
+    from { opacity: 0; transform: translateY(-10px); }
+    to { opacity: 1; transform: translateY(0); }
 }

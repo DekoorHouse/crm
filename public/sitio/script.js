@@ -436,8 +436,60 @@ if (waTooltip) {
 }
 
 // ============================================================
+// PEDIDOS RECIENTES FEED
+// ============================================================
+function loadPedidosRecientes() {
+    fetch(API_BASE_URL + '/api/pedidos-recientes')
+        .then(res => res.json())
+        .then(pedidos => {
+            const container = document.getElementById('pedidosFeed');
+            if (!container) return;
+            if (!pedidos || !pedidos.length) { container.innerHTML = ''; return; }
+
+            const escHtml = t => { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; };
+
+            container.innerHTML = pedidos.map(p => {
+                const nombre = escHtml(p.nombre);
+                const ciudad = escHtml(p.ciudad);
+                const estado = escHtml(p.estado);
+                const producto = p.producto ? escHtml(p.producto) : 'su pedido';
+                const tiempo = tiempoRelativo(p.fecha);
+
+                return `<div class="feed-item-home">
+                    <div class="feed-icon-home"><i class="fas fa-box"></i></div>
+                    <div class="feed-content-home">
+                        <div class="feed-text-home"><strong>${nombre}</strong> acaba de pedir ${producto} hasta <span class="feed-location-home">${ciudad}, ${estado}</span></div>
+                        <div class="feed-time-home"><i class="fas fa-clock"></i> ${tiempo}</div>
+                    </div>
+                </div>`;
+            }).join('');
+        })
+        .catch(err => {
+            console.error('Error cargando pedidos recientes:', err);
+            const c = document.getElementById('pedidosFeed');
+            if (c) c.innerHTML = '';
+        });
+}
+
+function tiempoRelativo(isoStr) {
+    if (!isoStr) return '';
+    const fecha = new Date(isoStr);
+    const diffMs = Date.now() - fecha;
+    const diffMin = Math.floor(diffMs / 60000);
+    const diffHrs = Math.floor(diffMs / 3600000);
+    const diffDias = Math.floor(diffMs / 86400000);
+
+    if (diffMin < 1) return 'Justo ahora';
+    if (diffMin < 60) return 'Hace ' + diffMin + ' min';
+    if (diffHrs < 24) return 'Hace ' + diffHrs + (diffHrs === 1 ? ' hora' : ' horas');
+    if (diffDias < 7) return 'Hace ' + diffDias + (diffDias === 1 ? ' día' : ' días');
+    return fecha.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' });
+}
+
+// ============================================================
 // INIT
 // ============================================================
 initCarousel();
 loadTestimonials();
 loadMapa();
+loadPedidosRecientes();
