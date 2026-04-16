@@ -5290,81 +5290,32 @@ router.post('/snapshots/daily', async (req, res) => {
     }
 });
 
-// --- CONSULTA CÓDIGO POSTAL (SEPOMEX) ---
+// --- CONSULTA CÓDIGO POSTAL (SEPOMEX LOCAL) ---
+const sepomex = require('./data/sepomex/sepomexService');
+
 router.get('/codigo-postal/:cp', async (req, res) => {
     const { cp } = req.params;
     if (!/^\d{5}$/.test(cp)) {
         return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
     }
-    try {
-        const response = await axios.get(`https://api.zippopotam.us/mx/${cp}`, { timeout: 5000 });
-        const data = response.data;
-        const colonias = (data.places || []).map(p => p['place name']);
-        const estado = data.places?.[0]?.state || '';
-        res.json({
-            success: true,
-            codigoPostal: cp,
-            estado: estado === 'Distrito Federal' ? 'Ciudad de Mexico' : estado,
-            colonias,
-        });
-    } catch (err) {
-        if (err.response?.status === 404) {
-            return res.json({ success: false, message: 'Código postal no encontrado.', colonias: [] });
-        }
-        console.warn(`[CP] Error consultando ${cp}:`, err.message);
-        res.json({ success: false, message: 'No se pudo consultar el código postal.', colonias: [] });
+    const result = sepomex.getByCp(cp);
+    if (!result) {
+        return res.json({ success: false, message: 'Código postal no encontrado.', colonias: [] });
     }
+    res.json(result);
 });
 
-// --- BUSCAR CP POR COLONIA ---
+// --- BUSCAR CP POR COLONIA (SEPOMEX LOCAL) ---
 router.get('/buscar-cp', async (req, res) => {
     const { estado, colonia } = req.query;
     if (!estado || !colonia || colonia.length < 3) {
         return res.json({ success: false, message: 'Escribe al menos 3 letras de tu colonia.', results: [] });
     }
-    try {
-        const response = await axios.get(
-            `https://api.zippopotam.us/mx/${encodeURIComponent(estado)}/${encodeURIComponent(colonia)}`,
-            { timeout: 5000 }
-        );
-        const places = response.data.places || [];
-
-        // Agrupar por CP para obtener colonias vecinas
-        const cpGroups = {};
-        places.forEach(p => {
-            if (!cpGroups[p['post code']]) cpGroups[p['post code']] = [];
-            cpGroups[p['post code']].push(p['place name']);
-        });
-
-        // Buscar colonias vecinas para cada CP (las que comparten el mismo CP)
-        const vecinosCache = {};
-        await Promise.all(Object.keys(cpGroups).map(async (cp) => {
-            try {
-                const cpRes = await axios.get(`https://api.zippopotam.us/mx/${cp}`, { timeout: 4000 });
-                vecinosCache[cp] = (cpRes.data.places || []).map(p => p['place name']);
-            } catch { vecinosCache[cp] = cpGroups[cp]; }
-        }));
-
-        const results = places.map(p => {
-            const cp = p['post code'];
-            const vecinos = (vecinosCache[cp] || []).filter(v => v !== p['place name']).slice(0, 3);
-            return {
-                colonia: p['place name'],
-                codigoPostal: cp,
-                estado: response.data.state || estado,
-                vecinos,
-                lat: parseFloat(p.latitude) || null,
-                lon: parseFloat(p.longitude) || null,
-            };
-        });
-
-        res.json({ success: true, results });
-    } catch (err) {
-        if (err.response?.status === 404) {
-            return res.json({ success: true, results: [], message: 'No se encontraron resultados.' });
-        }
-        res.json({ success: false, results: [], message: 'Error al buscar.' });
+    const results = sepomex.searchByColonia(estado, colonia);
+    if (results.length === 0) {
+        return res.json({ success: true, results: [], message: 'No se encontraron resultados.' });
     }
+    res.json({ success: true, results });
 });
 
 // --- DATOS PARA ENVÍO ---
