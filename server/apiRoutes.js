@@ -1181,10 +1181,14 @@ router.get('/expenses/summary', async (req, res) => {
 // --- Endpoint GET /api/expenses/find-duplicates (Encuentra gastos duplicados por firma) ---
 router.get('/expenses/find-duplicates', async (req, res) => {
     try {
+        const from = req.query.from || null; // YYYY-MM-DD
+        const to = req.query.to || null;
         const snapshot = await db.collection('expenses').get();
         const bySig = new Map();
         snapshot.docs.forEach(doc => {
             const d = doc.data();
+            if (from && d.date < from) return;
+            if (to && d.date > to) return;
             const concept = (d.concept || '').trim();
             const charge = parseFloat(d.charge) || 0;
             const credit = parseFloat(d.credit) || 0;
@@ -1200,7 +1204,7 @@ router.get('/expenses/find-duplicates', async (req, res) => {
                 extraCopies += docs.length - 1;
             }
         });
-        res.json({ totalExpenses: snapshot.size, duplicateGroups: duplicates.length, extraCopies, duplicates: duplicates.slice(0, 30) });
+        res.json({ filter: { from, to }, scannedExpenses: bySig.size > 0 ? [...bySig.values()].reduce((s,a)=>s+a.length,0) : 0, duplicateGroups: duplicates.length, extraCopies, duplicates: duplicates.slice(0, 50) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
