@@ -585,7 +585,7 @@
                     <div class="shipping-option-content">
                         <div class="shipping-option-top">
                             <span class="shipping-name">DHL Express</span>
-                            <span class="shipping-price">+$160 MXN</span>
+                            <span class="shipping-price" data-price="shipping-dhl" data-price-fmt="plus">+$160 MXN</span>
                         </div>
                         <span class="shipping-time">2-3 dias habiles</span>
                     </div>
@@ -594,7 +594,7 @@
 
             <div class="checkout-total" id="checkoutTotal">
                 <span>Total:</span>
-                <span id="totalAmount">$650 MXN</span>
+                <span id="totalAmount" data-price="unit" data-price-fmt="mxn">$650 MXN</span>
             </div>
 
             <button type="submit" class="checkout-submit" id="checkoutBtn">
@@ -614,17 +614,21 @@
     <i class="fab fa-whatsapp"></i>
 </a>
 
-<script src="/sitio/cart.js"></script>
 <script src="/env-config.js"></script>
+<script src="/sitio/config.js"></script>
+<script src="/sitio/cart.js"></script>
 <script>
 const WA = '5216181333519';
 const API = window.API_BASE_URL || '';
+
+// Helpers de precio (leen siempre del config actual)
+const priceStr = () => '$' + DekoorConfig.prices.productUnitPrice;
+const originalStr = () => '$' + DekoorConfig.prices.productOriginalPrice;
 
 const COLLECTIONS = {
     ninos: {
         title: 'Niños',
         desc: 'Lámparas 3D mágicas para los más pequeños del hogar. Personalizadas con su nombre y personaje favorito.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D',
         productDesc: 'Lámpara LED personalizada con grabado láser, base negra, control remoto con 16 colores.',
         folder: 'Ninos'
@@ -632,7 +636,6 @@ const COLLECTIONS = {
     pareja: {
         title: 'Pareja',
         desc: 'Regalos románticos personalizados con tu foto y mensaje especial. El detalle perfecto para esa persona.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D',
         productDesc: 'Lámpara LED personalizada con foto de pareja, nombre y fecha especial. 16 colores con control remoto.',
         folder: 'Pareja'
@@ -640,7 +643,6 @@ const COLLECTIONS = {
     empresas: {
         title: 'Empresas',
         desc: 'Reconocimientos, trofeos y regalos corporativos con el logo de tu empresa o equipo favorito.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Corporativa',
         productDesc: 'Lámpara LED con logo o diseño personalizado. Ideal para reconocimientos, premios y merchandising.',
         folder: 'Empresas'
@@ -648,7 +650,6 @@ const COLLECTIONS = {
     familia: {
         title: 'Familia',
         desc: 'Inmortaliza los mejores momentos familiares. Fotos de mascotas, hijos, abuelos y toda la familia.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Familiar',
         productDesc: 'Lámpara LED con foto familiar, nombre de mascota o retrato grupal. 16 colores con control remoto.',
         folder: 'Familia'
@@ -656,7 +657,6 @@ const COLLECTIONS = {
     memorial: {
         title: 'Memorial',
         desc: 'Un tributo luminoso para honrar la memoria de tus seres queridos. Un recuerdo que siempre brilla.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Memorial',
         productDesc: 'Lámpara LED con foto y mensaje dedicado. Un homenaje luminoso que mantiene viva su memoria.',
         folder: 'Memorial'
@@ -664,7 +664,6 @@ const COLLECTIONS = {
     religiosas: {
         title: 'Religiosas',
         desc: 'Lámparas con imágenes religiosas personalizadas. Vírgenes, santos y mensajes de fe grabados con láser.',
-        price: '$650', originalPrice: '$780',
         productName: 'Lámpara 3D Religiosa',
         productDesc: 'Lámpara LED con imagen religiosa personalizada, nombre y mensaje de fe. 16 colores con control remoto.',
         folder: 'Religiosas'
@@ -672,7 +671,6 @@ const COLLECTIONS = {
     otros: {
         title: 'Otros Regalos',
         desc: 'Cuadros, llaveros, letreros y más regalos personalizados con grabado láser para cualquier ocasión.',
-        price: '$650', originalPrice: '$780',
         productName: 'Regalo Personalizado',
         productDesc: 'Producto personalizado con grabado láser. Diseño único hecho a tu medida.',
         folder: 'Otros'
@@ -704,8 +702,8 @@ const productSchema = {
     "brand": { "@type": "Brand", "name": "Dekoor" },
     "offers": {
         "@type": "Offer",
-        "price": "650",
-        "priceCurrency": "MXN",
+        "price": String(DekoorConfig.prices.productUnitPrice),
+        "priceCurrency": DekoorConfig.prices.currency,
         "availability": "https://schema.org/InStock",
         "url": `https://app.dekoormx.com/sitio/coleccion/?id=${colId}`,
         "seller": { "@type": "Organization", "name": "Dekoor" },
@@ -779,8 +777,8 @@ function loadProducts() {
                     <div class="product-card-desc">${col.productDesc}</div>
                     <div class="product-card-pricing">
                         <div class="price-row">
-                            <span class="price-original">${col.originalPrice}</span>
-                            <span class="price-current">${col.price} <small>MXN</small></span>
+                            <span class="price-original">${originalStr()}</span>
+                            <span class="price-current">${priceStr()} <small>MXN</small></span>
                         </div>
                         <div class="price-shipping"><i class="fas fa-truck"></i> Envío gratis</div>
                     </div>
@@ -819,8 +817,8 @@ function addToCart(imgUrl, productName) {
         name: productName,
         collection: col.title,
         collectionId: colId,
-        price: 650,
-        originalPrice: 780,
+        price: DekoorConfig.prices.productUnitPrice,
+        originalPrice: DekoorConfig.prices.productOriginalPrice,
         img: imgUrl
     });
     DekoorCart.toast('Producto agregado al carrito');
@@ -837,7 +835,7 @@ function openCheckout(imgUrl, productName) {
         <img src="${imgUrl}" alt="${productName}">
         <div class="checkout-product-info">
             <div class="name">${productName} - ${col.title}</div>
-            <div class="price">$650 <small style="font-weight:400;color:var(--text-medium)">MXN</small></div>
+            <div class="price">${priceStr()} <small style="font-weight:400;color:var(--text-medium)">MXN</small></div>
         </div>`;
     document.getElementById('checkoutOverlay').classList.add('active');
 }
@@ -855,7 +853,9 @@ document.querySelectorAll('input[name="shipping"]').forEach(radio => {
         document.querySelectorAll('.shipping-option').forEach(el => el.classList.remove('selected'));
         radio.closest('.shipping-option').classList.add('selected');
         const isDHL = radio.value === 'dhl';
-        document.getElementById('totalAmount').textContent = isDHL ? '$810 MXN' : '$650 MXN';
+        const p = DekoorConfig.prices;
+        const total = p.productUnitPrice + (isDHL ? p.shippingDhlCost : p.shippingJtCost);
+        document.getElementById('totalAmount').textContent = '$' + total.toLocaleString('en') + ' MXN';
     });
 });
 

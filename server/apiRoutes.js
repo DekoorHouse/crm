@@ -15,6 +15,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
+const PRICES = require('./prices');
 const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 const jtService = require('./jt/jtService');
 
@@ -6956,6 +6957,12 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
         console.error('Error en cobranza individual:', error);
         res.status(500).json({ success: false, message: error.message });
     }
+});
+
+// GET /api/config/prices - Precios autoritativos del servidor (consumido por el sitio publico)
+router.get('/config/prices', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
+    res.json(PRICES);
 });
 
 module.exports = router;

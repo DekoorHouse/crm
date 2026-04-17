@@ -491,7 +491,7 @@
                 <label class="ck-shipping">
                     <input type="radio" name="shipping" value="dhl">
                     <div style="flex:1;">
-                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">DHL Express</span><span style="font-weight:700;font-size:0.9rem;">+$160 MXN</span></div>
+                        <div style="display:flex;justify-content:space-between;"><span style="font-weight:700;font-size:0.9rem;">DHL Express</span><span style="font-weight:700;font-size:0.9rem;" data-price="shipping-dhl" data-price-fmt="plus">+$160 MXN</span></div>
                         <span style="font-size:0.8rem;color:var(--text-medium);">2-3 dias habiles</span>
                     </div>
                 </label>
@@ -510,6 +510,8 @@
     <i class="fab fa-whatsapp"></i>
 </a>
 
+<script src="/env-config.js"></script>
+<script src="/sitio/config.js"></script>
 <script src="/sitio/cart.js"></script>
 <script>
 const WA = '5216181333519';
@@ -625,7 +627,8 @@ function goToCheckout(e) {
 function updateCheckoutTotal() {
     const subtotal = DekoorCart.subtotal();
     const isDHL = document.querySelector('input[name="shipping"]:checked')?.value === 'dhl';
-    const total = subtotal + (isDHL ? 160 : 0);
+    const p = DekoorConfig.prices;
+    const total = subtotal + (isDHL ? p.shippingDhlCost : p.shippingJtCost);
     document.getElementById('ckTotal').textContent = `$${total.toLocaleString('en')} MXN`;
 }
 

@@ -323,7 +323,7 @@
             <div id="addressInfo" class="customer-info" style="margin-top:0;"></div>
             <div class="order-line" id="subtotalLine">
                 <span>Subtotal</span>
-                <span>$650.00</span>
+                <span data-price="unit" data-price-fmt="with-2dec">$650.00</span>
             </div>
             <div class="order-line" id="shippingLine">
                 <span>Envio</span>
@@ -331,7 +331,7 @@
             </div>
             <div class="order-line total" id="totalLine">
                 <span>Total</span>
-                <span>$650.00 MXN</span>
+                <span><span data-price="unit" data-price-fmt="with-2dec">$650.00</span> MXN</span>
             </div>
             <div class="order-shipping" id="shippingMethod">
                 <i class="fas fa-truck"></i> J&T Express - 5-7 dias habiles
@@ -357,7 +357,7 @@
                 <img src="https://http2.mlstatic.com/storage/logos-api-admin/a5f047d0-9be0-11ec-aad4-c3381f368aaf-m.svg" alt="Mercado Pago" class="mp-cta-logo">
                 <p class="mp-cta-text">Acepta tarjetas de credito/debito, OXXO, SPEI, Mercado Pago, MSI y cuotas sin tarjeta.</p>
                 <button id="mpPayBtn" class="mp-cta-btn">
-                    <i class="fas fa-lock"></i> Pagar $<span id="btnTotal">650</span> MXN
+                    <i class="fas fa-lock"></i> Pagar $<span id="btnTotal" data-price="unit" data-price-fmt="raw">650</span> MXN
                 </button>
                 <div class="mp-methods">
                     <span><i class="far fa-credit-card"></i> Tarjeta</span>
@@ -370,8 +370,9 @@
     </div>
 </main>
 
-<script src="/sitio/cart.js"></script>
 <script src="/env-config.js"></script>
+<script src="/sitio/config.js"></script>
+<script src="/sitio/cart.js"></script>
 <script>
 const API = window.API_BASE_URL || '';
 
@@ -391,9 +392,10 @@ const state = params.get('state') || '';
 const zip = params.get('zip') || '';
 
 const qty = parseInt(params.get('qty')) || 1;
-const subtotalParam = parseInt(params.get('subtotal')) || 650;
+const P = DekoorConfig.prices;
+const subtotalParam = parseInt(params.get('subtotal')) || P.productUnitPrice;
 const isDHL = shipping === 'dhl';
-const shippingCost = isDHL ? 160 : 0;
+const shippingCost = isDHL ? P.shippingDhlCost : P.shippingJtCost;
 const total = subtotalParam + shippingCost;
 
 if (!customerName || !customerPhone) {
@@ -414,14 +416,14 @@ document.getElementById('addressInfo').innerHTML =
 // Show subtotal & shipping & totals
 document.getElementById('subtotalLine').innerHTML = `<span>Subtotal${qty > 1 ? ' (' + qty + ' productos)' : ''}</span><span>$${subtotalParam.toLocaleString('en')}.00</span>`;
 if (isDHL) {
-    document.getElementById('shippingLine').innerHTML = '<span>Envio DHL Express</span><span>$160.00</span>';
+    document.getElementById('shippingLine').innerHTML = `<span>Envio DHL Express</span><span>$${P.shippingDhlCost.toLocaleString('en')}.00</span>`;
     document.getElementById('shippingMethod').innerHTML = '<i class="fas fa-bolt"></i> DHL Express - 2-3 dias habiles';
 }
 document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total.toLocaleString('en')}.00 MXN</span>`;
 document.getElementById('btnTotal').textContent = total.toLocaleString('en');
 
 // Show product info
-const originalTotal = qty * 780;
+const originalTotal = qty * P.productOriginalPrice;
 document.getElementById('orderProduct').innerHTML = `
     ${imageUrl ? `<img src="${decodeURIComponent(imageUrl)}" alt="${productName}">` : ''}
     <div class="order-product-info">

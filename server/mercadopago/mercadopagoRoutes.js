@@ -15,10 +15,12 @@ const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
 
 // --- PRECIOS AUTORITATIVOS DEL SERVIDOR ---
 // El cliente NO puede modificar estos precios; siempre se calculan aquí.
-const PRODUCT_UNIT_PRICE = 650; // MXN por lampara
-const SHIPPING_DHL_COST = 160;  // MXN
-const SHIPPING_JT_COST = 0;     // MXN (gratis)
-const MAX_QTY = 50;             // limite anti-abuso
+// Fuente unica: server/prices.js
+const PRICES = require('../prices');
+const PRODUCT_UNIT_PRICE = PRICES.productUnitPrice;
+const SHIPPING_DHL_COST = PRICES.shippingDhlCost;
+const SHIPPING_JT_COST = PRICES.shippingJtCost;
+const MAX_QTY = PRICES.maxQty;
 
 function mpHeaders() {
     return {
