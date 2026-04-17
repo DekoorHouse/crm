@@ -20,6 +20,7 @@ const rules = [
     { match: 'alsuper plus d arrieta', category: 'Chris' },
     { match: 'fruteria alvarez', category: 'Chris' },
     { match: 'psa computo', category: 'Material' },
+    { match: 'retiro sin tarjeta / ******0670', category: 'Alex' },
 ];
 
 async function main() {
@@ -44,13 +45,29 @@ async function main() {
         }
     });
 
-    if (updated === 0) {
+    // Limpiar manualCategories que contradicen las reglas
+    const manualSnap = await db.collection('manualCategories').get();
+    let manualUpdated = 0;
+    manualSnap.docs.forEach(doc => {
+        const data = doc.data();
+        const concept = (data.concept || '').toLowerCase();
+        for (const rule of rules) {
+            if (concept.includes(rule.match) && data.category !== rule.category) {
+                console.log(`[manualCategories] "${data.concept}": ${data.category} -> ${rule.category}`);
+                batch.update(doc.ref, { category: rule.category });
+                manualUpdated++;
+                break;
+            }
+        }
+    });
+
+    if (updated === 0 && manualUpdated === 0) {
         console.log('No se encontraron movimientos para recategorizar.');
         return;
     }
 
     await batch.commit();
-    console.log(`\n✅ ${updated} movimientos recategorizados.`);
+    console.log(`\n✅ ${updated} movimientos + ${manualUpdated} categorías manuales actualizadas.`);
 }
 
 main().catch(console.error).finally(() => process.exit());

@@ -1188,6 +1188,7 @@ router.post('/expenses/recategorize', async (req, res) => {
             { match: 'alsuper plus d arrieta', category: 'Chris' },
             { match: 'fruteria alvarez', category: 'Chris' },
             { match: 'psa computo', category: 'Material' },
+            { match: 'retiro sin tarjeta / ******0670', category: 'Alex' },
         ];
 
         const snapshot = await db.collection('expenses').get();
@@ -1209,12 +1210,32 @@ router.post('/expenses/recategorize', async (req, res) => {
             }
         });
 
-        if (changes.length === 0) {
+        // Sincronizar manualCategories para no sobrescribir la regla
+        const manualSnap = await db.collection('manualCategories').get();
+        const manualChanges = [];
+        manualSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const concept = (data.concept || '').toLowerCase();
+            for (const rule of rules) {
+                if (concept.includes(rule.match) && data.category !== rule.category) {
+                    batch.update(doc.ref, { category: rule.category });
+                    manualChanges.push({ concept: data.concept, from: data.category, to: rule.category });
+                    break;
+                }
+            }
+        });
+
+        if (changes.length === 0 && manualChanges.length === 0) {
             return res.json({ success: true, message: 'No se encontraron movimientos para recategorizar.', changes: [] });
         }
 
         await batch.commit();
-        res.json({ success: true, message: `${changes.length} movimientos recategorizados.`, changes });
+        res.json({
+            success: true,
+            message: `${changes.length} movimientos + ${manualChanges.length} categorías manuales actualizadas.`,
+            changes,
+            manualChanges
+        });
     } catch (error) {
         console.error('Error recategorizando:', error);
         res.status(500).json({ success: false, error: error.message });
