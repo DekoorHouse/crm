@@ -1213,13 +1213,19 @@ router.get('/expenses/find-duplicates', async (req, res) => {
 // --- Endpoint POST /api/expenses/remove-duplicates (Elimina copias duplicadas, preserva 1) ---
 router.post('/expenses/remove-duplicates', async (req, res) => {
     try {
+        const from = req.query.from || req.body?.from || null;
+        const to = req.query.to || req.body?.to || null;
         const snapshot = await db.collection('expenses').get();
         const bySig = new Map();
         snapshot.docs.forEach(doc => {
             const d = doc.data();
-            const concept = (d.concept || '').trim().toUpperCase();
-            // Respeta los conceptos que sí pueden repetirse
-            const isSpecial = concept.includes('SU PAGO EN EFECTIVO') || concept.includes('PAY PAL*FACEBOOK');
+            if (from && d.date < from) return;
+            if (to && d.date > to) return;
+            const concept = (d.concept || '').trim().toUpperCase().replace(/\s+/g, ' ');
+            // Respeta los conceptos que sí pueden repetirse (pagos recurrentes en efectivo y ads Facebook)
+            const isSpecial = concept.includes('SU PAGO EN EFECTIVO') ||
+                              concept.includes('PAY PAL*FACEBOOK') ||
+                              concept.includes('PAYPAL*FACEBOOK');
             if (isSpecial) return;
             const charge = parseFloat(d.charge) || 0;
             const credit = parseFloat(d.credit) || 0;
