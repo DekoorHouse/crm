@@ -649,8 +649,9 @@ document.querySelectorAll('input[name="shipping"]').forEach(radio => {
     });
 });
 
-// Form submit → redirect to Mercado Pago checkout
-document.getElementById('checkoutForm').addEventListener('submit', (e) => {
+// Form submit → capturar carrito abandonado + redirect a checkout
+const API = window.API_BASE_URL || '';
+document.getElementById('checkoutForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const cart = DekoorCart.get();
     if (!cart.length) return;
@@ -659,15 +660,38 @@ document.getElementById('checkoutForm').addEventListener('submit', (e) => {
     const subtotal = DekoorCart.subtotal();
     const totalQty = DekoorCart.count();
     const itemsSummary = cart.map(i => `${i.name} (${i.collection})${i.qty > 1 ? ' x' + i.qty : ''}`).join(', ');
-    const params = new URLSearchParams({
-        name: document.getElementById('ckName').value.trim(),
-        phone: document.getElementById('ckPhone').value.trim(),
-        email: document.getElementById('ckEmail').value.trim(),
+
+    const customerName = document.getElementById('ckName').value.trim();
+    const customerPhone = document.getElementById('ckPhone').value.trim();
+    const customerEmail = document.getElementById('ckEmail').value.trim();
+    const address = {
         street: document.getElementById('ckStreet').value.trim(),
         colonia: document.getElementById('ckColonia').value.trim(),
         city: document.getElementById('ckCity').value.trim(),
         state: document.getElementById('ckState').value.trim(),
-        zip: document.getElementById('ckZip').value.trim(),
+        zip: document.getElementById('ckZip').value.trim()
+    };
+
+    // Capturar como lead (no bloquear redirect si falla)
+    fetch(API + '/api/carritos-abandonados', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            customerName, customerPhone, customerEmail,
+            items: cart.map(i => ({ name: i.name, collection: i.collection, qty: i.qty, price: i.price, img: i.img })),
+            subtotal, shipping, address
+        })
+    }).catch(() => {});
+
+    const params = new URLSearchParams({
+        name: customerName,
+        phone: customerPhone,
+        email: customerEmail,
+        street: address.street,
+        colonia: address.colonia,
+        city: address.city,
+        state: address.state,
+        zip: address.zip,
         shipping,
         product: itemsSummary,
         collection: firstItem.collection,

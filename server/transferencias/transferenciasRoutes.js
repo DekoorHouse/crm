@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { db } = require('../config');
 const PRICES = require('../prices');
+const { markCartConverted } = require('../carritos/carritosRoutes');
 
 // Datos bancarios (se muestran al cliente).
 // La CLABE no se proporciono; si se desea agregar, poner aqui.
@@ -105,7 +106,21 @@ router.post('/', async (req, res) => {
             estatusVerificado: false,
             pagoTransferencia: true,
             transferenciaReferencia: reference,
-            transferenciaExternalRef: externalReference
+            transferenciaExternalRef: externalReference,
+            // Datos para pre-llenar el formulario de guia J&T (el cliente
+            // ya los ingreso en el carrito, solo necesita confirmarlos).
+            envioPrefill: {
+                nombreCompleto: customerName,
+                telefono: phone,
+                email: customerEmail || '',
+                direccion: addr.street || '',
+                colonia: addr.colonia || '',
+                ciudad: addr.city || '',
+                estado: addr.state || '',
+                codigoPostal: addr.zip || '',
+                metodoEnvio: isDHL ? 'dhl' : 'jt',
+                source: 'web_checkout_transferencia'
+            }
         };
 
         await db.collection('pedidos').doc(orderNumber).set(pedido);
@@ -130,6 +145,9 @@ router.post('/', async (req, res) => {
             status: 'pending_proof',
             createdAt: new Date()
         });
+
+        // Marcar carrito abandonado como convertido (si existe)
+        markCartConverted(phone, orderNumber).catch(() => {});
 
         console.log(`[TRANSFER] Orden ${orderNumber} creada con referencia ${reference} (total: $${total})`);
 

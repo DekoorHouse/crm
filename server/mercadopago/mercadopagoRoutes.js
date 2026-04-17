@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 const { db } = require('../config');
+const { markCartConverted } = require('../carritos/carritosRoutes');
 
 const crypto = require('crypto');
 
@@ -381,11 +382,27 @@ router.post('/webhook', async (req, res) => {
             estatusVerificado: false,
             pagoMercadoPago: true,
             mpPaymentId: paymentId,
-            mpExternalReference: externalReference
+            mpExternalReference: externalReference,
+            // Datos para pre-llenar el formulario de guia J&T
+            envioPrefill: {
+                nombreCompleto: mpData.customerName || '',
+                telefono: mpData.customerPhone || '',
+                email: mpData.customerEmail || '',
+                direccion: addr.street || '',
+                colonia: addr.colonia || '',
+                ciudad: addr.city || '',
+                estado: addr.state || '',
+                codigoPostal: addr.zip || '',
+                metodoEnvio: (mpData.shippingMethod || '').includes('DHL') ? 'dhl' : 'jt',
+                source: 'web_checkout_mp'
+            }
         };
 
         await db.collection('pedidos').doc(orderNumber).set(pedido);
         await mpRef.update({ internalOrderNumber: orderNumber });
+
+        // Marcar carrito abandonado como convertido (si existe)
+        markCartConverted(mpData.customerPhone, orderNumber).catch(() => {});
 
         console.log(`[MP WEBHOOK] Order ${orderNumber} created from payment ${paymentId}`);
 
