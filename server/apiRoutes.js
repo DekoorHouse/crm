@@ -1179,6 +1179,250 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/delete-by-range (Elimina gastos en un rango de fechas) ---
+router.post('/expenses/delete-by-range', async (req, res) => {
+    try {
+        const from = req.query.from || req.body?.from;
+        const to = req.query.to || req.body?.to;
+        if (!from || !to) return res.status(400).json({ error: 'from y to requeridos (YYYY-MM-DD)' });
+        const snapshot = await db.collection('expenses')
+            .where('date', '>=', from)
+            .where('date', '<=', to)
+            .get();
+        if (snapshot.empty) {
+            return res.json({ success: true, message: 'No hay movimientos en el rango.', deleted: 0 });
+        }
+        const refs = snapshot.docs.map(d => d.ref);
+        const CHUNK = 400;
+        for (let i = 0; i < refs.length; i += CHUNK) {
+            const batch = db.batch();
+            refs.slice(i, i + CHUNK).forEach(ref => batch.delete(ref));
+            await batch.commit();
+        }
+        res.json({ success: true, message: `${refs.length} movimientos eliminados (${from} a ${to}).`, deleted: refs.length });
+    } catch (error) {
+        console.error('Error delete-by-range:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// --- Reglas de auto-categorización (replica de public/admon/js/utils.js) ---
+function autoCategorizeServer(concept, manualCategories) {
+    const lowerConcept = String(concept || '').toLowerCase().replace(/\s+/g, ' ');
+    if (manualCategories && manualCategories[lowerConcept]) {
+        return manualCategories[lowerConcept];
+    }
+    const rules = {
+        Ganancia: ['xciento'],
+        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera', 'minisuper natalia', 'temu', 'alsuper plus mezquital', 'alsuper plus d arrieta', 'fruteria alvarez'],
+        Alex: ['alex', 'bolt', 'retiro sin tarjeta / ******0670'],
+        Publicidad: ['facebook'],
+        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre', 'psa computo'],
+        Envios: ['guias'],
+        Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
+        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger'],
+        Local: ['local', 'renta', 'valeria'],
+        Deudas: ['saldos vencidos'],
+        Devoluciones: ['devolucion'],
+        GastosFinancieros: ['interes', 'comision']
+    };
+    for (const category in rules) {
+        if (rules[category].some(keyword => lowerConcept.includes(keyword))) return category;
+    }
+    return 'SinCategorizar';
+}
+
+// --- Endpoint POST /api/expenses/bulk-import (Importa expenses desde JSON) ---
+router.post('/expenses/bulk-import', async (req, res) => {
+    try {
+        const items = Array.isArray(req.body?.expenses) ? req.body.expenses : null;
+        if (!items || items.length === 0) return res.status(400).json({ error: 'expenses (array) requerido' });
+
+        // Cargar manualCategories
+        const mcSnap = await db.collection('manualCategories').get();
+        const manualCategories = {};
+        mcSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data.concept) manualCategories[data.concept.toLowerCase().replace(/\s+/g, ' ')] = data.category;
+        });
+
+        // Dedupe contra base existente (misma firma)
+        const existingSnap = await db.collection('expenses').get();
+        const existingSigs = new Set();
+        existingSnap.docs.forEach(d => {
+            const e = d.data();
+            const concept = (e.concept || '').trim();
+            const charge = parseFloat(e.charge) || 0;
+            const credit = parseFloat(e.credit) || 0;
+            existingSigs.add(`${e.date}|${concept}|${charge}|${credit}`);
+        });
+
+        const toImport = [];
+        const seenInFile = new Set();
+        let skippedExisting = 0, skippedIntraFile = 0;
+
+        items.forEach(raw => {
+            const date = raw.date;
+            const concept = String(raw.concept || '').trim();
+            const charge = Math.abs(parseFloat(raw.charge) || 0);
+            const credit = parseFloat(raw.credit) || 0;
+            if (!date || !concept) return;
+            const sig = `${date}|${concept}|${charge}|${credit}`;
+            const upperConcept = concept.toUpperCase();
+            const isSpecial = upperConcept.includes('SU PAGO EN EFECTIVO') || upperConcept.includes('PAY PAL*FACEBOOK') || upperConcept.includes('PAYPAL*FACEBOOK');
+            if (!isSpecial) {
+                if (existingSigs.has(sig)) { skippedExisting++; return; }
+                if (seenInFile.has(sig)) { skippedIntraFile++; return; }
+                seenInFile.add(sig);
+            }
+            const category = credit > 0 ? '' : autoCategorizeServer(concept, manualCategories);
+            toImport.push({
+                date,
+                concept,
+                charge,
+                credit,
+                category,
+                type: 'operativo',
+                source: raw.source || 'api-import',
+                subcategory: '',
+                sub_type: '',
+                channel: ''
+            });
+        });
+
+        if (toImport.length === 0) {
+            return res.json({ success: true, imported: 0, skippedExisting, skippedIntraFile, message: 'Nada nuevo para importar.' });
+        }
+
+        const CHUNK = 400;
+        for (let i = 0; i < toImport.length; i += CHUNK) {
+            const batch = db.batch();
+            toImport.slice(i, i + CHUNK).forEach(exp => {
+                batch.set(db.collection('expenses').doc(), exp);
+            });
+            await batch.commit();
+        }
+
+        res.json({
+            success: true,
+            imported: toImport.length,
+            skippedExisting,
+            skippedIntraFile,
+            message: `${toImport.length} movimientos importados. ${skippedExisting} ya existían, ${skippedIntraFile} duplicados en archivo.`
+        });
+    } catch (error) {
+        console.error('Error bulk-import:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// --- Endpoint GET /api/expenses/totals-by-range (Totales de cargo/abono por rango) ---
+router.get('/expenses/totals-by-range', async (req, res) => {
+    try {
+        const from = req.query.from;
+        const to = req.query.to;
+        if (!from || !to) return res.status(400).json({ error: 'from y to requeridos (YYYY-MM-DD)' });
+        const snapshot = await db.collection('expenses').get();
+        let totalCargo = 0, totalAbono = 0, count = 0;
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.date < from || d.date > to) return;
+            totalCargo += parseFloat(d.charge) || 0;
+            totalAbono += parseFloat(d.credit) || 0;
+            count++;
+        });
+        res.json({ from, to, count, totalCargo: +totalCargo.toFixed(2), totalAbono: +totalAbono.toFixed(2) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Endpoint GET /api/expenses/find-duplicates (Encuentra gastos duplicados por firma) ---
+router.get('/expenses/find-duplicates', async (req, res) => {
+    try {
+        const from = req.query.from || null; // YYYY-MM-DD
+        const to = req.query.to || null;
+        const snapshot = await db.collection('expenses').get();
+        const bySig = new Map();
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (from && d.date < from) return;
+            if (to && d.date > to) return;
+            const concept = (d.concept || '').trim();
+            const charge = parseFloat(d.charge) || 0;
+            const credit = parseFloat(d.credit) || 0;
+            const sig = `${d.date}|${concept}|${charge}|${credit}`;
+            if (!bySig.has(sig)) bySig.set(sig, []);
+            bySig.get(sig).push({ id: doc.id, date: d.date, concept: d.concept, charge, credit, category: d.category, source: d.source });
+        });
+        const duplicates = [];
+        let extraCopies = 0;
+        bySig.forEach((docs, sig) => {
+            if (docs.length > 1) {
+                duplicates.push({ signature: sig, count: docs.length, docs });
+                extraCopies += docs.length - 1;
+            }
+        });
+        res.json({ filter: { from, to }, scannedExpenses: bySig.size > 0 ? [...bySig.values()].reduce((s,a)=>s+a.length,0) : 0, duplicateGroups: duplicates.length, extraCopies, duplicates: duplicates.slice(0, 50) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Endpoint POST /api/expenses/remove-duplicates (Elimina copias duplicadas, preserva 1) ---
+router.post('/expenses/remove-duplicates', async (req, res) => {
+    try {
+        const from = req.query.from || req.body?.from || null;
+        const to = req.query.to || req.body?.to || null;
+        const snapshot = await db.collection('expenses').get();
+        const bySig = new Map();
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (from && d.date < from) return;
+            if (to && d.date > to) return;
+            const concept = (d.concept || '').trim().toUpperCase().replace(/\s+/g, ' ');
+            // Respeta los conceptos que sí pueden repetirse (pagos recurrentes en efectivo y ads Facebook)
+            const isSpecial = concept.includes('SU PAGO EN EFECTIVO') ||
+                              concept.includes('PAY PAL*FACEBOOK') ||
+                              concept.includes('PAYPAL*FACEBOOK');
+            if (isSpecial) return;
+            const charge = parseFloat(d.charge) || 0;
+            const credit = parseFloat(d.credit) || 0;
+            const sig = `${d.date}|${(d.concept || '').trim()}|${charge}|${credit}`;
+            if (!bySig.has(sig)) bySig.set(sig, []);
+            bySig.get(sig).push({ ref: doc.ref, data: d });
+        });
+
+        const toDelete = [];
+        bySig.forEach(docs => {
+            if (docs.length <= 1) return;
+            // Prioridad para conservar: source 'manual' o 'modified' > resto. Conserva el primero tras ordenar.
+            docs.sort((a, b) => {
+                const priA = (a.data.source === 'manual' || a.data.source === 'modified') ? 0 : 1;
+                const priB = (b.data.source === 'manual' || b.data.source === 'modified') ? 0 : 1;
+                if (priA !== priB) return priA - priB;
+                return (a.ref.id > b.ref.id ? 1 : -1);
+            });
+            docs.slice(1).forEach(d => toDelete.push(d.ref));
+        });
+
+        if (toDelete.length === 0) {
+            return res.json({ success: true, message: 'No hay duplicados para eliminar.', deleted: 0 });
+        }
+
+        const CHUNK = 400;
+        for (let i = 0; i < toDelete.length; i += CHUNK) {
+            const batch = db.batch();
+            toDelete.slice(i, i + CHUNK).forEach(ref => batch.delete(ref));
+            await batch.commit();
+        }
+        res.json({ success: true, message: `${toDelete.length} copias duplicadas eliminadas.`, deleted: toDelete.length });
+    } catch (error) {
+        console.error('Error removing duplicates:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/recategorize (Recategorizar movimientos por concepto) ---
 router.post('/expenses/recategorize', async (req, res) => {
     try {
@@ -1189,6 +1433,7 @@ router.post('/expenses/recategorize', async (req, res) => {
             { match: 'alsuper plus d arrieta', category: 'Chris' },
             { match: 'fruteria alvarez', category: 'Chris' },
             { match: 'psa computo', category: 'Material' },
+            { match: 'retiro sin tarjeta / ******0670', category: 'Alex' },
         ];
 
         const snapshot = await db.collection('expenses').get();
@@ -1197,7 +1442,7 @@ router.post('/expenses/recategorize', async (req, res) => {
 
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            const concept = (data.concept || '').toLowerCase();
+            const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
             for (const rule of rules) {
                 if (concept.includes(rule.match)) {
                     const oldCat = data.category || 'SinCategorizar';
@@ -1210,12 +1455,32 @@ router.post('/expenses/recategorize', async (req, res) => {
             }
         });
 
-        if (changes.length === 0) {
+        // Sincronizar manualCategories para no sobrescribir la regla
+        const manualSnap = await db.collection('manualCategories').get();
+        const manualChanges = [];
+        manualSnap.docs.forEach(doc => {
+            const data = doc.data();
+            const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
+            for (const rule of rules) {
+                if (concept.includes(rule.match) && data.category !== rule.category) {
+                    batch.update(doc.ref, { category: rule.category });
+                    manualChanges.push({ concept: data.concept, from: data.category, to: rule.category });
+                    break;
+                }
+            }
+        });
+
+        if (changes.length === 0 && manualChanges.length === 0) {
             return res.json({ success: true, message: 'No se encontraron movimientos para recategorizar.', changes: [] });
         }
 
         await batch.commit();
-        res.json({ success: true, message: `${changes.length} movimientos recategorizados.`, changes });
+        res.json({
+            success: true,
+            message: `${changes.length} movimientos + ${manualChanges.length} categorías manuales actualizadas.`,
+            changes,
+            manualChanges
+        });
     } catch (error) {
         console.error('Error recategorizando:', error);
         res.status(500).json({ success: false, error: error.message });

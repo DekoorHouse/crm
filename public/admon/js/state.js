@@ -35,6 +35,8 @@ export const state = {
   checadorLogs: [],
   checadorAdjustments: [],
   sueldosPeriod: 'semanal',
+  sueldosAdjCurrentName: '',
+  sueldosAdjCurrentType: 'bono',
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],

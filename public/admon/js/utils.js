@@ -155,11 +155,11 @@ export function autoCategorize(concept) {
 }
 
 export function autoCategorizeWithRulesOnly(concept) {
-    const lowerConcept = String(concept).toLowerCase();
+    const lowerConcept = String(concept).toLowerCase().replace(/\s+/g, ' ');
     const rules = {
         Ganancia: ['xciento'],
         Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera'],
-        Alex: ['alex', 'bolt'], 
+        Alex: ['alex', 'bolt', 'retiro sin tarjeta / ******0670'],
         Publicidad: ['facebook'],
         Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre'],
         Envios: ['guias'], 

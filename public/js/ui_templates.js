@@ -1303,6 +1303,7 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
                     <option value="Muerto">Muerto</option>
                     <option value="Corazón">Corazón</option>
                     <option value="Mario">Mario</option>
+                    <option value="Sonic">Sonic</option>
                     <option value="Especial">Especial</option>
                 </select>
             </div>
@@ -1504,7 +1505,7 @@ const OrderHistoryItemTemplate = (order) => {
 };
 
 const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
-    const productos = ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Mario', 'Especial'];
+    const productos = ['Spiderman', 'Rex', 'Guerreras', 'Muerto', 'Corazón', 'Mario', 'Sonic', 'Especial'];
     const options = productos.map(p => `<option value="${p}" ${item.producto === p ? 'selected' : ''}>${p}</option>`).join('');
     return `
     <div class="order-item-row" data-item-index="${index}">
