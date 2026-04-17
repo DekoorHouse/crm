@@ -13,6 +13,7 @@ const carritosRouter = require('./carritos/carritosRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
+const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -283,6 +284,8 @@ const server = app.listen(PORT, () => {
   startScheduler();
   // Iniciar scheduler de WhatsApp Group
   startWhatsAppScheduler();
+  // Iniciar scheduler de recuperacion de carritos abandonados
+  startCartRecoveryScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

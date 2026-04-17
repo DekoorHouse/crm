@@ -6,6 +6,7 @@
 const express = require('express');
 const router = express.Router();
 const { db, admin } = require('../config');
+const { runRecoverySweep } = require('./carritosScheduler');
 
 // Normaliza telefono MX a formato 10 digitos (para matching)
 function normalizePhone(raw) {
@@ -157,6 +158,12 @@ async function markCartConverted(phone, orderNumber) {
         console.warn('[CARRITO] Error marcando convertido:', e.message);
     }
 }
+
+// POST /api/carritos-abandonados/trigger-sweep - Dispara el sweep manual (util para testing)
+router.post('/trigger-sweep', async (_req, res) => {
+    runRecoverySweep().catch(e => console.error('[CART_RECOVERY] Manual trigger error:', e.message));
+    res.json({ ok: true, message: 'Sweep disparado (revisa logs del servidor)' });
+});
 
 module.exports = router;
 module.exports.markCartConverted = markCartConverted;
