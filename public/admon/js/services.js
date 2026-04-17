@@ -572,12 +572,16 @@ export async function deleteAdjustment(employeeId, type, adjustmentIndex) {
 export async function saveBulkExpenses(expenses) {
     if (!expenses || expenses.length === 0) return;
     saveStateToHistory();
-    const batch = writeBatch(db);
+    const CHUNK_SIZE = 400; // Firestore batch limit is 500
     try {
-        expenses.forEach(expense => {
-            batch.set(doc(collection(db, "expenses")), expense);
-        });
-        await batch.commit();
+        for (let i = 0; i < expenses.length; i += CHUNK_SIZE) {
+            const chunk = expenses.slice(i, i + CHUNK_SIZE);
+            const batch = writeBatch(db);
+            chunk.forEach(expense => {
+                batch.set(doc(collection(db, "expenses")), expense);
+            });
+            await batch.commit();
+        }
     } catch (error) {
         console.error("Error saving bulk expenses:", error);
         actionHistory.pop();
