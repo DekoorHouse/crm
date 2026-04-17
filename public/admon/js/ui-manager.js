@@ -202,9 +202,15 @@ export function updateSummary(getFilteredExpenses) {
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
 
-    const allOperationalExpenses = state.expenses.filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
-    const totalOverallIncome = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
-    const totalOverallCharges = allOperationalExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
+    // Utilidad Operativa: solo marzo-abril 2026 porque los meses anteriores tienen datos incorrectos
+    const NETO_FROM = '2026-03-01';
+    const NETO_TO = '2026-04-30';
+    const netoExpenses = state.expenses.filter(e =>
+        (e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses') &&
+        e.date >= NETO_FROM && e.date <= NETO_TO
+    );
+    const totalOverallIncome = netoExpenses.reduce((sum, exp) => sum + (parseFloat(exp.credit) || 0), 0);
+    const totalOverallCharges = netoExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
 
     summaryData.TotalNeto = totalOverallIncome - totalOverallCharges;
     
