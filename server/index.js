@@ -8,6 +8,7 @@ const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoute
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
 const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
+const transferenciasRouter = require('./transferencias/transferenciasRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
@@ -43,6 +44,7 @@ app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
+app.use('/api/pagos/transferencia', transferenciasRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
