@@ -30,7 +30,7 @@ async function main() {
 
     snapshot.docs.forEach(doc => {
         const data = doc.data();
-        const concept = (data.concept || '').toLowerCase();
+        const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
 
         for (const rule of rules) {
             if (concept.includes(rule.match)) {
@@ -50,7 +50,7 @@ async function main() {
     let manualUpdated = 0;
     manualSnap.docs.forEach(doc => {
         const data = doc.data();
-        const concept = (data.concept || '').toLowerCase();
+        const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
         for (const rule of rules) {
             if (concept.includes(rule.match) && data.category !== rule.category) {
                 console.log(`[manualCategories] "${data.concept}": ${data.category} -> ${rule.category}`);

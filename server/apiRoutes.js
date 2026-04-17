@@ -1217,7 +1217,7 @@ router.post('/expenses/recategorize', async (req, res) => {
 
         snapshot.docs.forEach(doc => {
             const data = doc.data();
-            const concept = (data.concept || '').toLowerCase();
+            const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
             for (const rule of rules) {
                 if (concept.includes(rule.match)) {
                     const oldCat = data.category || 'SinCategorizar';
@@ -1235,7 +1235,7 @@ router.post('/expenses/recategorize', async (req, res) => {
         const manualChanges = [];
         manualSnap.docs.forEach(doc => {
             const data = doc.data();
-            const concept = (data.concept || '').toLowerCase();
+            const concept = (data.concept || '').toLowerCase().replace(/\s+/g, ' ');
             for (const rule of rules) {
                 if (concept.includes(rule.match) && data.category !== rule.category) {
                     batch.update(doc.ref, { category: rule.category });

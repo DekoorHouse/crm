@@ -155,7 +155,7 @@ export function autoCategorize(concept) {
 }
 
 export function autoCategorizeWithRulesOnly(concept) {
-    const lowerConcept = String(concept).toLowerCase();
+    const lowerConcept = String(concept).toLowerCase().replace(/\s+/g, ' ');
     const rules = {
         Ganancia: ['xciento'],
         Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera'],
