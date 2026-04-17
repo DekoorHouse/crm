@@ -1178,6 +1178,82 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/find-duplicates (Encuentra gastos duplicados por firma) ---
+router.get('/expenses/find-duplicates', async (req, res) => {
+    try {
+        const snapshot = await db.collection('expenses').get();
+        const bySig = new Map();
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            const concept = (d.concept || '').trim();
+            const charge = parseFloat(d.charge) || 0;
+            const credit = parseFloat(d.credit) || 0;
+            const sig = `${d.date}|${concept}|${charge}|${credit}`;
+            if (!bySig.has(sig)) bySig.set(sig, []);
+            bySig.get(sig).push({ id: doc.id, date: d.date, concept: d.concept, charge, credit, category: d.category, source: d.source });
+        });
+        const duplicates = [];
+        let extraCopies = 0;
+        bySig.forEach((docs, sig) => {
+            if (docs.length > 1) {
+                duplicates.push({ signature: sig, count: docs.length, docs });
+                extraCopies += docs.length - 1;
+            }
+        });
+        res.json({ totalExpenses: snapshot.size, duplicateGroups: duplicates.length, extraCopies, duplicates: duplicates.slice(0, 30) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- Endpoint POST /api/expenses/remove-duplicates (Elimina copias duplicadas, preserva 1) ---
+router.post('/expenses/remove-duplicates', async (req, res) => {
+    try {
+        const snapshot = await db.collection('expenses').get();
+        const bySig = new Map();
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            const concept = (d.concept || '').trim().toUpperCase();
+            // Respeta los conceptos que sí pueden repetirse
+            const isSpecial = concept.includes('SU PAGO EN EFECTIVO') || concept.includes('PAY PAL*FACEBOOK');
+            if (isSpecial) return;
+            const charge = parseFloat(d.charge) || 0;
+            const credit = parseFloat(d.credit) || 0;
+            const sig = `${d.date}|${(d.concept || '').trim()}|${charge}|${credit}`;
+            if (!bySig.has(sig)) bySig.set(sig, []);
+            bySig.get(sig).push({ ref: doc.ref, data: d });
+        });
+
+        const toDelete = [];
+        bySig.forEach(docs => {
+            if (docs.length <= 1) return;
+            // Prioridad para conservar: source 'manual' o 'modified' > resto. Conserva el primero tras ordenar.
+            docs.sort((a, b) => {
+                const priA = (a.data.source === 'manual' || a.data.source === 'modified') ? 0 : 1;
+                const priB = (b.data.source === 'manual' || b.data.source === 'modified') ? 0 : 1;
+                if (priA !== priB) return priA - priB;
+                return (a.ref.id > b.ref.id ? 1 : -1);
+            });
+            docs.slice(1).forEach(d => toDelete.push(d.ref));
+        });
+
+        if (toDelete.length === 0) {
+            return res.json({ success: true, message: 'No hay duplicados para eliminar.', deleted: 0 });
+        }
+
+        const CHUNK = 400;
+        for (let i = 0; i < toDelete.length; i += CHUNK) {
+            const batch = db.batch();
+            toDelete.slice(i, i + CHUNK).forEach(ref => batch.delete(ref));
+            await batch.commit();
+        }
+        res.json({ success: true, message: `${toDelete.length} copias duplicadas eliminadas.`, deleted: toDelete.length });
+    } catch (error) {
+        console.error('Error removing duplicates:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/recategorize (Recategorizar movimientos por concepto) ---
 router.post('/expenses/recategorize', async (req, res) => {
     try {
