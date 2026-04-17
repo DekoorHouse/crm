@@ -1178,6 +1178,27 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/totals-by-range (Totales de cargo/abono por rango) ---
+router.get('/expenses/totals-by-range', async (req, res) => {
+    try {
+        const from = req.query.from;
+        const to = req.query.to;
+        if (!from || !to) return res.status(400).json({ error: 'from y to requeridos (YYYY-MM-DD)' });
+        const snapshot = await db.collection('expenses').get();
+        let totalCargo = 0, totalAbono = 0, count = 0;
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.date < from || d.date > to) return;
+            totalCargo += parseFloat(d.charge) || 0;
+            totalAbono += parseFloat(d.credit) || 0;
+            count++;
+        });
+        res.json({ from, to, count, totalCargo: +totalCargo.toFixed(2), totalAbono: +totalAbono.toFixed(2) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/expenses/find-duplicates (Encuentra gastos duplicados por firma) ---
 router.get('/expenses/find-duplicates', async (req, res) => {
     try {
