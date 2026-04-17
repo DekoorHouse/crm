@@ -1178,6 +1178,70 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/set-balance-target (Ajusta Utilidad para que coincida con saldo real) ---
+router.post('/expenses/set-balance-target', async (req, res) => {
+    try {
+        const { targetBalance, from, to, concept } = req.body || {};
+        if (typeof targetBalance !== 'number') return res.status(400).json({ error: 'targetBalance (number) requerido' });
+        if (!from || !to) return res.status(400).json({ error: 'from y to (YYYY-MM-DD) requeridos' });
+
+        const snapshot = await db.collection('expenses').get();
+        let totalIncome = 0, totalCharge = 0;
+        const adjDocs = [];
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.date < from || d.date > to) return;
+            const isOperational = d.type === 'operativo' || !d.type || d.sub_type === 'pago_intereses';
+            const isAdjustment = d.type === 'ajuste_saldo';
+            if (!isOperational && !isAdjustment) return;
+            totalIncome += parseFloat(d.credit) || 0;
+            totalCharge += parseFloat(d.charge) || 0;
+            if (isAdjustment) adjDocs.push(doc.ref);
+        });
+
+        // Borra ajustes previos para no duplicar
+        if (adjDocs.length > 0) {
+            const batch = db.batch();
+            adjDocs.forEach(ref => batch.delete(ref));
+            await batch.commit();
+        }
+        // Recalcula sin los ajustes borrados
+        const neto = totalIncome - totalCharge;
+
+        const delta = +(targetBalance - neto).toFixed(2);
+        if (Math.abs(delta) < 0.01) {
+            return res.json({ success: true, message: 'Sin ajuste necesario.', currentNeto: neto, delta: 0 });
+        }
+
+        const doc = {
+            date: to,
+            concept: concept || 'Ajuste de saldo bancario',
+            charge: delta < 0 ? Math.abs(delta) : 0,
+            credit: delta > 0 ? delta : 0,
+            category: 'AjusteSaldo',
+            type: 'ajuste_saldo',
+            source: 'manual',
+            subcategory: '',
+            sub_type: '',
+            channel: ''
+        };
+        await db.collection('expenses').add(doc);
+
+        res.json({
+            success: true,
+            message: `Ajuste creado: ${delta < 0 ? 'cargo' : 'abono'} de $${Math.abs(delta).toFixed(2)}.`,
+            previousNeto: neto,
+            targetBalance,
+            delta,
+            adjustmentsRemoved: adjDocs.length,
+            created: doc
+        });
+    } catch (error) {
+        console.error('Error set-balance-target:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/delete-by-range (Elimina gastos en un rango de fechas) ---
 router.post('/expenses/delete-by-range', async (req, res) => {
     try {
