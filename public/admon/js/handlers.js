@@ -62,40 +62,56 @@ async function handleFileUpload(e) {
                 newExpensesBySig.get(sig).push(expense);
             });
 
-            const nonDuplicates = [];
-            const duplicateGroups = [];
+            const toImport = [];
+            let skippedExisting = 0;
+            let skippedIntraFile = 0;
 
             for (const [sig, group] of newExpensesBySig.entries()) {
                 const firstExpense = group[0];
                 const concept = (firstExpense.concept || '').toUpperCase();
-                
-                // Conceptos especiales que permitimos duplicar
-                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO") || 
+
+                // Conceptos especiales que permitimos duplicar (pagos recurrentes)
+                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO") ||
                                        concept.includes("PAY PAL*FACEBOOK");
 
-                const isExisting = existingSignatures.has(sig);
-                const isIntraFile = group.length > 1;
+                if (isSpecialConcept) {
+                    group.forEach(expense => toImport.push(expense));
+                    continue;
+                }
 
-                if (!isSpecialConcept && (isExisting || isIntraFile)) {
-                    let reason = isExisting ? 'Ya existe en la base de datos' : 'Duplicado dentro del archivo';
-                    duplicateGroups.push({ signature: sig, expenses: group, reason: reason });
+                const isExisting = existingSignatures.has(sig);
+                if (isExisting) {
+                    skippedExisting += group.length;
                 } else {
-                    // Agregamos todos los del grupo (sean 1 o varios) a los procesables
-                    group.forEach(expense => nonDuplicates.push(expense));
+                    // Duplicados dentro del archivo: importar solo el primero
+                    toImport.push(firstExpense);
+                    if (group.length > 1) skippedIntraFile += group.length - 1;
                 }
             }
 
-            if (duplicateGroups.length > 0) {
-                ui.showDuplicateSelectionModal(duplicateGroups, nonDuplicates);
-            } else {
-                await services.saveBulkExpenses(nonDuplicates);
-                ui.showModal({
-                    title: 'Éxito',
-                    body: `Se cargaron y procesaron correctamente ${nonDuplicates.length} registros.`,
-                    confirmText: 'Entendido',
-                    showCancel: false
-                });
+            if (toImport.length > 0) {
+                await services.saveBulkExpenses(toImport);
             }
+
+            const totalSkipped = skippedExisting + skippedIntraFile;
+            const parts = [];
+            parts.push(`<p><strong>${toImport.length}</strong> movimiento${toImport.length !== 1 ? 's' : ''} nuevo${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''}.</p>`);
+            if (skippedExisting > 0) {
+                parts.push(`<p><strong>${skippedExisting}</strong> omitido${skippedExisting !== 1 ? 's' : ''}: ya existía${skippedExisting !== 1 ? 'n' : ''} en la base de datos.</p>`);
+            }
+            if (skippedIntraFile > 0) {
+                parts.push(`<p><strong>${skippedIntraFile}</strong> omitido${skippedIntraFile !== 1 ? 's' : ''}: duplicado${skippedIntraFile !== 1 ? 's' : ''} dentro del archivo.</p>`);
+            }
+            if (toImport.length === 0 && totalSkipped === 0) {
+                parts.push('<p>No se encontraron registros válidos en el archivo.</p>');
+            }
+
+            ui.showModal({
+                title: toImport.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
+                body: parts.join(''),
+                confirmText: 'Entendido',
+                showCancel: false
+            });
 
         } catch (error) {
             console.error("Error al procesar el archivo de gastos:", error);
