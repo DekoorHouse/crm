@@ -1178,6 +1178,143 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/delete-by-range (Elimina gastos en un rango de fechas) ---
+router.post('/expenses/delete-by-range', async (req, res) => {
+    try {
+        const from = req.query.from || req.body?.from;
+        const to = req.query.to || req.body?.to;
+        if (!from || !to) return res.status(400).json({ error: 'from y to requeridos (YYYY-MM-DD)' });
+        const snapshot = await db.collection('expenses')
+            .where('date', '>=', from)
+            .where('date', '<=', to)
+            .get();
+        if (snapshot.empty) {
+            return res.json({ success: true, message: 'No hay movimientos en el rango.', deleted: 0 });
+        }
+        const refs = snapshot.docs.map(d => d.ref);
+        const CHUNK = 400;
+        for (let i = 0; i < refs.length; i += CHUNK) {
+            const batch = db.batch();
+            refs.slice(i, i + CHUNK).forEach(ref => batch.delete(ref));
+            await batch.commit();
+        }
+        res.json({ success: true, message: `${refs.length} movimientos eliminados (${from} a ${to}).`, deleted: refs.length });
+    } catch (error) {
+        console.error('Error delete-by-range:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// --- Reglas de auto-categorización (replica de public/admon/js/utils.js) ---
+function autoCategorizeServer(concept, manualCategories) {
+    const lowerConcept = String(concept || '').toLowerCase().replace(/\s+/g, ' ');
+    if (manualCategories && manualCategories[lowerConcept]) {
+        return manualCategories[lowerConcept];
+    }
+    const rules = {
+        Ganancia: ['xciento'],
+        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera', 'minisuper natalia', 'temu', 'alsuper plus mezquital', 'alsuper plus d arrieta', 'fruteria alvarez'],
+        Alex: ['alex', 'bolt', 'retiro sin tarjeta / ******0670'],
+        Publicidad: ['facebook'],
+        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre', 'psa computo'],
+        Envios: ['guias'],
+        Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
+        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger'],
+        Local: ['local', 'renta', 'valeria'],
+        Deudas: ['saldos vencidos'],
+        Devoluciones: ['devolucion'],
+        GastosFinancieros: ['interes', 'comision']
+    };
+    for (const category in rules) {
+        if (rules[category].some(keyword => lowerConcept.includes(keyword))) return category;
+    }
+    return 'SinCategorizar';
+}
+
+// --- Endpoint POST /api/expenses/bulk-import (Importa expenses desde JSON) ---
+router.post('/expenses/bulk-import', async (req, res) => {
+    try {
+        const items = Array.isArray(req.body?.expenses) ? req.body.expenses : null;
+        if (!items || items.length === 0) return res.status(400).json({ error: 'expenses (array) requerido' });
+
+        // Cargar manualCategories
+        const mcSnap = await db.collection('manualCategories').get();
+        const manualCategories = {};
+        mcSnap.docs.forEach(d => {
+            const data = d.data();
+            if (data.concept) manualCategories[data.concept.toLowerCase().replace(/\s+/g, ' ')] = data.category;
+        });
+
+        // Dedupe contra base existente (misma firma)
+        const existingSnap = await db.collection('expenses').get();
+        const existingSigs = new Set();
+        existingSnap.docs.forEach(d => {
+            const e = d.data();
+            const concept = (e.concept || '').trim();
+            const charge = parseFloat(e.charge) || 0;
+            const credit = parseFloat(e.credit) || 0;
+            existingSigs.add(`${e.date}|${concept}|${charge}|${credit}`);
+        });
+
+        const toImport = [];
+        const seenInFile = new Set();
+        let skippedExisting = 0, skippedIntraFile = 0;
+
+        items.forEach(raw => {
+            const date = raw.date;
+            const concept = String(raw.concept || '').trim();
+            const charge = Math.abs(parseFloat(raw.charge) || 0);
+            const credit = parseFloat(raw.credit) || 0;
+            if (!date || !concept) return;
+            const sig = `${date}|${concept}|${charge}|${credit}`;
+            const upperConcept = concept.toUpperCase();
+            const isSpecial = upperConcept.includes('SU PAGO EN EFECTIVO') || upperConcept.includes('PAY PAL*FACEBOOK') || upperConcept.includes('PAYPAL*FACEBOOK');
+            if (!isSpecial) {
+                if (existingSigs.has(sig)) { skippedExisting++; return; }
+                if (seenInFile.has(sig)) { skippedIntraFile++; return; }
+                seenInFile.add(sig);
+            }
+            const category = credit > 0 ? '' : autoCategorizeServer(concept, manualCategories);
+            toImport.push({
+                date,
+                concept,
+                charge,
+                credit,
+                category,
+                type: 'operativo',
+                source: raw.source || 'api-import',
+                subcategory: '',
+                sub_type: '',
+                channel: ''
+            });
+        });
+
+        if (toImport.length === 0) {
+            return res.json({ success: true, imported: 0, skippedExisting, skippedIntraFile, message: 'Nada nuevo para importar.' });
+        }
+
+        const CHUNK = 400;
+        for (let i = 0; i < toImport.length; i += CHUNK) {
+            const batch = db.batch();
+            toImport.slice(i, i + CHUNK).forEach(exp => {
+                batch.set(db.collection('expenses').doc(), exp);
+            });
+            await batch.commit();
+        }
+
+        res.json({
+            success: true,
+            imported: toImport.length,
+            skippedExisting,
+            skippedIntraFile,
+            message: `${toImport.length} movimientos importados. ${skippedExisting} ya existían, ${skippedIntraFile} duplicados en archivo.`
+        });
+    } catch (error) {
+        console.error('Error bulk-import:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/expenses/totals-by-range (Totales de cargo/abono por rango) ---
 router.get('/expenses/totals-by-range', async (req, res) => {
     try {
