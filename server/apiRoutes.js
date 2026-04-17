@@ -1178,6 +1178,26 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/diagnose-concept (Diagnóstico: listar conceptos con substring) ---
+router.get('/expenses/diagnose-concept', async (req, res) => {
+    try {
+        const q = String(req.query.q || '').toLowerCase();
+        if (!q) return res.status(400).json({ error: 'missing q' });
+        const snapshot = await db.collection('expenses').get();
+        const matches = [];
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            const concept = (data.concept || '').toLowerCase();
+            if (concept.includes(q)) {
+                matches.push({ id: doc.id, concept: data.concept, category: data.category, date: data.date });
+            }
+        });
+        res.json({ total: matches.length, matches: matches.slice(0, 50) });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/recategorize (Recategorizar movimientos por concepto) ---
 router.post('/expenses/recategorize', async (req, res) => {
     try {
