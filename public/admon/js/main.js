@@ -30,6 +30,10 @@ function initializeAppUI() {
 
         ui.renderSueldosData();
 
+        if (elements.sueldosAdjModal && elements.sueldosAdjModal.style.display === 'flex') {
+            ui.renderSueldosAdjExisting();
+        }
+
         ui.renderKpisTable();
     };
 

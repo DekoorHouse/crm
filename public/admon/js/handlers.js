@@ -269,6 +269,89 @@ export function initEventListeners() {
         ui.renderSueldosData();
     });
 
+    // Sueldos adjustments (bono/descuento)
+    elements.sueldosTableContainer.addEventListener('click', async (e) => {
+        const addBtn = e.target.closest('.sueldos-adj-add-btn');
+        if (addBtn) {
+            ui.openSueldosAdjModal(addBtn.dataset.name);
+            return;
+        }
+        const delBtn = e.target.closest('.sueldos-adj-delete-btn');
+        if (delBtn) {
+            const docId = delBtn.dataset.docId;
+            try {
+                await services.deleteChecadorAdjustment(docId);
+                ui.showToast('Ajuste eliminado', 'success');
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudo eliminar el ajuste', 'error');
+            }
+        }
+    });
+
+    if (elements.sueldosAdjModalClose) {
+        elements.sueldosAdjModalClose.addEventListener('click', () => ui.closeSueldosAdjModal());
+    }
+    if (elements.sueldosAdjModal) {
+        elements.sueldosAdjModal.addEventListener('click', (e) => {
+            if (e.target.id === 'sueldos-adj-modal') ui.closeSueldosAdjModal();
+        });
+    }
+    elements.sueldosAdjTypeBtns?.forEach(btn => {
+        btn.addEventListener('click', () => {
+            state.sueldosAdjCurrentType = btn.dataset.type;
+            ui.updateSueldosAdjTypeButtons();
+        });
+    });
+    if (elements.sueldosAdjExisting) {
+        elements.sueldosAdjExisting.addEventListener('click', async (e) => {
+            const delBtn = e.target.closest('.sueldos-adj-modal-delete-btn');
+            if (!delBtn) return;
+            const docId = delBtn.dataset.docId;
+            try {
+                await services.deleteChecadorAdjustment(docId);
+                ui.showToast('Ajuste eliminado', 'success');
+                ui.renderSueldosAdjExisting();
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudo eliminar el ajuste', 'error');
+            }
+        });
+    }
+    if (elements.sueldosAdjSaveBtn) {
+        elements.sueldosAdjSaveBtn.addEventListener('click', async () => {
+            const amount = parseInt(elements.sueldosAdjAmount.value, 10);
+            const concept = elements.sueldosAdjConcept.value.trim();
+            if (!amount || amount <= 0) {
+                ui.showToast('Ingresa un monto válido', 'error');
+                return;
+            }
+            const btn = elements.sueldosAdjSaveBtn;
+            const originalText = btn.textContent;
+            btn.disabled = true;
+            btn.textContent = 'Guardando...';
+            try {
+                await services.saveChecadorAdjustment({
+                    name: state.sueldosAdjCurrentName,
+                    type: state.sueldosAdjCurrentType,
+                    amount,
+                    concept
+                });
+                const label = state.sueldosAdjCurrentType === 'bono' ? 'Bono' : 'Descuento';
+                ui.showToast(`${label} de $${amount} agregado`, 'success');
+                elements.sueldosAdjAmount.value = '';
+                elements.sueldosAdjConcept.value = '';
+                ui.renderSueldosAdjExisting();
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudo guardar el ajuste', 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = originalText;
+            }
+        });
+    }
+
     elements.resetHealthFilterBtn.addEventListener('click', () => {
         if (window.app.healthPicker) window.app.healthPicker.clearSelection(); // CORREGIDO: usar window.app
     });

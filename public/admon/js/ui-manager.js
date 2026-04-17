@@ -1,5 +1,5 @@
 import { elements, state } from './state.js';
-import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel } from './utils.js';
+import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange } from './utils.js';
 import * as services from './services.js';
 
 /**
@@ -42,6 +42,14 @@ export function cacheElements() {
     elements.sueldosEmptyState = document.getElementById('sueldos-empty-state');
     elements.sueldosPeriodToggle = document.getElementById('sueldos-period-toggle');
     elements.sueldosPeriodLabel = document.getElementById('sueldos-period-label');
+    elements.sueldosAdjModal = document.getElementById('sueldos-adj-modal');
+    elements.sueldosAdjModalTitle = document.getElementById('sueldos-adj-modal-title');
+    elements.sueldosAdjModalClose = document.getElementById('sueldos-adj-modal-close');
+    elements.sueldosAdjAmount = document.getElementById('sueldos-adj-amount');
+    elements.sueldosAdjConcept = document.getElementById('sueldos-adj-concept');
+    elements.sueldosAdjExisting = document.getElementById('sueldos-adj-existing');
+    elements.sueldosAdjSaveBtn = document.getElementById('sueldos-adj-save-btn');
+    elements.sueldosAdjTypeBtns = document.querySelectorAll('.sueldos-adj-type-btn');
 
     elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
     elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
@@ -828,9 +836,15 @@ export function renderSueldosData() {
         const adjLabel = emp.adjSum !== 0
             ? `<span style="color:${emp.adjSum > 0 ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${emp.adjSum > 0 ? '+' : ''}${formatCurrency(emp.adjSum)}</span>`
             : '<span style="color:var(--text-secondary);">—</span>';
-        const adjDetail = emp.adjustments.length > 0
-            ? `<br><small style="color:var(--text-secondary);">${emp.adjustments.map(a => `${a.type === 'bono' ? '+' : '-'}$${a.amount} ${a.concept || ''}`).join(', ')}</small>`
-            : '';
+        const adjItems = emp.adjustments.map(a => `
+            <span style="display:inline-flex; align-items:center; gap:4px; padding:2px 6px; margin:2px 3px 0 0; background:rgba(148,163,184,0.12); border-radius:6px; font-size:11px;">
+                <span style="color:${a.type === 'bono' ? 'var(--success)' : 'var(--danger)'}; font-weight:600;">${a.type === 'bono' ? '+' : '-'}$${a.amount}</span>
+                ${a.concept ? `<span style="color:var(--text-secondary);">${a.concept}</span>` : ''}
+                <button class="sueldos-adj-delete-btn" data-doc-id="${a.docId}" title="Eliminar" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:13px; line-height:1; padding:0 2px;">&times;</button>
+            </span>
+        `).join('');
+        const adjDetail = adjItems ? `<div style="margin-top:4px;">${adjItems}</div>` : '';
+        const addBtn = `<button class="sueldos-adj-add-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Agregar bono o descuento" style="margin-left:8px; background:rgba(99,102,241,0.12); color:var(--primary); border:1px solid var(--primary); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; cursor:pointer;">+/-</button>`;
 
         return `<tr>
             <td style="font-weight:600;">${capitalize(emp.name)}</td>
@@ -838,7 +852,7 @@ export function renderSueldosData() {
             <td style="font-weight:bold; color:var(--primary);">${emp.totalStr}</td>
             <td style="font-size:12px;color:var(--text-secondary);">$${emp.rate}/hr</td>
             <td>${formatCurrency(emp.basePay)}</td>
-            <td>${adjLabel}${adjDetail}</td>
+            <td>${adjLabel}${addBtn}${adjDetail}</td>
             <td style="font-weight:bold; color:var(--success);">${formatCurrency(emp.finalPay)}</td>
         </tr>`;
     }).join('');
@@ -877,6 +891,71 @@ export function renderSueldosData() {
         </div>
     `;
 }
+
+export function openSueldosAdjModal(name) {
+    state.sueldosAdjCurrentName = name;
+    state.sueldosAdjCurrentType = 'bono';
+    if (elements.sueldosAdjModalTitle) elements.sueldosAdjModalTitle.textContent = capitalize(name);
+    if (elements.sueldosAdjAmount) elements.sueldosAdjAmount.value = '';
+    if (elements.sueldosAdjConcept) elements.sueldosAdjConcept.value = '';
+    updateSueldosAdjTypeButtons();
+    renderSueldosAdjExisting();
+    if (elements.sueldosAdjModal) elements.sueldosAdjModal.style.display = 'flex';
+    setTimeout(() => elements.sueldosAdjAmount?.focus(), 50);
+}
+
+export function closeSueldosAdjModal() {
+    if (elements.sueldosAdjModal) elements.sueldosAdjModal.style.display = 'none';
+}
+
+export function updateSueldosAdjTypeButtons() {
+    const type = state.sueldosAdjCurrentType;
+    elements.sueldosAdjTypeBtns?.forEach(btn => {
+        const isActive = btn.dataset.type === type;
+        if (isActive) {
+            btn.style.background = type === 'bono'
+                ? 'linear-gradient(135deg,#10b981,#059669)'
+                : 'linear-gradient(135deg,#ef4444,#dc2626)';
+            btn.style.color = '#fff';
+            btn.style.border = 'none';
+        } else {
+            btn.style.background = 'rgba(148,163,184,0.15)';
+            btn.style.color = 'var(--text-primary)';
+            btn.style.border = '1px solid var(--border-color)';
+        }
+    });
+}
+
+export function renderSueldosAdjExisting() {
+    const container = elements.sueldosAdjExisting;
+    if (!container) return;
+    const name = state.sueldosAdjCurrentName || '';
+    const { start, end } = getChecadorPeriodRange(state.sueldosPeriod);
+    const adjs = state.checadorAdjustments.filter(a => {
+        if ((a.name || '').toLowerCase() !== name.toLowerCase()) return false;
+        const d = a.timestamp ? new Date(a.timestamp) : null;
+        return d && d >= start && d <= end;
+    });
+
+    if (adjs.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const periodLabel = state.sueldosPeriod === 'semanal' ? 'esta semana' : 'este mes';
+    container.innerHTML = `<div style="font-size:0.7rem; color:var(--text-secondary); margin-bottom:6px; text-transform:uppercase; font-weight:700; letter-spacing:0.5px;">Ajustes ${periodLabel}</div>` +
+        adjs.map(a => {
+            const isBono = a.type === 'bono';
+            return `<div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; background:rgba(148,163,184,0.08); border:1px solid var(--border-color); border-radius:8px; margin-bottom:4px; font-size:0.85rem;">
+                <div style="flex:1;">
+                    <span style="color:${isBono ? 'var(--success)' : 'var(--danger)'}; font-weight:700;">${isBono ? '+' : '-'}$${a.amount}</span>
+                    <span style="color:var(--text-secondary); margin-left:8px;">${a.concept || ''}</span>
+                </div>
+                <button class="sueldos-adj-modal-delete-btn" data-doc-id="${a.docId}" style="background:none; border:none; color:var(--danger); cursor:pointer; font-size:1rem; padding:2px 6px;" title="Eliminar">&times;</button>
+            </div>`;
+        }).join('');
+}
+
 
 export function renderKpisTable() {
     if (!elements.kpisTableBody) return;

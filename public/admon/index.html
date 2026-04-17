@@ -461,6 +461,30 @@
       </div>
   </div>
   
+  <!-- Modal Bono/Descuento (Sueldos) -->
+  <div id="sueldos-adj-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:92%; max-width:420px; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.35); border:1px solid var(--border-color);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+              <h3 id="sueldos-adj-modal-title" style="font-size:1.05rem; margin:0;">Agregar ajuste</h3>
+              <button id="sueldos-adj-modal-close" style="background:none; border:none; font-size:1.6rem; line-height:1; cursor:pointer; color:var(--text-secondary);">&times;</button>
+          </div>
+          <div style="display:flex; gap:8px; margin-bottom:14px;">
+              <button class="sueldos-adj-type-btn" data-type="bono" style="flex:1; padding:10px; font-size:0.85rem; font-weight:600; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:10px; cursor:pointer;">+ Bono</button>
+              <button class="sueldos-adj-type-btn" data-type="descuento" style="flex:1; padding:10px; font-size:0.85rem; font-weight:600; background:rgba(148,163,184,0.15); color:var(--text-primary); border:1px solid var(--border-color); border-radius:10px; cursor:pointer;">- Descuento</button>
+          </div>
+          <div style="margin-bottom:12px;">
+              <label style="display:block; font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">Monto ($)</label>
+              <input type="number" id="sueldos-adj-amount" placeholder="0" min="0" step="1" style="width:100%; padding:10px 12px; font-size:1.1rem; text-align:center; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input, transparent); color:inherit; box-sizing:border-box;">
+          </div>
+          <div style="margin-bottom:16px;">
+              <label style="display:block; font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">Concepto</label>
+              <input type="text" id="sueldos-adj-concept" placeholder="Ej: Bono puntualidad, Falta, Préstamo..." style="width:100%; padding:10px 12px; font-size:0.9rem; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input, transparent); color:inherit; box-sizing:border-box;">
+          </div>
+          <div id="sueldos-adj-existing" style="margin-bottom:14px;"></div>
+          <button id="sueldos-adj-save-btn" class="btn" style="width:100%; padding:12px; font-size:1rem;">Guardar</button>
+      </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container"></div>
 

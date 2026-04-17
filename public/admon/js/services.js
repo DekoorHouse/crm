@@ -227,6 +227,20 @@ export function listenForChecadorAdjustments(onDataChange) {
     }, (error) => console.error("Checador Adjustments Listener Error:", error));
 }
 
+export async function saveChecadorAdjustment({ name, type, amount, concept }) {
+    return addDoc(collection(db, "checador_adjustments"), {
+        name,
+        type,
+        amount,
+        concept: concept || '',
+        timestamp: Date.now()
+    });
+}
+
+export async function deleteChecadorAdjustment(docId) {
+    return deleteDoc(doc(db, "checador_adjustments", docId));
+}
+
 export function setupOrdersListener(onDataChange) {
     if (typeof ordersUnsubscribe === 'function') {
         ordersUnsubscribe();
