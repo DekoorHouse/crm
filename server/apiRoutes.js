@@ -1193,10 +1193,13 @@ router.post('/expenses/set-balance-target', async (req, res) => {
             if (d.date < from || d.date > to) return;
             const isOperational = d.type === 'operativo' || !d.type || d.sub_type === 'pago_intereses';
             const isAdjustment = d.type === 'ajuste_saldo';
-            if (!isOperational && !isAdjustment) return;
+            if (isAdjustment) {
+                adjDocs.push(doc.ref);
+                return; // no contar ajustes en el neto base
+            }
+            if (!isOperational) return;
             totalIncome += parseFloat(d.credit) || 0;
             totalCharge += parseFloat(d.charge) || 0;
-            if (isAdjustment) adjDocs.push(doc.ref);
         });
 
         // Borra ajustes previos para no duplicar
@@ -1205,7 +1208,7 @@ router.post('/expenses/set-balance-target', async (req, res) => {
             adjDocs.forEach(ref => batch.delete(ref));
             await batch.commit();
         }
-        // Recalcula sin los ajustes borrados
+        // Neto base (sin ajustes previos)
         const neto = totalIncome - totalCharge;
 
         const delta = +(targetBalance - neto).toFixed(2);
