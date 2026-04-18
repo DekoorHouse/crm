@@ -786,10 +786,17 @@ document.addEventListener('DOMContentLoaded', () => {
         btnSubmit.innerHTML = '<i class="fas fa-shipping-fast"></i> Generar guia de envio';
     }
 
-    // Auto-llenar el número de pedido desde la URL si existe
+    // Auto-llenar el número de pedido desde la URL si existe.
+    // Cuando viene de la URL, se bloquea el input para evitar que el cliente lo altere.
     const urlMatch = window.location.pathname.match(/\/datos-envio\/(DH\d+)/i);
     if (urlMatch) {
         orderInput.value = urlMatch[1].toUpperCase();
+        orderInput.readOnly = true;
+        orderInput.style.background = '#f3f4f6';
+        orderInput.style.color = 'var(--teal, #1B4D5C)';
+        orderInput.style.fontWeight = '700';
+        orderInput.style.cursor = 'not-allowed';
+        orderInput.setAttribute('aria-readonly', 'true');
         setTimeout(() => verificarPedido(orderInput.value), 300);
     }
 

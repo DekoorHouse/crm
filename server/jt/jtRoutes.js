@@ -346,6 +346,12 @@ router.post('/pedir-datos/:contactId', async (req, res) => {
         // 3. Reemplazar ** con el número de pedido en el mensaje
         let messageText = qr.message || '';
         messageText = messageText.replace(/\*\*/g, orderNumber);
+        // Auto-inyectar el pedido en URLs /datos-envio/ para que el formulario lo auto-llene
+        // y el cliente no pueda equivocarse tecleando el número.
+        messageText = messageText.replace(
+            /(https?:\/\/[^\/\s]+\/datos-envio)\/?(?=\s|$)/gi,
+            `$1/${orderNumber}`
+        );
 
         // 4. Enviar el mensaje usando sendAdvancedWhatsAppMessage
         const { sendAdvancedWhatsAppMessage } = require('../services');
