@@ -852,7 +852,7 @@ const MessageBubbleTemplate = (message) => {
         } else if (message.fileType.startsWith('audio/')) {
              const audioSrc = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
              contentHTML += `<audio controls preload="metadata" class="chat-audio-player"><source src="${audioSrc}" type="${message.fileType}">Tu navegador no soporta audio.</audio>`;
-        } else if (message.type === 'document' || message.fileType.startsWith('application/')) {
+        } else if (message.type === 'document' || message.fileType.startsWith('application/') || message.fileType.startsWith('text/')) {
             const fullDocUrl = message.fileUrl.startsWith('http') ? message.fileUrl : `${API_BASE_URL}${message.fileUrl}`;
             contentHTML += `<a href="${fullDocUrl}" target="_blank" rel="noopener noreferrer" class="document-link"><i class="fas fa-file-alt document-icon"></i><span class="document-text">${message.document?.filename || message.text || 'Ver Documento'}</span></a>`;
         } else if (message.type === 'sticker') {
@@ -1101,7 +1101,7 @@ const ChatWindowTemplate = (contact) => {
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
              <label for="file-input" class="cursor-pointer p-2 chat-icon-btn"><i class="fas fa-paperclip text-xl"></i></label>
-             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*" multiple>
+             <input type="file" id="file-input" onchange="handleFileInputChange(event)" accept="image/*,video/*,audio/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-powerpoint,application/vnd.openxmlformats-officedocument.presentationml.presentation,text/plain,text/csv,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" multiple>
              <button type="button" id="emoji-toggle-btn" onclick="toggleEmojiPicker()" class="p-2 chat-icon-btn"><i class="far fa-smile text-xl"></i></button>
              ${contact.channel !== 'messenger' ? '<button type="button" id="template-toggle-btn" onclick="toggleTemplatePicker()" class="p-2 chat-icon-btn" title="Enviar plantilla"><i class="fas fa-scroll"></i></button>' : ''}
              <button type="button" id="generate-reply-btn" onclick="handleGenerateReply()" class="p-2 chat-icon-btn" title="Contestar con IA"><i class="fas fa-magic"></i></button>

@@ -954,15 +954,29 @@ async function uploadAndSendFile(file, textCaption, isExpired, contactId, replyi
 }
 
 
-function stageFile(file) { 
-    if (!file || state.isUploading) return; 
-    if (!file.type.startsWith('image/') && !file.type.startsWith('video/') && !file.type.startsWith('audio/')) { showError('Solo se pueden adjuntar imágenes, videos y audios.'); return; } 
+function stageFile(file) {
+    if (!file || state.isUploading) return;
+    // WhatsApp tiene límite de 100MB para documentos, 16MB para media.
+    const MAX_SIZE_MB = 100;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+        showError(`El archivo excede el límite de ${MAX_SIZE_MB}MB.`);
+        return;
+    }
+    const isSupported = file.type.startsWith('image/')
+        || file.type.startsWith('video/')
+        || file.type.startsWith('audio/')
+        || file.type.startsWith('application/')
+        || file.type.startsWith('text/');
+    if (!isSupported) {
+        showError('Tipo de archivo no soportado.');
+        return;
+    }
     // Evitar duplicados (mismo archivo adjuntado dos veces)
     const isDuplicate = state.stagedFiles.some(f => f.name === file.name && f.size === file.size && f.lastModified === file.lastModified);
     if (isDuplicate) return;
-    state.stagedFiles.push(file); 
-    state.stagedRemoteFile = null; 
-    renderFilePreview(); 
+    state.stagedFiles.push(file);
+    state.stagedRemoteFile = null;
+    renderFilePreview();
 }
 
 function cancelStagedFile() { 
