@@ -1433,28 +1433,17 @@ export function openKpiModal(kpi = {}) {
 }
 
 export function openMetaSyncModal() {
-    const savedAdAccount = localStorage.getItem('meta_ad_account_id') || '';
-    const savedToken = localStorage.getItem('meta_access_token') || '';
-    
     const today = new Date();
     const firstDay = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
+    const lastDay = today.toISOString().split('T')[0];
 
     showModal({
         title: 'Sincronizar Gastos de Meta Ads',
         body: `
             <div style="margin-bottom: 15px; font-size: 13px; color: var(--text-secondary);">
-                Ingresa tu ID de cuenta publicitaria (ej. <code>act_12345678</code>) y tu Token de Acceso (System User o Graph API Explorer).
+                Usa la cuenta Meta configurada en el panel <code>/meta</code>. No necesitas ingresar token aquí.
             </div>
             <form id="meta-sync-form" style="display: grid; gap: 15px;">
-                <div class="form-group">
-                    <label for="meta-account-id">Ad Account ID (comienza con 'act_')</label>
-                    <input type="text" id="meta-account-id" class="modal-input" placeholder="act_1234567890" value="${savedAdAccount}" required>
-                </div>
-                <div class="form-group">
-                    <label for="meta-token">Access Token</label>
-                    <input type="password" id="meta-token" class="modal-input" placeholder="EAA..." value="${savedToken}" required>
-                </div>
                 <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
                     <div class="form-group">
                         <label for="meta-start-date">Desde</label>
@@ -1465,21 +1454,54 @@ export function openMetaSyncModal() {
                         <input type="date" id="meta-end-date" class="modal-input" value="${lastDay}" required>
                     </div>
                 </div>
+                <details style="font-size:12px; color:var(--text-secondary);">
+                    <summary style="cursor:pointer;">Avanzado: usar token manual</summary>
+                    <div style="margin-top:10px; display:grid; gap:10px;">
+                        <div class="form-group">
+                            <label for="meta-account-id">Ad Account ID (act_…)</label>
+                            <input type="text" id="meta-account-id" class="modal-input" placeholder="act_1234567890" value="${localStorage.getItem('meta_ad_account_id') || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="meta-token">Access Token</label>
+                            <input type="password" id="meta-token" class="modal-input" placeholder="EAA…" value="${localStorage.getItem('meta_access_token') || ''}">
+                        </div>
+                    </div>
+                </details>
             </form>
         `,
         confirmText: 'Sincronizar',
         onConfirm: async () => {
             const form = document.getElementById('meta-sync-form');
-            if (form.reportValidity()) {
-                const accountId = document.getElementById('meta-account-id').value.trim();
-                const token = document.getElementById('meta-token').value.trim();
-                const startDate = document.getElementById('meta-start-date').value;
-                const endDate = document.getElementById('meta-end-date').value;
+            if (!form.reportValidity()) return;
+            const startDate = document.getElementById('meta-start-date').value;
+            const endDate = document.getElementById('meta-end-date').value;
+            const manualAccount = document.getElementById('meta-account-id').value.trim();
+            const manualToken = document.getElementById('meta-token').value.trim();
 
-                localStorage.setItem('meta_ad_account_id', accountId);
-                localStorage.setItem('meta_access_token', token);
+            showModal({ title: 'Sincronizando…', body: '<p><i class="fas fa-spinner fa-spin"></i> Conectando con Meta…</p>', showConfirm: false, showCancel: false });
 
-                await services.syncMetaSpend(accountId, token, startDate, endDate);
+            // Si el usuario llenó token+accountId manuales, usa el flujo viejo (cliente -> Meta directo)
+            if (manualAccount && manualToken) {
+                localStorage.setItem('meta_ad_account_id', manualAccount);
+                localStorage.setItem('meta_access_token', manualToken);
+                await services.syncMetaSpend(manualAccount, manualToken, startDate, endDate);
+                return;
+            }
+
+            // Default: usa el endpoint del server con la cuenta ya configurada
+            const result = await services.autoSyncMetaKpis({ dateFrom: startDate, dateTo: endDate });
+            if (result && result.success) {
+                showModal({
+                    title: 'Sincronizado ✅',
+                    body: `<p>Se actualizaron <strong>${result.count}</strong> días (${result.dateFrom} a ${result.dateTo}).</p>`,
+                    confirmText: 'Listo', showCancel: false
+                });
+            } else {
+                showModal({
+                    title: 'Error',
+                    body: '<p>No hay cuenta Meta configurada en el servidor o el token guardado es inválido. Configúrala en el panel <code>/meta</code> o usa la sección <em>Avanzado</em> con token manual.</p>',
+                    confirmText: 'Cerrar', showCancel: false
+                });
             }
         }
     });
