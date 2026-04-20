@@ -164,7 +164,7 @@ export function autoCategorizeWithRulesOnly(concept) {
         Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre'],
         Envios: ['guias'], 
         Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
-        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger'], 
+        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger', 'payu *google cloud'],
         Local: ['local', 'renta', 'valeria'], 
         Deudas: ['saldos vencidos'], 
         Devoluciones: ['devolucion'],
