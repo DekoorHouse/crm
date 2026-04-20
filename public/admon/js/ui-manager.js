@@ -887,14 +887,40 @@ export function renderSueldosData() {
             : 'background:rgba(245,158,11,0.12); color:#d97706; border:1px solid #f59e0b;';
         const vacBtn = `<button class="sueldos-vac-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Vacaciones" style="margin-left:6px; ${vacStyle} border-radius:6px; padding:2px 8px; font-size:12px; font-weight:600; cursor:pointer;">${vacLabel}</button>`;
 
+        // Resumen de horas de entrada/salida por día (en el rango)
+        const dayGroups = getEmployeeDayGroups(emp.name, state.sueldosPeriod);
+        const timesHtml = dayGroups.length === 0 ? '' : (() => {
+            const lines = dayGroups.slice().reverse().map(g => {
+                const pairs = [];
+                let currentIn = null;
+                g.events.forEach(e => {
+                    const t = new Date(e.timestamp);
+                    const time = `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`;
+                    if (e.type === 'IN') {
+                        currentIn = time;
+                    } else if (e.type === 'OUT') {
+                        if (currentIn) {
+                            pairs.push(`<span style="color:var(--success);">${currentIn}</span>→<span style="color:#d97706;">${time}</span>`);
+                            currentIn = null;
+                        } else {
+                            pairs.push(`<span style="color:#d97706;">${time}</span>`);
+                        }
+                    }
+                });
+                if (currentIn) pairs.push(`<span style="color:var(--success);">${currentIn}</span>→…`);
+                return `<div><span style="color:var(--text-secondary); font-weight:600;">${formatDayLabel(g.date)}</span> · ${pairs.join(', ')}</div>`;
+            });
+            return `<div style="margin-top:4px; font-size:11px; line-height:1.5;">${lines.join('')}</div>`;
+        })();
+
         return `<tr>
-            <td style="font-weight:600;">${capitalize(emp.name)}${vacBtn}</td>
-            <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
-            <td><button class="sueldos-detail-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Ver detalle de entradas y salidas" style="background:none; border:none; color:var(--primary); font-weight:bold; cursor:pointer; padding:0; text-decoration:underline dotted; text-underline-offset:3px;">${emp.totalStr}</button></td>
-            <td style="font-size:12px;color:var(--text-secondary);">$${emp.rate}/hr</td>
-            <td>${formatCurrency(emp.basePay)}</td>
-            <td>${adjLabel}${addBtn}${adjDetail}</td>
-            <td style="font-weight:bold; color:var(--success);">${formatCurrency(emp.finalPay)}</td>
+            <td style="font-weight:600; vertical-align:top;">${capitalize(emp.name)}${vacBtn}</td>
+            <td style="vertical-align:top;">${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
+            <td style="vertical-align:top;"><button class="sueldos-detail-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Ver detalle de entradas y salidas" style="background:none; border:none; color:var(--primary); font-weight:bold; cursor:pointer; padding:0; text-decoration:underline dotted; text-underline-offset:3px;">${emp.totalStr}</button>${timesHtml}</td>
+            <td style="font-size:12px;color:var(--text-secondary); vertical-align:top;">$${emp.rate}/hr</td>
+            <td style="vertical-align:top;">${formatCurrency(emp.basePay)}</td>
+            <td style="vertical-align:top;">${adjLabel}${addBtn}${adjDetail}</td>
+            <td style="font-weight:bold; color:var(--success); vertical-align:top;">${formatCurrency(emp.finalPay)}</td>
         </tr>`;
     }).join('');
 
