@@ -5,6 +5,7 @@ import type { Contact, Message } from "@/lib/api/contacts";
 import { reactToMessage, sendUtilityMessage } from "@/lib/api/contacts";
 import MessageBubble from "./MessageBubble";
 import MessageComposer from "./MessageComposer";
+import ForwardModal from "./ForwardModal";
 import Twemoji from "@/components/Twemoji";
 import toast from "react-hot-toast";
 
@@ -34,6 +35,7 @@ export default function ChatWindow({
   const [utilityText, setUtilityText] = useState("");
   const [utilityTag, setUtilityTag] = useState<"POST_PURCHASE_UPDATE" | "CONFIRMED_EVENT_UPDATE" | "ACCOUNT_UPDATE">("POST_PURCHASE_UPDATE");
   const [utilitySending, setUtilitySending] = useState(false);
+  const [forwarding, setForwarding] = useState<Message | null>(null);
 
   async function handleSendUtility() {
     if (!contact || !utilityText.trim()) return;
@@ -208,6 +210,7 @@ export default function ChatWindow({
                     isSent={msg.from !== contact.id}
                     onReply={onSetReplyTo}
                     onReact={(docId, emoji) => reactToMessage(contact.id, docId, emoji).catch(() => {})}
+                    onForward={setForwarding}
                     allMessages={messages}
                   />
                 </div>
@@ -226,6 +229,15 @@ export default function ChatWindow({
         replyTo={replyTo}
         onCancelReply={() => onSetReplyTo(null)}
       />
+
+      {/* Modal de reenvio */}
+      {forwarding && (
+        <ForwardModal
+          message={forwarding}
+          onClose={() => setForwarding(null)}
+          excludeContactId={contact.id}
+        />
+      )}
 
     </div>
   );

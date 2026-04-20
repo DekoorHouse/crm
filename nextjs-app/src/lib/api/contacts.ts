@@ -30,6 +30,7 @@ export interface Message {
   location?: { latitude: number; longitude: number; name?: string; address?: string };
   messagingType?: string;
   tag?: string;
+  forwarded?: boolean;
 }
 
 interface ContactsResponse {
@@ -93,7 +94,7 @@ export async function fetchMessages(
 
 export async function sendMessage(
   contactId: string,
-  body: { text?: string; fileUrl?: string; fileType?: string; reply_to_wamid?: string }
+  body: { text?: string; fileUrl?: string; fileType?: string; reply_to_wamid?: string; forwarded?: boolean }
 ): Promise<void> {
   const res = await fetch(`/api/contacts/${contactId}/messages`, {
     method: "POST",
@@ -102,6 +103,26 @@ export async function sendMessage(
   });
   const data = await res.json();
   if (!data.success) throw new Error(data.message || "Error sending message");
+}
+
+// Reenvia un mensaje a multiples contactos. Devuelve resumen {success: [], failed: []}
+export async function forwardMessage(
+  targetContactIds: string[],
+  body: { text?: string; fileUrl?: string; fileType?: string }
+): Promise<{ success: string[]; failed: { contactId: string; error: string }[] }> {
+  const success: string[] = [];
+  const failed: { contactId: string; error: string }[] = [];
+  // Envio secuencial con delay pequeño para evitar rate limits
+  for (const contactId of targetContactIds) {
+    try {
+      await sendMessage(contactId, { ...body, forwarded: true });
+      success.push(contactId);
+    } catch (e) {
+      failed.push({ contactId, error: e instanceof Error ? e.message : "Error" });
+    }
+    await new Promise(r => setTimeout(r, 250));
+  }
+  return { success, failed };
 }
 
 export async function updateContactStatus(contactId: string, status: string): Promise<void> {

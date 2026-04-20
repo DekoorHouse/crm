@@ -2745,7 +2745,7 @@ router.post('/contacts/:contactId/utility-message', async (req, res) => {
 // --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // tempId es opcional, para UI optimista
+    const { text, fileUrl, fileType, reply_to_wamid, template, tempId, forwarded } = req.body; // tempId es opcional, para UI optimista
 
     // Validaciones básicas
     if (!text && !fileUrl && !template) {
@@ -2916,6 +2916,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         if (reply_to_wamid) {
             messageToSave.context = { id: reply_to_wamid };
+        }
+        if (forwarded) {
+            messageToSave.forwarded = true;
         }
         Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
 

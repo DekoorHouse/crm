@@ -9,6 +9,7 @@ interface MessageBubbleProps {
   isSent: boolean;
   onReply?: (msg: Message) => void;
   onReact?: (msgDocId: string, emoji: string) => void;
+  onForward?: (msg: Message) => void;
   allMessages?: Message[];
 }
 
@@ -115,7 +116,7 @@ function AudioPlayer({ src }: { src: string }) {
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
-export default function MessageBubble({ message, isSent, onReply, onReact, allMessages }: MessageBubbleProps) {
+export default function MessageBubble({ message, isSent, onReply, onReact, onForward, allMessages }: MessageBubbleProps) {
   const [showReactions, setShowReactions] = useState(false);
   const [showImage, setShowImage] = useState(false);
   const reactRef = useRef<HTMLDivElement>(null);
@@ -155,6 +156,14 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           isSent ? "bubble-sent text-primary rounded-br-md" : "bg-surface-container-lowest text-on-surface rounded-bl-md"
         }`}
       >
+        {/* Forwarded label */}
+        {message.forwarded && (
+          <div className={`flex items-center gap-1 mb-1 text-[10px] italic ${isSent ? "text-on-surface-variant/70" : "text-on-surface-variant/70"}`}>
+            <span className="material-symbols-outlined" style={{ fontSize: 12 }}>forward</span>
+            <span>Reenviado</span>
+          </div>
+        )}
+
         {/* Reply context */}
         {repliedMsg && (
           <div className={`mb-1.5 px-2.5 py-1.5 rounded-lg border-l-2 ${
@@ -254,8 +263,17 @@ export default function MessageBubble({ message, isSent, onReply, onReact, allMe
           {/* Reply button */}
           {onReply && (
             <button onClick={() => onReply(message)}
+              title="Responder"
               className="p-1 rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-surface-container-low transition-all">
               <span className="material-symbols-outlined" style={{ fontSize: 16 }}>reply</span>
+            </button>
+          )}
+          {/* Forward button */}
+          {onForward && (
+            <button onClick={() => onForward(message)}
+              title="Reenviar"
+              className="p-1 rounded-lg text-on-surface-variant/40 hover:text-on-surface hover:bg-surface-container-low transition-all">
+              <span className="material-symbols-outlined" style={{ fontSize: 16 }}>forward</span>
             </button>
           )}
         </div>
