@@ -37,6 +37,8 @@ export const state = {
   sueldosPeriod: 'semanal',
   sueldosAdjCurrentName: '',
   sueldosAdjCurrentType: 'bono',
+  sueldosVacCurrentDocId: '',
+  sueldosVacCurrentName: '',
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],

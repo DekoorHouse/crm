@@ -285,7 +285,7 @@ export function initEventListeners() {
         ui.renderSueldosData();
     });
 
-    // Sueldos adjustments (bono/descuento)
+    // Sueldos adjustments (bono/descuento) + vacaciones
     elements.sueldosTableContainer.addEventListener('click', async (e) => {
         const addBtn = e.target.closest('.sueldos-adj-add-btn');
         if (addBtn) {
@@ -302,8 +302,61 @@ export function initEventListeners() {
                 console.error(err);
                 ui.showToast('No se pudo eliminar el ajuste', 'error');
             }
+            return;
+        }
+        const vacBtn = e.target.closest('.sueldos-vac-btn');
+        if (vacBtn) {
+            ui.openSueldosVacModal(vacBtn.dataset.name);
         }
     });
+
+    // Vacaciones modal listeners
+    if (elements.sueldosVacModalClose) {
+        elements.sueldosVacModalClose.addEventListener('click', () => ui.closeSueldosVacModal());
+    }
+    if (elements.sueldosVacModal) {
+        elements.sueldosVacModal.addEventListener('click', (e) => {
+            if (e.target.id === 'sueldos-vac-modal') ui.closeSueldosVacModal();
+        });
+    }
+    if (elements.sueldosVacSaveBtn) {
+        elements.sueldosVacSaveBtn.addEventListener('click', async () => {
+            const desde = elements.sueldosVacDesde.value;
+            const hasta = elements.sueldosVacHasta.value;
+            if (!desde || !hasta) { ui.showToast('Selecciona ambas fechas', 'error'); return; }
+            if (hasta < desde) { ui.showToast('La fecha fin debe ser igual o posterior al inicio', 'error'); return; }
+            const btn = elements.sueldosVacSaveBtn;
+            const orig = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Guardando...';
+            try {
+                await services.saveEmployeeVacation(state.sueldosVacCurrentDocId, desde, hasta);
+                ui.showToast('Vacaciones guardadas 🏖', 'success');
+                ui.closeSueldosVacModal();
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudo guardar', 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = orig;
+            }
+        });
+    }
+    if (elements.sueldosVacRemoveBtn) {
+        elements.sueldosVacRemoveBtn.addEventListener('click', async () => {
+            const btn = elements.sueldosVacRemoveBtn;
+            const orig = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Quitando...';
+            try {
+                await services.removeEmployeeVacation(state.sueldosVacCurrentDocId);
+                ui.showToast('Vacaciones removidas', 'success');
+                ui.closeSueldosVacModal();
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudo quitar', 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = orig;
+            }
+        });
+    }
 
     if (elements.sueldosAdjModalClose) {
         elements.sueldosAdjModalClose.addEventListener('click', () => ui.closeSueldosAdjModal());

@@ -50,6 +50,13 @@ export function cacheElements() {
     elements.sueldosAdjExisting = document.getElementById('sueldos-adj-existing');
     elements.sueldosAdjSaveBtn = document.getElementById('sueldos-adj-save-btn');
     elements.sueldosAdjTypeBtns = document.querySelectorAll('.sueldos-adj-type-btn');
+    elements.sueldosVacModal = document.getElementById('sueldos-vac-modal');
+    elements.sueldosVacModalTitle = document.getElementById('sueldos-vac-modal-title');
+    elements.sueldosVacModalClose = document.getElementById('sueldos-vac-modal-close');
+    elements.sueldosVacDesde = document.getElementById('sueldos-vac-desde');
+    elements.sueldosVacHasta = document.getElementById('sueldos-vac-hasta');
+    elements.sueldosVacSaveBtn = document.getElementById('sueldos-vac-save-btn');
+    elements.sueldosVacRemoveBtn = document.getElementById('sueldos-vac-remove-btn');
 
     elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
     elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
@@ -853,8 +860,19 @@ export function renderSueldosData() {
         const adjDetail = adjItems ? `<div style="margin-top:4px;">${adjItems}</div>` : '';
         const addBtn = `<button class="sueldos-adj-add-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Agregar bono o descuento" style="margin-left:8px; background:rgba(99,102,241,0.12); color:var(--primary); border:1px solid var(--primary); border-radius:6px; padding:2px 8px; font-size:12px; font-weight:700; cursor:pointer;">+/-</button>`;
 
+        // Botón vacaciones
+        const empDoc = state.checadorEmployees.find(e => e.name && e.name.toLowerCase() === emp.name.toLowerCase());
+        const hasVac = empDoc && empDoc.vacaciones && empDoc.vacacionesDesde && empDoc.vacacionesHasta;
+        const vacLabel = hasVac
+            ? `🏖 ${empDoc.vacacionesDesde.slice(5)} → ${empDoc.vacacionesHasta.slice(5)}`
+            : '🏖';
+        const vacStyle = hasVac
+            ? 'background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; border:none;'
+            : 'background:rgba(245,158,11,0.12); color:#d97706; border:1px solid #f59e0b;';
+        const vacBtn = `<button class="sueldos-vac-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Vacaciones" style="margin-left:6px; ${vacStyle} border-radius:6px; padding:2px 8px; font-size:12px; font-weight:600; cursor:pointer;">${vacLabel}</button>`;
+
         return `<tr>
-            <td style="font-weight:600;">${capitalize(emp.name)}</td>
+            <td style="font-weight:600;">${capitalize(emp.name)}${vacBtn}</td>
             <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
             <td style="font-weight:bold; color:var(--primary);">${emp.totalStr}</td>
             <td style="font-size:12px;color:var(--text-secondary);">$${emp.rate}/hr</td>
@@ -931,6 +949,28 @@ export function updateSueldosAdjTypeButtons() {
             btn.style.border = '1px solid var(--border-color)';
         }
     });
+}
+
+export function openSueldosVacModal(name) {
+    const empDoc = state.checadorEmployees.find(e => e.name && e.name.toLowerCase() === name.toLowerCase());
+    if (!empDoc) {
+        showToast(`${capitalize(name)} no está registrado en checador — agrégalo ahí primero`, 'error');
+        return;
+    }
+    state.sueldosVacCurrentDocId = empDoc.id;
+    state.sueldosVacCurrentName = empDoc.name;
+    if (elements.sueldosVacModalTitle) elements.sueldosVacModalTitle.textContent = `🏖 Vacaciones — ${capitalize(empDoc.name)}`;
+    if (elements.sueldosVacDesde) elements.sueldosVacDesde.value = empDoc.vacacionesDesde || '';
+    if (elements.sueldosVacHasta) elements.sueldosVacHasta.value = empDoc.vacacionesHasta || '';
+    if (elements.sueldosVacRemoveBtn) {
+        elements.sueldosVacRemoveBtn.style.display = (empDoc.vacaciones && empDoc.vacacionesDesde) ? 'inline-block' : 'none';
+    }
+    if (elements.sueldosVacModal) elements.sueldosVacModal.style.display = 'flex';
+    setTimeout(() => elements.sueldosVacDesde?.focus(), 50);
+}
+
+export function closeSueldosVacModal() {
+    if (elements.sueldosVacModal) elements.sueldosVacModal.style.display = 'none';
 }
 
 export function renderSueldosAdjExisting() {

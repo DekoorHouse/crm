@@ -241,6 +241,22 @@ export async function deleteChecadorAdjustment(docId) {
     return deleteDoc(doc(db, "checador_adjustments", docId));
 }
 
+export async function saveEmployeeVacation(docId, desde, hasta) {
+    return updateDoc(doc(db, "checador_employees", docId), {
+        vacaciones: true,
+        vacacionesDesde: desde,
+        vacacionesHasta: hasta
+    });
+}
+
+export async function removeEmployeeVacation(docId) {
+    return updateDoc(doc(db, "checador_employees", docId), {
+        vacaciones: false,
+        vacacionesDesde: '',
+        vacacionesHasta: ''
+    });
+}
+
 export function setupOrdersListener(onDataChange) {
     if (typeof ordersUnsubscribe === 'function') {
         ordersUnsubscribe();

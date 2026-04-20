@@ -485,6 +485,29 @@
       </div>
   </div>
 
+  <!-- Modal Vacaciones (Sueldos) -->
+  <div id="sueldos-vac-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:92%; max-width:420px; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.35); border:1px solid var(--border-color);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:18px;">
+              <h3 id="sueldos-vac-modal-title" style="font-size:1.05rem; margin:0;">🏖 Vacaciones</h3>
+              <button id="sueldos-vac-modal-close" style="background:none; border:none; font-size:1.6rem; line-height:1; cursor:pointer; color:var(--text-secondary);">&times;</button>
+          </div>
+          <div style="margin-bottom:12px;">
+              <label style="display:block; font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">Fecha inicio</label>
+              <input type="date" id="sueldos-vac-desde" style="width:100%; padding:10px 12px; font-size:1rem; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input, transparent); color:inherit; box-sizing:border-box;">
+          </div>
+          <div style="margin-bottom:16px;">
+              <label style="display:block; font-size:0.8rem; color:var(--text-secondary); margin-bottom:4px;">Fecha fin</label>
+              <input type="date" id="sueldos-vac-hasta" style="width:100%; padding:10px 12px; font-size:1rem; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input, transparent); color:inherit; box-sizing:border-box;">
+          </div>
+          <p style="font-size:0.75rem; color:var(--text-secondary); margin-bottom:16px;">Horario vacaciones: L-V 9am-3pm (6h), Sáb 9am-1pm (4h).</p>
+          <div style="display:flex; gap:8px;">
+              <button id="sueldos-vac-save-btn" class="btn" style="flex:1; padding:12px; font-size:1rem;">Guardar</button>
+              <button id="sueldos-vac-remove-btn" class="btn" style="padding:12px 18px; font-size:0.9rem; display:none; background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border:none;">Quitar</button>
+          </div>
+      </div>
+  </div>
+
   <!-- Toast Container -->
   <div id="toast-container"></div>
 
