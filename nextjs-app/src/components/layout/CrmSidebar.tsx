@@ -25,6 +25,7 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
     label: "Marketing",
     items: [
       { href: "/crm/mensajes-ads", icon: "chat_bubble", label: "Mensajes Ads" },
+      { href: "/crm/carritos-abandonados", icon: "shopping_cart_off", label: "Carritos abandonados" },
     ],
   },
   {

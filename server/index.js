@@ -8,9 +8,12 @@ const { router: laserRouter, bridge: laserBridge } = require('./laser/laserRoute
 const metaAdsRouter = require('./meta/metaAdsRoutes');
 const mockupsRouter = require('./mockups/mockupsRoutes');
 const mercadopagoRouter = require('./mercadopago/mercadopagoRoutes');
+const transferenciasRouter = require('./transferencias/transferenciasRoutes');
+const carritosRouter = require('./carritos/carritosRoutes');
 const jtGuiasRouter = require('./jt/jtRoutes');
 const { startScheduler } = require('./autopost/autoPostScheduler');
 const { startWhatsAppScheduler } = require('./autopost/whatsappGroupScheduler');
+const { startCartRecoveryScheduler } = require('./carritos/carritosScheduler');
 const path = require('path');
 const express = require('express');
 const { WebSocketServer } = require('ws');
@@ -43,6 +46,8 @@ app.use('/api/laser', laserRouter);
 app.use('/api/meta-ads', metaAdsRouter);
 app.use('/api/mockups', mockupsRouter);
 app.use('/api/mercadopago', mercadopagoRouter);
+app.use('/api/pagos/transferencia', transferenciasRouter);
+app.use('/api/carritos-abandonados', carritosRouter);
 app.use('/api/jt-guias', jtGuiasRouter);
 app.use('/api/messenger-import', require('./messengerImport'));
 
@@ -279,6 +284,8 @@ const server = app.listen(PORT, () => {
   startScheduler();
   // Iniciar scheduler de WhatsApp Group
   startWhatsAppScheduler();
+  // Iniciar scheduler de recuperacion de carritos abandonados
+  startCartRecoveryScheduler();
   // Conectar bridge TCP a MeerK40t
   laserBridge.connect();
 });

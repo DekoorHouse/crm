@@ -223,6 +223,172 @@
         .mp-methods span { display: flex; align-items: center; gap: 5px; }
         .mp-methods i { color: var(--primary); }
 
+        /* Payment Method Toggle */
+        .pm-toggle {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+        .pm-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding: 14px 16px;
+            border: 2px solid var(--border);
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .pm-option:hover { border-color: var(--primary); }
+        .pm-option input[type="radio"] {
+            margin-top: 3px;
+            accent-color: var(--primary);
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .pm-option input[type="radio"]:checked ~ .pm-option-content .pm-option-title {
+            color: var(--primary);
+        }
+        .pm-option:has(input[type="radio"]:checked) {
+            border-color: var(--primary);
+            background: var(--primary-light, #fef3ec);
+        }
+        .pm-option-content { flex: 1; }
+        .pm-option-title {
+            font-weight: 700;
+            font-size: 0.95rem;
+            color: var(--text-dark);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .pm-option-title i { color: var(--primary); font-size: 1rem; }
+        .pm-option-sub {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+            margin-top: 3px;
+        }
+        .pm-badge-save {
+            background: #10b981;
+            color: #fff;
+            font-size: 0.65rem;
+            font-weight: 700;
+            padding: 2px 8px;
+            border-radius: 100px;
+            letter-spacing: 0.3px;
+            text-transform: uppercase;
+        }
+        .pm-panel { padding-top: 0.5rem; }
+
+        /* Transfer Panel */
+        .transfer-panel {
+            background: var(--cream);
+            border-radius: var(--radius);
+            padding: 1.25rem;
+        }
+        .transfer-info {
+            background: var(--white);
+            border-radius: var(--radius);
+            padding: 1rem 1.25rem;
+            margin-bottom: 1rem;
+        }
+        .transfer-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 0;
+            border-bottom: 1px dashed var(--border);
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .transfer-row:last-child { border-bottom: none; }
+        .transfer-label {
+            font-size: 0.8rem;
+            color: var(--text-medium);
+            font-weight: 600;
+        }
+        .transfer-value {
+            font-size: 0.95rem;
+            color: var(--text-dark);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            text-align: right;
+        }
+        .transfer-value.highlight { color: var(--primary); font-size: 1.05rem; }
+        .transfer-card-number {
+            font-family: 'Courier New', monospace;
+            letter-spacing: 1px;
+            font-weight: 700;
+        }
+        .copy-btn {
+            background: var(--primary);
+            color: #fff;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 100px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            font-family: inherit;
+            transition: all 0.2s ease;
+        }
+        .copy-btn:hover { transform: translateY(-1px); opacity: 0.9; }
+        .copy-btn.copied { background: #10b981; }
+        .transfer-steps {
+            background: #fffbeb;
+            border-left: 3px solid #f59e0b;
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        .transfer-step {
+            font-size: 0.85rem;
+            color: var(--text-dark);
+            line-height: 1.5;
+            margin-bottom: 4px;
+        }
+        .transfer-step:last-child { margin-bottom: 0; }
+        .transfer-step strong { color: #b45309; margin-right: 4px; }
+        .transfer-cta-btn {
+            background: linear-gradient(135deg, #25d366, #1fb855);
+            color: #fff;
+            border: none;
+            padding: 16px 24px;
+            border-radius: 100px;
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            box-shadow: 0 6px 20px rgba(37, 211, 102, 0.35);
+            transition: all 0.2s ease;
+            font-family: inherit;
+        }
+        .transfer-cta-btn:hover { transform: translateY(-2px); box-shadow: 0 10px 28px rgba(37, 211, 102, 0.45); }
+        .transfer-cta-btn:disabled { opacity: 0.6; cursor: wait; transform: none; }
+        .transfer-error {
+            background: #fee2e2;
+            color: #991b1b;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+
         /* Loading state */
         .checkout-loading {
             text-align: center;
@@ -323,7 +489,7 @@
             <div id="addressInfo" class="customer-info" style="margin-top:0;"></div>
             <div class="order-line" id="subtotalLine">
                 <span>Subtotal</span>
-                <span>$650.00</span>
+                <span data-price="unit" data-price-fmt="with-2dec">$650.00</span>
             </div>
             <div class="order-line" id="shippingLine">
                 <span>Envio</span>
@@ -331,7 +497,7 @@
             </div>
             <div class="order-line total" id="totalLine">
                 <span>Total</span>
-                <span>$650.00 MXN</span>
+                <span><span data-price="unit" data-price-fmt="with-2dec">$650.00</span> MXN</span>
             </div>
             <div class="order-shipping" id="shippingMethod">
                 <i class="fas fa-truck"></i> J&T Express - 5-7 dias habiles
@@ -349,29 +515,103 @@
             </div>
         </div>
 
-        <!-- Right: Mercado Pago CTA -->
+        <!-- Right: Payment Methods -->
         <div class="payment-section">
             <h2><i class="fas fa-credit-card"></i> Metodo de pago</h2>
-            <p class="payment-subtitle">Sera redirigido a Mercado Pago para completar tu compra de forma segura.</p>
-            <div class="mp-cta">
-                <img src="https://http2.mlstatic.com/storage/logos-api-admin/a5f047d0-9be0-11ec-aad4-c3381f368aaf-m.svg" alt="Mercado Pago" class="mp-cta-logo">
-                <p class="mp-cta-text">Acepta tarjetas de credito/debito, OXXO, SPEI, Mercado Pago, MSI y cuotas sin tarjeta.</p>
-                <button id="mpPayBtn" class="mp-cta-btn">
-                    <i class="fas fa-lock"></i> Pagar $<span id="btnTotal">650</span> MXN
-                </button>
-                <div class="mp-methods">
-                    <span><i class="far fa-credit-card"></i> Tarjeta</span>
-                    <span><i class="fas fa-store"></i> OXXO</span>
-                    <span><i class="fas fa-university"></i> SPEI</span>
-                    <span><i class="fas fa-mobile-alt"></i> Mercado Pago</span>
+            <p class="payment-subtitle">Elige como quieres pagar tu pedido.</p>
+
+            <div class="pm-toggle">
+                <label class="pm-option">
+                    <input type="radio" name="payment-method" value="transfer" checked>
+                    <div class="pm-option-content">
+                        <div class="pm-option-title">
+                            <i class="fas fa-university"></i> Transferencia BBVA
+                            <span class="pm-badge-save">Recomendado</span>
+                        </div>
+                        <div class="pm-option-sub">Envia comprobante por WhatsApp despues de transferir.</div>
+                    </div>
+                </label>
+                <label class="pm-option">
+                    <input type="radio" name="payment-method" value="mp">
+                    <div class="pm-option-content">
+                        <div class="pm-option-title">
+                            <i class="far fa-credit-card"></i> Tarjeta / OXXO / SPEI
+                        </div>
+                        <div class="pm-option-sub">Paga con Mercado Pago (acepta meses sin intereses).</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Panel: Transferencia (default) -->
+            <div id="pmTransfer" class="pm-panel">
+                <div class="transfer-panel">
+                    <div id="transferError" class="transfer-error"></div>
+                    <div class="transfer-info">
+                        <div class="transfer-row">
+                            <span class="transfer-label">Banco</span>
+                            <span class="transfer-value">BBVA</span>
+                        </div>
+                        <div class="transfer-row">
+                            <span class="transfer-label">Titular</span>
+                            <span class="transfer-value">Christian Morales Villanueva</span>
+                        </div>
+                        <div class="transfer-row">
+                            <span class="transfer-label">Numero de tarjeta</span>
+                            <span class="transfer-value">
+                                <span class="transfer-card-number">4152 3143 1457 0670</span>
+                                <button type="button" id="copyCardBtn" class="copy-btn">
+                                    <i class="far fa-copy"></i> Copiar
+                                </button>
+                            </span>
+                        </div>
+                        <div class="transfer-row">
+                            <span class="transfer-label">Monto a transferir</span>
+                            <span class="transfer-value highlight">$<span id="transferTotal">650</span> MXN</span>
+                        </div>
+                        <div class="transfer-row">
+                            <span class="transfer-label">Referencia (concepto)</span>
+                            <span class="transfer-value highlight">
+                                <span id="transferRef">Cargando...</span>
+                                <button type="button" id="copyRefBtn" class="copy-btn" disabled>
+                                    <i class="far fa-copy"></i> Copiar
+                                </button>
+                            </span>
+                        </div>
+                    </div>
+                    <div class="transfer-steps">
+                        <div class="transfer-step"><strong>1.</strong> Transfiere el monto exacto a la tarjeta BBVA. Copia la referencia y pegala en el concepto de tu transferencia.</div>
+                        <div class="transfer-step"><strong>2.</strong> Envia el comprobante por WhatsApp. Te confirmaremos el pedido en minutos.</div>
+                    </div>
+                    <button id="transferConfirmBtn" class="transfer-cta-btn">
+                        <i class="fab fa-whatsapp"></i> Ya transferi, enviar comprobante
+                    </button>
+                </div>
+            </div>
+
+            <!-- Panel: Mercado Pago -->
+            <div id="pmMp" class="pm-panel" style="display:none;">
+                <p class="payment-subtitle">Sera redirigido a Mercado Pago para completar tu compra de forma segura.</p>
+                <div class="mp-cta">
+                    <img src="https://http2.mlstatic.com/storage/logos-api-admin/a5f047d0-9be0-11ec-aad4-c3381f368aaf-m.svg" alt="Mercado Pago" class="mp-cta-logo">
+                    <p class="mp-cta-text">Acepta tarjetas de credito/debito, OXXO, SPEI, Mercado Pago, MSI y cuotas sin tarjeta.</p>
+                    <button id="mpPayBtn" class="mp-cta-btn">
+                        <i class="fas fa-lock"></i> Pagar $<span id="btnTotal" data-price="unit" data-price-fmt="raw">650</span> MXN
+                    </button>
+                    <div class="mp-methods">
+                        <span><i class="far fa-credit-card"></i> Tarjeta</span>
+                        <span><i class="fas fa-store"></i> OXXO</span>
+                        <span><i class="fas fa-university"></i> SPEI</span>
+                        <span><i class="fas fa-mobile-alt"></i> Mercado Pago</span>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 </main>
 
-<script src="/sitio/cart.js"></script>
 <script src="/env-config.js"></script>
+<script src="/sitio/config.js"></script>
+<script src="/sitio/cart.js"></script>
 <script>
 const API = window.API_BASE_URL || '';
 
@@ -391,9 +631,10 @@ const state = params.get('state') || '';
 const zip = params.get('zip') || '';
 
 const qty = parseInt(params.get('qty')) || 1;
-const subtotalParam = parseInt(params.get('subtotal')) || 650;
+const P = DekoorConfig.prices;
+const subtotalParam = parseInt(params.get('subtotal')) || P.productUnitPrice;
 const isDHL = shipping === 'dhl';
-const shippingCost = isDHL ? 160 : 0;
+const shippingCost = isDHL ? P.shippingDhlCost : P.shippingJtCost;
 const total = subtotalParam + shippingCost;
 
 if (!customerName || !customerPhone) {
@@ -414,14 +655,14 @@ document.getElementById('addressInfo').innerHTML =
 // Show subtotal & shipping & totals
 document.getElementById('subtotalLine').innerHTML = `<span>Subtotal${qty > 1 ? ' (' + qty + ' productos)' : ''}</span><span>$${subtotalParam.toLocaleString('en')}.00</span>`;
 if (isDHL) {
-    document.getElementById('shippingLine').innerHTML = '<span>Envio DHL Express</span><span>$160.00</span>';
+    document.getElementById('shippingLine').innerHTML = `<span>Envio DHL Express</span><span>$${P.shippingDhlCost.toLocaleString('en')}.00</span>`;
     document.getElementById('shippingMethod').innerHTML = '<i class="fas fa-bolt"></i> DHL Express - 2-3 dias habiles';
 }
 document.getElementById('totalLine').innerHTML = `<span>Total</span><span>$${total.toLocaleString('en')}.00 MXN</span>`;
 document.getElementById('btnTotal').textContent = total.toLocaleString('en');
 
 // Show product info
-const originalTotal = qty * 780;
+const originalTotal = qty * P.productOriginalPrice;
 document.getElementById('orderProduct').innerHTML = `
     ${imageUrl ? `<img src="${decodeURIComponent(imageUrl)}" alt="${productName}">` : ''}
     <div class="order-product-info">
@@ -436,6 +677,167 @@ document.getElementById('orderProduct').innerHTML = `
 // Show layout immediately (no need to wait for MP preference)
 document.getElementById('checkoutLoading').style.display = 'none';
 document.getElementById('checkoutLayout').style.display = '';
+
+// Set transfer total
+document.getElementById('transferTotal').textContent = total.toLocaleString('en');
+
+// ============================================================
+// PAYMENT METHOD TOGGLE (Transferencia default, MP alternativo)
+// ============================================================
+const pmTransferPanel = document.getElementById('pmTransfer');
+const pmMpPanel = document.getElementById('pmMp');
+
+document.querySelectorAll('input[name="payment-method"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+        const method = radio.value;
+        pmTransferPanel.style.display = method === 'transfer' ? '' : 'none';
+        pmMpPanel.style.display = method === 'mp' ? '' : 'none';
+
+        if (method === 'transfer' && !window.__transferData && !window.__transferLoading) {
+            createTransferOrder();
+        }
+
+        // GA4 event
+        if (typeof gtag === 'function') {
+            gtag('event', 'select_payment_method', { method });
+        }
+    });
+});
+
+// ============================================================
+// TRANSFERENCIA BBVA
+// ============================================================
+const CARD_NUMBER = '4152314570690670';
+const CARD_NUMBER_DISPLAY = '4152 3143 1457 0670';
+
+async function createTransferOrder() {
+    window.__transferLoading = true;
+    const refEl = document.getElementById('transferRef');
+    const copyRefBtn = document.getElementById('copyRefBtn');
+    const errEl = document.getElementById('transferError');
+    errEl.style.display = 'none';
+    refEl.textContent = 'Generando referencia...';
+
+    try {
+        const res = await fetch(API + '/api/pagos/transferencia', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                customerName,
+                customerPhone,
+                customerEmail,
+                productName,
+                collection,
+                imageUrl,
+                shipping,
+                qty,
+                address: { street, colonia, city, state, zip }
+            })
+        });
+        const data = await res.json();
+
+        if (!res.ok || !data.reference) {
+            throw new Error(data.error || 'No se pudo generar la referencia');
+        }
+
+        window.__transferData = data;
+        refEl.textContent = data.reference;
+        copyRefBtn.disabled = false;
+        if (typeof data.total === 'number') {
+            document.getElementById('transferTotal').textContent = data.total.toLocaleString('en');
+        }
+
+        // GA4 conversion event
+        if (typeof gtag === 'function') {
+            gtag('event', 'begin_checkout', {
+                method: 'transfer',
+                value: data.total,
+                currency: 'MXN',
+                transaction_id: data.orderNumber
+            });
+        }
+    } catch (e) {
+        console.error('[TRANSFER] Error:', e);
+        refEl.textContent = 'Error al generar referencia';
+        errEl.textContent = 'No se pudo generar la referencia. Puedes continuar y enviarnos comprobante por WhatsApp directamente.';
+        errEl.style.display = 'block';
+    } finally {
+        window.__transferLoading = false;
+    }
+}
+
+// Copy card number
+document.getElementById('copyCardBtn').addEventListener('click', function() {
+    const btn = this;
+    navigator.clipboard.writeText(CARD_NUMBER).then(() => {
+        btn.classList.add('copied');
+        btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<i class="far fa-copy"></i> Copiar';
+        }, 2000);
+    }).catch(() => {
+        alert('Tarjeta: ' + CARD_NUMBER_DISPLAY);
+    });
+});
+
+// Copy reference
+document.getElementById('copyRefBtn').addEventListener('click', function() {
+    const btn = this;
+    const ref = document.getElementById('transferRef').textContent.trim();
+    if (!ref || ref.includes('...') || ref.toLowerCase().includes('error')) return;
+    navigator.clipboard.writeText(ref).then(() => {
+        btn.classList.add('copied');
+        btn.innerHTML = '<i class="fas fa-check"></i> Copiado';
+        setTimeout(() => {
+            btn.classList.remove('copied');
+            btn.innerHTML = '<i class="far fa-copy"></i> Copiar';
+        }, 2000);
+    }).catch(() => {
+        alert('Referencia: ' + ref);
+    });
+});
+
+// Confirm transfer -> open WhatsApp with pre-armed message
+document.getElementById('transferConfirmBtn').addEventListener('click', function() {
+    const d = window.__transferData;
+    const WA = d ? d.whatsapp : '5216181333519';
+    const addr = [street, colonia, `${city}, ${state} C.P. ${zip}`].filter(Boolean).join(', ');
+
+    let msg;
+    if (d) {
+        msg = [
+            `Hola Dekoor, ya realice la transferencia por mi pedido.`,
+            ``,
+            `Pedido: ${d.orderNumber}`,
+            `Referencia: ${d.reference}`,
+            `Monto: $${d.total} MXN`,
+            `Nombre: ${customerName}`,
+            addr ? `Direccion: ${addr}` : '',
+            ``,
+            `Adjunto mi comprobante de pago.`
+        ].filter(Boolean).join('\n');
+    } else {
+        // Fallback si aun no se genero referencia
+        msg = [
+            `Hola Dekoor, quiero hacer un pedido por transferencia.`,
+            ``,
+            `Producto: ${productName}${collection ? ' - ' + collection : ''}`,
+            `Nombre: ${customerName}`,
+            `Monto: $${total} MXN`,
+            addr ? `Direccion: ${addr}` : ''
+        ].filter(Boolean).join('\n');
+    }
+
+    if (typeof gtag === 'function') {
+        gtag('event', 'whatsapp_click', { source: 'transfer_confirm', has_reference: !!d });
+    }
+
+    window.open(`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`, '_blank');
+});
+
+// Crear orden de transferencia inmediatamente (panel default visible)
+createTransferOrder();
 
 // Click handler: Create MP preference and redirect to Checkout Pro
 document.getElementById('mpPayBtn').addEventListener('click', async function() {

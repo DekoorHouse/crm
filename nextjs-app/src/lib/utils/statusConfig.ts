@@ -8,6 +8,7 @@ export interface StatusConfig {
 
 export const STATUS_OPTIONS: StatusConfig[] = [
   { id: "sin_estatus", label: "Sin estatus", icon: "help", color: "#6c757d", bgClass: "bg-gray-500" },
+  { id: "pendiente_transferencia", label: "Pendiente Transferencia", icon: "account_balance", color: "#0ea5e9", bgClass: "bg-sky-500" },
   { id: "foto_enviada", label: "Foto enviada", icon: "photo_camera", color: "#007bff", bgClass: "bg-blue-500" },
   { id: "esperando_pago", label: "Esperando pago", icon: "hourglass_top", color: "#ffc107", bgClass: "bg-yellow-500" },
   { id: "pagado", label: "Pagado", icon: "check_circle", color: "#28a745", bgClass: "bg-green-500" },

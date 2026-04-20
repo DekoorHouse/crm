@@ -840,7 +840,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 pedidoStatus.textContent = 'Pedido encontrado';
                 pedidoStatus.className = 'pedido-status success';
                 telMasked.textContent = data.telefonoMasked;
-                telConfirmacion.classList.add('show');
+
+                // Pre-llenar datos si vienen del checkout del sitio
+                if (data.envioPrefill) {
+                    await aplicarPrefill(data.envioPrefill);
+                    // Ocultar dialogo de confirmacion de telefono (ya lo pre-llenamos)
+                    telConfirmacion.classList.remove('show');
+                } else {
+                    telConfirmacion.classList.add('show');
+                }
             } else if (data.code === 'GUIA_EXISTENTE') {
                 pedidoStatus.textContent = data.message;
                 pedidoStatus.className = 'pedido-status error';
@@ -858,6 +866,79 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidoStatus.textContent = 'Error al verificar el pedido. Intenta de nuevo.';
             pedidoStatus.className = 'pedido-status error';
         }
+    }
+
+    // Aplica los datos pre-llenados del checkout (transferencia/MP)
+    async function aplicarPrefill(prefill) {
+        try {
+            if (prefill.nombreCompleto) {
+                document.getElementById('receiverName').value = prefill.nombreCompleto;
+            }
+            if (prefill.telefono) {
+                // Guardar solo los ultimos 10 digitos (formato local MX)
+                const digits = String(prefill.telefono).replace(/\D/g, '').slice(-10);
+                document.getElementById('receiverPhone').value = digits;
+            }
+            if (prefill.direccion) {
+                document.getElementById('street').value = prefill.direccion;
+            }
+            if (prefill.ciudad) {
+                document.getElementById('city').value = prefill.ciudad;
+            }
+            if (prefill.codigoPostal) {
+                // Disparar lookup de CP -> llena select de colonia + estado
+                const zipEl = document.getElementById('zip');
+                zipEl.value = prefill.codigoPostal;
+                zipEl.dispatchEvent(new Event('input', { bubbles: true }));
+
+                // Esperar a que termine el fetch del CP (maximo 2s)
+                await waitForColonias(prefill.colonia, 2000);
+            }
+
+            mostrarBannerPrefill();
+        } catch (e) {
+            console.warn('[PREFILL] Error aplicando datos:', e);
+        }
+    }
+
+    // Espera a que el select de colonia se llene y selecciona la colonia del prefill si coincide
+    function waitForColonias(coloniaTarget, timeoutMs) {
+        return new Promise(resolve => {
+            const start = Date.now();
+            const coloniaSelectEl = document.getElementById('colonia');
+            const tryFill = () => {
+                const opts = coloniaSelectEl.querySelectorAll('option');
+                // Consideramos "listo" cuando hay mas de 1 option (la default + las colonias)
+                if (opts.length > 1) {
+                    if (coloniaTarget) {
+                        // Buscar match case-insensitive
+                        const target = coloniaTarget.trim().toLowerCase();
+                        const match = Array.from(opts).find(o =>
+                            (o.value || '').trim().toLowerCase() === target
+                        );
+                        if (match) {
+                            coloniaSelectEl.value = match.value;
+                        }
+                    }
+                    resolve();
+                } else if (Date.now() - start >= timeoutMs) {
+                    resolve();
+                } else {
+                    setTimeout(tryFill, 150);
+                }
+            };
+            tryFill();
+        });
+    }
+
+    function mostrarBannerPrefill() {
+        if (document.getElementById('prefillBanner')) return;
+        const banner = document.createElement('div');
+        banner.id = 'prefillBanner';
+        banner.style.cssText = 'background:#d1fae5;border:1px solid #10b981;color:#065f46;padding:12px 16px;border-radius:8px;margin:1rem 0;font-size:0.9rem;display:flex;align-items:center;gap:10px;';
+        banner.innerHTML = '<i class="fas fa-check-circle" style="color:#10b981;font-size:1.2rem;"></i><div><strong>Datos pre-llenados de tu pedido.</strong> Revisalos y ajusta lo que necesites antes de confirmar.</div>';
+        const form = document.getElementById('envioForm');
+        form.insertBefore(banner, form.firstChild.nextSibling);
     }
 
     // Confirmación de teléfono

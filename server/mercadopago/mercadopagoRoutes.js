@@ -2,6 +2,7 @@ const express = require('express');
 const axios = require('axios');
 const router = express.Router();
 const { db } = require('../config');
+const { markCartConverted } = require('../carritos/carritosRoutes');
 
 const crypto = require('crypto');
 
@@ -15,10 +16,12 @@ const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
 
 // --- PRECIOS AUTORITATIVOS DEL SERVIDOR ---
 // El cliente NO puede modificar estos precios; siempre se calculan aquí.
-const PRODUCT_UNIT_PRICE = 650; // MXN por lampara
-const SHIPPING_DHL_COST = 160;  // MXN
-const SHIPPING_JT_COST = 0;     // MXN (gratis)
-const MAX_QTY = 50;             // limite anti-abuso
+// Fuente unica: server/prices.js
+const PRICES = require('../prices');
+const PRODUCT_UNIT_PRICE = PRICES.productUnitPrice;
+const SHIPPING_DHL_COST = PRICES.shippingDhlCost;
+const SHIPPING_JT_COST = PRICES.shippingJtCost;
+const MAX_QTY = PRICES.maxQty;
 
 function mpHeaders() {
     return {
@@ -379,11 +382,27 @@ router.post('/webhook', async (req, res) => {
             estatusVerificado: false,
             pagoMercadoPago: true,
             mpPaymentId: paymentId,
-            mpExternalReference: externalReference
+            mpExternalReference: externalReference,
+            // Datos para pre-llenar el formulario de guia J&T
+            envioPrefill: {
+                nombreCompleto: mpData.customerName || '',
+                telefono: mpData.customerPhone || '',
+                email: mpData.customerEmail || '',
+                direccion: addr.street || '',
+                colonia: addr.colonia || '',
+                ciudad: addr.city || '',
+                estado: addr.state || '',
+                codigoPostal: addr.zip || '',
+                metodoEnvio: (mpData.shippingMethod || '').includes('DHL') ? 'dhl' : 'jt',
+                source: 'web_checkout_mp'
+            }
         };
 
         await db.collection('pedidos').doc(orderNumber).set(pedido);
         await mpRef.update({ internalOrderNumber: orderNumber });
+
+        // Marcar carrito abandonado como convertido (si existe)
+        markCartConverted(mpData.customerPhone, orderNumber).catch(() => {});
 
         console.log(`[MP WEBHOOK] Order ${orderNumber} created from payment ${paymentId}`);
 

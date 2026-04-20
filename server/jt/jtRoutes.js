@@ -428,9 +428,10 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
             });
         }
 
-        // Buscar el pedido y su teléfono
+        // Buscar el pedido, su teléfono y datos pre-fill
         // Los pedidos tienen consecutiveOrderNumber como número (ej: 10952)
         let telefono = null;
+        let envioPrefill = null;
         const orderNumInt = parseInt(orderNumber.replace(/^DH/i, ''), 10);
 
         if (!isNaN(orderNumInt)) {
@@ -439,7 +440,9 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
                 .limit(1)
                 .get();
             if (!byField.empty) {
-                telefono = byField.docs[0].data().telefono || null;
+                const data = byField.docs[0].data();
+                telefono = data.telefono || null;
+                envioPrefill = data.envioPrefill || null;
             }
         }
 
@@ -447,7 +450,9 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
         if (!telefono) {
             const pedidoDoc = await db.collection('pedidos').doc(orderNumber).get();
             if (pedidoDoc.exists) {
-                telefono = pedidoDoc.data().telefono || null;
+                const data = pedidoDoc.data();
+                telefono = data.telefono || null;
+                if (!envioPrefill) envioPrefill = data.envioPrefill || null;
             }
         }
 
@@ -470,6 +475,7 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
             orderNumber,
             telefonoMasked,
             telefonoCompleto: telefonoLimpio,
+            envioPrefill: envioPrefill || null,
         });
     } catch (error) {
         console.error('[J&T] Error verificando pedido:', error.message);

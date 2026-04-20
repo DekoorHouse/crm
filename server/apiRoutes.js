@@ -15,6 +15,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
+const PRICES = require('./prices');
 const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
 const jtService = require('./jt/jtService');
 
@@ -3030,7 +3031,7 @@ router.post('/contacts/:contactId/utility-message', async (req, res) => {
 // --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template, tempId } = req.body; // tempId es opcional, para UI optimista
+    const { text, fileUrl, fileType, reply_to_wamid, template, tempId, forwarded } = req.body; // tempId es opcional, para UI optimista
 
     // Validaciones básicas
     if (!text && !fileUrl && !template) {
@@ -3201,6 +3202,9 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         if (reply_to_wamid) {
             messageToSave.context = { id: reply_to_wamid };
+        }
+        if (forwarded) {
+            messageToSave.forwarded = true;
         }
         Object.keys(messageToSave).forEach(key => messageToSave[key] == null && delete messageToSave[key]);
 
@@ -7507,6 +7511,12 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
         console.error('Error en cobranza individual:', error);
         res.status(500).json({ success: false, message: error.message });
     }
+});
+
+// GET /api/config/prices - Precios autoritativos del servidor (consumido por el sitio publico)
+router.get('/config/prices', (_req, res) => {
+    res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
+    res.json(PRICES);
 });
 
 module.exports = router;
