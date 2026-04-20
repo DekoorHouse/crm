@@ -1767,12 +1767,15 @@ router.get('/kpi/conversations-daily', async (req, res) => {
             contactDays[contactId].add(day);
         });
 
-        // 3. Leer createTime de cada contacto (batch getAll de 100 en 100)
+        // 3. Leer createTime de cada contacto en paralelo (batches de 300 con Promise.all)
         const contactIds = Object.keys(contactDays);
         const firstDayByContact = {};
-        const CHUNK = 100;
+        const CHUNK = 300;
+        const chunks = [];
         for (let i = 0; i < contactIds.length; i += CHUNK) {
-            const chunk = contactIds.slice(i, i + CHUNK);
+            chunks.push(contactIds.slice(i, i + CHUNK));
+        }
+        await Promise.all(chunks.map(async (chunk) => {
             const refs = chunk.map(cid => db.collection('contacts_whatsapp').doc(cid));
             const snaps = await db.getAll(...refs);
             snaps.forEach((snap, idx) => {
@@ -1782,7 +1785,7 @@ router.get('/kpi/conversations-daily', async (req, res) => {
                 const localStr = ct.toDate().toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
                 firstDayByContact[cid] = localStr.slice(0, 10);
             });
-        }
+        }));
 
         // 4. Buckets por día inicializados en 0 (sin huecos)
         const bucket = {};
@@ -1818,6 +1821,7 @@ router.get('/kpi/conversations-daily', async (req, res) => {
         const avgTotal = data.length > 0 ? Math.round((totalNew + totalExisting) / data.length) : 0;
         const todayRow = data.length > 0 ? data[data.length - 1] : { new: 0, existing: 0, total: 0 };
 
+        res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
         res.status(200).json({
             success: true,
             data,
