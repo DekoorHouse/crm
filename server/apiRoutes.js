@@ -1663,10 +1663,28 @@ router.get('/kpi/revenue-history', async (req, res) => {
     }
 });
 
+// === Cache simple en memoria para KPIs (TTL 5 min) ===
+const _kpiCache = {};
+function _cacheGet(key, ttlMs = 300000) {
+    const entry = _kpiCache[key];
+    if (!entry) return null;
+    if (Date.now() - entry.at > ttlMs) { delete _kpiCache[key]; return null; }
+    return entry.value;
+}
+function _cacheSet(key, value) { _kpiCache[key] = { value, at: Date.now() }; }
+
 // --- Endpoint GET /api/kpi/messages-daily (Mensajes entrantes por día, últimos N días) ---
 router.get('/kpi/messages-daily', async (req, res) => {
     try {
         const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+
+        // Cache hit?
+        const cacheKey = `msg-daily:${days}`;
+        const cached = _cacheGet(cacheKey);
+        if (cached) {
+            res.set('Cache-Control', 'public, max-age=300');
+            return res.status(200).json(cached);
+        }
 
         // Ventana en hora local de CDMX: [hoy 00:00 CDMX - (days-1) días, ahora]
         const TZ = 'America/Mexico_City';
@@ -1683,10 +1701,12 @@ router.get('/kpi/messages-daily', async (req, res) => {
         const startTimestamp = admin.firestore.Timestamp.fromDate(startUtc);
         const endTimestamp = admin.firestore.Timestamp.fromDate(now);
 
+        // .select('timestamp') proyecta solo el campo timestamp — reduce ~10x el payload de 50k docs
         const snapshot = await db.collectionGroup('messages')
             .where('timestamp', '>=', startTimestamp)
             .where('timestamp', '<=', endTimestamp)
             .where('from', '!=', PHONE_NUMBER_ID) // Solo entrantes
+            .select('timestamp')
             .get();
 
         // Inicializamos todos los días del rango con 0 para gráfica sin huecos
@@ -1722,11 +1742,14 @@ router.get('/kpi/messages-daily', async (req, res) => {
         const today = data.length > 0 ? data[data.length - 1].count : 0;
         const max = data.reduce((m, d) => d.count > m ? d.count : m, 0);
 
-        res.status(200).json({
+        const payload = {
             success: true,
             data,
             summary: { total, avg, today, max, days: data.length }
-        });
+        };
+        _cacheSet(cacheKey, payload);
+        res.set('Cache-Control', 'public, max-age=300');
+        res.status(200).json(payload);
     } catch (error) {
         console.error('Error fetching messages-daily:', error);
         res.status(500).json({ success: false, message: 'Error al obtener mensajes diarios.', error: error.message });
@@ -1737,6 +1760,14 @@ router.get('/kpi/messages-daily', async (req, res) => {
 router.get('/kpi/conversations-daily', async (req, res) => {
     try {
         const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+
+        const cacheKey = `conv-daily:${days}`;
+        const cached = _cacheGet(cacheKey);
+        if (cached) {
+            res.set('Cache-Control', 'public, max-age=300');
+            return res.status(200).json(cached);
+        }
+
         const TZ = 'America/Mexico_City';
         const now = new Date();
         const mexicoNow = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
@@ -1747,16 +1778,26 @@ router.get('/kpi/conversations-daily', async (req, res) => {
         const startTimestamp = admin.firestore.Timestamp.fromDate(startUtc);
         const endTimestamp = admin.firestore.Timestamp.fromDate(now);
 
-        // 1. Traer todos los mensajes entrantes del rango
-        const snapshot = await db.collectionGroup('messages')
-            .where('timestamp', '>=', startTimestamp)
-            .where('timestamp', '<=', endTimestamp)
-            .where('from', '!=', PHONE_NUMBER_ID)
-            .get();
+        // Correr ambas queries en paralelo:
+        // A) Mensajes entrantes del rango (proyectados — solo timestamp) para armar contactId -> días.
+        // B) Contactos activos del rango (una sola query indexada sobre lastMessageTimestamp)
+        //    para extraer createTime de cada uno y decidir nuevo vs recurrente.
+        const [msgSnap, contactsSnap] = await Promise.all([
+            db.collectionGroup('messages')
+                .where('timestamp', '>=', startTimestamp)
+                .where('timestamp', '<=', endTimestamp)
+                .where('from', '!=', PHONE_NUMBER_ID)
+                .select('timestamp')
+                .get(),
+            db.collection('contacts_whatsapp')
+                .where('lastMessageTimestamp', '>=', startTimestamp)
+                .select('lastMessageTimestamp') // proyección mínima; createTime viene como metadata
+                .get()
+        ]);
 
-        // 2. Armar: contactId -> Set<día local>
+        // 1) contactId -> Set<día local> desde los mensajes
         const contactDays = {};
-        snapshot.forEach(doc => {
+        msgSnap.forEach(doc => {
             const data = doc.data();
             if (!data.timestamp || typeof data.timestamp.toDate !== 'function') return;
             const contactId = doc.ref.parent.parent ? doc.ref.parent.parent.id : null;
@@ -1767,35 +1808,25 @@ router.get('/kpi/conversations-daily', async (req, res) => {
             contactDays[contactId].add(day);
         });
 
-        // 3. Leer createTime de cada contacto en paralelo (batches de 300 con Promise.all)
-        const contactIds = Object.keys(contactDays);
+        // 2) contactId -> día de creación (de createTime, metadata Firestore)
         const firstDayByContact = {};
-        const CHUNK = 300;
-        const chunks = [];
-        for (let i = 0; i < contactIds.length; i += CHUNK) {
-            chunks.push(contactIds.slice(i, i + CHUNK));
-        }
-        await Promise.all(chunks.map(async (chunk) => {
-            const refs = chunk.map(cid => db.collection('contacts_whatsapp').doc(cid));
-            const snaps = await db.getAll(...refs);
-            snaps.forEach((snap, idx) => {
-                const cid = chunk[idx];
-                const ct = snap.createTime;
-                if (!ct) { firstDayByContact[cid] = null; return; }
-                const localStr = ct.toDate().toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
-                firstDayByContact[cid] = localStr.slice(0, 10);
-            });
-        }));
+        contactsSnap.forEach(snap => {
+            const ct = snap.createTime;
+            if (!ct) { firstDayByContact[snap.id] = null; return; }
+            const localStr = ct.toDate().toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+            firstDayByContact[snap.id] = localStr.slice(0, 10);
+        });
 
-        // 4. Buckets por día inicializados en 0 (sin huecos)
+        // 3) Buckets por día inicializados en 0 (sin huecos)
         const bucket = {};
         for (let i = 0; i < days; i++) {
             const d = new Date(startLocal.getFullYear(), startLocal.getMonth(), startLocal.getDate() + i);
             const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
             bucket[key] = { new: 0, existing: 0, total: 0 };
         }
+        const contactIds = Object.keys(contactDays);
         for (const cid of contactIds) {
-            const firstDay = firstDayByContact[cid];
+            const firstDay = firstDayByContact[cid]; // puede ser undefined si el contacto no salió en contactsSnap
             for (const day of contactDays[cid]) {
                 if (!bucket[day]) continue;
                 bucket[day].total += 1;
@@ -1821,8 +1852,7 @@ router.get('/kpi/conversations-daily', async (req, res) => {
         const avgTotal = data.length > 0 ? Math.round((totalNew + totalExisting) / data.length) : 0;
         const todayRow = data.length > 0 ? data[data.length - 1] : { new: 0, existing: 0, total: 0 };
 
-        res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
-        res.status(200).json({
+        const payload = {
             success: true,
             data,
             summary: {
@@ -1836,7 +1866,10 @@ router.get('/kpi/conversations-daily', async (req, res) => {
                 todayTotal: todayRow.total,
                 days: data.length
             }
-        });
+        };
+        _cacheSet(cacheKey, payload);
+        res.set('Cache-Control', 'public, max-age=300');
+        res.status(200).json(payload);
     } catch (error) {
         console.error('Error fetching conversations-daily:', error);
         res.status(500).json({ success: false, message: 'Error al obtener conversaciones diarias.', error: error.message });
