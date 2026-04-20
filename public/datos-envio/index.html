@@ -845,6 +845,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 pedidoStatus.textContent = data.message;
                 pedidoStatus.className = 'pedido-status error';
                 bloquearSubmit('Guia ya existe para este pedido');
+            } else if (data.code === 'DATOS_YA_ENVIADOS') {
+                pedidoStatus.textContent = data.message;
+                pedidoStatus.className = 'pedido-status error';
+                bloquearSubmit('Datos ya enviados para este pedido');
             } else if (data.code === 'PEDIDO_NO_ENCONTRADO') {
                 pedidoStatus.textContent = data.message;
                 pedidoStatus.className = 'pedido-status error';
@@ -1144,9 +1148,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 resultSection.style.display = 'block';
             } else {
                 showAlert('error', result.message || 'Error al generar la guia.');
-                // Si el backend detecta guia duplicada, bloquear
+                // Si el backend detecta duplicado (guia o datos), bloquear
                 if (res.status === 409) {
-                    bloquearSubmit('Guia ya existe para este pedido');
+                    const motivo = result.code === 'DATOS_YA_ENVIADOS'
+                        ? 'Datos ya enviados para este pedido'
+                        : 'Guia ya existe para este pedido';
+                    bloquearSubmit(motivo);
                     return;
                 }
             }

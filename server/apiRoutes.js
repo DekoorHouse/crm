@@ -5893,19 +5893,45 @@ router.post('/datos-envio', async (req, res) => {
             return res.status(400).json({ success: false, message: 'El código postal debe tener 5 dígitos.' });
         }
 
-        await db.collection('datos_envio').add({
-            numeroPedido,
-            nombreCompleto,
-            telefono,
-            direccion,
-            numInterior: numInterior || '',
-            colonia,
-            estado,
-            ciudad,
-            codigoPostal,
-            referencia: referencia || '',
-            createdAt: admin.firestore.FieldValue.serverTimestamp(),
-        });
+        // Validar que no existan ya datos de envío para este pedido (evita duplicados)
+        const existingDatosSnap = await db.collection('datos_envio')
+            .where('numeroPedido', '==', numeroPedido)
+            .limit(1)
+            .get();
+
+        if (!existingDatosSnap.empty) {
+            return res.status(409).json({
+                success: false,
+                code: 'DATOS_YA_ENVIADOS',
+                message: `Ya existen datos de envío registrados para el pedido ${numeroPedido}.`,
+            });
+        }
+
+        // Usar numeroPedido como doc ID para garantizar unicidad atómica (previene race conditions)
+        try {
+            await db.collection('datos_envio').doc(numeroPedido).create({
+                numeroPedido,
+                nombreCompleto,
+                telefono,
+                direccion,
+                numInterior: numInterior || '',
+                colonia,
+                estado,
+                ciudad,
+                codigoPostal,
+                referencia: referencia || '',
+                createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            });
+        } catch (err) {
+            if (err.code === 6 || /already exists/i.test(err.message || '')) {
+                return res.status(409).json({
+                    success: false,
+                    code: 'DATOS_YA_ENVIADOS',
+                    message: `Ya existen datos de envío registrados para el pedido ${numeroPedido}.`,
+                });
+            }
+            throw err;
+        }
 
         // --- Auto-crear guía J&T ---
         let guiaResult = null;

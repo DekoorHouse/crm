@@ -428,6 +428,20 @@ router.get('/verificar-pedido/:orderNumber', async (req, res) => {
             });
         }
 
+        // Verificar si ya existen datos de envío registrados (evita duplicados del formulario)
+        const datosSnap = await db.collection('datos_envio')
+            .where('numeroPedido', '==', orderNumber)
+            .limit(1)
+            .get();
+
+        if (!datosSnap.empty) {
+            return res.status(409).json({
+                success: false,
+                code: 'DATOS_YA_ENVIADOS',
+                message: `Ya recibimos tus datos de envío para el pedido ${orderNumber}. Si necesitas hacer un cambio, contáctanos por WhatsApp.`,
+            });
+        }
+
         // Buscar el pedido y su teléfono
         // Los pedidos tienen consecutiveOrderNumber como número (ej: 10952)
         let telefono = null;
@@ -515,25 +529,52 @@ router.post('/cliente', async (req, res) => {
             const existing = existingSnap.docs[0].data();
             return res.status(409).json({
                 success: false,
+                code: 'GUIA_EXISTENTE',
                 message: `Ya existe una guía de envío para el pedido ${numeroPedido}. Si necesitas ayuda, contactanos por WhatsApp.`,
                 waybillNo: existing.waybillNo,
             });
         }
 
-        // 1. Guardar datos de envío
-        await db.collection('datos_envio').add({
-            numeroPedido,
-            nombreCompleto,
-            telefono,
-            direccion,
-            colonia,
-            ciudad,
-            estado,
-            codigoPostal,
-            referencia: referencia || '',
-            createdAt: new Date(),
-            source: 'cliente',
-        });
+        // Validar que no existan ya datos de envío registrados para este pedido (duplicados)
+        const existingDatosSnap = await db.collection('datos_envio')
+            .where('numeroPedido', '==', numeroPedido)
+            .limit(1)
+            .get();
+
+        if (!existingDatosSnap.empty) {
+            return res.status(409).json({
+                success: false,
+                code: 'DATOS_YA_ENVIADOS',
+                message: `Ya recibimos tus datos de envío para el pedido ${numeroPedido}. Si necesitas hacer un cambio, contáctanos por WhatsApp.`,
+            });
+        }
+
+        // 1. Guardar datos de envío — usar numeroPedido como doc ID para garantizar unicidad atómica
+        try {
+            await db.collection('datos_envio').doc(numeroPedido).create({
+                numeroPedido,
+                nombreCompleto,
+                telefono,
+                direccion,
+                colonia,
+                ciudad,
+                estado,
+                codigoPostal,
+                referencia: referencia || '',
+                createdAt: new Date(),
+                source: 'cliente',
+            });
+        } catch (err) {
+            // Firestore ALREADY_EXISTS (code 6) — protección contra race conditions
+            if (err.code === 6 || /already exists/i.test(err.message || '')) {
+                return res.status(409).json({
+                    success: false,
+                    code: 'DATOS_YA_ENVIADOS',
+                    message: `Ya recibimos tus datos de envío para el pedido ${numeroPedido}. Si necesitas hacer un cambio, contáctanos por WhatsApp.`,
+                });
+            }
+            throw err;
+        }
 
         // 2. Crear guía J&T (peso fijo 1kg, remark = número de pedido)
         const result = await jtService.createOrder({
