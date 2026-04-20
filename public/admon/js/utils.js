@@ -280,14 +280,13 @@ export function computePayrollFromChecador(period) {
         if (hasIn) { byEmployee[k].minutes += mins; byEmployee[k].days += 1; }
     });
 
-    // Add vacation days
-    const today = new Date(); today.setHours(23, 59, 59, 999);
+    // Add vacation days (cuenta todos los días del rango, aunque sean futuros)
     employees.forEach(emp => {
         if (!emp.vacaciones || !emp.vacacionesDesde || !emp.vacacionesHasta) return;
         const k = emp.name.toLowerCase();
         if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
         const cur = new Date(start);
-        while (cur <= end && cur <= today) {
+        while (cur <= end) {
             const desde = new Date(emp.vacacionesDesde + 'T00:00:00');
             const hasta = new Date(emp.vacacionesHasta + 'T23:59:59');
             const check = new Date(cur); check.setHours(12, 0, 0, 0);
@@ -296,8 +295,8 @@ export function computePayrollFromChecador(period) {
                 if (!dayGroups[dayKey]) {
                     const dow = cur.getDay();
                     let vacMins = 0;
-                    if (dow >= 1 && dow <= 5) vacMins = 360;
-                    else if (dow === 6) vacMins = 240;
+                    if (dow >= 1 && dow <= 5) vacMins = 360; // L-V: 6h (9am-3pm)
+                    else if (dow === 6) vacMins = 240;        // Sab: 4h (9am-1pm)
                     if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
                 }
             }
