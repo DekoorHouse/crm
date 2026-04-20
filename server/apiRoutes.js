@@ -1663,6 +1663,76 @@ router.get('/kpi/revenue-history', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/kpi/messages-daily (Mensajes entrantes por día, últimos N días) ---
+router.get('/kpi/messages-daily', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+
+        // Ventana en hora local de CDMX: [hoy 00:00 CDMX - (days-1) días, ahora]
+        const TZ = 'America/Mexico_City';
+        const now = new Date();
+        const mexicoNow = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+        const startLocal = new Date(mexicoNow.getFullYear(), mexicoNow.getMonth(), mexicoNow.getDate() - (days - 1));
+
+        // Convertimos el inicio local a timestamp absoluto (UTC real)
+        // Truco: la diferencia entre `new Date()` y `new Date(...toLocaleString(...,{timeZone:TZ}))`
+        // nos da el offset actual de CDMX respecto a UTC.
+        const offsetMs = now.getTime() - mexicoNow.getTime();
+        const startUtc = new Date(startLocal.getTime() + offsetMs);
+
+        const startTimestamp = admin.firestore.Timestamp.fromDate(startUtc);
+        const endTimestamp = admin.firestore.Timestamp.fromDate(now);
+
+        const snapshot = await db.collectionGroup('messages')
+            .where('timestamp', '>=', startTimestamp)
+            .where('timestamp', '<=', endTimestamp)
+            .where('from', '!=', PHONE_NUMBER_ID) // Solo entrantes
+            .get();
+
+        // Inicializamos todos los días del rango con 0 para gráfica sin huecos
+        const counts = {};
+        for (let i = 0; i < days; i++) {
+            const d = new Date(startLocal.getFullYear(), startLocal.getMonth(), startLocal.getDate() + i);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            counts[key] = 0;
+        }
+
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (!data.timestamp || typeof data.timestamp.toDate !== 'function') return;
+            const msgDate = data.timestamp.toDate();
+            // Convertir a fecha local CDMX
+            const localStr = msgDate.toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+            // en-CA devuelve YYYY-MM-DD
+            const key = localStr.slice(0, 10);
+            if (counts[key] !== undefined) counts[key] += 1;
+        });
+
+        const data = Object.keys(counts).sort().map(day => {
+            const d = new Date(day + 'T12:00:00'); // mediodía para evitar zona
+            return {
+                day,
+                label: d.toLocaleString('es-MX', { day: '2-digit', month: 'short' }),
+                count: counts[day]
+            };
+        });
+
+        const total = data.reduce((s, d) => s + d.count, 0);
+        const avg = data.length > 0 ? Math.round(total / data.length) : 0;
+        const today = data.length > 0 ? data[data.length - 1].count : 0;
+        const max = data.reduce((m, d) => d.count > m ? d.count : m, 0);
+
+        res.status(200).json({
+            success: true,
+            data,
+            summary: { total, avg, today, max, days: data.length }
+        });
+    } catch (error) {
+        console.error('Error fetching messages-daily:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener mensajes diarios.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
 router.get('/kpi/daily', async (req, res) => {
     try {
