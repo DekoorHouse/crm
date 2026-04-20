@@ -158,10 +158,10 @@ export function autoCategorizeWithRulesOnly(concept) {
     const lowerConcept = String(concept).toLowerCase().replace(/\s+/g, ' ');
     const rules = {
         Ganancia: ['xciento'],
-        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera'],
+        Chris: ['chris', 'moises', 'wm max llc', 'stori', 'jessica', 'yannine', 'recargas y paquetes bmov / ******6530', 'recargas y paquetes bmov / ******7167', 'carniceria las pradera', 'minisuper natalia', 'temu', 'alsuper plus mezquital', 'alsuper plus d arrieta', 'fruteria alvarez'],
         Alex: ['alex', 'bolt', 'retiro sin tarjeta / ******0670'],
         Publicidad: ['facebook'],
-        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre'],
+        Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre', 'psa computo'],
         Envios: ['guias'], 
         Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
         Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger', 'payu *google cloud'],
