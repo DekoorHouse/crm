@@ -437,6 +437,33 @@ export async function saveKpi(kpiData) {
 }
 
 /**
+ * Auto-sincroniza el gasto publicitario llamando al endpoint del servidor
+ * (que usa la cuenta Meta ya configurada en Firestore — sin pedir credenciales).
+ * Silencioso: errores van a console, no a UI.
+ */
+export async function autoSyncMetaKpis({ dateFrom, dateTo } = {}) {
+    try {
+        const body = {};
+        if (dateFrom) body.date_from = dateFrom;
+        if (dateTo) body.date_to = dateTo;
+        const resp = await fetch('/api/meta-ads/sync-kpis', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await resp.json();
+        if (!data.success) {
+            console.warn('Meta auto-sync:', data.error || 'sin cuenta activa');
+            return null;
+        }
+        return data;
+    } catch (err) {
+        console.warn('Meta auto-sync falló:', err.message);
+        return null;
+    }
+}
+
+/**
  * Sincroniza el gasto publicitario desde la API de Meta.
  */
 export async function syncMetaSpend(accountId, token, startDate, endDate) {

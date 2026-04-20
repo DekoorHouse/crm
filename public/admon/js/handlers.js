@@ -682,6 +682,15 @@ function handleTabClick(tab) {
     elements.tabContents.forEach(c => c.classList.remove('active'));
     tab.classList.add('active');
     document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+
+    // Auto-refresh de Meta al abrir la pestaña KPIs (rate-limited a 5 min)
+    if (tab.dataset.tab === 'kpis') {
+        const last = parseInt(localStorage.getItem('lastMetaSyncTs') || '0', 10);
+        if (Date.now() - last > 5 * 60 * 1000) {
+            localStorage.setItem('lastMetaSyncTs', String(Date.now()));
+            services.autoSyncMetaKpis().catch(() => {});
+        }
+    }
 }
 
 /**

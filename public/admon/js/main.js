@@ -63,6 +63,9 @@ function initializeAppUI() {
     app.healthPicker = ui.initHealthDateRangePicker(() => app.handleHealthDateFilterChange(app.healthPicker));
 
     onDataChange();
+
+    // Auto-sync de costo de publicidad desde Meta (mes actual). Silencioso si no hay cuenta activa.
+    services.autoSyncMetaKpis().catch(() => {});
 }
 
 const app = {

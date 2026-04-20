@@ -253,6 +253,57 @@ router.get('/insights/ads/:id', asyncHandler(async (req, res) => {
     res.json(data);
 }));
 
+// ===================== KPI SYNC (auto) =====================
+
+/**
+ * Sincroniza daily_kpis.costo_publicidad con el gasto diario de Meta Ads,
+ * usando la cuenta activa ya configurada en Firestore (no requiere credenciales).
+ * Query params opcionales: date_from, date_to (YYYY-MM-DD). Default: mes actual.
+ */
+router.post('/sync-kpis', asyncHandler(async (req, res) => {
+    const { db } = require('../config');
+    const settings = await svc.getActiveAccount();
+    const accountId = req.body?.accountId || req.query.accountId || settings?.activeAccountId;
+    if (!accountId) {
+        return res.status(400).json({ success: false, error: 'No hay cuenta Meta activa. Configura una en el panel de Meta.' });
+    }
+
+    const today = new Date();
+    const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const dateFrom = req.body?.date_from || req.query.date_from || firstOfMonth.toISOString().split('T')[0];
+    const dateTo = req.body?.date_to || req.query.date_to || today.toISOString().split('T')[0];
+
+    let insights;
+    try {
+        insights = await svc.getInsights('account', null, accountId, {
+            dateFrom, dateTo,
+            fields: 'spend,date_start',
+            timeIncrement: 1,
+            limit: 500
+        });
+    } catch (err) {
+        console.error('Meta insights error:', err.response?.data || err.message);
+        return res.status(500).json({ success: false, error: err.response?.data?.error?.message || err.message });
+    }
+
+    const data = insights?.data || [];
+    const updates = [];
+    for (const row of data) {
+        const fecha = row.date_start; // YYYY-MM-DD
+        const spend = parseFloat(row.spend) || 0;
+        if (!fecha) continue;
+        const existing = await db.collection('daily_kpis').where('fecha', '==', fecha).limit(1).get();
+        if (!existing.empty) {
+            await existing.docs[0].ref.update({ costo_publicidad: spend, metaSyncedAt: new Date() });
+        } else {
+            await db.collection('daily_kpis').add({ fecha, costo_publicidad: spend, metaSyncedAt: new Date() });
+        }
+        updates.push({ fecha, spend });
+    }
+
+    res.json({ success: true, dateFrom, dateTo, accountId, count: updates.length, updates });
+}));
+
 // ===================== AUDIENCES / TARGETING =====================
 
 router.get('/audiences/targeting-search', asyncHandler(async (req, res) => {
