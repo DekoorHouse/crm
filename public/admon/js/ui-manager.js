@@ -1200,7 +1200,7 @@ export function openSueldosVacModal(name) {
         showToast(`${capitalize(name)} no está registrado en checador — agrégalo ahí primero`, 'error');
         return;
     }
-    state.sueldosVacCurrentDocId = empDoc.id;
+    state.sueldosVacCurrentDocId = empDoc._docId;
     state.sueldosVacCurrentName = empDoc.name;
     if (elements.sueldosVacModalTitle) elements.sueldosVacModalTitle.textContent = `🏖 Vacaciones — ${capitalize(empDoc.name)}`;
     if (elements.sueldosVacDesde) elements.sueldosVacDesde.value = empDoc.vacacionesDesde || '';

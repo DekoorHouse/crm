@@ -208,7 +208,9 @@ export function listenForSueldos(onDataChange) {
 
 export function listenForChecadorEmployees(onDataChange) {
     return onSnapshot(collection(db, "checador_employees"), (snapshot) => {
-        state.checadorEmployees = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+        // Usar _docId para el Firestore doc ID. El campo `id` en los datos es
+        // el id interno del empleado (diferente del doc ID).
+        state.checadorEmployees = snapshot.docs.map(d => ({ _docId: d.id, ...d.data() }));
         onDataChange();
     }, (error) => console.error("Checador Employees Listener Error:", error));
 }
