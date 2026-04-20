@@ -22,6 +22,7 @@ const rules = [
     { match: 'psa computo', category: 'Material' },
     { match: 'retiro sin tarjeta / ******0670', category: 'Alex' },
     { match: 'payu *google cloud', category: 'Tecnologia' },
+    { match: 'tripo ai', category: 'Tecnologia' },
 ];
 
 async function main() {

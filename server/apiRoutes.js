@@ -1286,7 +1286,7 @@ function autoCategorizeServer(concept, manualCategories) {
         Material: ['material', 'raza', 'c00008749584', 'acrilico', 'mercadolibre', 'psa computo'],
         Envios: ['guias'],
         Sueldos: ['diego', 'catalina', 'rosario', 'erika', 'catarina', 'maria gua', 'karla', 'lupita', 'recargas y paquetes bmov / ******0030'],
-        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger', 'payu *google cloud'],
+        Tecnologia: ['openai', 'claude', 'whaticket', 'hostinger', 'payu *google cloud', 'tripo ai'],
         Local: ['local', 'renta', 'valeria'],
         Deudas: ['saldos vencidos'],
         Devoluciones: ['devolucion'],
@@ -1501,6 +1501,7 @@ router.post('/expenses/recategorize', async (req, res) => {
             { match: 'psa computo', category: 'Material' },
             { match: 'retiro sin tarjeta / ******0670', category: 'Alex' },
             { match: 'payu *google cloud', category: 'Tecnologia' },
+            { match: 'tripo ai', category: 'Tecnologia' },
         ];
 
         const snapshot = await db.collection('expenses').get();
