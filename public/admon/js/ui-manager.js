@@ -104,6 +104,9 @@ export function cacheElements() {
     elements.addKpiBtn = document.getElementById('add-kpi-btn');
     elements.syncMetaBtn = document.getElementById('sync-meta-btn');
     elements.kpisTableBody = document.querySelector('#kpis-table tbody');
+    elements.kpiMonthFilter = document.getElementById('kpi-month-filter');
+    elements.kpiMonthPrev = document.getElementById('kpi-month-prev');
+    elements.kpiMonthNext = document.getElementById('kpi-month-next');
     elements.kpisEmptyState = document.getElementById('kpis-empty-state');
 
     elements.notesEditor = document.getElementById('notes-editor');
@@ -1276,11 +1279,20 @@ export function renderSueldosAdjExisting() {
 export function renderKpisTable() {
     if (!elements.kpisTableBody) return;
 
+    // Detectar mes actual si no hay seleccionado
+    if (!state.kpiMonth) {
+        const t = new Date();
+        state.kpiMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
+    }
+
+    // Poblar selector de meses
+    populateKpiMonthFilter();
+
+    // Actualizar título con el mes seleccionado
     if (elements.kpiSummaryTitle) {
-        const today = new Date();
-        const monthName = today.toLocaleString('es-MX', { month: 'long' });
-        const year = today.getFullYear();
-        elements.kpiSummaryTitle.textContent = `Resumen de KPIs del Mes (${capitalize(monthName)} ${year})`;
+        const [yy, mm] = state.kpiMonth.split('-').map(Number);
+        const monthName = new Date(yy, mm - 1, 1).toLocaleString('es-MX', { month: 'long' });
+        elements.kpiSummaryTitle.textContent = `Resumen de KPIs del Mes (${capitalize(monthName)} ${yy})`;
     }
 
     elements.kpisTableBody.innerHTML = '';
@@ -1292,13 +1304,16 @@ export function renderKpisTable() {
         ...state.kpis.map(k => k.fecha)
     ]);
 
-    if (allDates.size === 0) {
+    // Filtrar por el mes seleccionado (state.kpiMonth = "YYYY-MM")
+    const filteredDates = Array.from(allDates).filter(d => d.startsWith(state.kpiMonth));
+
+    if (filteredDates.length === 0) {
         elements.kpisEmptyState.style.display = 'block';
-        calculateAndDisplayAverages([]); 
+        calculateAndDisplayAverages([]);
         return;
     }
 
-    const combinedData = Array.from(allDates).map(dateString => {
+    const combinedData = filteredDates.map(dateString => {
         const leads = state.monthlyLeads[dateString] || 0;
         const paidLeads = state.monthlyPaidLeads[dateString] || 0;
         const cancelledLeads = state.monthlyCancelledLeads[dateString] || 0;
@@ -1315,7 +1330,7 @@ export function renderKpisTable() {
             costo_publicidad: manualKpi.costo_publicidad || 0
         };
     });
-    
+
     combinedData.sort((a, b) => b.fecha.localeCompare(a.fecha));
 
     elements.kpisEmptyState.style.display = 'none';
@@ -1351,6 +1366,48 @@ export function renderKpisTable() {
     });
 
     calculateAndDisplayAverages(combinedData);
+}
+
+function populateKpiMonthFilter() {
+    const sel = elements.kpiMonthFilter;
+    if (!sel) return;
+
+    // Conjunto de meses disponibles (de los datos + año actual + 12 atrás)
+    const months = new Set();
+    const today = new Date();
+    for (let i = 0; i < 24; i++) {
+        const d = new Date(today.getFullYear(), today.getMonth() - i, 1);
+        months.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+    [...Object.keys(state.monthlyLeads), ...Object.keys(state.monthlyPaidLeads), ...state.kpis.map(k => k.fecha)]
+        .forEach(d => { if (d && d.length >= 7) months.add(d.substring(0, 7)); });
+
+    const sorted = Array.from(months).sort((a, b) => b.localeCompare(a));
+    if (!sorted.includes(state.kpiMonth)) state.kpiMonth = sorted[0];
+
+    sel.innerHTML = sorted.map(m => {
+        const [y, mm] = m.split('-').map(Number);
+        const label = capitalize(new Date(y, mm - 1, 1).toLocaleString('es-MX', { month: 'long' })) + ` ${y}`;
+        return `<option value="${m}" ${m === state.kpiMonth ? 'selected' : ''}>${label}</option>`;
+    }).join('');
+}
+
+export function changeKpiMonth(monthStr) {
+    state.kpiMonth = monthStr;
+    renderKpisTable();
+    // Auto-sync de Meta para el mes seleccionado
+    const [y, mm] = monthStr.split('-').map(Number);
+    const dateFrom = `${monthStr}-01`;
+    const lastDayDate = new Date(y, mm, 0); // último día del mes
+    const dateTo = `${monthStr}-${String(lastDayDate.getDate()).padStart(2, '0')}`;
+    services.autoSyncMetaKpis({ dateFrom, dateTo }).catch(() => {});
+}
+
+export function shiftKpiMonth(delta) {
+    const [y, mm] = state.kpiMonth.split('-').map(Number);
+    const next = new Date(y, mm - 1 + delta, 1);
+    const newMonth = `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`;
+    changeKpiMonth(newMonth);
 }
 
 function calculateAndDisplayAverages(data) {

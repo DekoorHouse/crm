@@ -382,10 +382,14 @@
                   </div>
               </div>
             </div>
-             <div class="btn-group" style="margin-bottom: 20px;">
+             <div style="display:flex; align-items:center; gap:12px; margin-bottom:20px; flex-wrap:wrap;">
                 <button id="add-kpi-btn" class="btn"><i class="fas fa-plus"></i> Agregar Registro Diario</button>
-                <!-- BOTON NUEVO DE META -->
                 <button id="sync-meta-btn" class="btn" style="background-color: #1877F2;"><i class="fab fa-facebook-f"></i> Sincronizar con Meta</button>
+                <div style="display:flex; align-items:center; gap:6px; margin-left:auto;">
+                    <button id="kpi-month-prev" class="btn btn-outline btn-sm" title="Mes anterior"><i class="fas fa-chevron-left"></i></button>
+                    <select id="kpi-month-filter" class="modal-input" style="min-width:160px; padding:8px 10px;"></select>
+                    <button id="kpi-month-next" class="btn btn-outline btn-sm" title="Mes siguiente"><i class="fas fa-chevron-right"></i></button>
+                </div>
              </div>
              <div class="table-container" id="kpis-table-container">
                <table id="kpis-table">

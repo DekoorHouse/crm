@@ -567,6 +567,17 @@ export function initEventListeners() {
         console.warn("No se encontró el botón de Sincronizar con Meta");
     }
 
+    // Filtro de mes en KPIs
+    if (elements.kpiMonthFilter) {
+        elements.kpiMonthFilter.addEventListener('change', (e) => ui.changeKpiMonth(e.target.value));
+    }
+    if (elements.kpiMonthPrev) {
+        elements.kpiMonthPrev.addEventListener('click', () => ui.shiftKpiMonth(-1));
+    }
+    if (elements.kpiMonthNext) {
+        elements.kpiMonthNext.addEventListener('click', () => ui.shiftKpiMonth(1));
+    }
+
     if (elements.kpisTableBody) {
         elements.kpisTableBody.addEventListener('click', (e) => {
             const editBtn = e.target.closest('.edit-kpi-btn');

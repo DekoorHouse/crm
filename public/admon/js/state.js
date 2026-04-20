@@ -39,6 +39,7 @@ export const state = {
   sueldosAdjCurrentType: 'bono',
   sueldosVacCurrentDocId: '',
   sueldosVacCurrentName: '',
+  kpiMonth: '', // YYYY-MM (vacío = mes actual)
   sueldosDetailCurrentName: '',
   sueldosEditLogName: '',
   sueldosEditLogEmpId: '',
