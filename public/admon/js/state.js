@@ -39,6 +39,12 @@ export const state = {
   sueldosAdjCurrentType: 'bono',
   sueldosVacCurrentDocId: '',
   sueldosVacCurrentName: '',
+  sueldosDetailCurrentName: '',
+  sueldosEditLogName: '',
+  sueldosEditLogEmpId: '',
+  sueldosEditLogDate: '', // formato DD/MM/YYYY
+  sueldosEditLogEntries: [], // [{ _docId, type, time, isNew, isDeleted }]
+  sueldosPinOnConfirm: null,
   financials: {
       dateFilter: { start: null, end: null }, 
       allOrders: [],

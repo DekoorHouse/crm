@@ -57,6 +57,22 @@ export function cacheElements() {
     elements.sueldosVacHasta = document.getElementById('sueldos-vac-hasta');
     elements.sueldosVacSaveBtn = document.getElementById('sueldos-vac-save-btn');
     elements.sueldosVacRemoveBtn = document.getElementById('sueldos-vac-remove-btn');
+    elements.sueldosDetailModal = document.getElementById('sueldos-detail-modal');
+    elements.sueldosDetailModalTitle = document.getElementById('sueldos-detail-modal-title');
+    elements.sueldosDetailModalClose = document.getElementById('sueldos-detail-modal-close');
+    elements.sueldosDetailBody = document.getElementById('sueldos-detail-body');
+    elements.sueldosEditLogModal = document.getElementById('sueldos-edit-log-modal');
+    elements.sueldosEditLogTitle = document.getElementById('sueldos-edit-log-title');
+    elements.sueldosEditLogClose = document.getElementById('sueldos-edit-log-close');
+    elements.sueldosEditLogSubtitle = document.getElementById('sueldos-edit-log-subtitle');
+    elements.sueldosEditLogEntries = document.getElementById('sueldos-edit-log-entries');
+    elements.sueldosAddLogIn = document.getElementById('sueldos-add-log-in');
+    elements.sueldosAddLogOut = document.getElementById('sueldos-add-log-out');
+    elements.sueldosSaveEditLog = document.getElementById('sueldos-save-edit-log');
+    elements.sueldosPinModal = document.getElementById('sueldos-pin-modal');
+    elements.sueldosPinInput = document.getElementById('sueldos-pin-input');
+    elements.sueldosPinCancel = document.getElementById('sueldos-pin-cancel');
+    elements.sueldosPinConfirm = document.getElementById('sueldos-pin-confirm');
 
     elements.healthDateRangeFilter = document.getElementById('health-date-range-filter');
     elements.resetHealthFilterBtn = document.getElementById('reset-health-filter-btn');
@@ -874,7 +890,7 @@ export function renderSueldosData() {
         return `<tr>
             <td style="font-weight:600;">${capitalize(emp.name)}${vacBtn}</td>
             <td>${emp.days} día${emp.days !== 1 ? 's' : ''}</td>
-            <td style="font-weight:bold; color:var(--primary);">${emp.totalStr}</td>
+            <td><button class="sueldos-detail-btn" data-name="${emp.name.replace(/"/g, '&quot;')}" title="Ver detalle de entradas y salidas" style="background:none; border:none; color:var(--primary); font-weight:bold; cursor:pointer; padding:0; text-decoration:underline dotted; text-underline-offset:3px;">${emp.totalStr}</button></td>
             <td style="font-size:12px;color:var(--text-secondary);">$${emp.rate}/hr</td>
             <td>${formatCurrency(emp.basePay)}</td>
             <td>${adjLabel}${addBtn}${adjDetail}</td>
@@ -949,6 +965,233 @@ export function updateSueldosAdjTypeButtons() {
             btn.style.border = '1px solid var(--border-color)';
         }
     });
+}
+
+// ========== DETALLE DE ENTRADAS/SALIDAS ==========
+
+const SUELDOS_EDIT_PIN = '0708';
+
+function parseLogDateToParts(dateStr) {
+    // "DD/MM/YYYY" -> { d, m, y }
+    const parts = String(dateStr || '').split('/');
+    if (parts.length !== 3) return null;
+    return { d: parseInt(parts[0]), m: parseInt(parts[1]), y: parseInt(parts[2]) };
+}
+
+function logDateToDate(dateStr) {
+    const p = parseLogDateToParts(dateStr);
+    if (!p) return null;
+    return new Date(p.y, p.m - 1, p.d);
+}
+
+function formatDayLabel(dateStr) {
+    const d = logDateToDate(dateStr);
+    if (!d) return dateStr;
+    const opts = { weekday: 'short', day: 'numeric', month: 'short' };
+    return d.toLocaleDateString('es-MX', opts);
+}
+
+function getEmployeeDayGroups(name, period) {
+    const { start, end } = getChecadorPeriodRange(period);
+    const logs = state.checadorLogs;
+    const employees = state.checadorEmployees;
+
+    const resolveLogName = (log) => {
+        if (log.name) return log.name;
+        const emp = employees.find(e => e.id === log.id);
+        return emp ? emp.name : (log.id || 'Desconocido');
+    };
+
+    const groups = {};
+    logs.forEach(log => {
+        const logName = resolveLogName(log);
+        if ((logName || '').toLowerCase() !== name.toLowerCase()) return;
+        const p = parseLogDateToParts(log.date);
+        if (!p) return;
+        const d = new Date(p.y, p.m - 1, p.d);
+        if (d < start || d > end) return;
+        if (!groups[log.date]) groups[log.date] = { date: log.date, events: [] };
+        groups[log.date].events.push(log);
+    });
+
+    // Calcular minutos por día
+    return Object.values(groups).map(group => {
+        const events = [...group.events].sort((a, b) => a.timestamp - b.timestamp);
+        let mins = 0, lastIn = null, hasIn = false;
+        events.forEach(e => {
+            if (e.type === 'IN') { lastIn = e.timestamp; hasIn = true; }
+            else if (e.type === 'OUT' && lastIn) {
+                mins += Math.floor((e.timestamp - lastIn) / 60000);
+                lastIn = null;
+            }
+        });
+        if (lastIn) {
+            const p = parseLogDateToParts(group.date);
+            const today = new Date();
+            if (p && today.getFullYear() === p.y && today.getMonth() === p.m - 1 && today.getDate() === p.d) {
+                mins += Math.floor((Date.now() - lastIn) / 60000);
+            }
+        }
+        return { date: group.date, events, mins, hasIn };
+    }).sort((a, b) => {
+        const da = logDateToDate(a.date), db = logDateToDate(b.date);
+        return db - da; // descendente
+    });
+}
+
+export function openSueldosDetailModal(name) {
+    state.sueldosDetailCurrentName = name;
+    if (elements.sueldosDetailModalTitle) {
+        elements.sueldosDetailModalTitle.textContent = `Registros — ${capitalize(name)}`;
+    }
+    renderSueldosDetailBody();
+    if (elements.sueldosDetailModal) elements.sueldosDetailModal.style.display = 'flex';
+}
+
+export function closeSueldosDetailModal() {
+    if (elements.sueldosDetailModal) elements.sueldosDetailModal.style.display = 'none';
+}
+
+export function renderSueldosDetailBody() {
+    const name = state.sueldosDetailCurrentName;
+    if (!name || !elements.sueldosDetailBody) return;
+    const groups = getEmployeeDayGroups(name, state.sueldosPeriod);
+
+    if (groups.length === 0) {
+        elements.sueldosDetailBody.innerHTML = `
+            <p style="color:var(--text-secondary); font-size:0.9rem; margin-bottom:12px;">Sin registros en este período.</p>
+            <button class="sueldos-add-day-btn" style="padding:10px 14px; background:var(--primary); color:#fff; border:none; border-radius:10px; cursor:pointer; font-weight:600;">+ Agregar registro</button>
+        `;
+        return;
+    }
+
+    elements.sueldosDetailBody.innerHTML = groups.map(g => {
+        const hrs = Math.floor(g.mins / 60);
+        const mn = g.mins % 60;
+        const entriesHtml = g.events.map(e => {
+            const d = new Date(e.timestamp);
+            const time = `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+            const color = e.type === 'IN' ? 'var(--success)' : '#d97706';
+            return `<span style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; margin:2px 3px 0 0; background:rgba(148,163,184,0.12); border-radius:6px; font-size:12px;">
+                <span style="color:${color}; font-weight:700;">${e.type}</span>
+                <span>${time}</span>
+            </span>`;
+        }).join('');
+        return `<div style="padding:12px; background:rgba(148,163,184,0.06); border:1px solid var(--border-color); border-radius:10px; margin-bottom:8px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                <div>
+                    <strong>${formatDayLabel(g.date)}</strong>
+                    <span style="color:var(--text-secondary); font-size:12px; margin-left:8px;">${g.date}</span>
+                </div>
+                <div style="display:flex; gap:8px; align-items:center;">
+                    <span style="color:var(--primary); font-weight:700;">${hrs}h ${mn}m</span>
+                    <button class="sueldos-edit-day-btn" data-date="${g.date}" style="padding:4px 10px; background:rgba(99,102,241,0.12); color:var(--primary); border:1px solid var(--primary); border-radius:6px; cursor:pointer; font-size:12px; font-weight:600;">Editar</button>
+                </div>
+            </div>
+            <div>${entriesHtml || '<span style="color:var(--text-secondary); font-size:12px;">Sin registros</span>'}</div>
+        </div>`;
+    }).join('') + `
+        <button class="sueldos-add-day-btn" style="margin-top:8px; padding:10px 14px; background:var(--primary); color:#fff; border:none; border-radius:10px; cursor:pointer; font-weight:600;">+ Agregar día</button>
+    `;
+}
+
+// ========== PIN ==========
+
+export function requirePinThen(callback) {
+    state.sueldosPinOnConfirm = callback;
+    if (elements.sueldosPinInput) elements.sueldosPinInput.value = '';
+    if (elements.sueldosPinModal) elements.sueldosPinModal.style.display = 'flex';
+    setTimeout(() => elements.sueldosPinInput?.focus(), 50);
+}
+
+export function closeSueldosPinModal() {
+    if (elements.sueldosPinModal) elements.sueldosPinModal.style.display = 'none';
+    state.sueldosPinOnConfirm = null;
+}
+
+export function tryConfirmPin() {
+    const val = (elements.sueldosPinInput?.value || '').trim();
+    if (val !== SUELDOS_EDIT_PIN) {
+        showToast('PIN incorrecto', 'error');
+        if (elements.sueldosPinInput) { elements.sueldosPinInput.value = ''; elements.sueldosPinInput.focus(); }
+        return;
+    }
+    const cb = state.sueldosPinOnConfirm;
+    closeSueldosPinModal();
+    if (typeof cb === 'function') cb();
+}
+
+// ========== EDITAR REGISTROS DE UN DÍA ==========
+
+function toHHMM(ts) {
+    const d = new Date(ts);
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+
+export function openSueldosEditLogModal(name, dateStr /* DD/MM/YYYY */) {
+    state.sueldosEditLogName = name;
+    state.sueldosEditLogDate = dateStr || '';
+
+    // Resolver empId
+    const empDoc = state.checadorEmployees.find(e => e.name && e.name.toLowerCase() === name.toLowerCase());
+    state.sueldosEditLogEmpId = empDoc ? empDoc.id : '';
+
+    // Si no hay fecha, usar hoy
+    if (!state.sueldosEditLogDate) {
+        const now = new Date();
+        state.sueldosEditLogDate = `${now.getDate()}/${now.getMonth()+1}/${now.getFullYear()}`;
+    }
+
+    // Cargar entries existentes
+    const logs = state.checadorLogs.filter(l => {
+        const lname = l.name || (empDoc && l.id === empDoc.id ? empDoc.name : '');
+        return (lname || '').toLowerCase() === name.toLowerCase() && l.date === state.sueldosEditLogDate;
+    });
+    state.sueldosEditLogEntries = logs
+        .sort((a, b) => a.timestamp - b.timestamp)
+        .map(l => ({ _docId: l.docId, type: l.type, time: toHHMM(l.timestamp), isNew: false, isDeleted: false }));
+
+    if (elements.sueldosEditLogTitle) elements.sueldosEditLogTitle.textContent = `Editar — ${capitalize(name)}`;
+    if (elements.sueldosEditLogSubtitle) elements.sueldosEditLogSubtitle.textContent = `Fecha: ${formatDayLabel(state.sueldosEditLogDate)} (${state.sueldosEditLogDate})`;
+    renderSueldosEditLogEntries();
+    if (elements.sueldosEditLogModal) elements.sueldosEditLogModal.style.display = 'flex';
+}
+
+export function closeSueldosEditLogModal() {
+    if (elements.sueldosEditLogModal) elements.sueldosEditLogModal.style.display = 'none';
+    state.sueldosEditLogEntries = [];
+}
+
+export function renderSueldosEditLogEntries() {
+    const container = elements.sueldosEditLogEntries;
+    if (!container) return;
+    const visible = state.sueldosEditLogEntries
+        .map((e, idx) => ({ e, idx }))
+        .filter(({ e }) => !e.isDeleted);
+    if (visible.length === 0) {
+        container.innerHTML = `<p style="color:var(--text-secondary); font-size:0.85rem; text-align:center; padding:16px 0;">Sin registros. Usa los botones de abajo para agregar.</p>`;
+        return;
+    }
+    container.innerHTML = visible.map(({ e, idx }) => {
+        const color = e.type === 'IN' ? 'var(--success)' : '#d97706';
+        return `<div style="display:flex; align-items:center; gap:10px; padding:10px; background:rgba(148,163,184,0.08); border:1px solid var(--border-color); border-radius:10px; margin-bottom:6px;">
+            <span style="color:${color}; font-weight:700; width:55px; font-size:0.85rem;">${e.type}</span>
+            <input type="time" class="sueldos-log-time-input" data-idx="${idx}" value="${e.time}" style="flex:1; padding:8px; font-size:0.95rem; border:1px solid var(--border-color); border-radius:8px; background:var(--bg-input, transparent); color:inherit;">
+            <button class="sueldos-log-del-btn" data-idx="${idx}" title="Eliminar" style="background:rgba(239,68,68,0.12); color:var(--danger); border:1px solid var(--danger); border-radius:6px; padding:4px 10px; cursor:pointer; font-weight:700;">✕</button>
+        </div>`;
+    }).join('');
+}
+
+export function addSueldosLogEntry(type) {
+    const now = new Date();
+    state.sueldosEditLogEntries.push({
+        _docId: null,
+        type,
+        time: `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`,
+        isNew: true,
+        isDeleted: false
+    });
+    renderSueldosEditLogEntries();
 }
 
 export function openSueldosVacModal(name) {

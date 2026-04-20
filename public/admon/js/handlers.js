@@ -285,7 +285,7 @@ export function initEventListeners() {
         ui.renderSueldosData();
     });
 
-    // Sueldos adjustments (bono/descuento) + vacaciones
+    // Sueldos adjustments (bono/descuento) + vacaciones + detalle
     elements.sueldosTableContainer.addEventListener('click', async (e) => {
         const addBtn = e.target.closest('.sueldos-adj-add-btn');
         if (addBtn) {
@@ -307,8 +307,121 @@ export function initEventListeners() {
         const vacBtn = e.target.closest('.sueldos-vac-btn');
         if (vacBtn) {
             ui.openSueldosVacModal(vacBtn.dataset.name);
+            return;
+        }
+        const detailBtn = e.target.closest('.sueldos-detail-btn');
+        if (detailBtn) {
+            ui.openSueldosDetailModal(detailBtn.dataset.name);
         }
     });
+
+    // Modal de detalle (ver registros por día)
+    if (elements.sueldosDetailModalClose) {
+        elements.sueldosDetailModalClose.addEventListener('click', () => ui.closeSueldosDetailModal());
+    }
+    if (elements.sueldosDetailModal) {
+        elements.sueldosDetailModal.addEventListener('click', (e) => {
+            if (e.target.id === 'sueldos-detail-modal') ui.closeSueldosDetailModal();
+        });
+    }
+    if (elements.sueldosDetailBody) {
+        elements.sueldosDetailBody.addEventListener('click', (e) => {
+            const editBtn = e.target.closest('.sueldos-edit-day-btn');
+            if (editBtn) {
+                const date = editBtn.dataset.date;
+                const name = state.sueldosDetailCurrentName;
+                ui.requirePinThen(() => ui.openSueldosEditLogModal(name, date));
+                return;
+            }
+            const addBtn = e.target.closest('.sueldos-add-day-btn');
+            if (addBtn) {
+                const name = state.sueldosDetailCurrentName;
+                ui.requirePinThen(() => ui.openSueldosEditLogModal(name, ''));
+            }
+        });
+    }
+
+    // PIN modal
+    if (elements.sueldosPinCancel) {
+        elements.sueldosPinCancel.addEventListener('click', () => ui.closeSueldosPinModal());
+    }
+    if (elements.sueldosPinConfirm) {
+        elements.sueldosPinConfirm.addEventListener('click', () => ui.tryConfirmPin());
+    }
+    if (elements.sueldosPinInput) {
+        elements.sueldosPinInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); ui.tryConfirmPin(); }
+            if (e.key === 'Escape') ui.closeSueldosPinModal();
+        });
+    }
+    if (elements.sueldosPinModal) {
+        elements.sueldosPinModal.addEventListener('click', (e) => {
+            if (e.target.id === 'sueldos-pin-modal') ui.closeSueldosPinModal();
+        });
+    }
+
+    // Modal de editar registros
+    if (elements.sueldosEditLogClose) {
+        elements.sueldosEditLogClose.addEventListener('click', () => ui.closeSueldosEditLogModal());
+    }
+    if (elements.sueldosEditLogModal) {
+        elements.sueldosEditLogModal.addEventListener('click', (e) => {
+            if (e.target.id === 'sueldos-edit-log-modal') ui.closeSueldosEditLogModal();
+        });
+    }
+    if (elements.sueldosAddLogIn) {
+        elements.sueldosAddLogIn.addEventListener('click', () => ui.addSueldosLogEntry('IN'));
+    }
+    if (elements.sueldosAddLogOut) {
+        elements.sueldosAddLogOut.addEventListener('click', () => ui.addSueldosLogEntry('OUT'));
+    }
+    if (elements.sueldosEditLogEntries) {
+        elements.sueldosEditLogEntries.addEventListener('input', (e) => {
+            const inp = e.target.closest('.sueldos-log-time-input');
+            if (inp) {
+                const idx = parseInt(inp.dataset.idx);
+                if (!isNaN(idx) && state.sueldosEditLogEntries[idx]) {
+                    state.sueldosEditLogEntries[idx].time = inp.value;
+                }
+            }
+        });
+        elements.sueldosEditLogEntries.addEventListener('click', (e) => {
+            const delBtn = e.target.closest('.sueldos-log-del-btn');
+            if (delBtn) {
+                const idx = parseInt(delBtn.dataset.idx);
+                if (!isNaN(idx) && state.sueldosEditLogEntries[idx]) {
+                    state.sueldosEditLogEntries[idx].isDeleted = true;
+                    ui.renderSueldosEditLogEntries();
+                }
+            }
+        });
+    }
+    if (elements.sueldosSaveEditLog) {
+        elements.sueldosSaveEditLog.addEventListener('click', async () => {
+            const btn = elements.sueldosSaveEditLog;
+            const orig = btn.textContent;
+            btn.disabled = true; btn.textContent = 'Guardando...';
+            try {
+                await services.saveChecadorLogEntries({
+                    name: state.sueldosEditLogName,
+                    empId: state.sueldosEditLogEmpId,
+                    date: state.sueldosEditLogDate,
+                    entries: state.sueldosEditLogEntries
+                });
+                ui.showToast('Registros guardados', 'success');
+                ui.closeSueldosEditLogModal();
+                // El listener en tiempo real refresca la tabla y el detalle si sigue abierto
+                if (elements.sueldosDetailModal && elements.sueldosDetailModal.style.display === 'flex') {
+                    ui.renderSueldosDetailBody();
+                }
+            } catch (err) {
+                console.error(err);
+                ui.showToast('No se pudieron guardar los cambios', 'error');
+            } finally {
+                btn.disabled = false; btn.textContent = orig;
+            }
+        });
+    }
 
     // Vacaciones modal listeners
     if (elements.sueldosVacModalClose) {

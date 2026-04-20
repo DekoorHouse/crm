@@ -485,6 +485,47 @@
       </div>
   </div>
 
+  <!-- Modal Detalle de registros por empleado (Sueldos) -->
+  <div id="sueldos-detail-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:2000;">
+      <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:94%; max-width:640px; max-height:85vh; display:flex; flex-direction:column; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.35); border:1px solid var(--border-color);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+              <h3 id="sueldos-detail-modal-title" style="font-size:1.05rem; margin:0;">Detalle</h3>
+              <button id="sueldos-detail-modal-close" style="background:none; border:none; font-size:1.6rem; line-height:1; cursor:pointer; color:var(--text-secondary);">&times;</button>
+          </div>
+          <div id="sueldos-detail-body" style="overflow-y:auto; flex:1;"></div>
+      </div>
+  </div>
+
+  <!-- Modal Editar registros (PIN protected) -->
+  <div id="sueldos-edit-log-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:2100;">
+      <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:94%; max-width:480px; max-height:85vh; display:flex; flex-direction:column; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.35); border:1px solid var(--border-color);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
+              <h3 id="sueldos-edit-log-title" style="font-size:1.05rem; margin:0;">Editar registros</h3>
+              <button id="sueldos-edit-log-close" style="background:none; border:none; font-size:1.6rem; line-height:1; cursor:pointer; color:var(--text-secondary);">&times;</button>
+          </div>
+          <p id="sueldos-edit-log-subtitle" style="font-size:0.8rem; color:var(--text-secondary); margin:0 0 12px 0;"></p>
+          <div id="sueldos-edit-log-entries" style="overflow-y:auto; flex:1; margin-bottom:14px;"></div>
+          <div style="display:flex; gap:8px; margin-bottom:10px;">
+              <button id="sueldos-add-log-in" style="flex:1; padding:10px; background:linear-gradient(135deg,#10b981,#059669); color:#fff; border:none; border-radius:10px; font-weight:600; cursor:pointer;">+ ENTRADA</button>
+              <button id="sueldos-add-log-out" style="flex:1; padding:10px; background:linear-gradient(135deg,#f59e0b,#d97706); color:#fff; border:none; border-radius:10px; font-weight:600; cursor:pointer;">+ SALIDA</button>
+          </div>
+          <button id="sueldos-save-edit-log" class="btn" style="width:100%; padding:12px; font-size:1rem;">Guardar cambios</button>
+      </div>
+  </div>
+
+  <!-- Modal PIN para editar -->
+  <div id="sueldos-pin-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.7); display:none; align-items:center; justify-content:center; z-index:2200;">
+      <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:92%; max-width:340px; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.4); border:1px solid var(--border-color);">
+          <h3 style="font-size:1.05rem; margin:0 0 14px 0;">🔒 PIN requerido</h3>
+          <p style="font-size:0.85rem; color:var(--text-secondary); margin:0 0 12px 0;">Ingresa el PIN para editar registros.</p>
+          <input type="password" id="sueldos-pin-input" placeholder="••••" maxlength="8" inputmode="numeric" style="width:100%; padding:12px; font-size:1.4rem; text-align:center; letter-spacing:0.4em; border:1px solid var(--border-color); border-radius:10px; background:var(--bg-input, transparent); color:inherit; box-sizing:border-box; margin-bottom:12px;">
+          <div style="display:flex; gap:8px;">
+              <button id="sueldos-pin-cancel" class="btn btn-outline" style="flex:1; padding:10px;">Cancelar</button>
+              <button id="sueldos-pin-confirm" class="btn" style="flex:1; padding:10px;">Aceptar</button>
+          </div>
+      </div>
+  </div>
+
   <!-- Modal Vacaciones (Sueldos) -->
   <div id="sueldos-vac-modal" style="position:fixed; inset:0; background:rgba(0,0,0,0.65); display:none; align-items:center; justify-content:center; z-index:2000;">
       <div style="background:var(--bg-card, #fff); color:var(--text-primary, #0f172a); width:92%; max-width:420px; border-radius:20px; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.35); border:1px solid var(--border-color);">

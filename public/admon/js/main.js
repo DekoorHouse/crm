@@ -34,6 +34,10 @@ function initializeAppUI() {
             ui.renderSueldosAdjExisting();
         }
 
+        if (elements.sueldosDetailModal && elements.sueldosDetailModal.style.display === 'flex') {
+            ui.renderSueldosDetailBody();
+        }
+
         ui.renderKpisTable();
     };
 

@@ -257,6 +257,49 @@ export async function removeEmployeeVacation(docId) {
     });
 }
 
+/**
+ * Persiste cambios a checador_logs para un empleado en un día específico.
+ * @param {Object} params
+ * @param {string} params.name - Nombre del empleado
+ * @param {string} params.empId - ID interno del empleado (checador_employees.id)
+ * @param {string} params.date - DD/MM/YYYY
+ * @param {Array}  params.entries - [{ _docId, type, time, isNew, isDeleted }]
+ */
+export async function saveChecadorLogEntries({ name, empId, date, entries }) {
+    const parts = String(date).split('/');
+    if (parts.length !== 3) throw new Error('Fecha inválida');
+    const day = parseInt(parts[0]);
+    const month = parseInt(parts[1]);
+    const year = parseInt(parts[2]);
+
+    const batch = writeBatch(db);
+    for (const entry of entries) {
+        if (!entry) continue;
+        const [hh, mm] = String(entry.time || '00:00').split(':').map(n => parseInt(n) || 0);
+        const timestamp = new Date(year, month - 1, day, hh, mm, 0).getTime();
+
+        if (entry.isDeleted && !entry.isNew && entry._docId) {
+            batch.delete(doc(db, 'checador_logs', entry._docId));
+        } else if (!entry.isDeleted && entry.isNew) {
+            const ref = doc(collection(db, 'checador_logs'));
+            batch.set(ref, {
+                id: empId || '',
+                name,
+                type: entry.type,
+                time: entry.time,
+                date,
+                timestamp
+            });
+        } else if (!entry.isDeleted && !entry.isNew && entry._docId) {
+            batch.update(doc(db, 'checador_logs', entry._docId), {
+                time: entry.time,
+                timestamp
+            });
+        }
+    }
+    await batch.commit();
+}
+
 export function setupOrdersListener(onDataChange) {
     if (typeof ordersUnsubscribe === 'function') {
         ordersUnsubscribe();
