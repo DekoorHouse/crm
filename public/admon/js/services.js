@@ -280,13 +280,18 @@ export async function saveExpense(expenseData, originalCategory) {
     try {
         const concept = (expenseData.concept || '').toLowerCase();
         const newCategory = expenseData.category;
-        const isCharge = (expenseData.charge || 0) > 0;
         const categoryChanged = originalCategory !== newCategory;
 
-        if (isCharge && newCategory && newCategory !== 'SinCategorizar' && (categoryChanged || !expenseData.id)) {
+        // Persistir el cambio manual de categoría para cargos e ingresos,
+        // así sobrevive a borrar y reimportar el mes.
+        if (newCategory && newCategory !== 'SinCategorizar' && categoryChanged) {
             const ruleBasedCategory = autoCategorizeWithRulesOnly(concept);
             if (newCategory !== ruleBasedCategory) {
                 await setDoc(doc(db, "manualCategories", hashCode(concept)), { concept: concept, category: newCategory });
+            } else {
+                // Si el usuario vuelve a la categoría que la regla ya produce,
+                // elimina cualquier override previo para mantener limpio.
+                try { await deleteDoc(doc(db, "manualCategories", hashCode(concept))); } catch (_) {}
             }
         }
         

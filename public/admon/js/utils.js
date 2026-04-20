@@ -109,12 +109,21 @@ export function parseExpensesData(jsonData, fileType) {
         const chargeValue = Math.abs(parseFloat(charge) || 0);
         const creditValue = parseFloat(credit) || 0;
 
+        // Para ingresos (abonos), solo respetamos manualCategories previamente asignados;
+        // no aplicamos reglas por substring (que están diseñadas para gastos).
+        const lowerConcept = concept.toLowerCase();
+        let category = '';
+        if (creditValue > 0) {
+            category = state.manualCategories.get(lowerConcept) || '';
+        } else {
+            category = autoCategorize(concept);
+        }
         return {
             date: dateValue,
             concept: concept,
             charge: chargeValue,
             credit: creditValue,
-            category: creditValue > 0 ? '' : autoCategorize(concept),
+            category,
             channel: '',
             type: 'operativo',
             sub_type: '',

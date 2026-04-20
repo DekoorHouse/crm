@@ -1341,7 +1341,11 @@ router.post('/expenses/bulk-import', async (req, res) => {
                 if (seenInFile.has(sig)) { skippedIntraFile++; return; }
                 seenInFile.add(sig);
             }
-            const category = credit > 0 ? '' : autoCategorizeServer(concept, manualCategories);
+            // Para ingresos, solo respetar override manual previo (no aplicar reglas por substring)
+            const lowerConcept = concept.toLowerCase().replace(/\s+/g, ' ');
+            const category = credit > 0
+                ? (manualCategories[lowerConcept] || '')
+                : autoCategorizeServer(concept, manualCategories);
             toImport.push({
                 date,
                 concept,
