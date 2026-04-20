@@ -1178,25 +1178,6 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
-// --- Endpoint GET /api/expenses/search (Busca conceptos por substring) ---
-router.get('/expenses/search', async (req, res) => {
-    try {
-        const q = String(req.query.q || '').toLowerCase();
-        if (!q) return res.status(400).json({ error: 'missing q' });
-        const snapshot = await db.collection('expenses').get();
-        const matches = [];
-        snapshot.docs.forEach(doc => {
-            const d = doc.data();
-            if ((d.concept || '').toLowerCase().includes(q)) {
-                matches.push({ id: doc.id, date: d.date, concept: d.concept, charge: d.charge, credit: d.credit, category: d.category });
-            }
-        });
-        res.json({ total: matches.length, matches: matches.slice(0, 50) });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 // --- Endpoint POST /api/expenses/set-balance-target (Ajusta Utilidad para que coincida con saldo real) ---
 router.post('/expenses/set-balance-target', async (req, res) => {
     try {
