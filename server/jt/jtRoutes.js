@@ -620,10 +620,37 @@ router.post('/cliente', async (req, res) => {
             }
         } catch (e) { /* ignore */ }
 
-        // 3. Enviar WhatsApp al cliente (plantilla guia_envio_creada)
+        // 3. Enviar WhatsApp al CHAT del CRM (contactId del pedido), no al telefono del formulario.
+        //    Prioridad: pedido.contactId → pedido.telefono → telefono del formulario (fallback).
+        let telefonoDestino10 = telefono;
+        let contactIdFull = null;
+        try {
+            let pedidoData = null;
+            const orderNumInt = parseInt(numeroPedido.replace(/^DH/i, ''), 10);
+            if (!isNaN(orderNumInt)) {
+                const byField = await db.collection('pedidos')
+                    .where('consecutiveOrderNumber', '==', orderNumInt)
+                    .limit(1)
+                    .get();
+                if (!byField.empty) pedidoData = byField.docs[0].data();
+            }
+            if (!pedidoData) {
+                const pedidoDoc = await db.collection('pedidos').doc(numeroPedido).get();
+                if (pedidoDoc.exists) pedidoData = pedidoDoc.data();
+            }
+            if (pedidoData) {
+                if (pedidoData.contactId) {
+                    contactIdFull = String(pedidoData.contactId).replace(/\D/g, '');
+                    if (contactIdFull.length >= 10) telefonoDestino10 = contactIdFull.slice(-10);
+                } else if (pedidoData.telefono) {
+                    telefonoDestino10 = String(pedidoData.telefono).replace(/\D/g, '').slice(-10);
+                }
+            }
+        } catch (_) { /* fallback al telefono del formulario */ }
+
         try {
             const axios = require('axios');
-            const waId = '52' + telefono;
+            const waId = '52' + telefonoDestino10;
             const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
             const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
 
@@ -675,11 +702,13 @@ router.post('/cliente', async (req, res) => {
                     `https://app.dekoormx.com/jt-rastreo/?waybill=${result.waybillNo}\n\n` +
                     `Gracias por tu compra! ❤️`;
 
-                // Resolver id de contacto probando formatos MX 521XXX y 52XXX
+                // Resolver id de contacto: preferir contactId exacto del pedido; si no, probar formatos MX
                 const digits = waId.replace(/\D/g, '');
                 const last10 = digits.slice(-10);
-                const candidates = ['521' + last10, '52' + last10, digits];
-                let resolvedId = '521' + last10;
+                const candidates = contactIdFull
+                    ? [contactIdFull, '521' + last10, '52' + last10, digits]
+                    : ['521' + last10, '52' + last10, digits];
+                let resolvedId = contactIdFull || ('521' + last10);
                 const seen = new Set();
                 for (const c of candidates) {
                     if (!c || seen.has(c)) continue;
@@ -708,9 +737,10 @@ router.post('/cliente', async (req, res) => {
                 console.warn(`[J&T] No se pudo registrar plantilla en historial de chat:`, logErr.message);
             }
 
-            console.log(`[J&T] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}`);
+            const avisoTel = telefonoDestino10 !== telefono ? ` (tel chat CRM: ${telefonoDestino10}, tel envío: ${telefono})` : '';
+            console.log(`[J&T] WhatsApp plantilla enviada a ${waId} para pedido ${numeroPedido}${avisoTel}`);
         } catch (waErr) {
-            console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefono}:`, waErr.response?.data || waErr.message);
+            console.warn(`[J&T] No se pudo enviar WhatsApp a ${telefonoDestino10}:`, waErr.response?.data || waErr.message);
         }
 
         res.status(201).json({
