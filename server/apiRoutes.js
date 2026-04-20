@@ -1733,6 +1733,112 @@ router.get('/kpi/messages-daily', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/kpi/conversations-daily (Conversaciones nuevas vs recurrentes por día) ---
+router.get('/kpi/conversations-daily', async (req, res) => {
+    try {
+        const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 90);
+        const TZ = 'America/Mexico_City';
+        const now = new Date();
+        const mexicoNow = new Date(now.toLocaleString('en-US', { timeZone: TZ }));
+        const startLocal = new Date(mexicoNow.getFullYear(), mexicoNow.getMonth(), mexicoNow.getDate() - (days - 1));
+        const offsetMs = now.getTime() - mexicoNow.getTime();
+        const startUtc = new Date(startLocal.getTime() + offsetMs);
+
+        const startTimestamp = admin.firestore.Timestamp.fromDate(startUtc);
+        const endTimestamp = admin.firestore.Timestamp.fromDate(now);
+
+        // 1. Traer todos los mensajes entrantes del rango
+        const snapshot = await db.collectionGroup('messages')
+            .where('timestamp', '>=', startTimestamp)
+            .where('timestamp', '<=', endTimestamp)
+            .where('from', '!=', PHONE_NUMBER_ID)
+            .get();
+
+        // 2. Armar: contactId -> Set<día local>
+        const contactDays = {};
+        snapshot.forEach(doc => {
+            const data = doc.data();
+            if (!data.timestamp || typeof data.timestamp.toDate !== 'function') return;
+            const contactId = doc.ref.parent.parent ? doc.ref.parent.parent.id : null;
+            if (!contactId) return;
+            const localStr = data.timestamp.toDate().toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+            const day = localStr.slice(0, 10);
+            if (!contactDays[contactId]) contactDays[contactId] = new Set();
+            contactDays[contactId].add(day);
+        });
+
+        // 3. Leer createTime de cada contacto (batch getAll de 100 en 100)
+        const contactIds = Object.keys(contactDays);
+        const firstDayByContact = {};
+        const CHUNK = 100;
+        for (let i = 0; i < contactIds.length; i += CHUNK) {
+            const chunk = contactIds.slice(i, i + CHUNK);
+            const refs = chunk.map(cid => db.collection('contacts_whatsapp').doc(cid));
+            const snaps = await db.getAll(...refs);
+            snaps.forEach((snap, idx) => {
+                const cid = chunk[idx];
+                const ct = snap.createTime;
+                if (!ct) { firstDayByContact[cid] = null; return; }
+                const localStr = ct.toDate().toLocaleString('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+                firstDayByContact[cid] = localStr.slice(0, 10);
+            });
+        }
+
+        // 4. Buckets por día inicializados en 0 (sin huecos)
+        const bucket = {};
+        for (let i = 0; i < days; i++) {
+            const d = new Date(startLocal.getFullYear(), startLocal.getMonth(), startLocal.getDate() + i);
+            const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            bucket[key] = { new: 0, existing: 0, total: 0 };
+        }
+        for (const cid of contactIds) {
+            const firstDay = firstDayByContact[cid];
+            for (const day of contactDays[cid]) {
+                if (!bucket[day]) continue;
+                bucket[day].total += 1;
+                if (firstDay && firstDay === day) bucket[day].new += 1;
+                else bucket[day].existing += 1;
+            }
+        }
+
+        const data = Object.keys(bucket).sort().map(day => {
+            const d = new Date(day + 'T12:00:00');
+            return {
+                day,
+                label: d.toLocaleString('es-MX', { day: '2-digit', month: 'short' }),
+                new: bucket[day].new,
+                existing: bucket[day].existing,
+                total: bucket[day].total
+            };
+        });
+
+        const totalNew = data.reduce((s, d) => s + d.new, 0);
+        const totalExisting = data.reduce((s, d) => s + d.existing, 0);
+        const avgNew = data.length > 0 ? Math.round(totalNew / data.length) : 0;
+        const avgTotal = data.length > 0 ? Math.round((totalNew + totalExisting) / data.length) : 0;
+        const todayRow = data.length > 0 ? data[data.length - 1] : { new: 0, existing: 0, total: 0 };
+
+        res.status(200).json({
+            success: true,
+            data,
+            summary: {
+                uniqueContacts: contactIds.length,
+                totalNew,
+                totalExisting,
+                avgNewPerDay: avgNew,
+                avgConversationsPerDay: avgTotal,
+                todayNew: todayRow.new,
+                todayExisting: todayRow.existing,
+                todayTotal: todayRow.total,
+                days: data.length
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching conversations-daily:', error);
+        res.status(500).json({ success: false, message: 'Error al obtener conversaciones diarias.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/kpi/daily (Obtener gasto publicitario del día) ---
 router.get('/kpi/daily', async (req, res) => {
     try {
