@@ -1394,6 +1394,8 @@ function populateKpiMonthFilter() {
 
 export function changeKpiMonth(monthStr) {
     state.kpiMonth = monthStr;
+    // Re-suscribirse al nuevo mes (leads/pagados/cancelados/revenue)
+    services.subscribeToKpiMonth(monthStr, () => renderKpisTable());
     renderKpisTable();
     // Auto-sync de Meta para el mes seleccionado
     const [y, mm] = monthStr.split('-').map(Number);

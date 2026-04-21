@@ -50,9 +50,12 @@ function initializeAppUI() {
     services.listenForChecadorLogs(onDataChange);
     services.listenForChecadorAdjustments(onDataChange);
     services.listenForKpis(onDataChange);
-    services.listenForMonthlyLeads(onDataChange);
-    services.listenForMonthlyPaidLeads(onDataChange);
-    services.listenForMonthlyCancelledLeads(onDataChange);
+    // Suscripción dinámica al mes seleccionado en la pestaña KPIs
+    if (!state.kpiMonth) {
+        const t = new Date();
+        state.kpiMonth = `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}`;
+    }
+    services.subscribeToKpiMonth(state.kpiMonth, onDataChange);
     services.listenForAllTimeLeads();
     services.setupOrdersListener(onDataChange);
     services.listenForNotes(ui.renderNotes);

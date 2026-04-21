@@ -91,6 +91,50 @@ export function listenForKpis(onDataChange) {
     }, (error) => console.error("KPIs Listener Error:", error));
 }
 
+// Listeners unificados de KPIs por mes (suscripción dinámica al cambiar de mes)
+let _kpiMonthUnsub = null;
+
+export function subscribeToKpiMonth(monthStr, onDataChange) {
+    // monthStr en formato YYYY-MM. Cancela suscripcion previa si existe.
+    if (typeof _kpiMonthUnsub === 'function') {
+        try { _kpiMonthUnsub(); } catch (_) {}
+        _kpiMonthUnsub = null;
+    }
+    if (!monthStr || monthStr.length < 7) return;
+    const [year, month] = monthStr.split('-').map(Number);
+    const startOfMonth = new Date(Date.UTC(year, month - 1, 1));
+    const endOfMonth = new Date(Date.UTC(year, month, 1));
+
+    const q = query(collection(db, "pedidos"),
+        where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
+        where("createdAt", "<", Timestamp.fromDate(endOfMonth))
+    );
+
+    const paidStatuses = ["Pagado", "Fabricar"];
+    _kpiMonthUnsub = onSnapshot(q, (snapshot) => {
+        const leads = {}, paid = {}, revenue = {}, cancelled = {};
+        snapshot.docs.forEach(doc => {
+            const data = doc.data();
+            if (!data.createdAt || !data.createdAt.toDate) return;
+            const date = data.createdAt.toDate();
+            const dateString = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+            leads[dateString] = (leads[dateString] || 0) + 1;
+            if (paidStatuses.includes(data.estatus)) {
+                paid[dateString] = (paid[dateString] || 0) + 1;
+                revenue[dateString] = (revenue[dateString] || 0) + (parseFloat(data.precio) || 0);
+            }
+            if (data.estatus === "Cancelado") {
+                cancelled[dateString] = (cancelled[dateString] || 0) + 1;
+            }
+        });
+        state.monthlyLeads = leads;
+        state.monthlyPaidLeads = paid;
+        state.monthlyPaidRevenue = revenue;
+        state.monthlyCancelledLeads = cancelled;
+        onDataChange();
+    }, (error) => console.error("KPI Month Listener Error:", error));
+}
+
 export function listenForMonthlyLeads(onDataChange) {
     // MODIFICADO: Carga el mes actual dinámicamente
     const today = new Date();
@@ -99,7 +143,7 @@ export function listenForMonthlyLeads(onDataChange) {
     const startOfMonth = new Date(Date.UTC(year, month, 1));
     const endOfMonth = new Date(Date.UTC(year, month + 1, 1));
 
-    const q = query(collection(db, "pedidos"), 
+    const q = query(collection(db, "pedidos"),
         where("createdAt", ">=", Timestamp.fromDate(startOfMonth)),
         where("createdAt", "<", Timestamp.fromDate(endOfMonth))
     );
