@@ -476,6 +476,11 @@
     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>
   </div>
 
+  <div id="familia-banner" style="display:none;margin:0 auto 30px;max-width:500px;padding:22px;background:linear-gradient(135deg,rgba(142,102,189,.12),rgba(199,162,224,.18));border:1px solid var(--lila-200);border-radius:14px;">
+    <div style="font-family:'Montserrat',sans-serif;letter-spacing:.25em;text-transform:uppercase;font-size:.7rem;color:var(--lila-600);margin-bottom:6px">Invitación especial para</div>
+    <div id="familia-name" style="font-family:'Great Vibes',cursive;font-size:2.2rem;color:var(--lila-700);line-height:1.1"></div>
+  </div>
+
   <div class="padres">Mis Padres</div>
   <div class="nombres">Christian Morales <span style="color:var(--lila-500)">&</span> Jessica Delgado</div>
   <p style="margin-top:22px;max-width:520px;margin-left:auto;margin-right:auto;font-size:1.1rem;">
@@ -580,6 +585,9 @@
   <div class="subtitulo">RSVP · Antes del 11 de Julio</div>
   <p>Para nosotros es muy importante contar contigo. Por favor confirma tu asistencia vía WhatsApp.</p>
   <div class="tel">+52 618 229 7167</div>
+  <div id="confirm-status" style="display:none;margin:0 auto 16px;max-width:420px;padding:14px 20px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.4);border-radius:12px;font-family:'Montserrat',sans-serif;font-size:.85rem;letter-spacing:.1em;">
+    ✓ Asistencia confirmada. ¡Te esperamos!
+  </div>
   <a class="btn btn-wa" id="btn-wa" href="#" target="_blank" rel="noopener">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
       <path d="M20.52 3.48A11.94 11.94 0 0 0 12.04 0C5.5 0 .2 5.3.2 11.84c0 2.08.55 4.11 1.58 5.9L0 24l6.44-1.69a11.84 11.84 0 0 0 5.6 1.42h.01c6.55 0 11.87-5.3 11.87-11.84 0-3.17-1.23-6.15-3.4-8.41zM12.05 21.5h-.01a9.66 9.66 0 0 1-4.92-1.35l-.35-.21-3.82 1 1.02-3.72-.23-.38a9.66 9.66 0 0 1-1.48-5.14c0-5.35 4.36-9.7 9.72-9.7a9.66 9.66 0 0 1 9.7 9.7c0 5.36-4.35 9.8-9.63 9.8zm5.52-7.3c-.3-.15-1.77-.87-2.05-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.88-.78-1.48-1.75-1.65-2.05-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.48-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.05 1.02-1.05 2.49 0 1.47 1.08 2.89 1.23 3.09.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.72.64.72.23 1.38.2 1.9.12.58-.09 1.77-.72 2.02-1.42.25-.7.25-1.29.17-1.42-.07-.13-.27-.2-.57-.35z"/>
@@ -604,7 +612,21 @@
   <div class="nota">25 · 07 · 2026</div>
 </footer>
 
-<script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
   /* ========== CONTADOR ========== */
   const target = new Date('2026-07-25T17:00:00-06:00').getTime();
   const el = {
@@ -630,34 +652,74 @@
   }
   tick(); setInterval(tick, 1000);
 
-  /* ========== WHATSAPP ========== */
+  /* ========== INVITADO DESDE FIRESTORE ========== */
   const tel = '526182297167';
-  const msg = encodeURIComponent('¡Hola! Confirmo mi asistencia a los XV años de Ximena el 25 de julio de 2026. 💜');
-  document.getElementById('btn-wa').href = `https://wa.me/${tel}?text=${msg}`;
+  const params = new URLSearchParams(location.search);
+  const codigo = params.get('c');
+  let invitadoData = null;
+  let familia = 'Invitado Especial';
+
+  async function cargarInvitado(){
+    if(!codigo) return;
+    try{
+      const snap = await getDoc(doc(db, 'xv_ximena_invitados', codigo));
+      if(snap.exists()){
+        invitadoData = snap.data();
+        familia = invitadoData.familia || 'Invitado Especial';
+        document.getElementById('familia-banner').style.display = 'block';
+        document.getElementById('familia-name').textContent = familia;
+        document.getElementById('pases').textContent = invitadoData.pases || 2;
+        if(invitadoData.confirmado){
+          document.getElementById('confirm-status').style.display = 'block';
+        }
+      }
+    } catch(err){
+      console.warn('No se pudo cargar invitado:', err);
+    }
+  }
 
   /* ========== QR ========== */
-  // Personalizable: cambia el invitado / número de pases en el query string
-  // Ejemplo: index.html?invitado=Familia+Lopez&pases=4
-  const params = new URLSearchParams(location.search);
-  const invitado = params.get('invitado') || 'Invitado Especial';
-  const pases = params.get('pases') || '2';
-  document.getElementById('pases').textContent = pases;
+  function generarQR(){
+    const qrText = codigo ? codigo : ('GENERICO-' + Math.random().toString(36).slice(2,8).toUpperCase());
+    new QRCode(document.getElementById('qrcode'), {
+      text: qrText,
+      width: 200,
+      height: 200,
+      colorDark: '#5a3c82',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.H
+    });
+  }
 
-  const qrData = JSON.stringify({
-    evento: 'XV Ximena',
-    fecha: '2026-07-25',
-    invitado: invitado,
-    pases: Number(pases),
-    id: 'XIM-' + Math.random().toString(36).slice(2,8).toUpperCase()
+  /* ========== WHATSAPP + CONFIRMACION ========== */
+  function actualizarBotonWA(){
+    const texto = codigo && invitadoData
+      ? `¡Hola! Confirmo la asistencia de ${familia} a los XV años de Ximena el 25 de julio de 2026. 💜`
+      : '¡Hola! Confirmo mi asistencia a los XV años de Ximena el 25 de julio de 2026. 💜';
+    document.getElementById('btn-wa').href = `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+  }
+
+  document.getElementById('btn-wa').addEventListener('click', async () => {
+    if(codigo && invitadoData && !invitadoData.confirmado){
+      try{
+        await updateDoc(doc(db, 'xv_ximena_invitados', codigo), {
+          confirmado: true,
+          confirmadoAt: serverTimestamp()
+        });
+        document.getElementById('confirm-status').style.display = 'block';
+        invitadoData.confirmado = true;
+      } catch(err){
+        console.warn('No se pudo registrar confirmacion:', err);
+      }
+    }
   });
-  new QRCode(document.getElementById('qrcode'), {
-    text: qrData,
-    width: 200,
-    height: 200,
-    colorDark: '#5a3c82',
-    colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.H
-  });
+
+  /* ========== INIT ========== */
+  (async () => {
+    await cargarInvitado();
+    generarQR();
+    actualizarBotonWA();
+  })();
 
   /* ========== MUSICA DE FONDO ========== */
   const audio = document.getElementById('bgMusic');

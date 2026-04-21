@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Admin · XV Ximena</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --lila-50:#f6f1fb;--lila-100:#ece0f6;--lila-200:#d9c2ec;--lila-300:#c3a2e0;
+    --lila-400:#a782cf;--lila-500:#8e66bd;--lila-600:#744ea2;--lila-700:#5a3c82;
+    --lila-800:#3f2a5d;--ok:#25D366;--warn:#e7a735;--err:#d94a6b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Montserrat',sans-serif;
+    background:linear-gradient(135deg,#ece0f6,#d9c2ec);
+    min-height:100vh;color:#3a2a4e;
+    padding:20px;
+  }
+  h1{font-family:'Great Vibes',cursive;font-size:2.4rem;color:var(--lila-700);text-align:center;margin-bottom:4px;font-weight:400}
+  .sub{text-align:center;letter-spacing:.3em;font-size:.72rem;text-transform:uppercase;color:var(--lila-600);margin-bottom:24px}
+
+  /* PIN gate */
+  .pin-overlay{
+    position:fixed;inset:0;background:linear-gradient(135deg,var(--lila-700),var(--lila-800));
+    display:flex;align-items:center;justify-content:center;z-index:1000;
+  }
+  .pin-box{
+    background:#fff;padding:40px 30px;border-radius:18px;max-width:340px;width:90%;
+    box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;
+  }
+  .pin-box h2{font-family:'Great Vibes',cursive;font-size:2rem;color:var(--lila-700);font-weight:400;margin-bottom:8px}
+  .pin-box p{font-size:.85rem;color:#666;margin-bottom:20px}
+  .pin-input{
+    width:100%;padding:14px;font-size:1.4rem;text-align:center;letter-spacing:.6em;
+    border:2px solid var(--lila-200);border-radius:10px;outline:none;
+    font-family:'Montserrat',sans-serif;font-weight:600;color:var(--lila-700);
+  }
+  .pin-input:focus{border-color:var(--lila-500)}
+  .pin-err{color:var(--err);font-size:.8rem;margin-top:10px;min-height:1.2em}
+
+  /* Container */
+  .wrap{max-width:1100px;margin:0 auto}
+  .card{background:#fff;border-radius:16px;padding:24px;margin-bottom:20px;box-shadow:0 6px 20px rgba(90,60,130,.08)}
+
+  /* Stats */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+  .stat{background:#fff;padding:18px 12px;border-radius:14px;text-align:center;box-shadow:0 4px 14px rgba(90,60,130,.08)}
+  .stat .n{font-size:1.9rem;font-weight:700;color:var(--lila-700);line-height:1}
+  .stat .l{font-size:.65rem;letter-spacing:.15em;text-transform:uppercase;color:#888;margin-top:6px}
+  @media (max-width:640px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+  }
+
+  /* Form */
+  .form-row{display:grid;grid-template-columns:2fr 1fr 1.4fr auto;gap:10px;align-items:end}
+  @media (max-width:720px){.form-row{grid-template-columns:1fr}}
+  .form-group label{display:block;font-size:.7rem;letter-spacing:.15em;text-transform:uppercase;color:#888;margin-bottom:4px}
+  .form-group input{
+    width:100%;padding:10px 12px;border:1px solid var(--lila-200);border-radius:8px;
+    font-family:inherit;font-size:.95rem;outline:none;background:#faf7fd;
+  }
+  .form-group input:focus{border-color:var(--lila-500);background:#fff}
+
+  /* Buttons */
+  .btn{
+    padding:10px 18px;border:none;border-radius:8px;cursor:pointer;
+    font-family:inherit;font-size:.78rem;letter-spacing:.1em;text-transform:uppercase;
+    font-weight:600;transition:all .2s;display:inline-flex;align-items:center;gap:6px;
+  }
+  .btn-primary{background:var(--lila-600);color:#fff}
+  .btn-primary:hover{background:var(--lila-700)}
+  .btn-wa{background:var(--ok);color:#fff}
+  .btn-wa:hover{background:#1eb858}
+  .btn-ghost{background:transparent;color:var(--lila-700);border:1px solid var(--lila-300)}
+  .btn-ghost:hover{background:var(--lila-50)}
+  .btn-danger{background:transparent;color:var(--err);border:1px solid #f0c0cc}
+  .btn-danger:hover{background:#fdf0f3}
+  .btn-sm{padding:6px 10px;font-size:.68rem}
+
+  /* Table */
+  .tbl-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.88rem}
+  th,td{padding:10px 8px;text-align:left;border-bottom:1px solid #f0e8f7}
+  th{font-size:.68rem;letter-spacing:.12em;text-transform:uppercase;color:#888;font-weight:600;background:#faf7fd}
+  tr:hover td{background:#faf7fd}
+  td .codigo{font-family:'Courier New',monospace;font-weight:700;color:var(--lila-700)}
+  td .badge{display:inline-block;padding:3px 8px;border-radius:10px;font-size:.68rem;font-weight:600}
+  .badge-ok{background:#d4f4e0;color:#0e7b3f}
+  .badge-pend{background:#fde8d0;color:#8a4b00}
+  .badge-full{background:#d4e7f7;color:#0d5488}
+  .acciones{display:flex;gap:4px;flex-wrap:wrap}
+
+  /* Filters */
+  .filters{display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .filters input, .filters select{
+    padding:8px 12px;border:1px solid var(--lila-200);border-radius:8px;
+    font-family:inherit;outline:none;background:#faf7fd;
+  }
+  .filters input{flex:1;min-width:160px}
+
+  /* Toast */
+  .toast{
+    position:fixed;bottom:20px;right:20px;background:var(--lila-700);color:#fff;
+    padding:14px 22px;border-radius:10px;font-size:.85rem;
+    box-shadow:0 10px 30px rgba(0,0,0,.2);opacity:0;transform:translateY(10px);
+    transition:.3s;z-index:500;pointer-events:none;
+  }
+  .toast.show{opacity:1;transform:translateY(0)}
+  .toast.err{background:var(--err)}
+  .toast.ok{background:#0e7b3f}
+
+  /* Modal */
+  .modal-backdrop{position:fixed;inset:0;background:rgba(63,42,93,.6);display:none;align-items:center;justify-content:center;z-index:600;padding:20px}
+  .modal-backdrop.show{display:flex}
+  .modal{background:#fff;border-radius:14px;padding:24px;max-width:400px;width:100%}
+  .modal h3{font-family:'Great Vibes',cursive;font-size:1.8rem;color:var(--lila-700);font-weight:400;margin-bottom:12px}
+  .modal .actions{display:flex;gap:10px;justify-content:flex-end;margin-top:18px}
+</style>
+</head>
+<body>
+
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-box">
+    <h2>Admin XV</h2>
+    <p>Ingresa el PIN de organizador</p>
+    <input type="password" inputmode="numeric" maxlength="4" class="pin-input" id="pinInput" autocomplete="off" placeholder="····">
+    <div class="pin-err" id="pinErr"></div>
+  </div>
+</div>
+
+<div class="wrap" id="mainContent" style="display:none">
+  <h1>Panel de Invitados</h1>
+  <div class="sub">XV Ximena · 25 · 07 · 2026</div>
+
+  <div class="stats">
+    <div class="stat"><div class="n" id="stFamilias">0</div><div class="l">Familias</div></div>
+    <div class="stat"><div class="n" id="stPases">0</div><div class="l">Pases Totales</div></div>
+    <div class="stat"><div class="n" id="stConfirm">0</div><div class="l">Confirmados</div></div>
+    <div class="stat"><div class="n" id="stLlegaron">0</div><div class="l">Ya Llegaron</div></div>
+  </div>
+
+  <div class="card">
+    <h3 style="margin-bottom:14px;color:var(--lila-700);font-size:1rem">Agregar nueva familia</h3>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Nombre de la familia</label>
+        <input type="text" id="fFamilia" placeholder="Ej: Familia Quiñonez">
+      </div>
+      <div class="form-group">
+        <label># Pases</label>
+        <input type="number" id="fPases" min="1" value="2">
+      </div>
+      <div class="form-group">
+        <label>Teléfono (opcional)</label>
+        <input type="tel" id="fTel" placeholder="6181234567">
+      </div>
+      <button class="btn btn-primary" id="btnAdd">+ Agregar</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="filters">
+      <input type="text" id="filtro" placeholder="🔍 Buscar familia o código…">
+      <select id="filtroEstado">
+        <option value="">Todos</option>
+        <option value="confirmado">Confirmados</option>
+        <option value="pendiente">Pendientes</option>
+        <option value="llegaron">Ya llegaron</option>
+      </select>
+      <button class="btn btn-ghost" id="btnRefresh">Recargar</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Código</th>
+            <th>Familia</th>
+            <th>Pases</th>
+            <th>Estado</th>
+            <th>Llegaron</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+      <div id="emptyState" style="text-align:center;padding:40px;color:#aaa;display:none">
+        No hay invitados aún. Agrega la primera familia arriba.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <h3 id="modalTitle">Editar</h3>
+    <div class="form-group" style="margin-bottom:10px">
+      <label>Familia</label>
+      <input type="text" id="mFamilia">
+    </div>
+    <div class="form-group" style="margin-bottom:10px">
+      <label># Pases</label>
+      <input type="number" id="mPases" min="1">
+    </div>
+    <div class="form-group">
+      <label>Teléfono</label>
+      <input type="tel" id="mTel">
+    </div>
+    <div class="actions">
+      <button class="btn btn-ghost" id="mCancel">Cancelar</button>
+      <button class="btn btn-primary" id="mSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, collection, doc, getDocs, setDoc, updateDoc, deleteDoc, serverTimestamp, query, orderBy } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const col = collection(db, 'xv_ximena_invitados');
+
+  const PIN = '0708';
+  const BASE_URL = location.origin + '/xv-ximena/';
+
+  /* ========= PIN ========= */
+  const pinOverlay = document.getElementById('pinOverlay');
+  const pinInput = document.getElementById('pinInput');
+  const pinErr = document.getElementById('pinErr');
+  const mainContent = document.getElementById('mainContent');
+
+  function unlock(){
+    pinOverlay.style.display='none';
+    mainContent.style.display='block';
+    sessionStorage.setItem('xv_admin_pin', PIN);
+    cargar();
+  }
+  if(sessionStorage.getItem('xv_admin_pin') === PIN){
+    unlock();
+  } else {
+    pinInput.focus();
+    pinInput.addEventListener('input', () => {
+      pinErr.textContent = '';
+      if(pinInput.value.length === 4){
+        if(pinInput.value === PIN) unlock();
+        else { pinErr.textContent='PIN incorrecto'; pinInput.value=''; }
+      }
+    });
+  }
+
+  /* ========= DATA ========= */
+  let invitados = [];
+
+  function genCodigo(){
+    // XMN + 4 alfanumericos
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let c='XMN';
+    for(let i=0;i<4;i++) c += chars[Math.floor(Math.random()*chars.length)];
+    return c;
+  }
+
+  async function cargar(){
+    try{
+      const snap = await getDocs(query(col, orderBy('creadoAt','desc')));
+      invitados = [];
+      snap.forEach(d => invitados.push({ id:d.id, ...d.data() }));
+      render();
+    } catch(err){
+      // Fallback sin orderBy si no hay indice
+      const snap = await getDocs(col);
+      invitados = [];
+      snap.forEach(d => invitados.push({ id:d.id, ...d.data() }));
+      render();
+    }
+  }
+
+  function render(){
+    const filtro = document.getElementById('filtro').value.toLowerCase();
+    const estado = document.getElementById('filtroEstado').value;
+    let list = invitados.filter(x => {
+      const matchText = !filtro || (x.familia||'').toLowerCase().includes(filtro) || x.id.toLowerCase().includes(filtro);
+      const matchEstado = !estado ||
+        (estado==='confirmado' && x.confirmado) ||
+        (estado==='pendiente' && !x.confirmado) ||
+        (estado==='llegaron' && (x.llegaron||0) > 0);
+      return matchText && matchEstado;
+    });
+
+    // Stats
+    document.getElementById('stFamilias').textContent = invitados.length;
+    document.getElementById('stPases').textContent = invitados.reduce((s,x)=>s+(x.pases||0),0);
+    document.getElementById('stConfirm').textContent = invitados.filter(x=>x.confirmado).length;
+    document.getElementById('stLlegaron').textContent = invitados.reduce((s,x)=>s+(x.llegaron||0),0);
+
+    const tbody = document.getElementById('tbody');
+    const empty = document.getElementById('emptyState');
+    if(list.length === 0){
+      tbody.innerHTML = '';
+      empty.style.display = invitados.length === 0 ? 'block' : 'none';
+      if(invitados.length > 0) tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#aaa">Sin resultados</td></tr>';
+      return;
+    }
+    empty.style.display = 'none';
+
+    tbody.innerHTML = list.map(x => {
+      const llegaron = x.llegaron || 0;
+      const pases = x.pases || 0;
+      let estadoBadge;
+      if(llegaron >= pases && pases > 0) estadoBadge = '<span class="badge badge-full">Completo</span>';
+      else if(x.confirmado) estadoBadge = '<span class="badge badge-ok">Confirmado</span>';
+      else estadoBadge = '<span class="badge badge-pend">Pendiente</span>';
+
+      return `
+        <tr>
+          <td><span class="codigo">${x.id}</span></td>
+          <td>${escapeHtml(x.familia || '—')}</td>
+          <td>${pases}</td>
+          <td>${estadoBadge}</td>
+          <td>${llegaron}/${pases}</td>
+          <td>
+            <div class="acciones">
+              <button class="btn btn-sm btn-ghost" data-act="copy" data-id="${x.id}">📋 Link</button>
+              <button class="btn btn-sm btn-wa" data-act="wa" data-id="${x.id}">💬 WhatsApp</button>
+              <button class="btn btn-sm btn-ghost" data-act="edit" data-id="${x.id}">Editar</button>
+              <button class="btn btn-sm btn-danger" data-act="del" data-id="${x.id}">Eliminar</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  /* ========= EVENTS ========= */
+  document.getElementById('btnAdd').addEventListener('click', async () => {
+    const familia = document.getElementById('fFamilia').value.trim();
+    const pases = parseInt(document.getElementById('fPases').value,10) || 2;
+    const tel = document.getElementById('fTel').value.trim();
+    if(!familia){ toast('Falta el nombre de la familia','err'); return; }
+
+    let codigo;
+    let intentos = 0;
+    do {
+      codigo = genCodigo();
+      intentos++;
+    } while(invitados.find(x=>x.id===codigo) && intentos<10);
+
+    try{
+      await setDoc(doc(db,'xv_ximena_invitados',codigo), {
+        familia, pases, telefono: tel,
+        confirmado: false, llegaron: 0,
+        creadoAt: serverTimestamp()
+      });
+      document.getElementById('fFamilia').value = '';
+      document.getElementById('fPases').value = '2';
+      document.getElementById('fTel').value = '';
+      toast(`✓ ${familia} agregada con código ${codigo}`,'ok');
+      await cargar();
+    } catch(err){
+      toast('Error al guardar: ' + err.message,'err');
+    }
+  });
+
+  document.getElementById('filtro').addEventListener('input', render);
+  document.getElementById('filtroEstado').addEventListener('change', render);
+  document.getElementById('btnRefresh').addEventListener('click', cargar);
+
+  document.getElementById('tbody').addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-act]');
+    if(!btn) return;
+    const act = btn.dataset.act;
+    const id = btn.dataset.id;
+    const inv = invitados.find(x=>x.id===id);
+    if(!inv) return;
+    const link = BASE_URL + '?c=' + id;
+
+    if(act === 'copy'){
+      await navigator.clipboard.writeText(link);
+      toast('Link copiado ✓','ok');
+    }
+    else if(act === 'wa'){
+      const msg = `💜 *XV Años de Ximena* 💜\n\nHola ${inv.familia}, están cordialmente invitados a los XV años de Ximena el *25 de julio de 2026*.\n\nSu invitación personalizada con *${inv.pases} pases* y código QR de acceso:\n\n${link}\n\n¡Esperamos contar con su presencia!`;
+      const tel = (inv.telefono||'').replace(/\D/g,'');
+      const telPart = tel ? (tel.startsWith('52') ? tel : '52'+tel) : '';
+      window.open(`https://wa.me/${telPart}?text=${encodeURIComponent(msg)}`,'_blank');
+    }
+    else if(act === 'edit'){
+      abrirEditar(inv);
+    }
+    else if(act === 'del'){
+      if(!confirm(`¿Eliminar a "${inv.familia}"? Su link dejará de funcionar.`)) return;
+      try{
+        await deleteDoc(doc(db,'xv_ximena_invitados',id));
+        toast('Eliminado','ok');
+        await cargar();
+      } catch(err){ toast('Error: '+err.message,'err'); }
+    }
+  });
+
+  /* ========= MODAL EDITAR ========= */
+  const modal = document.getElementById('modal');
+  let editingId = null;
+  function abrirEditar(inv){
+    editingId = inv.id;
+    document.getElementById('modalTitle').textContent = `Editar ${inv.id}`;
+    document.getElementById('mFamilia').value = inv.familia || '';
+    document.getElementById('mPases').value = inv.pases || 2;
+    document.getElementById('mTel').value = inv.telefono || '';
+    modal.classList.add('show');
+  }
+  document.getElementById('mCancel').addEventListener('click', () => modal.classList.remove('show'));
+  document.getElementById('mSave').addEventListener('click', async () => {
+    if(!editingId) return;
+    const familia = document.getElementById('mFamilia').value.trim();
+    const pases = parseInt(document.getElementById('mPases').value,10) || 2;
+    const tel = document.getElementById('mTel').value.trim();
+    if(!familia){ toast('Falta el nombre','err'); return; }
+    try{
+      await updateDoc(doc(db,'xv_ximena_invitados',editingId), { familia, pases, telefono: tel });
+      modal.classList.remove('show');
+      toast('Actualizado ✓','ok');
+      await cargar();
+    } catch(err){ toast('Error: '+err.message,'err'); }
+  });
+  modal.addEventListener('click', (e) => { if(e.target===modal) modal.classList.remove('show'); });
+
+  /* ========= TOAST ========= */
+  const toastEl = document.getElementById('toast');
+  let toastTimer;
+  function toast(msg, type=''){
+    toastEl.textContent = msg;
+    toastEl.className = 'toast show ' + (type==='err'?'err':type==='ok'?'ok':'');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3200);
+  }
+</script>
+</body>
+</html>

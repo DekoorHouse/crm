@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Check-in · XV Ximena</title>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --lila-50:#f6f1fb;--lila-100:#ece0f6;--lila-200:#d9c2ec;--lila-300:#c3a2e0;
+    --lila-400:#a782cf;--lila-500:#8e66bd;--lila-600:#744ea2;--lila-700:#5a3c82;
+    --lila-800:#3f2a5d;--ok:#0e7b3f;--warn:#e7a735;--err:#d94a6b;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:'Montserrat',sans-serif;
+    background:linear-gradient(180deg,var(--lila-800),var(--lila-700));
+    min-height:100vh;color:#fff;padding:16px;
+  }
+  h1{font-family:'Great Vibes',cursive;font-size:2.4rem;color:#fff;text-align:center;font-weight:400}
+  .sub{text-align:center;letter-spacing:.3em;font-size:.7rem;text-transform:uppercase;color:#d9c2ec;margin-bottom:20px}
+
+  /* PIN */
+  .pin-overlay{position:fixed;inset:0;background:linear-gradient(135deg,var(--lila-700),var(--lila-800));display:flex;align-items:center;justify-content:center;z-index:1000}
+  .pin-box{background:#fff;padding:40px 30px;border-radius:18px;max-width:340px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,.3);text-align:center;color:#3a2a4e}
+  .pin-box h2{font-family:'Great Vibes',cursive;font-size:2rem;color:var(--lila-700);font-weight:400;margin-bottom:8px}
+  .pin-box p{font-size:.85rem;color:#666;margin-bottom:20px}
+  .pin-input{width:100%;padding:14px;font-size:1.4rem;text-align:center;letter-spacing:.6em;border:2px solid var(--lila-200);border-radius:10px;outline:none;font-weight:600;color:var(--lila-700);font-family:inherit}
+  .pin-input:focus{border-color:var(--lila-500)}
+  .pin-err{color:var(--err);font-size:.8rem;margin-top:10px;min-height:1.2em}
+
+  .wrap{max-width:520px;margin:0 auto}
+
+  /* Scanner */
+  #reader{
+    width:100%;max-width:480px;margin:0 auto;
+    border-radius:16px;overflow:hidden;
+    box-shadow:0 10px 30px rgba(0,0,0,.3);
+    background:#000;
+  }
+  #reader video{width:100%!important;height:auto!important}
+  .scanner-hint{text-align:center;font-size:.8rem;color:#d9c2ec;margin:12px 0 20px;letter-spacing:.08em}
+
+  /* Result card */
+  .result{
+    background:#fff;color:#3a2a4e;border-radius:16px;padding:24px;
+    box-shadow:0 10px 30px rgba(0,0,0,.2);margin-top:16px;
+    animation:slideUp .35s ease;
+  }
+  @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+  .result.ok{border-top:4px solid var(--ok)}
+  .result.warn{border-top:4px solid var(--warn)}
+  .result.err{border-top:4px solid var(--err)}
+  .result .estado{
+    display:inline-block;padding:4px 12px;border-radius:12px;font-size:.68rem;
+    letter-spacing:.15em;text-transform:uppercase;font-weight:700;margin-bottom:10px;
+  }
+  .estado.ok{background:#d4f4e0;color:var(--ok)}
+  .estado.warn{background:#fde8d0;color:#8a4b00}
+  .estado.err{background:#fde0e8;color:var(--err)}
+  .result h3{font-family:'Great Vibes',cursive;font-size:2rem;font-weight:400;color:var(--lila-700);margin:6px 0}
+  .result .codigo{font-family:'Courier New',monospace;font-size:.85rem;color:#888;letter-spacing:.15em}
+  .result .pases-info{
+    display:flex;justify-content:space-around;margin:20px 0;
+    padding:16px;background:#faf7fd;border-radius:12px;
+  }
+  .pases-info .item{text-align:center}
+  .pases-info .num{font-size:1.8rem;font-weight:700;color:var(--lila-700);line-height:1}
+  .pases-info .lbl{font-size:.62rem;letter-spacing:.15em;text-transform:uppercase;color:#888;margin-top:4px}
+
+  .entry-ctrl{display:flex;align-items:center;justify-content:center;gap:14px;margin:18px 0}
+  .entry-ctrl button{
+    width:44px;height:44px;border-radius:50%;border:2px solid var(--lila-300);
+    background:#fff;color:var(--lila-600);font-size:1.3rem;font-weight:700;cursor:pointer;
+  }
+  .entry-ctrl button:hover{background:var(--lila-50)}
+  .entry-ctrl .n{font-size:2.5rem;font-weight:700;color:var(--lila-700);min-width:60px;text-align:center}
+
+  .btn{padding:14px 20px;border:none;border-radius:10px;cursor:pointer;font-family:inherit;font-size:.82rem;letter-spacing:.15em;text-transform:uppercase;font-weight:600;width:100%;transition:.2s}
+  .btn-primary{background:var(--lila-600);color:#fff}
+  .btn-primary:hover{background:var(--lila-700)}
+  .btn-primary:disabled{background:#ccc;cursor:not-allowed}
+  .btn-ghost{background:transparent;color:var(--lila-700);border:1px solid var(--lila-300);margin-top:10px}
+
+  /* History */
+  .history{margin-top:24px;background:rgba(255,255,255,.08);border-radius:12px;padding:14px}
+  .history h4{font-size:.75rem;letter-spacing:.2em;text-transform:uppercase;color:#d9c2ec;margin-bottom:10px}
+  .hist-item{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.82rem}
+  .hist-item:last-child{border-bottom:none}
+  .hist-item .t{color:#d9c2ec;font-size:.7rem}
+
+  /* Nav */
+  .nav-link{
+    display:inline-flex;align-items:center;gap:6px;color:#d9c2ec;text-decoration:none;
+    font-size:.75rem;letter-spacing:.15em;text-transform:uppercase;margin-top:20px;
+  }
+  .nav-link:hover{color:#fff}
+
+  /* Toast */
+  .toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(10px);background:var(--lila-800);color:#fff;padding:14px 22px;border-radius:10px;font-size:.85rem;box-shadow:0 10px 30px rgba(0,0,0,.3);opacity:0;transition:.3s;z-index:500;pointer-events:none;max-width:90%}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+</style>
+</head>
+<body>
+
+<div class="pin-overlay" id="pinOverlay">
+  <div class="pin-box">
+    <h2>Check-in XV</h2>
+    <p>PIN de organizador</p>
+    <input type="password" inputmode="numeric" maxlength="4" class="pin-input" id="pinInput" autocomplete="off" placeholder="····">
+    <div class="pin-err" id="pinErr"></div>
+  </div>
+</div>
+
+<div class="wrap" id="mainContent" style="display:none">
+  <h1>Check-in</h1>
+  <div class="sub">Escanea el QR del invitado</div>
+
+  <div id="reader"></div>
+  <div class="scanner-hint" id="hint">Apunta la cámara al código QR</div>
+
+  <div id="result"></div>
+
+  <div class="history" id="historyBox" style="display:none">
+    <h4>📋 Últimos registros</h4>
+    <div id="historyList"></div>
+  </div>
+
+  <a href="../admin/" class="nav-link">← Panel Admin</a>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, updateDoc, serverTimestamp, increment } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const PIN = '0708';
+  const pinOverlay = document.getElementById('pinOverlay');
+  const pinInput = document.getElementById('pinInput');
+  const pinErr = document.getElementById('pinErr');
+  const mainContent = document.getElementById('mainContent');
+
+  let scanner = null;
+  let history = JSON.parse(sessionStorage.getItem('xv_checkin_history') || '[]');
+  let processing = false;
+
+  function unlock(){
+    pinOverlay.style.display='none';
+    mainContent.style.display='block';
+    sessionStorage.setItem('xv_checkin_pin', PIN);
+    initScanner();
+    renderHistory();
+  }
+
+  if(sessionStorage.getItem('xv_checkin_pin') === PIN){
+    unlock();
+  } else {
+    pinInput.focus();
+    pinInput.addEventListener('input', () => {
+      pinErr.textContent='';
+      if(pinInput.value.length === 4){
+        if(pinInput.value === PIN) unlock();
+        else { pinErr.textContent='PIN incorrecto'; pinInput.value=''; }
+      }
+    });
+  }
+
+  /* ========= SCANNER ========= */
+  function initScanner(){
+    scanner = new Html5Qrcode('reader');
+    scanner.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 260, height: 260 } },
+      onScan,
+      () => {}
+    ).catch(err => {
+      document.getElementById('hint').textContent = '⚠ No se pudo acceder a la cámara: ' + err;
+    });
+  }
+
+  async function onScan(decodedText){
+    if(processing) return;
+    // Extraer codigo si viene URL completo
+    let codigo = decodedText.trim();
+    const m = codigo.match(/[?&]c=([A-Z0-9-]+)/i);
+    if(m) codigo = m[1];
+    codigo = codigo.toUpperCase();
+
+    processing = true;
+    // Pausar momentaneamente
+    if(scanner) scanner.pause(true);
+    navigator.vibrate && navigator.vibrate(100);
+
+    try{
+      const snap = await getDoc(doc(db, 'xv_ximena_invitados', codigo));
+      if(!snap.exists()){
+        mostrarResultado({
+          tipo:'err',
+          titulo:'Código no encontrado',
+          codigo: codigo,
+          mensaje:'Este QR no corresponde a ningún invitado registrado.'
+        });
+        return;
+      }
+      const data = snap.data();
+      const llegaron = data.llegaron || 0;
+      const pases = data.pases || 0;
+      const disponibles = pases - llegaron;
+
+      if(disponibles <= 0){
+        mostrarResultado({
+          tipo:'warn', warn:true,
+          titulo:data.familia,
+          codigo: codigo,
+          pases: pases, llegaron: llegaron, disponibles: 0,
+          mensaje:'Todos los pases de esta familia ya fueron usados.'
+        });
+        return;
+      }
+
+      mostrarResultado({
+        tipo:'ok',
+        titulo:data.familia,
+        codigo: codigo,
+        pases: pases, llegaron: llegaron, disponibles: disponibles,
+        data: data
+      });
+    } catch(err){
+      mostrarResultado({ tipo:'err', titulo:'Error', codigo: codigo, mensaje: err.message });
+    }
+  }
+
+  function mostrarResultado(r){
+    const div = document.getElementById('result');
+    if(r.tipo === 'ok'){
+      div.innerHTML = `
+        <div class="result ok">
+          <span class="estado ok">✓ Válido · ${r.disponibles} pases disponibles</span>
+          <h3>${escapeHtml(r.titulo)}</h3>
+          <div class="codigo">${r.codigo}</div>
+          <div class="pases-info">
+            <div class="item"><div class="num">${r.pases}</div><div class="lbl">Totales</div></div>
+            <div class="item"><div class="num">${r.llegaron}</div><div class="lbl">Ya Llegaron</div></div>
+            <div class="item"><div class="num" style="color:var(--ok)">${r.disponibles}</div><div class="lbl">Disponibles</div></div>
+          </div>
+          <div style="text-align:center;font-size:.78rem;color:#666;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px">¿Cuántas personas entran ahora?</div>
+          <div class="entry-ctrl">
+            <button id="minusBtn">−</button>
+            <div class="n" id="entryCount">${r.disponibles}</div>
+            <button id="plusBtn">+</button>
+          </div>
+          <button class="btn btn-primary" id="confirmBtn">Registrar Entrada</button>
+          <button class="btn btn-ghost" id="cancelBtn">Escanear otro</button>
+        </div>
+      `;
+      let count = r.disponibles;
+      const entryEl = document.getElementById('entryCount');
+      document.getElementById('minusBtn').onclick = () => { if(count>1){ count--; entryEl.textContent=count; } };
+      document.getElementById('plusBtn').onclick = () => { if(count<r.disponibles){ count++; entryEl.textContent=count; } };
+      document.getElementById('confirmBtn').onclick = async () => {
+        document.getElementById('confirmBtn').disabled = true;
+        try{
+          await updateDoc(doc(db,'xv_ximena_invitados',r.codigo), {
+            llegaron: increment(count),
+            ultimaEntrada: serverTimestamp()
+          });
+          addHistory(r.titulo, r.codigo, count);
+          toast(`✓ ${count} persona${count>1?'s':''} registrada${count>1?'s':''} de ${r.titulo}`);
+          setTimeout(reset, 1500);
+        } catch(err){
+          toast('Error: ' + err.message);
+          document.getElementById('confirmBtn').disabled = false;
+        }
+      };
+      document.getElementById('cancelBtn').onclick = reset;
+    }
+    else if(r.tipo === 'warn'){
+      div.innerHTML = `
+        <div class="result warn">
+          <span class="estado warn">⚠ Pases agotados</span>
+          <h3>${escapeHtml(r.titulo)}</h3>
+          <div class="codigo">${r.codigo}</div>
+          <div class="pases-info">
+            <div class="item"><div class="num">${r.pases}</div><div class="lbl">Totales</div></div>
+            <div class="item"><div class="num">${r.llegaron}</div><div class="lbl">Ya Llegaron</div></div>
+            <div class="item"><div class="num" style="color:var(--err)">0</div><div class="lbl">Disponibles</div></div>
+          </div>
+          <p style="text-align:center;color:#666;margin-bottom:14px">${r.mensaje}</p>
+          <button class="btn btn-primary" id="cancelBtn">Escanear otro</button>
+        </div>
+      `;
+      document.getElementById('cancelBtn').onclick = reset;
+    }
+    else {
+      div.innerHTML = `
+        <div class="result err">
+          <span class="estado err">✗ Error</span>
+          <h3>${escapeHtml(r.titulo)}</h3>
+          <div class="codigo">${r.codigo || ''}</div>
+          <p style="margin:14px 0;color:#666">${escapeHtml(r.mensaje)}</p>
+          <button class="btn btn-primary" id="cancelBtn">Escanear otro</button>
+        </div>
+      `;
+      document.getElementById('cancelBtn').onclick = reset;
+    }
+  }
+
+  function reset(){
+    document.getElementById('result').innerHTML = '';
+    processing = false;
+    if(scanner){
+      try{ scanner.resume(); } catch(e){}
+    }
+  }
+
+  function addHistory(familia, codigo, count){
+    history.unshift({ familia, codigo, count, t: Date.now() });
+    history = history.slice(0, 10);
+    sessionStorage.setItem('xv_checkin_history', JSON.stringify(history));
+    renderHistory();
+  }
+
+  function renderHistory(){
+    if(history.length === 0){ document.getElementById('historyBox').style.display='none'; return; }
+    document.getElementById('historyBox').style.display='block';
+    document.getElementById('historyList').innerHTML = history.map(h => {
+      const hora = new Date(h.t).toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+      return `<div class="hist-item"><span>${escapeHtml(h.familia)} · ${h.count}p</span><span class="t">${hora}</span></div>`;
+    }).join('');
+  }
+
+  function escapeHtml(s){
+    return String(s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  const toastEl = document.getElementById('toast');
+  let toastTimer;
+  function toast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 3500);
+  }
+</script>
+</body>
+</html>
