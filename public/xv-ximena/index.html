@@ -397,6 +397,59 @@
     section{padding:56px 18px}
     .card{padding:30px 20px}
   }
+
+  /* ========= REPRODUCTOR DE MUSICA ========= */
+  .music-btn{
+    position:fixed;
+    bottom:22px;right:22px;
+    width:56px;height:56px;
+    border-radius:50%;
+    border:none;
+    background:linear-gradient(135deg, var(--lila-500), var(--lila-700));
+    color:#fff;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;
+    box-shadow:0 8px 22px rgba(90,60,130,.45);
+    z-index:100;
+    transition:transform .25s ease;
+  }
+  .music-btn:hover{transform:scale(1.08)}
+  .music-btn svg{width:22px;height:22px}
+  .music-btn.playing{animation:mpulse 2s ease-in-out infinite}
+  .music-btn.playing::before{
+    content:"";
+    position:absolute;inset:-6px;
+    border-radius:50%;
+    border:2px solid var(--lila-400);
+    opacity:.6;
+    animation:mripple 1.8s ease-out infinite;
+  }
+  @keyframes mpulse{
+    0%,100%{box-shadow:0 8px 22px rgba(90,60,130,.45)}
+    50%{box-shadow:0 8px 30px rgba(142,102,189,.75)}
+  }
+  @keyframes mripple{
+    0%{transform:scale(1);opacity:.6}
+    100%{transform:scale(1.5);opacity:0}
+  }
+  .music-tip{
+    position:fixed;
+    bottom:32px;right:88px;
+    background:rgba(63,42,93,.92);
+    color:#fff;
+    padding:8px 14px;
+    border-radius:20px;
+    font-family:'Montserrat', sans-serif;
+    font-size:.72rem;
+    letter-spacing:.1em;
+    z-index:100;
+    opacity:0;
+    transform:translateX(10px);
+    transition:opacity .4s ease, transform .4s ease;
+    pointer-events:none;
+    white-space:nowrap;
+  }
+  .music-tip.show{opacity:1;transform:translateX(0)}
 </style>
 </head>
 <body>
@@ -535,6 +588,16 @@
   </a>
 </section>
 
+<!-- ============ MUSICA ============ -->
+<audio id="bgMusic" loop preload="auto">
+  <source src="musica.mp3" type="audio/mpeg">
+</audio>
+<div class="music-tip" id="musicTip">Toca para escuchar música</div>
+<button class="music-btn" id="musicBtn" aria-label="Reproducir música">
+  <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+  <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+</button>
+
 <!-- ============ FOOTER ============ -->
 <footer>
   <div class="firma">~ Ximena ~</div>
@@ -595,6 +658,52 @@
     colorLight: '#ffffff',
     correctLevel: QRCode.CorrectLevel.H
   });
+
+  /* ========== MUSICA DE FONDO ========== */
+  const audio = document.getElementById('bgMusic');
+  const btn = document.getElementById('musicBtn');
+  const iconPlay = document.getElementById('iconPlay');
+  const iconPause = document.getElementById('iconPause');
+  const tip = document.getElementById('musicTip');
+  audio.volume = 0.55;
+
+  function togglePlay(){
+    if(audio.paused){
+      audio.play().then(()=>{
+        btn.classList.add('playing');
+        iconPlay.style.display='none';
+        iconPause.style.display='block';
+      }).catch(()=>{});
+    } else {
+      audio.pause();
+      btn.classList.remove('playing');
+      iconPlay.style.display='block';
+      iconPause.style.display='none';
+    }
+  }
+  btn.addEventListener('click', togglePlay);
+
+  // Intentar autoplay (muted no es necesario con gesto del usuario)
+  // Mostrar hint al llegar a la página
+  setTimeout(()=>{ tip.classList.add('show'); }, 1200);
+  setTimeout(()=>{ tip.classList.remove('show'); }, 5200);
+
+  // Si el usuario hace cualquier interacción, intentar iniciar música
+  const tryAutoplay = () => {
+    if(audio.paused){
+      audio.play().then(()=>{
+        btn.classList.add('playing');
+        iconPlay.style.display='none';
+        iconPause.style.display='block';
+      }).catch(()=>{});
+    }
+    document.removeEventListener('click', tryAutoplay);
+    document.removeEventListener('touchstart', tryAutoplay);
+    document.removeEventListener('scroll', tryAutoplay);
+  };
+  document.addEventListener('click', tryAutoplay, {once:false});
+  document.addEventListener('touchstart', tryAutoplay, {once:false});
+  document.addEventListener('scroll', tryAutoplay, {once:false, passive:true});
 
   /* ========== REVEAL ON SCROLL ========== */
   const io = new IntersectionObserver((entries)=>{
