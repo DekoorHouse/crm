@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>XV Años · Ximena</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;0,600;1,300&family=Great+Vibes&family=Montserrat:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+  :root{
+    --lila-50:#f6f1fb;
+    --lila-100:#ece0f6;
+    --lila-200:#d9c2ec;
+    --lila-300:#c3a2e0;
+    --lila-400:#a782cf;
+    --lila-500:#8e66bd;
+    --lila-600:#744ea2;
+    --lila-700:#5a3c82;
+    --lila-800:#3f2a5d;
+    --crema:#faf7f2;
+    --dorado:#b89b5e;
+    --texto:#3a2a4e;
+  }
+
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:'Cormorant Garamond', serif;
+    color:var(--texto);
+    background:
+      radial-gradient(ellipse at top, #ece0f6 0%, #d9c2ec 45%, #b794d6 100%);
+    background-attachment:fixed;
+    line-height:1.6;
+    overflow-x:hidden;
+  }
+
+  /* Pétalos / destellos decorativos */
+  .sparkle{
+    position:fixed;
+    pointer-events:none;
+    z-index:0;
+    opacity:.35;
+  }
+
+  section{
+    position:relative;
+    padding:70px 20px;
+    text-align:center;
+    z-index:1;
+  }
+
+  .ornament{
+    font-family:'Great Vibes', cursive;
+    color:var(--lila-600);
+    font-size:1.6rem;
+    margin:10px 0 20px;
+  }
+
+  .divider{
+    display:flex;align-items:center;justify-content:center;gap:14px;
+    margin:22px auto;max-width:320px;
+  }
+  .divider::before,.divider::after{
+    content:"";flex:1;height:1px;
+    background:linear-gradient(90deg, transparent, var(--lila-400), transparent);
+  }
+  .divider svg{width:26px;height:26px;color:var(--lila-500)}
+
+  /* ================== HERO ================== */
+  .hero{
+    min-height:100vh;
+    background:
+      linear-gradient(180deg, rgba(63,42,93,.65) 0%, rgba(63,42,93,.35) 50%, rgba(250,247,242,.95) 100%),
+      url('ximena.jpg') center/cover no-repeat;
+    display:flex;flex-direction:column;justify-content:center;align-items:center;
+    color:#fff;
+    padding:40px 24px 60px;
+    text-shadow:0 2px 14px rgba(0,0,0,.35);
+  }
+  .hero .kicker{
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.5em;
+    text-transform:uppercase;
+    font-size:.75rem;
+    margin-bottom:18px;
+    color:#f6eaff;
+  }
+  .hero h1{
+    font-family:'Great Vibes', cursive;
+    font-weight:400;
+    font-size:clamp(4.5rem, 16vw, 8rem);
+    line-height:1;
+    color:#fff;
+    margin:10px 0;
+    text-shadow:0 3px 20px rgba(90,60,130,.6);
+  }
+  .hero .xv{
+    font-family:'Cormorant Garamond', serif;
+    font-style:italic;
+    letter-spacing:.4em;
+    font-size:clamp(1rem, 3.5vw, 1.3rem);
+    opacity:.95;
+    margin-top:6px;
+  }
+  .hero .fecha{
+    margin-top:36px;
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.35em;
+    font-size:.85rem;
+    padding:12px 20px;
+    border-top:1px solid rgba(255,255,255,.55);
+    border-bottom:1px solid rgba(255,255,255,.55);
+    display:inline-block;
+  }
+
+  /* ================== INTRO ================== */
+  .intro{
+    background:var(--crema);
+  }
+  .intro p.frase{
+    font-style:italic;
+    font-size:1.15rem;
+    max-width:640px;
+    margin:0 auto 24px;
+    color:var(--lila-700);
+  }
+  .intro .padres{
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.15em;
+    text-transform:uppercase;
+    font-size:.78rem;
+    color:var(--lila-600);
+    margin-top:28px;
+  }
+  .intro .nombres{
+    font-family:'Cormorant Garamond', serif;
+    font-size:1.3rem;
+    margin-top:10px;
+    color:var(--texto);
+  }
+
+  h2.titulo{
+    font-family:'Great Vibes', cursive;
+    font-size:clamp(2.5rem, 7vw, 3.5rem);
+    color:var(--lila-700);
+    font-weight:400;
+    margin-bottom:6px;
+  }
+  .subtitulo{
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.3em;
+    text-transform:uppercase;
+    font-size:.72rem;
+    color:var(--lila-500);
+    margin-bottom:20px;
+  }
+
+  /* ================== CONTADOR ================== */
+  .contador{
+    background:linear-gradient(180deg, #ece0f6 0%, #d9c2ec 100%);
+  }
+  .countdown{
+    display:flex;justify-content:center;gap:14px;flex-wrap:wrap;
+    margin-top:26px;
+  }
+  .countdown .box{
+    background:rgba(255,255,255,.75);
+    backdrop-filter:blur(6px);
+    border:1px solid rgba(142,102,189,.25);
+    border-radius:14px;
+    padding:18px 14px;
+    min-width:78px;
+    box-shadow:0 8px 24px rgba(90,60,130,.12);
+  }
+  .countdown .num{
+    font-family:'Cormorant Garamond', serif;
+    font-size:2.2rem;
+    font-weight:600;
+    color:var(--lila-700);
+    line-height:1;
+  }
+  .countdown .lbl{
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    font-size:.65rem;
+    color:var(--lila-600);
+    margin-top:6px;
+  }
+
+  /* ================== EVENTOS ================== */
+  .eventos{
+    background:var(--crema);
+  }
+  .evento-grid{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:28px;
+    max-width:960px;
+    margin:0 auto;
+  }
+  @media (min-width: 800px){
+    .evento-grid{grid-template-columns:1fr 1fr}
+  }
+  .card{
+    background:#fff;
+    border:1px solid var(--lila-100);
+    border-radius:18px;
+    padding:36px 24px;
+    box-shadow:0 10px 30px rgba(90,60,130,.08);
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";
+    position:absolute;inset:0;
+    background:
+      radial-gradient(circle at 100% 0%, rgba(142,102,189,.08), transparent 50%),
+      radial-gradient(circle at 0% 100%, rgba(184,155,94,.06), transparent 50%);
+    pointer-events:none;
+  }
+  .card .icono{
+    width:52px;height:52px;
+    margin:0 auto 12px;
+    display:flex;align-items:center;justify-content:center;
+    border:1px solid var(--lila-300);
+    border-radius:50%;
+    color:var(--lila-600);
+  }
+  .card h3{
+    font-family:'Great Vibes', cursive;
+    font-size:2rem;
+    font-weight:400;
+    color:var(--lila-700);
+    margin-bottom:4px;
+  }
+  .card .lugar{
+    font-weight:600;
+    font-size:1.15rem;
+    color:var(--texto);
+    margin:10px 0 4px;
+  }
+  .card .hora{
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.25em;
+    text-transform:uppercase;
+    font-size:.78rem;
+    color:var(--lila-600);
+    margin:8px 0 18px;
+  }
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.2em;
+    text-transform:uppercase;
+    font-size:.72rem;
+    padding:12px 22px;
+    border-radius:999px;
+    text-decoration:none;
+    transition:all .25s ease;
+    border:1px solid transparent;
+    cursor:pointer;
+  }
+  .btn-primario{
+    background:var(--lila-600);
+    color:#fff;
+    box-shadow:0 6px 18px rgba(116,78,162,.35);
+  }
+  .btn-primario:hover{background:var(--lila-700);transform:translateY(-2px)}
+  .btn-secundario{
+    background:transparent;
+    color:var(--lila-700);
+    border-color:var(--lila-400);
+  }
+  .btn-secundario:hover{background:var(--lila-50)}
+  .btn-wa{
+    background:#25D366;
+    color:#fff;
+    box-shadow:0 8px 22px rgba(37,211,102,.35);
+  }
+  .btn-wa:hover{background:#1eb858;transform:translateY(-2px)}
+
+  /* ================== DRESS CODE ================== */
+  .dress{
+    background:linear-gradient(180deg, #d9c2ec 0%, #c3a2e0 100%);
+    color:#fff;
+  }
+  .dress h2.titulo, .dress .subtitulo{color:#fff}
+  .dress .subtitulo{opacity:.85}
+  .dress p{
+    max-width:520px;margin:0 auto;
+    font-size:1.15rem;
+  }
+  .dress .etiqueta{
+    display:inline-block;margin-top:18px;
+    font-family:'Montserrat', sans-serif;
+    letter-spacing:.45em;
+    text-transform:uppercase;
+    font-size:1rem;
+    padding:14px 28px;
+    border-top:1px solid rgba(255,255,255,.6);
+    border-bottom:1px solid rgba(255,255,255,.6);
+  }
+  .paleta{
+    display:flex;justify-content:center;gap:10px;margin-top:26px;
+  }
+  .paleta span{
+    width:32px;height:32px;border-radius:50%;
+    border:2px solid rgba(255,255,255,.8);
+    box-shadow:0 4px 10px rgba(0,0,0,.1);
+  }
+
+  /* ================== REGALOS ================== */
+  .regalos{background:var(--crema)}
+  .regalos p{max-width:520px;margin:0 auto 20px;font-size:1.1rem}
+
+  /* ================== QR / PASE ================== */
+  .pase{
+    background:linear-gradient(180deg, #ece0f6 0%, #f6f1fb 100%);
+  }
+  .qr-wrap{
+    background:#fff;
+    border-radius:18px;
+    padding:28px;
+    display:inline-block;
+    box-shadow:0 12px 34px rgba(90,60,130,.18);
+    border:1px solid var(--lila-100);
+    margin-top:16px;
+  }
+  #qrcode{display:flex;justify-content:center}
+  #qrcode img, #qrcode canvas{border-radius:8px}
+  .pase .aviso{
+    margin-top:20px;
+    font-family:'Montserrat', sans-serif;
+    font-size:.8rem;
+    letter-spacing:.1em;
+    color:var(--lila-700);
+    max-width:420px;margin-left:auto;margin-right:auto;
+  }
+  .pase .pases-num{
+    font-family:'Cormorant Garamond', serif;
+    font-weight:600;
+    font-size:1.2rem;
+    color:var(--lila-700);
+    margin-top:12px;
+  }
+
+  /* ================== RSVP ================== */
+  .rsvp{
+    background:linear-gradient(180deg, #c3a2e0 0%, #a782cf 100%);
+    color:#fff;
+  }
+  .rsvp h2.titulo, .rsvp .subtitulo{color:#fff}
+  .rsvp p{max-width:560px;margin:0 auto 22px;font-size:1.1rem}
+  .rsvp .tel{
+    font-family:'Cormorant Garamond', serif;
+    font-size:1.5rem;
+    letter-spacing:.1em;
+    margin:10px 0 22px;
+    font-weight:500;
+  }
+
+  /* ================== FOOTER ================== */
+  footer{
+    background:var(--lila-800);
+    color:#ece0f6;
+    text-align:center;
+    padding:40px 20px;
+  }
+  footer .firma{
+    font-family:'Great Vibes', cursive;
+    font-size:2.2rem;
+    color:#fff;
+  }
+  footer .nota{
+    font-family:'Montserrat', sans-serif;
+    font-size:.72rem;
+    letter-spacing:.25em;
+    text-transform:uppercase;
+    opacity:.7;
+    margin-top:10px;
+  }
+
+  /* Animaciones entrada */
+  .reveal{
+    opacity:0;
+    transform:translateY(24px);
+    transition:opacity .9s ease, transform .9s ease;
+  }
+  .reveal.visible{opacity:1;transform:translateY(0)}
+
+  @media (max-width: 520px){
+    .countdown .box{min-width:68px;padding:14px 10px}
+    .countdown .num{font-size:1.8rem}
+    section{padding:56px 18px}
+    .card{padding:30px 20px}
+  }
+</style>
+</head>
+<body>
+
+<!-- Destellos decorativos -->
+<svg class="sparkle" style="top:8%;left:6%;width:40px" viewBox="0 0 24 24" fill="#8e66bd"><path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>
+<svg class="sparkle" style="top:24%;right:8%;width:28px" viewBox="0 0 24 24" fill="#c3a2e0"><path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>
+<svg class="sparkle" style="bottom:12%;left:10%;width:34px" viewBox="0 0 24 24" fill="#a782cf"><path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <div class="kicker">Mis XV Años</div>
+  <h1>Ximena</h1>
+  <div class="xv">· Q U I N C E · A Ñ O S ·</div>
+  <div class="fecha">25 · JULIO · 2026</div>
+</section>
+
+<!-- ============ INTRO ============ -->
+<section class="intro reveal">
+  <div class="ornament">~ Con la bendición de Dios ~</div>
+  <p class="frase">«Hay momentos en la vida que merecen ser celebrados con quienes llevamos en el corazón.»</p>
+
+  <div class="divider">
+    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l1.5 6.5L20 10l-6.5 1.5L12 18l-1.5-6.5L4 10l6.5-1.5z"/></svg>
+  </div>
+
+  <div class="padres">Mis Padres</div>
+  <div class="nombres">Christian Morales <span style="color:var(--lila-500)">&</span> Jessica Delgado</div>
+  <p style="margin-top:22px;max-width:520px;margin-left:auto;margin-right:auto;font-size:1.1rem;">
+    tienen el honor de invitarte a celebrar mis <em>XV años</em>.
+  </p>
+</section>
+
+<!-- ============ CONTADOR ============ -->
+<section class="contador reveal">
+  <h2 class="titulo">Faltan</h2>
+  <div class="subtitulo">Para el gran día</div>
+  <div class="countdown" id="countdown" aria-live="polite">
+    <div class="box"><div class="num" id="cd-d">--</div><div class="lbl">Días</div></div>
+    <div class="box"><div class="num" id="cd-h">--</div><div class="lbl">Horas</div></div>
+    <div class="box"><div class="num" id="cd-m">--</div><div class="lbl">Minutos</div></div>
+    <div class="box"><div class="num" id="cd-s">--</div><div class="lbl">Segundos</div></div>
+  </div>
+</section>
+
+<!-- ============ EVENTOS ============ -->
+<section class="eventos reveal">
+  <h2 class="titulo">La Celebración</h2>
+  <div class="subtitulo">Sábado 25 de Julio 2026</div>
+
+  <div class="evento-grid" style="margin-top:30px">
+
+    <div class="card">
+      <div class="icono">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 21h18"/><path d="M5 21V10l7-5 7 5v11"/><path d="M10 21v-6h4v6"/><path d="M12 3v2"/>
+        </svg>
+      </div>
+      <h3>Misa de Acción de Gracias</h3>
+      <div class="lugar">Catedral</div>
+      <div class="hora">Horario por confirmar</div>
+      <a class="btn btn-secundario" href="https://maps.app.goo.gl/9rDZaMtj4Z449uBm8" target="_blank" rel="noopener">
+        Ver Ubicación
+      </a>
+    </div>
+
+    <div class="card">
+      <div class="icono">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3v7a6 6 0 0 0 12 0V3"/><path d="M6 21h12"/><path d="M12 16v5"/>
+        </svg>
+      </div>
+      <h3>Recepción</h3>
+      <div class="lugar">Salón de Eventos</div>
+      <div class="hora">Horario por confirmar</div>
+      <a class="btn btn-primario" href="https://maps.app.goo.gl/myptFvT3rrARB2kDA" target="_blank" rel="noopener">
+        Ver Ubicación
+      </a>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ DRESS CODE ============ -->
+<section class="dress reveal">
+  <h2 class="titulo">Código de Vestimenta</h2>
+  <div class="subtitulo">Dress Code</div>
+  <span class="etiqueta">Etiqueta Formal</span>
+  <p style="margin-top:22px">Te pedimos acompañarnos con tu mejor atuendo formal. Se sugiere reservar el color lila para la quinceañera.</p>
+  <div class="paleta" aria-hidden="true">
+    <span style="background:#f6f1fb"></span>
+    <span style="background:#d9c2ec"></span>
+    <span style="background:#a782cf"></span>
+    <span style="background:#744ea2"></span>
+    <span style="background:#3f2a5d"></span>
+  </div>
+</section>
+
+<!-- ============ MESA DE REGALOS ============ -->
+<section class="regalos reveal">
+  <h2 class="titulo">Mesa de Regalos</h2>
+  <div class="subtitulo">Tu presencia es el mejor regalo</div>
+  <p>Si deseas obsequiarle a Ximena un detalle, hemos habilitado una mesa de regalos en Liverpool.</p>
+  <a class="btn btn-primario" href="https://www.liverpool.com.mx/tienda/mesa-de-regalos/" target="_blank" rel="noopener">
+    Ver Mesa en Liverpool
+  </a>
+  <p style="margin-top:14px;font-size:.95rem;color:var(--lila-600)">
+    <em>Número de mesa: por confirmar</em>
+  </p>
+</section>
+
+<!-- ============ PASE / QR ============ -->
+<section class="pase reveal">
+  <h2 class="titulo">Pase de Acceso</h2>
+  <div class="subtitulo">Preséntalo en la entrada</div>
+
+  <div class="qr-wrap">
+    <div id="qrcode"></div>
+  </div>
+
+  <div class="pases-num">Pases reservados: <span id="pases">2</span></div>
+  <p class="aviso">Este código QR es tu pase personal. Te pedimos mostrarlo (impreso o en tu celular) al ingresar al evento. No transferible.</p>
+</section>
+
+<!-- ============ RSVP ============ -->
+<section class="rsvp reveal">
+  <h2 class="titulo">Confirma tu Asistencia</h2>
+  <div class="subtitulo">RSVP · Antes del 11 de Julio</div>
+  <p>Para nosotros es muy importante contar contigo. Por favor confirma tu asistencia vía WhatsApp.</p>
+  <div class="tel">+52 618 229 7167</div>
+  <a class="btn btn-wa" id="btn-wa" href="#" target="_blank" rel="noopener">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <path d="M20.52 3.48A11.94 11.94 0 0 0 12.04 0C5.5 0 .2 5.3.2 11.84c0 2.08.55 4.11 1.58 5.9L0 24l6.44-1.69a11.84 11.84 0 0 0 5.6 1.42h.01c6.55 0 11.87-5.3 11.87-11.84 0-3.17-1.23-6.15-3.4-8.41zM12.05 21.5h-.01a9.66 9.66 0 0 1-4.92-1.35l-.35-.21-3.82 1 1.02-3.72-.23-.38a9.66 9.66 0 0 1-1.48-5.14c0-5.35 4.36-9.7 9.72-9.7a9.66 9.66 0 0 1 9.7 9.7c0 5.36-4.35 9.8-9.63 9.8zm5.52-7.3c-.3-.15-1.77-.87-2.05-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.88-.78-1.48-1.75-1.65-2.05-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.03-.52-.08-.15-.67-1.62-.92-2.22-.24-.58-.48-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.05 1.02-1.05 2.49 0 1.47 1.08 2.89 1.23 3.09.15.2 2.12 3.24 5.14 4.54.72.31 1.28.5 1.72.64.72.23 1.38.2 1.9.12.58-.09 1.77-.72 2.02-1.42.25-.7.25-1.29.17-1.42-.07-.13-.27-.2-.57-.35z"/>
+    </svg>
+    Confirmar por WhatsApp
+  </a>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<footer>
+  <div class="firma">~ Ximena ~</div>
+  <div class="nota">25 · 07 · 2026</div>
+</footer>
+
+<script>
+  /* ========== CONTADOR ========== */
+  const target = new Date('2026-07-25T19:00:00-06:00').getTime();
+  const el = {
+    d: document.getElementById('cd-d'),
+    h: document.getElementById('cd-h'),
+    m: document.getElementById('cd-m'),
+    s: document.getElementById('cd-s'),
+  };
+  function pad(n){return String(n).padStart(2,'0')}
+  function tick(){
+    const now = Date.now();
+    let diff = target - now;
+    if(diff < 0){
+      el.d.textContent='00';el.h.textContent='00';el.m.textContent='00';el.s.textContent='00';
+      document.querySelector('.contador h2').textContent='¡Hoy es el día!';
+      return;
+    }
+    const d = Math.floor(diff/86400000); diff%=86400000;
+    const h = Math.floor(diff/3600000); diff%=3600000;
+    const m = Math.floor(diff/60000); diff%=60000;
+    const s = Math.floor(diff/1000);
+    el.d.textContent=pad(d); el.h.textContent=pad(h); el.m.textContent=pad(m); el.s.textContent=pad(s);
+  }
+  tick(); setInterval(tick, 1000);
+
+  /* ========== WHATSAPP ========== */
+  const tel = '526182297167';
+  const msg = encodeURIComponent('¡Hola! Confirmo mi asistencia a los XV años de Ximena el 25 de julio de 2026. 💜');
+  document.getElementById('btn-wa').href = `https://wa.me/${tel}?text=${msg}`;
+
+  /* ========== QR ========== */
+  // Personalizable: cambia el invitado / número de pases en el query string
+  // Ejemplo: index.html?invitado=Familia+Lopez&pases=4
+  const params = new URLSearchParams(location.search);
+  const invitado = params.get('invitado') || 'Invitado Especial';
+  const pases = params.get('pases') || '2';
+  document.getElementById('pases').textContent = pases;
+
+  const qrData = JSON.stringify({
+    evento: 'XV Ximena',
+    fecha: '2026-07-25',
+    invitado: invitado,
+    pases: Number(pases),
+    id: 'XIM-' + Math.random().toString(36).slice(2,8).toUpperCase()
+  });
+  new QRCode(document.getElementById('qrcode'), {
+    text: qrData,
+    width: 200,
+    height: 200,
+    colorDark: '#5a3c82',
+    colorLight: '#ffffff',
+    correctLevel: QRCode.CorrectLevel.H
+  });
+
+  /* ========== REVEAL ON SCROLL ========== */
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach(e=>{
+      if(e.isIntersecting){ e.target.classList.add('visible'); io.unobserve(e.target); }
+    });
+  }, {threshold:.15});
+  document.querySelectorAll('.reveal').forEach(s=>io.observe(s));
+</script>
+</body>
+</html>
