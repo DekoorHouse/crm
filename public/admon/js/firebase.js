@@ -67,20 +67,35 @@ export function initFirebase(onLoginSuccess) {
     });
 
     // Listener para el formulario de login
+    const ALLOWED_ADMIN_EMAIL = 'admin@dekoor.com';
+
     loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         loginButton.disabled = true;
         loginError.textContent = '';
 
         try {
+            // Check client-side: solo el email autorizado puede intentar
+            if (loginEmail.value.trim().toLowerCase() !== ALLOWED_ADMIN_EMAIL) {
+                loginError.textContent = 'Usuario no autorizado.';
+                return;
+            }
+
             const cred = await signInWithEmailAndPassword(auth, loginEmail.value, loginPassword.value);
             // Crear session cookie en el servidor para protección server-side
             const idToken = await cred.user.getIdToken();
-            await fetch('/api/admin/session-login', {
+            const res = await fetch('/api/admin/session-login', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ idToken })
             });
+            if (res.status === 403) {
+                // El server rechazó — cerrar sesión también en cliente
+                const { signOut } = await import("https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js");
+                await signOut(auth);
+                loginError.textContent = 'Usuario no autorizado.';
+                return;
+            }
             // onAuthStateChanged se encargará del resto
         } catch (error) {
             console.error("Error de inicio de sesión:", error.code, error.message);

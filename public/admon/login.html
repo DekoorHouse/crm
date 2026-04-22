@@ -90,22 +90,34 @@
       togglePassword.setAttribute('aria-label', isPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
     });
 
+    const ALLOWED_ADMIN_EMAIL = 'admin@dekoor.com';
+
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       loginBtn.disabled = true;
       errorMsg.textContent = '';
 
       try {
+        // Check client-side: solo el email autorizado puede intentar
+        if (emailInput.value.trim().toLowerCase() !== ALLOWED_ADMIN_EMAIL) {
+          errorMsg.textContent = 'Usuario no autorizado.';
+          return;
+        }
+
         const cred = await signInWithEmailAndPassword(auth, emailInput.value, passwordInput.value);
         const idToken = await cred.user.getIdToken();
 
-        // Crear session cookie en el servidor
+        // Crear session cookie en el servidor (doble verificación server-side)
         const res = await fetch('/api/admin/session-login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ idToken })
         });
 
+        if (res.status === 403) {
+          errorMsg.textContent = 'Usuario no autorizado.';
+          return;
+        }
         if (!res.ok) throw new Error('Error de sesión');
 
         // Redirigir al panel admin

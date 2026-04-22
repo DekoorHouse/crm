@@ -58,12 +58,23 @@ app.use('/auth/facebook', require('./facebookAuth'));
 app.use(cookieParser());
 
 // --- SESSION AUTH PARA /admon/ ---
+// Único email autorizado para el panel admon. Cualquier otro usuario es rechazado.
+const ALLOWED_ADMIN_EMAIL = (process.env.ADMIN_EMAIL || 'admin@dekoor.com').toLowerCase();
+
 // Crear session cookie a partir de Firebase ID token
 app.post('/api/admin/session-login', async (req, res) => {
     const idToken = req.body.idToken;
     if (!idToken) return res.status(400).json({ error: 'Token requerido' });
     try {
-        // Verificar el token y crear session cookie (5 días)
+        // Verificar el token y extraer el email
+        const decoded = await admin.auth().verifyIdToken(idToken);
+        const email = (decoded.email || '').toLowerCase();
+        if (email !== ALLOWED_ADMIN_EMAIL) {
+            console.warn('Intento de login no autorizado:', decoded.email);
+            return res.status(403).json({ error: 'Usuario no autorizado para el panel admon' });
+        }
+
+        // Crear session cookie (5 días)
         const expiresIn = 5 * 24 * 60 * 60 * 1000;
         const sessionCookie = await admin.auth().createSessionCookie(idToken, { expiresIn });
         res.cookie('__session', sessionCookie, {
@@ -98,8 +109,13 @@ app.use('/admon', async (req, res, next) => {
         return res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'login.html'));
     }
     try {
-        await admin.auth().verifySessionCookie(sessionCookie, true);
-        next(); // Cookie válida → continuar
+        const decoded = await admin.auth().verifySessionCookie(sessionCookie, true);
+        // Doble verificación: solo el email autorizado puede pasar
+        if ((decoded.email || '').toLowerCase() !== ALLOWED_ADMIN_EMAIL) {
+            res.clearCookie('__session', { path: '/' });
+            return res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'login.html'));
+        }
+        next(); // Cookie válida y email autorizado → continuar
     } catch (error) {
         res.clearCookie('__session', { path: '/' });
         return res.sendFile(path.join(__dirname, '..', 'public', 'admon', 'login.html'));
