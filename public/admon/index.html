@@ -69,7 +69,12 @@
               </div>
               <div style="margin-bottom: 8px;">
                   <label for="login-password" style="display: block; text-align: left; margin-bottom: 8px; font-weight: 600; font-size: 14px; color: var(--text-secondary);">CONTRASEÑA</label>
-                  <input type="password" id="login-password" required placeholder="••••••••" class="modal-input" style="width: 100%;">
+                  <div style="position: relative;">
+                      <input type="password" id="login-password" required placeholder="••••••••" class="modal-input" style="width: 100%; padding-right: 44px;">
+                      <button type="button" id="toggle-password" aria-label="Mostrar contraseña" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 6px; display: flex; align-items: center;">
+                          <i class="fas fa-eye" id="toggle-password-icon"></i>
+                      </button>
+                  </div>
               </div>
               <div id="login-error-message" style="color: var(--danger); margin-top: 12px; font-size: 13px; font-weight: 500; min-height: 1.2em;"></div>
               <button type="submit" id="login-button" class="btn" style="width: 100%; margin-top: 24px; padding: 14px;">Ingresar al Panel <i class="fas fa-arrow-right" style="margin-left: 8px;"></i></button>

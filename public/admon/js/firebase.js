@@ -34,6 +34,19 @@ export function initFirebase(onLoginSuccess) {
     const loginError = document.getElementById('login-error-message');
     const logoutBtn = document.getElementById('logout-btn');
 
+    // Toggle visibilidad de contraseña
+    const togglePassword = document.getElementById('toggle-password');
+    const togglePasswordIcon = document.getElementById('toggle-password-icon');
+    if (togglePassword && togglePasswordIcon && loginPassword) {
+        togglePassword.addEventListener('click', () => {
+            const isPassword = loginPassword.type === 'password';
+            loginPassword.type = isPassword ? 'text' : 'password';
+            togglePasswordIcon.classList.toggle('fa-eye', !isPassword);
+            togglePasswordIcon.classList.toggle('fa-eye-slash', isPassword);
+            togglePassword.setAttribute('aria-label', isPassword ? 'Ocultar contraseña' : 'Mostrar contraseña');
+        });
+    }
+
     let appInitialized = false;
 
     // Listener de estado de autenticación
