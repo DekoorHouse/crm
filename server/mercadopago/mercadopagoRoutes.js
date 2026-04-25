@@ -787,15 +787,28 @@ router.post('/oxxo/send-to-customer', async (req, res) => {
 
         const venceTxt = o.expirationDate
             ? new Date(o.expirationDate.toDate ? o.expirationDate.toDate() : o.expirationDate)
-                .toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+                .toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
             : '';
 
         const firstName = (o.customerName || '').split(' ')[0];
+        const greeting = firstName && firstName !== 'Cliente' ? `*${firstName}*` : 'amig@';
+        const montoFmt = Number(o.total).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
         const caption = [
-            `Hola${firstName ? ' ' + firstName : ''}, aquí está tu referencia para pagar en OXXO 🏪`,
-            `Monto: $${Number(o.total).toLocaleString('es-MX')} MXN${venceTxt ? ' · Vence ' + venceTxt : ''}`,
-            `Muestra esta imagen en caja. Te aviso cuando se acredite. ¡Gracias!`
-        ].join('\n');
+            `¡Hola ${greeting}! 👋`,
+            ``,
+            `Aquí tienes tu referencia para pagar en *OXXO* 🏪`,
+            ``,
+            `💰 *Monto:* $${montoFmt} MXN`,
+            venceTxt ? `📅 *Vence:* ${venceTxt}` : '',
+            ``,
+            `📲 Solo *muestra esta imagen al cajero* — la escanea y listo. ¡No necesitas imprimir nada!`,
+            ``,
+            `✅ En cuanto se acredite tu pago te aviso por aquí mismo.`,
+            ``,
+            `¡Gracias por tu compra! 💚`,
+            `_— Dekoor_`
+        ].filter(Boolean).join('\n');
 
         const { sendAdvancedWhatsAppMessage } = require('../services');
         await sendAdvancedWhatsAppMessage(phone, {
