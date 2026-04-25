@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 
@@ -2185,6 +2185,80 @@ router.get('/kpi/profitability', async (req, res) => {
         });
     } catch (err) {
         console.error('[PROFITABILITY] Error:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+
+// --- Endpoint POST /api/kpi/profitability/ask (Q&A sobre los datos del dashboard) ---
+// Recibe { question, snapshot } donde snapshot es la respuesta del endpoint de profitability.
+// Llama a Gemini Pro con un prompt enfocado en analizar el dataset y responder.
+router.post('/kpi/profitability/ask', async (req, res) => {
+    try {
+        const { question, snapshot, history } = req.body || {};
+        if (!question || typeof question !== 'string') {
+            return res.status(400).json({ success: false, message: 'Falta el campo question.' });
+        }
+        if (!snapshot || typeof snapshot !== 'object') {
+            return res.status(400).json({ success: false, message: 'Falta el snapshot de datos.' });
+        }
+
+        const systemInstruction = `Eres un analista de marketing experto que ayuda a Dekoor (negocio de lámparas personalizadas vendidas por WhatsApp desde anuncios de Meta Ads) a interpretar sus métricas de rentabilidad.
+
+CONTEXTO DE NEGOCIO:
+- Producto: lámparas personalizadas a $650 MXN cada una.
+- Costo unitario: $70 producto + $80 envío fijo (envío no escala con cantidad).
+- El cliente paga después de ver una foto del producto con su nombre personalizado.
+- Estatus que cuentan como pagado: "Pagado" y "Fabricar".
+- El evento Purchase a Meta se dispara cuando el estatus pasa a "Fabricar".
+- Rango promedio lead → pago: 1-7 días.
+- Atribución: cada pedido se asigna al ad MÁS RECIENTE del contacto antes del pedido.
+- El tracking de atribución es confiable desde enero 2026.
+
+REGLAS DE RESPUESTA:
+- Responde en español, conciso y directo (máximo 4-6 oraciones a menos que pidan detalle).
+- Usa números EXACTOS del dataset que recibes. No inventes ni redondees agresivamente.
+- Si la pregunta no se puede responder con los datos actuales, dilo claramente y di qué dato faltaría.
+- Cuando aplique, da recomendaciones accionables (qué ad escalar, cuál pausar, qué probar).
+- No agregues disclaimers como "como modelo de IA" ni "te recomiendo consultar".
+- Cuando hables de un ad/campaña específico, usa su nombre exacto del dataset.
+- Formato: texto plano con viñetas (-) cuando sea útil. NO uses markdown bold ni headers.`;
+
+        // Reducir el snapshot para no mandar payload gigante: top 20 filas + totales + curva
+        const compactSnapshot = {
+            range: snapshot.range,
+            groupBy: snapshot.groupBy,
+            totals: snapshot.totals,
+            pipeline: snapshot.pipeline,
+            histogramaTiempoAPago: snapshot.histogramaTiempoAPago,
+            curvaDiaria: snapshot.curvaDiaria,
+            filas: Array.isArray(snapshot.filas) ? snapshot.filas.slice(0, 30) : [],
+            totalFilas: Array.isArray(snapshot.filas) ? snapshot.filas.length : 0
+        };
+
+        let historyText = '';
+        if (Array.isArray(history) && history.length > 0) {
+            historyText = '\n\nCONVERSACIÓN PREVIA:\n' + history.slice(-6).map(h => {
+                return `Usuario: ${h.q}\nAnalista: ${h.a}`;
+            }).join('\n\n');
+        }
+
+        const prompt = `DATOS DEL DASHBOARD (rango ${compactSnapshot.range?.from} → ${compactSnapshot.range?.to}, agrupado por ${compactSnapshot.groupBy}):
+${JSON.stringify(compactSnapshot, null, 2)}${historyText}
+
+PREGUNTA DEL USUARIO:
+${question}`;
+
+        const result = await askGeminiPro(prompt, systemInstruction);
+
+        res.json({
+            success: true,
+            answer: result.text,
+            model: result.model,
+            tokens: { input: result.inputTokens, output: result.outputTokens }
+        });
+    } catch (err) {
+        console.error('[PROFITABILITY ASK] Error:', err.message);
         res.status(500).json({ success: false, message: err.message });
     }
 });

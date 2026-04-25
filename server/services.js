@@ -547,6 +547,39 @@ function invalidateGeminiCache() {
  * Genera una respuesta de Gemini usando el prompt completo (sin caché).
  * Usado como fallback y para el simulador.
  */
+/**
+ * Genera respuesta usando un modelo Pro (más potente, más lento). Modelo
+ * configurable vía GEMINI_PRO_MODEL (default: gemini-3-pro).
+ * Sin caching ni imágenes — pensado para análisis puntual.
+ */
+async function askGeminiPro(prompt, systemInstruction = null) {
+    if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
+    const model = process.env.GEMINI_PRO_MODEL || 'gemini-3-pro';
+    const apiUrl = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
+    const payload = { contents: [{ parts: [{ text: prompt }] }] };
+    if (systemInstruction) {
+        payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+    }
+    const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+    });
+    if (!response.ok) {
+        const errText = await response.text().catch(() => '');
+        throw new Error(`Gemini Pro (${model}) respondió ${response.status}: ${errText.slice(0, 300)}`);
+    }
+    const result = await response.json();
+    const text = result.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) throw new Error('Gemini Pro no devolvió respuesta.');
+    return {
+        text,
+        model,
+        inputTokens: result.usageMetadata?.promptTokenCount || 0,
+        outputTokens: result.usageMetadata?.candidatesTokenCount || 0
+    };
+}
+
 async function generateGeminiResponse(prompt, imageParts = [], systemInstruction = null) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
     const apiUrl = `${GEMINI_BASE_URL}/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
@@ -1062,7 +1095,8 @@ module.exports = {
     sendMessengerUtilityMessage,
     invalidateGeminiCache,
     getMetaSpend,
-    getPedidoAttribution
+    getPedidoAttribution,
+    askGeminiPro
 };
 
 /**

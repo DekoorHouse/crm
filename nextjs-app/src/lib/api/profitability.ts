@@ -63,3 +63,27 @@ export async function fetchProfitability(opts: {
   }
   return data;
 }
+
+export interface AskResponse {
+  success: true;
+  answer: string;
+  model: string;
+  tokens: { input: number; output: number };
+}
+
+export async function askProfitability(opts: {
+  question: string;
+  snapshot: ProfitabilityResponse;
+  history: { q: string; a: string }[];
+}): Promise<AskResponse> {
+  const res = await fetch(`/api/kpi/profitability/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+  });
+  const data = await res.json();
+  if (!res.ok || !data.success) {
+    throw new Error(data.message || "Error al preguntar a la IA");
+  }
+  return data;
+}

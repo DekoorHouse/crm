@@ -4,9 +4,22 @@ import { useEffect, useState, useMemo, useCallback } from "react";
 import toast from "react-hot-toast";
 import {
   fetchProfitability,
+  askProfitability,
   type ProfitabilityResponse,
   type ProfitabilityRow,
 } from "@/lib/api/profitability";
+
+interface ChatTurn {
+  q: string;
+  a: string;
+}
+
+const SUGGESTED_QUESTIONS = [
+  "¿Qué anuncio debería escalar?",
+  "¿Cuál anuncio está perdiendo dinero?",
+  "¿Cuánto tardo en cobrar en promedio?",
+  "Compara mi mejor y peor anuncio",
+];
 
 type SortKey = "profit" | "spend" | "ingresos" | "pagados" | "roas" | "tasaPago";
 
@@ -55,6 +68,10 @@ export default function RentabilidadPage() {
   const [groupBy, setGroupBy] = useState<"ad" | "campaign">("ad");
   const [sortBy, setSortBy] = useState<SortKey>("profit");
   const [activePreset, setActivePreset] = useState<string>("month");
+  // Chat con Gemini Pro
+  const [chatHistory, setChatHistory] = useState<ChatTurn[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -78,6 +95,42 @@ export default function RentabilidadPage() {
     setActivePreset(id);
     setFrom(p.from());
     setTo(p.to());
+  };
+
+  const askIa = useCallback(
+    async (question: string) => {
+      if (!data || !question.trim() || chatLoading) return;
+      setChatLoading(true);
+      // Optimistic: agregar pregunta al historial vacía
+      setChatHistory((prev) => [...prev, { q: question, a: "" }]);
+      try {
+        const res = await askProfitability({ question, snapshot: data, history: chatHistory });
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { q: question, a: res.answer };
+          return next;
+        });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "Error al preguntar";
+        setChatHistory((prev) => {
+          const next = [...prev];
+          next[next.length - 1] = { q: question, a: `⚠️ ${msg}` };
+          return next;
+        });
+        toast.error(msg);
+      } finally {
+        setChatLoading(false);
+      }
+    },
+    [data, chatHistory, chatLoading]
+  );
+
+  const handleAskSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const q = chatInput.trim();
+    if (!q) return;
+    setChatInput("");
+    askIa(q);
   };
 
   const sortedFilas = useMemo(() => {
@@ -372,6 +425,98 @@ export default function RentabilidadPage() {
                 </table>
               </div>
             </div>
+          </div>
+
+          {/* Chat con Gemini Pro */}
+          <div className="rounded-2xl bg-surface-container-low p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-primary" style={{ fontSize: 20 }}>
+                auto_awesome
+              </span>
+              <h2 className="text-sm font-bold text-on-surface uppercase tracking-wide">
+                Pregúntale a la IA sobre estos datos
+              </h2>
+            </div>
+
+            {/* Sugerencias */}
+            {chatHistory.length === 0 && (
+              <div className="flex flex-wrap gap-2 mb-3">
+                {SUGGESTED_QUESTIONS.map((q) => (
+                  <button
+                    key={q}
+                    onClick={() => askIa(q)}
+                    disabled={chatLoading}
+                    className="text-xs bg-primary/10 text-primary hover:bg-primary/20 px-3 py-1.5 rounded-lg font-medium transition-all disabled:opacity-50"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Historial */}
+            {chatHistory.length > 0 && (
+              <div className="space-y-3 mb-3 max-h-96 overflow-y-auto pr-1">
+                {chatHistory.map((turn, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="flex items-start gap-2">
+                      <span className="material-symbols-outlined text-on-surface-variant flex-shrink-0" style={{ fontSize: 16 }}>
+                        person
+                      </span>
+                      <p className="text-sm text-on-surface flex-1 font-medium">{turn.q}</p>
+                    </div>
+                    <div className="flex items-start gap-2 pl-1">
+                      <span className="material-symbols-outlined text-primary flex-shrink-0" style={{ fontSize: 16 }}>
+                        auto_awesome
+                      </span>
+                      <div className="text-sm text-on-surface flex-1 whitespace-pre-wrap leading-relaxed">
+                        {turn.a || (
+                          <span className="text-on-surface-variant italic">Pensando...</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Input */}
+            <form onSubmit={handleAskSubmit} className="flex items-center gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={(e) => setChatInput(e.target.value)}
+                placeholder="Ej: ¿Qué anuncio me está costando más por pedido?"
+                disabled={chatLoading}
+                className="flex-1 bg-surface-container border border-outline-variant/20 rounded-lg px-4 py-2 text-sm text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:border-primary/50 disabled:opacity-50"
+              />
+              <button
+                type="submit"
+                disabled={chatLoading || !chatInput.trim()}
+                className="bg-primary text-white hover:bg-primary/90 rounded-lg px-4 py-2 text-sm font-semibold transition-all disabled:opacity-50"
+              >
+                {chatLoading ? (
+                  <span className="material-symbols-outlined animate-spin" style={{ fontSize: 16 }}>
+                    progress_activity
+                  </span>
+                ) : (
+                  "Preguntar"
+                )}
+              </button>
+              {chatHistory.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setChatHistory([])}
+                  disabled={chatLoading}
+                  className="text-xs text-on-surface-variant hover:text-on-surface px-2 py-2 disabled:opacity-50"
+                  title="Limpiar conversación"
+                >
+                  <span className="material-symbols-outlined" style={{ fontSize: 16 }}>
+                    refresh
+                  </span>
+                </button>
+              )}
+            </form>
           </div>
         </>
       )}
