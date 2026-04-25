@@ -987,6 +987,64 @@ async function sendConversionEvent(eventName, contactInfo, referralInfo, customD
     }
 }
 
+/**
+ * Resuelve la atribución de un pedido al ad más reciente del contacto antes de cierta fecha.
+ * Busca en la subcolección messages del contacto el último mensaje con adId <= beforeTimestamp.
+ * Si no hay ad reciente, cae al adReferral del contacto. Si tampoco, marca como 'organic'.
+ *
+ * @param {string} contactId - ID del contacto (contacts_whatsapp).
+ * @param {FirebaseFirestore.Timestamp|Date} beforeTimestamp - Cota superior para el ad referral.
+ * @returns {Promise<{ leadDate: FirebaseFirestore.Timestamp|null, attributedAdId: string|null, leadSource: 'ad'|'organic' }>}
+ */
+async function getPedidoAttribution(contactId, beforeTimestamp) {
+    const fallback = { leadDate: null, attributedAdId: null, leadSource: 'organic' };
+    if (!contactId) return fallback;
+
+    const beforeTs = beforeTimestamp instanceof admin.firestore.Timestamp
+        ? beforeTimestamp
+        : admin.firestore.Timestamp.fromDate(beforeTimestamp instanceof Date ? beforeTimestamp : new Date(beforeTimestamp));
+
+    try {
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+
+        // Buscar últimos 200 mensajes <= beforeTimestamp y encontrar el primero con adId.
+        // No usamos where('adId', '!=', null) para no requerir índice compuesto adicional.
+        const msgSnap = await contactRef.collection('messages')
+            .where('timestamp', '<=', beforeTs)
+            .orderBy('timestamp', 'desc')
+            .limit(200)
+            .get();
+
+        for (const doc of msgSnap.docs) {
+            const data = doc.data();
+            if (data.adId) {
+                return {
+                    leadDate: data.timestamp || null,
+                    attributedAdId: String(data.adId),
+                    leadSource: 'ad'
+                };
+            }
+        }
+
+        // Fallback: usar adReferral del contacto si existe (suele ser el primer ad que lo trajo).
+        const contactDoc = await contactRef.get();
+        if (contactDoc.exists) {
+            const ref = contactDoc.data().adReferral;
+            if (ref && ref.source_id) {
+                return {
+                    leadDate: contactDoc.data().createdAt || null,
+                    attributedAdId: String(ref.source_id),
+                    leadSource: 'ad'
+                };
+            }
+        }
+    } catch (err) {
+        console.error(`[ATTRIBUTION] Error resolviendo atribución para ${contactId}:`, err.message);
+    }
+
+    return fallback;
+}
+
 // SE ACTUALIZÓ LA EXPORTACIÓN
 module.exports = {
     handleWholesaleMessage,
@@ -1003,7 +1061,8 @@ module.exports = {
     sendMessengerMessage,
     sendMessengerUtilityMessage,
     invalidateGeminiCache,
-    getMetaSpend
+    getMetaSpend,
+    getPedidoAttribution
 };
 
 /**

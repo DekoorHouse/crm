@@ -16,7 +16,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
-const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend } = require('./services');
+const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution } = require('./services');
 const jtService = require('./jt/jtService');
 
 const router = express.Router();
@@ -4286,6 +4286,19 @@ router.post('/orders', async (req, res) => {
 
         // Añadir el nuevo pedido a la colección 'pedidos'
         const newOrderRef = await db.collection('pedidos').add(nuevoPedido);
+
+        // --- Atribución del pedido al ad más reciente del contacto antes de su creación ---
+        // Se usa para el dashboard de rentabilidad: agrupa por ad y por leadDate (no por createdAt)
+        try {
+            const attribution = await getPedidoAttribution(contactId, new Date());
+            await newOrderRef.update({
+                attributedAdId: attribution.attributedAdId,
+                leadDate: attribution.leadDate,
+                leadSource: attribution.leadSource
+            });
+        } catch (attrErr) {
+            console.error(`[ATTRIBUTION] No se pudo escribir atribución para pedido ${newOrderRef.id}:`, attrErr.message);
+        }
 
         // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
         // El evento Purchase a Meta se envía cuando el estatus cambie a "Fabricar" (corona zafiro)
