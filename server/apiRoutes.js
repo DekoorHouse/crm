@@ -17,6 +17,7 @@ const multer = require('multer');
 const { db, admin, bucket } = require('./config');
 const PRICES = require('./prices');
 const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution } = require('./services');
+const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
 
 const router = express.Router();
@@ -1925,6 +1926,257 @@ router.get('/kpi/daily', async (req, res) => {
     } catch (error) {
         console.error("Error fetching daily KPI:", error);
         res.status(500).json({ success: false, message: 'Error al obtener el gasto publicitario.', error: error.message });
+    }
+});
+
+
+// --- Endpoint GET /api/kpi/profitability (Dashboard de rentabilidad por anuncio/campaña) ---
+// Cruza pedidos atribuidos por leadDate con spend de Meta Ads. Devuelve KPIs, tabla,
+// curva diaria, pipeline y histograma de tiempo a pago en un solo JSON.
+//
+// Query params:
+//   from=YYYY-MM-DD   Fecha inicio (default: 2026-01-01, cuando el tracking empezó a ser confiable)
+//   to=YYYY-MM-DD     Fecha fin (default: hoy)
+//   groupBy=ad        Agrupar por anuncio (default) o campaign
+router.get('/kpi/profitability', async (req, res) => {
+    try {
+        const { from, to } = req.query;
+        const groupBy = (req.query.groupBy === 'campaign') ? 'campaign' : 'ad';
+
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const dateTo = to || todayStr;
+        const dateFrom = from || '2026-01-01';
+
+        const fromTs = admin.firestore.Timestamp.fromDate(new Date(dateFrom + 'T00:00:00'));
+        const toTs = admin.firestore.Timestamp.fromDate(new Date(dateTo + 'T23:59:59.999'));
+
+        const isPaid = (e) => e === 'Pagado' || e === 'Fabricar';
+        const isCancelled = (e) => e === 'Cancelado';
+        const COST_PER_UNIT = 70;
+        const SHIPPING = 80;
+        const ORG_KEY = '__organic__';
+
+        // 1. Pedidos en rango: dos queries (con leadDate + orgánicos por createdAt)
+        const [adQuery, organicQuery] = await Promise.all([
+            db.collection('pedidos').where('leadDate', '>=', fromTs).where('leadDate', '<=', toTs).get(),
+            db.collection('pedidos').where('leadSource', '==', 'organic').where('createdAt', '>=', fromTs).where('createdAt', '<=', toTs).get()
+        ]);
+
+        const seenIds = new Set();
+        const pedidos = [];
+        for (const doc of [...adQuery.docs, ...organicQuery.docs]) {
+            if (seenIds.has(doc.id)) continue;
+            seenIds.add(doc.id);
+            const d = doc.data();
+            pedidos.push({
+                id: doc.id,
+                attributedAdId: d.attributedAdId || null,
+                leadSource: d.leadSource || 'organic',
+                leadDate: d.leadDate || d.createdAt || null,
+                createdAt: d.createdAt || null,
+                confirmedAt: d.confirmedAt || null,
+                estatus: d.estatus || 'Sin estatus',
+                precio: Number(d.precio) || 0,
+                unidades: Array.isArray(d.items) ? Math.max(d.items.length, 1) : 1
+            });
+        }
+
+        // 2. Insights de Meta (ad-level siempre — cubre ambos modos)
+        let adInsights = [];
+        try {
+            adInsights = await metaAdsService.getInsightsByLevel(null, 'ad', dateFrom, dateTo);
+        } catch (metaErr) {
+            console.warn('[PROFITABILITY] No se pudieron obtener insights de Meta:', metaErr.message);
+        }
+
+        // adId -> { campaign_id, campaign_name, ad_name, spend }
+        const adMap = {};
+        for (const r of adInsights) {
+            if (!r.ad_id) continue;
+            adMap[r.ad_id] = {
+                ad_name: r.ad_name,
+                campaign_id: r.campaign_id,
+                campaign_name: r.campaign_name,
+                spend: r.spend
+            };
+        }
+
+        // 3. Spend agrupado por entidad según groupBy
+        const spendByKey = {};
+        const nameByKey = {};
+        const campaignNameByKey = {};
+        for (const r of adInsights) {
+            const key = groupBy === 'campaign' ? r.campaign_id : r.ad_id;
+            if (!key) continue;
+            spendByKey[key] = (spendByKey[key] || 0) + r.spend;
+            nameByKey[key] = groupBy === 'campaign' ? r.campaign_name : r.ad_name;
+            if (groupBy === 'ad') campaignNameByKey[key] = r.campaign_name;
+        }
+
+        // 4. Agregar pedidos por entidad
+        const aggByKey = {};
+        function ensureAgg(key) {
+            if (!aggByKey[key]) {
+                aggByKey[key] = { pedidos: 0, pagados: 0, cancelados: 0, ingresos: 0, costos: 0, daysToPay: [] };
+            }
+            return aggByKey[key];
+        }
+
+        function getKey(p) {
+            if (p.leadSource === 'organic' || !p.attributedAdId) return ORG_KEY;
+            if (groupBy === 'campaign') {
+                return adMap[p.attributedAdId]?.campaign_id || `unknown_campaign_${p.attributedAdId}`;
+            }
+            return p.attributedAdId;
+        }
+
+        const allDaysToPay = [];
+        for (const p of pedidos) {
+            const key = getKey(p);
+            const agg = ensureAgg(key);
+            agg.pedidos++;
+            if (isPaid(p.estatus)) {
+                agg.pagados++;
+                agg.ingresos += p.precio;
+                agg.costos += p.unidades * COST_PER_UNIT + SHIPPING;
+                if (p.confirmedAt && p.leadDate) {
+                    const days = (p.confirmedAt.toMillis() - p.leadDate.toMillis()) / (1000 * 60 * 60 * 24);
+                    if (days >= 0 && days < 90) {
+                        agg.daysToPay.push(days);
+                        allDaysToPay.push(days);
+                    }
+                }
+            } else if (isCancelled(p.estatus)) {
+                agg.cancelados++;
+            }
+        }
+
+        // 5. Filas de la tabla
+        const allKeys = new Set([...Object.keys(aggByKey), ...Object.keys(spendByKey)]);
+        const filas = [];
+        for (const key of allKeys) {
+            const agg = aggByKey[key] || { pedidos: 0, pagados: 0, cancelados: 0, ingresos: 0, costos: 0, daysToPay: [] };
+            const spend = spendByKey[key] || 0;
+            const profit = agg.ingresos - agg.costos - spend;
+            const roas = spend > 0 ? agg.ingresos / spend : null;
+            const tasaPago = agg.pedidos > 0 ? agg.pagados / agg.pedidos : 0;
+            const diasProm = agg.daysToPay.length > 0
+                ? agg.daysToPay.reduce((a, b) => a + b, 0) / agg.daysToPay.length
+                : null;
+
+            let name;
+            let campaignName = null;
+            if (key === ORG_KEY) {
+                name = 'Orgánico';
+            } else if (key.startsWith('unknown_campaign_')) {
+                name = 'Campaña desconocida';
+            } else if (groupBy === 'campaign') {
+                name = nameByKey[key] || `Campaña ${key}`;
+            } else {
+                name = nameByKey[key] || `Ad ${key}`;
+                campaignName = campaignNameByKey[key] || null;
+            }
+
+            filas.push({
+                id: key,
+                name,
+                campaignName,
+                spend: Math.round(spend * 100) / 100,
+                pedidos: agg.pedidos,
+                pagados: agg.pagados,
+                ingresos: agg.ingresos,
+                costos: agg.costos,
+                profit: Math.round(profit * 100) / 100,
+                roas: roas !== null ? Math.round(roas * 100) / 100 : null,
+                tasaPago: Math.round(tasaPago * 1000) / 1000,
+                diasProm: diasProm !== null ? Math.round(diasProm * 10) / 10 : null
+            });
+        }
+        filas.sort((a, b) => b.profit - a.profit);
+
+        // 6. Totales
+        const totals = filas.reduce((acc, r) => ({
+            spend: acc.spend + r.spend,
+            pedidos: acc.pedidos + r.pedidos,
+            pagados: acc.pagados + r.pagados,
+            ingresos: acc.ingresos + r.ingresos,
+            costos: acc.costos + r.costos,
+            profit: acc.profit + r.profit
+        }), { spend: 0, pedidos: 0, pagados: 0, ingresos: 0, costos: 0, profit: 0 });
+        totals.spend = Math.round(totals.spend * 100) / 100;
+        totals.profit = Math.round(totals.profit * 100) / 100;
+        totals.roas = totals.spend > 0 ? Math.round((totals.ingresos / totals.spend) * 100) / 100 : null;
+        totals.tasaPago = totals.pedidos > 0 ? Math.round((totals.pagados / totals.pedidos) * 1000) / 1000 : 0;
+        totals.diasPromedioLeadAPago = allDaysToPay.length > 0
+            ? Math.round((allDaysToPay.reduce((a, b) => a + b, 0) / allDaysToPay.length) * 10) / 10
+            : null;
+
+        // 7. Pipeline pendiente (no pagados ni cancelados, últimos 30d)
+        const pipelineFromTs = admin.firestore.Timestamp.fromDate(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000));
+        const pipelineSnap = await db.collection('pedidos').where('createdAt', '>=', pipelineFromTs).get();
+        const pipelineDocs = pipelineSnap.docs
+            .map(d => d.data())
+            .filter(p => !isPaid(p.estatus) && !isCancelled(p.estatus));
+        const pipelineCount = pipelineDocs.length;
+        const pipelineValue = Math.round(pipelineDocs.reduce((s, p) => s + (Number(p.precio) || 0), 0));
+        const esperadoCobrar = Math.round(pipelineValue * (totals.tasaPago || 0));
+
+        // 8. Curva diaria: spend (Meta) + ingresos/pipeline (pedidos)
+        let dailySpendArr = [];
+        try {
+            dailySpendArr = await metaAdsService.getDailySpend(null, dateFrom, dateTo);
+        } catch (e) {
+            console.warn('[PROFITABILITY] Error en gasto diario:', e.message);
+        }
+        const dailyMap = {};
+        function getOrInitDay(date) {
+            if (!dailyMap[date]) dailyMap[date] = { date, spend: 0, ingresos: 0, pedidos: 0, pagados: 0, pipeline: 0 };
+            return dailyMap[date];
+        }
+        for (const ds of dailySpendArr) getOrInitDay(ds.date).spend = Math.round(ds.spend * 100) / 100;
+        for (const p of pedidos) {
+            const d = p.leadDate || p.createdAt;
+            if (!d) continue;
+            const date = d.toDate().toISOString().slice(0, 10);
+            const day = getOrInitDay(date);
+            day.pedidos++;
+            if (isPaid(p.estatus)) {
+                day.pagados++;
+                day.ingresos += p.precio;
+            } else if (!isCancelled(p.estatus)) {
+                day.pipeline += p.precio;
+            }
+        }
+        const sevenDaysAgoStr = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+        const curvaDiaria = Object.values(dailyMap)
+            .sort((a, b) => a.date.localeCompare(b.date))
+            .map(d => ({ ...d, incompleto: d.date >= sevenDaysAgoStr }));
+
+        // 9. Histograma tiempo a pago
+        const buckets = { '1d': 0, '2d': 0, '3d': 0, '4-7d': 0, '8-14d': 0, '15+d': 0 };
+        for (const days of allDaysToPay) {
+            if (days <= 1) buckets['1d']++;
+            else if (days <= 2) buckets['2d']++;
+            else if (days <= 3) buckets['3d']++;
+            else if (days <= 7) buckets['4-7d']++;
+            else if (days <= 14) buckets['8-14d']++;
+            else buckets['15+d']++;
+        }
+        const histogramaTiempoAPago = Object.entries(buckets).map(([bucket, count]) => ({ bucket, count }));
+
+        res.json({
+            success: true,
+            range: { from: dateFrom, to: dateTo },
+            groupBy,
+            totals,
+            pipeline: { pedidosPendientes: pipelineCount, valorPendiente: pipelineValue, esperadoCobrar },
+            curvaDiaria,
+            histogramaTiempoAPago,
+            filas
+        });
+    } catch (err) {
+        console.error('[PROFITABILITY] Error:', err);
+        res.status(500).json({ success: false, message: err.message });
     }
 });
 

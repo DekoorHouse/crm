@@ -278,6 +278,83 @@ async function getInsights(level, entityId, accountId, { dateFrom, dateTo, field
     return metaGet(path, params, accountId);
 }
 
+/**
+ * Trae insights agrupados por entidad (ad/adset/campaign) en un rango de fechas.
+ * Pagina automáticamente y devuelve un array plano de filas con los IDs/nombres.
+ *
+ * @param {string|null} accountId - Cuenta publicitaria. Si es null usa la default.
+ * @param {'ad'|'adset'|'campaign'} level - Nivel de agrupación.
+ * @param {string} dateFrom - YYYY-MM-DD
+ * @param {string} dateTo - YYYY-MM-DD
+ * @returns {Promise<Array<{spend:number, ad_id?:string, ad_name?:string, adset_id?:string, adset_name?:string, campaign_id?:string, campaign_name?:string}>>}
+ */
+async function getInsightsByLevel(accountId, level, dateFrom, dateTo) {
+    const actId = normalizeAccountId(accountId);
+
+    const fieldsByLevel = {
+        ad: 'spend,impressions,clicks,ad_id,ad_name,adset_id,adset_name,campaign_id,campaign_name',
+        adset: 'spend,impressions,clicks,adset_id,adset_name,campaign_id,campaign_name',
+        campaign: 'spend,impressions,clicks,campaign_id,campaign_name'
+    };
+
+    const fields = fieldsByLevel[level];
+    if (!fields) throw new Error(`Nivel de insights no válido: ${level}`);
+
+    const baseParams = {
+        fields,
+        level,
+        time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
+        limit: 500
+    };
+
+    const allRows = [];
+    let after = null;
+    let safety = 20; // máximo 20 páginas (10k rows)
+    do {
+        const params = { ...baseParams };
+        if (after) params.after = after;
+        const data = await metaGet(`${actId}/insights`, params, accountId);
+        if (Array.isArray(data.data)) allRows.push(...data.data);
+        after = (data.paging && data.paging.next && data.paging.cursors && data.paging.cursors.after) || null;
+        safety--;
+    } while (after && safety > 0);
+
+    // Normalizar spend a número
+    return allRows.map(r => ({ ...r, spend: Number(r.spend) || 0 }));
+}
+
+/**
+ * Trae gasto diario total de la cuenta en un rango.
+ * @returns {Promise<Array<{date:string, spend:number}>>}
+ */
+async function getDailySpend(accountId, dateFrom, dateTo) {
+    const actId = normalizeAccountId(accountId);
+    const baseParams = {
+        fields: 'spend',
+        level: 'account',
+        time_range: JSON.stringify({ since: dateFrom, until: dateTo }),
+        time_increment: 1,
+        limit: 500
+    };
+
+    const allRows = [];
+    let after = null;
+    let safety = 20;
+    do {
+        const params = { ...baseParams };
+        if (after) params.after = after;
+        const data = await metaGet(`${actId}/insights`, params, accountId);
+        if (Array.isArray(data.data)) allRows.push(...data.data);
+        after = (data.paging && data.paging.next && data.paging.cursors && data.paging.cursors.after) || null;
+        safety--;
+    } while (after && safety > 0);
+
+    return allRows.map(r => ({
+        date: r.date_start,
+        spend: Number(r.spend) || 0
+    }));
+}
+
 // ===================== AUDIENCES / TARGETING =====================
 
 async function searchTargeting(query, type = 'adinterest', accountId) {
@@ -311,7 +388,7 @@ module.exports = {
     // Creatives
     listCreatives, getCreative, createCreative, uploadAdImage, getCreativePreview,
     // Insights
-    getInsights,
+    getInsights, getInsightsByLevel, getDailySpend,
     // Audiences
     searchTargeting, listCustomAudiences
 };
