@@ -721,8 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const orderNumber = pedido?.consecutiveOrderNumber ? `DH${pedido.consecutiveOrderNumber}` : '';
         document.getElementById('oxxoResultMonto').textContent = `$${Number(data.amount).toLocaleString('es-MX')} MXN`;
-        document.getElementById('oxxoResultCliente').textContent = data.customerName || orderNumber || '-';
-        document.getElementById('oxxoResultRef').textContent = data.barcodeContent || 'Ver en ficha';
+        document.getElementById('oxxoResultRef').textContent = data.barcodeContent || '-';
 
         let venceTxt = '-';
         if (data.expirationDate) {
@@ -733,40 +732,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         document.getElementById('oxxoResultVence').textContent = venceTxt;
 
+        // Imagen del ticket
+        const imgWrap = document.getElementById('oxxoTicketImageWrap');
+        const imgEl = document.getElementById('oxxoTicketImage');
+        const dlLink = document.getElementById('oxxoTicketDownload');
+        if (data.ticketImageUrl) {
+            imgEl.src = data.ticketImageUrl;
+            dlLink.href = data.ticketImageUrl;
+            imgWrap.style.display = '';
+            dlLink.style.display = '';
+        } else {
+            imgWrap.style.display = 'none';
+            dlLink.style.display = 'none';
+        }
+
         const voucherLink = document.getElementById('oxxoResultVoucherLink');
         voucherLink.href = data.voucherUrl || '#';
         voucherLink.style.display = data.voucherUrl ? '' : 'none';
 
-        // Mensaje pre-armado para WhatsApp
-        const msg = [
-            `Hola${data.customerName ? ' ' + data.customerName.split(' ')[0] : ''}, te comparto los datos de pago para tu pedido ${orderNumber}:`,
-            ``,
-            `🏪 *Pago en OXXO*`,
-            `💰 Monto: $${Number(data.amount).toLocaleString('es-MX')} MXN`,
-            data.barcodeContent ? `🔢 Referencia: ${data.barcodeContent}` : '',
-            venceTxt !== '-' ? `📅 Vence: ${venceTxt}` : '',
-            data.voucherUrl ? `\n📄 Ficha de pago: ${data.voucherUrl}` : '',
-            ``,
-            `Acude a cualquier OXXO con la referencia. En cuanto se acredite el pago te aviso. ¡Gracias!`
-        ].filter(Boolean).join('\n');
-
-        const btnCopiar = document.getElementById('btnCopiarOxxoMsg');
-        btnCopiar.onclick = () => {
-            navigator.clipboard.writeText(msg).then(() => {
-                btnCopiar.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
-                setTimeout(() => { btnCopiar.innerHTML = '<i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp'; }, 2000);
-            });
-        };
-
-        const btnWA = document.getElementById('btnEnviarOxxoWA');
-        btnWA.onclick = () => {
-            let phone = (pedido?.telefono || '').replace(/\D/g, '');
-            if (phone.length === 10) phone = '52' + phone;
-            if (!phone) {
-                alert('Este pedido no tiene teléfono registrado.');
+        // Boton: enviar imagen al cliente directo via WhatsApp API
+        const btnEnviar = document.getElementById('btnEnviarImagenWA');
+        btnEnviar.onclick = async () => {
+            if (!data.ticketImageUrl) {
+                alert('No hay imagen del ticket. Vuelve a generar.');
                 return;
             }
-            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+            const original = btnEnviar.innerHTML;
+            btnEnviar.disabled = true;
+            btnEnviar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+            try {
+                const res = await fetch((window.API_BASE_URL || '') + '/api/mercadopago/oxxo/send-to-customer', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        externalReference: data.externalReference,
+                        customerPhone: pedido?.telefono || ''
+                    })
+                });
+                const j = await res.json();
+                if (!res.ok || !j.success) throw new Error(j.error || 'Error al enviar');
+                btnEnviar.innerHTML = '<i class="fas fa-check"></i> ¡Imagen enviada!';
+                btnEnviar.style.background = '#10b981';
+            } catch (err) {
+                btnEnviar.disabled = false;
+                btnEnviar.innerHTML = original;
+                alert('Error: ' + err.message);
+            }
         };
     }
 

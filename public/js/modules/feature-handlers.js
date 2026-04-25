@@ -1397,22 +1397,25 @@ function showOxxoModal({ contactId, contactName, latestOrder }) {
         <div id="oxxoStep2" style="display:none;">
             <div style="background:#fff8e1;border-left:3px solid #f59e0b;padding:12px;border-radius:8px;margin-bottom:14px;">
                 <div style="font-weight:700;color:#b45309;font-size:0.88rem;">✅ Referencia generada</div>
-                <div style="font-size:0.78rem;color:#666;margin-top:3px;">Compártela por WhatsApp. Te llegará alerta al WhatsApp del admin cuando se acredite (hasta 48h).</div>
+                <div style="font-size:0.78rem;color:#666;margin-top:3px;">Te llegará alerta cuando se acredite (hasta 48h).</div>
+            </div>
+            <div id="oxxoTicketImageWrap" style="text-align:center;margin-bottom:14px;display:none;">
+                <img id="oxxoTicketImage" src="" alt="Ticket OXXO" style="max-width:100%;border-radius:8px;border:1px solid #e5e7eb;">
             </div>
             <div id="oxxoResultBox" style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px;"></div>
             <div style="display:flex;flex-direction:column;gap:8px;">
-                <a id="oxxoVoucherLink" href="#" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#e2231a;color:#fff;padding:12px;border-radius:8px;text-decoration:none;font-weight:700;">
-                    <i class="fas fa-external-link-alt"></i> Ver / imprimir ficha OXXO
+                <button id="oxxoSendImageBtn" style="background:#128c7e;color:#fff;padding:14px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;font-size:1rem;">
+                    <i class="fab fa-whatsapp"></i> Enviar imagen al cliente
+                </button>
+                <a id="oxxoTicketDownload" href="#" download="ticket-oxxo.png" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#f3f4f6;color:#374151;padding:10px;border-radius:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">
+                    <i class="fas fa-download"></i> Descargar imagen
                 </a>
-                <button id="oxxoCopyMsgBtn" style="background:#25d366;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;">
-                    <i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp
-                </button>
-                <button id="oxxoSendChatBtn" style="background:#128c7e;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;">
-                    <i class="fas fa-paper-plane"></i> Enviar al chat actual
-                </button>
+                <a id="oxxoVoucherLink" href="#" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;background:transparent;color:#e2231a;padding:8px;text-decoration:none;font-weight:600;font-size:0.85rem;">
+                    <i class="fas fa-external-link-alt"></i> Ver ficha oficial OXXO
+                </a>
             </div>
             <div style="margin-top:12px;text-align:center;">
-                <button id="oxxoCloseBtn" style="background:#f3f4f6;color:#374151;padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;">Listo</button>
+                <button id="oxxoCloseBtn" style="background:#f3f4f6;color:#374151;padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;">Cerrar</button>
             </div>
         </div>
     `;
@@ -1483,18 +1486,27 @@ function showOxxoModal({ contactId, contactName, latestOrder }) {
             } catch {}
         }
 
+        // Mostrar imagen del ticket si esta disponible
+        const imgWrap = card.querySelector('#oxxoTicketImageWrap');
+        const imgEl = card.querySelector('#oxxoTicketImage');
+        const dlLink = card.querySelector('#oxxoTicketDownload');
+        if (data.ticketImageUrl) {
+            imgEl.src = data.ticketImageUrl;
+            dlLink.href = data.ticketImageUrl;
+            imgWrap.style.display = '';
+        } else {
+            imgWrap.style.display = 'none';
+            dlLink.style.display = 'none';
+        }
+
         card.querySelector('#oxxoResultBox').innerHTML = `
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;">
                 <span style="color:#888;">Monto</span>
                 <strong style="color:#e2231a;">$${Number(monto).toLocaleString('es-MX')} MXN</strong>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;">
-                <span style="color:#888;">Cliente</span>
-                <span style="font-weight:600;">${nombre || '-'}</span>
-            </div>
             <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;align-items:center;gap:8px;flex-wrap:wrap;">
                 <span style="color:#888;">Referencia</span>
-                <span style="font-family:'Courier New',monospace;font-weight:700;word-break:break-all;text-align:right;">${data.barcodeContent || 'Ver ficha'}</span>
+                <span style="font-family:'Courier New',monospace;font-weight:700;word-break:break-all;text-align:right;font-size:0.78rem;">${data.barcodeContent || '-'}</span>
             </div>
             <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.85rem;">
                 <span style="color:#888;">Vence</span>
@@ -1509,47 +1521,35 @@ function showOxxoModal({ contactId, contactName, latestOrder }) {
             voucherLink.style.display = 'none';
         }
 
-        // Mensaje pre-armado
-        const firstName = nombre ? nombre.split(' ')[0] : '';
-        const msg = [
-            `Hola${firstName ? ' ' + firstName : ''}, te comparto los datos de pago${orderNumber ? ' para tu pedido ' + orderNumber : ''}:`,
-            ``,
-            `🏪 *Pago en OXXO*`,
-            `💰 Monto: $${Number(monto).toLocaleString('es-MX')} MXN`,
-            data.barcodeContent ? `🔢 Referencia: ${data.barcodeContent}` : '',
-            venceTxt !== '-' ? `📅 Vence: ${venceTxt}` : '',
-            data.voucherUrl ? `\n📄 Ficha de pago: ${data.voucherUrl}` : '',
-            ``,
-            `Acude a cualquier OXXO con la referencia. En cuanto se acredite el pago te aviso. ¡Gracias!`
-        ].filter(Boolean).join('\n');
-
-        const btnCopy = card.querySelector('#oxxoCopyMsgBtn');
-        btnCopy.addEventListener('click', () => {
-            navigator.clipboard.writeText(msg).then(() => {
-                btnCopy.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
-                setTimeout(() => { btnCopy.innerHTML = '<i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp'; }, 2000);
-            });
-        });
-
-        // Enviar al chat actual usando el input de mensaje
-        const btnSendChat = card.querySelector('#oxxoSendChatBtn');
-        btnSendChat.addEventListener('click', () => {
-            const input = document.getElementById('message-input') || document.querySelector('textarea[placeholder*="mensaje" i]');
-            if (input) {
-                if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
-                    input.value = msg;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                } else {
-                    input.innerText = msg;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                }
-                input.focus();
-                close();
-                showError('Mensaje pegado en el chat. Revisa y envía.', 'success');
-            } else {
-                navigator.clipboard.writeText(msg).then(() => {
-                    showError('No encontré el input. Mensaje copiado al portapapeles.', 'success');
+        // BOTON PRINCIPAL: enviar imagen al cliente directo via WhatsApp API
+        const btnSendImage = card.querySelector('#oxxoSendImageBtn');
+        btnSendImage.addEventListener('click', async () => {
+            if (!data.ticketImageUrl) {
+                showError('No hay imagen del ticket. Vuelve a generar.');
+                return;
+            }
+            const original = btnSendImage.innerHTML;
+            btnSendImage.disabled = true;
+            btnSendImage.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Enviando...';
+            try {
+                const res = await fetch(`${API_BASE_URL}/api/mercadopago/oxxo/send-to-customer`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        externalReference: data.externalReference,
+                        customerPhone: contactId
+                    })
                 });
+                const j = await res.json();
+                if (!res.ok || !j.success) throw new Error(j.error || 'Error al enviar');
+                btnSendImage.innerHTML = '<i class="fas fa-check"></i> ¡Imagen enviada!';
+                btnSendImage.style.background = '#10b981';
+                showError('Imagen enviada al cliente por WhatsApp.', 'success');
+                setTimeout(close, 1500);
+            } catch (err) {
+                btnSendImage.disabled = false;
+                btnSendImage.innerHTML = original;
+                showError('Error: ' + err.message);
             }
         });
 

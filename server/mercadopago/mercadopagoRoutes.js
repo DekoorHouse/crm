@@ -1,10 +1,12 @@
 const express = require('express');
 const axios = require('axios');
 const router = express.Router();
-const { db } = require('../config');
+const { db, bucket } = require('../config');
 const { markCartConverted } = require('../carritos/carritosRoutes');
 
 const crypto = require('crypto');
+const bwipjs = require('bwip-js');
+const sharp = require('sharp');
 
 const MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN;
 const MP_API = 'https://api.mercadopago.com';
@@ -211,6 +213,110 @@ router.post('/checkout', async (req, res) => {
 });
 
 // =====================================================================
+// Genera una imagen tipo "ticket" con los datos del pago OXXO + codigo
+// de barras Code128. La sube a Firebase Storage y devuelve la URL
+// publica para mandarla al cliente por WhatsApp como imagen.
+// =====================================================================
+async function generateOxxoTicketImage({ barcodeContent, amount, customerName, expirationDate, orderNumber }) {
+    if (!barcodeContent) return null;
+
+    try {
+        // 1) Generar PNG del codigo de barras (Code128)
+        const barcodePng = await bwipjs.toBuffer({
+            bcid: 'code128',
+            text: barcodeContent,
+            scale: 3,
+            height: 14,
+            includetext: true,
+            textxalign: 'center',
+            textsize: 9,
+            backgroundcolor: 'FFFFFF',
+            paddingwidth: 10,
+            paddingheight: 6
+        });
+        const barcodeMeta = await sharp(barcodePng).metadata();
+
+        // 2) Componer ticket: encabezado rojo + datos + barcode
+        const ticketWidth = Math.max(720, barcodeMeta.width + 80);
+        const monto = `$${Number(amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`;
+        const venceTxt = expirationDate
+            ? new Date(expirationDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' })
+            : '';
+        const cliente = (customerName || 'Cliente Dekoor').slice(0, 40);
+        const pedidoLine = orderNumber ? `Pedido ${orderNumber}` : 'Pago Dekoor';
+
+        // SVG de la parte superior (texto + estilos)
+        const headerHeight = 320;
+        const totalHeight = headerHeight + barcodeMeta.height + 90;
+
+        const svg = `
+            <svg width="${ticketWidth}" height="${totalHeight}" xmlns="http://www.w3.org/2000/svg">
+                <style>
+                    .bg { fill: #ffffff; }
+                    .header { fill: #e2231a; }
+                    .title { font: bold 38px sans-serif; fill: #ffffff; }
+                    .subtitle { font: 600 18px sans-serif; fill: #ffe5e3; }
+                    .label { font: 600 14px sans-serif; fill: #888; text-transform: uppercase; letter-spacing: 1px; }
+                    .value { font: bold 28px sans-serif; fill: #111; }
+                    .amount { font: bold 48px sans-serif; fill: #e2231a; }
+                    .ref { font: bold 22px monospace; fill: #222; }
+                    .footer { font: 500 13px sans-serif; fill: #666; }
+                    .divider { stroke: #eee; stroke-width: 1; stroke-dasharray: 4 4; }
+                </style>
+                <rect class="bg" x="0" y="0" width="${ticketWidth}" height="${totalHeight}"/>
+                <rect class="header" x="0" y="0" width="${ticketWidth}" height="100"/>
+                <text class="title" x="32" y="55">PAGO EN OXXO</text>
+                <text class="subtitle" x="32" y="82">${pedidoLine} · Dekoor</text>
+
+                <text class="label" x="32" y="140">Monto a pagar</text>
+                <text class="amount" x="32" y="185">${monto}</text>
+
+                <text class="label" x="32" y="225">Cliente</text>
+                <text class="value" x="32" y="255">${cliente}</text>
+
+                ${venceTxt ? `<text class="label" x="32" y="290">Vence</text>
+                <text class="value" x="32" y="320" style="font-size:22px;">${venceTxt}</text>` : ''}
+
+                <line class="divider" x1="32" y1="${headerHeight - 10}" x2="${ticketWidth - 32}" y2="${headerHeight - 10}"/>
+
+                <text class="footer" x="32" y="${totalHeight - 22}">Acude a cualquier OXXO con esta referencia. Pago se acredita en hasta 48h.</text>
+            </svg>
+        `;
+
+        // 3) Componer imagen final con sharp
+        const ticketBuffer = await sharp({
+            create: {
+                width: ticketWidth,
+                height: totalHeight,
+                channels: 3,
+                background: '#ffffff'
+            }
+        })
+        .composite([
+            { input: Buffer.from(svg), top: 0, left: 0 },
+            { input: barcodePng, top: headerHeight + 10, left: Math.floor((ticketWidth - barcodeMeta.width) / 2) }
+        ])
+        .png()
+        .toBuffer();
+
+        // 4) Subir a Firebase Storage publico
+        const ts = Date.now();
+        const id = ts + '_' + Math.random().toString(36).slice(2, 8);
+        const filePath = `oxxo-tickets/${id}.png`;
+        const file = bucket.file(filePath);
+        await file.save(ticketBuffer, {
+            metadata: { contentType: 'image/png', cacheControl: 'public, max-age=31536000' },
+            public: true
+        });
+        const publicUrl = `https://storage.googleapis.com/${bucket.name}/${filePath}`;
+        return publicUrl;
+    } catch (err) {
+        console.error('[OXXO IMG] Error generando ticket:', err.message);
+        return null;
+    }
+}
+
+// =====================================================================
 // POST /api/mercadopago/oxxo
 // Genera una referencia OXXO directa via /v1/payments (sin Checkout Pro).
 // Pensado para uso interno desde el CRM: el admin captura monto + datos
@@ -296,6 +402,15 @@ router.post('/oxxo', async (req, res) => {
         const voucherUrl = pago?.transaction_details?.external_resource_url || null;
         const barcodeContent = pago?.barcode?.content || null;
 
+        // Genera imagen tipo "ticket" con codigo de barras y subela a Storage
+        const ticketImageUrl = await generateOxxoTicketImage({
+            barcodeContent,
+            amount: monto,
+            customerName: cleanName,
+            expirationDate,
+            orderNumber
+        });
+
         // Guarda en mp_orders para que el webhook pueda hacer match
         await db.collection('mp_orders').doc(externalReference).set({
             externalReference,
@@ -316,6 +431,7 @@ router.post('/oxxo', async (req, res) => {
             crmOrderNumber: orderNumber || null,
             voucherUrl,
             barcodeContent,
+            ticketImageUrl,
             expirationDate,
             note: note || '',
             createdAt: new Date()
@@ -329,6 +445,7 @@ router.post('/oxxo', async (req, res) => {
                     externalReference,
                     voucherUrl,
                     barcodeContent,
+                    ticketImageUrl,
                     amount: monto,
                     status: pago.status || 'pending',
                     createdAt: new Date(),
@@ -345,6 +462,7 @@ router.post('/oxxo', async (req, res) => {
             status: pago.status,
             voucherUrl,
             barcodeContent,
+            ticketImageUrl,
             amount: monto,
             expirationDate: expirationDate.toISOString()
         });
@@ -647,6 +765,73 @@ async function notifyAdminOxxoApproved({ amount, customerName, customerPhone, or
         console.error('[MP WEBHOOK] No se pudo enviar alerta al admin:', error.message);
     }
 }
+
+// POST /api/mercadopago/oxxo/send-to-customer
+// Envia la imagen del ticket OXXO al WhatsApp del cliente directamente,
+// con un caption corto. Usa sendAdvancedWhatsAppMessage del services.
+router.post('/oxxo/send-to-customer', async (req, res) => {
+    try {
+        const { externalReference, customerPhone } = req.body;
+        if (!externalReference) return res.status(400).json({ error: 'externalReference requerido' });
+
+        const doc = await db.collection('mp_orders').doc(externalReference).get();
+        if (!doc.exists) return res.status(404).json({ error: 'Orden no encontrada' });
+
+        const o = doc.data();
+        const phone = (customerPhone || o.customerPhone || '').replace(/\D/g, '');
+        if (!phone) return res.status(400).json({ error: 'Telefono del cliente no disponible' });
+
+        if (!o.ticketImageUrl) {
+            return res.status(400).json({ error: 'Esta orden no tiene imagen del ticket. Vuelve a generarla.' });
+        }
+
+        const venceTxt = o.expirationDate
+            ? new Date(o.expirationDate.toDate ? o.expirationDate.toDate() : o.expirationDate)
+                .toLocaleDateString('es-MX', { day: '2-digit', month: 'short' })
+            : '';
+
+        const firstName = (o.customerName || '').split(' ')[0];
+        const caption = [
+            `Hola${firstName ? ' ' + firstName : ''}, aquí está tu referencia para pagar en OXXO 🏪`,
+            `Monto: $${Number(o.total).toLocaleString('es-MX')} MXN${venceTxt ? ' · Vence ' + venceTxt : ''}`,
+            `Muestra esta imagen en caja. Te aviso cuando se acredite. ¡Gracias!`
+        ].join('\n');
+
+        const { sendAdvancedWhatsAppMessage } = require('../services');
+        await sendAdvancedWhatsAppMessage(phone, {
+            text: caption,
+            fileUrl: o.ticketImageUrl,
+            fileType: 'image/png'
+        });
+
+        // Tambien guardar el mensaje en la coleccion de mensajes del contacto
+        // (sendAdvancedWhatsAppMessage solo manda a Meta; aqui lo guardamos para
+        // que aparezca en el chat del CRM de inmediato)
+        try {
+            await db.collection('contacts_whatsapp').doc(phone).collection('messages').add({
+                from_me: true,
+                text: caption,
+                fileUrl: o.ticketImageUrl,
+                fileType: 'image/png',
+                type: 'image',
+                timestamp: new Date(),
+                status: 'sent',
+                origin: 'crm_oxxo'
+            });
+            await db.collection('contacts_whatsapp').doc(phone).set({
+                lastMessage: '🏪 Referencia OXXO enviada',
+                lastMessageTimestamp: new Date()
+            }, { merge: true });
+        } catch (e) {
+            console.warn('[OXXO SEND] No se pudo guardar mensaje en CRM:', e.message);
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('[OXXO SEND] Error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // GET /api/mercadopago/contact-latest-order/:contactId
 // Devuelve el ultimo pedido (mayor consecutiveOrderNumber) del contacto y

@@ -307,41 +307,41 @@
         <div id="oxxoStepResultado" style="display:none;">
             <div style="background:#fff8e1; border-left:4px solid #f59e0b; padding:14px; border-radius:8px; margin-bottom:14px;">
                 <div style="font-weight:700; color:#b45309; margin-bottom:4px;"><i class="fas fa-info-circle"></i> Referencia generada</div>
-                <div style="font-size:0.85rem; color:#555;">Compártela con el cliente por WhatsApp. Te llegará alerta cuando se acredite el pago (puede tardar hasta 48h).</div>
+                <div style="font-size:0.85rem; color:#555;">Te llegará alerta cuando se acredite (hasta 48h).</div>
             </div>
 
-            <div style="background:#fff; border:1px solid #ddd; border-radius:10px; padding:16px; margin-bottom:14px;">
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee;">
+            <div id="oxxoTicketImageWrap" style="text-align:center; margin-bottom:14px; display:none;">
+                <img id="oxxoTicketImage" src="" alt="Ticket OXXO" style="max-width:100%; border-radius:8px; border:1px solid #e5e7eb;">
+            </div>
+
+            <div style="background:#fff; border:1px solid #ddd; border-radius:10px; padding:14px; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #eee;">
                     <span style="color:#888; font-size:0.85rem;">Monto</span>
-                    <strong id="oxxoResultMonto" style="color:#e2231a; font-size:1.1rem;">$0 MXN</strong>
+                    <strong id="oxxoResultMonto" style="color:#e2231a; font-size:1.05rem;">$0 MXN</strong>
                 </div>
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee;">
-                    <span style="color:#888; font-size:0.85rem;">Cliente</span>
-                    <span id="oxxoResultCliente" style="font-weight:600;">-</span>
-                </div>
-                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee; align-items:center; flex-wrap:wrap; gap:8px;">
+                <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px dashed #eee; align-items:center; flex-wrap:wrap; gap:8px;">
                     <span style="color:#888; font-size:0.85rem;">Referencia</span>
-                    <span style="font-family:'Courier New',monospace; font-weight:700; word-break:break-all; text-align:right;" id="oxxoResultRef">-</span>
+                    <span style="font-family:'Courier New',monospace; font-weight:700; word-break:break-all; text-align:right; font-size:0.78rem;" id="oxxoResultRef">-</span>
                 </div>
-                <div style="display:flex; justify-content:space-between; padding:8px 0;">
+                <div style="display:flex; justify-content:space-between; padding:6px 0;">
                     <span style="color:#888; font-size:0.85rem;">Vence</span>
                     <span id="oxxoResultVence" style="font-weight:600;">-</span>
                 </div>
             </div>
 
             <div style="display:flex; flex-direction:column; gap:8px;">
-                <a id="oxxoResultVoucherLink" href="#" target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#e2231a; color:#fff; padding:14px; border-radius:8px; text-decoration:none; font-weight:700;">
-                    <i class="fas fa-external-link-alt"></i> Ver / imprimir ficha OXXO
+                <button type="button" id="btnEnviarImagenWA" style="background:#128c7e; color:#fff; padding:14px; border:none; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px; font-size:1rem;">
+                    <i class="fab fa-whatsapp"></i> Enviar imagen al cliente
+                </button>
+                <a id="oxxoTicketDownload" href="#" download="ticket-oxxo.png" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#f3f4f6; color:#374151; padding:10px; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.85rem;">
+                    <i class="fas fa-download"></i> Descargar imagen
                 </a>
-                <button type="button" id="btnCopiarOxxoMsg" style="background:#25d366; color:#fff; padding:14px; border:none; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
-                    <i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp
-                </button>
-                <button type="button" id="btnEnviarOxxoWA" style="background:#128c7e; color:#fff; padding:14px; border:none; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
-                    <i class="fab fa-whatsapp"></i> Abrir WhatsApp con el cliente
-                </button>
+                <a id="oxxoResultVoucherLink" href="#" target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; background:transparent; color:#e2231a; padding:8px; text-decoration:none; font-weight:600; font-size:0.85rem;">
+                    <i class="fas fa-external-link-alt"></i> Ver ficha oficial OXXO
+                </a>
             </div>
             <div class="form-actions" style="margin-top:14px;">
-                <button type="button" id="btnCerrarOxxoFinal"><i class="fas fa-check"></i> Listo</button>
+                <button type="button" id="btnCerrarOxxoFinal"><i class="fas fa-check"></i> Cerrar</button>
             </div>
         </div>
     </div>
