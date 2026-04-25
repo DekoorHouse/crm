@@ -243,8 +243,9 @@ async function generateOxxoTicketImage({ barcodeContent, amount, customerName, e
         const barcodeMeta = await sharp(barcodePng).metadata();
 
         // 2) Cargar logos OXXO y Mercado Pago (resize a alturas fijas)
-        const OXXO_LOGO_HEIGHT = 70;
-        const MP_LOGO_HEIGHT = 36;
+        // Diseno premium minimalista: header blanco, logos en su color natural
+        const OXXO_LOGO_HEIGHT = 56;
+        const MP_LOGO_HEIGHT = 30;
         let oxxoLogoBuf = null, oxxoLogoMeta = null;
         let mpLogoBuf = null, mpLogoMeta = null;
         try {
@@ -260,7 +261,7 @@ async function generateOxxoTicketImage({ barcodeContent, amount, customerName, e
             console.warn('[OXXO IMG] No se pudieron cargar logos:', e.message);
         }
 
-        // 3) Definir layout del ticket
+        // 3) Definir layout del ticket — Premium Minimalista
         const ticketWidth = Math.max(720, barcodeMeta.width + 80);
         const monto = `$${Number(amount).toLocaleString('es-MX', { minimumFractionDigits: 2 })} MXN`;
         const venceTxt = expirationDate
@@ -269,56 +270,62 @@ async function generateOxxoTicketImage({ barcodeContent, amount, customerName, e
         const cliente = (customerName || 'Cliente Dekoor').slice(0, 40);
         const pedidoLine = orderNumber ? `Pedido ${orderNumber}` : 'Pago Dekoor';
 
-        const headerHeight = 110;          // Banda superior roja con logo OXXO
-        const bodyTop = headerHeight + 30;
-        const bodyHeight = 230;            // Datos
+        const headerHeight = 100;          // Header blanco con borde rojo abajo
+        const accentBarHeight = 3;         // Linea roja delgada bajo el header
+        const bodyTop = headerHeight + accentBarHeight + 36;
+        const bodyHeight = 230;
         const barcodeAreaTop = bodyTop + bodyHeight;
-        const footerTop = barcodeAreaTop + barcodeMeta.height + 40;
-        const footerHeight = 80;
+        const footerTop = barcodeAreaTop + barcodeMeta.height + 44;
+        const footerHeight = 78;
         const totalHeight = footerTop + footerHeight;
 
-        // 4) SVG con estilos, header y datos del pago
+        // 4) SVG con estilos minimalistas y neutros
         const svg = `
             <svg width="${ticketWidth}" height="${totalHeight}" xmlns="http://www.w3.org/2000/svg">
                 <style>
-                    .header-bg { fill: #e2231a; }
-                    .footer-bg { fill: #f9fafb; }
-                    .title { font: 800 32px sans-serif; fill: #ffffff; letter-spacing: 1px; }
-                    .subtitle { font: 600 16px sans-serif; fill: #ffe0dd; }
-                    .label { font: 700 12px sans-serif; fill: #9ca3af; letter-spacing: 1.5px; }
-                    .value { font: 700 22px sans-serif; fill: #111827; }
-                    .amount { font: 800 52px sans-serif; fill: #e2231a; }
-                    .ref-label { font: 600 13px sans-serif; fill: #6b7280; }
-                    .footer-txt { font: 500 12px sans-serif; fill: #6b7280; }
+                    .accent-bar { fill: #e2231a; }
+                    .footer-divider { stroke: #f3f4f6; stroke-width: 1; }
+                    .title { font: 800 28px sans-serif; fill: #111827; letter-spacing: 0.5px; }
+                    .subtitle { font: 500 13px sans-serif; fill: #9ca3af; letter-spacing: 0.5px; }
+                    .label { font: 700 11px sans-serif; fill: #9ca3af; letter-spacing: 1.5px; }
+                    .value { font: 600 20px sans-serif; fill: #111827; }
+                    .amount { font: 800 48px sans-serif; fill: #111827; letter-spacing: -0.5px; }
+                    .currency { font: 600 18px sans-serif; fill: #6b7280; }
+                    .ref-label { font: 700 11px sans-serif; fill: #9ca3af; letter-spacing: 2px; }
                     .footer-strong { font: 700 12px sans-serif; fill: #374151; }
-                    .divider { stroke: #e5e7eb; stroke-width: 1; }
+                    .footer-txt { font: 500 12px sans-serif; fill: #6b7280; }
+                    .divider { stroke: #f3f4f6; stroke-width: 1; }
                 </style>
 
-                <!-- Banda roja -->
-                <rect class="header-bg" x="0" y="0" width="${ticketWidth}" height="${headerHeight}"/>
-                <text class="title" x="32" y="50">PAGO EN OXXO</text>
-                <text class="subtitle" x="32" y="80">${pedidoLine} · Dekoor</text>
+                <!-- Header blanco -->
+                <text class="title" x="36" y="48">PAGO EN OXXO</text>
+                <text class="subtitle" x="36" y="72">${pedidoLine.toUpperCase()} · DEKOOR</text>
+
+                <!-- Linea roja delgada (acento de marca) -->
+                <rect class="accent-bar" x="0" y="${headerHeight}" width="${ticketWidth}" height="${accentBarHeight}"/>
 
                 <!-- Cuerpo: monto -->
-                <text class="label" x="32" y="${bodyTop + 18}">MONTO A PAGAR</text>
-                <text class="amount" x="32" y="${bodyTop + 70}">${monto}</text>
+                <text class="label" x="36" y="${bodyTop + 16}">MONTO A PAGAR</text>
+                <text class="amount" x="36" y="${bodyTop + 70}">${monto}</text>
 
-                <line class="divider" x1="32" y1="${bodyTop + 100}" x2="${ticketWidth - 32}" y2="${bodyTop + 100}"/>
+                <line class="divider" x1="36" y1="${bodyTop + 100}" x2="${ticketWidth - 36}" y2="${bodyTop + 100}"/>
 
-                <!-- Cuerpo: cliente -->
-                <text class="label" x="32" y="${bodyTop + 130}">CLIENTE</text>
-                <text class="value" x="32" y="${bodyTop + 158}">${cliente}</text>
+                <!-- Cuerpo: cliente y vence -->
+                <text class="label" x="36" y="${bodyTop + 130}">CLIENTE</text>
+                <text class="value" x="36" y="${bodyTop + 158}">${cliente}</text>
 
                 ${venceTxt ? `<text class="label" x="${ticketWidth / 2 + 16}" y="${bodyTop + 130}">VENCE</text>
-                <text class="value" x="${ticketWidth / 2 + 16}" y="${bodyTop + 158}" style="font-size:18px;">${venceTxt}</text>` : ''}
+                <text class="value" x="${ticketWidth / 2 + 16}" y="${bodyTop + 158}" style="font-size:17px;">${venceTxt}</text>` : ''}
 
                 <!-- Etiqueta del barcode -->
-                <text class="ref-label" x="${ticketWidth / 2}" y="${barcodeAreaTop - 10}" text-anchor="middle">REFERENCIA DE PAGO</text>
+                <text class="ref-label" x="${ticketWidth / 2}" y="${barcodeAreaTop - 12}" text-anchor="middle">REFERENCIA DE PAGO</text>
 
-                <!-- Footer -->
-                <rect class="footer-bg" x="0" y="${footerTop}" width="${ticketWidth}" height="${footerHeight}"/>
-                <text class="footer-strong" x="32" y="${footerTop + 28}">Acude a cualquier tienda OXXO con esta referencia.</text>
-                <text class="footer-txt" x="32" y="${footerTop + 50}">El cajero la escanea — no necesitas imprimir nada. Pago se acredita en hasta 48h.</text>
+                <!-- Linea divisoria antes del footer -->
+                <line class="footer-divider" x1="36" y1="${footerTop}" x2="${ticketWidth - 36}" y2="${footerTop}"/>
+
+                <!-- Footer blanco con texto neutro -->
+                <text class="footer-strong" x="36" y="${footerTop + 30}">Acude a cualquier tienda OXXO con esta referencia.</text>
+                <text class="footer-txt" x="36" y="${footerTop + 52}">El cajero la escanea — no necesitas imprimir. Pago se acredita en hasta 48h.</text>
             </svg>
         `;
 
@@ -328,21 +335,21 @@ async function generateOxxoTicketImage({ barcodeContent, amount, customerName, e
             { input: barcodePng, top: barcodeAreaTop, left: Math.floor((ticketWidth - barcodeMeta.width) / 2) }
         ];
 
-        // Logo OXXO arriba a la derecha, dentro de la banda roja
+        // Logo OXXO arriba a la derecha en el header blanco (mantiene su rojo natural)
         if (oxxoLogoBuf && oxxoLogoMeta) {
             composites.push({
                 input: oxxoLogoBuf,
                 top: Math.floor((headerHeight - oxxoLogoMeta.height) / 2),
-                left: ticketWidth - oxxoLogoMeta.width - 32
+                left: ticketWidth - oxxoLogoMeta.width - 36
             });
         }
 
-        // Logo Mercado Pago en el footer abajo a la derecha (respaldo de seguridad)
+        // Logo Mercado Pago en el footer abajo a la derecha
         if (mpLogoBuf && mpLogoMeta) {
             composites.push({
                 input: mpLogoBuf,
                 top: footerTop + Math.floor((footerHeight - mpLogoMeta.height) / 2),
-                left: ticketWidth - mpLogoMeta.width - 24
+                left: ticketWidth - mpLogoMeta.width - 28
             });
         }
 
