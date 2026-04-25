@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pagos OXXO | Dekoor</title>
+<link rel="icon" href="/favicon.png" type="image/png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+<style>
+:root {
+    --primary: #e2231a;
+    --green: #10b981;
+    --amber: #f59e0b;
+    --gray-50: #f9fafb;
+    --gray-100: #f3f4f6;
+    --gray-200: #e5e7eb;
+    --gray-300: #d1d5db;
+    --gray-500: #6b7280;
+    --gray-700: #374151;
+    --gray-900: #111827;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    background: var(--gray-50);
+    color: var(--gray-900);
+}
+.container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+header h1 { font-size: 1.6rem; margin: 0; display: flex; align-items: center; gap: 10px; }
+header h1 .badge-oxxo { background: var(--primary); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 0.85rem; font-weight: 700; }
+.user-bar { display: flex; align-items: center; gap: 12px; font-size: 0.85rem; color: var(--gray-500); }
+.user-bar button {
+    background: var(--gray-200); border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-family: inherit; font-weight: 600; font-size: 0.8rem;
+}
+.user-bar button:hover { background: var(--gray-300); }
+
+/* Stats cards */
+.stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.stat-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border: 1px solid var(--gray-200);
+}
+.stat-card .label { font-size: 0.8rem; color: var(--gray-500); font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+.stat-card .value { font-size: 1.8rem; font-weight: 800; }
+.stat-card.green .value { color: var(--green); }
+.stat-card.amber .value { color: var(--amber); }
+.stat-card.red .value { color: var(--primary); }
+
+/* Tabs */
+.tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--gray-100);
+    padding: 4px;
+    border-radius: 10px;
+    margin-bottom: 16px;
+    width: fit-content;
+}
+.tab {
+    padding: 10px 20px;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-weight: 600;
+    color: var(--gray-700);
+    border-radius: 7px;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.tab.active { background: #fff; color: var(--gray-900); box-shadow: 0 1px 2px rgba(0,0,0,0.08); }
+.tab-count { background: var(--gray-200); padding: 1px 8px; border-radius: 100px; font-size: 0.75rem; font-weight: 700; }
+.tab.active .tab-count { background: var(--primary); color: #fff; }
+
+/* List */
+.oxxo-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+.oxxo-card {
+    background: #fff;
+    border: 1px solid var(--gray-200);
+    border-radius: 12px;
+    padding: 18px 20px;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 18px;
+    align-items: center;
+}
+.oxxo-card .status-icon {
+    width: 48px; height: 48px;
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.4rem;
+    color: #fff;
+}
+.oxxo-card[data-status="approved"] .status-icon { background: var(--green); }
+.oxxo-card[data-status="pending"] .status-icon { background: var(--amber); }
+.oxxo-card[data-status="cancelled"], .oxxo-card[data-status="expired"] { opacity: 0.6; }
+.oxxo-card[data-status="cancelled"] .status-icon, .oxxo-card[data-status="expired"] .status-icon { background: var(--gray-500); }
+
+.oxxo-info .top-row {
+    display: flex; align-items: center; gap: 10px;
+    flex-wrap: wrap; margin-bottom: 4px;
+}
+.oxxo-info .name { font-weight: 700; font-size: 1.05rem; }
+.oxxo-info .order-tag { background: var(--gray-100); padding: 2px 8px; border-radius: 6px; font-size: 0.78rem; color: var(--gray-700); font-weight: 600; }
+.oxxo-info .amount { color: var(--primary); font-weight: 700; font-size: 1rem; }
+.oxxo-info .meta { font-size: 0.85rem; color: var(--gray-500); }
+.oxxo-info .meta strong { color: var(--gray-700); }
+.oxxo-info .ref { font-family: 'Courier New', monospace; font-weight: 700; color: var(--gray-700); font-size: 0.85rem; }
+
+.oxxo-actions { display: flex; gap: 8px; }
+.btn-icon {
+    background: var(--gray-100);
+    border: 1px solid var(--gray-200);
+    width: 38px; height: 38px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--gray-700);
+    text-decoration: none;
+}
+.btn-icon:hover { background: var(--gray-200); }
+.btn-icon.wa { color: #25d366; }
+
+.empty {
+    text-align: center; padding: 64px 24px; color: var(--gray-500);
+    background: #fff; border-radius: 12px; border: 1px solid var(--gray-200);
+}
+.empty i { font-size: 3rem; margin-bottom: 12px; opacity: 0.3; }
+
+/* Login */
+#loginView {
+    min-height: 100vh;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--gray-50);
+}
+.login-card {
+    background: #fff;
+    padding: 36px;
+    border-radius: 14px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.08);
+    max-width: 400px; width: 100%;
+}
+.login-card h1 { margin: 0 0 24px; font-size: 1.4rem; text-align: center; }
+.login-card label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.85rem; color: var(--gray-700); }
+.login-card input {
+    width: 100%; padding: 11px 14px; border: 1px solid var(--gray-200); border-radius: 8px;
+    font-family: inherit; font-size: 0.95rem; margin-bottom: 14px;
+}
+.login-card button {
+    width: 100%; padding: 12px; background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-family: inherit; font-weight: 700; cursor: pointer; font-size: 0.95rem;
+}
+#loginError { color: var(--primary); font-size: 0.85rem; margin-top: 8px; min-height: 1em; }
+
+@media (max-width: 640px) {
+    .oxxo-card { grid-template-columns: auto 1fr; }
+    .oxxo-actions { grid-column: 1 / -1; justify-content: flex-end; }
+}
+</style>
+</head>
+<body>
+
+<div id="loginView">
+    <form id="loginForm" class="login-card">
+        <h1><i class="fas fa-store" style="color:var(--primary)"></i> Pagos OXXO</h1>
+        <label for="loginEmail">Correo</label>
+        <input type="email" id="loginEmail" required>
+        <label for="loginPassword">Contraseña</label>
+        <input type="password" id="loginPassword" required>
+        <button type="submit">Ingresar</button>
+        <div id="loginError"></div>
+    </form>
+</div>
+
+<div id="appView" class="container" style="display:none;">
+    <header>
+        <h1><span class="badge-oxxo">OXXO</span> Pagos OXXO</h1>
+        <div class="user-bar">
+            <a href="/pedidos/" style="color:var(--gray-500); text-decoration:none;"><i class="fas fa-arrow-left"></i> Pedidos</a>
+            <span id="userEmail"></span>
+            <button id="btnLogout"><i class="fas fa-sign-out-alt"></i> Salir</button>
+        </div>
+    </header>
+
+    <div class="stats">
+        <div class="stat-card amber">
+            <div class="label"><i class="fas fa-clock"></i> Pendientes</div>
+            <div class="value" id="statPending">0</div>
+        </div>
+        <div class="stat-card green">
+            <div class="label"><i class="fas fa-check-circle"></i> Acreditados</div>
+            <div class="value" id="statApproved">0</div>
+        </div>
+        <div class="stat-card red">
+            <div class="label"><i class="fas fa-dollar-sign"></i> Cobrado (total)</div>
+            <div class="value" id="statTotal">$0</div>
+        </div>
+    </div>
+
+    <div class="tabs">
+        <button class="tab active" data-filter="all">Todos <span class="tab-count" id="cntAll">0</span></button>
+        <button class="tab" data-filter="pending">Pendientes <span class="tab-count" id="cntPending">0</span></button>
+        <button class="tab" data-filter="approved">Pagados <span class="tab-count" id="cntApproved">0</span></button>
+    </div>
+
+    <div class="oxxo-list" id="oxxoList">
+        <div class="empty"><i class="fas fa-spinner fa-spin"></i><p>Cargando...</p></div>
+    </div>
+</div>
+
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, query, where, orderBy, onSnapshot, limit } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+const firebaseConfig = {
+    apiKey: "AIzaSyBdLBxVl64KqifVUinLrtxjQnk2jrPT-yg",
+    authDomain: "pedidos-con-gemini.firebaseapp.com",
+    projectId: "pedidos-con-gemini",
+    storageBucket: "pedidos-con-gemini.firebasestorage.app",
+    messagingSenderId: "300825194175",
+    appId: "1:300825194175:web:972fa7b8af195a83e6e00a"
+};
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+const loginView = document.getElementById('loginView');
+const appView = document.getElementById('appView');
+const loginForm = document.getElementById('loginForm');
+const loginError = document.getElementById('loginError');
+
+loginForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    loginError.textContent = '';
+    const email = document.getElementById('loginEmail').value.trim();
+    const pw = document.getElementById('loginPassword').value;
+    try {
+        await signInWithEmailAndPassword(auth, email, pw);
+    } catch (err) {
+        loginError.textContent = 'Credenciales inválidas';
+    }
+});
+
+document.getElementById('btnLogout').addEventListener('click', () => signOut(auth));
+
+let unsubscribe = null;
+let allItems = [];
+let currentFilter = 'all';
+
+onAuthStateChanged(auth, (user) => {
+    if (user) {
+        loginView.style.display = 'none';
+        appView.style.display = '';
+        document.getElementById('userEmail').textContent = user.email;
+        startListening();
+    } else {
+        loginView.style.display = 'flex';
+        appView.style.display = 'none';
+        if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+    }
+});
+
+function startListening() {
+    if (unsubscribe) unsubscribe();
+    const q = query(
+        collection(db, 'mp_orders'),
+        where('source', '==', 'crm_oxxo_manual'),
+        orderBy('createdAt', 'desc'),
+        limit(200)
+    );
+    unsubscribe = onSnapshot(q, (snap) => {
+        allItems = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        render();
+    }, (err) => {
+        console.error('[OXXO LIST] Error:', err);
+        document.getElementById('oxxoList').innerHTML =
+            `<div class="empty"><i class="fas fa-exclamation-triangle"></i><p>Error: ${err.message}</p></div>`;
+    });
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        t.classList.add('active');
+        currentFilter = t.dataset.filter;
+        render();
+    });
+});
+
+function fmtMoney(n) {
+    return '$' + Number(n || 0).toLocaleString('es-MX', { maximumFractionDigits: 0 });
+}
+function fmtDate(ts) {
+    if (!ts) return '-';
+    try {
+        const d = ts.toDate ? ts.toDate() : new Date(ts);
+        return d.toLocaleString('es-MX', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+    } catch { return '-'; }
+}
+
+function render() {
+    const pending = allItems.filter(x => x.status === 'pending');
+    const approved = allItems.filter(x => x.status === 'approved');
+    const totalCobrado = approved.reduce((s, x) => s + Number(x.total || 0), 0);
+
+    document.getElementById('statPending').textContent = pending.length;
+    document.getElementById('statApproved').textContent = approved.length;
+    document.getElementById('statTotal').textContent = fmtMoney(totalCobrado);
+
+    document.getElementById('cntAll').textContent = allItems.length;
+    document.getElementById('cntPending').textContent = pending.length;
+    document.getElementById('cntApproved').textContent = approved.length;
+
+    const filtered = currentFilter === 'all' ? allItems
+        : currentFilter === 'pending' ? pending
+        : approved;
+
+    const list = document.getElementById('oxxoList');
+    if (filtered.length === 0) {
+        list.innerHTML = `<div class="empty"><i class="fas fa-inbox"></i><p>Sin registros</p></div>`;
+        return;
+    }
+
+    list.innerHTML = filtered.map(item => {
+        const st = item.status || 'pending';
+        const icon = st === 'approved' ? 'check' : st === 'pending' ? 'clock' : 'times';
+        const stLabel = st === 'approved' ? 'Pagado' : st === 'pending' ? 'Pendiente' : st;
+        const stColor = st === 'approved' ? 'var(--green)' : st === 'pending' ? 'var(--amber)' : 'var(--gray-500)';
+        const tel = (item.customerPhone || '').replace(/\D/g, '');
+        const waLink = tel ? `https://wa.me/${tel}` : null;
+        const ref = item.barcodeContent || '-';
+
+        return `
+            <div class="oxxo-card" data-status="${st}">
+                <div class="status-icon"><i class="fas fa-${icon}"></i></div>
+                <div class="oxxo-info">
+                    <div class="top-row">
+                        <span class="name">${item.customerName || 'Sin nombre'}</span>
+                        ${item.crmOrderNumber ? `<span class="order-tag">${item.crmOrderNumber}</span>` : ''}
+                        <span class="amount">${fmtMoney(item.total)}</span>
+                        <span style="color:${stColor}; font-weight:700; font-size:0.85rem;">· ${stLabel}</span>
+                    </div>
+                    <div class="meta">
+                        <strong>Tel:</strong> ${item.customerPhone || 's/n'} ·
+                        <span class="ref">${ref}</span> ·
+                        <strong>Creado:</strong> ${fmtDate(item.createdAt)}
+                        ${item.paidAt ? ` · <strong style="color:var(--green)">Pagado:</strong> ${fmtDate(item.paidAt)}` : ''}
+                    </div>
+                </div>
+                <div class="oxxo-actions">
+                    ${item.voucherUrl ? `<a class="btn-icon" href="${item.voucherUrl}" target="_blank" title="Ver ficha"><i class="fas fa-receipt"></i></a>` : ''}
+                    ${ref !== '-' ? `<button class="btn-icon" onclick="navigator.clipboard.writeText('${ref}'); this.innerHTML='<i class=\\'fas fa-check\\'></i>'; setTimeout(()=>this.innerHTML='<i class=\\'far fa-copy\\'></i>',1500);" title="Copiar referencia"><i class="far fa-copy"></i></button>` : ''}
+                    ${waLink ? `<a class="btn-icon wa" href="${waLink}" target="_blank" title="WhatsApp"><i class="fab fa-whatsapp"></i></a>` : ''}
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+</script>
+</body>
+</html>

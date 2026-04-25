@@ -613,6 +613,163 @@ document.addEventListener('DOMContentLoaded', () => {
         if(btnConfirmarBorradoDefinitivo) btnConfirmarBorradoDefinitivo.innerHTML = '<i class="fas fa-trash-alt"></i> Sí, Borrar';
     }
 
+    // ============================================================
+    // MODAL OXXO: Genera referencia de pago para mandar por WhatsApp
+    // ============================================================
+    let oxxoPedidoActual = null;
+
+    function abrirModalOxxo(pedidoId, pedidoData) {
+        const modal = document.getElementById('modalOxxo');
+        if (!modal) return;
+        oxxoPedidoActual = { id: pedidoId, data: pedidoData };
+
+        // Si ya existe una referencia OXXO en el pedido, mostrarla directamente
+        if (pedidoData.oxxo && pedidoData.oxxo.barcodeContent) {
+            renderResultadoOxxo({
+                amount: pedidoData.oxxo.amount,
+                customerName: pedidoData.consecutiveOrderNumber ? `DH${pedidoData.consecutiveOrderNumber}` : '',
+                barcodeContent: pedidoData.oxxo.barcodeContent,
+                voucherUrl: pedidoData.oxxo.voucherUrl,
+                expirationDate: pedidoData.oxxo.expirationDate
+            }, pedidoData);
+        } else {
+            // Step 1: pre-llenar con datos del pedido
+            document.getElementById('oxxoStepDatos').style.display = '';
+            document.getElementById('oxxoStepResultado').style.display = 'none';
+            document.getElementById('oxxoMontoInput').value = pedidoData.precio || '';
+            document.getElementById('oxxoNombreInput').value = '';
+            document.getElementById('oxxoNotaInput').value = '';
+            const orderNum = pedidoData.consecutiveOrderNumber ? `DH${pedidoData.consecutiveOrderNumber}` : pedidoId;
+            const tel = pedidoData.telefono || 's/n';
+            const prod = pedidoData.producto || 's/p';
+            document.getElementById('oxxoPedidoInfo').innerHTML =
+                `<strong>Pedido:</strong> ${orderNum} &nbsp;·&nbsp; <strong>Tel:</strong> ${tel} &nbsp;·&nbsp; <strong>Producto:</strong> ${prod}`;
+            document.getElementById('oxxoErrorMsg').style.display = 'none';
+            const btn = document.getElementById('btnGenerarOxxo');
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-bolt"></i> Generar referencia';
+        }
+
+        modal.style.display = 'flex';
+        document.body.classList.add('modal-open');
+    }
+
+    function cerrarModalOxxo() {
+        const modal = document.getElementById('modalOxxo');
+        if (!modal) return;
+        modal.style.display = 'none';
+        document.body.classList.remove('modal-open');
+        oxxoPedidoActual = null;
+    }
+
+    async function generarReferenciaOxxo() {
+        if (!oxxoPedidoActual) return;
+        const monto = parseFloat(document.getElementById('oxxoMontoInput').value);
+        const nombre = document.getElementById('oxxoNombreInput').value.trim();
+        const nota = document.getElementById('oxxoNotaInput').value.trim();
+        const errorEl = document.getElementById('oxxoErrorMsg');
+        errorEl.style.display = 'none';
+
+        if (!monto || monto <= 0) {
+            errorEl.textContent = 'Ingresa un monto válido.';
+            errorEl.style.display = 'block';
+            return;
+        }
+
+        const btn = document.getElementById('btnGenerarOxxo');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando...';
+
+        const pedido = oxxoPedidoActual.data;
+        const orderNumber = pedido.consecutiveOrderNumber ? `DH${pedido.consecutiveOrderNumber}` : oxxoPedidoActual.id;
+
+        try {
+            const res = await fetch((window.API_BASE_URL || '') + '/api/mercadopago/oxxo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount: monto,
+                    customerName: nombre || pedido.cliente || '',
+                    customerPhone: pedido.telefono || '',
+                    orderNumber,
+                    productName: pedido.producto ? `${pedido.producto} - ${orderNumber}` : `Pedido ${orderNumber}`,
+                    note: nota
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error al generar referencia');
+
+            renderResultadoOxxo({
+                amount: data.amount,
+                customerName: nombre || pedido.cliente || '',
+                barcodeContent: data.barcodeContent,
+                voucherUrl: data.voucherUrl,
+                expirationDate: data.expirationDate
+            }, pedido);
+        } catch (err) {
+            console.error('[OXXO] Error:', err);
+            errorEl.textContent = 'Error: ' + err.message;
+            errorEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-bolt"></i> Generar referencia';
+        }
+    }
+
+    function renderResultadoOxxo(data, pedido) {
+        document.getElementById('oxxoStepDatos').style.display = 'none';
+        document.getElementById('oxxoStepResultado').style.display = '';
+
+        const orderNumber = pedido?.consecutiveOrderNumber ? `DH${pedido.consecutiveOrderNumber}` : '';
+        document.getElementById('oxxoResultMonto').textContent = `$${Number(data.amount).toLocaleString('es-MX')} MXN`;
+        document.getElementById('oxxoResultCliente').textContent = data.customerName || orderNumber || '-';
+        document.getElementById('oxxoResultRef').textContent = data.barcodeContent || 'Ver en ficha';
+
+        let venceTxt = '-';
+        if (data.expirationDate) {
+            try {
+                const d = data.expirationDate.toDate ? data.expirationDate.toDate() : new Date(data.expirationDate);
+                venceTxt = d.toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+            } catch {}
+        }
+        document.getElementById('oxxoResultVence').textContent = venceTxt;
+
+        const voucherLink = document.getElementById('oxxoResultVoucherLink');
+        voucherLink.href = data.voucherUrl || '#';
+        voucherLink.style.display = data.voucherUrl ? '' : 'none';
+
+        // Mensaje pre-armado para WhatsApp
+        const msg = [
+            `Hola${data.customerName ? ' ' + data.customerName.split(' ')[0] : ''}, te comparto los datos de pago para tu pedido ${orderNumber}:`,
+            ``,
+            `🏪 *Pago en OXXO*`,
+            `💰 Monto: $${Number(data.amount).toLocaleString('es-MX')} MXN`,
+            data.barcodeContent ? `🔢 Referencia: ${data.barcodeContent}` : '',
+            venceTxt !== '-' ? `📅 Vence: ${venceTxt}` : '',
+            data.voucherUrl ? `\n📄 Ficha de pago: ${data.voucherUrl}` : '',
+            ``,
+            `Acude a cualquier OXXO con la referencia. En cuanto se acredite el pago te aviso. ¡Gracias!`
+        ].filter(Boolean).join('\n');
+
+        const btnCopiar = document.getElementById('btnCopiarOxxoMsg');
+        btnCopiar.onclick = () => {
+            navigator.clipboard.writeText(msg).then(() => {
+                btnCopiar.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
+                setTimeout(() => { btnCopiar.innerHTML = '<i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp'; }, 2000);
+            });
+        };
+
+        const btnWA = document.getElementById('btnEnviarOxxoWA');
+        btnWA.onclick = () => {
+            let phone = (pedido?.telefono || '').replace(/\D/g, '');
+            if (phone.length === 10) phone = '52' + phone;
+            if (!phone) {
+                alert('Este pedido no tiene teléfono registrado.');
+                return;
+            }
+            window.open(`https://wa.me/${phone}?text=${encodeURIComponent(msg)}`, '_blank');
+        };
+    }
+
     function mostrarModalConfirmacionRegistro(numeroPedido) {
         if (!modalConfirmacionRegistro || !numeroPedidoConfirmacionSpan || !btnCopiarNumeroPedidoConfirmacion) return;
 
@@ -907,6 +1064,26 @@ document.addEventListener('DOMContentLoaded', () => {
         editButton.dataset.action = 'edit';
         editButton.dataset.orderId = pedido.id;
         accionesTd.appendChild(editButton);
+
+        // Boton OXXO: genera referencia de pago y la copia para mandar por WhatsApp
+        const oxxoButton = document.createElement('button');
+        const oxxoEstado = pedido.oxxo?.status;
+        if (oxxoEstado === 'approved') {
+            oxxoButton.className = 'action-button oxxo-button oxxo-paid';
+            oxxoButton.innerHTML = '<i class="fas fa-check-circle"></i> OXXO Pagado';
+            oxxoButton.title = 'Pago OXXO acreditado';
+        } else if (oxxoEstado === 'pending') {
+            oxxoButton.className = 'action-button oxxo-button oxxo-pending';
+            oxxoButton.innerHTML = '<i class="fas fa-clock"></i> OXXO Pendiente';
+            oxxoButton.title = 'Ver referencia OXXO';
+        } else {
+            oxxoButton.className = 'action-button oxxo-button';
+            oxxoButton.innerHTML = '<i class="fas fa-store"></i> OXXO';
+            oxxoButton.title = 'Generar referencia de pago OXXO';
+        }
+        oxxoButton.dataset.action = 'oxxo';
+        oxxoButton.dataset.orderId = pedido.id;
+        accionesTd.appendChild(oxxoButton);
 
         const deleteButton = document.createElement('button');
         deleteButton.className = 'action-button delete-button';
@@ -2015,6 +2192,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (modalConfirmarBorrado) modalConfirmarBorrado.addEventListener('click', (e) => { if (e.target === modalConfirmarBorrado) cerrarModalConfirmarBorrado(); });
     if (modalConfirmacionRegistro) modalConfirmacionRegistro.addEventListener('click', (e) => { if (e.target === modalConfirmacionRegistro) cerrarModalConfirmacionRegistro(); });
     if (modalComentario) modalComentario.addEventListener('click', (e) => { if (e.target === modalComentario) cerrarModalComentario(); });
+
+    // Modal OXXO listeners
+    const modalOxxo = document.getElementById('modalOxxo');
+    const btnCerrarModalOxxo = document.getElementById('btnCerrarModalOxxo');
+    const btnCancelarOxxo = document.getElementById('btnCancelarOxxo');
+    const btnGenerarOxxo = document.getElementById('btnGenerarOxxo');
+    const btnCerrarOxxoFinal = document.getElementById('btnCerrarOxxoFinal');
+    if (modalOxxo) modalOxxo.addEventListener('click', (e) => { if (e.target === modalOxxo) cerrarModalOxxo(); });
+    if (btnCerrarModalOxxo) btnCerrarModalOxxo.addEventListener('click', cerrarModalOxxo);
+    if (btnCancelarOxxo) btnCancelarOxxo.addEventListener('click', cerrarModalOxxo);
+    if (btnCerrarOxxoFinal) btnCerrarOxxoFinal.addEventListener('click', cerrarModalOxxo);
+    if (btnGenerarOxxo) btnGenerarOxxo.addEventListener('click', generarReferenciaOxxo);
     
     if (btnCerrarModalImagen) btnCerrarModalImagen.addEventListener('click', cerrarModalImagen);
     if (btnCerrarModalConfirmarBorrado) btnCerrarModalConfirmarBorrado.addEventListener('click', cerrarModalConfirmarBorrado);
@@ -2078,6 +2267,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     e.stopPropagation();
                     const pedido = pedidosDataMap.get(orderId);
                     if (pedido) abrirModalConfirmarBorrado(orderId, pedido);
+                } else if (action === 'oxxo') {
+                    e.stopPropagation();
+                    const pedido = pedidosDataMap.get(orderId);
+                    if (pedido) abrirModalOxxo(orderId, pedido);
                 }
                 return;
             }

@@ -872,6 +872,22 @@ body.dark-mode .edit-button:hover { background-color: #d39e00; }
 body.dark-mode .delete-button { background-color: var(--color-danger); }
 body.dark-mode .delete-button:hover { background-color: var(--color-danger-hover); }
 
+.oxxo-button {
+    background-color: #e2231a;
+    color: white;
+}
+.oxxo-button:hover { background-color: #b81c14; }
+.oxxo-button.oxxo-pending {
+    background-color: #f59e0b;
+    color: white;
+}
+.oxxo-button.oxxo-pending:hover { background-color: #d97706; }
+.oxxo-button.oxxo-paid {
+    background-color: #10b981;
+    color: white;
+}
+.oxxo-button.oxxo-paid:hover { background-color: #059669; }
+
 
 #darkModeToggle {
     background-color: var(--color-accent);

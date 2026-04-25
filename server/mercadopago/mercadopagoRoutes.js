@@ -14,6 +14,14 @@ const MP_SANDBOX = process.env.MP_SANDBOX === 'true';
 
 const BASE_URL = process.env.API_URL || 'https://app.dekoormx.com';
 
+// Email generico requerido por MP para pagos OXXO (Dekoor no usa email del cliente,
+// la referencia se comparte por WhatsApp directamente).
+const OXXO_GENERIC_EMAIL = 'pagos@dekoormx.com';
+
+// Numero del admin que recibe alertas cuando un pago OXXO se acredita.
+// Formato internacional sin '+' (52 = Mexico, 1 = celular). Se puede override con env.
+const ADMIN_ALERT_PHONE = process.env.ADMIN_ALERT_PHONE || '5216182297167';
+
 // --- PRECIOS AUTORITATIVOS DEL SERVIDOR ---
 // El cliente NO puede modificar estos precios; siempre se calculan aquí.
 // Fuente unica: server/prices.js
@@ -202,6 +210,154 @@ router.post('/checkout', async (req, res) => {
     }
 });
 
+// =====================================================================
+// POST /api/mercadopago/oxxo
+// Genera una referencia OXXO directa via /v1/payments (sin Checkout Pro).
+// Pensado para uso interno desde el CRM: el admin captura monto + datos
+// del cliente, recibe la referencia y la comparte por WhatsApp.
+// =====================================================================
+router.post('/oxxo', async (req, res) => {
+    try {
+        if (!MP_ACCESS_TOKEN) {
+            return res.status(500).json({ error: 'Pasarela de pago no configurada' });
+        }
+
+        const {
+            amount,                 // Monto a cobrar (MXN)
+            customerName,           // Nombre del cliente (opcional)
+            customerPhone,          // Telefono (para vincular al pedido)
+            orderNumber,            // # de pedido del CRM (DH1234) si aplica
+            productName,            // Concepto/descripcion del cobro
+            note                    // Nota interna (opcional)
+        } = req.body;
+
+        const monto = Number(amount);
+        if (!monto || isNaN(monto) || monto <= 0) {
+            return res.status(400).json({ error: 'Monto invalido' });
+        }
+
+        // Limpia telefono: 10 digitos + lada Mexico
+        let phone = (customerPhone || '').replace(/\D/g, '');
+        if (phone.length === 10) phone = '52' + phone;
+
+        // Split nombre
+        const cleanName = (customerName || 'Cliente Dekoor').trim();
+        const nameParts = cleanName.split(' ');
+        const firstName = nameParts[0] || cleanName;
+        const lastName = nameParts.slice(1).join(' ') || nameParts[0] || 'Dekoor';
+
+        // External reference para vincular webhook con esta orden
+        const externalReference = `oxxo_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+        // OXXO expira en 3 dias (default MP). Configurable por env si hace falta.
+        const expirationDays = parseInt(process.env.OXXO_EXPIRATION_DAYS) || 3;
+        const expirationDate = new Date(Date.now() + expirationDays * 24 * 60 * 60 * 1000);
+
+        const description = productName ||
+            (orderNumber ? `Pedido ${orderNumber} - Dekoor` : 'Pago Dekoor');
+
+        const paymentPayload = {
+            transaction_amount: Math.round(monto * 100) / 100,
+            description,
+            payment_method_id: 'oxxo',
+            external_reference: externalReference,
+            date_of_expiration: expirationDate.toISOString().replace('Z', '-06:00'),
+            notification_url: `${BASE_URL}/api/mercadopago/webhook`,
+            payer: {
+                email: OXXO_GENERIC_EMAIL,
+                first_name: firstName,
+                last_name: lastName,
+                identification: { type: 'RFC', number: 'XAXX010101000' }
+            },
+            metadata: {
+                source: 'crm_oxxo_manual',
+                order_number: orderNumber || '',
+                customer_phone: phone,
+                customer_name: cleanName,
+                note: note || ''
+            }
+        };
+
+        console.log(`[MP OXXO] Generando referencia $${monto} para ${cleanName} (${phone}) pedido=${orderNumber || 'N/A'}`);
+
+        // Idempotency-Key obligatoria para /v1/payments
+        const idempotencyKey = crypto.randomUUID();
+
+        const response = await axios.post(`${MP_API}/v1/payments`, paymentPayload, {
+            headers: {
+                ...mpHeaders(),
+                'X-Idempotency-Key': idempotencyKey
+            }
+        });
+
+        const pago = response.data;
+
+        // Extrae datos del voucher OXXO
+        const voucherUrl = pago?.transaction_details?.external_resource_url || null;
+        const barcodeContent = pago?.barcode?.content || null;
+
+        // Guarda en mp_orders para que el webhook pueda hacer match
+        await db.collection('mp_orders').doc(externalReference).set({
+            externalReference,
+            paymentId: pago.id,
+            paymentMethod: 'oxxo',
+            paymentType: 'ticket',
+            customerName: cleanName,
+            customerPhone: phone,
+            customerEmail: OXXO_GENERIC_EMAIL,
+            productName: description,
+            qty: 1,
+            subtotal: monto,
+            shippingCost: 0,
+            total: monto,
+            address: null,
+            status: pago.status || 'pending',
+            source: 'crm_oxxo_manual',
+            crmOrderNumber: orderNumber || null,
+            voucherUrl,
+            barcodeContent,
+            expirationDate,
+            note: note || '',
+            createdAt: new Date()
+        });
+
+        // Si viene de un pedido del CRM, lo marcamos para verlo en el pedido
+        if (orderNumber) {
+            await db.collection('pedidos').doc(orderNumber).set({
+                oxxo: {
+                    paymentId: pago.id,
+                    externalReference,
+                    voucherUrl,
+                    barcodeContent,
+                    amount: monto,
+                    status: pago.status || 'pending',
+                    createdAt: new Date(),
+                    expirationDate
+                }
+            }, { merge: true }).catch(err => {
+                console.warn('[MP OXXO] No se pudo actualizar pedido', orderNumber, err.message);
+            });
+        }
+
+        res.json({
+            paymentId: pago.id,
+            externalReference,
+            status: pago.status,
+            voucherUrl,
+            barcodeContent,
+            amount: monto,
+            expirationDate: expirationDate.toISOString()
+        });
+
+    } catch (error) {
+        console.error('[MP OXXO] Error:', error.response?.data || error.message);
+        res.status(500).json({
+            error: 'Error al generar referencia OXXO',
+            details: error.response?.data || error.message
+        });
+    }
+});
+
 // Verifica la firma HMAC del webhook segun el protocolo de Mercado Pago.
 // Docs: https://www.mercadopago.com.mx/developers/es/docs/your-integrations/notifications/webhooks
 function verifyMpSignature(req) {
@@ -342,6 +498,36 @@ router.post('/webhook', async (req, res) => {
             return;
         }
 
+        // Si es un OXXO generado manualmente desde el CRM, NO creamos un pedido nuevo
+        // (ya existe en la coleccion pedidos). Solo actualizamos el pedido y alertamos
+        // al admin de que el pago se acredito.
+        if (mpData.source === 'crm_oxxo_manual') {
+            console.log(`[MP WEBHOOK] OXXO manual del CRM acreditado: ${externalReference} (pedido ${mpData.crmOrderNumber || 'N/A'})`);
+
+            // Actualizar el pedido del CRM con el estatus "Pagado"
+            if (mpData.crmOrderNumber) {
+                await db.collection('pedidos').doc(mpData.crmOrderNumber).set({
+                    'oxxo.status': 'approved',
+                    'oxxo.paidAt': new Date(),
+                    pagoOxxoAcreditado: true,
+                    pagoOxxoFecha: new Date()
+                }, { merge: true }).catch(err => {
+                    console.warn('[MP WEBHOOK] No se pudo actualizar pedido CRM:', err.message);
+                });
+            }
+
+            // Alerta al admin via WhatsApp
+            await notifyAdminOxxoApproved({
+                amount: mpData.total,
+                customerName: mpData.customerName,
+                customerPhone: mpData.customerPhone,
+                orderNumber: mpData.crmOrderNumber,
+                paymentId
+            }).catch(err => console.error('[MP WEBHOOK] Error alertando admin:', err.message));
+
+            return;
+        }
+
         // Avoid duplicate order creation (idempotency)
         if (mpData.internalOrderNumber) {
             console.log(`[MP WEBHOOK] Order ${mpData.internalOrderNumber} already created for ${externalReference}`);
@@ -406,6 +592,16 @@ router.post('/webhook', async (req, res) => {
 
         console.log(`[MP WEBHOOK] Order ${orderNumber} created from payment ${paymentId}`);
 
+        // Alerta al admin via WhatsApp (incluye pagos OXXO/SPEI/tarjeta del checkout publico)
+        await notifyAdminOxxoApproved({
+            amount: mpData.total,
+            customerName: mpData.customerName,
+            customerPhone: mpData.customerPhone,
+            orderNumber,
+            paymentId,
+            paymentMethod: payment.payment_method_id
+        }).catch(err => console.error('[MP WEBHOOK] Error alertando admin:', err.message));
+
     } catch (error) {
         console.error('[MP WEBHOOK] Error:', error.response?.data || error.message);
         await db.collection('mp_webhook_errors').add({
@@ -415,6 +611,73 @@ router.post('/webhook', async (req, res) => {
             stack: error.stack || null,
             createdAt: new Date()
         }).catch(() => {});
+    }
+});
+
+// =====================================================================
+// Envia una alerta por WhatsApp al admin cuando un pago se acredita.
+// Usa sendAdvancedWhatsAppMessage del services.js (require lazy para
+// evitar dependencias circulares en el arranque).
+// =====================================================================
+async function notifyAdminOxxoApproved({ amount, customerName, customerPhone, orderNumber, paymentId, paymentMethod }) {
+    try {
+        const { sendAdvancedWhatsAppMessage } = require('../services');
+        const metodoLabel = paymentMethod
+            ? (paymentMethod === 'oxxo' ? 'OXXO' :
+               paymentMethod === 'pse' || paymentMethod === 'spei' ? 'SPEI' :
+               paymentMethod.toUpperCase())
+            : 'OXXO';
+
+        const lineas = [
+            `💰 *Pago ${metodoLabel} acreditado*`,
+            ``,
+            `*Cliente:* ${customerName || 'Sin nombre'}`,
+            customerPhone ? `*Tel:* ${customerPhone}` : '',
+            orderNumber ? `*Pedido:* ${orderNumber}` : '',
+            `*Monto:* $${Number(amount).toLocaleString('es-MX')} MXN`,
+            `*MP ID:* ${paymentId}`,
+            ``,
+            `Ya puedes preparar el pedido. ✅`
+        ].filter(Boolean);
+
+        const text = lineas.join('\n');
+        await sendAdvancedWhatsAppMessage(ADMIN_ALERT_PHONE, { text });
+        console.log(`[MP WEBHOOK] Alerta enviada al admin (${ADMIN_ALERT_PHONE}) por pago ${paymentId}`);
+    } catch (error) {
+        console.error('[MP WEBHOOK] No se pudo enviar alerta al admin:', error.message);
+    }
+}
+
+// GET /api/mercadopago/oxxo/list — Lista de OXXO (admin panel)
+router.get('/oxxo/list', async (req, res) => {
+    try {
+        const status = req.query.status; // 'pending' | 'approved' | undefined
+        let q = db.collection('mp_orders').where('source', '==', 'crm_oxxo_manual');
+        if (status) q = q.where('status', '==', status);
+        const snap = await q.orderBy('createdAt', 'desc').limit(100).get();
+        const items = snap.docs.map(d => {
+            const v = d.data();
+            return {
+                externalReference: v.externalReference,
+                paymentId: v.paymentId,
+                status: v.status,
+                customerName: v.customerName,
+                customerPhone: v.customerPhone,
+                total: v.total,
+                voucherUrl: v.voucherUrl,
+                barcodeContent: v.barcodeContent,
+                crmOrderNumber: v.crmOrderNumber,
+                productName: v.productName,
+                note: v.note,
+                createdAt: v.createdAt,
+                paidAt: v.paidAt || null,
+                expirationDate: v.expirationDate || null
+            };
+        });
+        res.json({ items });
+    } catch (error) {
+        console.error('[MP OXXO LIST] Error:', error.message);
+        res.status(500).json({ error: error.message });
     }
 });
 

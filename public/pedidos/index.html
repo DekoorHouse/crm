@@ -62,6 +62,7 @@
         </div>
         <div class="user-info-container">
              <p id="usuarioLogueado"></p>
+             <a href="/admon/oxxo/" style="display:inline-flex; align-items:center; gap:6px; padding:8px 14px; background:#e2231a; color:#fff; border-radius:8px; text-decoration:none; font-weight:600; font-size:0.9rem;"><i class="fas fa-store"></i> Pagos OXXO</a>
              <button id="darkModeToggle"><i class="fas fa-moon"></i> Modo Oscuro</button>
              <button id="btnCerrarSesion"><i class="fas fa-sign-out-alt"></i> Cerrar Sesión</button>
         </div>
@@ -266,6 +267,82 @@
         </div>
         <div class="form-actions">
             <button type="button" id="btnCerrarModalConfirmacionRegistro"><i class="fas fa-times"></i> Cerrar</button>
+        </div>
+    </div>
+</div>
+
+<div id="modalOxxo" class="modal-overlay" style="display: none;">
+    <div class="modal-content" id="modalContentOxxo">
+        <button id="btnCerrarModalOxxo" class="modal-close-btn" title="Cerrar">×</button>
+        <h2 id="modalOxxoTitle"><i class="fas fa-store" style="color:#e2231a;"></i> Referencia OXXO</h2>
+
+        <!-- Step 1: Datos -->
+        <div id="oxxoStepDatos">
+            <p style="margin: 0 0 14px; color: #555; font-size: 0.95rem;">
+                Confirma los datos para generar la referencia. La compartirás por WhatsApp.
+            </p>
+            <div class="form-grid">
+                <div class="form-item">
+                    <label for="oxxoMontoInput">Monto a cobrar (MXN) (*):</label>
+                    <input type="number" id="oxxoMontoInput" step="0.01" min="1" placeholder="650.00" required>
+                </div>
+                <div class="form-item">
+                    <label for="oxxoNombreInput">Nombre del cliente:</label>
+                    <input type="text" id="oxxoNombreInput" placeholder="Opcional">
+                </div>
+                <div class="form-item form-item-full">
+                    <label for="oxxoNotaInput">Nota interna:</label>
+                    <input type="text" id="oxxoNotaInput" placeholder="Opcional, solo para tu referencia">
+                </div>
+                <div class="form-item form-item-full" id="oxxoPedidoInfo" style="background:#f5f5f5; padding:10px 14px; border-radius:8px; font-size:0.85rem; color:#555;"></div>
+            </div>
+            <div id="oxxoErrorMsg" style="display:none; background:#fee; color:#c00; padding:10px 14px; border-radius:8px; margin-top:10px; font-size:0.9rem;"></div>
+            <div class="form-actions">
+                <button type="button" id="btnCancelarOxxo"><i class="fas fa-times"></i> Cancelar</button>
+                <button type="button" id="btnGenerarOxxo" style="background:#e2231a; color:#fff;"><i class="fas fa-bolt"></i> Generar referencia</button>
+            </div>
+        </div>
+
+        <!-- Step 2: Resultado -->
+        <div id="oxxoStepResultado" style="display:none;">
+            <div style="background:#fff8e1; border-left:4px solid #f59e0b; padding:14px; border-radius:8px; margin-bottom:14px;">
+                <div style="font-weight:700; color:#b45309; margin-bottom:4px;"><i class="fas fa-info-circle"></i> Referencia generada</div>
+                <div style="font-size:0.85rem; color:#555;">Compártela con el cliente por WhatsApp. Te llegará alerta cuando se acredite el pago (puede tardar hasta 48h).</div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #ddd; border-radius:10px; padding:16px; margin-bottom:14px;">
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee;">
+                    <span style="color:#888; font-size:0.85rem;">Monto</span>
+                    <strong id="oxxoResultMonto" style="color:#e2231a; font-size:1.1rem;">$0 MXN</strong>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee;">
+                    <span style="color:#888; font-size:0.85rem;">Cliente</span>
+                    <span id="oxxoResultCliente" style="font-weight:600;">-</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0; border-bottom:1px dashed #eee; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <span style="color:#888; font-size:0.85rem;">Referencia</span>
+                    <span style="font-family:'Courier New',monospace; font-weight:700; word-break:break-all; text-align:right;" id="oxxoResultRef">-</span>
+                </div>
+                <div style="display:flex; justify-content:space-between; padding:8px 0;">
+                    <span style="color:#888; font-size:0.85rem;">Vence</span>
+                    <span id="oxxoResultVence" style="font-weight:600;">-</span>
+                </div>
+            </div>
+
+            <div style="display:flex; flex-direction:column; gap:8px;">
+                <a id="oxxoResultVoucherLink" href="#" target="_blank" style="display:flex; align-items:center; justify-content:center; gap:8px; background:#e2231a; color:#fff; padding:14px; border-radius:8px; text-decoration:none; font-weight:700;">
+                    <i class="fas fa-external-link-alt"></i> Ver / imprimir ficha OXXO
+                </a>
+                <button type="button" id="btnCopiarOxxoMsg" style="background:#25d366; color:#fff; padding:14px; border:none; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp
+                </button>
+                <button type="button" id="btnEnviarOxxoWA" style="background:#128c7e; color:#fff; padding:14px; border:none; border-radius:8px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:8px;">
+                    <i class="fab fa-whatsapp"></i> Abrir WhatsApp con el cliente
+                </button>
+            </div>
+            <div class="form-actions" style="margin-top:14px;">
+                <button type="button" id="btnCerrarOxxoFinal"><i class="fas fa-check"></i> Listo</button>
+            </div>
         </div>
     </div>
 </div>
