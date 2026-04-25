@@ -586,11 +586,27 @@ router.post('/cliente', async (req, res) => {
         } catch (e) { /* ignore */ }
 
         // 3. Enviar WhatsApp al cliente (plantilla guia_envio_creada)
+        // IMPORTANTE: usamos el telefono ORIGINAL del CRM (pedido.telefono),
+        // NO el telefono que el cliente puso en el formulario, porque a veces
+        // ponen un numero distinto y el mensaje debe llegar al chat real.
         try {
             const axios = require('axios');
-            const waId = '52' + telefono;
             const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
             const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+
+            // Resolver wa_id desde el pedido (telefono del CRM, no del form)
+            let waId = '52' + telefono; // fallback al telefono del form
+            try {
+                const pedidoDoc = await db.collection('pedidos').doc(numeroPedido).get();
+                if (pedidoDoc.exists) {
+                    const pedidoTel = String(pedidoDoc.data().telefono || '').replace(/\D/g, '');
+                    if (pedidoTel.length >= 10) {
+                        waId = pedidoTel; // ya viene en formato 52XXX o 521XXX
+                    }
+                }
+            } catch (e) {
+                console.warn(`[J&T] No se pudo leer telefono del pedido ${numeroPedido}, usando el del form:`, e.message);
+            }
 
             const templatePayload = {
                 messaging_product: 'whatsapp',
