@@ -81,6 +81,17 @@ async function main() {
         const contactId = data.contactId || data.telefono;
         const beforeTs = data.createdAt || admin.firestore.Timestamp.now();
 
+        if (!contactId) {
+            organicCount++;
+            buckets['A_no_contactId'] = (buckets['A_no_contactId'] || 0) + 1;
+            if (data.createdAt) {
+                const d = data.createdAt.toDate();
+                const month = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                monthHistogram[month] = (monthHistogram[month] || 0) + 1;
+            }
+            continue;
+        }
+
         // Replicar la lógica del backfill rápido para detectar si es ad real
         const contactRef = db.collection('contacts_whatsapp').doc(contactId);
         let isAd = false;
