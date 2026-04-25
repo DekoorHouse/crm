@@ -1956,18 +1956,27 @@ router.get('/kpi/profitability', async (req, res) => {
         const SHIPPING = 80;
         const ORG_KEY = '__organic__';
 
-        // 1. Pedidos en rango: dos queries (con leadDate + orgánicos por createdAt)
-        const [adQuery, organicQuery] = await Promise.all([
-            db.collection('pedidos').where('leadDate', '>=', fromTs).where('leadDate', '<=', toTs).get(),
-            db.collection('pedidos').where('leadSource', '==', 'organic').where('createdAt', '>=', fromTs).where('createdAt', '<=', toTs).get()
-        ]);
+        // 1. Pedidos en rango. Para evitar índice compuesto:
+        //    - Una query amplia por createdAt (con padding de 7 días para cubrir casos donde
+        //      leadDate está en rango pero createdAt cayó días después por la IA nocturna).
+        //    - Filtrado en memoria por COALESCE(leadDate, createdAt) ∈ [fromTs, toTs].
+        const padMs = 7 * 24 * 60 * 60 * 1000;
+        const wideFromTs = admin.firestore.Timestamp.fromMillis(fromTs.toMillis() - padMs);
+        const wideToTs = admin.firestore.Timestamp.fromMillis(toTs.toMillis() + padMs);
+        const snap = await db.collection('pedidos')
+            .where('createdAt', '>=', wideFromTs)
+            .where('createdAt', '<=', wideToTs)
+            .get();
 
-        const seenIds = new Set();
+        const fromMs = fromTs.toMillis();
+        const toMs = toTs.toMillis();
         const pedidos = [];
-        for (const doc of [...adQuery.docs, ...organicQuery.docs]) {
-            if (seenIds.has(doc.id)) continue;
-            seenIds.add(doc.id);
+        for (const doc of snap.docs) {
             const d = doc.data();
+            const effective = d.leadDate || d.createdAt;
+            if (!effective) continue;
+            const ms = effective.toMillis();
+            if (ms < fromMs || ms > toMs) continue;
             pedidos.push({
                 id: doc.id,
                 attributedAdId: d.attributedAdId || null,
