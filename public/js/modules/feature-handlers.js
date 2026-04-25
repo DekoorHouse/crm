@@ -1331,6 +1331,233 @@ async function handleTransferChat(event) {
 // --- END NUEVOS MANEJADORES ---
 
 
+// =====================================================================
+// OXXO: Genera referencia de pago para mandar por WhatsApp al cliente
+// =====================================================================
+async function handleGenerarOxxo() {
+    if (!state.selectedContactId) {
+        showError('Selecciona un contacto primero.');
+        return;
+    }
+    const contactId = state.selectedContactId;
+    const contact = state.contacts.find(c => c.id === contactId);
+    const contactName = contact?.name || '';
+
+    // Buscar ultimo pedido del contacto para detectar precio
+    let latestOrder = null;
+    try {
+        const r = await fetch(`${API_BASE_URL}/api/mercadopago/contact-latest-order/${contactId}`);
+        if (r.ok) {
+            const data = await r.json();
+            if (data.found) latestOrder = data;
+        }
+    } catch (e) {
+        console.warn('[OXXO] No se pudo obtener ultimo pedido:', e.message);
+    }
+
+    showOxxoModal({ contactId, contactName, latestOrder });
+}
+
+function showOxxoModal({ contactId, contactName, latestOrder }) {
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.5);font-family:Manrope,sans-serif;';
+    const card = document.createElement('div');
+    card.style.cssText = 'background:#fff;border-radius:16px;padding:24px;width:440px;max-width:92vw;max-height:90vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.25);';
+
+    const orderInfoLine = latestOrder
+        ? `<div style="background:#f5f5f5;padding:10px 14px;border-radius:8px;font-size:0.82rem;color:#444;margin-bottom:14px;"><strong>Último pedido:</strong> ${latestOrder.orderNumber} · <strong>${latestOrder.productName || 's/p'}</strong> · $${Number(latestOrder.precio).toLocaleString('es-MX')} MXN</div>`
+        : `<div style="background:#fff8e1;padding:10px 14px;border-radius:8px;font-size:0.82rem;color:#92400e;margin-bottom:14px;"><i class="fas fa-info-circle"></i> Este contacto no tiene pedidos registrados. La referencia OXXO se generará sin vincular a un pedido.</div>`;
+
+    const defaultAmount = latestOrder?.precio || '';
+
+    card.innerHTML = `
+        <h2 style="margin:0 0 14px;font-size:1.15rem;display:flex;align-items:center;gap:8px;">
+            <i class="fas fa-store" style="color:#e2231a"></i> Generar Pago OXXO
+        </h2>
+        <div id="oxxoStep1">
+            <p style="margin:0 0 12px;color:#555;font-size:0.9rem;">Confirma el monto a cobrar. La referencia se compartirá por WhatsApp.</p>
+            ${orderInfoLine}
+            <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:6px;">Monto a cobrar (MXN) *</label>
+            <input type="number" id="oxxoModalMonto" step="0.01" min="1" value="${defaultAmount}" placeholder="650.00"
+                style="width:100%;padding:11px 14px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:12px;font-family:inherit;">
+            <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:6px;">Nombre del cliente</label>
+            <input type="text" id="oxxoModalNombre" value="${contactName}" placeholder="Opcional"
+                style="width:100%;padding:11px 14px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:12px;font-family:inherit;">
+            <label style="display:block;font-weight:600;font-size:0.85rem;margin-bottom:6px;">Nota interna</label>
+            <input type="text" id="oxxoModalNota" placeholder="Opcional"
+                style="width:100%;padding:11px 14px;border:1px solid #ddd;border-radius:8px;font-size:1rem;margin-bottom:12px;font-family:inherit;">
+            <div id="oxxoModalError" style="display:none;background:#fee;color:#c00;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:0.85rem;"></div>
+            <div style="display:flex;gap:8px;">
+                <button id="oxxoModalCancel" style="flex:1;padding:12px;border-radius:10px;border:none;background:#f3f4f6;color:#374151;font-weight:700;cursor:pointer;font-family:inherit;">Cancelar</button>
+                <button id="oxxoModalGenerar" style="flex:1;padding:12px;border-radius:10px;border:none;background:#e2231a;color:#fff;font-weight:700;cursor:pointer;font-family:inherit;">
+                    <i class="fas fa-bolt"></i> Generar referencia
+                </button>
+            </div>
+        </div>
+        <div id="oxxoStep2" style="display:none;">
+            <div style="background:#fff8e1;border-left:3px solid #f59e0b;padding:12px;border-radius:8px;margin-bottom:14px;">
+                <div style="font-weight:700;color:#b45309;font-size:0.88rem;">✅ Referencia generada</div>
+                <div style="font-size:0.78rem;color:#666;margin-top:3px;">Compártela por WhatsApp. Te llegará alerta al WhatsApp del admin cuando se acredite (hasta 48h).</div>
+            </div>
+            <div id="oxxoResultBox" style="background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px;margin-bottom:14px;"></div>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+                <a id="oxxoVoucherLink" href="#" target="_blank" style="display:flex;align-items:center;justify-content:center;gap:8px;background:#e2231a;color:#fff;padding:12px;border-radius:8px;text-decoration:none;font-weight:700;">
+                    <i class="fas fa-external-link-alt"></i> Ver / imprimir ficha OXXO
+                </a>
+                <button id="oxxoCopyMsgBtn" style="background:#25d366;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;">
+                    <i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp
+                </button>
+                <button id="oxxoSendChatBtn" style="background:#128c7e;color:#fff;padding:12px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px;">
+                    <i class="fas fa-paper-plane"></i> Enviar al chat actual
+                </button>
+            </div>
+            <div style="margin-top:12px;text-align:center;">
+                <button id="oxxoCloseBtn" style="background:#f3f4f6;color:#374151;padding:10px 20px;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-family:inherit;">Listo</button>
+            </div>
+        </div>
+    `;
+
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+
+    function close() { overlay.remove(); }
+    card.querySelector('#oxxoModalCancel').addEventListener('click', close);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+
+    card.querySelector('#oxxoModalGenerar').addEventListener('click', async () => {
+        const monto = parseFloat(card.querySelector('#oxxoModalMonto').value);
+        const nombre = card.querySelector('#oxxoModalNombre').value.trim();
+        const nota = card.querySelector('#oxxoModalNota').value.trim();
+        const errEl = card.querySelector('#oxxoModalError');
+        errEl.style.display = 'none';
+
+        if (!monto || monto <= 0) {
+            errEl.textContent = 'Ingresa un monto válido.';
+            errEl.style.display = 'block';
+            return;
+        }
+
+        const btn = card.querySelector('#oxxoModalGenerar');
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generando...';
+
+        try {
+            const orderNumber = latestOrder?.orderNumber || '';
+            const productName = latestOrder?.productName
+                ? `${latestOrder.productName}${orderNumber ? ' - ' + orderNumber : ''}`
+                : (orderNumber ? `Pedido ${orderNumber}` : 'Pago Dekoor');
+
+            const res = await fetch(`${API_BASE_URL}/api/mercadopago/oxxo`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    amount: monto,
+                    customerName: nombre,
+                    customerPhone: contactId,
+                    orderNumber,
+                    productName,
+                    note: nota
+                })
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Error al generar referencia');
+
+            renderOxxoResult({ data, monto, nombre, orderNumber, contactId });
+        } catch (err) {
+            console.error('[OXXO] Error:', err);
+            errEl.textContent = 'Error: ' + err.message;
+            errEl.style.display = 'block';
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fas fa-bolt"></i> Generar referencia';
+        }
+    });
+
+    function renderOxxoResult({ data, monto, nombre, orderNumber, contactId }) {
+        card.querySelector('#oxxoStep1').style.display = 'none';
+        card.querySelector('#oxxoStep2').style.display = '';
+
+        let venceTxt = '-';
+        if (data.expirationDate) {
+            try {
+                venceTxt = new Date(data.expirationDate).toLocaleDateString('es-MX', { day: '2-digit', month: 'short', year: 'numeric' });
+            } catch {}
+        }
+
+        card.querySelector('#oxxoResultBox').innerHTML = `
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;">
+                <span style="color:#888;">Monto</span>
+                <strong style="color:#e2231a;">$${Number(monto).toLocaleString('es-MX')} MXN</strong>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;">
+                <span style="color:#888;">Cliente</span>
+                <span style="font-weight:600;">${nombre || '-'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px dashed #eee;font-size:0.85rem;align-items:center;gap:8px;flex-wrap:wrap;">
+                <span style="color:#888;">Referencia</span>
+                <span style="font-family:'Courier New',monospace;font-weight:700;word-break:break-all;text-align:right;">${data.barcodeContent || 'Ver ficha'}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;padding:6px 0;font-size:0.85rem;">
+                <span style="color:#888;">Vence</span>
+                <span style="font-weight:600;">${venceTxt}</span>
+            </div>
+        `;
+
+        const voucherLink = card.querySelector('#oxxoVoucherLink');
+        if (data.voucherUrl) {
+            voucherLink.href = data.voucherUrl;
+        } else {
+            voucherLink.style.display = 'none';
+        }
+
+        // Mensaje pre-armado
+        const firstName = nombre ? nombre.split(' ')[0] : '';
+        const msg = [
+            `Hola${firstName ? ' ' + firstName : ''}, te comparto los datos de pago${orderNumber ? ' para tu pedido ' + orderNumber : ''}:`,
+            ``,
+            `🏪 *Pago en OXXO*`,
+            `💰 Monto: $${Number(monto).toLocaleString('es-MX')} MXN`,
+            data.barcodeContent ? `🔢 Referencia: ${data.barcodeContent}` : '',
+            venceTxt !== '-' ? `📅 Vence: ${venceTxt}` : '',
+            data.voucherUrl ? `\n📄 Ficha de pago: ${data.voucherUrl}` : '',
+            ``,
+            `Acude a cualquier OXXO con la referencia. En cuanto se acredite el pago te aviso. ¡Gracias!`
+        ].filter(Boolean).join('\n');
+
+        const btnCopy = card.querySelector('#oxxoCopyMsgBtn');
+        btnCopy.addEventListener('click', () => {
+            navigator.clipboard.writeText(msg).then(() => {
+                btnCopy.innerHTML = '<i class="fas fa-check"></i> ¡Copiado!';
+                setTimeout(() => { btnCopy.innerHTML = '<i class="fab fa-whatsapp"></i> Copiar mensaje para WhatsApp'; }, 2000);
+            });
+        });
+
+        // Enviar al chat actual usando el input de mensaje
+        const btnSendChat = card.querySelector('#oxxoSendChatBtn');
+        btnSendChat.addEventListener('click', () => {
+            const input = document.getElementById('message-input') || document.querySelector('textarea[placeholder*="mensaje" i]');
+            if (input) {
+                if (input.tagName === 'TEXTAREA' || input.tagName === 'INPUT') {
+                    input.value = msg;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                } else {
+                    input.innerText = msg;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                }
+                input.focus();
+                close();
+                showError('Mensaje pegado en el chat. Revisa y envía.', 'success');
+            } else {
+                navigator.clipboard.writeText(msg).then(() => {
+                    showError('No encontré el input. Mensaje copiado al portapapeles.', 'success');
+                });
+            }
+        });
+
+        card.querySelector('#oxxoCloseBtn').addEventListener('click', close);
+    }
+}
+
+
 // --- Make functions globally accessible ---
 // Funciones que se llaman directamente desde el HTML (onclick)
 window.handleUpdateContact = handleUpdateContact;
@@ -1341,6 +1568,7 @@ window.handleMarkAsRegistration = handleMarkAsRegistration; // Mantener si aún 
 window.handleSendViewContent = handleSendViewContent;
 window.handlePedirDatosEnvio = handlePedirDatosEnvio;
 window.handleCancelarGuiaEnvio = handleCancelarGuiaEnvio;
+window.handleGenerarOxxo = handleGenerarOxxo;
 window.handleSaveOrder = handleSaveOrder;
 window.handleUpdateExistingOrder = handleUpdateExistingOrder;
 window.handleSendCampaign = handleSendCampaign;

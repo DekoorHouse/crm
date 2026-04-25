@@ -648,6 +648,42 @@ async function notifyAdminOxxoApproved({ amount, customerName, customerPhone, or
     }
 }
 
+// GET /api/mercadopago/contact-latest-order/:contactId
+// Devuelve el ultimo pedido (mayor consecutiveOrderNumber) del contacto y
+// si ya tiene una referencia OXXO activa. Lo usa el panel del CRM para
+// pre-llenar el modal de generacion de OXXO.
+router.get('/contact-latest-order/:contactId', async (req, res) => {
+    try {
+        const { contactId } = req.params;
+        const snap = await db.collection('pedidos')
+            .where('telefono', '==', contactId)
+            .get();
+
+        if (snap.empty) return res.json({ found: false });
+
+        const orders = snap.docs.map(d => ({ id: d.id, ...d.data() }))
+            .filter(o => o.consecutiveOrderNumber)
+            .sort((a, b) => (b.consecutiveOrderNumber || 0) - (a.consecutiveOrderNumber || 0));
+
+        if (orders.length === 0) return res.json({ found: false });
+
+        const o = orders[0];
+        res.json({
+            found: true,
+            orderNumber: `DH${o.consecutiveOrderNumber}`,
+            consecutiveOrderNumber: o.consecutiveOrderNumber,
+            productName: o.producto || '',
+            precio: Number(o.precio) || 0,
+            telefono: o.telefono || contactId,
+            oxxo: o.oxxo || null,
+            estatus: o.estatus || null
+        });
+    } catch (error) {
+        console.error('[MP] contact-latest-order error:', error.message);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // GET /api/mercadopago/oxxo/list — Lista de OXXO (admin panel)
 router.get('/oxxo/list', async (req, res) => {
     try {
