@@ -69,9 +69,15 @@ async function main() {
     let toUpdate = [];
     let alreadyHave = 0;
     let noContact = 0;
+    let processed = 0;
 
     for (const doc of snap.docs) {
         const data = doc.data();
+        processed++;
+
+        if (processed % 500 === 0) {
+            console.log(`  procesando... ${processed}/${snap.size}`);
+        }
 
         if (data.leadDate || data.leadSource) {
             alreadyHave++;
