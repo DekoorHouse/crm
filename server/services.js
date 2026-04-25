@@ -554,7 +554,7 @@ function invalidateGeminiCache() {
  */
 async function askGeminiPro(prompt, systemInstruction = null) {
     if (!GEMINI_API_KEY) throw new Error('La API Key de Gemini no está configurada.');
-    const model = process.env.GEMINI_PRO_MODEL || 'gemini-3-pro';
+    const model = process.env.GEMINI_PRO_MODEL || 'gemini-3.1-pro-preview';
     const apiUrl = `${GEMINI_BASE_URL}/models/${model}:generateContent?key=${GEMINI_API_KEY}`;
     const payload = { contents: [{ parts: [{ text: prompt }] }] };
     if (systemInstruction) {
