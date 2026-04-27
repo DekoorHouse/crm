@@ -167,6 +167,7 @@ function abrirModalMaterial(materialId) {
     $('materialMinimo').value = m?.stockMinimo ?? 0;
     $('materialBuffer').value = m?.bufferPct ?? 20;
     $('materialMultiplo').value = Math.max(1, Number(m?.multiploCompra) || 1);
+    $('materialPaquetesOrden').value = Math.max(0, parseInt(m?.paquetesPorOrden, 10) || 0);
     $('materialLead').value = m?.leadTimeDias ?? 3;
     $('materialCosto').value = m?.costoUnit ?? 0;
     $('materialProveedor').value = m?.proveedor || '';
@@ -193,6 +194,7 @@ $('formMaterial').addEventListener('submit', async (e) => {
         stockMinimo: Number($('materialMinimo').value) || 0,
         bufferPct: Number($('materialBuffer').value) || 0,
         multiploCompra: Math.max(1, parseInt($('materialMultiplo').value, 10) || 1),
+        paquetesPorOrden: Math.max(0, parseInt($('materialPaquetesOrden').value, 10) || 0),
         leadTimeDias: Number($('materialLead').value) || 0,
         costoUnit: Number($('materialCosto').value) || 0,
         proveedor: $('materialProveedor').value.trim(),

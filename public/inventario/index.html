@@ -144,6 +144,10 @@
                     <input type="number" id="materialMultiplo" step="1" min="1" value="1" title="Tamaño del paquete (ej. 10 si vienen en bolsas de 10). Usa 1 si se puede pedir cualquier cantidad.">
                 </div>
                 <div class="form-item">
+                    <label>Paquetes por orden:</label>
+                    <input type="number" id="materialPaquetesOrden" step="1" min="0" value="0" placeholder="0 = autom&aacute;tico" title="Si defines un número (ej. 5), siempre pedirá esa cantidad fija de paquetes. Deja en 0 para que el sistema calcule la cantidad según el consumo proyectado.">
+                </div>
+                <div class="form-item">
                     <label>Lead time (d&iacute;as):</label>
                     <input type="number" id="materialLead" step="1" min="0" value="3">
                 </div>
