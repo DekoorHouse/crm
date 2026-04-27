@@ -56,6 +56,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Form inputs for pedido
     const pedidoProductoSelect = document.getElementById('pedidoProductoSelect');
     const pedidoTelefonoInput = document.getElementById('pedidoTelefono');
+    const pedidoCantidadInput = document.getElementById('pedidoCantidad');
     const pedidoPrecioInput = document.getElementById('pedidoPrecio');
     const pedidoComentariosInput = document.getElementById('pedidoComentarios');
     const pedidoDatosProductoInput = document.getElementById('pedidoDatosProducto');
@@ -493,6 +494,11 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidoProductoSelect.value = pedidoData.producto || '';
 
             pedidoTelefonoInput.value = pedidoData.telefono || '';
+            // Soporta tanto 'cantidad' a nivel raiz como en items[0]
+            const editCantidad = pedidoData.cantidad
+                || (Array.isArray(pedidoData.items) && pedidoData.items[0]?.cantidad)
+                || 1;
+            if (pedidoCantidadInput) pedidoCantidadInput.value = Math.max(1, Number(editCantidad) || 1);
             pedidoPrecioInput.value = pedidoData.precio || '';
             pedidoComentariosInput.value = pedidoData.comentarios || '';
             pedidoDatosProductoInput.value = pedidoData.datosProducto || '';
@@ -511,6 +517,7 @@ document.addEventListener('DOMContentLoaded', () => {
             btnGuardarPedido.innerHTML = '<i class="fas fa-save"></i> Guardar Pedido';
             pedidoPrecioInput.value = '650';
             pedidoProductoSelect.value = 'Spiderman';
+            if (pedidoCantidadInput) pedidoCantidadInput.value = '1';
         }
 
         renderOrderPhotoPreviews();
@@ -906,7 +913,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const consecutiveOrderNumber = pedido.consecutiveOrderNumber || 'N/A';
         const fechaFormateada = formatFirebaseTimestamp(pedido.createdAt);
-        const precioFormateado = formatCurrency(pedido.precio);
         const vendedor = pedido.vendedor || '<em>N/A</em>';
         const telefonoOriginal = pedido.telefono || '-';
         const estatus = pedido.estatus || 'Sin estatus';
@@ -917,7 +923,13 @@ document.addEventListener('DOMContentLoaded', () => {
             return qty > 1 ? `${it.producto} ×${qty}` : it.producto;
         };
         let productoNombre;
+        let precioTotal = Number(pedido.precio) || 0;
         if (Array.isArray(pedido.items) && pedido.items.length > 0) {
+            // Recalcular total considerando cantidad por item
+            precioTotal = pedido.items.reduce((sum, it) => {
+                const qty = Math.max(1, Number(it.cantidad) || 1);
+                return sum + (Number(it.precio) || 0) * qty;
+            }, 0);
             if (pedido.items.length === 1) {
                 productoNombre = formatItemName(pedido.items[0]);
             } else if (pedido.items.length <= 3) {
@@ -926,8 +938,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 productoNombre = `${pedido.items.length} productos`;
             }
         } else {
-            productoNombre = pedido.producto || '<em>N/A</em>';
+            // Legacy: producto + cantidad a nivel raiz
+            const qty = Math.max(1, Number(pedido.cantidad) || 1);
+            precioTotal = (Number(pedido.precio) || 0) * qty;
+            productoNombre = pedido.producto
+                ? (qty > 1 ? `${pedido.producto} ×${qty}` : pedido.producto)
+                : '<em>N/A</em>';
         }
+        const precioFormateado = formatCurrency(precioTotal);
         const datosProductoTexto = pedido.datosProducto || '-';
         const datosPromocionTexto = pedido.datosPromocion || '-';
 
@@ -1669,6 +1687,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const finalOrderPhotoUrls = await processPhotos(orderPhotosManager, initialOrderPhotoUrls, 'pedidos');
             const finalPromoPhotoUrls = await processPhotos(promoPhotosManager, initialPromoPhotoUrls, 'promociones');
             
+            const cantidad = Math.max(1, parseInt(pedidoCantidadInput?.value, 10) || 1);
             const pedidoData = {
                 producto: productoFinal,
                 telefono: telefono,
@@ -1677,6 +1696,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 comentarios: pedidoComentariosInput.value.trim(),
                 datosProducto: pedidoDatosProductoInput.value.trim(),
                 datosPromocion: pedidoDatosPromocionInput.value.trim(),
+                cantidad: cantidad,
                 precio: Number(pedidoPrecioInput.value) || 0,
                 userEmail: auth.currentUser.email
             };

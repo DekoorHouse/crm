@@ -167,7 +167,11 @@
                          <input type="tel" id="pedidoTelefono" placeholder="Ej: 5512345678" required>
                      </div>
                      <div class="form-item">
-                          <label for="pedidoPrecio">Precio (MXN):</label>
+                          <label for="pedidoCantidad">Cantidad (*):</label>
+                          <input type="number" id="pedidoCantidad" min="1" step="1" value="1" required>
+                      </div>
+                     <div class="form-item">
+                          <label for="pedidoPrecio">Precio unitario (MXN):</label>
                           <input type="number" id="pedidoPrecio" step="0.01" placeholder="Ej: 650.00">
                       </div>
 
