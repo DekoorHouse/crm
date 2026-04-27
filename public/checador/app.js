@@ -224,4 +224,12 @@ setInterval(updateClock, 1000);
 updateClock();
 checkNetwork();
 setInterval(checkNetwork, 30 * 1000);
+
+// Revalidar al volver a la pestaña — Chrome móvil suspende setInterval en background
+document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') checkNetwork();
+});
+// Revalidar cuando la conexión se recupera
+window.addEventListener('online', checkNetwork);
+
 setTimeout(() => employeeIdInput.focus(), 500);
