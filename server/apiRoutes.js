@@ -183,7 +183,7 @@ router.post('/referencias/rotate', async (req, res) => {
 // Lee la IP real del request (req.ip con trust proxy habilitado) y valida contra
 // prefijos almacenados en Firestore (config/checador_network.authorizedPrefixes).
 // Si el doc no existe o falla la lectura, cae a una lista por defecto.
-const CHECADOR_FALLBACK_PREFIXES = ['2806:267:2484', '177.226.102', '187.244.65'];
+const CHECADOR_FALLBACK_PREFIXES = ['2806:267:2484', '177.226.102'];
 let checadorPrefixCache = { value: null, timestamp: 0 };
 const CHECADOR_PREFIX_TTL_MS = 60 * 1000;
 
