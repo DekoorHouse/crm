@@ -48,7 +48,15 @@ async function descontarInventarioPorPedido(orderId, orderData, motivo) {
     });
 
     // 2) Calcular consumo total por material (multi-producto, multi-cantidad)
-    const consumoPorMaterial = new Map(); // materialId -> total cantidad
+    //
+    // Regla de escala:
+    //   - 'por_unidad' (default): cantidad × item.cantidad, sumado a través de items.
+    //   - 'por_pedido': fija; si varios items definen el mismo material como por_pedido,
+    //     se toma el MÁXIMO (no se suma, porque "por pedido" significa una vez por pedido).
+    //     Ej: pedido con 3 Spider + 2 Rex y ambos definen "Etiqueta térmica por_pedido = 1"
+    //     → consumo = max(1, 1) = 1, no 5 ni 2.
+    const consumoPorUnidad = new Map();   // materialId -> suma escalada
+    const consumoPorPedido = new Map();   // materialId -> máximo
     const productosSinBom = [];
 
     for (const item of items) {
@@ -60,14 +68,31 @@ async function descontarInventarioPorPedido(orderId, orderData, motivo) {
         const qtyPedido = Math.max(1, parseInt(item.cantidad, 10) || 1);
         for (const comp of bom.componentes) {
             if (!comp.materialId) continue;
-            const totalConsumo = (Number(comp.cantidad) || 0) * qtyPedido;
-            if (totalConsumo <= 0) continue;
-            consumoPorMaterial.set(
-                comp.materialId,
-                (consumoPorMaterial.get(comp.materialId) || 0) + totalConsumo
-            );
+            const cantBase = Number(comp.cantidad) || 0;
+            if (cantBase <= 0) continue;
+
+            if (comp.escala === 'por_pedido') {
+                consumoPorPedido.set(
+                    comp.materialId,
+                    Math.max(consumoPorPedido.get(comp.materialId) || 0, cantBase)
+                );
+            } else {
+                // por_unidad (default)
+                const total = cantBase * qtyPedido;
+                consumoPorUnidad.set(
+                    comp.materialId,
+                    (consumoPorUnidad.get(comp.materialId) || 0) + total
+                );
+            }
         }
     }
+
+    // Combinar ambos mapas en consumoPorMaterial. Si un material aparece en
+    // ambos (caso raro: definido como por_unidad en un producto y por_pedido
+    // en otro), se SUMAN las dos contribuciones.
+    const consumoPorMaterial = new Map();
+    consumoPorUnidad.forEach((v, k) => consumoPorMaterial.set(k, (consumoPorMaterial.get(k) || 0) + v));
+    consumoPorPedido.forEach((v, k) => consumoPorMaterial.set(k, (consumoPorMaterial.get(k) || 0) + v));
 
     if (consumoPorMaterial.size === 0) {
         // Marcar como "intentado" para no reintentar pero NO escribir movimientos

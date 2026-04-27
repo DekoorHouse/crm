@@ -298,7 +298,7 @@ h1, h2, h3 { font-family: 'Poppins', sans-serif; margin: 0; }
 /* --- COMPONENTES DE RECETA --- */
 .componente-row {
     display: grid;
-    grid-template-columns: 1fr 100px 80px 36px;
+    grid-template-columns: 1fr 90px 130px 70px 36px;
     gap: 8px;
     align-items: end;
     margin-bottom: 8px;
@@ -340,7 +340,15 @@ h1, h2, h3 { font-family: 'Poppins', sans-serif; margin: 0; }
 .toast.success { background: var(--color-primary); }
 
 @media (max-width: 640px) {
-    .componente-row { grid-template-columns: 1fr 80px 60px 32px; }
+    .componente-row {
+        grid-template-columns: 1fr 70px 32px;
+        grid-template-areas: "material material material" "cantidad escala remove" "unidad unidad unidad";
+    }
+    .componente-row .form-item:nth-child(1) { grid-area: material; }
+    .componente-row .form-item:nth-child(2) { grid-area: cantidad; }
+    .componente-row .form-item:nth-child(3) { grid-area: escala; }
+    .componente-row .comp-unidad { grid-area: unidad; text-align: left; }
+    .componente-row .btn-remove { grid-area: remove; }
     .form-grid { grid-template-columns: 1fr; }
     .toolbar { flex-direction: column; align-items: stretch; }
 }

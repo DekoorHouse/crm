@@ -272,7 +272,10 @@ function renderRecetas() {
                 const m = state.materialesById.get(c.materialId);
                 const nombre = m?.nombre || c.materialNombre || '(material no encontrado)';
                 const unidad = m?.unidad || '';
-                return `<li><strong>${fmtNum(c.cantidad)} ${escapeHtml(unidad)}</strong> de ${escapeHtml(nombre)}</li>`;
+                const escalaTxt = c.escala === 'por_pedido'
+                    ? ' <span style="color:var(--color-warning);font-size:11px;">(por pedido)</span>'
+                    : '';
+                return `<li><strong>${fmtNum(c.cantidad)} ${escapeHtml(unidad)}</strong> de ${escapeHtml(nombre)}${escalaTxt}</li>`;
             }).join('') + '</ul>'
             : '';
 
@@ -335,6 +338,7 @@ async function copiarRecetaAOtros(productoOrigen) {
                     materialId: c.materialId,
                     materialNombre: c.materialNombre || '',
                     cantidad: c.cantidad,
+                    escala: c.escala === 'por_pedido' ? 'por_pedido' : 'por_unidad',
                 })),
                 updatedAt: serverTimestamp(),
             }, { merge: true })
@@ -388,6 +392,7 @@ function agregarFilaComponente(componente = null) {
     const opciones = state.materiales
         .map(m => `<option value="${m.id}" ${componente?.materialId === m.id ? 'selected' : ''}>${escapeHtml(m.nombre)}</option>`)
         .join('');
+    const escalaActual = componente?.escala === 'por_pedido' ? 'por_pedido' : 'por_unidad';
     const row = document.createElement('div');
     row.className = 'componente-row';
     row.innerHTML = `
@@ -401,6 +406,13 @@ function agregarFilaComponente(componente = null) {
         <div class="form-item">
             <label>Cantidad:</label>
             <input type="number" class="comp-cantidad" step="0.01" min="0" value="${componente?.cantidad ?? 1}">
+        </div>
+        <div class="form-item">
+            <label>Escala:</label>
+            <select class="comp-escala" title="Por unidad: multiplica por cada lámpara del pedido. Por pedido: una sola vez sin importar cuántas lámparas.">
+                <option value="por_unidad" ${escalaActual === 'por_unidad' ? 'selected' : ''}>Por unidad</option>
+                <option value="por_pedido" ${escalaActual === 'por_pedido' ? 'selected' : ''}>Por pedido</option>
+            </select>
         </div>
         <div class="qty-unit comp-unidad">${unidadDe(componente?.materialId) || '—'}</div>
         <button type="button" class="btn-remove" title="Quitar"><i class="fas fa-times"></i></button>
@@ -439,6 +451,8 @@ $('btnGuardarReceta').addEventListener('click', async () => {
     filas.forEach(row => {
         const materialId = row.querySelector('.comp-material').value;
         const cantidad = Number(row.querySelector('.comp-cantidad').value);
+        const escalaSel = row.querySelector('.comp-escala')?.value;
+        const escala = escalaSel === 'por_pedido' ? 'por_pedido' : 'por_unidad';
         if (!materialId) return; // fila vacía
         if (!isFinite(cantidad) || cantidad <= 0) {
             invalido = true; return;
@@ -452,6 +466,7 @@ $('btnGuardarReceta').addEventListener('click', async () => {
             materialId,
             materialNombre: m?.nombre || '',
             cantidad,
+            escala,
         });
     });
 
