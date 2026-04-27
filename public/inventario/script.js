@@ -276,6 +276,12 @@ function renderRecetas() {
             }).join('') + '</ul>'
             : '';
 
+        const copiarBtn = componentes.length > 0
+            ? `<button class="btn btn-link" data-copiar="${escapeHtml(producto)}" style="width:100%; margin-top:6px;">
+                    <i class="fas fa-copy"></i> Copiar receta a los demás productos
+               </button>`
+            : '';
+
         return `
             <div class="receta-card">
                 <h3>${escapeHtml(producto)}</h3>
@@ -284,6 +290,7 @@ function renderRecetas() {
                 <button class="btn btn-secondary" data-receta="${escapeHtml(producto)}" style="width:100%;">
                     <i class="fas fa-pen"></i> ${componentes.length > 0 ? 'Editar' : 'Definir'} receta
                 </button>
+                ${copiarBtn}
             </div>
         `;
     }).join('');
@@ -291,6 +298,54 @@ function renderRecetas() {
     grid.querySelectorAll('[data-receta]').forEach(btn => {
         btn.addEventListener('click', () => abrirModalReceta(btn.dataset.receta));
     });
+    grid.querySelectorAll('[data-copiar]').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            copiarRecetaAOtros(btn.dataset.copiar);
+        });
+    });
+}
+
+async function copiarRecetaAOtros(productoOrigen) {
+    const bomOrigen = state.bomByProducto.get(productoOrigen);
+    if (!bomOrigen?.componentes?.length) {
+        toast('La receta de origen está vacía', 'error');
+        return;
+    }
+
+    const destinos = PRODUCTOS_CATALOGO.filter(p => {
+        if (p === productoOrigen) return false;
+        const existing = state.bomByProducto.get(p);
+        return !existing || !existing.componentes || existing.componentes.length === 0;
+    });
+
+    if (destinos.length === 0) {
+        toast('Todos los demás productos ya tienen receta. Usa "Editar" para sobrescribir.', '');
+        return;
+    }
+
+    const msg = `Copiar la receta de "${productoOrigen}" a los siguientes ${destinos.length} producto(s)?\n\n• ${destinos.join('\n• ')}\n\n(No se sobrescribirán productos que ya tengan receta definida.)`;
+    if (!confirm(msg)) return;
+
+    try {
+        await Promise.all(destinos.map(producto =>
+            setDoc(doc(db, 'productos_bom', producto), {
+                producto,
+                componentes: bomOrigen.componentes.map(c => ({
+                    materialId: c.materialId,
+                    materialNombre: c.materialNombre || '',
+                    cantidad: c.cantidad,
+                })),
+                updatedAt: serverTimestamp(),
+            }, { merge: true })
+        ));
+        toast(`Receta copiada a ${destinos.length} producto(s)`, 'success');
+        await cargarBOMs();
+        renderRecetas();
+    } catch (err) {
+        console.error(err);
+        toast('Error al copiar: ' + err.message, 'error');
+    }
 }
 
 function abrirModalReceta(producto) {
