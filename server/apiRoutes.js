@@ -179,6 +179,54 @@ router.post('/referencias/rotate', async (req, res) => {
     }
 });
 
+// --- Validación de red autorizada para checador ---
+// Lee la IP real del request (req.ip con trust proxy habilitado) y valida contra
+// prefijos almacenados en Firestore (config/checador_network.authorizedPrefixes).
+// Si el doc no existe o falla la lectura, cae a una lista por defecto.
+const CHECADOR_FALLBACK_PREFIXES = ['2806:267:2484', '177.226.102'];
+let checadorPrefixCache = { value: null, timestamp: 0 };
+const CHECADOR_PREFIX_TTL_MS = 60 * 1000;
+
+async function getCheckadorAuthorizedPrefixes() {
+    const now = Date.now();
+    if (checadorPrefixCache.value && now - checadorPrefixCache.timestamp < CHECADOR_PREFIX_TTL_MS) {
+        return checadorPrefixCache.value;
+    }
+    try {
+        const doc = await db.collection('config').doc('checador_network').get();
+        const data = doc.exists ? doc.data() : null;
+        const prefixes = Array.isArray(data?.authorizedPrefixes) && data.authorizedPrefixes.length > 0
+            ? data.authorizedPrefixes
+            : CHECADOR_FALLBACK_PREFIXES;
+        checadorPrefixCache = { value: prefixes, timestamp: now };
+        return prefixes;
+    } catch (err) {
+        console.warn('[CHECADOR-NETWORK] Error leyendo config, usando fallback:', err.message);
+        return CHECADOR_FALLBACK_PREFIXES;
+    }
+}
+
+function getCheckadorClientIp(req) {
+    const xff = req.headers['x-forwarded-for'];
+    if (xff) {
+        const first = xff.split(',')[0].trim();
+        if (first) return first;
+    }
+    return req.ip || req.connection?.remoteAddress || '';
+}
+
+router.get('/checador/check-network', async (req, res) => {
+    try {
+        const ip = getCheckadorClientIp(req);
+        const prefixes = await getCheckadorAuthorizedPrefixes();
+        const authorized = !!ip && prefixes.some(p => ip.startsWith(p));
+        res.json({ authorized, ip });
+    } catch (err) {
+        console.error('[CHECADOR-NETWORK] Error:', err);
+        res.status(500).json({ authorized: false, error: 'Error verificando red' });
+    }
+});
+
 // --- Subir foto de perfil (checador) ---
 router.post('/checador/avatar', uploadRef.single('foto'), async (req, res) => {
     try {

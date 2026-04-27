@@ -58,9 +58,6 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     firebaseAuth.signOut();
 });
 
-// Configuración
-const AUTHORIZED_PREFIXES = ["2806:267:2484", "177.226.102"];
-
 // DOM
 const timeEl = document.getElementById('time');
 const dateEl = document.getElementById('date');
@@ -83,24 +80,41 @@ function updateClock() {
     dateEl.textContent = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
 }
 
-// 2. Red
+// 2. Red — valida en el backend (lee req.ip y compara contra prefijos en Firestore)
+let networkCheckInProgress = false;
+
 async function checkNetwork() {
+    if (networkCheckInProgress) return;
+    networkCheckInProgress = true;
     try {
-        const response = await fetch('https://api64.ipify.org?format=json');
-        const data = await response.json();
-        const userIp = data.ip;
-        if (AUTHORIZED_PREFIXES.some(prefix => userIp.startsWith(prefix))) {
-            isAuthorized = true;
-            networkStatusEl.className = "status-badge status-online";
-            networkTextEl.textContent = "CONECTADO A RED OFICINA";
-            networkBlockedOverlay.style.display = 'none';
-        } else {
-            isAuthorized = false;
-            networkStatusEl.className = "status-badge status-offline";
-            networkTextEl.textContent = "RED NO AUTORIZADA";
+        for (let attempt = 0; attempt < 3; attempt++) {
+            try {
+                const response = await fetch('/api/checador/check-network', { cache: 'no-store' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
+                const data = await response.json();
+                isAuthorized = !!data.authorized;
+                if (isAuthorized) {
+                    networkStatusEl.className = "status-badge status-online";
+                    networkTextEl.textContent = "CONECTADO A RED OFICINA";
+                    networkBlockedOverlay.style.display = 'none';
+                } else {
+                    networkStatusEl.className = "status-badge status-offline";
+                    networkTextEl.textContent = "RED NO AUTORIZADA";
+                }
+                return;
+            } catch (e) {
+                if (attempt < 2) {
+                    await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+                } else {
+                    console.error('checkNetwork falló tras reintentos:', e);
+                    isAuthorized = false;
+                    networkStatusEl.className = "status-badge status-offline";
+                    networkTextEl.textContent = "ERROR DE CONEXIÓN";
+                }
+            }
         }
-    } catch (e) {
-        console.error(e);
+    } finally {
+        networkCheckInProgress = false;
     }
 }
 
@@ -118,6 +132,11 @@ async function registerAttendance(type) {
         return;
     }
     const displayName = employee.name;
+
+    // Revalidar antes de registrar para que un fallo transitorio no bloquee al usuario
+    if (!isAuthorized && displayName.toLowerCase() !== 'rosario') {
+        await checkNetwork();
+    }
 
     if (!isAuthorized && displayName.toLowerCase() !== 'rosario') {
         showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
@@ -204,4 +223,5 @@ document.addEventListener('click', (e) => {
 setInterval(updateClock, 1000);
 updateClock();
 checkNetwork();
+setInterval(checkNetwork, 30 * 1000);
 setTimeout(() => employeeIdInput.focus(), 500);

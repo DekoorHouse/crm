@@ -27,6 +27,10 @@ const bucket = getStorage().bucket();
 // --- CONFIGURACIÓN DEL SERVIDOR EXPRESS ---
 const app = express();
 
+// Confiar en un nivel de proxy (Render LB) para que req.ip y X-Forwarded-For
+// reflejen la IP real del cliente, no la del proxy.
+app.set('trust proxy', 1);
+
 // --- COMPRESIÓN GZIP/BROTLI ---
 app.use(compression());
 
@@ -85,7 +89,7 @@ app.use((req, res, next) => {
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://cdnjs.cloudflare.com https://unpkg.com https://cdn.jsdelivr.net; " +
         "img-src 'self' data: blob: https: http:; " +
         "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com https://fonts.googleapis.com; " +
-        "connect-src 'self' data: blob: https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://api.mercadopago.com https://sdk.mercadopago.com https://www.gstatic.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://graph.facebook.com https://cdn.jsdelivr.net https://api64.ipify.org https://maps.googleapis.com; " +
+        "connect-src 'self' data: blob: https://www.google-analytics.com https://firestore.googleapis.com https://*.firebaseio.com https://*.basemaps.cartocdn.com https://api.mercadopago.com https://sdk.mercadopago.com https://www.gstatic.com https://www.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://storage.googleapis.com https://graph.facebook.com https://cdn.jsdelivr.net https://maps.googleapis.com; " +
         "media-src 'self' https: blob:; " +
         "frame-src https://www.mercadopago.com.mx https://www.mercadopago.com; " +
         "object-src 'none'; " +
