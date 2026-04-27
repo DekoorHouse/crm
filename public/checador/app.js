@@ -82,6 +82,7 @@ function updateClock() {
 
 // 2. Red — valida en el backend (lee req.ip y compara contra prefijos en Firestore)
 let networkCheckInProgress = false;
+const networkDiagnosticEl = document.getElementById('network-diagnostic');
 
 async function checkNetwork() {
     if (networkCheckInProgress) return;
@@ -89,7 +90,9 @@ async function checkNetwork() {
     try {
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
-                const response = await fetch('/api/checador/check-network', { cache: 'no-store' });
+                // Bust cualquier caché intermedio agregando un nonce a la URL
+                const url = `/api/checador/check-network?_=${Date.now()}`;
+                const response = await fetch(url, { cache: 'no-store' });
                 if (!response.ok) throw new Error('HTTP ' + response.status);
                 const data = await response.json();
                 isAuthorized = !!data.authorized;
@@ -97,9 +100,12 @@ async function checkNetwork() {
                     networkStatusEl.className = "status-badge status-online";
                     networkTextEl.textContent = "CONECTADO A RED OFICINA";
                     networkBlockedOverlay.style.display = 'none';
+                    networkDiagnosticEl.style.display = 'none';
                 } else {
                     networkStatusEl.className = "status-badge status-offline";
                     networkTextEl.textContent = "RED NO AUTORIZADA";
+                    networkDiagnosticEl.textContent = `IP detectada: ${data.ip || '—'} · toca el badge para reintentar`;
+                    networkDiagnosticEl.style.display = 'block';
                 }
                 return;
             } catch (e) {
@@ -110,6 +116,8 @@ async function checkNetwork() {
                     isAuthorized = false;
                     networkStatusEl.className = "status-badge status-offline";
                     networkTextEl.textContent = "ERROR DE CONEXIÓN";
+                    networkDiagnosticEl.textContent = 'Toca el badge para reintentar';
+                    networkDiagnosticEl.style.display = 'block';
                 }
             }
         }
@@ -117,6 +125,9 @@ async function checkNetwork() {
         networkCheckInProgress = false;
     }
 }
+
+// Permitir reintento manual tocando el badge
+document.getElementById('network-status').addEventListener('click', checkNetwork);
 
 // 3. Asistencia
 async function registerAttendance(type) {

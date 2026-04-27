@@ -216,10 +216,18 @@ function getCheckadorClientIp(req) {
 }
 
 router.get('/checador/check-network', async (req, res) => {
+    // Evitar cualquier caché intermedio (browser, CDN, proxy)
+    res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    res.set('Pragma', 'no-cache');
+    res.set('Expires', '0');
     try {
         const ip = getCheckadorClientIp(req);
         const prefixes = await getCheckadorAuthorizedPrefixes();
         const authorized = !!ip && prefixes.some(p => ip.startsWith(p));
+        // Log para diagnosticar reportes de "red no autorizada" en celulares
+        if (!authorized) {
+            console.log(`[CHECADOR-NETWORK] No autorizado. ip=${ip} xff=${req.headers['x-forwarded-for'] || '-'} ua=${(req.headers['user-agent'] || '').slice(0, 80)}`);
+        }
         res.json({ authorized, ip });
     } catch (err) {
         console.error('[CHECADOR-NETWORK] Error:', err);
