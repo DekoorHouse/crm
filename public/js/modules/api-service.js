@@ -59,15 +59,16 @@ function listenForContactOrders(contactId, callback) {
 
     // Establece el listener onSnapshot
     unsubscribeOrdersListener = q.onSnapshot(snapshot => {
-        // Mapea los documentos a un formato más simple
+        // Incluir todos los campos del pedido para que el modal de edición y el
+        // historial puedan mostrar precio, items, fotos, comentarios, etc.
         const orders = snapshot.docs.map(doc => {
             const data = doc.data();
             return {
-                id: doc.id, // ID del documento
-                consecutiveOrderNumber: data.consecutiveOrderNumber, // Número DHxxxx
-                producto: data.producto, // Nombre del producto
-                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null, // Fecha a ISO string
-                estatus: data.estatus || 'Sin estatus' // Estatus o default
+                ...data,
+                id: doc.id,
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null,
+                leadDate: data.leadDate?.toDate ? data.leadDate.toDate().toISOString() : (data.leadDate || null),
+                estatus: data.estatus || 'Sin estatus'
             };
         });
         // Ordena los pedidos por fecha descendente (más recientes primero)
