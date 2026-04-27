@@ -2042,7 +2042,9 @@ router.get('/kpi/profitability', async (req, res) => {
                 confirmedAt: d.confirmedAt || null,
                 estatus: d.estatus || 'Sin estatus',
                 precio: Number(d.precio) || 0,
-                unidades: Array.isArray(d.items) ? Math.max(d.items.length, 1) : 1
+                unidades: Array.isArray(d.items)
+                    ? Math.max(d.items.reduce((sum, it) => sum + (Math.max(1, parseInt(it?.cantidad, 10) || 1)), 0), 1)
+                    : 1
             });
         }
 
@@ -4484,16 +4486,18 @@ router.put('/orders/:orderId', async (req, res) => {
                 .filter(it => it && it.producto)
                 .map(it => ({
                     producto: String(it.producto),
+                    cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1),
                     precio: Number(it.precio) || 0,
                     datosProducto: it.datosProducto || ''
                 }));
             if (normalizedItems.length > 0) {
                 updateData.items = normalizedItems;
                 updateData.producto = normalizedItems[0].producto;
-                updateData.precio = normalizedItems.reduce((sum, it) => sum + (it.precio || 0), 0);
+                updateData.precio = normalizedItems.reduce((sum, it) => sum + (it.precio || 0) * it.cantidad, 0);
                 updateData.datosProducto = normalizedItems.length > 1
                     ? normalizedItems.map(it => {
-                        const base = `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`;
+                        const qtyTxt = it.cantidad > 1 ? ` ×${it.cantidad}` : '';
+                        const base = `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
                         return it.datosProducto ? `${base}: ${it.datosProducto}` : base;
                     }).join('\n')
                     : normalizedItems[0].datosProducto;
@@ -4503,6 +4507,7 @@ router.put('/orders/:orderId', async (req, res) => {
             // para mantener el array de items consistente con producto/precio/datosProducto
             updateData.items = [{
                 producto: String(updateData.producto),
+                cantidad: 1,
                 precio: Number(updateData.precio) || 0,
                 datosProducto: updateData.datosProducto || ''
             }];
@@ -4600,12 +4605,14 @@ router.post('/orders', async (req, res) => {
             .filter(it => it && it.producto)
             .map(it => ({
                 producto: String(it.producto),
+                cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1),
                 precio: Number(it.precio) || 0,
                 datosProducto: it.datosProducto || ''
             }));
     } else if (producto) {
         normalizedItems = [{
             producto: String(producto),
+            cantidad: 1,
             precio: Number(precio) || 0,
             datosProducto: datosProducto || ''
         }];
@@ -4634,10 +4641,11 @@ router.post('/orders', async (req, res) => {
         });
 
         // Calcular totales y datos "principales" (para backward compat con queries y reportes)
-        const totalValue = normalizedItems.reduce((sum, it) => sum + (it.precio || 0), 0);
+        const totalValue = normalizedItems.reduce((sum, it) => sum + (it.precio || 0) * it.cantidad, 0);
         const mainProducto = normalizedItems[0].producto;
         const mainDatosProducto = normalizedItems.map(it => {
-            const base = `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`;
+            const qtyTxt = it.cantidad > 1 ? ` ×${it.cantidad}` : '';
+            const base = `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
             return it.datosProducto ? `${base}: ${it.datosProducto}` : base;
         }).join('\n');
 

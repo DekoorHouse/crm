@@ -31,7 +31,8 @@
       "Bash(./gradlew assembleDebug)",
       "Bash(git pull:*)",
       "Bash(git add:*)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(node -c server/apiRoutes.js)"
     ]
   }
 }

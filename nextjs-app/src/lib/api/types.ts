@@ -1,3 +1,10 @@
+export interface OrderItem {
+  producto: string;
+  cantidad: number;
+  precio: number;
+  datosProducto: string;
+}
+
 export interface Order {
   id: string;
   consecutiveOrderNumber: number | null;
@@ -15,6 +22,7 @@ export interface Order {
   estatusVerificado: boolean;
   createdAt: { _seconds: number; _nanoseconds: number } | null;
   contactId: string | null;
+  items?: OrderItem[];
 }
 
 export interface OrderFilters {

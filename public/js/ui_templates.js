@@ -1309,7 +1309,11 @@ const NewOrderItemRowTemplate = (index, isFirst = false) => `
                 </select>
             </div>
             <div class="form-item">
-                <label>Precio (MXN):</label>
+                <label>Cantidad (*):</label>
+                <input type="number" class="order-item-quantity" min="1" step="1" value="1" required>
+            </div>
+            <div class="form-item">
+                <label>Precio unitario (MXN):</label>
                 <input type="number" class="order-item-price" step="0.01" placeholder="Ej: 650.00" value="650">
             </div>
             <div class="form-item form-item-full">
@@ -1465,22 +1469,32 @@ const OrderHistoryItemTemplate = (order) => {
     const currentStatusStyle = state.orderStatuses.find(s => s.key === estatus) || { color: '#e9ecef' };
 
     // Soportar pedidos con múltiples productos (items embebidos)
+    const formatItemDisplay = (it) => {
+        const qty = Number(it.cantidad) || 1;
+        return qty > 1 ? `${it.producto} ×${qty}` : it.producto;
+    };
+    const formatItemTitle = (it) => {
+        const qty = Number(it.cantidad) || 1;
+        const qtyTxt = qty > 1 ? ` ×${qty}` : '';
+        return `${it.producto}${qtyTxt}${it.precio ? ` ($${it.precio})` : ''}`;
+    };
     let productoDisplay;
     let productoTitle;
     let totalPrecio = 0;
     if (Array.isArray(order.items) && order.items.length > 0) {
-        totalPrecio = order.items.reduce((sum, it) => sum + (Number(it.precio) || 0), 0);
-        if (order.items.length > 1) {
-            // Resumir: "Rex + Guerreras" o "3 productos" si son muchos
-            if (order.items.length <= 3) {
-                productoDisplay = order.items.map(it => it.producto).join(' + ');
-            } else {
-                productoDisplay = `${order.items.length} productos`;
-            }
-            productoTitle = order.items.map(it => `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`).join(', ');
+        totalPrecio = order.items.reduce((sum, it) => {
+            const qty = Math.max(1, Number(it.cantidad) || 1);
+            return sum + (Number(it.precio) || 0) * qty;
+        }, 0);
+        if (order.items.length === 1) {
+            productoDisplay = formatItemDisplay(order.items[0]);
+            productoTitle = formatItemTitle(order.items[0]);
+        } else if (order.items.length <= 3) {
+            productoDisplay = order.items.map(formatItemDisplay).join(' + ');
+            productoTitle = order.items.map(formatItemTitle).join(', ');
         } else {
-            productoDisplay = order.items[0].producto || '';
-            productoTitle = order.items[0].producto || '';
+            productoDisplay = `${order.items.length} productos`;
+            productoTitle = order.items.map(formatItemTitle).join(', ');
         }
     } else {
         totalPrecio = Number(order.precio) || 0;
@@ -1531,7 +1545,11 @@ const EditOrderItemRowTemplate = (index, item, isFirst = false) => {
                 <select class="edit-order-item-product" required>${options}</select>
             </div>
             <div class="form-item">
-                <label>Precio (MXN):</label>
+                <label>Cantidad (*):</label>
+                <input type="number" class="edit-order-item-quantity" min="1" step="1" value="${Math.max(1, Number(item.cantidad) || 1)}" required>
+            </div>
+            <div class="form-item">
+                <label>Precio unitario (MXN):</label>
                 <input type="number" class="edit-order-item-price" step="0.01" placeholder="Ej: 275.00" value="${item.precio ?? ''}">
             </div>
             <div class="form-item form-item-full">

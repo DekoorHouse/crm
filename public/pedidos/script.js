@@ -912,10 +912,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const estatus = pedido.estatus || 'Sin estatus';
         const comentarios = pedido.comentarios || '-';
         // Soportar pedidos con múltiples items embebidos
+        const formatItemName = (it) => {
+            const qty = Number(it.cantidad) || 1;
+            return qty > 1 ? `${it.producto} ×${qty}` : it.producto;
+        };
         let productoNombre;
-        if (Array.isArray(pedido.items) && pedido.items.length > 1) {
-            if (pedido.items.length <= 3) {
-                productoNombre = pedido.items.map(it => it.producto).join(' + ');
+        if (Array.isArray(pedido.items) && pedido.items.length > 0) {
+            if (pedido.items.length === 1) {
+                productoNombre = formatItemName(pedido.items[0]);
+            } else if (pedido.items.length <= 3) {
+                productoNombre = pedido.items.map(formatItemName).join(' + ');
             } else {
                 productoNombre = `${pedido.items.length} productos`;
             }

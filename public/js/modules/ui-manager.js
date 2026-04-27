@@ -2032,8 +2032,8 @@ function openOrderEditModal(orderId) {
     // --- Poblar items (multi-producto) ---
     // Si el pedido ya tiene items embebidos, usarlos. Si no, construir un item desde los campos legacy.
     const itemsToRender = (Array.isArray(order.items) && order.items.length > 0)
-        ? order.items
-        : [{ producto: order.producto || 'Spiderman', precio: order.precio || 0, datosProducto: order.datosProducto || '' }];
+        ? order.items.map(it => ({ ...it, cantidad: Math.max(1, parseInt(it.cantidad, 10) || 1) }))
+        : [{ producto: order.producto || 'Spiderman', cantidad: 1, precio: order.precio || 0, datosProducto: order.datosProducto || '' }];
 
     editOrderItemsNextIndex = itemsToRender.length;
     const itemsContainer = document.getElementById('edit-order-items-container');

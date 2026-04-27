@@ -270,6 +270,7 @@ async function handleSaveOrder(event) {
     const itemRows = document.querySelectorAll('#order-items-container .order-item-row');
     const items = Array.from(itemRows).map(row => ({
         producto: row.querySelector('.order-item-product').value,
+        cantidad: Math.max(1, parseInt(row.querySelector('.order-item-quantity')?.value, 10) || 1),
         precio: Number(row.querySelector('.order-item-price').value) || 0,
         datosProducto: row.querySelector('.order-item-details').value.trim()
     }));
@@ -371,6 +372,7 @@ async function handleUpdateExistingOrder(event, orderId) {
     const itemRows = document.querySelectorAll('#edit-order-items-container .order-item-row');
     const items = Array.from(itemRows).map(row => ({
         producto: row.querySelector('.edit-order-item-product').value,
+        cantidad: Math.max(1, parseInt(row.querySelector('.edit-order-item-quantity')?.value, 10) || 1),
         precio: Number(row.querySelector('.edit-order-item-price').value) || 0,
         datosProducto: row.querySelector('.edit-order-item-details').value.trim()
     }));
