@@ -19,6 +19,9 @@ const PRICES = require('./prices');
 const { sendConversionEvent, generateGeminiResponse, generateGeminiResponseWithCache, getOrCreateCache, skipAiTimer, sendAdvancedWhatsAppMessage, sendMessengerMessage, sendMessengerUtilityMessage, invalidateGeminiCache, getMetaSpend, getPedidoAttribution, askGeminiPro } = require('./services');
 const metaAdsService = require('./meta/metaAdsService');
 const jtService = require('./jt/jtService');
+const { descontarInventarioPorPedido } = require('./inventario/inventarioService');
+const { calcularReporte } = require('./inventario/inventarioReporte');
+const { ejecutarReporteDiario } = require('./inventario/inventarioScheduler');
 
 const router = express.Router();
 const uploadRef = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -4808,6 +4811,23 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
         // Actualizar el pedido en Firestore
         await orderRef.update(updatePayload);
 
+        // --- Descuento de inventario al confirmar pedido (idempotente) ---
+        if (isConfirming && !wasConfirmed) {
+            try {
+                const result = await descontarInventarioPorPedido(orderId, orderData, newStatus);
+                if (result.ok && result.descontado) {
+                    console.log(`[INVENTARIO] Pedido ${orderId} descontó ${result.movimientos} materiales (${newStatus})`);
+                } else if (result.ok && !result.descontado) {
+                    console.log(`[INVENTARIO] Pedido ${orderId} no descontado: ${result.motivo}`);
+                } else {
+                    console.warn(`[INVENTARIO] Pedido ${orderId} falló descuento: ${result.motivo}`);
+                }
+            } catch (invErr) {
+                console.error(`[INVENTARIO] Error descontando pedido ${orderId}:`, invErr.message);
+                // No fallar el cambio de estatus por un error de inventario
+            }
+        }
+
         let metaEventSent = false;
 
         // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro + evento Purchase a Meta
@@ -7929,6 +7949,36 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
 router.get('/config/prices', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
     res.json(PRICES);
+});
+
+// ============================================
+// INVENTARIO
+// ============================================
+
+// GET /api/inventario/reporte - Reporte de inventario actual (consumido por la pantalla web)
+router.get('/inventario/reporte', async (req, res) => {
+    try {
+        const hasta = req.query.hasta ? new Date(req.query.hasta) : new Date();
+        if (isNaN(hasta.getTime())) {
+            return res.status(400).json({ success: false, message: 'Parámetro "hasta" inválido' });
+        }
+        const reporte = await calcularReporte(hasta);
+        res.json({ success: true, reporte });
+    } catch (err) {
+        console.error('[INVENTARIO] Error en /reporte:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// POST /api/inventario/enviar-reporte - Disparo manual del reporte completo (testing)
+router.post('/inventario/enviar-reporte', async (_req, res) => {
+    try {
+        const result = await ejecutarReporteDiario();
+        res.json({ success: !!result.ok, ...result });
+    } catch (err) {
+        console.error('[INVENTARIO] Error en /enviar-reporte:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
 });
 
 module.exports = router;

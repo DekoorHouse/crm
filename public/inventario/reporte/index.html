@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporte de Inventario | DekoorHouse</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/inventario/style.css">
+    <style>
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .summary-card {
+            background: var(--color-card);
+            padding: 16px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            border-left: 4px solid var(--color-primary);
+        }
+        .summary-card.warn { border-left-color: var(--color-warning); }
+        .summary-card.danger { border-left-color: var(--color-danger); }
+        .summary-card .label {
+            font-size: 12px;
+            color: var(--color-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            font-weight: 600;
+        }
+        .summary-card .value {
+            font-size: 1.6rem;
+            font-weight: 700;
+            margin-top: 4px;
+            font-family: 'Poppins', sans-serif;
+        }
+        .summary-card .sub {
+            font-size: 13px;
+            color: var(--color-muted);
+            margin-top: 4px;
+        }
+        .section-title {
+            font-family: 'Poppins', sans-serif;
+            font-size: 1.1rem;
+            margin: 24px 0 12px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .section-title i { color: var(--color-primary); }
+        .badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+        .badge-fijo { background: #e0e7ff; color: #3730a3; }
+        .badge-dinamico { background: #fef3c7; color: #92400e; }
+        .pedidos-list {
+            display: flex; flex-wrap: wrap; gap: 8px;
+            font-size: 14px;
+            margin-top: 8px;
+        }
+        .pedidos-list .chip {
+            background: var(--color-bg);
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .toolbar-actions {
+            display: flex; gap: 8px; align-items: center;
+            background: var(--color-card);
+            padding: 12px;
+            border-radius: var(--radius);
+            box-shadow: var(--shadow);
+            margin-bottom: 16px;
+        }
+        .toolbar-actions .when {
+            color: var(--color-muted);
+            font-size: 13px;
+            margin-left: auto;
+        }
+    </style>
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <!-- LOGIN -->
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-clipboard-check"></i> Reporte de Inventario</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo:</label>
+                    <input type="email" id="email" required>
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required>
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- APP -->
+    <div id="seccionApp" style="display:none;">
+        <header class="app-header">
+            <h1><i class="fas fa-clipboard-check"></i> Reporte de Inventario</h1>
+            <div class="user-info">
+                <a href="/inventario/" class="btn-icon" title="Ir a inventario"><i class="fas fa-arrow-left"></i> Inventario</a>
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" title="Cerrar sesi&oacute;n"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </header>
+
+        <div class="toolbar-actions">
+            <button class="btn btn-primary" id="btnRecargar">
+                <i class="fas fa-rotate"></i> Recalcular
+            </button>
+            <button class="btn btn-secondary" id="btnEnviarAhora" title="Disparar ahora el reporte por WhatsApp (no espera a las 6pm)">
+                <i class="fas fa-paper-plane"></i> Enviar por WhatsApp ahora
+            </button>
+            <span class="when" id="reporteWhen"></span>
+        </div>
+
+        <!-- Resumen -->
+        <div class="summary-grid" id="summaryGrid"></div>
+
+        <!-- Detalle pedidos -->
+        <div id="pedidosSection" style="display:none;">
+            <h2 class="section-title"><i class="fas fa-shopping-cart"></i> Pedidos confirmados (últimas 24 h)</h2>
+            <div class="table-wrap" style="padding:12px;">
+                <div class="pedidos-list" id="pedidosPorProducto"></div>
+            </div>
+        </div>
+
+        <!-- Materiales a pedir -->
+        <h2 class="section-title"><i class="fas fa-box"></i> Materiales a reabastecer</h2>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th class="num">Stock</th>
+                        <th class="num">M&iacute;nimo</th>
+                        <th class="num">Consumo 24h</th>
+                        <th class="num">A pedir</th>
+                        <th>Modo</th>
+                        <th>Proveedor</th>
+                        <th class="num">Costo</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyAPedir">
+                    <tr><td colspan="8" class="empty">Cargando...</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Stock OK -->
+        <h2 class="section-title" id="stockOkTitle" style="display:none;">
+            <i class="fas fa-check-circle"></i> Materiales con stock suficiente
+        </h2>
+        <div class="table-wrap" id="stockOkWrap" style="display:none;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Material</th>
+                        <th class="num">Stock</th>
+                        <th class="num">M&iacute;nimo</th>
+                    </tr>
+                </thead>
+                <tbody id="tbodyStockOk"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module" src="/inventario/reporte/script.js"></script>
+</body>
+</html>
