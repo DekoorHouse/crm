@@ -296,8 +296,9 @@ function renderAdminLogs() {
             dayMins += mins;
             empTotals[emp.name.toLowerCase()] += mins;
             const active = hasActiveIn(group);
-            const cellLabel = mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : (active ? '▶ activo' : '0h 0m');
-            const color = mins > 0 ? 'var(--success)' : (active ? 'var(--warning)' : 'var(--text-muted)');
+            const timeStr = mins > 0 ? `${Math.floor(mins/60)}h ${mins%60}m` : '0h 0m';
+            const cellLabel = active ? (mins > 0 ? `▶ ${timeStr}` : '▶ activo') : timeStr;
+            const color = active ? 'var(--warning)' : (mins > 0 ? 'var(--success)' : 'var(--text-muted)');
             return `<td style="text-align:center; cursor:pointer;" onclick="openEditModal(${idx})" title="Click para editar">
                 <span style="color:${color}; font-weight:600; font-size:0.9rem;">${cellLabel}</span>
             </td>`;
