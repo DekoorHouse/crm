@@ -1467,18 +1467,27 @@ const OrderHistoryItemTemplate = (order) => {
     // Soportar pedidos con múltiples productos (items embebidos)
     let productoDisplay;
     let productoTitle;
-    if (Array.isArray(order.items) && order.items.length > 1) {
-        // Resumir: "Rex + Guerreras" o "3 productos" si son muchos
-        if (order.items.length <= 3) {
-            productoDisplay = order.items.map(it => it.producto).join(' + ');
+    let totalPrecio = 0;
+    if (Array.isArray(order.items) && order.items.length > 0) {
+        totalPrecio = order.items.reduce((sum, it) => sum + (Number(it.precio) || 0), 0);
+        if (order.items.length > 1) {
+            // Resumir: "Rex + Guerreras" o "3 productos" si son muchos
+            if (order.items.length <= 3) {
+                productoDisplay = order.items.map(it => it.producto).join(' + ');
+            } else {
+                productoDisplay = `${order.items.length} productos`;
+            }
+            productoTitle = order.items.map(it => `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`).join(', ');
         } else {
-            productoDisplay = `${order.items.length} productos`;
+            productoDisplay = order.items[0].producto || '';
+            productoTitle = order.items[0].producto || '';
         }
-        productoTitle = order.items.map(it => `${it.producto}${it.precio ? ` ($${it.precio})` : ''}`).join(', ');
     } else {
+        totalPrecio = Number(order.precio) || 0;
         productoDisplay = order.producto || '';
         productoTitle = order.producto || '';
     }
+    const precioDisplay = totalPrecio > 0 ? `$${totalPrecio.toLocaleString('es-MX')}` : '';
 
     return `
         <div class="order-history-item">
@@ -1486,7 +1495,7 @@ const OrderHistoryItemTemplate = (order) => {
                 <button class="order-number" onclick="openOrderEditModal('${order.id}')">
                     DH${order.consecutiveOrderNumber}
                 </button>
-                <span class="order-date">${orderDate}</span>
+                <span class="order-date">${orderDate}${precioDisplay ? ` · <strong>${precioDisplay}</strong>` : ''}</span>
             </div>
             <div class="order-history-row">
                 <span class="order-product" title="${productoTitle}">${productoDisplay}</span>
