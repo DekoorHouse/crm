@@ -88,6 +88,19 @@ service cloud.firestore {
       allow read, write: if isAuthenticated();
     }
 
+    // --- Inventario ---
+    match /materiales/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /productos_bom/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
+    match /movimientos_inventario/{docId} {
+      allow read, write: if isAuthenticated();
+    }
+
     // --- XV Ximena: sistema de invitados (publico, protegido por PIN client-side) ---
     match /xv_ximena_invitados/{codigo} {
       allow read: if true;

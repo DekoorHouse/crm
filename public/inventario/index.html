@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventario | DekoorHouse</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/inventario/style.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <!-- LOGIN -->
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-boxes-stacked"></i> Inventario</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- APP -->
+    <div id="seccionApp" style="display:none;">
+        <header class="app-header">
+            <h1><i class="fas fa-boxes-stacked"></i> Inventario</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" title="Cerrar sesi&oacute;n"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </header>
+
+        <nav class="tabs">
+            <button class="tab active" data-tab="materiales">
+                <i class="fas fa-cubes"></i> Materiales
+            </button>
+            <button class="tab" data-tab="recetas">
+                <i class="fas fa-clipboard-list"></i> Recetas (BOM)
+            </button>
+        </nav>
+
+        <!-- ============================================ -->
+        <!-- TAB: MATERIALES                              -->
+        <!-- ============================================ -->
+        <section id="tab-materiales" class="tab-panel active">
+            <div class="toolbar">
+                <input type="search" id="busquedaMaterial" placeholder="Buscar material...">
+                <button class="btn btn-primary" id="btnNuevoMaterial">
+                    <i class="fas fa-plus"></i> Nuevo material
+                </button>
+            </div>
+
+            <div class="table-wrap">
+                <table class="data-table" id="tablaMateriales">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Unidad</th>
+                            <th class="num">Stock</th>
+                            <th class="num">M&iacute;nimo</th>
+                            <th class="num">Buffer %</th>
+                            <th>Proveedor</th>
+                            <th class="num">Lead (d&iacute;as)</th>
+                            <th class="num">Costo unit.</th>
+                            <th>Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tbodyMateriales">
+                        <tr><td colspan="9" class="empty">Cargando...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- ============================================ -->
+        <!-- TAB: RECETAS (BOM)                           -->
+        <!-- ============================================ -->
+        <section id="tab-recetas" class="tab-panel">
+            <div class="toolbar toolbar-info">
+                <p class="info-text">
+                    Define qu&eacute; materiales (y cu&aacute;ntos) se consumen al fabricar 1 unidad de cada producto.
+                </p>
+            </div>
+            <div class="recetas-grid" id="recetasGrid">
+                <!-- Tarjetas de productos generadas en JS -->
+            </div>
+        </section>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- MODAL: EDITAR MATERIAL                       -->
+<!-- ============================================ -->
+<div id="modalMaterial" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <button class="modal-close" id="cerrarModalMaterial" title="Cerrar">&times;</button>
+        <h2 id="tituloModalMaterial"><i class="fas fa-cube"></i> Nuevo material</h2>
+        <form id="formMaterial">
+            <input type="hidden" id="materialId">
+            <div class="form-grid">
+                <div class="form-item form-item-full">
+                    <label>Nombre (*):</label>
+                    <input type="text" id="materialNombre" required placeholder="Ej: Base LED chica">
+                </div>
+                <div class="form-item">
+                    <label>Unidad (*):</label>
+                    <input type="text" id="materialUnidad" required placeholder="pieza, metro, caja..." value="pieza">
+                </div>
+                <div class="form-item">
+                    <label>Stock actual:</label>
+                    <input type="number" id="materialStock" step="1" min="0" value="0">
+                </div>
+                <div class="form-item">
+                    <label>Stock m&iacute;nimo:</label>
+                    <input type="number" id="materialMinimo" step="1" min="0" value="0">
+                </div>
+                <div class="form-item">
+                    <label>Buffer % al pedir:</label>
+                    <input type="number" id="materialBuffer" step="1" min="0" max="100" value="20">
+                </div>
+                <div class="form-item">
+                    <label>Lead time (d&iacute;as):</label>
+                    <input type="number" id="materialLead" step="1" min="0" value="3">
+                </div>
+                <div class="form-item">
+                    <label>Costo unitario (MXN):</label>
+                    <input type="number" id="materialCosto" step="0.01" min="0" value="0">
+                </div>
+                <div class="form-item form-item-full">
+                    <label>Proveedor:</label>
+                    <input type="text" id="materialProveedor" placeholder="Nombre del proveedor">
+                </div>
+                <div class="form-item form-item-full">
+                    <label>Notas:</label>
+                    <textarea id="materialNotas" rows="2" placeholder="Notas opcionales..."></textarea>
+                </div>
+            </div>
+            <div id="errorMaterial" class="error-msg"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-danger" id="btnEliminarMaterial" style="display:none;">
+                    <i class="fas fa-trash"></i> Eliminar
+                </button>
+                <div class="actions-right">
+                    <button type="button" class="btn btn-secondary" id="cancelarModalMaterial">Cancelar</button>
+                    <button type="submit" class="btn btn-primary" id="btnGuardarMaterial">
+                        <i class="fas fa-save"></i> Guardar
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ============================================ -->
+<!-- MODAL: EDITAR RECETA (BOM)                   -->
+<!-- ============================================ -->
+<div id="modalReceta" class="modal-overlay" style="display:none;">
+    <div class="modal-content">
+        <button class="modal-close" id="cerrarModalReceta" title="Cerrar">&times;</button>
+        <h2 id="tituloModalReceta"><i class="fas fa-clipboard-list"></i> Receta de producto</h2>
+        <p class="info-text">Por cada unidad vendida, se descontar&aacute;n estos materiales del inventario.</p>
+
+        <div id="recetaComponentes">
+            <!-- Filas de componentes generadas en JS -->
+        </div>
+
+        <button type="button" class="btn btn-link" id="btnAgregarComponente">
+            <i class="fas fa-plus"></i> Agregar material a la receta
+        </button>
+
+        <div id="errorReceta" class="error-msg"></div>
+        <div class="modal-actions">
+            <div></div>
+            <div class="actions-right">
+                <button type="button" class="btn btn-secondary" id="cancelarModalReceta">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="btnGuardarReceta">
+                    <i class="fas fa-save"></i> Guardar receta
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script type="module" src="/inventario/script.js"></script>
+</body>
+</html>
