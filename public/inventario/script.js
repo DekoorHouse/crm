@@ -115,14 +115,16 @@ function renderMateriales() {
         : state.materiales;
 
     if (lista.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty">${filtro ? 'Sin resultados' : 'Aún no hay materiales. Crea el primero con "Nuevo material".'}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="empty">${filtro ? 'Sin resultados' : 'Aún no hay materiales. Crea el primero con "Nuevo material".'}</td></tr>`;
         return;
     }
 
     tbody.innerHTML = lista.map(m => {
         const stock = Number(m.stockActual) || 0;
         const minimo = Number(m.stockMinimo) || 0;
+        const multiplo = Math.max(1, Number(m.multiploCompra) || 1);
         const stockClass = stock <= 0 ? 'stock-low' : (minimo > 0 && stock <= minimo ? 'stock-warn' : '');
+        const multiploTxt = multiplo > 1 ? `pack ${multiplo}` : '—';
         return `
             <tr>
                 <td><strong>${escapeHtml(m.nombre)}</strong></td>
@@ -130,6 +132,7 @@ function renderMateriales() {
                 <td class="num ${stockClass}">${fmtNum(stock)}</td>
                 <td class="num">${fmtNum(minimo)}</td>
                 <td class="num">${fmtNum(m.bufferPct || 0)}%</td>
+                <td class="num">${multiploTxt}</td>
                 <td>${escapeHtml(m.proveedor || '')}</td>
                 <td class="num">${fmtNum(m.leadTimeDias || 0)}</td>
                 <td class="num">${fmtMoney(m.costoUnit || 0)}</td>
@@ -163,6 +166,7 @@ function abrirModalMaterial(materialId) {
     $('materialStock').value = m?.stockActual ?? 0;
     $('materialMinimo').value = m?.stockMinimo ?? 0;
     $('materialBuffer').value = m?.bufferPct ?? 20;
+    $('materialMultiplo').value = Math.max(1, Number(m?.multiploCompra) || 1);
     $('materialLead').value = m?.leadTimeDias ?? 3;
     $('materialCosto').value = m?.costoUnit ?? 0;
     $('materialProveedor').value = m?.proveedor || '';
@@ -188,6 +192,7 @@ $('formMaterial').addEventListener('submit', async (e) => {
         stockActual: Number($('materialStock').value) || 0,
         stockMinimo: Number($('materialMinimo').value) || 0,
         bufferPct: Number($('materialBuffer').value) || 0,
+        multiploCompra: Math.max(1, parseInt($('materialMultiplo').value, 10) || 1),
         leadTimeDias: Number($('materialLead').value) || 0,
         costoUnit: Number($('materialCosto').value) || 0,
         proveedor: $('materialProveedor').value.trim(),

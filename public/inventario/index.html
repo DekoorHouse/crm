@@ -79,6 +79,7 @@
                             <th class="num">Stock</th>
                             <th class="num">M&iacute;nimo</th>
                             <th class="num">Buffer %</th>
+                            <th class="num">M&uacute;ltiplo</th>
                             <th>Proveedor</th>
                             <th class="num">Lead (d&iacute;as)</th>
                             <th class="num">Costo unit.</th>
@@ -86,7 +87,7 @@
                         </tr>
                     </thead>
                     <tbody id="tbodyMateriales">
-                        <tr><td colspan="9" class="empty">Cargando...</td></tr>
+                        <tr><td colspan="10" class="empty">Cargando...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -137,6 +138,10 @@
                 <div class="form-item">
                     <label>Buffer % al pedir:</label>
                     <input type="number" id="materialBuffer" step="1" min="0" max="100" value="20">
+                </div>
+                <div class="form-item">
+                    <label>M&uacute;ltiplo de compra:</label>
+                    <input type="number" id="materialMultiplo" step="1" min="1" value="1" title="Tamaño del paquete (ej. 10 si vienen en bolsas de 10). Usa 1 si se puede pedir cualquier cantidad.">
                 </div>
                 <div class="form-item">
                     <label>Lead time (d&iacute;as):</label>
