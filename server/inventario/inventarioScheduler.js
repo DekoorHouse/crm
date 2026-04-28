@@ -46,6 +46,11 @@ function fmtMoney(n) {
     return num.toLocaleString('es-MX', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
 }
 
+function fmtNum(n) {
+    const num = Number(n) || 0;
+    return num.toLocaleString('es-MX', { maximumFractionDigits: 0 });
+}
+
 /**
  * Construye los 4 valores que llenan {{1}}…{{4}} de la plantilla.
  * La plantilla aprobada en Meta debe ser:
@@ -55,6 +60,11 @@ function fmtMoney(n) {
  *    💰 Costo aproximado del pedido: ${{4}} MXN
  *    Ver detalle completo: <link>"
  */
+/**
+ * Construye los parámetros de la plantilla. Por restricción de Meta,
+ * los valores no pueden contener \n, tabs ni > 4 espacios consecutivos:
+ * por eso la lista de materiales va en UNA línea separada con " • ".
+ */
 function construirParametros(reporte) {
     const fecha = fmtFechaCorta(reporte.periodo.hasta);
     const totalPedidos = String(reporte.pedidos.total || 0);
@@ -63,9 +73,19 @@ function construirParametros(reporte) {
     if (reporte.aPedir.length === 0) {
         materialesText = 'Ninguno (stock OK)';
     } else {
-        const nombres = reporte.aPedir.slice(0, 4).map(p => p.nombre).filter(Boolean);
-        const sufijo = reporte.aPedir.length > 4 ? ` y ${reporte.aPedir.length - 4} más` : '';
-        materialesText = `${reporte.aPedir.length} (${nombres.join(', ')}${sufijo})`;
+        const items = reporte.aPedir.map(p => {
+            const sug = p.sugerencia;
+            const cantidadTxt = sug.multiplo > 1
+                ? `${sug.paquetes} pack${sug.paquetes === 1 ? '' : 's'} (${fmtNum(sug.unidades)} ${p.unidad})`
+                : `${fmtNum(sug.unidades)} ${p.unidad}`;
+            return `${p.nombre}: ${cantidadTxt}`;
+        });
+        materialesText = items.join(' • ');
+        // Límite seguro de Meta: 1024 chars por variable. Truncamos a ~900
+        // para dejar margen y dirigir a la pantalla web si la lista es larga.
+        if (materialesText.length > 900) {
+            materialesText = materialesText.substring(0, 870) + '… (ver detalle)';
+        }
     }
 
     const costo = fmtMoney(reporte.costoTotal);
