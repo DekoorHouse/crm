@@ -1765,6 +1765,79 @@ export function showNotesSaveStatus(text) {
     }
 }
 
+/**
+ * Modal post-importación que muestra los movimientos omitidos y permite
+ * al usuario seleccionar cuáles importar adicionalmente.
+ * @param {Object} opts
+ * @param {number} opts.importedCount - Cuántos ya se importaron automáticamente
+ * @param {Array} opts.skippedIntraFile - [{ expense, sig, copyIndex, totalCopies }]
+ * @param {Array} opts.skippedExisting - [{ expense, sig }]
+ * @param {Function} opts.onConfirm - callback(selectedExpenses[]) cuando confirma
+ */
+export function showOmittedReviewModal({ importedCount, skippedIntraFile, skippedExisting, onConfirm }) {
+    const fmtRow = (item, idx, kind) => {
+        const e = item.expense;
+        const amount = e.charge > 0 ? `<span style="color:var(--danger);">-$${e.charge.toFixed(2)}</span>` : `<span style="color:var(--success);">+$${e.credit.toFixed(2)}</span>`;
+        const extra = kind === 'intra' ? `<span style="font-size:11px; color:var(--text-secondary);"> · copia ${item.copyIndex}/${item.totalCopies}</span>` : '';
+        return `<tr>
+            <td style="padding:6px 8px;"><input type="checkbox" class="omit-check" data-kind="${kind}" data-idx="${idx}"></td>
+            <td style="padding:6px 8px; white-space:nowrap; font-size:12px;">${e.date}</td>
+            <td style="padding:6px 8px; font-size:12px;">${e.concept}${extra}</td>
+            <td style="padding:6px 8px; text-align:right; font-size:12px;">${amount}</td>
+        </tr>`;
+    };
+
+    let html = `<p style="margin-bottom:12px;"><strong>${importedCount}</strong> movimiento${importedCount !== 1 ? 's' : ''} importado${importedCount !== 1 ? 's' : ''} automáticamente.</p>`;
+    html += `<p style="font-size:13px; color:var(--text-secondary); margin-bottom:14px;">Los siguientes se omitieron. Marca los que sí quieras agregar:</p>`;
+
+    html += `<div style="max-height:340px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px;">`;
+    html += `<table style="width:100%; border-collapse:collapse;">`;
+    html += `<thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;"><tr>
+        <th style="padding:6px 8px; text-align:left; font-size:11px;"><input type="checkbox" id="omit-check-all"></th>
+        <th style="padding:6px 8px; text-align:left; font-size:11px;">FECHA</th>
+        <th style="padding:6px 8px; text-align:left; font-size:11px;">CONCEPTO</th>
+        <th style="padding:6px 8px; text-align:right; font-size:11px;">MONTO</th>
+    </tr></thead><tbody>`;
+
+    if (skippedIntraFile.length > 0) {
+        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(245,158,11,0.08); color:#d97706; text-transform:uppercase;">Duplicados dentro del archivo (${skippedIntraFile.length})</td></tr>`;
+        html += skippedIntraFile.map((item, idx) => fmtRow(item, idx, 'intra')).join('');
+    }
+
+    if (skippedExisting.length > 0) {
+        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(99,102,241,0.08); color:var(--primary); text-transform:uppercase;">Ya existen en la base de datos (${skippedExisting.length})</td></tr>`;
+        html += skippedExisting.map((item, idx) => fmtRow(item, idx, 'existing')).join('');
+    }
+
+    html += `</tbody></table></div>`;
+    html += `<p style="font-size:11px; color:var(--text-secondary); margin-top:10px;">Tip: si los marcas, se agregarán como copias adicionales del mismo movimiento.</p>`;
+
+    showModal({
+        title: 'Movimientos omitidos',
+        body: html,
+        confirmText: 'Importar seleccionados',
+        onConfirm: () => {
+            const selected = [];
+            document.querySelectorAll('.omit-check:checked').forEach(cb => {
+                const kind = cb.dataset.kind;
+                const idx = parseInt(cb.dataset.idx);
+                const item = (kind === 'intra' ? skippedIntraFile : skippedExisting)[idx];
+                if (item && item.expense) selected.push(item.expense);
+            });
+            showModal({ show: false });
+            if (typeof onConfirm === 'function') onConfirm(selected);
+        },
+        onModalOpen: () => {
+            const all = document.getElementById('omit-check-all');
+            if (all) {
+                all.addEventListener('change', () => {
+                    document.querySelectorAll('.omit-check').forEach(cb => { cb.checked = all.checked; });
+                });
+            }
+        }
+    });
+}
+
 export function showDuplicateSelectionModal(duplicateGroups, nonDuplicates) {
     let duplicateHtml = duplicateGroups.map((group, index) => {
         const header = `

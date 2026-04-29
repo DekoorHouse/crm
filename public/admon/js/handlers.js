@@ -63,8 +63,8 @@ async function handleFileUpload(e) {
             });
 
             const toImport = [];
-            let skippedExisting = 0;
-            let skippedIntraFile = 0;
+            const skippedIntraFile = []; // [{ expense, sig, copyIndex, totalCopies }]
+            const skippedExisting = [];   // [{ expense, sig }]
 
             for (const [sig, group] of newExpensesBySig.entries()) {
                 const firstExpense = group[0];
@@ -81,11 +81,13 @@ async function handleFileUpload(e) {
 
                 const isExisting = existingSignatures.has(sig);
                 if (isExisting) {
-                    skippedExisting += group.length;
+                    group.forEach(exp => skippedExisting.push({ expense: exp, sig }));
                 } else {
-                    // Duplicados dentro del archivo: importar solo el primero
+                    // Duplicados dentro del archivo: importar solo el primero, marcar el resto como omitidos
                     toImport.push(firstExpense);
-                    if (group.length > 1) skippedIntraFile += group.length - 1;
+                    for (let i = 1; i < group.length; i++) {
+                        skippedIntraFile.push({ expense: group[i], sig, copyIndex: i + 1, totalCopies: group.length });
+                    }
                 }
             }
 
@@ -93,25 +95,37 @@ async function handleFileUpload(e) {
                 await services.saveBulkExpenses(toImport);
             }
 
-            const totalSkipped = skippedExisting + skippedIntraFile;
-            const parts = [];
-            parts.push(`<p><strong>${toImport.length}</strong> movimiento${toImport.length !== 1 ? 's' : ''} nuevo${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''}.</p>`);
-            if (skippedExisting > 0) {
-                parts.push(`<p><strong>${skippedExisting}</strong> omitido${skippedExisting !== 1 ? 's' : ''}: ya existía${skippedExisting !== 1 ? 'n' : ''} en la base de datos.</p>`);
-            }
-            if (skippedIntraFile > 0) {
-                parts.push(`<p><strong>${skippedIntraFile}</strong> omitido${skippedIntraFile !== 1 ? 's' : ''}: duplicado${skippedIntraFile !== 1 ? 's' : ''} dentro del archivo.</p>`);
-            }
-            if (toImport.length === 0 && totalSkipped === 0) {
-                parts.push('<p>No se encontraron registros válidos en el archivo.</p>');
-            }
+            const totalSkipped = skippedIntraFile.length + skippedExisting.length;
 
-            ui.showModal({
-                title: toImport.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
-                body: parts.join(''),
-                confirmText: 'Entendido',
-                showCancel: false
-            });
+            if (totalSkipped > 0) {
+                ui.showOmittedReviewModal({
+                    importedCount: toImport.length,
+                    skippedIntraFile,
+                    skippedExisting,
+                    onConfirm: async (selectedExpenses) => {
+                        if (selectedExpenses.length > 0) {
+                            await services.saveBulkExpenses(selectedExpenses);
+                        }
+                        ui.showModal({
+                            title: 'Importación completada',
+                            body: `<p><strong>${toImport.length + selectedExpenses.length}</strong> movimientos importados en total.</p>` +
+                                (selectedExpenses.length > 0 ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> seleccionado${selectedExpenses.length !== 1 ? 's' : ''} de los omitidos.</p>` : '') +
+                                ((totalSkipped - selectedExpenses.length) > 0 ? `<p><strong>${totalSkipped - selectedExpenses.length}</strong> descartados.</p>` : ''),
+                            confirmText: 'Entendido',
+                            showCancel: false
+                        });
+                    }
+                });
+            } else {
+                ui.showModal({
+                    title: toImport.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
+                    body: toImport.length > 0
+                        ? `<p><strong>${toImport.length}</strong> movimiento${toImport.length !== 1 ? 's' : ''} nuevo${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''}.</p>`
+                        : '<p>No se encontraron registros válidos en el archivo.</p>',
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+            }
 
         } catch (error) {
             console.error("Error al procesar el archivo de gastos:", error);
