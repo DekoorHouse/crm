@@ -1,7 +1,7 @@
 import { db } from './firebase.js';
 import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state.js';
-import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment } from './utils.js';
+import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment, extractMerchantKey } from './utils.js';
 import { showModal } from './ui-manager.js';
 
 /**
@@ -383,19 +383,27 @@ export function setupOrdersListener(onDataChange) {
 export async function saveExpense(expenseData, originalCategory) {
     saveStateToHistory();
     try {
-        const concept = (expenseData.concept || '').toLowerCase();
+        const rawConcept = expenseData.concept || '';
+        const concept = rawConcept.toLowerCase();
+        const merchantKey = extractMerchantKey(rawConcept);
         const newCategory = expenseData.category;
         const categoryChanged = originalCategory !== newCategory;
 
-        // Persistir el cambio manual de categoría para cargos e ingresos,
-        // así sobrevive a borrar y reimportar el mes.
-        if (newCategory && newCategory !== 'SinCategorizar' && categoryChanged) {
+        // Persistir el cambio manual de categoría POR COMERCIO (parte antes de "/").
+        // Asi una sola categorizacion aplica a todos los movimientos del mismo
+        // comercio aunque cada uno tenga AUT/RFC distinto en el concepto.
+        if (newCategory && newCategory !== 'SinCategorizar' && categoryChanged && merchantKey) {
             const ruleBasedCategory = autoCategorizeWithRulesOnly(concept);
             if (newCategory !== ruleBasedCategory) {
-                await setDoc(doc(db, "manualCategories", hashCode(concept)), { concept: concept, category: newCategory });
+                await setDoc(doc(db, "manualCategories", hashCode(merchantKey)), {
+                    concept: merchantKey,
+                    category: newCategory,
+                    kind: 'merchant'
+                });
             } else {
                 // Si el usuario vuelve a la categoría que la regla ya produce,
-                // elimina cualquier override previo para mantener limpio.
+                // elimina cualquier override previo (tanto merchant como exacto).
+                try { await deleteDoc(doc(db, "manualCategories", hashCode(merchantKey))); } catch (_) {}
                 try { await deleteDoc(doc(db, "manualCategories", hashCode(concept))); } catch (_) {}
             }
         }

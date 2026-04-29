@@ -46,6 +46,21 @@ export function capitalize(str) {
 }
 
 /**
+ * Extrae el "merchant key" de un concepto: la parte antes del primer "/"
+ * normalizada. Por ejemplo:
+ *   "COPPEL PLAZA MADERO    / ******0670 RFC: COP..." -> "coppel plaza madero"
+ *   "DLO DIDI FOOD MX       / ******8493 RFC: ..."     -> "dlo didi food mx"
+ *   "GROK XAI               / ******8493 USD 30.00..." -> "grok xai"
+ * Permite categorizar una vez y aplicar a todos los futuros movimientos
+ * del mismo comercio (cada uno tiene AUT distinto en su concepto).
+ */
+export function extractMerchantKey(concept) {
+    const lower = String(concept || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const slashIdx = lower.indexOf('/');
+    return slashIdx >= 0 ? lower.substring(0, slashIdx).trim() : lower;
+}
+
+/**
  * Genera una firma única para un registro de gasto.
  */
 export function getExpenseSignature(expense) {
@@ -112,9 +127,12 @@ export function parseExpensesData(jsonData, fileType) {
         // Para ingresos (abonos), solo respetamos manualCategories previamente asignados;
         // no aplicamos reglas por substring (que están diseñadas para gastos).
         const lowerConcept = concept.toLowerCase();
+        const merchantKey = extractMerchantKey(concept);
         let category = '';
         if (creditValue > 0) {
-            category = state.manualCategories.get(lowerConcept) || '';
+            category = state.manualCategories.get(lowerConcept)
+                    || state.manualCategories.get(merchantKey)
+                    || '';
         } else {
             category = autoCategorize(concept);
         }
@@ -157,8 +175,14 @@ export function calculateMinutesFromEntryExit(entrada, salida) {
  */
 export function autoCategorize(concept) {
     const lowerConcept = String(concept).toLowerCase();
+    // 1. Match exacto del concepto completo (compatibilidad con entradas viejas)
     if (state.manualCategories.has(lowerConcept)) {
         return state.manualCategories.get(lowerConcept);
+    }
+    // 2. Match por comercio (parte antes del "/") — clave para que persista entre transacciones
+    const merchantKey = extractMerchantKey(concept);
+    if (merchantKey && state.manualCategories.has(merchantKey)) {
+        return state.manualCategories.get(merchantKey);
     }
     return autoCategorizeWithRulesOnly(concept);
 }

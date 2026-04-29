@@ -1333,11 +1333,24 @@ router.post('/expenses/delete-by-range', async (req, res) => {
     }
 });
 
+// Helper: extrae el "merchant key" (parte antes del primer "/")
+function extractMerchantKeyServer(concept) {
+    const lower = String(concept || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    const slashIdx = lower.indexOf('/');
+    return slashIdx >= 0 ? lower.substring(0, slashIdx).trim() : lower;
+}
+
 // --- Reglas de auto-categorización (replica de public/admon/js/utils.js) ---
 function autoCategorizeServer(concept, manualCategories) {
     const lowerConcept = String(concept || '').toLowerCase().replace(/\s+/g, ' ');
+    // 1. Match exacto
     if (manualCategories && manualCategories[lowerConcept]) {
         return manualCategories[lowerConcept];
+    }
+    // 2. Match por comercio
+    const merchantKey = extractMerchantKeyServer(concept);
+    if (merchantKey && manualCategories && manualCategories[merchantKey]) {
+        return manualCategories[merchantKey];
     }
     const rules = {
         Ganancia: ['xciento'],
@@ -1404,8 +1417,9 @@ router.post('/expenses/bulk-import', async (req, res) => {
             }
             // Para ingresos, solo respetar override manual previo (no aplicar reglas por substring)
             const lowerConcept = concept.toLowerCase().replace(/\s+/g, ' ');
+            const merchantKey = extractMerchantKeyServer(concept);
             const category = credit > 0
-                ? (manualCategories[lowerConcept] || '')
+                ? (manualCategories[lowerConcept] || manualCategories[merchantKey] || '')
                 : autoCategorizeServer(concept, manualCategories);
             toImport.push({
                 date,
