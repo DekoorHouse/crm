@@ -792,6 +792,55 @@ export function populateCategoryFilter() {
         elements.categoryFilter.appendChild(option);
     });
     elements.categoryFilter.value = currentCategory;
+
+    // Sincronizar el dropdown custom (label + lista del modal)
+    syncCategoryPickerUI();
+}
+
+export function syncCategoryPickerUI() {
+    const label = document.getElementById('category-filter-label');
+    const list = document.getElementById('category-picker-list');
+    if (!list || !elements.categoryFilter) return;
+
+    const current = elements.categoryFilter.value || 'all';
+    const currentText = current === 'all'
+        ? 'Todas las categorías'
+        : (Array.from(elements.categoryFilter.options).find(o => o.value === current)?.textContent || 'Categoría');
+    if (label) label.textContent = currentText;
+
+    list.innerHTML = '';
+    Array.from(elements.categoryFilter.options).forEach(opt => {
+        if (opt.disabled && opt.textContent.includes('─')) {
+            const div = document.createElement('div');
+            div.className = 'custom-picker-divider';
+            list.appendChild(div);
+            return;
+        }
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'custom-picker-item';
+        if (opt.value === current) btn.classList.add('selected');
+        if (opt.value === '__add_new_category__') btn.classList.add('special');
+        btn.dataset.value = opt.value;
+        btn.textContent = opt.textContent;
+        if (opt.value === current) {
+            const check = document.createElement('span');
+            check.textContent = '✓';
+            btn.appendChild(check);
+        }
+        list.appendChild(btn);
+    });
+}
+
+export function openCategoryPicker() {
+    syncCategoryPickerUI();
+    const modal = document.getElementById('category-picker-modal');
+    if (modal) modal.classList.add('show');
+}
+
+export function closeCategoryPicker() {
+    const modal = document.getElementById('category-picker-modal');
+    if (modal) modal.classList.remove('show');
 }
 
 export function initDateRangePicker(callback) {

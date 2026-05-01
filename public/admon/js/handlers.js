@@ -243,6 +243,42 @@ export function initEventListeners() {
     elements.deletePreviousMonthBtn.addEventListener('click', confirmDeletePreviousMonth);
     elements.exportBtn.addEventListener('click', exportToExcel);
     elements.categoryFilter.addEventListener('change', handleFilterChange);
+
+    // Custom dropdown picker para filtro Categoría
+    const categoryFilterBtn = document.getElementById('category-filter-btn');
+    const categoryPickerModal = document.getElementById('category-picker-modal');
+    const categoryPickerClose = document.getElementById('category-picker-close');
+    const categoryPickerList = document.getElementById('category-picker-list');
+
+    if (categoryFilterBtn) {
+        categoryFilterBtn.addEventListener('click', () => ui.openCategoryPicker());
+    }
+    if (categoryPickerClose) {
+        categoryPickerClose.addEventListener('click', () => ui.closeCategoryPicker());
+    }
+    if (categoryPickerModal) {
+        categoryPickerModal.addEventListener('click', (e) => {
+            if (e.target === categoryPickerModal) ui.closeCategoryPicker();
+        });
+    }
+    if (categoryPickerList) {
+        categoryPickerList.addEventListener('click', (e) => {
+            const item = e.target.closest('.custom-picker-item');
+            if (!item) return;
+            const value = item.dataset.value;
+            if (value === '__add_new_category__') {
+                // Cierra picker y dispara el flujo de "nueva categoría" del select original
+                ui.closeCategoryPicker();
+                elements.categoryFilter.value = '__add_new_category__';
+                elements.categoryFilter.dispatchEvent(new Event('change', { bubbles: true }));
+                return;
+            }
+            elements.categoryFilter.value = value;
+            elements.categoryFilter.dispatchEvent(new Event('change', { bubbles: true }));
+            ui.syncCategoryPickerUI();
+            ui.closeCategoryPicker();
+        });
+    }
     
     elements.modal.addEventListener('click', (e) => {
         if (e.target.closest('.modal-cancel-btn')) { // Ensure cancel button in modal closes it

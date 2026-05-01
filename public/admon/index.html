@@ -14,6 +14,7 @@
   <!-- PWA Meta Tags -->
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#1e40af">
+  <meta name="color-scheme" content="light dark">
   <link rel="apple-touch-icon" href="icon-192x192.png">
 
   <!-- Google Fonts -->
@@ -142,7 +143,8 @@
                           <label for="date-range-filter">Rango personalizado:</label>
                           <input type="text" id="date-range-filter" placeholder="Seleccionar..." readonly>
                           <label for="category-filter">Categoría:</label>
-                          <select id="category-filter"></select>
+                          <button type="button" id="category-filter-btn" class="custom-dropdown"><span id="category-filter-label">Todas las categorías</span></button>
+                          <select id="category-filter" style="display:none;"></select>
                           <select id="month-filter-select" class="modal-input" style="width: auto; margin-left: 10px;">
                               <!-- Month options will be rendered here by JavaScript -->
                           </select>
@@ -556,6 +558,17 @@
               <button id="sueldos-vac-save-btn" class="btn" style="flex:1; padding:12px; font-size:1rem;">Guardar</button>
               <button id="sueldos-vac-remove-btn" class="btn" style="padding:12px 18px; font-size:0.9rem; display:none; background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border:none;">Quitar</button>
           </div>
+      </div>
+  </div>
+
+  <!-- Custom picker modal (categoría) -->
+  <div id="category-picker-modal" class="custom-picker-modal">
+      <div class="custom-picker-card">
+          <div class="custom-picker-header">
+              <h3>Categoría</h3>
+              <button class="custom-picker-close" id="category-picker-close" aria-label="Cerrar">&times;</button>
+          </div>
+          <div class="custom-picker-list" id="category-picker-list"></div>
       </div>
   </div>
 

@@ -1095,6 +1095,129 @@
     }
 
     /* ============================================ */
+    /* THEMING: aplica color-scheme y accent a forms */
+    /* ============================================ */
+    :root { color-scheme: light; accent-color: #6366f1; }
+    body.dark-mode { color-scheme: dark; }
+    input, select, textarea, button {
+        accent-color: var(--primary, #6366f1);
+    }
+
+    /* Custom dropdown picker (categoría, subcategoría, etc) */
+    .custom-dropdown {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 10px 14px;
+        background: var(--bg-card);
+        color: var(--text-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        font-size: 14px;
+        cursor: pointer;
+        min-width: 180px;
+        font-family: inherit;
+    }
+    .custom-dropdown:hover {
+        border-color: var(--primary);
+    }
+    .custom-dropdown::after {
+        content: '▾';
+        color: var(--text-secondary);
+        font-size: 12px;
+        margin-left: auto;
+    }
+
+    .custom-picker-modal {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 2500;
+    }
+    .custom-picker-modal.show { display: flex; }
+    .custom-picker-card {
+        background: var(--bg-card);
+        color: var(--text-primary);
+        width: 92%;
+        max-width: 440px;
+        max-height: 85vh;
+        border-radius: 20px;
+        padding: 0;
+        box-shadow: 0 20px 60px rgba(0,0,0,0.4);
+        border: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    .custom-picker-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--border-color);
+    }
+    .custom-picker-header h3 {
+        margin: 0;
+        font-size: 1rem;
+        font-weight: 700;
+    }
+    .custom-picker-close {
+        background: none;
+        border: none;
+        font-size: 1.5rem;
+        line-height: 1;
+        cursor: pointer;
+        color: var(--text-secondary);
+        padding: 4px 8px;
+    }
+    .custom-picker-list {
+        overflow-y: auto;
+        flex: 1;
+        padding: 8px;
+    }
+    .custom-picker-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 16px;
+        border-radius: 10px;
+        cursor: pointer;
+        font-size: 15px;
+        transition: background 0.15s;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        width: 100%;
+        text-align: left;
+        font-family: inherit;
+    }
+    .custom-picker-item:hover {
+        background: rgba(99,102,241,0.08);
+    }
+    .custom-picker-item.selected {
+        background: var(--primary);
+        color: #fff;
+        font-weight: 600;
+    }
+    .custom-picker-item.special {
+        color: var(--primary);
+        font-weight: 600;
+    }
+    .custom-picker-item.special:hover {
+        background: rgba(99,102,241,0.12);
+    }
+    .custom-picker-divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: 6px 12px;
+    }
+
+    /* ============================================ */
     /* RESPONSIVE: Tablet (≤ 900px)                 */
     /* ============================================ */
     @media (max-width: 900px) {
