@@ -1328,6 +1328,79 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/diff-against-file (compara CRM vs un set de signatures) ---
+router.post('/expenses/diff-against-file', async (req, res) => {
+    try {
+        const { expenses, from, to } = req.body || {};
+        if (!Array.isArray(expenses)) return res.status(400).json({ error: 'expenses requerido' });
+        if (!from || !to) return res.status(400).json({ error: 'from/to requeridos' });
+
+        const fileSigs = new Map(); // sig -> count
+        expenses.forEach(e => {
+            const concept = (e.concept || '').trim();
+            const charge = Math.abs(parseFloat(e.charge) || 0);
+            const credit = parseFloat(e.credit) || 0;
+            const sig = `${e.date}|${concept}|${charge}|${credit}`;
+            fileSigs.set(sig, (fileSigs.get(sig) || 0) + 1);
+        });
+
+        const snap = await db.collection('expenses').get();
+        const crmSigs = new Map(); // sig -> [docs]
+        snap.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.date < from || d.date > to) return;
+            if (d.type === 'ajuste_saldo') return;
+            const concept = (d.concept || '').trim();
+            const charge = parseFloat(d.charge) || 0;
+            const credit = parseFloat(d.credit) || 0;
+            const sig = `${d.date}|${concept}|${charge}|${credit}`;
+            if (!crmSigs.has(sig)) crmSigs.set(sig, []);
+            crmSigs.get(sig).push({ id: doc.id, date: d.date, concept: d.concept, charge, credit, source: d.source });
+        });
+
+        const onlyInCRM = []; // CRM tiene pero file no
+        const onlyInFile = []; // file tiene pero CRM no
+        const duplicatedInCRM = []; // CRM tiene N copias pero file tiene < N
+
+        crmSigs.forEach((docs, sig) => {
+            const fileCount = fileSigs.get(sig) || 0;
+            if (fileCount === 0) {
+                docs.forEach(d => onlyInCRM.push(d));
+            } else if (docs.length > fileCount) {
+                // sobran (docs.length - fileCount) copias
+                const extras = docs.slice(fileCount);
+                extras.forEach(d => duplicatedInCRM.push(d));
+            }
+        });
+
+        fileSigs.forEach((count, sig) => {
+            const crmCount = (crmSigs.get(sig) || []).length;
+            if (crmCount < count) {
+                const [date, concept, charge, credit] = sig.split('|');
+                for (let i = 0; i < (count - crmCount); i++) {
+                    onlyInFile.push({ date, concept, charge: parseFloat(charge), credit: parseFloat(credit) });
+                }
+            }
+        });
+
+        const sumExtras = duplicatedInCRM.reduce((s, d) => ({ c: s.c + d.charge, a: s.a + d.credit }), { c: 0, a: 0 });
+        const sumOnlyCRM = onlyInCRM.reduce((s, d) => ({ c: s.c + d.charge, a: s.a + d.credit }), { c: 0, a: 0 });
+        const sumOnlyFile = onlyInFile.reduce((s, d) => ({ c: s.c + d.charge, a: s.a + d.credit }), { c: 0, a: 0 });
+
+        res.json({
+            from, to,
+            fileMovements: expenses.length,
+            crmMovements: Array.from(crmSigs.values()).reduce((s, a) => s + a.length, 0),
+            duplicatedInCRM: { count: duplicatedInCRM.length, sumCharge: sumExtras.c, sumCredit: sumExtras.a, items: duplicatedInCRM.slice(0, 50) },
+            onlyInCRM: { count: onlyInCRM.length, sumCharge: sumOnlyCRM.c, sumCredit: sumOnlyCRM.a, items: onlyInCRM.slice(0, 30) },
+            onlyInFile: { count: onlyInFile.length, sumCharge: sumOnlyFile.c, sumCredit: sumOnlyFile.a, items: onlyInFile.slice(0, 30) }
+        });
+    } catch (error) {
+        console.error('diff-against-file error:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/expenses/types-summary (resumen de tipos únicos) ---
 router.get('/expenses/types-summary', async (req, res) => {
     try {
