@@ -2,8 +2,20 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Checador Pro | Registro de Asistencia</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="/checador/manifest.json">
+    <meta name="theme-color" content="#193C4E">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Checador">
+    <link rel="apple-touch-icon" href="/checador/icon-192.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="/checador/icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="/checador/icon-512.png">
+
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -74,6 +86,13 @@
                 <a href="/checador/panel" class="link-btn">Panel Administrativo</a>
                 <button id="logout-btn" class="link-btn" style="color: var(--danger);">Cerrar Sesion</button>
             </div>
+
+            <button id="install-pwa-btn" type="button" style="display:none; margin-top:14px; width:100%; padding:12px; background:transparent; color:var(--primary); border:1px solid var(--primary); border-radius:10px; font-size:0.85rem; font-weight:600; cursor:pointer;">
+                📲 Instalar app en este dispositivo
+            </button>
+            <div id="install-ios-hint" style="display:none; margin-top:14px; font-size:0.75rem; color:var(--text-muted); text-align:center; line-height:1.4;">
+                Para instalar: toca <strong>Compartir</strong> y luego <strong>"Agregar a pantalla de inicio"</strong>.
+            </div>
         </div>
     </div>
 
@@ -87,5 +106,6 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
 
     <script src="app.js"></script>
+    <script src="pwa.js"></script>
 </body>
 </html>
