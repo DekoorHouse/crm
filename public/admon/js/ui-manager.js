@@ -228,10 +228,12 @@ export function updateSummary(getFilteredExpenses) {
         return acc;
     }, { TotalCargos: 0, TotalIngresos: 0 });
 
-    // Utilidad Operativa: solo marzo-abril 2026 porque los meses anteriores tienen datos incorrectos
-    // Incluye tipo 'ajuste_saldo' (conciliación bancaria) — este tipo se excluye de Ingresos/Cargos
+    // Utilidad Operativa: desde marzo 2026 (los meses anteriores tienen datos incorrectos)
+    // hasta hoy. Incluye 'ajuste_saldo' (saldo previo + conciliación) pero se excluye
+    // de Ingresos/Cargos individuales.
     const NETO_FROM = '2026-03-01';
-    const NETO_TO = '2026-04-30';
+    const today = new Date();
+    const NETO_TO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const netoExpenses = state.expenses.filter(e =>
         (e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses' || e.type === 'ajuste_saldo') &&
         e.date >= NETO_FROM && e.date <= NETO_TO
