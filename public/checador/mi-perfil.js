@@ -14,9 +14,28 @@ const db = firebase.firestore();
 let currentEmployee = null;
 let logsCache = [];
 let adjustmentsCache = [];
+let holidaysCache = [];
 let weekOffset = 0;
 let unsubscribeLogs = null;
 let unsubscribeAdj = null;
+let unsubscribeHolidays = null;
+
+function isoDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dy = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dy}`;
+}
+function findHoliday(dateObj) {
+    if (!holidaysCache.length) return null;
+    const iso = isoDateStr(dateObj);
+    return holidaysCache.find(h => h.date === iso) || null;
+}
+function getHolidayMinutesForDay(dayOfWeek) {
+    if (dayOfWeek >= 1 && dayOfWeek <= 5) return 360;
+    if (dayOfWeek === 6) return 240;
+    return 0;
+}
 
 // =====================
 // AUTH - requiere Firebase auth activo
@@ -110,6 +129,12 @@ async function loginWithPin(nameInput, pinInput, isAutoLogin) {
             renderProfile();
         });
 
+    unsubscribeHolidays = db.collection('checador_holidays')
+        .onSnapshot(snap => {
+            holidaysCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+            renderProfile();
+        });
+
     return true;
 }
 
@@ -130,8 +155,10 @@ document.getElementById('logout-btn').addEventListener('click', () => {
     currentEmployee = null;
     if (unsubscribeLogs) { unsubscribeLogs(); unsubscribeLogs = null; }
     if (unsubscribeAdj) { unsubscribeAdj(); unsubscribeAdj = null; }
+    if (unsubscribeHolidays) { unsubscribeHolidays(); unsubscribeHolidays = null; }
     logsCache = [];
     adjustmentsCache = [];
+    holidaysCache = [];
     document.getElementById('profile-content').style.display = 'none';
     document.getElementById('pin-login-view').style.display = 'flex';
     document.getElementById('emp-name-input').value = '';
@@ -247,6 +274,8 @@ function renderProfile() {
 
         // Vacaciones: si no hay logs, checar si está de vacaciones en esa fecha
         let isVacDay = false;
+        let isHolidayDay = false;
+        let holidayLabel = '';
         if (dayLogs.length === 0 && currentEmployee.vacaciones && currentEmployee.vacacionesDesde && currentEmployee.vacacionesHasta) {
             const checkD = new Date(dateObj); checkD.setHours(12, 0, 0, 0);
             const desde = new Date(currentEmployee.vacacionesDesde + 'T00:00:00');
@@ -258,23 +287,43 @@ function renderProfile() {
                 else if (dow === 6) { dayMins = 240; isVacDay = true; }
             }
         }
+        // Día inhábil: si no hay logs ni vacaciones, checar si la fecha es inhábil
+        if (dayLogs.length === 0 && !isVacDay) {
+            const holiday = findHoliday(dateObj);
+            if (holiday) {
+                const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
+                if (dateObj <= todayEnd) {
+                    const hMins = getHolidayMinutesForDay(dateObj.getDay());
+                    if (hMins > 0) {
+                        dayMins = hMins;
+                        isHolidayDay = true;
+                        holidayLabel = holiday.label || 'Día inhábil';
+                    }
+                }
+            }
+        }
 
-        if (dayLogs.length > 0 || isVacDay) {
+        if (dayLogs.length > 0 || isVacDay || isHolidayDay) {
             daysWorked++;
             totalWeekMins += dayMins;
         }
 
-        const hasData = dayLogs.length > 0 || isVacDay;
+        const hasData = dayLogs.length > 0 || isVacDay || isHolidayDay;
         const hoursStr = dayMins > 0 ? `${Math.floor(dayMins / 60)}h ${dayMins % 60}m` : (hasData ? '0h 0m' : '—');
         const dayPay = Math.round((dayMins / 60) * 70);
         const payStr = hasData ? `$${dayPay.toLocaleString()}` : '';
 
         const row = document.createElement('div');
         row.className = `day-row ${hasData ? 'has-data' : 'no-data'} ${isToday ? 'today' : ''}`;
-        row.style.borderLeftColor = isVacDay ? '#f59e0b' : '';
+        if (isVacDay) row.style.borderLeftColor = '#f59e0b';
+        else if (isHolidayDay) row.style.borderLeftColor = '#a78bfa';
+        let detail = '';
+        if (isVacDay) detail = '🏖 Vacaciones';
+        else if (isHolidayDay) detail = `📅 ${holidayLabel}`;
+        else if (dayLogs.length > 0) detail = timeline.join(' &bull; ');
         row.innerHTML = `
             <span class="day-name">${dayNames[i]}</span>
-            <span class="day-detail">${isVacDay ? '🏖 Vacaciones' : (dayLogs.length > 0 ? timeline.join(' &bull; ') : '')}</span>
+            <span class="day-detail">${detail}</span>
             <span class="day-hours">${hoursStr}${payStr ? `<br><small style="color:var(--primary); font-weight:600;">${payStr}</small>` : ''}</span>
         `;
         daysList.appendChild(row);

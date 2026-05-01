@@ -17,6 +17,7 @@ const ADMIN_PIN = "0809";
 let logsCache = [];
 let employeesCache = [];
 let adjustmentsCache = [];
+let holidaysCache = [];
 let weekOffset = 0; // 0 = semana actual, -1 = anterior, etc.
 
 // =====================
@@ -53,6 +54,15 @@ firebaseAuth.onAuthStateChanged(user => {
                 adjustmentsCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
                 if (document.getElementById('panel-content').style.display !== 'none') {
                     renderAdminLogs();
+                }
+            });
+        db.collection('checador_holidays')
+            .onSnapshot(snap => {
+                holidaysCache = snap.docs.map(doc => ({ _docId: doc.id, ...doc.data() }));
+                if (document.getElementById('panel-content').style.display !== 'none') {
+                    renderAdminLogs();
+                    renderResumen();
+                    renderHolidays();
                 }
             });
     }
@@ -206,6 +216,31 @@ function isOnVacation(empName, checkDate) {
 }
 
 // =====================
+// DÍAS INHÁBILES (FERIADOS)
+// =====================
+function isoDateStr(d) {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dy = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dy}`;
+}
+
+function findHoliday(checkDate) {
+    if (!holidaysCache.length) return null;
+    const iso = isoDateStr(checkDate);
+    return holidaysCache.find(h => h.date === iso) || null;
+}
+
+function isHoliday(checkDate) {
+    return !!findHoliday(checkDate);
+}
+
+function getHolidayMinutes(dayOfWeek) {
+    // Mismo horario normal que vacaciones: L-V 6h, Sáb 4h.
+    return getVacationMinutes(dayOfWeek);
+}
+
+// =====================
 // ASISTENCIA (VISTA SEMANAL)
 // =====================
 function renderAdminLogs() {
@@ -269,7 +304,11 @@ function renderAdminLogs() {
     weekDates.forEach((dateObj, i) => {
         const dateStr = weekDateStrs[i];
         const dayName = dateObj.toLocaleDateString('es-MX', { weekday: 'short' });
-        const label = `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
+        const holidayInfo = findHoliday(dateObj);
+        const labelBase = `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${dateObj.getDate()}/${dateObj.getMonth() + 1}`;
+        const label = holidayInfo
+            ? `${labelBase} <span title="${(holidayInfo.label || 'Inhábil').replace(/"/g, '&quot;')}" style="color:#a78bfa;">📅</span>`
+            : labelBase;
 
         let dayMins = 0;
         const cells = employees.map(emp => {
@@ -284,6 +323,22 @@ function renderAdminLogs() {
                         dayMins += vacMins;
                         empTotals[emp.name.toLowerCase()] += vacMins;
                         return `<td style="text-align:center;"><span style="color:#f59e0b; font-weight:600; font-size:0.9rem;">🏖 ${Math.floor(vacMins/60)}h</span></td>`;
+                    }
+                }
+            }
+            // Inhábil: si no hay logs y la fecha es un día inhábil, auto-llenar
+            if (idx === undefined) {
+                const holiday = findHoliday(dateObj);
+                if (holiday) {
+                    const today = new Date(); today.setHours(23, 59, 59, 999);
+                    if (dateObj <= today) {
+                        const hMins = getHolidayMinutes(dateObj.getDay());
+                        if (hMins > 0) {
+                            dayMins += hMins;
+                            empTotals[emp.name.toLowerCase()] += hMins;
+                            const safeLabel = (holiday.label || 'Inhábil').replace(/"/g, '&quot;');
+                            return `<td style="text-align:center;" title="${safeLabel}"><span style="color:#a78bfa; font-weight:600; font-size:0.9rem;">📅 ${Math.floor(hMins/60)}h</span></td>`;
+                        }
                     }
                 }
             }
@@ -721,8 +776,91 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
         document.getElementById(btn.dataset.tab).classList.add('active');
         if (btn.dataset.tab === 'tab-employees') setTimeout(() => document.getElementById('new-emp-name').focus(), 100);
         if (btn.dataset.tab === 'tab-resumen') renderResumen();
+        if (btn.dataset.tab === 'tab-holidays') {
+            renderHolidays();
+            setTimeout(() => document.getElementById('new-holiday-date').focus(), 100);
+        }
     });
 });
+
+// =====================
+// DÍAS INHÁBILES — UI
+// =====================
+function formatHolidayDateLabel(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-').map(n => parseInt(n, 10));
+    const dt = new Date(y, m - 1, d);
+    const dayName = dt.toLocaleDateString('es-MX', { weekday: 'short' });
+    const day = dt.getDate();
+    const monName = dt.toLocaleDateString('es-MX', { month: 'short' });
+    return `${dayName.charAt(0).toUpperCase() + dayName.slice(1)} ${day} ${monName} ${y}`;
+}
+
+function renderHolidays() {
+    const tbody = document.getElementById('admin-holidays-body');
+    if (!tbody) return;
+    if (!holidaysCache.length) {
+        tbody.innerHTML = '<tr><td colspan="4" style="text-align:center; color:var(--text-muted); padding:20px;">Sin días inhábiles registrados</td></tr>';
+        return;
+    }
+    const sorted = [...holidaysCache].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    tbody.innerHTML = sorted.map(h => {
+        const [y, m, d] = (h.date || '').split('-').map(n => parseInt(n, 10));
+        const dt = (y && m && d) ? new Date(y, m - 1, d) : null;
+        const mins = dt ? getHolidayMinutes(dt.getDay()) : 0;
+        const hours = mins > 0 ? `${Math.floor(mins / 60)}h` : '—';
+        return `
+            <tr>
+                <td>📅 ${formatHolidayDateLabel(h.date)}</td>
+                <td>${h.label || '<span style="color:var(--text-muted);">(sin concepto)</span>'}</td>
+                <td style="text-align:center; color:#a78bfa; font-weight:600;">${hours}</td>
+                <td style="text-align:center;">
+                    <button class="btn-small btn-danger" data-doc="${h._docId}" onclick="deleteHoliday('${h._docId}')" style="padding:6px 10px;">Eliminar</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+document.getElementById('add-holiday-btn').addEventListener('click', async () => {
+    const dateInput = document.getElementById('new-holiday-date');
+    const labelInput = document.getElementById('new-holiday-label');
+    const date = dateInput.value;
+    const label = labelInput.value.trim();
+    if (!date) {
+        showNotification('Selecciona una fecha', 'danger');
+        return;
+    }
+    if (holidaysCache.some(h => h.date === date)) {
+        showNotification('Esa fecha ya está marcada como inhábil', 'danger');
+        return;
+    }
+    try {
+        await db.collection('checador_holidays').add({
+            date,
+            label: label || 'Día inhábil',
+            createdAt: Date.now()
+        });
+        dateInput.value = '';
+        labelInput.value = '';
+        showNotification('Día inhábil agregado 📅');
+    } catch (err) {
+        console.error(err);
+        showNotification('Error al guardar', 'danger');
+    }
+});
+
+async function deleteHoliday(docId) {
+    if (!confirm('¿Eliminar este día inhábil?')) return;
+    try {
+        await db.collection('checador_holidays').doc(docId).delete();
+        showNotification('Día inhábil eliminado');
+    } catch (err) {
+        console.error(err);
+        showNotification('Error al eliminar', 'danger');
+    }
+}
+window.deleteHoliday = deleteHoliday;
 
 // =====================
 // RESUMEN
@@ -807,6 +945,24 @@ function getResumenData(period) {
                 if (!dayGroups[dayKey]) {
                     const vacMins = getVacationMinutes(cur.getDay());
                     if (vacMins > 0) { byEmployee[k].minutes += vacMins; byEmployee[k].days += 1; }
+                }
+            }
+            cur.setDate(cur.getDate() + 1);
+        }
+    });
+
+    // Agregar días inhábiles a TODOS los empleados (que no tengan logs ni vacaciones ese día)
+    employeesCache.forEach(emp => {
+        const k = emp.name.toLowerCase();
+        if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
+        const cur = new Date(start);
+        while (cur <= end && cur <= today) {
+            if (isHoliday(cur) && !isOnVacation(emp.name, cur)) {
+                const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
+                const dayKey = `${k}-${dateStr}`;
+                if (!dayGroups[dayKey]) {
+                    const hMins = getHolidayMinutes(cur.getDay());
+                    if (hMins > 0) { byEmployee[k].minutes += hMins; byEmployee[k].days += 1; }
                 }
             }
             cur.setDate(cur.getDate() + 1);
@@ -956,6 +1112,12 @@ function buildWeekReportData() {
                 if (vacMins > 0) {
                     entry.totalMins += vacMins;
                     entry.days.push({ day: dayNames[i], hours: `${Math.floor(vacMins/60)}h 🏖` });
+                }
+            } else if (isHoliday(dateObj) && dateObj <= today) {
+                const hMins = getHolidayMinutes(dateObj.getDay());
+                if (hMins > 0) {
+                    entry.totalMins += hMins;
+                    entry.days.push({ day: dayNames[i], hours: `${Math.floor(hMins/60)}h 📅` });
                 }
             }
         });
