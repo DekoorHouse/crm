@@ -1328,6 +1328,30 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/types-summary (resumen de tipos únicos) ---
+router.get('/expenses/types-summary', async (req, res) => {
+    try {
+        const from = req.query.from;
+        const to = req.query.to;
+        const snapshot = await db.collection('expenses').get();
+        const byType = {};
+        snapshot.docs.forEach(doc => {
+            const d = doc.data();
+            if (from && d.date < from) return;
+            if (to && d.date > to) return;
+            const t = d.type || '(none)';
+            if (!byType[t]) byType[t] = { count: 0, charge: 0, credit: 0, sample: [] };
+            byType[t].count++;
+            byType[t].charge += parseFloat(d.charge) || 0;
+            byType[t].credit += parseFloat(d.credit) || 0;
+            if (byType[t].sample.length < 5) byType[t].sample.push({ id: doc.id, date: d.date, concept: d.concept?.substring(0, 60), charge: d.charge, credit: d.credit, sub_type: d.sub_type });
+        });
+        res.json({ from, to, byType });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/expenses/list-by-type (Diagnóstico: lista expenses por tipo) ---
 router.get('/expenses/list-by-type', async (req, res) => {
     try {
