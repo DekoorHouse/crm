@@ -1328,6 +1328,26 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint GET /api/expenses/list-by-type (Diagnóstico: lista expenses por tipo) ---
+router.get('/expenses/list-by-type', async (req, res) => {
+    try {
+        const type = req.query.type || 'ajuste_saldo';
+        const snapshot = await db.collection('expenses').where('type', '==', type).get();
+        const docs = snapshot.docs.map(d => ({
+            id: d.id,
+            ...d.data()
+        }));
+        let totalCharge = 0, totalCredit = 0;
+        docs.forEach(d => {
+            totalCharge += parseFloat(d.charge) || 0;
+            totalCredit += parseFloat(d.credit) || 0;
+        });
+        res.json({ type, count: docs.length, totalCharge, totalCredit, docs });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/set-balance-target (Ajusta Utilidad para que coincida con saldo real) ---
 router.post('/expenses/set-balance-target', async (req, res) => {
     try {
