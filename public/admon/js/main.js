@@ -84,14 +84,45 @@ const app = {
         
         // Registrar Service Worker para PWA
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js')
-            .then(registration => {
-                console.log('SW registrado con éxito:', registration);
-            })
-            .catch(error => {
-                console.log('Fallo el registro del SW:', error);
-            });
+            navigator.serviceWorker.register('/admon/sw.js', { scope: '/admon/' })
+                .then(reg => {
+                    console.log('SW registrado:', reg.scope);
+                    // Auto-actualizar al detectar nueva versión
+                    reg.addEventListener('updatefound', () => {
+                        const sw = reg.installing;
+                        if (sw) {
+                            sw.addEventListener('statechange', () => {
+                                if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                                    sw.postMessage({ type: 'SKIP_WAITING' });
+                                }
+                            });
+                        }
+                    });
+                })
+                .catch(err => console.warn('SW registro falló:', err.message));
         }
+
+        // Capturar evento de instalación PWA
+        let deferredPrompt = null;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            e.preventDefault();
+            deferredPrompt = e;
+            const btn = document.getElementById('install-pwa-btn');
+            if (btn) btn.style.display = 'inline-flex';
+        });
+        document.addEventListener('click', async (e) => {
+            const btn = e.target.closest('#install-pwa-btn');
+            if (!btn || !deferredPrompt) return;
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            console.log('PWA install outcome:', outcome);
+            deferredPrompt = null;
+            btn.style.display = 'none';
+        });
+        window.addEventListener('appinstalled', () => {
+            const btn = document.getElementById('install-pwa-btn');
+            if (btn) btn.style.display = 'none';
+        });
     } catch (error) {
         console.error("Error fatal:", error);
     }

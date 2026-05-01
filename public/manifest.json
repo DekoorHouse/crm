@@ -1,20 +1,38 @@
 {
-  "name": "Gestor de Negocio",
-  "short_name": "CRM Admin",
-  "start_url": "/admon",
+  "name": "Gestor de Negocio Dekoor",
+  "short_name": "Dekoor Admin",
+  "description": "Panel administrativo Dekoor: ingresos, gastos, KPIs, sueldos, checador.",
+  "start_url": "/admon/",
+  "scope": "/admon/",
   "display": "standalone",
+  "orientation": "portrait-primary",
   "background_color": "#ffffff",
-  "theme_color": "#1e40af",
+  "theme_color": "#6366f1",
+  "lang": "es-MX",
   "icons": [
     {
-      "src": "favicon-192.png",
+      "src": "/favicon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
-      "src": "favicon.png",
+      "src": "/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
