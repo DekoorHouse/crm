@@ -80,32 +80,96 @@ function updateClock() {
     dateEl.textContent = now.toLocaleDateString('es-MX', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' }).toUpperCase();
 }
 
-// 2. Red — valida en el backend (lee req.ip y compara contra prefijos en Firestore)
+// 2. Validación de ubicación (GPS) — el backend decide modo (gps/ip).
 let networkCheckInProgress = false;
 const networkDiagnosticEl = document.getElementById('network-diagnostic');
+
+function getGeolocation(timeoutMs = 10000) {
+    return new Promise((resolve) => {
+        if (!('geolocation' in navigator)) {
+            resolve({ ok: false, reason: 'unsupported' });
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            pos => resolve({
+                ok: true,
+                lat: pos.coords.latitude,
+                lng: pos.coords.longitude,
+                accuracy: pos.coords.accuracy
+            }),
+            err => {
+                let reason = 'error';
+                if (err && err.code === 1) reason = 'denied';
+                else if (err && err.code === 2) reason = 'unavailable';
+                else if (err && err.code === 3) reason = 'timeout';
+                resolve({ ok: false, reason });
+            },
+            { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 30000 }
+        );
+    });
+}
+
+function setBadgeAuthorized(text) {
+    networkStatusEl.className = "status-badge status-online";
+    networkTextEl.textContent = text;
+    networkBlockedOverlay.style.display = 'none';
+    networkDiagnosticEl.style.display = 'none';
+}
+
+function setBadgeBlocked(text, diagnostic) {
+    networkStatusEl.className = "status-badge status-offline";
+    networkTextEl.textContent = text;
+    if (diagnostic) {
+        networkDiagnosticEl.textContent = diagnostic;
+        networkDiagnosticEl.style.display = 'block';
+    } else {
+        networkDiagnosticEl.style.display = 'none';
+    }
+}
 
 async function checkNetwork() {
     if (networkCheckInProgress) return;
     networkCheckInProgress = true;
     try {
+        // Pide GPS antes de llamar al backend. Si el navegador no lo da,
+        // mandamos la request sin lat/lng — el backend responde con razón clara.
+        const geo = await getGeolocation();
+
         for (let attempt = 0; attempt < 3; attempt++) {
             try {
-                // Bust cualquier caché intermedio agregando un nonce a la URL
-                const url = `/api/checador/check-network?_=${Date.now()}`;
+                let url = `/api/checador/check-network?_=${Date.now()}`;
+                if (geo.ok) {
+                    url += `&lat=${encodeURIComponent(geo.lat)}&lng=${encodeURIComponent(geo.lng)}&accuracy=${encodeURIComponent(Math.round(geo.accuracy || 0))}`;
+                }
                 const response = await fetch(url, { cache: 'no-store' });
                 if (!response.ok) throw new Error('HTTP ' + response.status);
                 const data = await response.json();
                 isAuthorized = !!data.authorized;
+                const mode = data.mode || 'ip';
+
                 if (isAuthorized) {
-                    networkStatusEl.className = "status-badge status-online";
-                    networkTextEl.textContent = "CONECTADO A RED OFICINA";
-                    networkBlockedOverlay.style.display = 'none';
-                    networkDiagnosticEl.style.display = 'none';
+                    setBadgeAuthorized(mode === 'gps' ? 'EN LA OFICINA' : 'CONECTADO A RED OFICINA');
+                    return;
+                }
+
+                if (mode === 'gps') {
+                    if (!geo.ok) {
+                        if (geo.reason === 'denied') {
+                            setBadgeBlocked('PERMITE TU UBICACIÓN', 'Activa permisos de ubicación en el navegador (candado en la barra de direcciones) y toca el badge para reintentar.');
+                        } else if (geo.reason === 'unsupported') {
+                            setBadgeBlocked('UBICACIÓN NO DISPONIBLE', 'Este dispositivo o navegador no soporta GPS.');
+                        } else {
+                            setBadgeBlocked('OBTENIENDO UBICACIÓN…', `Reintentando GPS (${geo.reason}). Toca el badge para reintentar.`);
+                        }
+                    } else if (data.reason === 'low-accuracy') {
+                        setBadgeBlocked('PRECISIÓN INSUFICIENTE', `Precisión actual: ${data.accuracy} m. Sal a un lugar con mejor señal y toca el badge.`);
+                    } else if (typeof data.distance === 'number') {
+                        setBadgeBlocked('FUERA DE LA OFICINA', `A ${data.distance} m de la oficina (radio permitido: ${data.radius} m). Toca para reintentar.`);
+                    } else {
+                        setBadgeBlocked('FUERA DE LA OFICINA', 'Toca el badge para reintentar.');
+                    }
                 } else {
-                    networkStatusEl.className = "status-badge status-offline";
-                    networkTextEl.textContent = "RED NO AUTORIZADA";
-                    networkDiagnosticEl.textContent = `IP detectada: ${data.ip || '—'} · toca el badge para reintentar`;
-                    networkDiagnosticEl.style.display = 'block';
+                    setBadgeBlocked('RED NO AUTORIZADA', `IP detectada: ${data.ip || '—'} · toca el badge para reintentar`);
                 }
                 return;
             } catch (e) {
@@ -114,10 +178,7 @@ async function checkNetwork() {
                 } else {
                     console.error('checkNetwork falló tras reintentos:', e);
                     isAuthorized = false;
-                    networkStatusEl.className = "status-badge status-offline";
-                    networkTextEl.textContent = "ERROR DE CONEXIÓN";
-                    networkDiagnosticEl.textContent = 'Toca el badge para reintentar';
-                    networkDiagnosticEl.style.display = 'block';
+                    setBadgeBlocked('ERROR DE CONEXIÓN', 'Toca el badge para reintentar');
                 }
             }
         }
@@ -150,7 +211,7 @@ async function registerAttendance(type) {
     }
 
     if (!isAuthorized && displayName.toLowerCase() !== 'rosario') {
-        showNotification("Debes estar conectado a la red Wi-Fi de la oficina", "danger");
+        showNotification("Debes estar físicamente en la oficina para checar", "danger");
         return;
     }
 

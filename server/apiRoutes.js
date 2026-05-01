@@ -182,30 +182,57 @@ router.post('/referencias/rotate', async (req, res) => {
     }
 });
 
-// --- Validación de red autorizada para checador ---
-// Lee la IP real del request (req.ip con trust proxy habilitado) y valida contra
-// prefijos almacenados en Firestore (config/checador_network.authorizedPrefixes).
-// Si el doc no existe o falla la lectura, cae a una lista por defecto.
+// --- Validación de ubicación / red autorizada para checador ---
+// Modo principal: GPS (geofence). Si el doc Firestore tiene `officeLocation`
+// con lat/lng/radiusMeters, se valida la distancia entre el celular y la
+// oficina (fórmula de Haversine). Si no hay `officeLocation`, cae al modo
+// legacy de validación por IP usando `authorizedPrefixes`.
 const CHECADOR_FALLBACK_PREFIXES = ['2806:267:2484', '177.226.102', '187.244.64', '187.244.65'];
-let checadorPrefixCache = { value: null, timestamp: 0 };
-const CHECADOR_PREFIX_TTL_MS = 60 * 1000;
+const CHECADOR_DEFAULT_RADIUS_M = 100;
+const CHECADOR_DEFAULT_MAX_ACCURACY_M = 200;
+let checadorConfigCache = { value: null, timestamp: 0 };
+const CHECADOR_CONFIG_TTL_MS = 60 * 1000;
 
-async function getCheckadorAuthorizedPrefixes() {
+function parseOfficeLocation(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const lat = Number(raw.lat);
+    const lng = Number(raw.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const radiusMeters = Number.isFinite(Number(raw.radiusMeters)) && Number(raw.radiusMeters) > 0
+        ? Number(raw.radiusMeters)
+        : CHECADOR_DEFAULT_RADIUS_M;
+    const maxAccuracyMeters = Number.isFinite(Number(raw.maxAccuracyMeters)) && Number(raw.maxAccuracyMeters) > 0
+        ? Number(raw.maxAccuracyMeters)
+        : CHECADOR_DEFAULT_MAX_ACCURACY_M;
+    return { lat, lng, radiusMeters, maxAccuracyMeters };
+}
+
+async function getCheckadorConfig() {
     const now = Date.now();
-    if (checadorPrefixCache.value && now - checadorPrefixCache.timestamp < CHECADOR_PREFIX_TTL_MS) {
-        return checadorPrefixCache.value;
+    if (checadorConfigCache.value && now - checadorConfigCache.timestamp < CHECADOR_CONFIG_TTL_MS) {
+        return checadorConfigCache.value;
     }
     try {
         const doc = await db.collection('config').doc('checador_network').get();
         const data = doc.exists ? doc.data() : null;
-        const prefixes = Array.isArray(data?.authorizedPrefixes) && data.authorizedPrefixes.length > 0
-            ? data.authorizedPrefixes
-            : CHECADOR_FALLBACK_PREFIXES;
-        checadorPrefixCache = { value: prefixes, timestamp: now };
-        return prefixes;
+        const config = {
+            authorizedPrefixes: Array.isArray(data?.authorizedPrefixes) && data.authorizedPrefixes.length > 0
+                ? data.authorizedPrefixes
+                : CHECADOR_FALLBACK_PREFIXES,
+            officeLocation: parseOfficeLocation(data?.officeLocation),
+            allowGpsBypassNames: Array.isArray(data?.allowGpsBypassNames)
+                ? data.allowGpsBypassNames.map(s => String(s).toLowerCase())
+                : []
+        };
+        checadorConfigCache = { value: config, timestamp: now };
+        return config;
     } catch (err) {
         console.warn('[CHECADOR-NETWORK] Error leyendo config, usando fallback:', err.message);
-        return CHECADOR_FALLBACK_PREFIXES;
+        return {
+            authorizedPrefixes: CHECADOR_FALLBACK_PREFIXES,
+            officeLocation: null,
+            allowGpsBypassNames: []
+        };
     }
 }
 
@@ -218,6 +245,17 @@ function getCheckadorClientIp(req) {
     return req.ip || req.connection?.remoteAddress || '';
 }
 
+// Distancia en metros entre dos coordenadas (Haversine).
+function haversineMeters(lat1, lng1, lat2, lng2) {
+    const R = 6371000;
+    const toRad = d => d * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a = Math.sin(dLat / 2) ** 2
+        + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return 2 * R * Math.asin(Math.sqrt(a));
+}
+
 router.get('/checador/check-network', async (req, res) => {
     // Evitar cualquier caché intermedio (browser, CDN, proxy)
     res.set('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -225,13 +263,64 @@ router.get('/checador/check-network', async (req, res) => {
     res.set('Expires', '0');
     try {
         const ip = getCheckadorClientIp(req);
-        const prefixes = await getCheckadorAuthorizedPrefixes();
-        const authorized = !!ip && prefixes.some(p => ip.startsWith(p));
-        // Log para diagnosticar reportes de "red no autorizada" en celulares
-        if (!authorized) {
-            console.log(`[CHECADOR-NETWORK] No autorizado. ip=${ip} xff=${req.headers['x-forwarded-for'] || '-'} ua=${(req.headers['user-agent'] || '').slice(0, 80)}`);
+        const config = await getCheckadorConfig();
+        const ua = (req.headers['user-agent'] || '').slice(0, 80);
+
+        const lat = parseFloat(req.query.lat);
+        const lng = parseFloat(req.query.lng);
+        const accuracy = parseFloat(req.query.accuracy);
+        const hasGps = Number.isFinite(lat) && Number.isFinite(lng);
+
+        // --- Modo GPS (geofence) ---
+        if (config.officeLocation) {
+            if (!hasGps) {
+                console.log(`[CHECADOR-NETWORK] Sin GPS. ip=${ip} ua=${ua}`);
+                return res.json({
+                    authorized: false,
+                    mode: 'gps',
+                    reason: 'no-gps',
+                    ip
+                });
+            }
+            const accFinite = Number.isFinite(accuracy) ? accuracy : null;
+            // Si la precisión reportada es peor que el máximo permitido, rechaza
+            // para evitar falsos positivos con posiciones imprecisas.
+            if (accFinite !== null && accFinite > config.officeLocation.maxAccuracyMeters) {
+                console.log(`[CHECADOR-NETWORK] Precisión baja. ip=${ip} acc=${Math.round(accFinite)}m max=${config.officeLocation.maxAccuracyMeters}m`);
+                return res.json({
+                    authorized: false,
+                    mode: 'gps',
+                    reason: 'low-accuracy',
+                    accuracy: Math.round(accFinite),
+                    maxAccuracy: config.officeLocation.maxAccuracyMeters,
+                    ip
+                });
+            }
+            const distance = haversineMeters(
+                lat, lng,
+                config.officeLocation.lat, config.officeLocation.lng
+            );
+            const radius = config.officeLocation.radiusMeters;
+            const authorized = distance <= radius;
+            if (!authorized) {
+                console.log(`[CHECADOR-NETWORK] Fuera de oficina. ip=${ip} dist=${Math.round(distance)}m radio=${radius}m acc=${accFinite ?? '?'}m`);
+            }
+            return res.json({
+                authorized,
+                mode: 'gps',
+                distance: Math.round(distance),
+                radius,
+                accuracy: accFinite !== null ? Math.round(accFinite) : null,
+                ip
+            });
         }
-        res.json({ authorized, ip });
+
+        // --- Modo legacy: validación por IP ---
+        const authorized = !!ip && config.authorizedPrefixes.some(p => ip.startsWith(p));
+        if (!authorized) {
+            console.log(`[CHECADOR-NETWORK] No autorizado (IP). ip=${ip} xff=${req.headers['x-forwarded-for'] || '-'} ua=${ua}`);
+        }
+        res.json({ authorized, mode: 'ip', ip });
     } catch (err) {
         console.error('[CHECADOR-NETWORK] Error:', err);
         res.status(500).json({ authorized: false, error: 'Error verificando red' });
