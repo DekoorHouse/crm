@@ -326,19 +326,18 @@ function renderAdminLogs() {
                     }
                 }
             }
-            // Inhábil: si no hay logs y la fecha es un día inhábil, auto-llenar
+            // Inhábil: si no hay logs y la fecha es un día inhábil, auto-llenar.
+            // (No se gatea por fecha pasada — los inhábiles se planean con
+            //  anticipación y deben verse de inmediato en la tabla.)
             if (idx === undefined) {
                 const holiday = findHoliday(dateObj);
                 if (holiday) {
-                    const today = new Date(); today.setHours(23, 59, 59, 999);
-                    if (dateObj <= today) {
-                        const hMins = getHolidayMinutes(dateObj.getDay());
-                        if (hMins > 0) {
-                            dayMins += hMins;
-                            empTotals[emp.name.toLowerCase()] += hMins;
-                            const safeLabel = (holiday.label || 'Inhábil').replace(/"/g, '&quot;');
-                            return `<td style="text-align:center;" title="${safeLabel}"><span style="color:#a78bfa; font-weight:600; font-size:0.9rem;">📅 ${Math.floor(hMins/60)}h</span></td>`;
-                        }
+                    const hMins = getHolidayMinutes(dateObj.getDay());
+                    if (hMins > 0) {
+                        dayMins += hMins;
+                        empTotals[emp.name.toLowerCase()] += hMins;
+                        const safeLabel = (holiday.label || 'Inhábil').replace(/"/g, '&quot;');
+                        return `<td style="text-align:center;" title="${safeLabel}"><span style="color:#a78bfa; font-weight:600; font-size:0.9rem;">📅 ${Math.floor(hMins/60)}h</span></td>`;
                     }
                 }
             }
@@ -951,12 +950,13 @@ function getResumenData(period) {
         }
     });
 
-    // Agregar días inhábiles a TODOS los empleados (que no tengan logs ni vacaciones ese día)
+    // Agregar días inhábiles a TODOS los empleados (que no tengan logs ni vacaciones ese día).
+    // No se gatea por today: los inhábiles se planean con anticipación y se reflejan de inmediato.
     employeesCache.forEach(emp => {
         const k = emp.name.toLowerCase();
         if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
         const cur = new Date(start);
-        while (cur <= end && cur <= today) {
+        while (cur <= end) {
             if (isHoliday(cur) && !isOnVacation(emp.name, cur)) {
                 const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
                 const dayKey = `${k}-${dateStr}`;
@@ -1113,7 +1113,7 @@ function buildWeekReportData() {
                     entry.totalMins += vacMins;
                     entry.days.push({ day: dayNames[i], hours: `${Math.floor(vacMins/60)}h 🏖` });
                 }
-            } else if (isHoliday(dateObj) && dateObj <= today) {
+            } else if (isHoliday(dateObj)) {
                 const hMins = getHolidayMinutes(dateObj.getDay());
                 if (hMins > 0) {
                     entry.totalMins += hMins;

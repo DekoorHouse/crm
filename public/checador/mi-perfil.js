@@ -287,18 +287,16 @@ function renderProfile() {
                 else if (dow === 6) { dayMins = 240; isVacDay = true; }
             }
         }
-        // Día inhábil: si no hay logs ni vacaciones, checar si la fecha es inhábil
+        // Día inhábil: si no hay logs ni vacaciones, checar si la fecha es inhábil.
+        // Se muestra inmediatamente, incluso para fechas futuras.
         if (dayLogs.length === 0 && !isVacDay) {
             const holiday = findHoliday(dateObj);
             if (holiday) {
-                const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-                if (dateObj <= todayEnd) {
-                    const hMins = getHolidayMinutesForDay(dateObj.getDay());
-                    if (hMins > 0) {
-                        dayMins = hMins;
-                        isHolidayDay = true;
-                        holidayLabel = holiday.label || 'Día inhábil';
-                    }
+                const hMins = getHolidayMinutesForDay(dateObj.getDay());
+                if (hMins > 0) {
+                    dayMins = hMins;
+                    isHolidayDay = true;
+                    holidayLabel = holiday.label || 'Día inhábil';
                 }
             }
         }
