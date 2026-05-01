@@ -148,11 +148,12 @@
             <!-- Tab: Inhábiles -->
             <div id="tab-holidays" class="tab-content">
                 <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:14px;">
-                    Los días inhábiles se pagan a todos los empleados como si trabajaran su horario normal: L-V 6h, Sáb 4h ($70/hr).
+                    Los días inhábiles se pagan a todos los empleados como si trabajaran. Default: L-V 6h, Sáb 4h ($70/hr). Puedes sobreescribir las horas por inhábil.
                 </p>
-                <div class="add-employee-form" style="grid-template-columns: 160px 1fr auto; gap:10px;">
+                <div class="add-employee-form" style="grid-template-columns: 150px 1fr 110px auto; gap:10px;">
                     <input type="date" id="new-holiday-date">
                     <input type="text" id="new-holiday-label" placeholder="Concepto (ej: Día del Trabajo)" maxlength="60">
+                    <input type="number" id="new-holiday-hours" placeholder="Horas (auto)" min="0" step="0.5" title="Déjalo vacío para usar el horario normal del día">
                     <button id="add-holiday-btn" class="btn-in" style="padding: 10px 16px;">Agregar</button>
                 </div>
                 <div class="table-container" style="margin-top:14px;">
@@ -161,7 +162,7 @@
                             <tr>
                                 <th style="min-width:120px;">Fecha</th>
                                 <th>Concepto</th>
-                                <th style="text-align:center; min-width:90px;">Horas que paga</th>
+                                <th style="text-align:center; min-width:120px;">Horas que paga</th>
                                 <th style="text-align:center; min-width:80px;">Acción</th>
                             </tr>
                         </thead>

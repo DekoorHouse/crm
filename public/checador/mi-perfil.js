@@ -36,6 +36,12 @@ function getHolidayMinutesForDay(dayOfWeek) {
     if (dayOfWeek === 6) return 240;
     return 0;
 }
+function getMinutesForHoliday(holiday, dayOfWeek) {
+    if (holiday && Number.isFinite(Number(holiday.customMinutes)) && Number(holiday.customMinutes) >= 0) {
+        return Math.round(Number(holiday.customMinutes));
+    }
+    return getHolidayMinutesForDay(dayOfWeek);
+}
 
 // =====================
 // AUTH - requiere Firebase auth activo
@@ -292,7 +298,7 @@ function renderProfile() {
         if (dayLogs.length === 0 && !isVacDay) {
             const holiday = findHoliday(dateObj);
             if (holiday) {
-                const hMins = getHolidayMinutesForDay(dateObj.getDay());
+                const hMins = getMinutesForHoliday(holiday, dateObj.getDay());
                 if (hMins > 0) {
                     dayMins = hMins;
                     isHolidayDay = true;

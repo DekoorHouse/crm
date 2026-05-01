@@ -240,6 +240,22 @@ function getHolidayMinutes(dayOfWeek) {
     return getVacationMinutes(dayOfWeek);
 }
 
+// Si el inhábil tiene customMinutes, úsalo; si no, default por día de la semana.
+function getMinutesForHoliday(holiday, dayOfWeek) {
+    if (holiday && Number.isFinite(Number(holiday.customMinutes)) && Number(holiday.customMinutes) >= 0) {
+        return Math.round(Number(holiday.customMinutes));
+    }
+    return getHolidayMinutes(dayOfWeek);
+}
+
+function formatHoursLabel(mins) {
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    if (m === 0) return `${h}h`;
+    if (m === 30) return `${h}.5h`;
+    return `${h}h ${m}m`;
+}
+
 // =====================
 // ASISTENCIA (VISTA SEMANAL)
 // =====================
@@ -332,12 +348,12 @@ function renderAdminLogs() {
             if (idx === undefined) {
                 const holiday = findHoliday(dateObj);
                 if (holiday) {
-                    const hMins = getHolidayMinutes(dateObj.getDay());
+                    const hMins = getMinutesForHoliday(holiday, dateObj.getDay());
                     if (hMins > 0) {
                         dayMins += hMins;
                         empTotals[emp.name.toLowerCase()] += hMins;
                         const safeLabel = (holiday.label || 'Inhábil').replace(/"/g, '&quot;');
-                        return `<td style="text-align:center;" title="${safeLabel}"><span style="color:#a78bfa; font-weight:600; font-size:0.9rem;">📅 ${Math.floor(hMins/60)}h</span></td>`;
+                        return `<td style="text-align:center;" title="${safeLabel}"><span style="color:#a78bfa; font-weight:600; font-size:0.9rem;">📅 ${formatHoursLabel(hMins)}</span></td>`;
                     }
                 }
             }
@@ -806,26 +822,92 @@ function renderHolidays() {
     tbody.innerHTML = sorted.map(h => {
         const [y, m, d] = (h.date || '').split('-').map(n => parseInt(n, 10));
         const dt = (y && m && d) ? new Date(y, m - 1, d) : null;
-        const mins = dt ? getHolidayMinutes(dt.getDay()) : 0;
-        const hours = mins > 0 ? `${Math.floor(mins / 60)}h` : '—';
+        const dow = dt ? dt.getDay() : 0;
+        const defaultMins = dt ? getHolidayMinutes(dow) : 0;
+        const mins = getMinutesForHoliday(h, dow);
+        const hoursValue = (mins / 60).toFixed(1).replace(/\.0$/, '');
+        const isCustom = h.customMinutes !== undefined && h.customMinutes !== null && h.customMinutes !== '';
+        const defaultHint = `Default: ${formatHoursLabel(defaultMins)}`;
         return `
             <tr>
                 <td>📅 ${formatHolidayDateLabel(h.date)}</td>
                 <td>${h.label || '<span style="color:var(--text-muted);">(sin concepto)</span>'}</td>
-                <td style="text-align:center; color:#a78bfa; font-weight:600;">${hours}</td>
+                <td style="text-align:center;">
+                    <input type="number" min="0" step="0.5" value="${hoursValue}"
+                        data-doc="${h._docId}" data-default="${defaultMins}"
+                        title="${defaultHint}"
+                        class="holiday-hours-input"
+                        style="width:80px; text-align:center; padding:6px 8px; background:rgba(255,255,255,0.06); border:1px solid ${isCustom ? '#a78bfa' : 'var(--glass-border)'}; border-radius:8px; color:var(--text-main); font-weight:600;">
+                    <span style="color:var(--text-muted); font-size:0.85rem;">h</span>
+                </td>
                 <td style="text-align:center;">
                     <button class="btn-small btn-danger" data-doc="${h._docId}" onclick="deleteHoliday('${h._docId}')" style="padding:6px 10px;">Eliminar</button>
                 </td>
             </tr>
         `;
     }).join('');
+
+    // Bind eventos a los inputs de horas
+    tbody.querySelectorAll('.holiday-hours-input').forEach(inp => {
+        let originalValue = inp.value;
+        inp.addEventListener('focus', () => { originalValue = inp.value; });
+        inp.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+            if (e.key === 'Escape') { inp.value = originalValue; inp.blur(); }
+        });
+        inp.addEventListener('change', () => updateHolidayHours(inp));
+    });
 }
+
+async function updateHolidayHours(inputEl) {
+    const docId = inputEl.dataset.doc;
+    const defaultMins = parseFloat(inputEl.dataset.default) || 0;
+    const raw = inputEl.value.trim();
+    const hours = parseFloat(raw);
+    if (raw === '' || !Number.isFinite(hours) || hours < 0) {
+        // Vacío o inválido → quitar customMinutes y dejar el default
+        try {
+            await db.collection('checador_holidays').doc(docId).update({
+                customMinutes: firebase.firestore.FieldValue.delete()
+            });
+            showNotification('Horas restablecidas al default');
+        } catch (err) {
+            console.error(err);
+            showNotification('Error al actualizar', 'danger');
+        }
+        return;
+    }
+    const customMinutes = Math.round(hours * 60);
+    // Si coincide con el default, también lo quitamos para que se vea limpio
+    if (customMinutes === defaultMins) {
+        try {
+            await db.collection('checador_holidays').doc(docId).update({
+                customMinutes: firebase.firestore.FieldValue.delete()
+            });
+            showNotification('Horas guardadas (default del día)');
+        } catch (err) {
+            console.error(err);
+            showNotification('Error al actualizar', 'danger');
+        }
+        return;
+    }
+    try {
+        await db.collection('checador_holidays').doc(docId).update({ customMinutes });
+        showNotification('Horas actualizadas');
+    } catch (err) {
+        console.error(err);
+        showNotification('Error al actualizar', 'danger');
+    }
+}
+window.updateHolidayHours = updateHolidayHours;
 
 document.getElementById('add-holiday-btn').addEventListener('click', async () => {
     const dateInput = document.getElementById('new-holiday-date');
     const labelInput = document.getElementById('new-holiday-label');
+    const hoursInput = document.getElementById('new-holiday-hours');
     const date = dateInput.value;
     const label = labelInput.value.trim();
+    const hoursRaw = hoursInput.value.trim();
     if (!date) {
         showNotification('Selecciona una fecha', 'danger');
         return;
@@ -834,14 +916,24 @@ document.getElementById('add-holiday-btn').addEventListener('click', async () =>
         showNotification('Esa fecha ya está marcada como inhábil', 'danger');
         return;
     }
+    const payload = {
+        date,
+        label: label || 'Día inhábil',
+        createdAt: Date.now()
+    };
+    if (hoursRaw !== '') {
+        const hours = parseFloat(hoursRaw);
+        if (!Number.isFinite(hours) || hours < 0) {
+            showNotification('Horas inválidas', 'danger');
+            return;
+        }
+        payload.customMinutes = Math.round(hours * 60);
+    }
     try {
-        await db.collection('checador_holidays').add({
-            date,
-            label: label || 'Día inhábil',
-            createdAt: Date.now()
-        });
+        await db.collection('checador_holidays').add(payload);
         dateInput.value = '';
         labelInput.value = '';
+        hoursInput.value = '';
         showNotification('Día inhábil agregado 📅');
     } catch (err) {
         console.error(err);
@@ -957,11 +1049,12 @@ function getResumenData(period) {
         if (!byEmployee[k]) byEmployee[k] = { name: emp.name, minutes: 0, days: 0 };
         const cur = new Date(start);
         while (cur <= end) {
-            if (isHoliday(cur) && !isOnVacation(emp.name, cur)) {
+            const holiday = findHoliday(cur);
+            if (holiday && !isOnVacation(emp.name, cur)) {
                 const dateStr = `${cur.getDate()}/${cur.getMonth() + 1}/${cur.getFullYear()}`;
                 const dayKey = `${k}-${dateStr}`;
                 if (!dayGroups[dayKey]) {
-                    const hMins = getHolidayMinutes(cur.getDay());
+                    const hMins = getMinutesForHoliday(holiday, cur.getDay());
                     if (hMins > 0) { byEmployee[k].minutes += hMins; byEmployee[k].days += 1; }
                 }
             }
@@ -1113,11 +1206,14 @@ function buildWeekReportData() {
                     entry.totalMins += vacMins;
                     entry.days.push({ day: dayNames[i], hours: `${Math.floor(vacMins/60)}h 🏖` });
                 }
-            } else if (isHoliday(dateObj)) {
-                const hMins = getHolidayMinutes(dateObj.getDay());
-                if (hMins > 0) {
-                    entry.totalMins += hMins;
-                    entry.days.push({ day: dayNames[i], hours: `${Math.floor(hMins/60)}h 📅` });
+            } else {
+                const holiday = findHoliday(dateObj);
+                if (holiday) {
+                    const hMins = getMinutesForHoliday(holiday, dateObj.getDay());
+                    if (hMins > 0) {
+                        entry.totalMins += hMins;
+                        entry.days.push({ day: dayNames[i], hours: `${formatHoursLabel(hMins)} 📅` });
+                    }
                 }
             }
         });
