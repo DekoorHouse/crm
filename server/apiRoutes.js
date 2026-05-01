@@ -1328,6 +1328,26 @@ router.get('/expenses/summary', async (req, res) => {
     }
 });
 
+// --- Endpoint POST /api/expenses/delete-by-ids (elimina docs por id) ---
+router.post('/expenses/delete-by-ids', async (req, res) => {
+    try {
+        const ids = Array.isArray(req.body?.ids) ? req.body.ids : null;
+        if (!ids || ids.length === 0) return res.status(400).json({ error: 'ids requeridos' });
+        const CHUNK = 400;
+        let deleted = 0;
+        for (let i = 0; i < ids.length; i += CHUNK) {
+            const batch = db.batch();
+            ids.slice(i, i + CHUNK).forEach(id => batch.delete(db.collection('expenses').doc(id)));
+            await batch.commit();
+            deleted += ids.slice(i, i + CHUNK).length;
+        }
+        res.json({ success: true, deleted });
+    } catch (error) {
+        console.error('delete-by-ids error:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // --- Endpoint POST /api/expenses/diff-against-file (compara CRM vs un set de signatures) ---
 router.post('/expenses/diff-against-file', async (req, res) => {
     try {
