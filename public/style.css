@@ -1603,8 +1603,10 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     #main-sidebar {
         position: fixed;
         top: 0;
+        bottom: 0;
         left: -280px;
         height: 100vh;
+        height: 100dvh;
         z-index: 1000 !important;
         box-shadow: 10px 0 30px rgba(0,0,0,0.1);
         transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
