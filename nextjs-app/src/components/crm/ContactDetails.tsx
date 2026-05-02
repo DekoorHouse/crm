@@ -81,7 +81,7 @@ export default function ContactDetails({ contact, onClose, onNewOrder, onStatusC
   }
 
   return (
-    <aside className="w-80 h-full flex flex-col border-l border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
+    <aside className="fixed md:static inset-0 md:inset-auto z-40 md:z-auto w-full md:w-80 h-full flex flex-col border-l border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
       {/* Header */}
       <div className="px-4 py-3 border-b border-outline-variant/10 flex items-center justify-between glass-header">
         <h3 className="text-sm font-bold text-on-surface">Detalles del contacto</h3>

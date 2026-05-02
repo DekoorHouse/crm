@@ -21,11 +21,13 @@ interface ChatWindowProps {
   onToggleDetails: () => void;
   showDetails: boolean;
   onToggleBot: () => void;
+  onBackToList?: () => void;
 }
 
 export default function ChatWindow({
   contact, messages, loading, sessionExpired, onSend,
   replyTo, onSetReplyTo, onLoadOlder, onToggleDetails, showDetails, onToggleBot,
+  onBackToList,
 }: ChatWindowProps) {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -98,7 +100,17 @@ export default function ChatWindow({
   return (
     <div className="flex-1 flex flex-col bg-background min-w-0">
       {/* Header */}
-      <div className="px-5 py-3 border-b border-outline-variant/10 flex items-center gap-3 glass-header z-10">
+      <div className="px-3 md:px-5 py-3 border-b border-outline-variant/10 flex items-center gap-2 md:gap-3 glass-header z-10">
+        {/* Back button (mobile only) */}
+        {onBackToList && (
+          <button
+            onClick={onBackToList}
+            aria-label="Volver a contactos"
+            className="md:hidden p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-all flex-shrink-0"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 22 }}>arrow_back</span>
+          </button>
+        )}
         <button onClick={onToggleDetails} className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer hover:opacity-80 transition-opacity">
           <div className="w-9 h-9 rounded-full avatar-gradient flex items-center justify-center text-white font-bold text-sm flex-shrink-0 shadow-sm">
             {(contact.name || contact.id).charAt(0).toUpperCase()}

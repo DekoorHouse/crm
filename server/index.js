@@ -123,6 +123,14 @@ app.use('/admon', async (req, res, next) => {
     }
 });
 
+// --- PWA: Service Worker del CRM (servir con Service-Worker-Allowed para que el scope /crm/ funcione) ---
+app.get('/crm-sw.js', (req, res) => {
+    res.setHeader('Service-Worker-Allowed', '/crm/');
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.sendFile(path.join(__dirname, '..', 'public', 'crm-sw.js'));
+});
+
 // --- SERVIR ARCHIVOS ESTÁTICOS ---
 app.use(express.static(path.join(__dirname, '..', 'public')));
 

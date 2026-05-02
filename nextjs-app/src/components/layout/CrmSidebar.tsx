@@ -55,12 +55,25 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
 interface CrmSidebarProps {
   collapsed: boolean;
   onToggle: () => void;
+  onMobileClose?: () => void;
 }
 
-export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
+export default function CrmSidebar({ collapsed: collapsedProp, onToggle, onMobileClose }: CrmSidebarProps) {
   const pathname = usePathname();
   const { user } = useAuth();
   const { isDark, toggleTheme } = useTheme();
+
+  // En mobile (< md = 768px) el sidebar siempre se ve expandido (no colapsado).
+  // El layout maneja el show/hide via translate-x. La prop collapsed solo aplica en desktop.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    const update = () => setIsMobile(mq.matches);
+    update();
+    mq.addEventListener("change", update);
+    return () => mq.removeEventListener("change", update);
+  }, []);
+  const collapsed = isMobile ? false : collapsedProp;
 
   const userName = user?.email
     ? user.email.split("@")[0].charAt(0).toUpperCase() + user.email.split("@")[0].slice(1)
@@ -99,18 +112,32 @@ export default function CrmSidebar({ collapsed, onToggle }: CrmSidebarProps) {
       <div className={`py-4 flex items-center ${collapsed ? "px-3 justify-center" : "px-5 gap-3"}`}>
         <button
           onClick={onToggle}
-          className="w-8 h-8 rounded-xl avatar-gradient flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all shadow-sm"
+          className="w-8 h-8 rounded-xl avatar-gradient flex items-center justify-center flex-shrink-0 hover:opacity-90 transition-all shadow-sm md:flex hidden"
           title={collapsed ? "Expandir menu" : "Colapsar menu"}
         >
           <span className="material-symbols-outlined text-white" style={{ fontSize: 18 }}>
             {collapsed ? "menu" : "menu_open"}
           </span>
         </button>
+        {/* Avatar gradient (solo mobile, no es boton) */}
+        <div className="md:hidden w-8 h-8 rounded-xl avatar-gradient flex items-center justify-center flex-shrink-0 shadow-sm">
+          <span className="text-white text-xs font-bold">D</span>
+        </div>
         {!collapsed && (
           <div className="flex-1">
             <h1 className="text-sm font-extrabold font-headline text-on-surface leading-none">Dekoor</h1>
             <p className="text-[10px] text-on-surface-variant font-medium">CRM Workspace</p>
           </div>
+        )}
+        {/* Close button (mobile only) */}
+        {onMobileClose && (
+          <button
+            onClick={onMobileClose}
+            aria-label="Cerrar menu"
+            className="md:hidden p-1.5 rounded-lg text-on-surface-variant hover:bg-surface-container-low transition-all"
+          >
+            <span className="material-symbols-outlined" style={{ fontSize: 22 }}>close</span>
+          </button>
         )}
       </div>
 

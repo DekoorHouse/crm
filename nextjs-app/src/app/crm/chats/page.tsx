@@ -91,24 +91,36 @@ export default function ChatsPage() {
     }
   }, [selectedContact, updateContactLocal]);
 
+  // Mobile: solo se muestra una columna a la vez.
+  //  - Si NO hay contacto seleccionado: ContactList visible
+  //  - Si hay contacto seleccionado: ChatWindow visible (con boton back en header)
+  //  - ContactDetails: overlay fullscreen en mobile
+  const showListMobile = !selectedId;
+  const showChatMobile = !!selectedId;
+
   return (
     <div className="flex h-full">
-      <ContactList
-        contacts={contacts} loading={loading} selectedId={selectedId} onSelect={setSelectedId}
-        onLoadMore={loadMore} hasMore={hasMore} searchQuery={searchQuery} onSearch={search}
-        activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
-        designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
-        pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
-        channelFilter={channelFilter} onChannelFilter={handleChannelFilter}
-        onPreview={(id) => setPreviewId(id)}
-        onMarkUnread={(id) => { markContactUnread(id).then(() => toast.success("Marcado como no leido")).catch(() => {}); }}
-      />
-      <ChatWindow
-        contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}
-        onSend={send} replyTo={replyTo} onSetReplyTo={setReplyTo} onLoadOlder={loadOlder}
-        onToggleDetails={() => setShowDetails(!showDetails)} showDetails={showDetails}
-        onToggleBot={handleToggleBot}
-      />
+      <div className={`${showListMobile ? "flex" : "hidden"} md:flex flex-col w-full md:w-auto md:flex-shrink-0 min-w-0`}>
+        <ContactList
+          contacts={contacts} loading={loading} selectedId={selectedId} onSelect={setSelectedId}
+          onLoadMore={loadMore} hasMore={hasMore} searchQuery={searchQuery} onSearch={search}
+          activeTag={activeTag} onTagFilter={handleTagFilter} unreadOnly={unreadOnly} onToggleUnread={handleToggleUnread}
+          designReview={designReview} onToggleDesignReview={handleToggleDesignReview}
+          pendingAi={pendingAi} onTogglePendingAi={handleTogglePendingAi}
+          channelFilter={channelFilter} onChannelFilter={handleChannelFilter}
+          onPreview={(id) => setPreviewId(id)}
+          onMarkUnread={(id) => { markContactUnread(id).then(() => toast.success("Marcado como no leido")).catch(() => {}); }}
+        />
+      </div>
+      <div className={`${showChatMobile ? "flex" : "hidden"} md:flex flex-1 min-w-0`}>
+        <ChatWindow
+          contact={selectedContact} messages={messages} loading={messagesLoading} sessionExpired={sessionExpired}
+          onSend={send} replyTo={replyTo} onSetReplyTo={setReplyTo} onLoadOlder={loadOlder}
+          onToggleDetails={() => setShowDetails(!showDetails)} showDetails={showDetails}
+          onToggleBot={handleToggleBot}
+          onBackToList={() => setSelectedId(null)}
+        />
+      </div>
       {showDetails && selectedContact && (
         <ContactDetails
           contact={selectedContact}

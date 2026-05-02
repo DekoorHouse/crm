@@ -1,0 +1,55 @@
+{
+  "name": "Dekoor CRM",
+  "short_name": "Dekoor CRM",
+  "description": "Sistema CRM de Dekoor: chats, pedidos y carritos abandonados",
+  "start_url": "/crm/chats",
+  "scope": "/crm/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#ffffff",
+  "theme_color": "#1B4D5C",
+  "lang": "es-MX",
+  "dir": "ltr",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Chats",
+      "short_name": "Chats",
+      "description": "Ver conversaciones de WhatsApp",
+      "url": "/crm/chats",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Carritos abandonados",
+      "short_name": "Carritos",
+      "description": "Recuperar leads que no completaron compra",
+      "url": "/crm/carritos-abandonados",
+      "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

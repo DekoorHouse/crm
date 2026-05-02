@@ -77,9 +77,9 @@ export default function ContactList({
   const activeTagObj = tags.find((t) => t.key === activeTag);
 
   return (
-    <aside className="w-80 h-full flex flex-col border-r border-outline-variant/15 bg-surface-container-lowest flex-shrink-0">
-      {/* Header + Search */}
-      <div className="px-3 pt-3 pb-2 space-y-2.5 border-b border-outline-variant/10">
+    <aside className="w-full md:w-80 h-full flex flex-col border-r border-outline-variant/15 bg-surface-container-lowest md:flex-shrink-0">
+      {/* Header + Search (con padding-left extra en mobile para el hamburger button) */}
+      <div className="px-3 pl-16 md:pl-3 pt-3 pb-2 space-y-2.5 border-b border-outline-variant/10">
         <div className="flex items-center gap-2">
           <div className="flex-1 relative">
             <span className="absolute inset-y-0 left-2.5 flex items-center text-on-surface-variant/50">
