@@ -25,6 +25,12 @@
     <!-- Estilos Personalizados -->
     <link rel="stylesheet" href="style.css">
 
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest-crm.json">
+    <meta name="theme-color" content="#4338ca">
+    <link rel="icon" href="/favicon.png">
+    <link rel="apple-touch-icon" href="/favicon-192.png">
+
 </head>
 <body class="antialiased">
 
@@ -153,6 +159,10 @@
                     </a>
                 </nav>
                 <div class="mt-auto">
+                    <a id="install-pwa-btn" class="nav-item">
+                        <i class="fas fa-mobile-alt"></i>
+                        <span class="sidebar-text">Instalar app</span>
+                    </a>
                      <a id="logout-button" class="nav-item">
                         <i class="fas fa-sign-out-alt"></i>
                         <span class="sidebar-text">Cerrar Sesión</span>
@@ -448,6 +458,7 @@
     <script src="js/modules/feature-handlers.js"></script>
     <script src="js/modules/main.js"></script>
     <script src="js/modules/auth.js"></script>
+    <script src="js/install-pwa.js"></script>
 
 </body>
 </html>
