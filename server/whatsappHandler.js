@@ -659,15 +659,12 @@ router.post('/', async (req, res) => {
                         profile: { name: contactInfo.profile?.name || from }
                     };
                     
-                    // Enviar el evento "Lead" (o el evento estándar para una conversación iniciada)
-                    // Usamos "Lead" como un evento estándar de CAPI.
-                    // El usuario mencionó "conversación con mensajes iniciada", que es similar a "MessagedConversationStarted"
-                    // o "Lead". Usaremos "Lead".
-                    await sendConversionEvent('Lead', eventInfo, message.referral, {});
-                    console.log(`[META EVENT] Evento 'Lead' enviado a Meta CAPI para ${from}.`);
+                    // Meta requiere 'LeadSubmitted' (no 'Lead') cuando action_source = business_messaging
+                    await sendConversionEvent('LeadSubmitted', eventInfo, message.referral, {});
+                    console.log(`[META EVENT] Evento 'LeadSubmitted' enviado a Meta CAPI para ${from}.`);
 
                 } catch (eventError) {
-                    console.error(`[META EVENT] Error al enviar evento 'Lead' a Meta CAPI para ${from}:`, eventError.message);
+                    console.error(`[META EVENT] Error al enviar evento 'LeadSubmitted' a Meta CAPI para ${from}:`, eventError.message);
                     // No bloquear el resto del flujo, solo registrar el error
                 }
             }
