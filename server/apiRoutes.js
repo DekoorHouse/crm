@@ -4942,8 +4942,11 @@ router.post('/orders', async (req, res) => {
             console.error(`[ATTRIBUTION] No se pudo escribir atribución para pedido ${newOrderRef.id}:`, attrErr.message);
         }
 
+        // Leer datos del contacto para enviar evento Purchase a Meta CAPI
+        const contactDoc = await contactRef.get();
+        const contactData = contactDoc.exists ? contactDoc.data() : null;
+
         // Actualizar el documento del contacto con la información del último pedido y MARCAR COMO REGISTRADO (corona plateada)
-        // El evento Purchase a Meta se envía cuando el estatus cambie a "Fabricar" (corona zafiro)
         await contactRef.update({
             lastOrderNumber: newOrderNumber,
             lastOrderDate: nuevoPedido.createdAt,
@@ -4951,6 +4954,30 @@ router.post('/orders', async (req, res) => {
             purchaseValue: totalValue,
             purchaseDate: admin.firestore.FieldValue.serverTimestamp()
         });
+
+        // Enviar evento Purchase a Meta CAPI al registrar el pedido (no al pagar/fabricar)
+        // Optimiza campañas con señal rápida y mayor volumen; el ROAS real se mide aparte en el CRM.
+        if (contactData?.wa_id) {
+            try {
+                const eventInfo = {
+                    wa_id: contactData.wa_id,
+                    profile: { name: contactData.name }
+                };
+                const customData = {
+                    value: totalValue,
+                    currency: 'MXN'
+                };
+                console.log(`[META EVENT] Enviando Purchase por registro de pedido DH${newOrderNumber}, contacto ${contactId}`);
+                await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
+                console.log(`[META EVENT] ✅ Evento Purchase enviado por registro, pedido DH${newOrderNumber}, valor $${totalValue}`);
+            } catch (metaError) {
+                console.error('[META EVENT] Error al enviar evento Purchase por registro:', metaError.message);
+                if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+                // No fallar el registro del pedido por un error en Meta
+            }
+        } else if (contactData) {
+            console.warn(`[META EVENT] Contacto ${contactId} sin wa_id. No se envió evento Purchase.`);
+        }
 
         // --- Detección automática de cliente recurrente ---
         // Buscar si este teléfono ya tiene otros pedidos PAGADOS anteriores
@@ -5020,7 +5047,7 @@ router.post('/orders', async (req, res) => {
 });
 
 
-// --- Endpoint POST /api/orders/:orderId/change-status (Cambiar estatus + Meta al pasar a Fabricar) ---
+// --- Endpoint POST /api/orders/:orderId/change-status (Cambiar estatus + corona zafiro al pasar a Fabricar) ---
 router.post('/orders/:orderId/change-status', async (req, res) => {
     const { orderId } = req.params;
     const { newStatus } = req.body;
@@ -5068,44 +5095,17 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
             }
         }
 
-        let metaEventSent = false;
-
-        // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro + evento Purchase a Meta
+        // Si cambia a "Fabricar" y antes no era Fabricar → corona zafiro
+        // El evento Purchase a Meta ya se envió al registrar el pedido (en POST /api/orders)
         if (newStatus === 'Fabricar' && !oldStatus.includes('fabricar') && orderData.contactId) {
             try {
                 const contactRef = db.collection('contacts_whatsapp').doc(orderData.contactId);
-                const contactDoc = await contactRef.get();
-
-                if (contactDoc.exists) {
-                    const contactData = contactDoc.data();
-
-                    // Actualizar purchaseStatus del contacto a 'completed' (corona zafiro)
-                    await contactRef.update({
-                        purchaseStatus: 'completed',
-                        purchaseDate: admin.firestore.FieldValue.serverTimestamp()
-                    });
-
-                    // Enviar evento Purchase a Meta CAPI
-                    if (contactData.wa_id) {
-                        const eventInfo = {
-                            wa_id: contactData.wa_id,
-                            profile: { name: contactData.name }
-                        };
-                        const customData = {
-                            value: parseFloat(orderData.precio) || 0,
-                            currency: 'MXN'
-                        };
-                        console.log(`[META EVENT] Enviando Purchase por cambio a Fabricar, pedido ${orderId}, contacto ${orderData.contactId}`);
-                        await sendConversionEvent('Purchase', eventInfo, contactData.adReferral || {}, customData);
-                        console.log(`[META EVENT] ✅ Evento Purchase enviado por Fabricar, pedido ${orderId}, valor $${orderData.precio}`);
-                        metaEventSent = true;
-                    } else {
-                        console.warn(`[META EVENT] Contacto ${orderData.contactId} sin wa_id. No se envió evento Purchase.`);
-                    }
-                }
-            } catch (metaError) {
-                console.error('[META EVENT] Error al enviar evento Purchase por Fabricar:', metaError.message);
-                if (metaError.response) console.error('[META EVENT] Respuesta:', JSON.stringify(metaError.response.data));
+                await contactRef.update({
+                    purchaseStatus: 'completed',
+                    purchaseDate: admin.firestore.FieldValue.serverTimestamp()
+                });
+            } catch (crownError) {
+                console.error('[CROWN] Error al actualizar corona a completed:', crownError.message);
                 // No fallar el request principal
             }
         }
@@ -5163,8 +5163,7 @@ router.post('/orders/:orderId/change-status', async (req, res) => {
 
         res.status(200).json({
             success: true,
-            message: 'Estatus actualizado.',
-            metaEventSent
+            message: 'Estatus actualizado.'
         });
 
     } catch (error) {
