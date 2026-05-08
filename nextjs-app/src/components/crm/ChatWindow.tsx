@@ -142,7 +142,7 @@ export default function ChatWindow({
           )}
           <button
             onClick={onToggleBot}
-            title={contact.botActive ? "Desactivar IA" : "Activar IA"}
+            title={`${contact.botActive ? "Desactivar IA" : "Activar IA"} (Shift+X)`}
             className={`text-[10px] font-bold px-2.5 py-1 rounded-full flex items-center gap-1 transition-all border ${
               contact.botActive
                 ? "text-primary bg-primary/10 border-primary/20 hover:bg-primary/20 shadow-sm"

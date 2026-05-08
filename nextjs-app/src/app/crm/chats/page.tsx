@@ -91,6 +91,34 @@ export default function ChatsPage() {
     }
   }, [selectedContact, updateContactLocal]);
 
+  // Atajo de teclado: Shift+X para alternar IA del contacto activo
+  useEffect(() => {
+    function isTypingTarget(target: EventTarget | null): boolean {
+      if (!(target instanceof HTMLElement)) return false;
+      const tag = target.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        target.isContentEditable
+      );
+    }
+
+    function onKeyDown(e: KeyboardEvent) {
+      // Shift + X (no Ctrl, no Alt, no Meta — solo Shift)
+      if (!e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+      if (e.key !== "X" && e.key !== "x") return;
+      // Ignorar si el usuario esta escribiendo
+      if (isTypingTarget(e.target)) return;
+      if (!selectedContact) return;
+      e.preventDefault();
+      handleToggleBot();
+    }
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [selectedContact, handleToggleBot]);
+
   // Mobile: solo se muestra una columna a la vez.
   //  - Si NO hay contacto seleccionado: ContactList visible
   //  - Si hay contacto seleccionado: ChatWindow visible (con boton back en header)
