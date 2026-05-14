@@ -2,7 +2,16 @@ import { db } from './firebase.js';
 import { collection, doc, addDoc, getDocs, writeBatch, onSnapshot, updateDoc, deleteDoc, query, where, setDoc, Timestamp, deleteField } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
 import { state, actionHistory, setOrdersUnsubscribe } from './state.js';
 import { autoCategorize, autoCategorizeWithRulesOnly, getExpenseSignature, hashCode, recalculatePayment, extractMerchantKey } from './utils.js';
+import { getStrictSignature, getSoftSignature } from './bbva-parser.js';
+import { collectionName } from './config.js';
 import { showModal } from './ui-manager.js';
+
+// Helpers para alias corto en este módulo. La función `EXP()` resuelve al
+// nombre real de la colección de gastos según el modo (prod o test). Mismo
+// patrón para checkpoints. Cualquier escritura/lectura de gastos pasa por
+// aquí — no usar literales 'expenses' directos.
+const EXP = () => collectionName('expenses');
+const CHK = () => collectionName('balance_checkpoints');
 
 /**
  * @file Módulo de servicios de datos.
@@ -14,7 +23,7 @@ import { showModal } from './ui-manager.js';
 // --- LISTENERS EN TIEMPO REAL ---
 
 export function listenForExpenses(onDataChange) {
-    return onSnapshot(collection(db, "expenses"), (snapshot) => {
+    return onSnapshot(collection(db, EXP()), (snapshot) => {
         state.expenses = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
         onDataChange();
     }, (error) => console.error("Expenses Listener Error:", error));
@@ -413,13 +422,23 @@ export async function saveExpense(expenseData, originalCategory) {
             dataToSave.splits = deleteField();
         }
 
+        // Recalcular firmas para que coincidan con los datos finales. Si el
+        // usuario edita un movimiento (cambia monto, concepto o fecha) las
+        // firmas viejas dejarían de ser correctas y romperían la detección
+        // de duplicados.
+        dataToSave.strictSignature = getStrictSignature(dataToSave);
+        dataToSave.softSignature   = getSoftSignature(dataToSave);
+        // Marcar como modificado si fue editado (preserva manualidad y evita
+        // que `deleteCurrentMonthData` lo borre).
+        if (dataToSave.id && !dataToSave.source) dataToSave.source = 'modified';
+
         if (dataToSave.id) {
-            await updateDoc(doc(db, "expenses", dataToSave.id), dataToSave);
+            await updateDoc(doc(db, EXP(), dataToSave.id), dataToSave);
         } else {
             if (dataToSave.splits && typeof dataToSave.splits === 'object' && dataToSave.splits._methodName) {
                 delete dataToSave.splits;
             }
-            await addDoc(collection(db, "expenses"), dataToSave);
+            await addDoc(collection(db, EXP()), dataToSave);
         }
         showModal({ show: false });
     } catch(error) {
@@ -583,7 +602,7 @@ export async function syncMetaSpend(accountId, token, startDate, endDate) {
 export async function deleteExpense(id) {
     saveStateToHistory();
     try {
-        await deleteDoc(doc(db, "expenses", id));
+        await deleteDoc(doc(db, EXP(), id));
         showModal({ show: false });
     } catch (error) {
         console.error("Error borrando el registro:", error);
@@ -723,7 +742,7 @@ export async function saveBulkExpenses(expenses) {
             const chunk = expenses.slice(i, i + CHUNK_SIZE);
             const batch = writeBatch(db);
             chunk.forEach(expense => {
-                batch.set(doc(collection(db, "expenses")), expense);
+                batch.set(doc(collection(db, EXP())), expense);
             });
             await batch.commit();
         }
@@ -742,7 +761,7 @@ export async function deleteCurrentMonthData() {
     const end = new Date(today.getFullYear(), today.getMonth() + 1, 0).toISOString().split('T')[0];
     try {
         const batch = writeBatch(db);
-        const q = query(collection(db, "expenses"), where("date", ">=", start), where("date", "<=", end));
+        const q = query(collection(db, EXP()), where("date", ">=", start), where("date", "<=", end));
         const snapshot = await getDocs(q);
         let deletedCount = 0;
         if (snapshot.empty) {
@@ -777,7 +796,7 @@ export async function deletePreviousMonthData() {
       const end = new Date(y, m + 1, 0).toISOString().split('T')[0];
       try {
           const batch = writeBatch(db);
-          const q = query(collection(db, "expenses"), where("date", ">=", start), where("date", "<=", end));
+          const q = query(collection(db, EXP()), where("date", ">=", start), where("date", "<=", end));
           const snapshot = await getDocs(q);
           let deletedCount = 0;
           if (snapshot.empty) {
@@ -827,6 +846,128 @@ export async function deleteEmployee(employeeId) {
 
 // --- GESTIÓN DEL HISTORIAL (UNDO) ---
 
+// ---------------------------------------------------------------------------
+//  Eliminación SEGURA de duplicados exactos
+// ---------------------------------------------------------------------------
+
+/**
+ * Elimina duplicados EXACTOS de Firestore. La regla de seguridad es:
+ *
+ *   1. Sólo se eliminan movimientos con la misma firma ESTRICTA
+ *      (fecha + concepto completo + montos). Los que sólo comparten
+ *      firma suave (mismo merchant, mismo monto, misma fecha pero AUT
+ *      distinto) NO se tocan, porque pueden ser pagos reales separados.
+ *
+ *   2. Si un grupo contiene un movimiento manual o `confirmed_real`, ése
+ *      se conserva como sobreviviente. El usuario lo marcó como real, así
+ *      que tiene prioridad sobre las importaciones.
+ *
+ *   3. Si no hay manual/confirmed, se conserva el de menor `importedAt`
+ *      (el más antiguo). Esto preserva la categorización original.
+ *
+ *   4. Movimientos con source 'manual' o 'modified' nunca se eliminan,
+ *      aunque haya duplicados — quedaría un manual + el primer import.
+ *
+ * @returns {Promise<number>}  cantidad de documentos eliminados
+ */
+export async function removeDuplicates() {
+    saveStateToHistory();
+
+    const snapshot = await getDocs(collection(db, EXP()));
+    const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // Agrupar por strictSignature (calcular on-the-fly si el doc no la tiene)
+    const groups = new Map();
+    for (const d of docs) {
+        const sig = d.strictSignature || getStrictSignature(d);
+        if (!groups.has(sig)) groups.set(sig, []);
+        groups.get(sig).push(d);
+    }
+
+    const PROTECTED_SOURCES = new Set(['manual', 'modified']);
+    const PROTECTED_STATUSES = new Set(['confirmed_real']);
+
+    const toDelete = [];
+
+    for (const group of groups.values()) {
+        if (group.length < 2) continue;
+
+        // Ordenar: manuales/modified primero, luego confirmed_real, luego por
+        // importedAt ascendente (más antiguo primero).
+        group.sort((a, b) => {
+            const aMan = PROTECTED_SOURCES.has(a.source) ? 0 : 1;
+            const bMan = PROTECTED_SOURCES.has(b.source) ? 0 : 1;
+            if (aMan !== bMan) return aMan - bMan;
+            const aConf = PROTECTED_STATUSES.has(a.duplicateStatus) ? 0 : 1;
+            const bConf = PROTECTED_STATUSES.has(b.duplicateStatus) ? 0 : 1;
+            if (aConf !== bConf) return aConf - bConf;
+            const aT = Number(a.importedAt) || 0;
+            const bT = Number(b.importedAt) || 0;
+            return aT - bT;
+        });
+
+        // Conservar el primero. De los restantes, sólo eliminar los que NO
+        // estén protegidos (no son manual/modified ni confirmed_real).
+        for (let i = 1; i < group.length; i++) {
+            const cand = group[i];
+            if (PROTECTED_SOURCES.has(cand.source)) continue;
+            if (PROTECTED_STATUSES.has(cand.duplicateStatus)) continue;
+            toDelete.push(cand.id);
+        }
+    }
+
+    if (toDelete.length === 0) return 0;
+
+    const CHUNK = 400;
+    for (let i = 0; i < toDelete.length; i += CHUNK) {
+        const chunk = toDelete.slice(i, i + CHUNK);
+        const batch = writeBatch(db);
+        chunk.forEach(id => batch.delete(doc(db, EXP(), id)));
+        await batch.commit();
+    }
+    return toDelete.length;
+}
+
+// ---------------------------------------------------------------------------
+//  Conciliación bancaria
+// ---------------------------------------------------------------------------
+
+/**
+ * Guarda un "checkpoint" de saldo real BBVA capturado por el usuario.
+ * Se persiste en la colección `balance_checkpoints` con id `YYYY-MM-DD`
+ * para que regrabar el mismo día sobreescriba el valor anterior.
+ *
+ * @param {{ date:string, realBalance:number, openingBalance?:number,
+ *           expectedBalance?:number, difference?:number, note?:string }} checkpoint
+ */
+export async function saveBalanceCheckpoint(checkpoint) {
+    if (!checkpoint || !checkpoint.date) {
+        throw new Error('Falta la fecha del checkpoint');
+    }
+    const data = {
+        date: checkpoint.date,
+        realBalance: Number(checkpoint.realBalance) || 0,
+        openingBalance: Number(checkpoint.openingBalance) || 0,
+        expectedBalance: Number(checkpoint.expectedBalance) || 0,
+        difference: Number(checkpoint.difference) || 0,
+        note: checkpoint.note || '',
+        createdAt: Timestamp.now()
+    };
+    const id = String(checkpoint.date);
+    await setDoc(doc(db, CHK(), id), data, { merge: true });
+    return id;
+}
+
+/**
+ * Lee todos los checkpoints guardados (una sola lectura, sin listener).
+ * @returns {Promise<Array<object>>}
+ */
+export async function listBalanceCheckpoints() {
+    const snap = await getDocs(collection(db, CHK()));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }))
+        .sort((a, b) => (a.date < b.date ? -1 : 1));
+}
+
 export function saveStateToHistory(dataType = 'expenses') {
     const snapshot = (dataType === 'sueldos')
         ? JSON.parse(JSON.stringify(state.sueldosData))
@@ -845,9 +986,9 @@ export async function undoLastAction() {
             await saveSueldosDataToFirestore(lastAction.data);
         } else {
             const batch = writeBatch(db);
-            const snapshot = await getDocs(collection(db, "expenses"));
+            const snapshot = await getDocs(collection(db, EXP()));
             snapshot.forEach(doc => batch.delete(doc.ref));
-            lastAction.data.forEach(exp => batch.set(doc(collection(db, "expenses")), exp));
+            lastAction.data.forEach(exp => batch.set(doc(collection(db, EXP())), exp));
             await batch.commit();
         }
         showModal({ title: 'Éxito', body: 'La última acción ha sido deshecha.', showCancel: false, confirmText: 'Entendido' });

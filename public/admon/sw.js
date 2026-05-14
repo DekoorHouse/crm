@@ -4,7 +4,11 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-const CACHE_VERSION = 'admon-v3';
+// v4 (2026-05-14): incluye config.js, bbva-parser.js, tests-bbva.js y
+// botones nuevos (Vista previa, Conciliar BBVA, Limpiar duplicados, Modo
+// prueba). El bump de versión fuerza a todos los clientes existentes a
+// limpiar el cache viejo y descargar los archivos nuevos al próximo acceso.
+const CACHE_VERSION = 'admon-v4';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

@@ -1,9 +1,27 @@
 import { state } from './state.js';
+import {
+    detectBBVAHeader,
+    parseBBVARow,
+    attachSignatures,
+    getStrictSignature as parserGetStrictSignature,
+    getSoftSignature as parserGetSoftSignature,
+    normalizeConcept as parserNormalizeConcept,
+    normalizeAmount as parserNormalizeAmount,
+    getMerchantKey as parserGetMerchantKey
+} from './bbva-parser.js';
 
 /**
  * @file Módulo de funciones de utilidad.
  * @description Contiene funciones puras y reutilizables para tareas comunes.
  */
+
+// Re-exportamos las firmas y normalizadores del parser para que el resto
+// del código (handlers, services) tenga un único punto de entrada.
+export const getStrictSignature = parserGetStrictSignature;
+export const getSoftSignature   = parserGetSoftSignature;
+export const normalizeConcept   = parserNormalizeConcept;
+export const normalizeAmount    = parserNormalizeAmount;
+export const getMerchantKey     = parserGetMerchantKey;
 
 const DEFAULT_CATEGORIES = ['Alex', 'Chris', 'Sueldos', 'Publicidad', 'Envios', 'Local', 'Material', 'Tecnologia', 'Deudas', 'Devoluciones', 'GastosFinancieros', 'Ganancia', 'SinCategorizar'];
 
@@ -62,12 +80,18 @@ export function extractMerchantKey(concept) {
 
 /**
  * Genera una firma única para un registro de gasto.
+ *
+ * NOTA: Históricamente esta firma se construía con `date | concept | charge | credit`
+ * sin normalizar el concepto. Eso causaba colisiones falsas (espacios extra) y
+ * además se usaba indistintamente para "duplicados exactos" y "movimientos
+ * sospechosamente repetidos". A partir de esta versión `getExpenseSignature`
+ * está aliasado a `getStrictSignature` (concepto COMPLETO normalizado, monto
+ * con 2 decimales). El concepto completo incluye el AUT/RFC que BBVA inyecta
+ * por cada movimiento, así que dos pagos reales del mismo comercio no chocan.
+ * Para detectar "movimientos sospechosamente repetidos" use `getSoftSignature`.
  */
 export function getExpenseSignature(expense) {
-  const concept = (expense.concept || '').trim();
-  const charge = parseFloat(expense.charge) || 0;
-  const credit = parseFloat(expense.credit) || 0;
-  return `${expense.date}|${concept}|${charge}|${credit}`;
+    return getStrictSignature(expense);
 }
 
 /**
@@ -85,71 +109,58 @@ export function hashCode(str) {
 }
 
 /**
- * Convierte un número de serie de fecha de Excel a un objeto Date de JavaScript.
+ * Parsea los datos de gastos desde un array JSON exportado por XLSX.
+ *
+ * Cambios respecto a la versión anterior:
+ *   1. Ya no se asume que los datos empiezan en la fila 5 (`slice(4)`):
+ *      ahora `detectBBVAHeader` busca dinámicamente la fila de encabezado
+ *      ("FECHA", "DESCRIPCIÓN/CONCEPTO", "CARGO", "ABONO") y devuelve un
+ *      mapa de columnas. Si no encuentra encabezados (archivo raro o sin
+ *      cabecera) hace fallback a la heurística vieja.
+ *   2. Cada movimiento queda con metadata de auditoría: archivo, hash,
+ *      número de fila, batch de importación, fecha de importación,
+ *      firmas estricta/suave y duplicateStatus.
+ *
+ * @param {Array<Array>} jsonData
+ * @param {string|Object} fileMetaOrExt  Si se pasa un objeto con
+ *        { sourceFileName, sourceFileHash, importBatchId, importedAt, sourceFileExt }
+ *        se usa como metadata. Si se pasa un string (compatibilidad con la
+ *        firma vieja) se interpreta como la extensión del archivo.
+ * @returns {Array<object>}  transacciones normalizadas con firmas adjuntas
  */
-function convertExcelDate(excelDate) {
-    const jsDate = new Date(Math.round((excelDate - 25569) * 86400 * 1000));
-    return new Date(jsDate.getTime() + (jsDate.getTimezoneOffset() * 60000));
-}
+export function parseExpensesData(jsonData, fileMetaOrExt) {
+    if (!Array.isArray(jsonData) || jsonData.length === 0) return [];
 
-/**
- * Parsea los datos de gastos desde un array JSON.
- */
-export function parseExpensesData(jsonData, fileType) {
-    const rowsToProcess = jsonData.slice(4); 
+    const meta = (typeof fileMetaOrExt === 'string' || !fileMetaOrExt)
+        ? { sourceFileExt: fileMetaOrExt || 'xls' }
+        : fileMetaOrExt;
 
-    const mappedExpenses = rowsToProcess.map((row) => {
-        const rawDate = row[0];
-        const concept = String(row[1] || '').trim();
-        const charge = String(row[2] || '0').replace(/[^0-9.-]+/g, "");
-        const credit = String(row[3] || '0').replace(/[^0-9.-]+/g, "");
+    const { headerRowIndex, columnMap } = detectBBVAHeader(jsonData);
+    const startRow = headerRowIndex + 1;
 
-        let dateValue = '';
-        if (rawDate instanceof Date) {
-            const d = new Date(Date.UTC(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate()));
-            if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
-        } else if (typeof rawDate === 'number') {
-            const d = convertExcelDate(rawDate);
-            if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
-        } else if (typeof rawDate === 'string') {
-            const parts = rawDate.match(/(\d+)/g);
-            if (parts && parts.length === 3) {
-                const d = new Date(Date.UTC(parts[2], parts[1] - 1, parts[0]));
-                 if (!isNaN(d)) dateValue = d.toISOString().split('T')[0];
-            }
-        }
+    const expenses = [];
+    for (let i = startRow; i < jsonData.length; i++) {
+        const tx = parseBBVARow(jsonData[i], i, columnMap, meta);
+        if (!tx) continue;
 
-        if (!dateValue || !concept) return null;
-        
-        const chargeValue = Math.abs(parseFloat(charge) || 0);
-        const creditValue = parseFloat(credit) || 0;
-
-        // Para ingresos (abonos), solo respetamos manualCategories previamente asignados;
-        // no aplicamos reglas por substring (que están diseñadas para gastos).
-        const lowerConcept = concept.toLowerCase();
-        const merchantKey = extractMerchantKey(concept);
-        let category = '';
-        if (creditValue > 0) {
-            category = state.manualCategories.get(lowerConcept)
-                    || state.manualCategories.get(merchantKey)
-                    || '';
+        // Auto-categorización: a los abonos no les aplicamos reglas por
+        // substring (están diseñadas para gastos). Sólo respetamos lo que ya
+        // exista en `state.manualCategories` para ese concepto/comercio.
+        if (tx.credit > 0) {
+            const lowerConcept = tx.concept.toLowerCase();
+            const merchantKey = extractMerchantKey(tx.concept);
+            tx.category = state.manualCategories.get(lowerConcept)
+                       || state.manualCategories.get(merchantKey)
+                       || '';
         } else {
-            category = autoCategorize(concept);
+            tx.category = autoCategorize(tx.concept);
         }
-        return {
-            date: dateValue,
-            concept: concept,
-            charge: chargeValue,
-            credit: creditValue,
-            category,
-            channel: '',
-            type: 'operativo',
-            sub_type: '',
-            source: fileType || 'xls'
-        };
-    });
 
-    return mappedExpenses.filter(e => e && (e.charge > 0 || e.credit > 0));
+        attachSignatures(tx);
+        expenses.push(tx);
+    }
+
+    return expenses;
 }
 
 /**

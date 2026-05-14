@@ -112,6 +112,7 @@
                </div>
              </div>
              <button id="install-pwa-btn" class="btn btn-outline btn-sm" title="Instalar como app" style="display:none;"><i class="fas fa-download"></i> Instalar app</button>
+             <button id="test-mode-toggle-btn" class="btn btn-outline btn-sm" title="Activar modo prueba (colecciones _test)"><i class="fas fa-vial"></i> Modo prueba</button>
              <button id="theme-toggle" class="btn btn-outline btn-sm" title="Modo Oscuro"><i class="fas fa-moon"></i></button>
              <button id="logout-btn" class="btn btn-outline btn-sm">Salir <i class="fas fa-sign-out-alt" style="margin-left: 8px;"></i></button>
          </div>
@@ -133,11 +134,15 @@
               <div id="actions-container">
                   <div class="btn-group">
                     <button id="upload-btn" class="btn" title="Cargar Archivo (Ctrl+I)"><i class="fas fa-upload"></i> Cargar Archivo</button>
+                    <button id="dry-run-btn" class="btn btn-outline" title="Analizar archivo SIN guardar nada (vista previa)"><i class="fas fa-eye"></i> Vista previa</button>
                     <button id="add-manual-btn" class="btn btn-outline"><i class="fas fa-plus"></i> Agregar Gasto/Ingreso</button>
+                    <button id="reconcile-btn" class="btn btn-outline" title="Conciliar saldo contra BBVA"><i class="fas fa-balance-scale"></i> Conciliar BBVA</button>
+                    <button id="remove-duplicates-btn" class="btn btn-outline" title="Eliminar sólo duplicados exactos (firma estricta)"><i class="fas fa-clone"></i> Limpiar duplicados</button>
                     <button id="export-btn" class="btn btn-outline"><i class="fas fa-download"></i> Exportar</button>
                     <button id="delete-previous-month-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-calendar-minus"></i> Borrar Mes Anterior</button>
                     <button id="delete-current-month-btn" class="btn btn-outline btn-danger" style="background-color: var(--danger-light); border-color: transparent; color: var(--danger);"><i class="fas fa-calendar-times"></i> Borrar Mes Actual</button>
                   </div>
+                  <input type="file" id="dry-run-input" accept=".xlsx, .xls" style="display:none;" />
                   <div class="main-filters">
                       <div class="filter-group">
                           <label for="date-range-filter">Rango personalizado:</label>
