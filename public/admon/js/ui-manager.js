@@ -1,6 +1,7 @@
 import { elements, state } from './state.js';
 import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange } from './utils.js';
 import * as services from './services.js';
+import { isTestMode, setTestMode, describeMode } from './config.js';
 
 /**
  * @file Módulo de gestión de la interfaz de usuario (UI).
@@ -1817,62 +1818,113 @@ export function showNotesSaveStatus(text) {
 }
 
 /**
- * Modal post-importación que muestra los movimientos omitidos y permite
- * al usuario seleccionar cuáles importar adicionalmente.
- * @param {Object} opts
- * @param {number} opts.importedCount - Cuántos ya se importaron automáticamente
- * @param {Array} opts.skippedIntraFile - [{ expense, sig, copyIndex, totalCopies }]
- * @param {Array} opts.skippedExisting - [{ expense, sig }]
- * @param {Function} opts.onConfirm - callback(selectedExpenses[]) cuando confirma
+ * Modal post-importación. Muestra al usuario QUÉ se importó automáticamente,
+ * QUÉ se omitió y POR QUÉ. Permite agregar los omitidos como "duplicados
+ * confirmados como reales" (útil cuando hiciste dos pagos al mismo comercio
+ * el mismo día por el mismo monto).
+ *
+ * @param {object} opts
+ * @param {number} opts.importedCount   - Movimientos ya importados (incl. sospechosos)
+ * @param {number} opts.suspectCount    - De ese total, cuántos quedaron marcados como sospechosos
+ * @param {Array}  opts.skippedIntraFile - Filas duplicadas EXACTAS dentro del XLS
+ * @param {Array}  opts.skippedExisting  - Filas que ya existían en la base
+ * @param {Array}  opts.suspectRepeated  - Movimientos importados que coinciden por softSig
+ * @param {object} opts.importMeta       - { sourceFileName, sourceFileHash, importBatchId, ... }
+ * @param {Function} opts.onConfirm      - callback(selectedExpenses[]) al confirmar
  */
-export function showOmittedReviewModal({ importedCount, skippedIntraFile, skippedExisting, onConfirm }) {
+export function showOmittedReviewModal({
+    importedCount,
+    suspectCount = 0,
+    skippedIntraFile = [],
+    skippedExisting = [],
+    suspectRepeated = [],
+    importMeta = {},
+    onConfirm
+}) {
     const fmtRow = (item, idx, kind) => {
         const e = item.expense;
-        const amount = e.charge > 0 ? `<span style="color:var(--danger);">-$${e.charge.toFixed(2)}</span>` : `<span style="color:var(--success);">+$${e.credit.toFixed(2)}</span>`;
-        const extra = kind === 'intra' ? `<span style="font-size:11px; color:var(--text-secondary);"> · copia ${item.copyIndex}/${item.totalCopies}</span>` : '';
+        const amount = e.charge > 0
+            ? `<span style="color:var(--danger);">-${formatCurrency(e.charge)}</span>`
+            : `<span style="color:var(--success);">+${formatCurrency(e.credit)}</span>`;
+        let extra = '';
+        if (kind === 'intra') {
+            extra = `<span style="font-size:11px; color:var(--text-secondary);"> · copia ${item.copyIndex}/${item.totalCopies}</span>`;
+        } else if (kind === 'suspect') {
+            extra = `<span style="font-size:11px; color:var(--text-secondary);"> · ${item.peers} apariciones del mismo comercio/monto/fecha</span>`;
+        }
+        const checkboxDisabled = kind === 'suspect' ? 'disabled' : '';
+        const checkboxNote = kind === 'suspect' ? '<span style="font-size:10px;color:var(--text-secondary);">ya importado</span>' : `<input type="checkbox" class="omit-check" data-kind="${kind}" data-idx="${idx}" ${checkboxDisabled}>`;
         return `<tr>
-            <td style="padding:6px 8px;"><input type="checkbox" class="omit-check" data-kind="${kind}" data-idx="${idx}"></td>
+            <td style="padding:6px 8px;">${checkboxNote}</td>
             <td style="padding:6px 8px; white-space:nowrap; font-size:12px;">${e.date}</td>
             <td style="padding:6px 8px; font-size:12px;">${e.concept}${extra}</td>
             <td style="padding:6px 8px; text-align:right; font-size:12px;">${amount}</td>
         </tr>`;
     };
 
-    let html = `<p style="margin-bottom:12px;"><strong>${importedCount}</strong> movimiento${importedCount !== 1 ? 's' : ''} importado${importedCount !== 1 ? 's' : ''} automáticamente.</p>`;
-    html += `<p style="font-size:13px; color:var(--text-secondary); margin-bottom:14px;">Los siguientes se omitieron. Marca los que sí quieras agregar:</p>`;
+    let html = `<p style="margin-bottom:8px;"><strong>${importedCount}</strong> movimiento${importedCount !== 1 ? 's' : ''} importado${importedCount !== 1 ? 's' : ''} automáticamente.</p>`;
+    if (suspectCount > 0) {
+        html += `<p style="font-size:13px; color:#d97706; margin-bottom:8px;">` +
+            `<i class="fas fa-exclamation-triangle"></i> ${suspectCount} de esos quedaron marcados como ` +
+            `<strong>posibles repetidos</strong> (mismo comercio/monto/fecha) y se podrán revisar en Conciliación.</p>`;
+    }
+    if (importMeta.sourceFileName) {
+        html += `<p style="font-size:11px; color:var(--text-secondary); margin-bottom:14px;">` +
+            `Archivo: ${importMeta.sourceFileName} · Lote: <code>${(importMeta.importBatchId||'').slice(0,16)}</code></p>`;
+    }
 
-    html += `<div style="max-height:340px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px;">`;
+    html += `<div style="max-height:360px; overflow-y:auto; border:1px solid var(--border-color); border-radius:8px;">`;
     html += `<table style="width:100%; border-collapse:collapse;">`;
     html += `<thead style="position:sticky; top:0; background:var(--bg-card); z-index:1;"><tr>
-        <th style="padding:6px 8px; text-align:left; font-size:11px;"><input type="checkbox" id="omit-check-all"></th>
+        <th style="padding:6px 8px; text-align:left; font-size:11px;"><input type="checkbox" id="omit-check-all" title="Marcar todos"></th>
         <th style="padding:6px 8px; text-align:left; font-size:11px;">FECHA</th>
         <th style="padding:6px 8px; text-align:left; font-size:11px;">CONCEPTO</th>
         <th style="padding:6px 8px; text-align:right; font-size:11px;">MONTO</th>
     </tr></thead><tbody>`;
 
     if (skippedIntraFile.length > 0) {
-        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(245,158,11,0.08); color:#d97706; text-transform:uppercase;">Duplicados dentro del archivo (${skippedIntraFile.length})</td></tr>`;
+        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(245,158,11,0.08); color:#d97706; text-transform:uppercase;">
+            <i class="fas fa-copy"></i> Filas duplicadas exactas dentro del archivo (${skippedIntraFile.length})
+            <div style="font-weight:400; text-transform:none; margin-top:4px; color:var(--text-secondary);">
+                Misma fecha, mismo concepto exacto y mismo monto que otra fila del XLS. Importamos una vez. Si en realidad fueron dos pagos distintos, márcalos abajo.
+            </div></td></tr>`;
         html += skippedIntraFile.map((item, idx) => fmtRow(item, idx, 'intra')).join('');
     }
 
     if (skippedExisting.length > 0) {
-        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(99,102,241,0.08); color:var(--primary); text-transform:uppercase;">Ya existen en la base de datos (${skippedExisting.length})</td></tr>`;
+        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(99,102,241,0.08); color:var(--primary); text-transform:uppercase;">
+            <i class="fas fa-database"></i> Ya existen en la base de datos (${skippedExisting.length})
+            <div style="font-weight:400; text-transform:none; margin-top:4px; color:var(--text-secondary);">
+                Estos movimientos ya están guardados (posible re-importación del mismo archivo). Sólo márcalos si quieres agregarlos otra vez como repetidos.
+            </div></td></tr>`;
         html += skippedExisting.map((item, idx) => fmtRow(item, idx, 'existing')).join('');
     }
 
+    if (suspectRepeated.length > 0) {
+        html += `<tr><td colspan="4" style="padding:8px; font-size:11px; font-weight:700; background:rgba(34,197,94,0.08); color:#16a34a; text-transform:uppercase;">
+            <i class="fas fa-check-circle"></i> Posibles repetidos REALES (${suspectRepeated.length}) — ya importados
+            <div style="font-weight:400; text-transform:none; margin-top:4px; color:var(--text-secondary);">
+                Mismo comercio/monto/fecha pero con AUT distinto. Asumimos que son pagos reales separados y los importamos. Quedan marcados para revisión.
+            </div></td></tr>`;
+        html += suspectRepeated.map((item, idx) => fmtRow(item, idx, 'suspect')).join('');
+    }
+
     html += `</tbody></table></div>`;
-    html += `<p style="font-size:11px; color:var(--text-secondary); margin-top:10px;">Tip: si los marcas, se agregarán como copias adicionales del mismo movimiento.</p>`;
+    html += `<p style="font-size:11px; color:var(--text-secondary); margin-top:10px;">` +
+        `Si marcas filas omitidas y aceptas, se agregan como <strong>"repetido confirmado real"</strong> ` +
+        `y quedan protegidas contra la limpieza automática de duplicados.</p>`;
 
     showModal({
-        title: 'Movimientos omitidos',
+        title: 'Revisión de importación',
         body: html,
-        confirmText: 'Importar seleccionados',
+        confirmText: 'Confirmar selección',
         onConfirm: () => {
             const selected = [];
             document.querySelectorAll('.omit-check:checked').forEach(cb => {
                 const kind = cb.dataset.kind;
                 const idx = parseInt(cb.dataset.idx);
-                const item = (kind === 'intra' ? skippedIntraFile : skippedExisting)[idx];
+                const list = kind === 'intra' ? skippedIntraFile : (kind === 'existing' ? skippedExisting : []);
+                const item = list[idx];
                 if (item && item.expense) selected.push(item.expense);
             });
             showModal({ show: false });
@@ -1882,9 +1934,189 @@ export function showOmittedReviewModal({ importedCount, skippedIntraFile, skippe
             const all = document.getElementById('omit-check-all');
             if (all) {
                 all.addEventListener('change', () => {
-                    document.querySelectorAll('.omit-check').forEach(cb => { cb.checked = all.checked; });
+                    document.querySelectorAll('.omit-check:not([disabled])').forEach(cb => { cb.checked = all.checked; });
                 });
             }
+        }
+    });
+}
+
+/**
+ * Modal de Conciliación Bancaria.
+ *
+ * Recibe callbacks puros (no asume Firebase) para que sea fácil de probar.
+ *
+ * @param {object} opts
+ * @param {Function} opts.getExpenses              - () => Array<expense> (state.expenses)
+ * @param {Function} opts.calculateExpectedBalance - (txs, opening) => {...}
+ * @param {Function} opts.reconcileBalance         - (expected, real) => {...}
+ * @param {Function} opts.onSaveCheckpoint         - async (checkpoint) => id
+ */
+export function openReconciliationModal({ getExpenses, calculateExpectedBalance, reconcileBalance, onSaveCheckpoint }) {
+    const today = new Date();
+    const firstDay = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-01`;
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+
+    const html = `
+        <div style="display:grid; gap:12px; max-width:560px;">
+            <p style="font-size:13px; color:var(--text-secondary); margin:0;">
+                Captura el <strong>saldo inicial</strong> (lo que tenías en BBVA al inicio del periodo) y el
+                <strong>saldo real final</strong> (lo que ves hoy en la app BBVA). El sistema calcula la diferencia
+                contra los movimientos registrados.
+            </p>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group">
+                    <label for="rec-start">Fecha inicial</label>
+                    <input type="date" id="rec-start" class="modal-input" value="${firstDay}">
+                </div>
+                <div class="form-group">
+                    <label for="rec-end">Fecha final</label>
+                    <input type="date" id="rec-end" class="modal-input" value="${todayStr}">
+                </div>
+            </div>
+
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                <div class="form-group">
+                    <label for="rec-opening">Saldo inicial BBVA ($)</label>
+                    <input type="number" step="0.01" id="rec-opening" class="modal-input" placeholder="0.00" value="0">
+                </div>
+                <div class="form-group">
+                    <label for="rec-real">Saldo real final BBVA ($)</label>
+                    <input type="number" step="0.01" id="rec-real" class="modal-input" placeholder="0.00" value="0">
+                </div>
+            </div>
+
+            <div style="display:flex; gap:8px;">
+                <button type="button" id="rec-compute-btn" class="btn"><i class="fas fa-calculator"></i> Calcular</button>
+                <button type="button" id="rec-save-btn" class="btn btn-outline" disabled><i class="fas fa-save"></i> Guardar saldo real</button>
+            </div>
+
+            <div id="rec-result" style="display:none; padding:14px; border-radius:10px; border:1px solid var(--border-color);"></div>
+        </div>
+    `;
+
+    showModal({
+        title: 'Conciliación bancaria BBVA',
+        body: html,
+        showCancel: true,
+        confirmText: 'Cerrar',
+        onConfirm: () => showModal({ show: false }),
+        onModalOpen: () => {
+            const $start = document.getElementById('rec-start');
+            const $end = document.getElementById('rec-end');
+            const $opening = document.getElementById('rec-opening');
+            const $real = document.getElementById('rec-real');
+            const $result = document.getElementById('rec-result');
+            const $compute = document.getElementById('rec-compute-btn');
+            const $save = document.getElementById('rec-save-btn');
+
+            let lastReconciliation = null;
+
+            const compute = () => {
+                const start = $start.value;
+                const end = $end.value;
+                if (!start || !end || start > end) {
+                    showToast('Verifica las fechas: inicio debe ser ≤ fin', 'warning');
+                    return;
+                }
+                const all = getExpenses();
+                const inRange = all.filter(e => e.date && e.date >= start && e.date <= end);
+                // Excluir ajustes y financieros del cálculo de saldo bancario;
+                // BBVA refleja entradas/salidas de efectivo, no ajustes contables.
+                const banking = inRange.filter(e =>
+                    e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses'
+                );
+                const opening = parseFloat($opening.value) || 0;
+                const real = parseFloat($real.value) || 0;
+                const calc = calculateExpectedBalance(banking, opening);
+                const recon = reconcileBalance(calc.expectedBalance, real);
+
+                // Detectar grupos sospechosos por softSignature en el rango
+                const softGroups = new Map();
+                for (const t of banking) {
+                    const sig = t.softSignature;
+                    if (!sig) continue;
+                    if (!softGroups.has(sig)) softGroups.set(sig, []);
+                    softGroups.get(sig).push(t);
+                }
+                const softDupGroups = [...softGroups.values()].filter(g => g.length > 1);
+                const uncategorized = banking.filter(e => (parseFloat(e.charge)||0) > 0 && (!e.category || e.category === 'SinCategorizar'));
+                const manualEntries = banking.filter(e => e.source === 'manual' || e.source === 'modified');
+                const confirmedReal = banking.filter(e => e.duplicateStatus === 'confirmed_real');
+                const suspectRepeated = banking.filter(e => e.duplicateStatus === 'suspect_repeated');
+
+                lastReconciliation = {
+                    date: end,
+                    openingBalance: opening,
+                    expectedBalance: calc.expectedBalance,
+                    realBalance: real,
+                    difference: recon.difference,
+                    note: `${start} → ${end}`
+                };
+
+                const statusColor = recon.isReconciled ? 'var(--success)' : 'var(--danger)';
+                const statusIcon = recon.isReconciled ? 'fa-check-circle' : 'fa-exclamation-triangle';
+                const statusText = recon.isReconciled ? 'CONCILIADO' : 'DIFERENCIA ENCONTRADA';
+
+                let resultHtml = `
+                    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+                        <i class="fas ${statusIcon}" style="color:${statusColor}; font-size:20px;"></i>
+                        <strong style="color:${statusColor}; font-size:15px;">${statusText}</strong>
+                    </div>
+                    <table style="width:100%; font-size:13px;">
+                        <tr><td style="padding:4px 0;">Movimientos en rango:</td><td style="text-align:right;"><strong>${calc.count}</strong></td></tr>
+                        <tr><td style="padding:4px 0;">Total cargos:</td><td style="text-align:right; color:var(--danger);">-${formatCurrency(calc.totalCharges)}</td></tr>
+                        <tr><td style="padding:4px 0;">Total abonos:</td><td style="text-align:right; color:var(--success);">+${formatCurrency(calc.totalCredits)}</td></tr>
+                        <tr><td style="padding:4px 0; border-top:1px solid var(--border-color);"><strong>Saldo esperado:</strong></td><td style="text-align:right; border-top:1px solid var(--border-color);"><strong>${formatCurrency(calc.expectedBalance)}</strong></td></tr>
+                        <tr><td style="padding:4px 0;"><strong>Saldo real BBVA:</strong></td><td style="text-align:right;"><strong>${formatCurrency(real)}</strong></td></tr>
+                        <tr><td style="padding:4px 0;"><strong>Diferencia:</strong></td><td style="text-align:right; color:${statusColor};"><strong>${formatCurrency(recon.difference)}</strong></td></tr>
+                    </table>
+                `;
+
+                if (!recon.isReconciled) {
+                    resultHtml += `
+                    <details style="margin-top:12px;">
+                        <summary style="cursor:pointer; font-weight:600; font-size:13px;">🔎 Posibles causas de la diferencia</summary>
+                        <ul style="font-size:12px; margin-top:8px; line-height:1.6;">
+                            <li>Grupos de "posibles duplicados" en el rango: <strong>${softDupGroups.length}</strong></li>
+                            <li>Movimientos marcados como "posible repetido real": <strong>${suspectRepeated.length}</strong></li>
+                            <li>Movimientos marcados como "confirmados reales": <strong>${confirmedReal.length}</strong></li>
+                            <li>Entradas manuales/editadas en el rango: <strong>${manualEntries.length}</strong></li>
+                            <li>Cargos sin categorizar: <strong>${uncategorized.length}</strong></li>
+                            <li>Movimientos omitidos en importaciones: revisa el historial de cargas para ver qué se descartó.</li>
+                        </ul>
+                        <p style="font-size:11px; color:var(--text-secondary); margin-top:6px;">
+                            Si la diferencia es positiva (real &gt; esperado): hay <em>ingresos</em> sin registrar.
+                            Si es negativa (real &lt; esperado): hay <em>cargos</em> sin registrar o duplicados que sí eran únicos.
+                        </p>
+                    </details>`;
+                }
+
+                $result.innerHTML = resultHtml;
+                $result.style.borderColor = statusColor;
+                $result.style.display = 'block';
+                $save.disabled = false;
+            };
+
+            $compute.addEventListener('click', compute);
+
+            $save.addEventListener('click', async () => {
+                if (!lastReconciliation) return;
+                $save.disabled = true;
+                const orig = $save.textContent;
+                $save.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Guardando...';
+                try {
+                    await onSaveCheckpoint(lastReconciliation);
+                    showToast('Saldo real guardado', 'success');
+                } catch (err) {
+                    console.error(err);
+                    showToast('No se pudo guardar el saldo', 'error');
+                } finally {
+                    $save.disabled = false;
+                    $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
+                }
+            });
         }
     });
 }
@@ -2065,4 +2297,339 @@ function applyColorTheme(theme) {
     options.forEach(opt => {
         opt.classList.toggle('active', opt.dataset.theme === theme);
     });
+}
+
+// =============================================================================
+//  MODO PRUEBA — banner + toggle
+// =============================================================================
+
+/**
+ * Inserta o esconde el banner amarillo "MODO PRUEBA" en el header del app.
+ * Idempotente: se puede llamar varias veces.
+ *
+ * El banner queda fijado arriba del .container y muestra:
+ *   - Las colecciones a las que se escribirá (p.ej. expenses_test).
+ *   - Un botón para salir del modo.
+ *
+ * Si el modo prueba está apagado, retira el banner si estuviera.
+ */
+export function renderTestModeBanner() {
+    const existing = document.getElementById('test-mode-banner');
+    if (!isTestMode()) {
+        if (existing) existing.remove();
+        // Desactivar también el botón "MODO PRUEBA: ON" si existía
+        const toggleBtn = document.getElementById('test-mode-toggle-btn');
+        if (toggleBtn) {
+            toggleBtn.innerHTML = '<i class="fas fa-vial"></i> Modo prueba';
+            toggleBtn.classList.remove('btn-warning-active');
+        }
+        return;
+    }
+
+    const info = describeMode();
+    const collectionList = info.isolatedCollections.join(', ');
+
+    if (existing) {
+        existing.querySelector('.tm-collections').textContent = collectionList;
+        return;
+    }
+
+    const banner = document.createElement('div');
+    banner.id = 'test-mode-banner';
+    banner.style.cssText = `
+        background: linear-gradient(90deg, #fef3c7 0%, #fde68a 100%);
+        color: #78350f;
+        border: 1px solid #f59e0b;
+        border-radius: 12px;
+        padding: 10px 16px;
+        margin: 0 0 16px 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 13px;
+        font-weight: 600;
+        box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
+    `;
+    banner.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;">
+            <i class="fas fa-vial" style="font-size:18px;"></i>
+            <div>
+                <div>MODO PRUEBA ACTIVO — las escrituras no afectan producción.</div>
+                <div style="font-weight:400;font-size:11px;opacity:0.85;">
+                    Lecturas/escrituras en: <strong class="tm-collections">${collectionList}</strong>
+                </div>
+            </div>
+        </div>
+        <button id="test-mode-exit-btn" class="btn btn-sm" style="background:#78350f;color:#fef3c7;border:none;">
+            <i class="fas fa-sign-out-alt"></i> Salir del modo prueba
+        </button>
+    `;
+
+    // Insertar como primer hijo del .container principal
+    const container = document.querySelector('.container');
+    if (container) container.insertBefore(banner, container.firstChild);
+
+    document.getElementById('test-mode-exit-btn').addEventListener('click', () => {
+        showModal({
+            title: 'Salir del modo prueba',
+            body: '<p>Vas a regresar a las colecciones REALES de Firestore (producción). La página se recargará.</p>' +
+                  '<p>¿Continuar?</p>',
+            confirmText: 'Sí, salir',
+            confirmClass: 'btn-danger',
+            onConfirm: () => setTestMode(false)
+        });
+    });
+
+    // Marcar el botón "Modo prueba" del header como activo si existe
+    const toggleBtn = document.getElementById('test-mode-toggle-btn');
+    if (toggleBtn) {
+        toggleBtn.innerHTML = '<i class="fas fa-vial"></i> Prueba: ON';
+        toggleBtn.classList.add('btn-warning-active');
+    }
+}
+
+/**
+ * Conecta el botón del header (id `test-mode-toggle-btn`) que enciende el
+ * modo prueba. Se llama desde main.js después de cachear elementos.
+ */
+export function initTestModeToggle() {
+    const btn = document.getElementById('test-mode-toggle-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+        if (isTestMode()) {
+            // Si ya está prendido, abre la confirmación del banner.
+            const exitBtn = document.getElementById('test-mode-exit-btn');
+            if (exitBtn) exitBtn.click();
+            return;
+        }
+        showModal({
+            title: 'Activar modo prueba',
+            body: `<p>La app se reabrirá leyendo y escribiendo SÓLO en colecciones de prueba:</p>
+                   <ul style="margin:8px 0 8px 20px;">
+                       <li><code>expenses_test</code></li>
+                       <li><code>balance_checkpoints_test</code></li>
+                   </ul>
+                   <p style="font-size:12px;color:var(--text-secondary);">
+                       Las colecciones reales (<code>expenses</code>, <code>balance_checkpoints</code>) no se tocarán.
+                       Asegúrate de que las reglas de Firestore permiten leer/escribir esas colecciones.
+                   </p>
+                   <p>¿Activar?</p>`,
+            confirmText: 'Sí, activar modo prueba',
+            onConfirm: () => setTestMode(true)
+        });
+    });
+    renderTestModeBanner();
+}
+
+// =============================================================================
+//  Vista previa de importación (DRY-RUN) — no toca Firestore
+// =============================================================================
+
+/**
+ * Muestra un reporte completo del XLS importado SIN guardar nada en la base.
+ *
+ * @param {Object} opts
+ * @param {File}   opts.file
+ * @param {Object} opts.headerInfo            { headerRowIndex, columnMap, headerFound }
+ * @param {number} opts.totalParsedRows       cantidad total parseada
+ * @param {Array}  opts.newUnique             movimientos que se importarían
+ * @param {Array}  opts.intraFileDuplicates   filas duplicadas dentro del archivo
+ * @param {Array}  opts.existingExact         choque exacto contra DB
+ * @param {Array}  opts.suspectRepeated       posibles repetidos reales
+ * @param {Object} opts.importMeta
+ * @param {Function} opts.calculateExpectedBalance
+ * @param {Function} opts.reconcileBalance
+ * @param {Function} opts.getExpenses         () => state.expenses
+ */
+export function showDryRunReportModal(opts) {
+    const {
+        file, headerInfo, totalParsedRows, newUnique, intraFileDuplicates,
+        existingExact, suspectRepeated, importMeta,
+        calculateExpectedBalance, reconcileBalance, getExpenses
+    } = opts;
+
+    // Métricas globales del archivo
+    const totalCharges = newUnique.reduce((s, t) => s + (+t.charge||0), 0);
+    const totalCredits = newUnique.reduce((s, t) => s + (+t.credit||0), 0);
+    const allRows = [...newUnique, ...intraFileDuplicates.map(x=>x.expense), ...existingExact.map(x=>x.expense)];
+    const fileCharges = allRows.reduce((s, t) => s + (+t.charge||0), 0);
+    const fileCredits = allRows.reduce((s, t) => s + (+t.credit||0), 0);
+
+    // Rango de fechas detectado
+    const dates = allRows.map(t => t.date).filter(Boolean).sort();
+    const firstDate = dates[0] || '—';
+    const lastDate  = dates[dates.length - 1] || '—';
+
+    // Bucket por mes para inspección rápida
+    const byMonth = {};
+    allRows.forEach(t => {
+        const m = (t.date || '').slice(0, 7);
+        if (!m) return;
+        if (!byMonth[m]) byMonth[m] = { count: 0, charge: 0, credit: 0 };
+        byMonth[m].count++;
+        byMonth[m].charge += (+t.charge||0);
+        byMonth[m].credit += (+t.credit||0);
+    });
+    const monthsRows = Object.entries(byMonth).sort(([a],[b]) => a.localeCompare(b))
+        .map(([m, v]) => `<tr><td>${m}</td><td style="text-align:right;">${v.count}</td><td style="text-align:right;">${formatCurrency(v.charge)}</td><td style="text-align:right;">${formatCurrency(v.credit)}</td></tr>`).join('');
+
+    const headerStatus = headerInfo.headerFound
+        ? `<span style="color:var(--success);"><i class="fas fa-check-circle"></i> Encabezados detectados en fila ${headerInfo.headerRowIndex + 1}</span>`
+        : `<span style="color:#d97706;"><i class="fas fa-exclamation-triangle"></i> Sin encabezados explícitos — usando heurística (fila 5)</span>`;
+
+    const html = `
+        <div style="display:grid;gap:14px;max-width:680px;">
+            <div style="background:var(--bg-glass, rgba(99,102,241,0.06));border:1px solid var(--border-color);padding:12px;border-radius:10px;">
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-secondary);font-weight:700;margin-bottom:6px;">
+                    <i class="fas fa-eye"></i> Vista previa — nada se guardó en la base
+                </div>
+                <div style="font-size:13px;">${file.name} · ${(file.size/1024).toFixed(1)} KB · hash <code style="font-size:10px;">${importMeta.sourceFileHash.slice(0,12)}…</code></div>
+                <div style="font-size:12px;margin-top:4px;">${headerStatus}</div>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:2px;">
+                    Columnas: date=${headerInfo.columnMap.date}, concept=${headerInfo.columnMap.concept}, charge=${headerInfo.columnMap.charge}, credit=${headerInfo.columnMap.credit}
+                </div>
+            </div>
+
+            <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;">
+                ${cardCell('Filas parseadas', totalParsedRows)}
+                ${cardCell('Se importarían', newUnique.length, 'var(--success)')}
+                ${cardCell('Duplicados intra-archivo', intraFileDuplicates.length, '#d97706')}
+                ${cardCell('Ya existen en DB', existingExact.length, 'var(--primary)')}
+                ${cardCell('Posibles repetidos reales', suspectRepeated.length, '#16a34a')}
+            </div>
+
+            <div style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-secondary);font-weight:700;margin-bottom:6px;">
+                    Totales (si confirmaras la importación)
+                </div>
+                <table style="width:100%;font-size:13px;">
+                    <tr><td>Cargos a importar:</td><td style="text-align:right;color:var(--danger);"><strong>-${formatCurrency(totalCharges)}</strong></td></tr>
+                    <tr><td>Abonos a importar:</td><td style="text-align:right;color:var(--success);"><strong>+${formatCurrency(totalCredits)}</strong></td></tr>
+                    <tr><td>Neto del lote:</td><td style="text-align:right;"><strong>${formatCurrency(totalCredits - totalCharges)}</strong></td></tr>
+                </table>
+                <div style="font-size:11px;color:var(--text-secondary);margin-top:8px;">
+                    Totales en el archivo entero (incluye omitidos): cargos -${formatCurrency(fileCharges)} · abonos +${formatCurrency(fileCredits)}
+                </div>
+            </div>
+
+            <div style="border:1px solid var(--border-color);border-radius:10px;padding:12px;">
+                <div style="font-size:11px;text-transform:uppercase;color:var(--text-secondary);font-weight:700;margin-bottom:6px;">
+                    Rango y desglose por mes
+                </div>
+                <div style="font-size:13px;margin-bottom:6px;">
+                    Primer fecha: <strong>${firstDate}</strong> · Última fecha: <strong>${lastDate}</strong>
+                </div>
+                <table style="width:100%;font-size:12px;border-collapse:collapse;">
+                    <thead><tr style="border-bottom:1px solid var(--border-color);">
+                        <th style="text-align:left;padding:4px 0;">Mes</th>
+                        <th style="text-align:right;padding:4px 0;">Filas</th>
+                        <th style="text-align:right;padding:4px 0;">Cargos</th>
+                        <th style="text-align:right;padding:4px 0;">Abonos</th>
+                    </tr></thead>
+                    <tbody>${monthsRows || '<tr><td colspan="4" style="text-align:center;color:var(--text-secondary);padding:8px;">— sin datos —</td></tr>'}</tbody>
+                </table>
+            </div>
+
+            <details>
+                <summary style="cursor:pointer;font-weight:600;font-size:13px;">
+                    🔎 Conciliación estimada contra saldo real BBVA (opcional)
+                </summary>
+                <div style="padding:10px 0;display:grid;gap:8px;">
+                    <p style="font-size:12px;color:var(--text-secondary);margin:0;">
+                        Captura un saldo inicial y un saldo real BBVA para una conciliación rápida
+                        considerando SÓLO los movimientos que se importarían (newUnique + suspect_repeated).
+                    </p>
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                        <div><label style="font-size:11px;color:var(--text-secondary);">Saldo inicial BBVA</label>
+                            <input type="number" step="0.01" id="dry-opening" class="modal-input" value="0"></div>
+                        <div><label style="font-size:11px;color:var(--text-secondary);">Saldo real final BBVA</label>
+                            <input type="number" step="0.01" id="dry-real" class="modal-input" value="0"></div>
+                    </div>
+                    <button type="button" id="dry-compute" class="btn btn-outline btn-sm" style="justify-self:flex-start;">
+                        <i class="fas fa-calculator"></i> Calcular
+                    </button>
+                    <div id="dry-reconcile-result" style="font-size:12px;"></div>
+                </div>
+            </details>
+
+            <details>
+                <summary style="cursor:pointer;font-weight:600;font-size:13px;">
+                    📋 Lista detallada (${Math.min(allRows.length, 200)} de ${allRows.length})
+                </summary>
+                <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border-color);border-radius:8px;margin-top:8px;">
+                    <table style="width:100%;font-size:11px;border-collapse:collapse;">
+                        <thead style="position:sticky;top:0;background:var(--bg-card);">
+                            <tr>
+                                <th style="text-align:left;padding:6px;">Fila</th>
+                                <th style="text-align:left;padding:6px;">Fecha</th>
+                                <th style="text-align:left;padding:6px;">Concepto</th>
+                                <th style="text-align:right;padding:6px;">Cargo</th>
+                                <th style="text-align:right;padding:6px;">Abono</th>
+                                <th style="text-align:left;padding:6px;">Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${allRows.slice(0, 200).map(t => {
+                                const statusColor = {
+                                    'new': 'var(--success)',
+                                    'suspect_repeated': '#16a34a',
+                                    'skipped_intrafile': '#d97706',
+                                    'skipped_existing': 'var(--primary)'
+                                }[t.duplicateStatus] || 'var(--text-secondary)';
+                                return `<tr style="border-bottom:1px solid var(--border-color);">
+                                    <td style="padding:4px 6px;">${t.sourceRowIndex ?? '—'}</td>
+                                    <td style="padding:4px 6px;white-space:nowrap;">${t.date}</td>
+                                    <td style="padding:4px 6px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${t.concept.replace(/"/g, '&quot;')}">${t.concept}</td>
+                                    <td style="padding:4px 6px;text-align:right;color:var(--danger);">${t.charge > 0 ? formatCurrency(t.charge) : ''}</td>
+                                    <td style="padding:4px 6px;text-align:right;color:var(--success);">${t.credit > 0 ? formatCurrency(t.credit) : ''}</td>
+                                    <td style="padding:4px 6px;color:${statusColor};font-size:10px;">${t.duplicateStatus || 'new'}</td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </details>
+
+            <p style="font-size:11px;color:var(--text-secondary);margin:0;text-align:center;">
+                ✅ Nada se guardó. Si los números cuadran con tu app BBVA, cierra este modal y vuelve a cargar el XLS con el botón normal "Cargar Archivo".
+            </p>
+        </div>
+    `;
+
+    showModal({
+        title: 'Vista previa de importación (sin guardar)',
+        body: html,
+        confirmText: 'Cerrar',
+        showCancel: false,
+        onConfirm: () => showModal({ show: false }),
+        onModalOpen: () => {
+            const $opening = document.getElementById('dry-opening');
+            const $real    = document.getElementById('dry-real');
+            const $compute = document.getElementById('dry-compute');
+            const $result  = document.getElementById('dry-reconcile-result');
+            $compute.addEventListener('click', () => {
+                const opening = parseFloat($opening.value) || 0;
+                const real    = parseFloat($real.value) || 0;
+                const calc = calculateExpectedBalance([...newUnique, ...suspectRepeated.map(x=>x.expense)], opening);
+                const rec  = reconcileBalance(calc.expectedBalance, real);
+                const color = rec.isReconciled ? 'var(--success)' : 'var(--danger)';
+                $result.innerHTML = `
+                    <table style="width:100%;font-size:12px;margin-top:6px;">
+                        <tr><td>Saldo esperado:</td><td style="text-align:right;"><strong>${formatCurrency(calc.expectedBalance)}</strong></td></tr>
+                        <tr><td>Saldo real BBVA:</td><td style="text-align:right;"><strong>${formatCurrency(real)}</strong></td></tr>
+                        <tr><td>Diferencia:</td><td style="text-align:right;color:${color};"><strong>${formatCurrency(rec.difference)}</strong></td></tr>
+                        <tr><td colspan="2" style="padding-top:4px;color:${color};font-weight:600;">${rec.isReconciled ? '✓ CONCILIADO' : '⚠ DIFERENCIA ENCONTRADA'}</td></tr>
+                    </table>
+                `;
+            });
+        }
+    });
+}
+
+function cardCell(label, value, color = 'var(--text-primary)') {
+    return `<div style="background:var(--bg-card);border:1px solid var(--border-color);border-radius:8px;padding:8px 10px;text-align:center;">
+        <div style="font-size:18px;font-weight:800;color:${color};">${value}</div>
+        <div style="font-size:10px;color:var(--text-secondary);text-transform:uppercase;font-weight:600;">${label}</div>
+    </div>`;
 }

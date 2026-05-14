@@ -3,6 +3,8 @@ import * as utils from './utils.js';
 import * as ui from './ui-manager.js';
 import * as services from './services.js';
 import * as charts from './charts.js';
+import { classifyForImport, computeFileHash, generateImportBatchId, calculateExpectedBalance, reconcileBalance, detectBBVAHeader } from './bbva-parser.js';
+import { isTestMode } from './config.js';
 
 /**
  * @file Módulo de manejadores de eventos.
@@ -12,14 +14,28 @@ import * as charts from './charts.js';
 
 /**
  * Procesa el archivo de gastos (.xls o .xlsx) cargado por el usuario.
- * @param {Event} e - El evento 'change' del input de archivo.
+ *
+ * Flujo nuevo (auditable y conservador):
+ *   1. Calculamos un fingerprint SHA-256 del archivo y un id de lote.
+ *   2. Parseamos las filas con detección dinámica de encabezados (utils.parseExpensesData).
+ *   3. Clasificamos los movimientos en 4 grupos con `classifyForImport`:
+ *        - newUnique           → importar directo
+ *        - intraFileDuplicates → mostrar como sospechosos del mismo archivo
+ *        - existingExact       → mostrar como ya existentes en DB
+ *        - suspectRepeated     → se importan, pero marcados para revisión
+ *   4. Sólo los movimientos del grupo 1 (+ los sospechosos repetidos) se
+ *      guardan automáticamente. Los grupos 2 y 3 se muestran al usuario
+ *      para que decida si los agrega o los descarta.
+ *
+ * @param {Event} e
  */
-async function handleFileUpload(e) {
+async function handleFileUpload(e, options = {}) {
     const file = e.target.files[0];
     if (!file) return;
+    const dryRun = !!options.dryRun;
 
     ui.showModal({
-        title: "Procesando Archivo...",
+        title: dryRun ? "Analizando archivo (sin guardar)..." : "Procesando Archivo...",
         body: '<p><i class="fas fa-spinner fa-spin"></i> Por favor, espera mientras se leen los datos del archivo.</p>',
         showConfirm: false,
         showCancel: false
@@ -28,89 +44,105 @@ async function handleFileUpload(e) {
     const reader = new FileReader();
     reader.onload = async (event) => {
         try {
-            const data = new Uint8Array(event.target.result);
+            const arrayBuffer = event.target.result;
+            const data = new Uint8Array(arrayBuffer);
             const workbook = XLSX.read(data, { type: 'array', cellDates: true });
             const sheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[sheetName];
-            
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
             if (jsonData.length === 0) {
                 throw new Error("El archivo Excel está vacío o no tiene el formato correcto.");
             }
 
-            const newExpenses = utils.parseExpensesData(jsonData, file.name.split('.').pop());
-            
+            // Metadata del lote — necesaria para auditoría y para que la
+            // función `removeDuplicates` segura pueda agrupar movimientos
+            // del mismo archivo.
+            const sourceFileHash = await computeFileHash(arrayBuffer);
+            const importBatchId = generateImportBatchId();
+            const importedAt = Date.now();
+            const sourceFileExt = (file.name.split('.').pop() || 'xls').toLowerCase();
+            const importMeta = {
+                sourceFileName: file.name,
+                sourceFileHash,
+                importBatchId,
+                importedAt,
+                sourceFileExt
+            };
+
+            // Detección de encabezados (la usamos también para el reporte de dry-run)
+            const headerInfo = detectBBVAHeader(jsonData);
+            const newExpenses = utils.parseExpensesData(jsonData, importMeta);
             if (newExpenses.length === 0) {
                 ui.showModal({
                     title: 'Sin Datos Válidos',
-                    body: 'No se encontraron registros de gastos válidos en el archivo para procesar.',
+                    body: 'No se encontraron registros válidos en el archivo. Revisa que tenga columnas Fecha/Concepto/Cargo/Abono.',
                     confirmText: 'Entendido',
                     showCancel: false
                 });
                 return;
             }
 
-            const existingSignatures = new Set(state.expenses.map(exp => utils.getExpenseSignature(exp)));
-            const newExpensesBySig = new Map();
+            // Clasificación con firmas estricta+suave. Esto es lo que decide
+            // qué se importa automático y qué se muestra al usuario.
+            const { newUnique, intraFileDuplicates, existingExact, suspectRepeated } =
+                classifyForImport(newExpenses, state.expenses);
 
-            newExpenses.forEach(expense => {
-                const sig = utils.getExpenseSignature(expense);
-                if (!newExpensesBySig.has(sig)) {
-                    newExpensesBySig.set(sig, []);
-                }
-                newExpensesBySig.get(sig).push(expense);
-            });
-
-            const toImport = [];
-            const skippedIntraFile = []; // [{ expense, sig, copyIndex, totalCopies }]
-            const skippedExisting = [];   // [{ expense, sig }]
-
-            for (const [sig, group] of newExpensesBySig.entries()) {
-                const firstExpense = group[0];
-                const concept = (firstExpense.concept || '').toUpperCase();
-
-                // Conceptos especiales que permitimos duplicar (pagos recurrentes)
-                const isSpecialConcept = concept.includes("SU PAGO EN EFECTIVO") ||
-                                       concept.includes("PAY PAL*FACEBOOK");
-
-                if (isSpecialConcept) {
-                    group.forEach(expense => toImport.push(expense));
-                    continue;
-                }
-
-                const isExisting = existingSignatures.has(sig);
-                if (isExisting) {
-                    group.forEach(exp => skippedExisting.push({ expense: exp, sig }));
-                } else {
-                    // Duplicados dentro del archivo: importar solo el primero, marcar el resto como omitidos
-                    toImport.push(firstExpense);
-                    for (let i = 1; i < group.length; i++) {
-                        skippedIntraFile.push({ expense: group[i], sig, copyIndex: i + 1, totalCopies: group.length });
-                    }
-                }
+            // ============================================================
+            //  DRY-RUN: NO se persiste nada. Sólo mostramos el resumen.
+            // ============================================================
+            if (dryRun) {
+                ui.showDryRunReportModal({
+                    file,
+                    headerInfo,
+                    totalParsedRows: newExpenses.length,
+                    newUnique,
+                    intraFileDuplicates,
+                    existingExact,
+                    suspectRepeated,
+                    importMeta,
+                    calculateExpectedBalance,
+                    reconcileBalance,
+                    getExpenses: () => state.expenses
+                });
+                return;
             }
 
-            if (toImport.length > 0) {
-                await services.saveBulkExpenses(toImport);
+            // newUnique ya incluye los `suspect_repeated` (se importan, pero
+            // marcados para que el panel de conciliación los pueda listar).
+            if (newUnique.length > 0) {
+                await services.saveBulkExpenses(newUnique);
             }
 
-            const totalSkipped = skippedIntraFile.length + skippedExisting.length;
+            const totalSkipped = intraFileDuplicates.length + existingExact.length;
 
-            if (totalSkipped > 0) {
+            if (totalSkipped > 0 || suspectRepeated.length > 0) {
                 ui.showOmittedReviewModal({
-                    importedCount: toImport.length,
-                    skippedIntraFile,
-                    skippedExisting,
+                    importedCount: newUnique.length,
+                    suspectCount: suspectRepeated.length,
+                    skippedIntraFile: intraFileDuplicates,
+                    skippedExisting: existingExact,
+                    suspectRepeated,
+                    importMeta,
                     onConfirm: async (selectedExpenses) => {
                         if (selectedExpenses.length > 0) {
+                            // Marcamos los confirmados manualmente para que la
+                            // auditoría sepa que el usuario los validó.
+                            selectedExpenses.forEach(exp => { exp.duplicateStatus = 'confirmed_real'; });
                             await services.saveBulkExpenses(selectedExpenses);
                         }
+                        const totalImported = newUnique.length + selectedExpenses.length;
+                        const discarded = totalSkipped - selectedExpenses.length;
                         ui.showModal({
                             title: 'Importación completada',
-                            body: `<p><strong>${toImport.length + selectedExpenses.length}</strong> movimientos importados en total.</p>` +
-                                (selectedExpenses.length > 0 ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> seleccionado${selectedExpenses.length !== 1 ? 's' : ''} de los omitidos.</p>` : '') +
-                                ((totalSkipped - selectedExpenses.length) > 0 ? `<p><strong>${totalSkipped - selectedExpenses.length}</strong> descartados.</p>` : ''),
+                            body:
+                                `<p><strong>${totalImported}</strong> movimiento${totalImported !== 1 ? 's' : ''} importado${totalImported !== 1 ? 's' : ''} en total.</p>` +
+                                (selectedExpenses.length > 0
+                                    ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> confirmado${selectedExpenses.length !== 1 ? 's' : ''} de los sospechosos.</p>` : '') +
+                                (suspectRepeated.length > 0
+                                    ? `<p><strong>${suspectRepeated.length}</strong> marcado${suspectRepeated.length !== 1 ? 's' : ''} como "posible repetido real" — se importaron pero quedan para revisión en Conciliación.</p>` : '') +
+                                (discarded > 0
+                                    ? `<p><strong>${discarded}</strong> descartado${discarded !== 1 ? 's' : ''}.</p>` : ''),
                             confirmText: 'Entendido',
                             showCancel: false
                         });
@@ -118,9 +150,9 @@ async function handleFileUpload(e) {
                 });
             } else {
                 ui.showModal({
-                    title: toImport.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
-                    body: toImport.length > 0
-                        ? `<p><strong>${toImport.length}</strong> movimiento${toImport.length !== 1 ? 's' : ''} nuevo${toImport.length !== 1 ? 's' : ''} importado${toImport.length !== 1 ? 's' : ''}.</p>`
+                    title: newUnique.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
+                    body: newUnique.length > 0
+                        ? `<p><strong>${newUnique.length}</strong> movimiento${newUnique.length !== 1 ? 's' : ''} nuevo${newUnique.length !== 1 ? 's' : ''} importado${newUnique.length !== 1 ? 's' : ''}.</p>`
                         : '<p>No se encontraron registros válidos en el archivo.</p>',
                     confirmText: 'Entendido',
                     showCancel: false
@@ -139,7 +171,7 @@ async function handleFileUpload(e) {
             e.target.value = ''; // Reset input
         }
     };
-    reader.onerror = (error) => {
+    reader.onerror = () => {
          ui.showModal({
             title: 'Error de Lectura',
             body: `Hubo un error al leer el archivo. Intenta de nuevo.`,
@@ -236,6 +268,26 @@ async function handleSueldosFileUpload(e) {
 export function initEventListeners() {
     elements.uploadBtn.addEventListener('click', () => elements.uploadInput.click());
     elements.uploadInput.addEventListener('change', handleFileUpload);
+
+    // Botones de Conciliación y limpieza de duplicados exactos. Si no existen
+    // en el HTML (versión vieja) simplemente se ignoran — no rompe nada.
+    const reconcileBtn = document.getElementById('reconcile-btn');
+    if (reconcileBtn) reconcileBtn.addEventListener('click', openReconciliation);
+    const removeDupsBtn = document.getElementById('remove-duplicates-btn');
+    if (removeDupsBtn) removeDupsBtn.addEventListener('click', confirmRemoveDuplicates);
+
+    // Vista previa sin guardar (dry-run). Usa un input separado para no
+    // interferir con el flujo normal; al elegir un XLS dispara el mismo
+    // parser+clasificador pero NO llama a Firestore.
+    const dryRunBtn = document.getElementById('dry-run-btn');
+    const dryRunInput = document.getElementById('dry-run-input');
+    if (dryRunBtn && dryRunInput) {
+        dryRunBtn.addEventListener('click', () => dryRunInput.click());
+        dryRunInput.addEventListener('change', (ev) => handleFileUpload(ev, { dryRun: true }));
+    }
+
+    // Toggle de modo prueba (banner + botón). Lo conecta `ui-manager.js`
+    // al renderizar el banner; nada que hacer aquí.
     
     elements.tabs.forEach(tab => tab.addEventListener('click', () => handleTabClick(tab)));
     elements.addManualBtn.addEventListener('click', () => ui.openExpenseModal());
@@ -817,13 +869,62 @@ function confirmDeletePreviousMonth() {
     });
 }
 
+/**
+ * Pide confirmación y dispara el barrido seguro de duplicados.
+ * "Seguro" significa: SOLO se borran movimientos con la misma firma estricta
+ * (fecha + concepto completo + montos), conservando el primero. No se tocan
+ * los que sólo comparten la firma suave (mismo comercio, mismo monto, misma
+ * fecha) porque pueden ser pagos reales separados — esos se reportan al
+ * usuario por separado.
+ */
 function confirmRemoveDuplicates() {
     ui.showModal({
-        title: "Confirmar Eliminación de Duplicados",
-        body: "El sistema buscará y eliminará registros duplicados basados en fecha, concepto y montos. Esta acción no se puede deshacer. <br><br>¿Deseas continuar?",
-        confirmText: "Sí, Eliminar Duplicados",
+        title: "Buscar y eliminar duplicados exactos",
+        body:
+            "<p>El sistema busca movimientos con <strong>firma estricta idéntica</strong> " +
+            "(misma fecha, mismo concepto exacto, mismo cargo y mismo abono) y conserva " +
+            "sólo el primero de cada grupo.</p>" +
+            "<p style='color:var(--text-secondary); font-size:13px;'>Los movimientos que sólo coinciden por fecha/comercio/monto " +
+            "(mismo softSignature pero AUT/RFC distinto) NO se borran — se consideran " +
+            "pagos reales separados. Para revisarlos usa el panel de Conciliación.</p>" +
+            "<p><strong>Esta acción no se puede deshacer.</strong> ¿Continuar?</p>",
+        confirmText: "Sí, Eliminar Duplicados Exactos",
         confirmClass: 'btn-danger',
-        onConfirm: () => services.removeDuplicates()
+        onConfirm: async () => {
+            try {
+                const deleted = await services.removeDuplicates();
+                ui.showModal({
+                    title: 'Listo',
+                    body: deleted > 0
+                        ? `<p>Se eliminaron <strong>${deleted}</strong> movimientos duplicados exactos.</p>`
+                        : '<p>No se encontraron duplicados exactos. Tu cuenta ya está limpia.</p>',
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+            } catch (err) {
+                console.error('removeDuplicates error', err);
+                ui.showModal({
+                    title: 'Error',
+                    body: `<p>No se pudieron eliminar los duplicados: ${err.message}</p>`,
+                    confirmText: 'Cerrar',
+                    showCancel: false
+                });
+            }
+        }
+    });
+}
+
+/**
+ * Abre el panel de conciliación bancaria. El usuario captura el saldo
+ * inicial y el saldo real (lo que ve en su app BBVA) para un rango de
+ * fechas, y el sistema calcula la diferencia.
+ */
+function openReconciliation() {
+    ui.openReconciliationModal({
+        getExpenses: () => state.expenses,
+        calculateExpectedBalance,
+        reconcileBalance,
+        onSaveCheckpoint: async (checkpoint) => services.saveBalanceCheckpoint(checkpoint)
     });
 }
 

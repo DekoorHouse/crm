@@ -79,6 +79,7 @@ const app = {
     try {
         ui.cacheElements();
         ui.initDarkMode(); // Inicializar el Dark Mode
+        ui.initTestModeToggle(); // Banner amarillo + botón "Modo prueba"
         Handlers.initEventListeners();
         initFirebase(initializeAppUI);
         
