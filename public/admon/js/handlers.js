@@ -7,6 +7,38 @@ import { classifyForImport, computeFileHash, generateImportBatchId, calculateExp
 import { isTestMode } from './config.js';
 
 /**
+ * Verifica que la librería XLSX (SheetJS) esté disponible en `window.XLSX`.
+ * Si no, muestra un modal con diagnóstico claro y devuelve false.
+ *
+ * Este guard se ejecuta al inicio de TODA función que use XLSX: handleFileUpload
+ * (carga normal), handleFileUpload con dry-run, y handleSueldosFileUpload.
+ */
+function ensureXLSXLoaded() {
+    if (typeof XLSX !== 'undefined' && XLSX && typeof XLSX.read === 'function') {
+        return true;
+    }
+    ui.showModal({
+        title: 'Falta la librería XLSX',
+        body: `<p>No se pudo cargar <code>js/vendor/xlsx.full.min.js</code>. Sin esa librería el sistema no puede leer archivos Excel.</p>
+               <p><strong>Pasos para corregir:</strong></p>
+               <ol style="margin-left:18px;font-size:13px;">
+                   <li>Verifica que el archivo existe abriendo
+                       <code>${location.origin}/admon/js/vendor/xlsx.full.min.js</code>
+                       en una pestaña nueva. Debe mostrar código JavaScript empezando con <code>/*! xlsx.js</code>.</li>
+                   <li>Si responde 404, falta subir el archivo al servidor. Revisa que la carpeta
+                       <code>public/admon/js/vendor/</code> esté en el repo y desplegada.</li>
+                   <li>Recarga la página con <kbd>Ctrl+Shift+R</kbd> (hard reload) para evitar caché.</li>
+                   <li>Abre la consola del navegador (F12). Deberías ver el mensaje
+                       <em>"[admon] Dependencias críticas OK: XLSX, Chart"</em>. Si no, la librería
+                       no cargó.</li>
+               </ol>`,
+        confirmText: 'Cerrar',
+        showCancel: false
+    });
+    return false;
+}
+
+/**
  * @file Módulo de manejadores de eventos.
  * @description Conecta las interacciones del usuario en la UI con la lógica de la aplicación
  * definida en otros módulos.
@@ -33,6 +65,12 @@ async function handleFileUpload(e, options = {}) {
     const file = e.target.files[0];
     if (!file) return;
     const dryRun = !!options.dryRun;
+
+    // Guard de dependencias: si XLSX no cargó, abortar con mensaje claro.
+    if (!ensureXLSXLoaded()) {
+        e.target.value = '';
+        return;
+    }
 
     ui.showModal({
         title: dryRun ? "Analizando archivo (sin guardar)..." : "Procesando Archivo...",
@@ -191,6 +229,11 @@ async function handleFileUpload(e, options = {}) {
 async function handleSueldosFileUpload(e) {
     const file = e.target.files[0];
     if (!file) return;
+
+    if (!ensureXLSXLoaded()) {
+        e.target.value = '';
+        return;
+    }
 
     ui.showModal({
         title: "Procesando Archivo...",

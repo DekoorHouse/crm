@@ -4,11 +4,11 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v4 (2026-05-14): incluye config.js, bbva-parser.js, tests-bbva.js y
-// botones nuevos (Vista previa, Conciliar BBVA, Limpiar duplicados, Modo
-// prueba). El bump de versión fuerza a todos los clientes existentes a
-// limpiar el cache viejo y descargar los archivos nuevos al próximo acceso.
-const CACHE_VERSION = 'admon-v4';
+// v5 (2026-05-14): mueve XLSX y Chart.js a copia local en /admon/js/vendor/
+// porque el CDN cdnjs.cloudflare.com fallaba con "XLSX is not defined". El
+// bump fuerza a los clientes con sw v4 a refrescar y a precachear las
+// nuevas rutas vendor.
+const CACHE_VERSION = 'admon-v5';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -17,6 +17,10 @@ const PRECACHE_URLS = [
     '/admon/index.html',
     '/admon/login.html',
     '/admon/style.css',
+    // Librerías críticas locales (sin CDN). Precachearlas hace que la app
+    // funcione aunque haya degradación de red en el primer load.
+    '/admon/js/vendor/xlsx.full.min.js',
+    '/admon/js/vendor/chart.min.js',
     '/manifest.json',
     '/favicon.png',
     '/favicon-192.png'

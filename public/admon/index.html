@@ -5,9 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Gestor de Negocio v6.29</title>
   
-  <!-- Librerías -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+  <!-- Librerías críticas (vendored locales) — antes venían de cdnjs.cloudflare.com pero el CDN fallaba con "XLSX is not defined" / "Chart is not defined". Versión local elimina la dependencia externa y permite que el Service Worker las cachee. -->
+  <script src="js/vendor/xlsx.full.min.js"></script>
+  <script src="js/vendor/chart.min.js"></script>
+  <script>
+    // Guardia temprana: si alguna librería crítica no cargó (404 o JS roto),
+    // dejamos un mensaje claro en consola para diagnosticar. La validación
+    // específica por feature vive en handlers.js / charts.js.
+    (function () {
+        var missing = [];
+        if (typeof XLSX  === 'undefined') missing.push('XLSX (js/vendor/xlsx.full.min.js)');
+        if (typeof Chart === 'undefined') missing.push('Chart (js/vendor/chart.min.js)');
+        if (missing.length) {
+            console.error('[admon] Dependencias críticas faltantes:', missing.join(', '));
+            window.__admonMissingDeps = missing;
+        } else {
+            console.info('[admon] Dependencias críticas OK: XLSX, Chart');
+        }
+    })();
+  </script>
+
+  <!-- Librerías opcionales (sólo para Exportar PDF / capturas) — siguen en CDN porque no son críticas para el flujo BBVA. Si fallan, sólo "Exportar PDF" no funcionará. -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 

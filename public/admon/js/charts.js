@@ -6,9 +6,26 @@ import { formatCurrency, getExpenseParts } from './utils.js';
  */
 
 /**
+ * Verifica que la librería Chart.js esté cargada. Si no lo está, registra un
+ * warning en consola y devuelve false — las funciones de charts.js abortan
+ * silenciosamente en lugar de crashear con "Chart is not defined". Esto
+ * evita romper el resto de la app cuando el bundle local de Chart.js falta.
+ */
+let _chartMissingWarned = false;
+function ensureChartLoaded() {
+    if (typeof Chart !== 'undefined') return true;
+    if (!_chartMissingWarned) {
+        console.error('[admon] Chart.js no cargó. Las gráficas están deshabilitadas. Verifica js/vendor/chart.min.js');
+        _chartMissingWarned = true;
+    }
+    return false;
+}
+
+/**
  * Actualiza todas las gráficas principales de la aplicación.
  */
 export function updateAllCharts(getFilteredExpenses) {
+    if (!ensureChartLoaded()) return;
     const expenses = getFilteredExpenses().filter(e => e.type === 'operativo' || !e.type || e.sub_type === 'pago_intereses');
     
     const totalIncomeAdjusted = expenses.reduce((acc, exp) => acc + (parseFloat(exp.credit) || 0), 0);
@@ -106,6 +123,7 @@ function getCompareChartConfig(alexTotal, chrisTotal) {
  * Actualiza el dashboard de salud financiera.
  */
 export function updateFinancialHealthDashboard(getFilteredExpenses) {
+    if (!ensureChartLoaded()) return;
     const expenses = getFilteredExpenses(true);
     const { totalOrdersCount, paidOrdersCount, paidOrdersRevenue, totalLeads } = state.financials;
     const cogsCategories = ['Material', 'Sueldos'];
@@ -176,6 +194,7 @@ export function updateFinancialHealthDashboard(getFilteredExpenses) {
 }
   
 export function updateLeadsTrendChart() {
+    if (!ensureChartLoaded()) return;
     if (!elements.chartContexts.leadsTrend) return;
     if (charts.leadsTrendChart) {
         charts.leadsTrendChart.destroy();
@@ -264,6 +283,7 @@ export function updateLeadsTrendChart() {
 }
 
 export function updateIncomeVsAdCostChart() {
+    if (!ensureChartLoaded()) return;
     if (!elements.chartContexts.incomeVsAdCost) return;
     if (charts.incomeVsAdCostChart) {
         charts.incomeVsAdCostChart.destroy();
