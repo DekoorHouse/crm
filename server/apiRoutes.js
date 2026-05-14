@@ -2929,6 +2929,8 @@ router.post('/tts', async (req, res) => {
 const VIDEO_SIZE_LIMIT_MB = 15.5; // Límite seguro de 15.5MB (el de WhatsApp es 16MB)
 const VIDEO_SIZE_LIMIT_BYTES = VIDEO_SIZE_LIMIT_MB * 1024 * 1024;
 const TARGET_BITRATE = '1000k'; // Bitrate objetivo de 1 Mbps para la compresión
+const IMAGE_SIZE_LIMIT_MB = 4.8; // Margen seguro bajo el límite real de WhatsApp (5MB para imágenes)
+const IMAGE_SIZE_LIMIT_BYTES = IMAGE_SIZE_LIMIT_MB * 1024 * 1024;
 // --- FIN: NUEVAS CONSTANTES ---
 
 // --- INICIO: NUEVA FUNCIÓN DE COMPRESIÓN DE VIDEO ---
@@ -3042,6 +3044,58 @@ function convertAudioToOggOpusIfNeeded(inputBuffer, mimeType) {
 }
 // --- FIN: NUEVA FUNCIÓN ---
 
+/**
+ * Comprime una imagen si excede el límite de WhatsApp (5MB para imágenes).
+ * Convierte a JPEG y redimensiona/recomprime con presets progresivos hasta caber.
+ * @param {Buffer} inputBuffer Búfer de la imagen original.
+ * @param {string} mimeType Tipo MIME original.
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>} Búfer (potencialmente recomprimido) y MIME final.
+ */
+async function compressImageIfNeeded(inputBuffer, mimeType) {
+    if (!mimeType.startsWith('image/') || inputBuffer.length <= IMAGE_SIZE_LIMIT_BYTES) {
+        return { buffer: inputBuffer, mimeType };
+    }
+
+    console.log(`[IMAGE COMPRESSOR] La imagen excede el límite (${(inputBuffer.length / 1024 / 1024).toFixed(2)} MB > ${IMAGE_SIZE_LIMIT_MB} MB). Iniciando compresión.`);
+
+    const presets = [
+        { width: 2560, quality: 85 },
+        { width: 1920, quality: 82 },
+        { width: 1600, quality: 78 },
+        { width: 1280, quality: 72 },
+        { width: 1024, quality: 65 },
+        { width: 800, quality: 55 },
+    ];
+
+    try {
+        for (const preset of presets) {
+            const compressed = await sharp(inputBuffer)
+                .rotate() // Respetar orientación EXIF
+                .resize({ width: preset.width, withoutEnlargement: true, fit: 'inside' })
+                .jpeg({ quality: preset.quality, mozjpeg: true })
+                .toBuffer();
+
+            if (compressed.length <= IMAGE_SIZE_LIMIT_BYTES) {
+                console.log(`[IMAGE COMPRESSOR] Compresión exitosa con preset ${preset.width}px / q${preset.quality}. Nuevo tamaño: ${(compressed.length / 1024 / 1024).toFixed(2)} MB.`);
+                return { buffer: compressed, mimeType: 'image/jpeg' };
+            }
+        }
+
+        // Si ningún preset funcionó, devolver el más agresivo igual (último del array)
+        const last = presets[presets.length - 1];
+        const fallback = await sharp(inputBuffer)
+            .rotate()
+            .resize({ width: last.width, withoutEnlargement: true, fit: 'inside' })
+            .jpeg({ quality: last.quality, mozjpeg: true })
+            .toBuffer();
+        console.warn(`[IMAGE COMPRESSOR] Ningún preset bajó del límite. Enviando el más comprimido: ${(fallback.length / 1024 / 1024).toFixed(2)} MB.`);
+        return { buffer: fallback, mimeType: 'image/jpeg' };
+    } catch (err) {
+        console.error(`[IMAGE COMPRESSOR] Falló la compresión, se enviará el original: ${err.message}`);
+        return { buffer: inputBuffer, mimeType };
+    }
+}
+
 // --- INICIO: Helper function to parse ad IDs ---
 /**
  * Parses the adIds input (string or array) into a clean array of strings.
@@ -3087,6 +3141,11 @@ async function uploadMediaToWhatsApp(mediaUrl, mimeType) {
             const conversionResult = await convertAudioToOggOpusIfNeeded(fileBuffer, mimeType);
             fileBuffer = conversionResult.buffer;
             finalMimeType = conversionResult.mimeType; // Podría ser 'audio/ogg' ahora
+        } else if (mimeType.startsWith('image/')) {
+            // Comprimir imagen si excede el límite (5MB) — convierte a JPEG si es necesario
+            const compressionResult = await compressImageIfNeeded(fileBuffer, mimeType);
+            fileBuffer = compressionResult.buffer;
+            finalMimeType = compressionResult.mimeType; // Podría ser 'image/jpeg' ahora
         }
         // --- FIN: PASO DE COMPRESIÓN/CONVERSIÓN AÑADIDO ---
 
