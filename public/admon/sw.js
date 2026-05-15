@@ -4,11 +4,10 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v5 (2026-05-14): mueve XLSX y Chart.js a copia local en /admon/js/vendor/
-// porque el CDN cdnjs.cloudflare.com fallaba con "XLSX is not defined". El
-// bump fuerza a los clientes con sw v4 a refrescar y a precachear las
-// nuevas rutas vendor.
-const CACHE_VERSION = 'admon-v5';
+// v6 (2026-05-15): agrega tarjeta "Saldo BBVA Estimado" al Resumen +
+// configuración persistente del saldo inicial de ajuste
+// (admin_data/balance_config). Bump para forzar refresh de los JS cacheados.
+const CACHE_VERSION = 'admon-v6';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

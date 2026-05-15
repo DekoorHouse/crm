@@ -232,7 +232,7 @@ export function updateSummary(getFilteredExpenses) {
     // Utilidad Operativa: desde marzo 2026 (los meses anteriores tienen datos incorrectos)
     // hasta hoy. Incluye 'ajuste_saldo' (saldo previo + conciliación) pero se excluye
     // de Ingresos/Cargos individuales.
-    const NETO_FROM = '2026-03-01';
+    const NETO_FROM = state.balanceConfig?.openingDate || '2026-03-01';
     const today = new Date();
     const NETO_TO = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
     const netoExpenses = state.expenses.filter(e =>
@@ -243,8 +243,27 @@ export function updateSummary(getFilteredExpenses) {
     const totalOverallCharges = netoExpenses.reduce((sum, exp) => sum + (parseFloat(exp.charge) || 0), 0);
 
     summaryData.TotalNeto = totalOverallIncome - totalOverallCharges;
-    
+
+    // ===== Saldo BBVA Estimado =====
+    // saldoBBVAEstimado = openingBalance (saldo inicial de ajuste) + TotalNeto
+    // Si el usuario no ha configurado el saldo inicial, la tarjeta lo indica.
+    const openingBalance = Number(state.balanceConfig?.openingBalance) || 0;
+    const isConfigured = !!state.balanceConfig?.isConfigured;
+    const saldoBBVAEstimado = openingBalance + summaryData.TotalNeto;
+
     elements.summarySection.innerHTML = '';
+
+    // 1. Inyectar la tarjeta especial "Saldo BBVA Estimado" como primera tarjeta.
+    const balanceCard = createBalanceEstimadoCard({
+        openingBalance,
+        openingDate: state.balanceConfig?.openingDate || NETO_FROM,
+        utilidadOperativa: summaryData.TotalNeto,
+        saldoBBVAEstimado,
+        isConfigured
+    });
+    elements.summarySection.appendChild(balanceCard);
+
+    // 2. Tarjetas regulares (Utilidad Operativa, Ingresos, Cargos, categorías).
     const summaryOrder = ['TotalNeto', 'TotalIngresos', 'TotalCargos'];
     const sortedSummary = Object.entries(summaryData).sort(([keyA], [keyB]) => {
         const indexA = summaryOrder.indexOf(keyA);
@@ -261,6 +280,53 @@ export function updateSummary(getFilteredExpenses) {
             elements.summarySection.appendChild(card);
         }
     });
+}
+
+/**
+ * Crea la tarjeta especial "Saldo BBVA Estimado" del Resumen. Es interactiva
+ * (clic abre el modal de configuración del saldo inicial) y muestra el
+ * desglose dentro de la propia tarjeta.
+ *
+ * @param {{ openingBalance:number, openingDate:string, utilidadOperativa:number, saldoBBVAEstimado:number, isConfigured:boolean }} opts
+ * @returns {HTMLElement}
+ */
+function createBalanceEstimadoCard({ openingBalance, openingDate, utilidadOperativa, saldoBBVAEstimado, isConfigured }) {
+    const card = document.createElement('div');
+    card.className = 'summary-card SaldoBBVAEstimado clickable';
+    card.dataset.category = 'SaldoBBVAEstimado';
+    card.id = 'balance-estimado-card';
+    card.style.cursor = 'pointer';
+    card.title = 'Clic para editar el saldo inicial de ajuste';
+
+    if (!isConfigured) {
+        // Estado "sin configurar": pide al usuario que capture el saldo inicial.
+        card.innerHTML = `
+            <div class="icon-container"><i class="fas fa-piggy-bank"></i></div>
+            <div>
+                <div class="summary-card-title">Saldo BBVA Estimado</div>
+                <div class="summary-card-value" style="font-size:0.95em;color:var(--text-secondary);">Configura saldo inicial</div>
+                <div style="font-size:11px; color:var(--text-secondary); margin-top:4px;">
+                    Clic para capturar el saldo inicial de ajuste.
+                </div>
+            </div>`;
+        return card;
+    }
+
+    // Caption con desglose. Se queda en una sola fila pequeña debajo del valor
+    // grande para mantener el mismo "tamaño visual" que las otras tarjetas.
+    card.innerHTML = `
+        <div class="icon-container"><i class="fas fa-piggy-bank"></i></div>
+        <div style="flex:1;">
+            <div class="summary-card-title">Saldo BBVA Estimado</div>
+            <div class="summary-card-value">${formatCurrency(saldoBBVAEstimado)}</div>
+            <div style="font-size:11px; color:var(--text-secondary); margin-top:4px; line-height:1.5;">
+                = <strong>${formatCurrency(openingBalance)}</strong> inicial
+                + <strong>${formatCurrency(utilidadOperativa)}</strong> neto
+                <br>
+                <span style="opacity:0.8;">Incluye saldo inicial de ajuste + movimientos registrados desde ${openingDate}.</span>
+            </div>
+        </div>`;
+    return card;
 }
   
 export function createSummaryCard(title, amount, isClickable) {
@@ -2623,6 +2689,72 @@ export function showDryRunReportModal(opts) {
                     </table>
                 `;
             });
+        }
+    });
+}
+
+/**
+ * Modal para editar el "saldo inicial de ajuste" usado por la tarjeta
+ * "Saldo BBVA Estimado" del Resumen. Persiste en Firestore
+ * `admin_data/balance_config` vía `services.saveBalanceConfig`.
+ *
+ * @param {Object} opts
+ * @param {Function} opts.onSaved  callback opcional al guardar OK
+ */
+export function openBalanceConfigModal({ onSaved } = {}) {
+    const cfg = state.balanceConfig || {};
+    const currentBalance = Number(cfg.openingBalance) || 0;
+    const currentDate = cfg.openingDate || '2026-03-01';
+    const isConfigured = !!cfg.isConfigured;
+
+    showModal({
+        title: 'Saldo inicial de ajuste',
+        body: `
+            <p style="font-size:13px; color:var(--text-secondary); margin-bottom:14px;">
+                Este es el saldo que tenías en BBVA al inicio del periodo que el sistema considera para
+                calcular la utilidad operativa. Se suma a los movimientos registrados para estimar tu
+                saldo actual:
+            </p>
+            <div style="font-size:12px; background:var(--bg-glass, rgba(99,102,241,0.06)); padding:10px 12px; border-radius:8px; margin-bottom:14px;">
+                <code>Saldo BBVA Estimado = Saldo inicial + Utilidad Operativa</code>
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label for="balance-cfg-amount">Saldo inicial BBVA ($)</label>
+                <input type="number" step="0.01" id="balance-cfg-amount" class="modal-input" value="${currentBalance}">
+            </div>
+            <div class="form-group" style="margin-bottom:12px;">
+                <label for="balance-cfg-date">Fecha del saldo inicial</label>
+                <input type="date" id="balance-cfg-date" class="modal-input" value="${currentDate}">
+                <p style="font-size:11px; color:var(--text-secondary); margin-top:6px;">
+                    La utilidad operativa sólo cuenta movimientos desde esta fecha hacia adelante.
+                </p>
+            </div>
+            ${isConfigured
+                ? `<p style="font-size:11px; color:var(--text-secondary);">Última edición: ${cfg.updatedAt && cfg.updatedAt.toDate ? cfg.updatedAt.toDate().toLocaleString('es-MX') : '—'}.</p>`
+                : `<p style="font-size:12px; color:#d97706;"><i class="fas fa-info-circle"></i> Aún no está configurado. Se está usando el fallback histórico $${currentBalance.toFixed(2)} al ${currentDate}.</p>`}
+        `,
+        confirmText: 'Guardar',
+        showCancel: true,
+        onConfirm: async () => {
+            const amount = parseFloat(document.getElementById('balance-cfg-amount').value);
+            const date = document.getElementById('balance-cfg-date').value;
+            if (!Number.isFinite(amount)) {
+                showToast('Monto inválido', 'error');
+                return;
+            }
+            if (!date) {
+                showToast('Selecciona una fecha', 'error');
+                return;
+            }
+            try {
+                await services.saveBalanceConfig({ openingBalance: amount, openingDate: date });
+                showToast('Saldo inicial guardado', 'success');
+                showModal({ show: false });
+                if (typeof onSaved === 'function') onSaved();
+            } catch (err) {
+                console.error('saveBalanceConfig error', err);
+                showToast('No se pudo guardar el saldo inicial', 'error');
+            }
         }
     });
 }

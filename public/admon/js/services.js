@@ -968,6 +968,57 @@ export async function listBalanceCheckpoints() {
         .sort((a, b) => (a.date < b.date ? -1 : 1));
 }
 
+// ---------------------------------------------------------------------------
+//  Configuración del saldo inicial de ajuste (admin_data/balance_config)
+// ---------------------------------------------------------------------------
+//  La usa el Resumen para calcular "Saldo BBVA Estimado". Es un singleton:
+//  un solo documento, editable desde la tarjeta del Resumen.
+//
+//  Se mantiene en `admin_data/balance_config` (mismo "namespace" que
+//  `admin_data/notes`). No se aísla con el sufijo `_test` — la configuración
+//  de saldo inicial debe ser la misma en prod y en modo prueba, porque es
+//  un dato del negocio, no de la base de movimientos.
+//
+//  Si el documento no existe, el listener deja el fallback histórico
+//  (`state.balanceConfig.openingBalance = 2471.45`) y marca isConfigured=false
+//  para que la UI muestre "Configura saldo inicial".
+
+export function listenForBalanceConfig(onDataChange) {
+    const ref = doc(db, "admin_data", "balance_config");
+    return onSnapshot(ref, (snap) => {
+        if (snap.exists()) {
+            const d = snap.data() || {};
+            state.balanceConfig = {
+                openingBalance: Number(d.openingBalance) || 0,
+                openingDate: d.openingDate || '2026-03-01',
+                isConfigured: true,
+                updatedAt: d.updatedAt || null
+            };
+        } else {
+            // Sin doc → fallback en state.balanceConfig (definido en state.js).
+            state.balanceConfig.isConfigured = false;
+        }
+        if (typeof onDataChange === 'function') onDataChange();
+    }, (error) => console.error("Balance Config Listener Error:", error));
+}
+
+/**
+ * Guarda la configuración del saldo inicial de ajuste.
+ *
+ * @param {{ openingBalance:number, openingDate?:string }} cfg
+ */
+export async function saveBalanceConfig(cfg) {
+    if (cfg == null || typeof cfg.openingBalance !== 'number' || !Number.isFinite(cfg.openingBalance)) {
+        throw new Error('openingBalance inválido');
+    }
+    const ref = doc(db, "admin_data", "balance_config");
+    await setDoc(ref, {
+        openingBalance: Number(cfg.openingBalance),
+        openingDate: cfg.openingDate || state.balanceConfig.openingDate || '2026-03-01',
+        updatedAt: Timestamp.now()
+    }, { merge: true });
+}
+
 export function saveStateToHistory(dataType = 'expenses') {
     const snapshot = (dataType === 'sueldos')
         ? JSON.parse(JSON.stringify(state.sueldosData))
