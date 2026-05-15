@@ -22,6 +22,7 @@
  */
 
 const TEST_MODE_KEY = 'admonTestMode';
+const DEV_MODE_KEY = 'admonDevMode';
 const TEST_SUFFIX = '_test';
 
 // Colecciones que SÍ migran al modo test. El resto (sueldos, kpis, pedidos,
@@ -33,15 +34,35 @@ const TEST_COLLECTIONS = new Set([
 ]);
 
 let _testMode = false;
+let _devMode = false;
 
 // Inicialización: ejecutar una sola vez al importar el módulo.
 (function initFromEnvironment() {
     if (typeof window === 'undefined') return;
 
-    // 1. Query string tiene la última palabra.
-    const match = window.location.search.match(/[?&]testMode=([01])/);
-    if (match) {
-        _testMode = match[1] === '1';
+    const search = window.location.search;
+
+    // 1a. ?dev=1 / ?dev=0 — el "modo desarrollador" controla la VISIBILIDAD
+    //     del botón "Modo prueba" en el header. No activa el test mode por
+    //     sí solo; sólo desbloquea el toggle.
+    const devMatch = search.match(/[?&]dev=([01])/);
+    if (devMatch) {
+        _devMode = devMatch[1] === '1';
+        try {
+            if (_devMode) localStorage.setItem(DEV_MODE_KEY, '1');
+            else          localStorage.removeItem(DEV_MODE_KEY);
+        } catch (_) { /* ignore */ }
+    } else {
+        try { _devMode = localStorage.getItem(DEV_MODE_KEY) === '1'; }
+        catch (_) { _devMode = false; }
+    }
+
+    // 1b. ?testMode=1 / ?testMode=0 — activa o desactiva las colecciones _test.
+    //     Esto SÍ funciona aunque dev mode esté apagado, para no perder la
+    //     vía de URL como bookmark de recuperación.
+    const tmMatch = search.match(/[?&]testMode=([01])/);
+    if (tmMatch) {
+        _testMode = tmMatch[1] === '1';
         try {
             if (_testMode) localStorage.setItem(TEST_MODE_KEY, '1');
             else           localStorage.removeItem(TEST_MODE_KEY);
@@ -101,17 +122,49 @@ export function collectionName(base) {
 }
 
 /**
+ * @returns {boolean} true si dev mode está activado (botón "Modo prueba"
+ * del header visible). Activable con `?dev=1` en la URL o vía consola.
+ */
+export function isDevMode() {
+    return _devMode;
+}
+
+/**
+ * Activa o desactiva el dev mode. No recarga la página por default — el
+ * efecto inmediato es que `renderTestModeBanner` / `initTestModeToggle`
+ * vuelven a calcular si el botón debe estar visible.
+ *
+ * @param {boolean} value
+ * @param {{ reload?:boolean }} [opts]
+ */
+export function setDevMode(value, opts = {}) {
+    const reload = opts.reload === true;  // default false
+    _devMode = !!value;
+    try {
+        if (_devMode) localStorage.setItem(DEV_MODE_KEY, '1');
+        else          localStorage.removeItem(DEV_MODE_KEY);
+    } catch (_) { /* ignore */ }
+
+    if (reload && typeof window !== 'undefined') {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('dev');
+        window.location.replace(url.toString());
+    }
+}
+
+/**
  * Util para escribir banners/avisos.
- * @returns {{ testMode:boolean, isolatedCollections:string[] }}
+ * @returns {{ testMode:boolean, devMode:boolean, isolatedCollections:string[] }}
  */
 export function describeMode() {
     return {
         testMode: _testMode,
+        devMode: _devMode,
         isolatedCollections: [...TEST_COLLECTIONS].map(c => _testMode ? `${c}${TEST_SUFFIX}` : c)
     };
 }
 
 // Expone para debug desde la consola.
 if (typeof window !== 'undefined') {
-    window.__admonConfig = { isTestMode, setTestMode, collectionName, describeMode };
+    window.__admonConfig = { isTestMode, setTestMode, isDevMode, setDevMode, collectionName, describeMode };
 }
