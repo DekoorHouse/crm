@@ -4,10 +4,11 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v6 (2026-05-15): agrega tarjeta "Saldo BBVA Estimado" al Resumen +
-// configuración persistente del saldo inicial de ajuste
-// (admin_data/balance_config). Bump para forzar refresh de los JS cacheados.
-const CACHE_VERSION = 'admon-v6';
+// v7 (2026-05-15): Fase A+B de limpieza UX. Modales con botones más claros
+// (Conciliación sin Cancelar redundante, Vista Previa con botón "Importar
+// este archivo", Revisión de importación con título y botón dinámico).
+// Modo Prueba ahora oculto en header salvo URL ?dev=1.
+const CACHE_VERSION = 'admon-v7';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

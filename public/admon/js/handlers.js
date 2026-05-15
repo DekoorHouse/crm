@@ -45,6 +45,71 @@ function ensureXLSXLoaded() {
  */
 
 /**
+ * Persiste un lote ya clasificado en Firestore y muestra el flujo de
+ * post-importación (revisión de omitidos + modal de éxito).
+ *
+ * Esta función centraliza el "qué hacer después de clasificar", para que
+ * tanto el flujo normal como la promoción desde Vista Previa (dry-run →
+ * "Importar este archivo") la puedan reusar sin duplicar código.
+ *
+ * @param {{ newUnique:Array, intraFileDuplicates:Array, existingExact:Array, suspectRepeated:Array, importMeta:object }} classified
+ */
+async function persistClassifiedImport(classified) {
+    const { newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta } = classified;
+
+    // newUnique ya incluye los `suspect_repeated` (se importan, pero marcados
+    // para que el panel de Conciliación los pueda listar).
+    if (newUnique.length > 0) {
+        await services.saveBulkExpenses(newUnique);
+    }
+
+    const totalSkipped = intraFileDuplicates.length + existingExact.length;
+
+    if (totalSkipped > 0 || suspectRepeated.length > 0) {
+        ui.showOmittedReviewModal({
+            importedCount: newUnique.length,
+            suspectCount: suspectRepeated.length,
+            skippedIntraFile: intraFileDuplicates,
+            skippedExisting: existingExact,
+            suspectRepeated,
+            importMeta,
+            onConfirm: async (selectedExpenses) => {
+                if (selectedExpenses.length > 0) {
+                    // Marcamos los confirmados manualmente como `confirmed_real`
+                    // para que la limpieza automática no los borre.
+                    selectedExpenses.forEach(exp => { exp.duplicateStatus = 'confirmed_real'; });
+                    await services.saveBulkExpenses(selectedExpenses);
+                }
+                const totalImported = newUnique.length + selectedExpenses.length;
+                const discarded = totalSkipped - selectedExpenses.length;
+                ui.showModal({
+                    title: 'Importación completada',
+                    body:
+                        `<p><strong>${totalImported}</strong> movimiento${totalImported !== 1 ? 's' : ''} importado${totalImported !== 1 ? 's' : ''} en total.</p>` +
+                        (selectedExpenses.length > 0
+                            ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> confirmado${selectedExpenses.length !== 1 ? 's' : ''} de los sospechosos.</p>` : '') +
+                        (suspectRepeated.length > 0
+                            ? `<p><strong>${suspectRepeated.length}</strong> marcado${suspectRepeated.length !== 1 ? 's' : ''} como "posible repetido real" — se importaron pero quedan para revisión en Conciliación.</p>` : '') +
+                        (discarded > 0
+                            ? `<p><strong>${discarded}</strong> descartado${discarded !== 1 ? 's' : ''}.</p>` : ''),
+                    confirmText: 'Entendido',
+                    showCancel: false
+                });
+            }
+        });
+    } else {
+        ui.showModal({
+            title: newUnique.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
+            body: newUnique.length > 0
+                ? `<p><strong>${newUnique.length}</strong> movimiento${newUnique.length !== 1 ? 's' : ''} nuevo${newUnique.length !== 1 ? 's' : ''} importado${newUnique.length !== 1 ? 's' : ''}.</p>`
+                : '<p>No se encontraron registros válidos en el archivo.</p>',
+            confirmText: 'Entendido',
+            showCancel: false
+        });
+    }
+}
+
+/**
  * Procesa el archivo de gastos (.xls o .xlsx) cargado por el usuario.
  *
  * Flujo nuevo (auditable y conservador):
@@ -58,8 +123,11 @@ function ensureXLSXLoaded() {
  *   4. Sólo los movimientos del grupo 1 (+ los sospechosos repetidos) se
  *      guardan automáticamente. Los grupos 2 y 3 se muestran al usuario
  *      para que decida si los agrega o los descarta.
+ *   5. Si options.dryRun=true: NO persiste; muestra Vista previa con opción
+ *      de "Importar este archivo" (que entonces sí llama a persistClassifiedImport).
  *
  * @param {Event} e
+ * @param {{ dryRun?:boolean }} [options]
  */
 async function handleFileUpload(e, options = {}) {
     const file = e.target.files[0];
@@ -127,7 +195,10 @@ async function handleFileUpload(e, options = {}) {
                 classifyForImport(newExpenses, state.expenses);
 
             // ============================================================
-            //  DRY-RUN: NO se persiste nada. Sólo mostramos el resumen.
+            //  DRY-RUN: NO se persiste nada. El usuario puede pulsar
+            //  "Importar este archivo" dentro del modal para promover el
+            //  resultado a una importación real, usando los mismos
+            //  movimientos ya clasificados (sin re-parsear el XLS).
             // ============================================================
             if (dryRun) {
                 ui.showDryRunReportModal({
@@ -141,61 +212,16 @@ async function handleFileUpload(e, options = {}) {
                     importMeta,
                     calculateExpectedBalance,
                     reconcileBalance,
-                    getExpenses: () => state.expenses
+                    getExpenses: () => state.expenses,
+                    onImport: async (classified) => {
+                        ui.showModal({ show: false });
+                        await persistClassifiedImport(classified);
+                    }
                 });
                 return;
             }
 
-            // newUnique ya incluye los `suspect_repeated` (se importan, pero
-            // marcados para que el panel de conciliación los pueda listar).
-            if (newUnique.length > 0) {
-                await services.saveBulkExpenses(newUnique);
-            }
-
-            const totalSkipped = intraFileDuplicates.length + existingExact.length;
-
-            if (totalSkipped > 0 || suspectRepeated.length > 0) {
-                ui.showOmittedReviewModal({
-                    importedCount: newUnique.length,
-                    suspectCount: suspectRepeated.length,
-                    skippedIntraFile: intraFileDuplicates,
-                    skippedExisting: existingExact,
-                    suspectRepeated,
-                    importMeta,
-                    onConfirm: async (selectedExpenses) => {
-                        if (selectedExpenses.length > 0) {
-                            // Marcamos los confirmados manualmente para que la
-                            // auditoría sepa que el usuario los validó.
-                            selectedExpenses.forEach(exp => { exp.duplicateStatus = 'confirmed_real'; });
-                            await services.saveBulkExpenses(selectedExpenses);
-                        }
-                        const totalImported = newUnique.length + selectedExpenses.length;
-                        const discarded = totalSkipped - selectedExpenses.length;
-                        ui.showModal({
-                            title: 'Importación completada',
-                            body:
-                                `<p><strong>${totalImported}</strong> movimiento${totalImported !== 1 ? 's' : ''} importado${totalImported !== 1 ? 's' : ''} en total.</p>` +
-                                (selectedExpenses.length > 0
-                                    ? `<p>Incluyendo <strong>${selectedExpenses.length}</strong> confirmado${selectedExpenses.length !== 1 ? 's' : ''} de los sospechosos.</p>` : '') +
-                                (suspectRepeated.length > 0
-                                    ? `<p><strong>${suspectRepeated.length}</strong> marcado${suspectRepeated.length !== 1 ? 's' : ''} como "posible repetido real" — se importaron pero quedan para revisión en Conciliación.</p>` : '') +
-                                (discarded > 0
-                                    ? `<p><strong>${discarded}</strong> descartado${discarded !== 1 ? 's' : ''}.</p>` : ''),
-                            confirmText: 'Entendido',
-                            showCancel: false
-                        });
-                    }
-                });
-            } else {
-                ui.showModal({
-                    title: newUnique.length > 0 ? 'Importación completada' : 'Sin registros nuevos',
-                    body: newUnique.length > 0
-                        ? `<p><strong>${newUnique.length}</strong> movimiento${newUnique.length !== 1 ? 's' : ''} nuevo${newUnique.length !== 1 ? 's' : ''} importado${newUnique.length !== 1 ? 's' : ''}.</p>`
-                        : '<p>No se encontraron registros válidos en el archivo.</p>',
-                    confirmText: 'Entendido',
-                    showCancel: false
-                });
-            }
+            await persistClassifiedImport({ newUnique, intraFileDuplicates, existingExact, suspectRepeated, importMeta });
 
         } catch (error) {
             console.error("Error al procesar el archivo de gastos:", error);
@@ -888,15 +914,10 @@ function handleMonthFilterChange(e) {
     window.app.renderAllCharts();
 }
 
-function confirmDeleteAllData() {
-    ui.showModal({
-        title: "Confirmar Borrado Total",
-        body: "<strong>¡Atención!</strong> Estás a punto de borrar TODOS los registros de gastos. Esta acción es irreversible. <br><br>¿Estás completamente seguro?",
-        confirmText: "Sí, Borrar Todo",
-        confirmClass: 'btn-danger',
-        onConfirm: () => services.deleteAllData()
-    });
-}
+// (Fase A.4 — 2026-05-15) Función `confirmDeleteAllData()` eliminada por
+// huérfana: no estaba conectada a ningún botón de UI y además llamaba a
+// `services.deleteAllData()` que tampoco existe. Riesgo de uso accidental
+// desde la consola del navegador.
 
 function confirmDeleteCurrentMonth() {
     ui.showModal({

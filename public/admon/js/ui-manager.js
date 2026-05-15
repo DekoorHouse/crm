@@ -1,7 +1,7 @@
 import { elements, state } from './state.js';
 import { formatCurrency, autoCategorize, capitalize, getAllCategories, getExpenseParts, computePayrollFromChecador, getChecadorPeriodLabel, getChecadorPeriodRange } from './utils.js';
 import * as services from './services.js';
-import { isTestMode, setTestMode, describeMode } from './config.js';
+import { isTestMode, setTestMode, isDevMode, setDevMode, describeMode } from './config.js';
 
 /**
  * @file Módulo de gestión de la interfaz de usuario (UI).
@@ -375,6 +375,19 @@ export function showCategoryDetailsModal(category, getFilteredExpenses) {
   
 export function showModal({ show = true, title, body, onConfirm, onModalOpen, confirmText = 'Confirmar', confirmClass = '', showCancel = true, showConfirm = true }) {
       if (!show) { elements.modal.classList.remove('visible'); return; }
+
+      // Cleanup defensivo: si un modal previo inyectó botones extra en el
+      // footer (caso `#rec-save-btn` de Conciliación), los removemos antes
+      // de abrir el nuevo modal. Sólo conservamos los dos botones canónicos.
+      const footer = elements.modal.querySelector('.modal-footer');
+      if (footer) {
+          [...footer.children].forEach(btn => {
+              if (btn.id !== 'modal-cancel-btn' && btn.id !== 'modal-confirm-btn') {
+                  btn.remove();
+              }
+          });
+      }
+
       elements.modalTitle.textContent = title;
       elements.modalBody.innerHTML = body;
       elements.modalConfirmBtn.textContent = confirmText;
@@ -1980,10 +1993,16 @@ export function showOmittedReviewModal({
         `Si marcas filas omitidas y aceptas, se agregan como <strong>"repetido confirmado real"</strong> ` +
         `y quedan protegidas contra la limpieza automática de duplicados.</p>`;
 
+    // Fase A.2 (2026-05-15): título más claro (la importación principal ya
+    // pasó, este modal es sólo para revisar omitidos) y botón confirmador
+    // dinámico — dice "Cerrar" si no hay nada marcado, "Agregar N
+    // seleccionados" si hay items marcados. Quita la ambigüedad de
+    // "Confirmar selección" cuando no había selección.
     showModal({
-        title: 'Revisión de importación',
+        title: 'Movimientos importados — revisar omitidos',
         body: html,
-        confirmText: 'Confirmar selección',
+        confirmText: 'Cerrar',
+        showCancel: false,
         onConfirm: () => {
             const selected = [];
             document.querySelectorAll('.omit-check:checked').forEach(cb => {
@@ -1997,12 +2016,29 @@ export function showOmittedReviewModal({
             if (typeof onConfirm === 'function') onConfirm(selected);
         },
         onModalOpen: () => {
+            const confirmBtn = elements.modalConfirmBtn;
+            const updateConfirmLabel = () => {
+                const n = document.querySelectorAll('.omit-check:checked').length;
+                if (n > 0) {
+                    confirmBtn.innerHTML = `<i class="fas fa-plus"></i> Agregar ${n} seleccionado${n !== 1 ? 's' : ''}`;
+                    confirmBtn.classList.add('btn-success-active');
+                } else {
+                    confirmBtn.textContent = 'Cerrar';
+                    confirmBtn.classList.remove('btn-success-active');
+                }
+            };
+            // Reaccionar a cada cambio de checkbox (individuales + select-all).
+            document.querySelectorAll('.omit-check').forEach(cb => {
+                cb.addEventListener('change', updateConfirmLabel);
+            });
             const all = document.getElementById('omit-check-all');
             if (all) {
                 all.addEventListener('change', () => {
                     document.querySelectorAll('.omit-check:not([disabled])').forEach(cb => { cb.checked = all.checked; });
+                    updateConfirmLabel();
                 });
             }
+            updateConfirmLabel();
         }
     });
 }
@@ -2055,19 +2091,22 @@ export function openReconciliationModal({ getExpenses, calculateExpectedBalance,
 
             <div style="display:flex; gap:8px;">
                 <button type="button" id="rec-compute-btn" class="btn"><i class="fas fa-calculator"></i> Calcular</button>
-                <button type="button" id="rec-save-btn" class="btn btn-outline" disabled><i class="fas fa-save"></i> Guardar saldo real</button>
             </div>
 
             <div id="rec-result" style="display:none; padding:14px; border-radius:10px; border:1px solid var(--border-color);"></div>
         </div>
     `;
 
+    // Fase A.1 (2026-05-15): se elimina el botón "Cancelar" del footer (era
+    // redundante con "Cerrar") y "Guardar saldo real" se mueve al footer como
+    // acción primaria, junto a "Cerrar" como acción secundaria. El botón
+    // "Calcular" sigue dentro del body porque es una acción de cómputo local,
+    // no de cierre.
     showModal({
         title: 'Conciliación bancaria BBVA',
         body: html,
-        showCancel: true,
+        showCancel: false,
         confirmText: 'Cerrar',
-        onConfirm: () => showModal({ show: false }),
         onModalOpen: () => {
             const $start = document.getElementById('rec-start');
             const $end = document.getElementById('rec-end');
@@ -2075,7 +2114,24 @@ export function openReconciliationModal({ getExpenses, calculateExpectedBalance,
             const $real = document.getElementById('rec-real');
             const $result = document.getElementById('rec-result');
             const $compute = document.getElementById('rec-compute-btn');
-            const $save = document.getElementById('rec-save-btn');
+
+            // Inyectar botón "Guardar saldo real" en el footer, a la izquierda
+            // del botón Cerrar. Si ya existe (re-apertura del modal), reciclar.
+            const footer = elements.modal.querySelector('.modal-footer');
+            const confirmBtn = elements.modalConfirmBtn;
+            let $save = document.getElementById('rec-save-btn');
+            if (!$save) {
+                $save = document.createElement('button');
+                $save.id = 'rec-save-btn';
+                $save.type = 'button';
+                $save.className = 'btn';
+                $save.disabled = true;
+                $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
+                footer.insertBefore($save, confirmBtn);
+            } else {
+                $save.disabled = true;
+                $save.innerHTML = '<i class="fas fa-save"></i> Guardar saldo real';
+            }
 
             let lastReconciliation = null;
 
@@ -2381,10 +2437,11 @@ function applyColorTheme(theme) {
  */
 export function renderTestModeBanner() {
     const existing = document.getElementById('test-mode-banner');
+    const toggleBtn = document.getElementById('test-mode-toggle-btn');
+
     if (!isTestMode()) {
         if (existing) existing.remove();
         // Desactivar también el botón "MODO PRUEBA: ON" si existía
-        const toggleBtn = document.getElementById('test-mode-toggle-btn');
         if (toggleBtn) {
             toggleBtn.innerHTML = '<i class="fas fa-vial"></i> Modo prueba';
             toggleBtn.classList.remove('btn-warning-active');
@@ -2417,6 +2474,9 @@ export function renderTestModeBanner() {
         font-weight: 600;
         box-shadow: 0 2px 8px rgba(245, 158, 11, 0.15);
     `;
+    // Fase B (2026-05-15): incluye leyenda recordando cómo se accede al
+    // toggle (URL ?dev=1) — útil para futuros usuarios que aterricen aquí
+    // sin saber por qué ven este banner.
     banner.innerHTML = `
         <div style="display:flex;align-items:center;gap:10px;">
             <i class="fas fa-vial" style="font-size:18px;"></i>
@@ -2424,6 +2484,10 @@ export function renderTestModeBanner() {
                 <div>MODO PRUEBA ACTIVO — las escrituras no afectan producción.</div>
                 <div style="font-weight:400;font-size:11px;opacity:0.85;">
                     Lecturas/escrituras en: <strong class="tm-collections">${collectionList}</strong>
+                </div>
+                <div style="font-weight:400;font-size:10px;opacity:0.7;margin-top:2px;">
+                    El toggle "Modo prueba" del header sólo aparece si activas dev mode con
+                    <code>?dev=1</code> en la URL.
                 </div>
             </div>
         </div>
@@ -2448,7 +2512,6 @@ export function renderTestModeBanner() {
     });
 
     // Marcar el botón "Modo prueba" del header como activo si existe
-    const toggleBtn = document.getElementById('test-mode-toggle-btn');
     if (toggleBtn) {
         toggleBtn.innerHTML = '<i class="fas fa-vial"></i> Prueba: ON';
         toggleBtn.classList.add('btn-warning-active');
@@ -2458,10 +2521,22 @@ export function renderTestModeBanner() {
 /**
  * Conecta el botón del header (id `test-mode-toggle-btn`) que enciende el
  * modo prueba. Se llama desde main.js después de cachear elementos.
+ *
+ * Fase B (2026-05-15): el botón sólo aparece si dev mode está activo
+ * (URL `?dev=1` o `__admonConfig.setDevMode(true)` en consola). En uso
+ * diario queda oculto para evitar activación accidental del modo prueba
+ * en producción. El banner amarillo, en cambio, SIEMPRE aparece cuando el
+ * modo prueba está activo — eso no cambia.
  */
 export function initTestModeToggle() {
     const btn = document.getElementById('test-mode-toggle-btn');
     if (!btn) return;
+
+    // Visibilidad: sólo si dev mode está prendido. Si el usuario activa el
+    // test mode por URL sin dev mode, el banner amarillo igual aparecerá
+    // (con su propio botón "Salir"), pero el toggle del header queda oculto.
+    btn.style.display = isDevMode() ? '' : 'none';
+
     btn.addEventListener('click', () => {
         if (isTestMode()) {
             // Si ya está prendido, abre la confirmación del banner.
@@ -2507,6 +2582,13 @@ export function initTestModeToggle() {
  * @param {Function} opts.calculateExpectedBalance
  * @param {Function} opts.reconcileBalance
  * @param {Function} opts.getExpenses         () => state.expenses
+ * @param {Function} [opts.onImport]          async (classified) => void
+ *        Callback opcional. Si está presente, se inyecta un botón
+ *        "Importar este archivo" en el footer; al hacer clic se invoca con
+ *        los grupos clasificados (newUnique, intraFileDuplicates,
+ *        existingExact, suspectRepeated, importMeta) para promover la
+ *        vista previa a una importación real. Si no está presente, el
+ *        botón no aparece y la modal sigue siendo solo lectura.
  */
 export function showDryRunReportModal(opts) {
     const {
@@ -2658,11 +2740,22 @@ export function showDryRunReportModal(opts) {
             </details>
 
             <p style="font-size:11px;color:var(--text-secondary);margin:0;text-align:center;">
-                ✅ Nada se guardó. Si los números cuadran con tu app BBVA, cierra este modal y vuelve a cargar el XLS con el botón normal "Cargar Archivo".
+                ✅ Nada se ha guardado todavía. Para guardar, presiona <strong>"Importar este archivo"</strong>.
+                Si los números no cuadran, presiona <strong>"Cerrar"</strong> y revisa el XLS antes de importar.
             </p>
         </div>
     `;
 
+    const canImport = newUnique.length > 0 || suspectRepeated.length > 0;
+    const importLabel = canImport
+        ? `<i class="fas fa-file-import"></i> Importar este archivo (${newUnique.length})`
+        : '<i class="fas fa-file-import"></i> Importar este archivo';
+
+    // Fase A.3 (2026-05-15): la vista previa ahora ofrece importar directo
+    // sin tener que cerrar y volver a hacer "Cargar Archivo". Se inyecta el
+    // botón "Importar este archivo" en el footer (acción primaria); "Cerrar"
+    // queda como acción secundaria. El callback `opts.onImport` se invoca
+    // con los movimientos ya clasificados — handlers.js los persiste.
     showModal({
         title: 'Vista previa de importación (sin guardar)',
         body: html,
@@ -2670,6 +2763,7 @@ export function showDryRunReportModal(opts) {
         showCancel: false,
         onConfirm: () => showModal({ show: false }),
         onModalOpen: () => {
+            // --- Conciliación rápida (lo que ya existía) ---
             const $opening = document.getElementById('dry-opening');
             const $real    = document.getElementById('dry-real');
             const $compute = document.getElementById('dry-compute');
@@ -2688,6 +2782,42 @@ export function showDryRunReportModal(opts) {
                         <tr><td colspan="2" style="padding-top:4px;color:${color};font-weight:600;">${rec.isReconciled ? '✓ CONCILIADO' : '⚠ DIFERENCIA ENCONTRADA'}</td></tr>
                     </table>
                 `;
+            });
+
+            // --- Botón "Importar este archivo" inyectado al footer ---
+            const footer = elements.modal.querySelector('.modal-footer');
+            const confirmBtn = elements.modalConfirmBtn;
+            const $import = document.createElement('button');
+            $import.id = 'dry-run-import-btn';
+            $import.type = 'button';
+            $import.className = 'btn';
+            $import.disabled = !canImport;
+            $import.innerHTML = importLabel;
+            if (!canImport) $import.title = 'No hay movimientos nuevos para importar';
+            footer.insertBefore($import, confirmBtn);
+
+            $import.addEventListener('click', async () => {
+                if (typeof opts.onImport !== 'function') {
+                    showModal({ show: false });
+                    return;
+                }
+                $import.disabled = true;
+                $import.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Importando...';
+                try {
+                    await opts.onImport({
+                        newUnique,
+                        intraFileDuplicates,
+                        existingExact,
+                        suspectRepeated,
+                        importMeta
+                    });
+                    // El callback se encarga de cerrar/mostrar el modal de resultado.
+                } catch (err) {
+                    console.error('dry-run import error', err);
+                    showToast('No se pudo importar', 'error');
+                    $import.disabled = false;
+                    $import.innerHTML = importLabel;
+                }
             });
         }
     });
