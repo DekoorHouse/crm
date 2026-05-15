@@ -60,6 +60,23 @@ export const state = {
   monthlyPaidRevenue: {},
   monthlyCancelledLeads: {},
   totalLeads: 0,
+
+  /**
+   * Configuración del saldo inicial de ajuste, usada para calcular el
+   * "Saldo BBVA Estimado" en el Resumen:
+   *   saldoBBVAEstimado = openingBalance + utilidadOperativa
+   *
+   * El valor real viene del documento Firestore `admin_data/balance_config`.
+   * Si ese doc no existe, dejamos el fallback histórico (saldo previo conocido
+   * al 2026-03-01) y marcamos `isConfigured = false` para que la UI muestre
+   * un aviso "Configura saldo inicial".
+   */
+  balanceConfig: {
+    openingBalance: 2471.45,
+    openingDate: '2026-03-01',
+    isConfigured: false,
+    updatedAt: null
+  }
 };
 
 export const charts = { 

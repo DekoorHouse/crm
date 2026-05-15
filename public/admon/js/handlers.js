@@ -411,9 +411,15 @@ export function initEventListeners() {
     
     elements.summarySection.addEventListener('click', (e) => {
         const card = e.target.closest('.summary-card.clickable');
-        if (card) {
-            ui.showCategoryDetailsModal(card.dataset.category, utils.getFilteredExpenses);
+        if (!card) return;
+        // Caso especial: la tarjeta "Saldo BBVA Estimado" abre el modal de
+        // configuración del saldo inicial de ajuste, NO el detalle de
+        // categoría (no es una categoría).
+        if (card.dataset.category === 'SaldoBBVAEstimado') {
+            ui.openBalanceConfigModal();
+            return;
         }
+        ui.showCategoryDetailsModal(card.dataset.category, utils.getFilteredExpenses);
     });
 
     // Sueldos period toggle

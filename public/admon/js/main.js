@@ -59,6 +59,8 @@ function initializeAppUI() {
     services.listenForAllTimeLeads();
     services.setupOrdersListener(onDataChange);
     services.listenForNotes(ui.renderNotes);
+    // Configuración del saldo inicial (alimenta "Saldo BBVA Estimado" del Resumen)
+    services.listenForBalanceConfig(onDataChange);
 
     ui.renderMonthFilter();
     
