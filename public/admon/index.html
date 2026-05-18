@@ -40,10 +40,8 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.1.1/css/all.min.css"
-  />
+  <!-- Font Awesome vendored local. Antes venía de cdnjs.cloudflare.com pero los iconos no cargaban en producción (mismo problema que tuvimos con XLSX/Chart). El CSS referencia webfonts/* con ruta relativa, así que la estructura debe respetarse: css/all.min.css + webfonts/*. -->
+  <link rel="stylesheet" href="js/vendor/fontawesome/css/all.min.css" />
   <!-- Litepicker Date Range Picker -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/litepicker/dist/css/litepicker.css"/>
   <script src="https://cdn.jsdelivr.net/npm/litepicker/dist/litepicker.js"></script>
