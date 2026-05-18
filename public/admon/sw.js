@@ -4,11 +4,10 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v7 (2026-05-15): Fase A+B de limpieza UX. Modales con botones más claros
-// (Conciliación sin Cancelar redundante, Vista Previa con botón "Importar
-// este archivo", Revisión de importación con título y botón dinámico).
-// Modo Prueba ahora oculto en header salvo URL ?dev=1.
-const CACHE_VERSION = 'admon-v7';
+// v8 (2026-05-18): Font Awesome también se mueve a copia local
+// (js/vendor/fontawesome/). Antes venía de cdnjs y los iconos no cargaban
+// en producción. Bump fuerza refresh.
+const CACHE_VERSION = 'admon-v8';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
@@ -21,6 +20,10 @@ const PRECACHE_URLS = [
     // funcione aunque haya degradación de red en el primer load.
     '/admon/js/vendor/xlsx.full.min.js',
     '/admon/js/vendor/chart.min.js',
+    '/admon/js/vendor/fontawesome/css/all.min.css',
+    '/admon/js/vendor/fontawesome/webfonts/fa-solid-900.woff2',
+    '/admon/js/vendor/fontawesome/webfonts/fa-regular-400.woff2',
+    '/admon/js/vendor/fontawesome/webfonts/fa-brands-400.woff2',
     '/manifest.json',
     '/favicon.png',
     '/favicon-192.png'
