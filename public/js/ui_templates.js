@@ -1094,9 +1094,10 @@ const ChatWindowTemplate = (contact) => {
            </div>`
         : '';
 
+    const isMobileWidth = typeof window !== 'undefined' && window.innerWidth <= 768;
     const placeholderText = isSessionExpired
-        ? 'La ventana de 24h ha cerrado. Los mensajes se encolarán.'
-        : 'Escribe un mensaje o usa / para respuestas rápidas...';
+        ? (isMobileWidth ? 'Ventana de 24h cerrada' : 'La ventana de 24h ha cerrado. Los mensajes se encolarán.')
+        : (isMobileWidth ? 'Mensaje' : 'Escribe un mensaje o usa / para respuestas rápidas...');
 
     const footerContent = `
         <form id="message-form" class="flex items-center space-x-3">
