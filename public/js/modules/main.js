@@ -51,6 +51,24 @@ function startApp() {
             if (overlay) overlay.classList.remove('active');
         }
     });
+
+    // Mobile keyboard handling: cuando el teclado aparece en Chrome móvil
+    // el visual viewport se reduce pero #app-container con position:fixed
+    // queda anclado al layout viewport, lo que hace desaparecer el header.
+    // Sincronizamos la altura del app-container con el visual viewport real.
+    if (window.visualViewport) {
+        const syncViewportHeight = () => {
+            if (window.innerWidth > 768) {
+                document.documentElement.style.removeProperty('--mobile-vh');
+                return;
+            }
+            const vh = window.visualViewport.height;
+            document.documentElement.style.setProperty('--mobile-vh', vh + 'px');
+        };
+        window.visualViewport.addEventListener('resize', syncViewportHeight);
+        window.visualViewport.addEventListener('scroll', syncViewportHeight);
+        syncViewportHeight();
+    }
 }
 
 /**
