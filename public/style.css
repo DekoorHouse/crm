@@ -1592,10 +1592,22 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 }
 
 @media (max-width: 768px) {
+    /* Asegurar que html/body usen la altura visible real, no 100vh fantasma */
+    html, body {
+        height: 100%;
+        height: 100dvh;
+    }
+
     /* General Layout */
     #app-container {
         position: fixed;
-        inset: 0;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        /* 100dvh sigue dinámicamente la URL bar/nav bar del navegador móvil */
+        height: 100vh; /* fallback */
+        height: 100dvh;
         display: flex;
         flex-direction: column;
         overflow: hidden;
