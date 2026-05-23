@@ -385,6 +385,10 @@ async function handleSelectContact(contactId) {
     if (chatView) {
         chatView.classList.add('contact-selected');
     }
+    // En mobile, escondemos el app-header global (WhatsApp-style)
+    if (window.innerWidth <= 768) {
+        document.body.classList.add('chat-open');
+    }
     
     let isInitialMessageLoad = true;
     

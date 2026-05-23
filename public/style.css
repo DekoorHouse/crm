@@ -1763,6 +1763,108 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
         position: fixed !important;
         z-index: 2000;
     }
+
+    /* ----- CRM mobile polish: vista de Chats tipo WhatsApp ----- */
+
+    /* App header compacto en mobile */
+    #app-header h1 { font-size: 1.25rem; }
+    #app-header .text-2xl { font-size: 1.25rem; }
+    #app-header #user-info { font-size: 0.8rem; max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #app-header .gap-4 { gap: 0.5rem; }
+    #app-header .gap-3 { gap: 0.5rem; }
+    #app-header #tag-sidebar-toggle { margin-right: 0.5rem; padding: 0.25rem 0.5rem; }
+
+    /* Ocultar app-header global cuando se ha entrado a un chat (WhatsApp-style) */
+    body.chat-open #app-header { display: none; }
+
+    /* Chat header: compactar para que el nombre no se trunque ni los botones desborden */
+    .chat-header {
+        gap: 0.25rem;
+        padding: 0.5rem 0.5rem;
+    }
+    .chat-header h2 { font-size: 0.95rem; line-height: 1.2; }
+    .chat-header h2 i.fa-whatsapp,
+    .chat-header h2 i.fa-facebook-messenger { margin-right: 0.25rem; }
+    .chat-header .flex-grow { min-width: 0; }
+    .chat-header .flex-grow h2 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chat-header .flex.items-center.pr-2 { padding-right: 0 !important; gap: 0; }
+    .chat-header .flex.items-center.pr-2 > button { padding: 0.375rem !important; margin-left: 0 !important; min-height: 36px; }
+    .chat-header .flex.items-center.pr-2 > button i { font-size: 1rem !important; }
+    .chat-header .flex-shrink-0.pt-0\.5 { display: none; } /* el avatar del header de chat ocupa espacio precioso */
+
+    /* Burbujas: más ancho y espacio reservado para la hora */
+    .message-bubble { max-width: 80%; padding: 6px 12px 22px 12px; min-width: 90px; }
+    .message-bubble.has-image, .message-bubble.has-video { max-width: 80%; padding: 4px; min-width: 0; }
+    .message-bubble.has-image .time-overlay,
+    .message-bubble.has-video .time-overlay { bottom: 8px; right: 8px; }
+    /* Time overlay sin fondo cuando el bubble ya reserva espacio: se ve más limpio tipo WhatsApp */
+    .message-bubble:not(.has-image):not(.has-video) .time-overlay {
+        background-color: transparent !important;
+        color: rgba(0,0,0,0.5) !important;
+        padding: 0 !important;
+        font-size: 0.68rem !important;
+    }
+    .message-bubble.sent:not(.has-image):not(.has-video) .time-overlay { color: rgba(0,0,0,0.45) !important; }
+    .message-bubble.received:not(.has-image):not(.has-video) .time-overlay { color: rgba(0,0,0,0.45) !important; }
+    .message-bubble:not(.has-image):not(.has-video) .time-overlay i { color: rgba(0,0,0,0.45) !important; }
+    body.dark-mode .message-bubble:not(.has-image):not(.has-video) .time-overlay,
+    body.dark-mode .message-bubble:not(.has-image):not(.has-video) .time-overlay i { color: rgba(255,255,255,0.65) !important; }
+    .chat-image-preview { width: 100%; height: auto; max-width: 240px; max-height: 280px; }
+    .chat-audio-player { width: 100%; min-width: 0; max-width: 250px; }
+
+    /* Footer del chat: input cómodo, iconos compactos */
+    .chat-footer { padding: 6px 6px; }
+    .chat-footer #message-form { gap: 2px !important; }
+    /* Anular space-x-3 de Tailwind que mete margin-left de 0.75rem */
+    .chat-footer #message-form > * + * { margin-left: 2px !important; }
+    .chat-footer #message-form > .chat-icon-btn,
+    .chat-footer #message-form > label.chat-icon-btn { padding: 5px !important; min-height: 36px; min-width: 32px; }
+    .chat-footer #message-form .chat-icon-btn i { font-size: 1.05rem !important; }
+    /* En mobile escondemos el botón "plantillas" (scroll) — disponible en menú de chat-header */
+    .chat-footer #message-form #template-toggle-btn { display: none; }
+    .chat-footer #message-input {
+        padding: 8px 14px;
+        min-height: 40px;
+        max-height: 100px;
+        flex: 1 1 0%;
+        min-width: 0;
+    }
+    .chat-footer .btn-primary {
+        width: 42px !important;
+        height: 42px !important;
+        min-width: 42px !important;
+        min-height: 42px !important;
+        flex-shrink: 0;
+    }
+    .chat-footer .btn-primary i { font-size: 1rem !important; }
+
+    /* New order / edit order modals: ajustar padding y max-width */
+    #new-order-modal .modal-content,
+    #order-edit-modal .modal-content {
+        padding: 1.25rem !important;
+        max-width: 96vw !important;
+    }
+    #new-order-modal button,
+    #order-edit-modal button {
+        padding: 10px 16px;
+        font-size: 0.9rem;
+        margin-left: 6px;
+    }
+    #formularioNuevoPedido .form-grid,
+    .order-item-fields {
+        grid-template-columns: 1fr !important;
+    }
+    #new-order-modal .modal-close-btn { top: 6px; right: 10px; font-size: 2rem; }
+
+    /* Pipeline en mobile: columnas más estrechas y scroll horizontal cómodo */
+    .pipeline-container { padding: 0.75rem; padding-right: 0.75rem; gap: 0.75rem; }
+    .pipeline-column { flex: 0 0 78vw; width: 78vw; max-width: 320px; }
+
+    /* Sticky date header dentro del chat: que no choque con header */
+    #sticky-date-header { top: 0.5rem; }
+
+    /* Sidebar de detalles de contacto: scroll seguro */
+    #contact-details-panel { overflow-y: auto; }
 }
 
 /* Helper for Desktop-First override to ensure desktop is untouched */

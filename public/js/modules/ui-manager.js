@@ -20,6 +20,10 @@ function navigateTo(viewName, force = false) {
         if (sidebar) sidebar.classList.remove('mobile-open');
         if (overlay) overlay.classList.remove('active');
     }
+    // Al cambiar de vista limpiamos el flag de chat-open (esconde app-header)
+    if (viewName !== 'chats') {
+        document.body.classList.remove('chat-open');
+    }
 
     state.activeView = viewName;
 
@@ -3304,8 +3308,9 @@ function closeChatOnMobile() {
     if (chatView) {
         chatView.classList.remove('contact-selected');
     }
+    document.body.classList.remove('chat-open');
     // Opcional: Re-renderizar para limpiar el estado visual si es necesario
-    // renderChatWindow(); 
+    // renderChatWindow();
 }
 
 window.actualizarBadgePedidosHoy = actualizarBadgePedidosHoy;

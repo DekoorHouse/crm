@@ -40,6 +40,17 @@ function startApp() {
     
     // Setup global event listeners
     document.addEventListener('click', handleClickOutside);
+
+    // Limpiar estado mobile-only al rotar / cambiar a desktop
+    window.addEventListener('resize', () => {
+        if (window.innerWidth > 768) {
+            document.body.classList.remove('chat-open');
+            const sidebar = document.getElementById('main-sidebar');
+            const overlay = document.getElementById('sidebar-overlay');
+            if (sidebar) sidebar.classList.remove('mobile-open');
+            if (overlay) overlay.classList.remove('active');
+        }
+    });
 }
 
 /**
