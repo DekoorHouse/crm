@@ -4,10 +4,10 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v8 (2026-05-18): Font Awesome también se mueve a copia local
-// (js/vendor/fontawesome/). Antes venía de cdnjs y los iconos no cargaban
-// en producción. Bump fuerza refresh.
-const CACHE_VERSION = 'admon-v8';
+// v9 (2026-05-18): se añade 'jovita' a las reglas de auto-categorización
+// como Sueldos en utils.js (autoCategorizeWithRulesOnly). Bump fuerza
+// refresh de utils.js cacheado por clientes.
+const CACHE_VERSION = 'admon-v9';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 
