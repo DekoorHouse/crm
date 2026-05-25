@@ -1,0 +1,360 @@
+/* ===================================================================
+   Exportar pedidos - estilos
+   =================================================================== */
+
+* {
+    box-sizing: border-box;
+}
+
+:root {
+    --bg: #f5f7fa;
+    --surface: #ffffff;
+    --border: #e3e8ef;
+    --text: #1f2937;
+    --text-soft: #5b6471;
+    --primary: #4f9d77;
+    --primary-dark: #3d7d5e;
+    --primary-soft: #e6f3ec;
+    --danger: #dc3545;
+    --warning: #f59e0b;
+    --success: #16a34a;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.08);
+    --radius: 10px;
+}
+
+html, body {
+    margin: 0;
+    padding: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+}
+
+/* ---- Login ---- */
+.login-section {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+}
+
+.login-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-md);
+    padding: 32px;
+    max-width: 380px;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.login-card h1 {
+    margin: 0;
+    font-size: 22px;
+    color: var(--text);
+}
+
+.login-sub {
+    margin: 0 0 8px;
+    color: var(--text-soft);
+    font-size: 14px;
+}
+
+.login-card label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+}
+
+.login-card input {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.login-card input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.msg-error {
+    color: var(--danger);
+    font-size: 13px;
+    margin: 0;
+    min-height: 1.2em;
+}
+
+/* ---- Layout principal ---- */
+.export-section {
+    max-width: 880px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+}
+
+.export-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+.header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.header-left h1 {
+    margin: 0;
+    font-size: 24px;
+    color: var(--text);
+}
+
+.header-left h1 i {
+    color: var(--primary);
+    margin-right: 8px;
+}
+
+.back-link {
+    color: var(--text-soft);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.back-link:hover {
+    color: var(--primary);
+}
+
+.back-link i {
+    margin-right: 4px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+#usuarioLogueado {
+    color: var(--text-soft);
+    font-size: 13px;
+}
+
+/* ---- Cards ---- */
+.export-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 24px;
+    margin-bottom: 16px;
+}
+
+.export-card--info {
+    background: #fafbfc;
+}
+
+.export-card--info h2 {
+    margin: 0 0 12px;
+    font-size: 16px;
+    color: var(--text);
+}
+
+.export-card--info h2 i {
+    color: var(--primary);
+    margin-right: 6px;
+}
+
+.export-desc {
+    margin: 0 0 20px;
+    color: var(--text-soft);
+    font-size: 14px;
+}
+
+.cols-list {
+    margin: 0;
+    padding-left: 22px;
+    color: var(--text-soft);
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.cols-list code {
+    background: #eef2f7;
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--text);
+    font-size: 13px;
+}
+
+/* ---- Selectores de fecha ---- */
+.date-fields {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.date-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.date-field label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-soft);
+}
+
+.date-field label i {
+    color: var(--primary);
+    margin-right: 4px;
+}
+
+.date-field input[type="date"] {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 15px;
+    font-family: inherit;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s;
+    background: #fff;
+}
+
+.date-field input[type="date"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* ---- Botones ---- */
+.btn-primary,
+.btn-secondary {
+    border: none;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: background 0.15s, transform 0.05s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+    background: var(--primary-dark);
+}
+
+.btn-primary:disabled {
+    background: #9ec5af;
+    cursor: not-allowed;
+}
+
+.btn-primary:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.btn-secondary {
+    background: #f1f3f5;
+    color: var(--text);
+}
+
+.btn-secondary:hover {
+    background: #e3e8ef;
+}
+
+.btn-download {
+    width: 100%;
+    justify-content: center;
+    padding: 14px;
+    font-size: 15px;
+}
+
+/* ---- Loader ---- */
+.loader {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+    color: var(--text-soft);
+    font-size: 14px;
+}
+
+.spinner {
+    width: 18px;
+    height: 18px;
+    border: 3px solid #e3e8ef;
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* ---- Mensaje de estatus ---- */
+.status-msg {
+    margin: 14px 0 0;
+    font-size: 14px;
+    min-height: 1.4em;
+}
+
+.status-msg.success {
+    color: var(--success);
+}
+
+.status-msg.error {
+    color: var(--danger);
+}
+
+.status-msg.warning {
+    color: var(--warning);
+}
+
+/* ---- Responsive ---- */
+@media (max-width: 600px) {
+    .export-section {
+        padding: 16px 12px 40px;
+    }
+
+    .header-left h1 {
+        font-size: 20px;
+    }
+
+    .date-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .export-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .header-right {
+        width: 100%;
+        justify-content: space-between;
+    }
+}

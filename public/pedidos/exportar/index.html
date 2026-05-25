@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exportar pedidos - Dekoor</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+    <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+    <!-- Login overlay (visible si no hay sesion) -->
+    <section id="seccionLogin" class="login-section" style="display:none;">
+        <form id="formularioLogin" class="login-card">
+            <h1><i class="fas fa-lock"></i> Iniciar sesion</h1>
+            <p class="login-sub">Necesitas iniciar sesion para exportar pedidos.</p>
+            <label for="email">Correo</label>
+            <input type="email" id="email" autocomplete="email" required />
+            <label for="password">Contrasena</label>
+            <input type="password" id="password" autocomplete="current-password" required />
+            <button type="submit" class="btn-primary">Entrar</button>
+            <p id="mensajeError" class="msg-error"></p>
+        </form>
+    </section>
+
+    <!-- Pantalla principal -->
+    <main id="seccionExport" class="export-section" style="display:none;">
+        <header class="export-header">
+            <div class="header-left">
+                <a href="/pedidos/" class="back-link"><i class="fas fa-arrow-left"></i> Volver a Pedidos</a>
+                <h1><i class="fas fa-file-csv"></i> Exportar pedidos</h1>
+            </div>
+            <div class="header-right">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" class="btn-secondary"><i class="fas fa-sign-out-alt"></i> Cerrar sesion</button>
+            </div>
+        </header>
+
+        <section class="export-card">
+            <p class="export-desc">
+                Descarga un CSV con los pedidos del rango seleccionado. El archivo abre directamente en Excel (UTF-8 con BOM).
+            </p>
+
+            <div class="date-fields">
+                <div class="date-field">
+                    <label for="fechaDesde"><i class="fas fa-calendar-alt"></i> Desde</label>
+                    <input type="date" id="fechaDesde" />
+                </div>
+                <div class="date-field">
+                    <label for="fechaHasta"><i class="fas fa-calendar-alt"></i> Hasta</label>
+                    <input type="date" id="fechaHasta" />
+                </div>
+            </div>
+
+            <button id="btnDescargar" class="btn-primary btn-download">
+                <i class="fas fa-download"></i> Descargar CSV
+            </button>
+
+            <div id="loader" class="loader" style="display:none;">
+                <div class="spinner"></div>
+                <span id="loaderMsg">Generando CSV...</span>
+            </div>
+
+            <p id="statusMsg" class="status-msg"></p>
+        </section>
+
+        <section class="export-card export-card--info">
+            <h2><i class="fas fa-info-circle"></i> Columnas del CSV</h2>
+            <ol class="cols-list">
+                <li><code>id_pedido</code> &mdash; numero visible (DH...)</li>
+                <li><code>fecha_pedido</code> &mdash; fecha de registro (YYYY-MM-DD)</li>
+                <li><code>id_cliente</code> &mdash; hash anonimo del telefono</li>
+                <li><code>monto_total</code> &mdash; precio en MXN</li>
+                <li><code>producto</code></li>
+                <li><code>estatus</code></li>
+                <li><code>cantidad_piezas</code></li>
+                <li><code>estado</code> &mdash; entidad federativa de envio</li>
+                <li><code>metodo_pago</code></li>
+                <li><code>costo_envio_real</code></li>
+            </ol>
+        </section>
+    </main>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
