@@ -8692,13 +8692,21 @@ Clasifica la satisfaccion del cliente.`;
 }
 
 async function getCandidateContactsByAudience(audience, limit, dateRange = null) {
-    // 'pagado' (default): solo contactos con al menos un pedido Pagado.
-    // 'all': toda la coleccion contacts_whatsapp (puede ser 80k+ — usar con cuidado).
+    // Devuelve { docs, breakdown } donde breakdown describe los pasos del filtro
+    // para poder diagnosticar de donde salen los numeros en la UI.
+
     if (audience === 'all') {
         let query = db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc');
         if (limit) query = query.limit(limit);
         const snap = await query.get();
-        return snap.docs;
+        return {
+            docs: snap.docs,
+            breakdown: {
+                source: 'contacts_whatsapp (toda la coleccion)',
+                contactsTotal: snap.size,
+                contactsLimited: snap.docs.length
+            }
+        };
     }
 
     // audience === 'pagado'
@@ -8713,12 +8721,29 @@ async function getCandidateContactsByAudience(audience, limit, dateRange = null)
         pagadoQuery = pagadoQuery.orderBy('createdAt', 'desc');
     }
     const pagadoSnap = await pagadoQuery.get();
+    const pedidosCount = pagadoSnap.size;
+
     const telefonos = [...new Set(pagadoSnap.docs.map(d => {
         const t = d.data().telefono;
         return t ? String(t).replace(/\D/g, '') : null;
     }).filter(Boolean))];
+    const uniqueTelefonos = telefonos.length;
 
-    if (telefonos.length === 0) return [];
+    const breakdown = {
+        source: 'pedidos.estatus == Pagado',
+        dateRange: dateRange ? {
+            from: dateRange.startMs ? new Date(Number(dateRange.startMs)).toISOString() : null,
+            to: dateRange.endMs ? new Date(Number(dateRange.endMs)).toISOString() : null
+        } : null,
+        pedidosCount,
+        uniqueTelefonos,
+        contactsFound: 0,
+        contactsLimited: 0
+    };
+
+    if (uniqueTelefonos === 0) {
+        return { docs: [], breakdown };
+    }
 
     // Lookup batched a contacts_whatsapp (Firestore IN max 30)
     const docs = [];
@@ -8729,9 +8754,10 @@ async function getCandidateContactsByAudience(audience, limit, dateRange = null)
         docs.push(...snap.docs);
     }
 
-    // Si pidio limit, lo aplicamos despues
-    if (limit) return docs.slice(0, limit);
-    return docs;
+    breakdown.contactsFound = docs.length;
+    const finalDocs = limit ? docs.slice(0, limit) : docs;
+    breakdown.contactsLimited = finalDocs.length;
+    return { docs: finalDocs, breakdown };
 }
 
 async function runSatisfaccionJob(jobId, options = {}) {
@@ -8740,7 +8766,8 @@ async function runSatisfaccionJob(jobId, options = {}) {
     if (!job) return;
 
     try {
-        const contactDocs = await getCandidateContactsByAudience(audience, limit, dateRange);
+        const { docs: contactDocs, breakdown } = await getCandidateContactsByAudience(audience, limit, dateRange);
+        job.breakdown = breakdown;
 
         const candidates = contactDocs.filter(doc => {
             const data = doc.data();
@@ -8936,6 +8963,8 @@ router.get('/satisfaccion/progreso', (req, res) => {
         tokens: job.tokens,
         aiCalls: job.aiCalls,
         etaSeconds,
+        breakdown: job.breakdown || null,
+        options: job.options,
         lastError: job.lastError,
         error: job.error
     });

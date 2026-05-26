@@ -29,6 +29,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const fechaDesde = document.getElementById('fechaDesde');
     const fechaHasta = document.getElementById('fechaHasta');
     const fechaRow = document.getElementById('fechaRow');
+    const progresoBreakdown = document.getElementById('progresoBreakdown');
     const progresoBox = document.getElementById('progresoBox');
     const progressBar = document.getElementById('progressBar');
     const progresoTexto = document.getElementById('progresoTexto');
@@ -183,6 +184,10 @@ document.addEventListener('DOMContentLoaded', () => {
         progresoExtra.textContent = `Alcance: ${audienceText} · Modo: ${mode}`;
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
+        if (progresoBreakdown) {
+            progresoBreakdown.style.display = 'none';
+            progresoBreakdown.innerHTML = '';
+        }
         if (btnCancelar) btnCancelar.style.display = 'inline-flex';
         try {
             const token = await auth.currentUser.getIdToken();
@@ -230,6 +235,22 @@ document.addEventListener('DOMContentLoaded', () => {
         btnReclasificar.disabled = disabled;
     }
 
+    function renderBreakdown(bd) {
+        if (!progresoBreakdown) return;
+        if (!bd) { progresoBreakdown.style.display = 'none'; return; }
+        progresoBreakdown.style.display = 'block';
+        const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : '-';
+        if (bd.source && bd.source.startsWith('pedidos')) {
+            const rangoTxt = bd.dateRange ? `<div class="bd-line">📅 Rango: <strong>${fmt(bd.dateRange.from)} → ${fmt(bd.dateRange.to)}</strong></div>` : `<div class="bd-line">📅 Rango: <strong>todas las fechas</strong></div>`;
+            progresoBreakdown.innerHTML = `
+                ${rangoTxt}
+                <div class="bd-line"><span class="bd-num">${bd.pedidosCount}</span> pedidos Pagado <span class="bd-arrow">→</span> <span class="bd-num">${bd.uniqueTelefonos}</span> teléfonos únicos <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsFound}</span> con WhatsApp <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsLimited}</span> a clasificar</div>
+            `;
+        } else {
+            progresoBreakdown.innerHTML = `<div class="bd-line">📂 <strong>${bd.source}</strong>: ${bd.contactsTotal || bd.contactsLimited} contactos</div>`;
+        }
+    }
+
     function pollProgreso(jobId) {
         if (pollTimer) clearInterval(pollTimer);
         pollTimer = setInterval(async () => {
@@ -247,6 +268,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const etaTxt = data.etaSeconds != null ? ` · ETA ${Math.floor(data.etaSeconds/60)}m ${data.etaSeconds%60}s` : '';
                 const tokTxt = data.tokens?.input ? ` · ~${(data.tokens.input/1000).toFixed(1)}K tokens entrada` : '';
                 progresoExtra.textContent = `Llamadas IA: ${data.aiCalls || 0}${etaTxt}${tokTxt}`;
+                renderBreakdown(data.breakdown);
                 if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
                     clearInterval(pollTimer);
                     pollTimer = null;
