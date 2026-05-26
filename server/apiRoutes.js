@@ -8243,6 +8243,282 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
     }
 });
 
+// ============================================
+// RETARGETING (mensajes masivos a pedidos Pagado)
+// ============================================
+
+// Buscar pedidos Pagado por rango de fecha para retargeting
+router.get('/retargeting/buscar-pedidos', async (req, res) => {
+    try {
+        const { startDate, endDate } = req.query;
+        if (!startDate || !endDate) {
+            return res.status(400).json({ success: false, message: 'Se requieren startDate y endDate.' });
+        }
+
+        const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
+        const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
+
+        const snapshot = await db.collection('pedidos')
+            .where('estatus', '==', 'Pagado')
+            .where('createdAt', '>=', start)
+            .where('createdAt', '<=', end)
+            .orderBy('createdAt', 'desc')
+            .get();
+
+        const orders = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                consecutiveOrderNumber: data.consecutiveOrderNumber,
+                producto: data.producto,
+                telefono: data.telefono,
+                precio: data.precio,
+                estatus: data.estatus,
+                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+            };
+        });
+
+        // Obtener lastRetargetingDate de cada contacto para marcar "Enviado Hoy"
+        const telefonos = [...new Set(orders.map(o => o.telefono).filter(Boolean))];
+        const retargetingMap = {};
+        // Firestore 'in' soporta max 30 valores por query
+        for (let i = 0; i < telefonos.length; i += 30) {
+            const batch = telefonos.slice(i, i + 30);
+            const contactsSnap = await db.collection('contacts_whatsapp')
+                .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
+            contactsSnap.docs.forEach(doc => {
+                const d = doc.data();
+                if (d.lastRetargetingDate) retargetingMap[doc.id] = d.lastRetargetingDate;
+            });
+        }
+
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+        orders.forEach(o => {
+            o.retargetadoHoy = retargetingMap[o.telefono] === todayMx;
+        });
+
+        res.json({ success: true, orders });
+    } catch (error) {
+        console.error('Error buscando pedidos para retargeting:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
+// Enviar mensaje de retargeting IA para un contacto
+router.post('/retargeting/enviar', async (req, res) => {
+    try {
+        const { contactId, instructions, orderNumbers } = req.body;
+        if (!contactId || !instructions) {
+            return res.status(400).json({ success: false, message: 'Faltan contactId o instrucciones.' });
+        }
+
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.json({ success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' });
+        }
+
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const contactData = contactDoc.data();
+        if (contactData.lastRetargetingDate === todayMx) {
+            return res.json({ success: false, skipped: true, reason: 'Ya se envió retargeting hoy' });
+        }
+
+        const messagesSnapshot = await contactRef.collection('messages')
+            .orderBy('timestamp', 'desc')
+            .limit(50)
+            .get();
+
+        // Si la conversación tiene mensajes de hoy (cualquier dirección), no molestar
+        const hasMessagesToday = messagesSnapshot.docs.some(d => {
+            const ts = d.data().timestamp?.toDate();
+            if (!ts) return false;
+            const msgDateMx = ts.toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+            return msgDateMx === todayMx;
+        });
+        if (hasMessagesToday) {
+            return res.json({ success: false, skipped: true, reason: 'Tiene conversación hoy' });
+        }
+
+        // Detectar ventana de 24h
+        const lastInboundMsg = messagesSnapshot.docs.find(d => d.data().from === contactId);
+        const lastInboundTime = lastInboundMsg?.data()?.timestamp?.toDate();
+        const windowOpen = lastInboundTime && (Date.now() - lastInboundTime.getTime() < 24 * 60 * 60 * 1000);
+
+        const conversationHistory = messagesSnapshot.docs.map(doc => {
+            const d = doc.data();
+            const fromLabel = d.from === contactId ? 'Cliente' : 'Asistente';
+            return `${fromLabel}: ${d.text || ''}`;
+        }).reverse().join('\n');
+
+        // Respuestas guardadas
+        const quickRepliesSnapshot = await db.collection('quick_replies').get();
+        const quickRepliesData = quickRepliesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const quickRepliesContext = quickRepliesData.map(qr => {
+            let entry = `/${qr.shortcut}: ${qr.message || ''}`;
+            if (qr.fileUrl) entry += ` [ARCHIVO: ${qr.fileUrl}]`;
+            return entry;
+        }).join('\n');
+
+        // Plantillas WhatsApp aprobadas (para chats cerrados)
+        let templatesContext = '';
+        let templatesData = [];
+        try {
+            const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+            const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+            if (WHATSAPP_BUSINESS_ACCOUNT_ID && WHATSAPP_TOKEN) {
+                const tplRes = await axios.get(
+                    `https://graph.facebook.com/v19.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}/message_templates`,
+                    { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }, params: { limit: 100 } }
+                );
+                templatesData = (tplRes.data.data || [])
+                    .filter(t => t.status === 'APPROVED')
+                    .map(t => ({
+                        name: t.name,
+                        language: t.language,
+                        components: t.components?.map(c => ({ type: c.type, text: c.text, format: c.format, buttons: c.buttons })) || []
+                    }));
+                templatesContext = templatesData.map(t => {
+                    const body = t.components.find(c => c.type === 'BODY');
+                    return `[TEMPLATE:${t.name}]: ${body?.text || '(sin texto)'}`;
+                }).join('\n');
+            }
+        } catch (e) {
+            console.warn('[Retargeting] Error cargando plantillas:', e.message);
+        }
+
+        const ordersInfo = orderNumbers ? `Pedidos previos del cliente (todos Pagado): ${orderNumbers.map(n => 'DH' + n).join(', ')}` : '';
+
+        const windowStatus = windowOpen
+            ? 'VENTANA DE 24H: ABIERTA - Puedes enviar mensaje normal o respuesta rápida.'
+            : 'VENTANA DE 24H: CERRADA - Debes usar una plantilla. Responde con [TEMPLATE:nombre_plantilla]';
+
+        const systemPrompt = `${instructions}
+
+--- RESPUESTAS GUARDADAS DISPONIBLES ---
+${quickRepliesContext}
+
+--- PLANTILLAS DE WHATSAPP APROBADAS (para chats cerrados) ---
+${templatesContext || '(ninguna disponible)'}
+
+--- ESTADO DEL CHAT ---
+${windowStatus}
+
+--- FECHA DE HOY ---
+Hoy es ${todayMx} (zona horaria America/Mexico_City, formato YYYY-MM-DD).
+
+--- FORMATO DE RESPUESTA ---
+- Para enviar una respuesta rápida: responde SOLAMENTE con el shortcut, ej: /a3
+- Para enviar una plantilla (chat cerrado): responde con [TEMPLATE:nombre_plantilla]
+- Para enviar un mensaje personalizado (chat abierto): escribe solo el mensaje
+- Si decides que NO conviene re-contactar a este cliente: responde SKIP
+- No incluyas "Asistente:" ni etiquetas extra.`;
+
+        const dynamicPrompt = `${ordersInfo}
+
+--- HISTORIAL DE CONVERSACIÓN ---
+${conversationHistory || '(sin historial previo)'}
+
+--- INSTRUCCIÓN ---
+Analiza la conversación y decide qué mensaje de retargeting enviar al cliente. Recuerda que este cliente YA HA PAGADO al menos un pedido anteriormente.`;
+
+        const aiResponse = await generateGeminiResponse(dynamicPrompt, [], systemPrompt);
+        let responseText = aiResponse.text.trim();
+
+        // Log de uso de tokens
+        const today = new Date().toISOString().split('T')[0];
+        const usageRef = db.collection('ai_usage_logs').doc(today);
+        await usageRef.set({
+            inputTokens: admin.firestore.FieldValue.increment(aiResponse.inputTokens),
+            outputTokens: admin.firestore.FieldValue.increment(aiResponse.outputTokens),
+            requestCount: admin.firestore.FieldValue.increment(1),
+            date: today
+        }, { merge: true });
+
+        if (responseText.toUpperCase().includes('SKIP')) {
+            return res.json({ success: false, skipped: true, reason: 'IA determinó que no conviene re-contactar' });
+        }
+
+        // Detectar shortcut
+        const shortcutMatch = responseText.match(/^\/(\S+)$/);
+        let sendResult;
+
+        if (shortcutMatch) {
+            const shortcut = shortcutMatch[1];
+            const qr = quickRepliesData.find(q => q.shortcut === shortcut);
+            if (qr) {
+                sendResult = await sendAdvancedWhatsAppMessage(contactId, {
+                    text: qr.message || '',
+                    fileUrl: qr.fileUrl || null,
+                    fileType: qr.fileType || null
+                });
+            } else {
+                sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
+            }
+        }
+        else if (responseText.includes('[TEMPLATE:')) {
+            const templateMatch = responseText.match(/\[TEMPLATE:(.+?)\]/);
+            if (templateMatch) {
+                const templateName = templateMatch[1].trim();
+                const template = templatesData.find(t => t.name === templateName);
+                if (template) {
+                    const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+                    const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+                    const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+                    const tplResponse = await axios.post(
+                        `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID}/messages`,
+                        payload,
+                        { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}`, 'Content-Type': 'application/json' } }
+                    );
+                    const messageId = tplResponse.data.messages[0].id;
+                    sendResult = { id: messageId, textForDb: messageToSaveText };
+                } else {
+                    const cleanText = responseText.replace(/\[TEMPLATE:.+?\]/, '').trim();
+                    if (cleanText) {
+                        sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: cleanText });
+                    } else {
+                        return res.json({ success: false, skipped: true, reason: `Plantilla '${templateName}' no encontrada` });
+                    }
+                }
+            }
+        }
+        else {
+            sendResult = await sendAdvancedWhatsAppMessage(contactId, { text: responseText });
+        }
+
+        if (sendResult) {
+            await contactRef.collection('messages').doc(sendResult.id).set({
+                from: process.env.PHONE_NUMBER_ID || 'system',
+                text: sendResult.textForDb,
+                timestamp: admin.firestore.FieldValue.serverTimestamp(),
+                status: 'sent',
+                id: sendResult.id,
+                isAutoReply: true,
+                isRetargeting: true,
+                ...(sendResult.fileUrlForDb ? { fileUrl: sendResult.fileUrlForDb, fileType: sendResult.fileTypeForDb } : {})
+            });
+
+            await contactRef.update({
+                lastMessage: sendResult.textForDb,
+                lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+                lastRetargetingDate: todayMx
+            });
+        }
+
+        res.json({
+            success: true,
+            message: 'Mensaje enviado',
+            sentText: responseText,
+            windowOpen
+        });
+
+    } catch (error) {
+        console.error('Error en retargeting individual:', error);
+        res.status(500).json({ success: false, message: error.message });
+    }
+});
+
 // GET /api/config/prices - Precios autoritativos del servidor (consumido por el sitio publico)
 router.get('/config/prices', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300'); // 5 min cache
