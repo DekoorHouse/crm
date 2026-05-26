@@ -4009,8 +4009,16 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         res.status(200).json({ success: true, message: 'Mensaje(s) enviado(s).' });
     } catch (error) {
+        const metaErr = error.response?.data?.error;
+        const detail = metaErr?.message || error.message || 'Error al enviar el mensaje.';
         console.error('❌ Error al enviar mensaje:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        res.status(500).json({ success: false, message: 'Error al enviar el mensaje.' });
+        res.status(500).json({
+            success: false,
+            message: detail,
+            meta_code: metaErr?.code || null,
+            meta_subcode: metaErr?.error_subcode || null,
+            meta_details: metaErr?.error_data?.details || null
+        });
     }
 });
 // ... (resto de las rutas sin cambios)
