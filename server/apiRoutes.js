@@ -8692,7 +8692,7 @@ Clasifica la satisfaccion del cliente.`;
 }
 
 async function runSatisfaccionJob(jobId, options = {}) {
-    const { force = false, limit = null } = options;
+    const { mode = 'pending', limit = null } = options;
     const job = satisfaccionJobs.get(jobId);
     if (!job) return;
 
@@ -8703,9 +8703,21 @@ async function runSatisfaccionJob(jobId, options = {}) {
         const snapshot = await query.get();
 
         const candidates = snapshot.docs.filter(doc => {
-            if (force) return true;
             const data = doc.data();
-            return !data.satisfaction || !data.satisfaction.level;
+            const hasClassification = !!(data.satisfaction && data.satisfaction.level);
+
+            if (mode === 'all') return true;
+
+            if (mode === 'recent-activity') {
+                // Solo contactos ya clasificados que tuvieron mensajes nuevos despues
+                if (!hasClassification) return false;
+                const classifiedAtMs = data.satisfaction.classifiedAt?.toMillis?.() || 0;
+                const lastMsgMs = data.lastMessageTimestamp?.toMillis?.() || 0;
+                return lastMsgMs > classifiedAtMs;
+            }
+
+            // mode === 'pending' (default): solo contactos sin clasificar
+            return !hasClassification;
         });
 
         job.total = candidates.length;
@@ -8779,7 +8791,13 @@ async function runSatisfaccionJob(jobId, options = {}) {
 // POST /api/satisfaccion/clasificar - lanza un job asincrono
 router.post('/satisfaccion/clasificar', async (req, res) => {
     try {
-        const { force = false, limit = null } = req.body || {};
+        const { force = false, mode: requestedMode, limit = null } = req.body || {};
+
+        // Backward-compat: si vino force=true sin mode, equivale a mode='all'
+        let mode = requestedMode || (force ? 'all' : 'pending');
+        if (!['pending', 'all', 'recent-activity'].includes(mode)) {
+            mode = 'pending';
+        }
 
         // Verificar si ya hay un job en curso
         for (const [id, job] of satisfaccionJobs) {
@@ -8797,6 +8815,7 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
         pruneSatisfaccionState();
 
         const jobId = uuidv4();
+        const numericLimit = limit ? Number(limit) : null;
         satisfaccionJobs.set(jobId, {
             id: jobId,
             status: 'running',
@@ -8809,11 +8828,11 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
             skipped: 0,
             tokens: { input: 0, output: 0, cached: 0 },
             aiCalls: 0,
-            options: { force: !!force, limit: limit ? Number(limit) : null }
+            options: { mode, limit: numericLimit }
         });
 
         // Lanzar en background; el frontend pollea /progreso
-        runSatisfaccionJob(jobId, { force: !!force, limit: limit ? Number(limit) : null });
+        runSatisfaccionJob(jobId, { mode, limit: numericLimit });
 
         res.json({ success: true, jobId });
     } catch (err) {

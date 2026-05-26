@@ -52,10 +52,13 @@
             <h2><i class="fas fa-brain"></i> Clasificar conversaciones con Gemini</h2>
             <p class="hint">Gemini Flash lee los ultimos 50 mensajes de cada contacto y los clasifica en Positivo, Neutral o Negativo. Costo estimado: $1.5 - $3 USD para 2500 contactos. La primera corrida puede tardar 8-12 min.</p>
             <div class="acciones-clasificar">
-                <button id="btnClasificar" onclick="iniciarClasificacion(false)">
+                <button id="btnClasificar" onclick="iniciarClasificacion('pending')">
                     <i class="fas fa-play"></i> Clasificar pendientes
                 </button>
-                <button id="btnReclasificar" class="btn-secondary" onclick="iniciarClasificacion(true)">
+                <button id="btnReclasificarRecientes" onclick="iniciarClasificacion('recent-activity')" title="Solo procesa contactos que recibieron mensajes nuevos despues de su ultima clasificacion">
+                    <i class="fas fa-bolt"></i> Re-clasificar con actividad reciente
+                </button>
+                <button id="btnReclasificar" class="btn-secondary" onclick="iniciarClasificacion('all')">
                     <i class="fas fa-redo"></i> Re-clasificar todas
                 </button>
             </div>

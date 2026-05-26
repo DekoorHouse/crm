@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const mensajeError = document.getElementById('mensajeError');
     const usuarioLogueado = document.getElementById('usuarioLogueado');
     const btnClasificar = document.getElementById('btnClasificar');
+    const btnReclasificarRecientes = document.getElementById('btnReclasificarRecientes');
     const btnReclasificar = document.getElementById('btnReclasificar');
     const progresoBox = document.getElementById('progresoBox');
     const progressBar = document.getElementById('progressBar');
@@ -103,10 +104,10 @@ document.addEventListener('DOMContentLoaded', () => {
     window.cerrarSesion = () => signOut(auth);
 
     // --- Clasificar ---
-    window.iniciarClasificacion = async (force) => {
-        if (force && !confirm('Esto va a re-clasificar TODAS las conversaciones (incluso las ya clasificadas). Costo estimado: $2-3 USD. Continuar?')) return;
-        btnClasificar.disabled = true;
-        btnReclasificar.disabled = true;
+    window.iniciarClasificacion = async (mode) => {
+        if (mode === 'all' && !confirm('Esto va a re-clasificar TODAS las conversaciones (incluso las ya clasificadas). Costo estimado: $2-3 USD. Continuar?')) return;
+        if (mode === 'recent-activity' && !confirm('Esto va a re-clasificar solo contactos que recibieron mensajes despues de la ultima clasificacion. Costo tipico: ~10-20% del total. Continuar?')) return;
+        setBotonesDisabled(true);
         progresoBox.style.display = 'block';
         progresoTexto.textContent = 'Iniciando job...';
         progresoExtra.textContent = '';
@@ -117,17 +118,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/satisfaccion/clasificar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ force })
+                body: JSON.stringify({ mode })
             });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error iniciando');
             pollProgreso(data.jobId);
         } catch (e) {
             alert('Error: ' + e.message);
-            btnClasificar.disabled = false;
-            btnReclasificar.disabled = false;
+            setBotonesDisabled(false);
         }
     };
+
+    function setBotonesDisabled(disabled) {
+        btnClasificar.disabled = disabled;
+        if (btnReclasificarRecientes) btnReclasificarRecientes.disabled = disabled;
+        btnReclasificar.disabled = disabled;
+    }
 
     function pollProgreso(jobId) {
         if (pollTimer) clearInterval(pollTimer);
@@ -149,8 +155,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (data.status === 'done' || data.status === 'error') {
                     clearInterval(pollTimer);
                     pollTimer = null;
-                    btnClasificar.disabled = false;
-                    btnReclasificar.disabled = false;
+                    setBotonesDisabled(false);
                     if (data.status === 'error') {
                         progresoTexto.textContent = `Error: ${data.error || 'desconocido'}`;
                     } else {
