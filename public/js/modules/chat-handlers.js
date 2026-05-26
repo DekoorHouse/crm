@@ -268,7 +268,7 @@ function renderChatWindow(options = {}) {
                         // forzar reflow para reiniciar la animación si se clickea varias veces
                         void targetBubble.offsetWidth;
                         targetBubble.classList.add('message-highlight');
-                        setTimeout(() => targetBubble.classList.remove('message-highlight'), 2400);
+                        setTimeout(() => targetBubble.classList.remove('message-highlight'), 3800);
                     }, 450);
                 });
             }
