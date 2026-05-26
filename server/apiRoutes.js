@@ -8570,6 +8570,384 @@ Analiza la conversación y decide qué mensaje de retargeting enviar al cliente.
     }
 });
 
+// ============================================
+// SATISFACCION (clasificacion masiva con Gemini)
+// ============================================
+
+const pLimit = require('p-limit');
+
+// Job tracking en memoria (servidor persistente, no Cloud Functions)
+const satisfaccionJobs = new Map();
+const SATISFACCION_JOB_TTL_MS = 60 * 60 * 1000; // 1h, luego se borra
+
+// Cache del listado (mismo patron que retargeting): TTL 30 min
+const satisfaccionListadoCache = new Map();
+const SATISFACCION_LISTADO_TTL_MS = 30 * 60 * 1000;
+
+function pruneSatisfaccionState() {
+    const now = Date.now();
+    for (const [id, job] of satisfaccionJobs) {
+        if (job.finishedAt && now - job.finishedAt > SATISFACCION_JOB_TTL_MS) {
+            satisfaccionJobs.delete(id);
+        }
+    }
+    for (const [key, entry] of satisfaccionListadoCache) {
+        if (now - entry.cachedAt > SATISFACCION_LISTADO_TTL_MS) {
+            satisfaccionListadoCache.delete(key);
+        }
+    }
+}
+
+const SATISFACCION_LEVELS = ['positivo', 'neutral', 'negativo', 'sin_senal'];
+const SATISFACCION_SYSTEM_PROMPT = `Eres un analista de servicio al cliente para una tienda mexicana que vende productos personalizados (cuadros, mugs, velas) por WhatsApp.
+
+Tu tarea: leer el historial de una conversacion con un cliente y clasificar el nivel de satisfaccion del CLIENTE (no de la asistente) en una de tres categorias:
+
+- **positivo**: el cliente expresa agrado, agradece, recompra, recomienda, da feedback bueno, o tiene un tono claramente contento.
+- **negativo**: el cliente expresa molestia, queja activa, reclamo, frustracion, decepcion, amenaza con devolucion, o tono claramente molesto. Tambien si quedo sin respuesta tras una queja seria.
+- **neutral**: conversacion normal, transaccional, sin senales emocionales claras en ninguna direccion. Ej: solo pregunto precio, hizo el pedido sin comentarios, conversacion corta sin opinion.
+
+REGLAS:
+- Te enfocas SOLO en lo que dice el cliente, no en lo que dice la asistente.
+- Si el cliente repitio preocupaciones o quejas multiples veces sin resolver, es negativo aunque al final haya un mensaje cordial.
+- Si solo hay 1-2 mensajes muy cortos y transaccionales, es neutral.
+- Si la conversacion esta vacia o solo tiene mensajes nuestros, no clasifiques (te lo filtramos antes).
+
+FORMATO DE RESPUESTA (estricto, una sola linea):
+NIVEL|RAZON
+
+Donde NIVEL es exactamente uno de: positivo, neutral, negativo
+Y RAZON es una frase MUY corta (max 100 chars) en espanol explicando la decision.
+
+Ejemplos:
+positivo|Cliente agradecio el resultado y dijo que volveria a comprar
+negativo|Cliente se quejo varias veces de la calidad sin recibir solucion
+neutral|Solo pregunto precio y confirmo pedido, sin opinion expresada`;
+
+function parseSatisfaccionResponse(text) {
+    if (!text) return null;
+    const line = text.split('\n')[0].trim();
+    const sep = line.indexOf('|');
+    if (sep < 0) return null;
+    const rawLevel = line.slice(0, sep).trim().toLowerCase();
+    const reason = line.slice(sep + 1).trim().slice(0, 200);
+    if (!['positivo', 'neutral', 'negativo'].includes(rawLevel)) return null;
+    return { level: rawLevel, reason };
+}
+
+async function classifyOneContact(contactDoc) {
+    const contactId = contactDoc.id;
+    const messagesSnap = await db.collection('contacts_whatsapp').doc(contactId)
+        .collection('messages')
+        .orderBy('timestamp', 'desc')
+        .limit(50)
+        .get();
+
+    // Mensajes utiles del cliente (con texto)
+    const clientHasText = messagesSnap.docs.some(d => {
+        const data = d.data();
+        return data.from === contactId && (data.text || '').trim().length > 0;
+    });
+
+    if (!clientHasText) {
+        return {
+            level: 'sin_senal',
+            reason: 'Sin mensajes de texto del cliente',
+            messagesAnalyzed: messagesSnap.size,
+            tokens: { input: 0, output: 0, cached: 0 }
+        };
+    }
+
+    const conversationHistory = messagesSnap.docs.map(d => {
+        const data = d.data();
+        const who = data.from === contactId ? 'Cliente' : 'Asistente';
+        const text = (data.text || '').replace(/\s+/g, ' ').trim();
+        if (!text) return null;
+        return `${who}: ${text}`;
+    }).filter(Boolean).reverse().join('\n');
+
+    const dynamicPrompt = `--- HISTORIAL DE CONVERSACION ---
+${conversationHistory}
+
+--- INSTRUCCION ---
+Clasifica la satisfaccion del cliente.`;
+
+    const aiResponse = await generateGeminiResponse(dynamicPrompt, [], SATISFACCION_SYSTEM_PROMPT);
+    const parsed = parseSatisfaccionResponse(aiResponse.text);
+
+    if (!parsed) {
+        throw new Error(`Respuesta IA invalida: "${aiResponse.text}"`);
+    }
+
+    return {
+        level: parsed.level,
+        reason: parsed.reason,
+        messagesAnalyzed: messagesSnap.size,
+        tokens: {
+            input: aiResponse.inputTokens || 0,
+            output: aiResponse.outputTokens || 0,
+            cached: aiResponse.cachedTokens || 0
+        }
+    };
+}
+
+async function runSatisfaccionJob(jobId, options = {}) {
+    const { force = false, limit = null } = options;
+    const job = satisfaccionJobs.get(jobId);
+    if (!job) return;
+
+    try {
+        // Cargar todos los contactos
+        let query = db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc');
+        if (limit) query = query.limit(limit);
+        const snapshot = await query.get();
+
+        const candidates = snapshot.docs.filter(doc => {
+            if (force) return true;
+            const data = doc.data();
+            return !data.satisfaction || !data.satisfaction.level;
+        });
+
+        job.total = candidates.length;
+        job.processed = 0;
+        job.errors = 0;
+        job.skipped = snapshot.size - candidates.length;
+        job.startedAt = Date.now();
+
+        if (candidates.length === 0) {
+            job.status = 'done';
+            job.finishedAt = Date.now();
+            return;
+        }
+
+        const concurrency = pLimit(10);
+        const totalTokens = { input: 0, output: 0, cached: 0 };
+        let totalAiCalls = 0;
+
+        await Promise.all(candidates.map(contactDoc => concurrency(async () => {
+            try {
+                const result = await classifyOneContact(contactDoc);
+                await contactDoc.ref.update({
+                    satisfaction: {
+                        level: result.level,
+                        reason: result.reason,
+                        classifiedAt: admin.firestore.FieldValue.serverTimestamp(),
+                        messagesAnalyzed: result.messagesAnalyzed,
+                        model: 'gemini-3-flash-preview'
+                    }
+                });
+                totalTokens.input += result.tokens.input;
+                totalTokens.output += result.tokens.output;
+                totalTokens.cached += result.tokens.cached;
+                if (result.tokens.input > 0) totalAiCalls++;
+            } catch (err) {
+                console.error(`[Satisfaccion] Error clasificando ${contactDoc.id}:`, err.message);
+                job.errors++;
+                job.lastError = err.message;
+            } finally {
+                job.processed++;
+            }
+        })));
+
+        // Tracking de tokens (igual que cobranza/retargeting)
+        if (totalAiCalls > 0) {
+            const today = new Date().toISOString().split('T')[0];
+            await db.collection('ai_usage_logs').doc(today).set({
+                inputTokens: admin.firestore.FieldValue.increment(totalTokens.input),
+                outputTokens: admin.firestore.FieldValue.increment(totalTokens.output),
+                cachedTokens: admin.firestore.FieldValue.increment(totalTokens.cached),
+                requestCount: admin.firestore.FieldValue.increment(totalAiCalls),
+                date: today
+            }, { merge: true });
+        }
+
+        // Invalidar cache del listado para que la siguiente lectura traiga los nuevos niveles
+        satisfaccionListadoCache.clear();
+
+        job.tokens = totalTokens;
+        job.aiCalls = totalAiCalls;
+        job.status = 'done';
+        job.finishedAt = Date.now();
+    } catch (err) {
+        console.error('[Satisfaccion] Error fatal del job:', err);
+        job.status = 'error';
+        job.error = err.message;
+        job.finishedAt = Date.now();
+    }
+}
+
+// POST /api/satisfaccion/clasificar - lanza un job asincrono
+router.post('/satisfaccion/clasificar', async (req, res) => {
+    try {
+        const { force = false, limit = null } = req.body || {};
+
+        // Verificar si ya hay un job en curso
+        for (const [id, job] of satisfaccionJobs) {
+            if (job.status === 'running') {
+                return res.json({
+                    success: false,
+                    message: 'Ya hay un job en curso',
+                    jobId: id,
+                    processed: job.processed,
+                    total: job.total
+                });
+            }
+        }
+
+        pruneSatisfaccionState();
+
+        const jobId = uuidv4();
+        satisfaccionJobs.set(jobId, {
+            id: jobId,
+            status: 'running',
+            createdAt: Date.now(),
+            startedAt: null,
+            finishedAt: null,
+            total: 0,
+            processed: 0,
+            errors: 0,
+            skipped: 0,
+            tokens: { input: 0, output: 0, cached: 0 },
+            aiCalls: 0,
+            options: { force: !!force, limit: limit ? Number(limit) : null }
+        });
+
+        // Lanzar en background; el frontend pollea /progreso
+        runSatisfaccionJob(jobId, { force: !!force, limit: limit ? Number(limit) : null });
+
+        res.json({ success: true, jobId });
+    } catch (err) {
+        console.error('Error iniciando job de satisfaccion:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/satisfaccion/progreso?jobId=X - polling
+router.get('/satisfaccion/progreso', (req, res) => {
+    const { jobId } = req.query;
+    if (!jobId) {
+        return res.status(400).json({ success: false, message: 'Falta jobId' });
+    }
+    const job = satisfaccionJobs.get(jobId);
+    if (!job) {
+        return res.status(404).json({ success: false, message: 'Job no encontrado' });
+    }
+    const elapsed = job.startedAt ? (Date.now() - job.startedAt) / 1000 : 0;
+    const rate = job.processed > 0 && elapsed > 0 ? job.processed / elapsed : 0;
+    const remaining = job.total - job.processed;
+    const etaSeconds = rate > 0 ? Math.round(remaining / rate) : null;
+    res.json({
+        success: true,
+        jobId,
+        status: job.status,
+        total: job.total,
+        processed: job.processed,
+        errors: job.errors,
+        skipped: job.skipped,
+        tokens: job.tokens,
+        aiCalls: job.aiCalls,
+        etaSeconds,
+        lastError: job.lastError,
+        error: job.error
+    });
+});
+
+// GET /api/satisfaccion/listado - lista paginada de contactos clasificados
+router.get('/satisfaccion/listado', async (req, res) => {
+    try {
+        const { level, search, limit = 200, cursor, fresh } = req.query;
+        const lim = Math.min(Number(limit) || 200, 500);
+
+        const cacheKey = `${level || 'all'}_${lim}_${cursor || ''}`;
+        if (fresh !== '1' && !search) {
+            const entry = satisfaccionListadoCache.get(cacheKey);
+            if (entry && (Date.now() - entry.cachedAt) < SATISFACCION_LISTADO_TTL_MS) {
+                return res.json({
+                    success: true,
+                    contacts: entry.contacts,
+                    nextCursor: entry.nextCursor,
+                    counts: entry.counts,
+                    fromCache: true,
+                    cacheAgeMs: Date.now() - entry.cachedAt
+                });
+            }
+        }
+
+        let query = db.collection('contacts_whatsapp');
+
+        if (level && SATISFACCION_LEVELS.includes(level)) {
+            query = query.where('satisfaction.level', '==', level);
+        }
+
+        // Para tener orden estable, ordenamos por lastMessageTimestamp DESC
+        query = query.orderBy('lastMessageTimestamp', 'desc');
+
+        if (cursor) {
+            const cursorDoc = await db.collection('contacts_whatsapp').doc(cursor).get();
+            if (cursorDoc.exists) query = query.startAfter(cursorDoc);
+        }
+
+        const snapshot = await query.limit(lim).get();
+
+        let contacts = snapshot.docs.map(doc => {
+            const d = doc.data();
+            return {
+                id: doc.id,
+                name: d.name || '',
+                lastMessage: d.lastMessage || '',
+                lastMessageTimestamp: d.lastMessageTimestamp ? d.lastMessageTimestamp.toDate().toISOString() : null,
+                satisfaction: d.satisfaction ? {
+                    level: d.satisfaction.level,
+                    reason: d.satisfaction.reason,
+                    classifiedAt: d.satisfaction.classifiedAt ? d.satisfaction.classifiedAt.toDate().toISOString() : null,
+                    messagesAnalyzed: d.satisfaction.messagesAnalyzed || 0
+                } : null
+            };
+        });
+
+        // Filtro por busqueda (post-query; pequeno set)
+        if (search) {
+            const q = String(search).toLowerCase().trim();
+            contacts = contacts.filter(c =>
+                c.id.includes(q) || (c.name || '').toLowerCase().includes(q)
+            );
+        }
+
+        const nextCursor = snapshot.docs.length === lim ? snapshot.docs[snapshot.docs.length - 1].id : null;
+
+        // Conteos por nivel (solo se calcula cuando no hay filtro de nivel)
+        let counts = null;
+        if (!level) {
+            counts = { positivo: 0, neutral: 0, negativo: 0, sin_senal: 0, sin_clasificar: 0 };
+            try {
+                const aggPromises = SATISFACCION_LEVELS.map(lv =>
+                    db.collection('contacts_whatsapp').where('satisfaction.level', '==', lv).count().get()
+                        .then(s => ({ lv, n: s.data().count }))
+                );
+                const aggs = await Promise.all(aggPromises);
+                aggs.forEach(({ lv, n }) => { counts[lv] = n; });
+            } catch (err) {
+                console.warn('[Satisfaccion] count() fallo (indice?):', err.message);
+            }
+        }
+
+        const responseBody = { contacts, nextCursor, counts };
+
+        if (!search) {
+            pruneSatisfaccionState();
+            satisfaccionListadoCache.set(cacheKey, {
+                cachedAt: Date.now(),
+                contacts, nextCursor, counts
+            });
+        }
+
+        res.json({ success: true, ...responseBody, fromCache: false });
+    } catch (err) {
+        console.error('Error leyendo listado de satisfaccion:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // GET /api/config/prices - Precios autoritativos del servidor (consumido por el sitio publico)
 router.get('/config/prices', (_req, res) => {
     res.set('Cache-Control', 'public, max-age=300'); // 5 min cache

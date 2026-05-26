@@ -23,6 +23,14 @@
         { "fieldPath": "estatus", "order": "ASCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "contacts_whatsapp",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "satisfaction.level", "order": "ASCENDING" },
+        { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

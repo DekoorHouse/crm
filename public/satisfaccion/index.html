@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Satisfaccion de Clientes IA</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/satisfaccion/style.css">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-smile-beam"></i> Satisfaccion IA</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="seccionSatisfaccion" style="display:none;">
+        <div class="titulo-container">
+            <h1><i class="fas fa-smile-beam" style="color:#7c3aed;"></i> Satisfaccion de Clientes IA</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" onclick="cerrarSesion()" title="Cerrar sesion"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <div class="content-box">
+            <h2><i class="fas fa-brain"></i> Clasificar conversaciones con Gemini</h2>
+            <p class="hint">Gemini Flash lee los ultimos 50 mensajes de cada contacto y los clasifica en Positivo, Neutral o Negativo. Costo estimado: $1.5 - $3 USD para 2500 contactos. La primera corrida puede tardar 8-12 min.</p>
+            <div class="acciones-clasificar">
+                <button id="btnClasificar" onclick="iniciarClasificacion(false)">
+                    <i class="fas fa-play"></i> Clasificar pendientes
+                </button>
+                <button id="btnReclasificar" class="btn-secondary" onclick="iniciarClasificacion(true)">
+                    <i class="fas fa-redo"></i> Re-clasificar todas
+                </button>
+            </div>
+
+            <div id="progresoBox" class="progreso-box" style="display:none;">
+                <div class="progress-bar-container">
+                    <div id="progressBar" class="progress-bar" style="width:0%">0%</div>
+                </div>
+                <p id="progresoTexto" class="progreso-texto">Iniciando...</p>
+                <p id="progresoExtra" class="progreso-extra"></p>
+            </div>
+        </div>
+
+        <div class="content-box">
+            <div class="contadores-row">
+                <div class="contador contador-positivo">
+                    <span class="contador-num" id="cntPositivo">-</span>
+                    <span class="contador-lbl"><i class="fas fa-thumbs-up"></i> Positivos</span>
+                </div>
+                <div class="contador contador-neutral">
+                    <span class="contador-num" id="cntNeutral">-</span>
+                    <span class="contador-lbl"><i class="fas fa-equals"></i> Neutrales</span>
+                </div>
+                <div class="contador contador-negativo">
+                    <span class="contador-num" id="cntNegativo">-</span>
+                    <span class="contador-lbl"><i class="fas fa-thumbs-down"></i> Negativos</span>
+                </div>
+                <div class="contador contador-sin-senal">
+                    <span class="contador-num" id="cntSinSenal">-</span>
+                    <span class="contador-lbl"><i class="fas fa-question"></i> Sin senal</span>
+                </div>
+            </div>
+
+            <div class="filtros-row">
+                <div class="filtros-chips">
+                    <button class="chip chip-active" data-level="" onclick="setLevelFilter('')">Todos</button>
+                    <button class="chip" data-level="positivo" onclick="setLevelFilter('positivo')">Positivos</button>
+                    <button class="chip" data-level="neutral" onclick="setLevelFilter('neutral')">Neutrales</button>
+                    <button class="chip" data-level="negativo" onclick="setLevelFilter('negativo')">Negativos</button>
+                    <button class="chip" data-level="sin_senal" onclick="setLevelFilter('sin_senal')">Sin senal</button>
+                </div>
+                <input type="text" id="searchInput" placeholder="Buscar telefono o nombre..." oninput="onSearchInput()">
+                <button class="btn-secondary" onclick="recargarLista(true)" title="Forzar recarga"><i class="fas fa-sync-alt"></i> Recargar</button>
+            </div>
+
+            <div id="listaContainer" class="lista-container">
+                <div class="empty-state"><i class="fas fa-info-circle"></i> Carga las conversaciones para ver la clasificacion.</div>
+            </div>
+
+            <div class="paginacion-row">
+                <span id="cacheInfo" class="cache-info"></span>
+                <button id="btnCargarMas" class="btn-secondary" style="display:none;" onclick="cargarMas()">
+                    <i class="fas fa-chevron-down"></i> Cargar mas
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script type="module" src="/satisfaccion/script.js"></script>
+</body>
+</html>
