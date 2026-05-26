@@ -8691,18 +8691,48 @@ Clasifica la satisfaccion del cliente.`;
     };
 }
 
+async function getCandidateContactsByAudience(audience, limit) {
+    // 'pagado' (default): solo contactos con al menos un pedido Pagado.
+    // 'all': toda la coleccion contacts_whatsapp (puede ser 80k+ — usar con cuidado).
+    if (audience === 'all') {
+        let query = db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc');
+        if (limit) query = query.limit(limit);
+        const snap = await query.get();
+        return snap.docs;
+    }
+
+    // audience === 'pagado'
+    const pagadoSnap = await db.collection('pedidos').where('estatus', '==', 'Pagado').get();
+    const telefonos = [...new Set(pagadoSnap.docs.map(d => {
+        const t = d.data().telefono;
+        return t ? String(t).replace(/\D/g, '') : null;
+    }).filter(Boolean))];
+
+    if (telefonos.length === 0) return [];
+
+    // Lookup batched a contacts_whatsapp (Firestore IN max 30)
+    const docs = [];
+    for (let i = 0; i < telefonos.length; i += 30) {
+        const batch = telefonos.slice(i, i + 30);
+        const snap = await db.collection('contacts_whatsapp')
+            .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
+        docs.push(...snap.docs);
+    }
+
+    // Si pidio limit, lo aplicamos despues
+    if (limit) return docs.slice(0, limit);
+    return docs;
+}
+
 async function runSatisfaccionJob(jobId, options = {}) {
-    const { mode = 'pending', limit = null } = options;
+    const { mode = 'pending', limit = null, audience = 'pagado' } = options;
     const job = satisfaccionJobs.get(jobId);
     if (!job) return;
 
     try {
-        // Cargar todos los contactos
-        let query = db.collection('contacts_whatsapp').orderBy('lastMessageTimestamp', 'desc');
-        if (limit) query = query.limit(limit);
-        const snapshot = await query.get();
+        const contactDocs = await getCandidateContactsByAudience(audience, limit);
 
-        const candidates = snapshot.docs.filter(doc => {
+        const candidates = contactDocs.filter(doc => {
             const data = doc.data();
             const hasClassification = !!(data.satisfaction && data.satisfaction.level);
 
@@ -8723,7 +8753,7 @@ async function runSatisfaccionJob(jobId, options = {}) {
         job.total = candidates.length;
         job.processed = 0;
         job.errors = 0;
-        job.skipped = snapshot.size - candidates.length;
+        job.skipped = contactDocs.length - candidates.length;
         job.startedAt = Date.now();
 
         if (candidates.length === 0) {
@@ -8737,8 +8767,11 @@ async function runSatisfaccionJob(jobId, options = {}) {
         let totalAiCalls = 0;
 
         await Promise.all(candidates.map(contactDoc => concurrency(async () => {
+            // Permitir cancelacion entre llamadas
+            if (job.status === 'cancelled') return;
             try {
                 const result = await classifyOneContact(contactDoc);
+                if (job.status === 'cancelled') return; // doble-check antes de escribir
                 await contactDoc.ref.update({
                     satisfaction: {
                         level: result.level,
@@ -8778,7 +8811,8 @@ async function runSatisfaccionJob(jobId, options = {}) {
 
         job.tokens = totalTokens;
         job.aiCalls = totalAiCalls;
-        job.status = 'done';
+        // No sobreescribir 'cancelled' con 'done'
+        if (job.status !== 'cancelled') job.status = 'done';
         job.finishedAt = Date.now();
     } catch (err) {
         console.error('[Satisfaccion] Error fatal del job:', err);
@@ -8791,13 +8825,17 @@ async function runSatisfaccionJob(jobId, options = {}) {
 // POST /api/satisfaccion/clasificar - lanza un job asincrono
 router.post('/satisfaccion/clasificar', async (req, res) => {
     try {
-        const { force = false, mode: requestedMode, limit = null } = req.body || {};
+        const { force = false, mode: requestedMode, limit = null, audience: requestedAudience } = req.body || {};
 
         // Backward-compat: si vino force=true sin mode, equivale a mode='all'
         let mode = requestedMode || (force ? 'all' : 'pending');
         if (!['pending', 'all', 'recent-activity'].includes(mode)) {
             mode = 'pending';
         }
+
+        // Audience: 'pagado' (default seguro) o 'all' (toda contacts_whatsapp, puede ser 80k+)
+        let audience = requestedAudience || 'pagado';
+        if (!['pagado', 'all'].includes(audience)) audience = 'pagado';
 
         // Verificar si ya hay un job en curso
         for (const [id, job] of satisfaccionJobs) {
@@ -8828,17 +8866,33 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
             skipped: 0,
             tokens: { input: 0, output: 0, cached: 0 },
             aiCalls: 0,
-            options: { mode, limit: numericLimit }
+            options: { mode, audience, limit: numericLimit }
         });
 
         // Lanzar en background; el frontend pollea /progreso
-        runSatisfaccionJob(jobId, { mode, limit: numericLimit });
+        runSatisfaccionJob(jobId, { mode, audience, limit: numericLimit });
 
         res.json({ success: true, jobId });
     } catch (err) {
         console.error('Error iniciando job de satisfaccion:', err);
         res.status(500).json({ success: false, message: err.message });
     }
+});
+
+// POST /api/satisfaccion/cancelar - marca como 'cancelled' cualquier job en curso
+// (o uno especifico si se pasa jobId). Los workers ya en vuelo terminan; no se inician nuevos.
+router.post('/satisfaccion/cancelar', (req, res) => {
+    const { jobId } = req.body || {};
+    let cancelled = 0;
+    for (const [id, job] of satisfaccionJobs) {
+        if (jobId && id !== jobId) continue;
+        if (job.status === 'running') {
+            job.status = 'cancelled';
+            job.cancelledAt = Date.now();
+            cancelled++;
+        }
+    }
+    res.json({ success: true, cancelled });
 });
 
 // GET /api/satisfaccion/progreso?jobId=X - polling

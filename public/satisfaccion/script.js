@@ -25,6 +25,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnClasificar = document.getElementById('btnClasificar');
     const btnReclasificarRecientes = document.getElementById('btnReclasificarRecientes');
     const btnReclasificar = document.getElementById('btnReclasificar');
+    const btnCancelar = document.getElementById('btnCancelar');
     const progresoBox = document.getElementById('progresoBox');
     const progressBar = document.getElementById('progressBar');
     const progresoTexto = document.getElementById('progresoTexto');
@@ -45,6 +46,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let nextCursor = null;
     let pollTimer = null;
     let searchDebounce = null;
+    let currentJobId = null;
 
     // --- Cache local (24h) ---
     const CACHE_KEY = 'satisfaccion:listado:v1';
@@ -105,27 +107,56 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Clasificar ---
     window.iniciarClasificacion = async (mode) => {
-        if (mode === 'all' && !confirm('Esto va a re-clasificar TODAS las conversaciones (incluso las ya clasificadas). Costo estimado: $2-3 USD. Continuar?')) return;
-        if (mode === 'recent-activity' && !confirm('Esto va a re-clasificar solo contactos que recibieron mensajes despues de la ultima clasificacion. Costo tipico: ~10-20% del total. Continuar?')) return;
+        const audience = document.querySelector('input[name="audience"]:checked')?.value || 'pagado';
+
+        if (audience === 'all' && !confirm('OJO: vas a procesar TODA la base de contacts_whatsapp (80k+ contactos, incluyendo spam y leads sin compra). Costo estimado: ~$80 USD. Continuar?')) return;
+        if (mode === 'all' && !confirm('Esto va a re-clasificar TODAS las conversaciones del alcance seleccionado (incluso las ya clasificadas). Continuar?')) return;
+        if (mode === 'recent-activity' && !confirm('Esto va a re-clasificar solo contactos que recibieron mensajes despues de la ultima clasificacion. Continuar?')) return;
+
         setBotonesDisabled(true);
         progresoBox.style.display = 'block';
         progresoTexto.textContent = 'Iniciando job...';
-        progresoExtra.textContent = '';
+        progresoExtra.textContent = `Alcance: ${audience === 'pagado' ? 'solo con pedido Pagado' : 'TODA la base'} · Modo: ${mode}`;
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
+        if (btnCancelar) btnCancelar.style.display = 'inline-flex';
         try {
             const token = await auth.currentUser.getIdToken();
             const res = await fetch('/api/satisfaccion/clasificar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ mode })
+                body: JSON.stringify({ mode, audience })
             });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error iniciando');
+            currentJobId = data.jobId;
             pollProgreso(data.jobId);
         } catch (e) {
             alert('Error: ' + e.message);
             setBotonesDisabled(false);
+            if (btnCancelar) btnCancelar.style.display = 'none';
+        }
+    };
+
+    window.cancelarJob = async () => {
+        if (!currentJobId) return;
+        if (!confirm('Cancelar el job? Los contactos ya procesados quedan clasificados; los que esten en vuelo a Gemini terminan, pero no se inician nuevos.')) return;
+        btnCancelar.disabled = true;
+        btnCancelar.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Cancelando...';
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/satisfaccion/cancelar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ jobId: currentJobId })
+            });
+            const data = await res.json();
+            if (!data.success) throw new Error(data.message || 'Error cancelando');
+            progresoTexto.textContent = 'Cancelacion solicitada. Esperando a que terminen los workers en vuelo...';
+        } catch (e) {
+            alert('Error: ' + e.message);
+            btnCancelar.disabled = false;
+            btnCancelar.innerHTML = '<i class="fas fa-stop"></i> Cancelar';
         }
     };
 
@@ -152,12 +183,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 const etaTxt = data.etaSeconds != null ? ` · ETA ${Math.floor(data.etaSeconds/60)}m ${data.etaSeconds%60}s` : '';
                 const tokTxt = data.tokens?.input ? ` · ~${(data.tokens.input/1000).toFixed(1)}K tokens entrada` : '';
                 progresoExtra.textContent = `Llamadas IA: ${data.aiCalls || 0}${etaTxt}${tokTxt}`;
-                if (data.status === 'done' || data.status === 'error') {
+                if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
                     clearInterval(pollTimer);
                     pollTimer = null;
                     setBotonesDisabled(false);
+                    if (btnCancelar) {
+                        btnCancelar.style.display = 'none';
+                        btnCancelar.disabled = false;
+                        btnCancelar.innerHTML = '<i class="fas fa-stop"></i> Cancelar';
+                    }
+                    currentJobId = null;
                     if (data.status === 'error') {
                         progresoTexto.textContent = `Error: ${data.error || 'desconocido'}`;
+                    } else if (data.status === 'cancelled') {
+                        progresoTexto.textContent = `Cancelado: ${data.processed} de ${data.total} clasificados antes de detener.`;
                     } else {
                         progresoTexto.textContent = `Completado: ${data.processed} clasificados (${data.errors} errores)`;
                     }

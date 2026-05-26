@@ -50,7 +50,13 @@
 
         <div class="content-box">
             <h2><i class="fas fa-brain"></i> Clasificar conversaciones con Gemini</h2>
-            <p class="hint">Gemini Flash lee los ultimos 50 mensajes de cada contacto y los clasifica en Positivo, Neutral o Negativo. Costo estimado: $1.5 - $3 USD para 2500 contactos. La primera corrida puede tardar 8-12 min.</p>
+            <p class="hint">Gemini Flash lee los ultimos 50 mensajes y los clasifica en Positivo, Neutral o Negativo. <strong>Alcance por default: solo contactos con al menos un pedido Pagado</strong> (esto evita procesar los miles de leads que solo escribieron una vez sin comprar). Cambialo si quieres procesar TODA la base.</p>
+
+            <div class="audience-row">
+                <label><input type="radio" name="audience" value="pagado" checked> Solo contactos con pedido <strong>Pagado</strong> <span class="hint-inline">(recomendado, ~$0.50 USD)</span></label>
+                <label><input type="radio" name="audience" value="all"> TODA la base de contacts_whatsapp <span class="hint-inline">(80k+, ~$80 USD, NO recomendado)</span></label>
+            </div>
+
             <div class="acciones-clasificar">
                 <button id="btnClasificar" onclick="iniciarClasificacion('pending')">
                     <i class="fas fa-play"></i> Clasificar pendientes
@@ -69,6 +75,9 @@
                 </div>
                 <p id="progresoTexto" class="progreso-texto">Iniciando...</p>
                 <p id="progresoExtra" class="progreso-extra"></p>
+                <button id="btnCancelar" class="btn-danger" onclick="cancelarJob()" style="display:none; margin-top:10px;">
+                    <i class="fas fa-stop"></i> Cancelar
+                </button>
             </div>
         </div>
 
