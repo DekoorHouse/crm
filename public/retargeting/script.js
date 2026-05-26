@@ -1,6 +1,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-storage.js";
 
 document.addEventListener('DOMContentLoaded', () => {
 
@@ -17,6 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const app = initializeApp(firebaseConfig);
     const auth = getAuth(app);
     const db = getFirestore(app);
+    const storage = getStorage(app);
 
     // DOM
     const loadingOverlay = document.getElementById('loading-overlay');
@@ -46,6 +48,18 @@ document.addEventListener('DOMContentLoaded', () => {
     let modoEnvio = 'ia'; // 'ia' | 'plantilla'
     let plantillasDisponibles = []; // [{ name, language, components }, ...]
     let plantillaSeleccionada = null;
+    let plantillaMediaUrl = null; // URL de la imagen/video/documento subido para esta tanda
+    let plantillaMediaSubiendo = false;
+
+    const MEDIA_FORMATS = ['IMAGE', 'VIDEO', 'DOCUMENT'];
+    const MEDIA_ICONS = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'file-pdf' };
+    const MEDIA_LABELS = { IMAGE: 'imagen', VIDEO: 'video', DOCUMENT: 'documento (PDF)' };
+    const MEDIA_ACCEPT = { IMAGE: 'image/*', VIDEO: 'video/mp4,video/3gp,video/quicktime', DOCUMENT: 'application/pdf' };
+
+    function plantillaMediaFormat(t) {
+        const header = t?.components?.find(c => c.type === 'HEADER');
+        return MEDIA_FORMATS.includes(header?.format) ? header.format : null;
+    }
 
     const SATISFACTION_LABELS = {
         positivo: 'Positivo',
@@ -231,11 +245,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/whatsapp-templates', { headers: { 'Authorization': `Bearer ${token}` } });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error al cargar plantillas');
-            plantillasDisponibles = (data.templates || []).filter(t => {
-                // Excluir las que requieren imagen (no soportado en este flujo)
-                const header = t.components?.find(c => c.type === 'HEADER');
-                return !(header?.format === 'IMAGE');
-            });
+            plantillasDisponibles = data.templates || [];
             localStorage.setItem(PLANTILLAS_CACHE_KEY, JSON.stringify({ cachedAt: Date.now(), templates: plantillasDisponibles }));
             renderPlantillasSelect();
         } catch (e) {
@@ -251,13 +261,18 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         select.innerHTML = '<option value="">Selecciona una plantilla...</option>' +
-            plantillasDisponibles.map(t => `<option value="${t.name}">${t.name} (${t.language})</option>`).join('');
+            plantillasDisponibles.map(t => {
+                const mediaFmt = plantillaMediaFormat(t);
+                const tag = mediaFmt ? ` 📎${MEDIA_LABELS[mediaFmt]}` : '';
+                return `<option value="${t.name}">${t.name} (${t.language})${tag}</option>`;
+            }).join('');
     }
 
     window.onPlantillaChange = () => {
         const select = document.getElementById('plantillaSelect');
         const name = select.value;
         plantillaSeleccionada = plantillasDisponibles.find(t => t.name === name) || null;
+        plantillaMediaUrl = null; // reset media al cambiar plantilla
         const previewBox = document.getElementById('plantillaPreview');
         if (!plantillaSeleccionada) {
             previewBox.style.display = 'none';
@@ -269,7 +284,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const body = plantillaSeleccionada.components?.find(c => c.type === 'BODY');
         const footer = plantillaSeleccionada.components?.find(c => c.type === 'FOOTER');
         const buttons = plantillaSeleccionada.components?.find(c => c.type === 'BUTTONS');
+        const mediaFmt = plantillaMediaFormat(plantillaSeleccionada);
         const parts = [];
+        if (mediaFmt) {
+            parts.push(`
+                <div class="plantilla-media-block">
+                    <label class="plantilla-media-label">
+                        <i class="fas fa-${MEDIA_ICONS[mediaFmt]}"></i> Esta plantilla requiere ${MEDIA_LABELS[mediaFmt]}. Sube el archivo (se usará para todos los contactos seleccionados).
+                    </label>
+                    <input type="file" id="plantillaMediaFile" accept="${MEDIA_ACCEPT[mediaFmt]}" onchange="onPlantillaMediaSelected(event)">
+                    <div id="plantillaMediaStatus" class="plantilla-media-status"></div>
+                </div>
+            `);
+        }
         if (header?.text) parts.push(`<div class="plantilla-header">${header.text.replace(/\{\{1\}\}/g, '<em>[Nombre]</em>')}</div>`);
         if (body?.text) parts.push(`<div class="plantilla-body">${body.text.replace(/\{\{1\}\}/g, '<em>[Nombre]</em>').replace(/\{\{(\d+)\}\}/g, '<em>[var $1]</em>').replace(/\n/g, '<br>')}</div>`);
         if (footer?.text) parts.push(`<div class="plantilla-footer">${footer.text}</div>`);
@@ -279,6 +306,35 @@ document.addEventListener('DOMContentLoaded', () => {
         previewBox.innerHTML = parts.join('') || '<em>(plantilla sin contenido)</em>';
         previewBox.style.display = 'block';
         actualizarBotonEnviar();
+    };
+
+    window.onPlantillaMediaSelected = async (event) => {
+        const file = event.target.files?.[0];
+        const statusEl = document.getElementById('plantillaMediaStatus');
+        if (!file) {
+            plantillaMediaUrl = null;
+            if (statusEl) statusEl.innerHTML = '';
+            actualizarBotonEnviar();
+            return;
+        }
+        plantillaMediaSubiendo = true;
+        plantillaMediaUrl = null;
+        actualizarBotonEnviar();
+        if (statusEl) statusEl.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Subiendo...';
+        try {
+            const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const path = `template-media/${Date.now()}_${safeName}`;
+            const ref = storageRef(storage, path);
+            await uploadBytes(ref, file, { contentType: file.type });
+            plantillaMediaUrl = await getDownloadURL(ref);
+            if (statusEl) statusEl.innerHTML = `<i class="fas fa-check-circle" style="color:#16a34a;"></i> ${file.name} listo.`;
+        } catch (e) {
+            console.error('Error subiendo media:', e);
+            if (statusEl) statusEl.innerHTML = `<i class="fas fa-exclamation-circle" style="color:#dc2626;"></i> Error: ${e.message}`;
+        } finally {
+            plantillaMediaSubiendo = false;
+            actualizarBotonEnviar();
+        }
     };
 
     window.cerrarSesion = () => signOut(auth);
@@ -517,12 +573,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const count = pedidosSeleccionados.size;
         const requierePlantilla = modoEnvio === 'plantilla';
         const plantillaLista = !!plantillaSeleccionada;
-        btnEnviar.disabled = count === 0 || (requierePlantilla && !plantillaLista);
+        const mediaFmt = plantillaLista ? plantillaMediaFormat(plantillaSeleccionada) : null;
+        const necesitaMedia = !!mediaFmt;
+        const mediaLista = !necesitaMedia || !!plantillaMediaUrl;
+        btnEnviar.disabled = count === 0
+            || (requierePlantilla && !plantillaLista)
+            || (requierePlantilla && necesitaMedia && !mediaLista)
+            || plantillaMediaSubiendo;
         if (count === 0) {
             btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar Retargeting Masivo`;
         } else if (requierePlantilla) {
-            const tplLabel = plantillaLista ? `: ${plantillaSeleccionada.name}` : '';
-            btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar plantilla (${count})${tplLabel}`;
+            if (necesitaMedia && plantillaMediaSubiendo) {
+                btnEnviar.innerHTML = `<i class="fas fa-spinner fa-spin"></i> Subiendo ${MEDIA_LABELS[mediaFmt]}...`;
+            } else if (necesitaMedia && !mediaLista) {
+                btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Sube ${MEDIA_LABELS[mediaFmt]} para enviar`;
+            } else {
+                const tplLabel = plantillaLista ? `: ${plantillaSeleccionada.name}` : '';
+                btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar plantilla (${count})${tplLabel}`;
+            }
         } else {
             btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar Retargeting (${count})`;
         }
@@ -538,6 +606,11 @@ document.addEventListener('DOMContentLoaded', () => {
         let instrucciones = '';
         if (esPlantilla) {
             if (!plantillaSeleccionada) { alert('Selecciona una plantilla primero.'); return; }
+            const mediaFmt = plantillaMediaFormat(plantillaSeleccionada);
+            if (mediaFmt && !plantillaMediaUrl) {
+                alert(`Esta plantilla requiere ${MEDIA_LABELS[mediaFmt]}. Súbelo antes de enviar.`);
+                return;
+            }
         } else {
             instrucciones = instruccionesTA.value.trim();
             if (!instrucciones) { alert('Escribe las instrucciones de IA primero.'); return; }
@@ -576,7 +649,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const endpoint = esPlantilla ? '/api/retargeting/enviar-plantilla' : '/api/retargeting/enviar';
                     const body = esPlantilla
-                        ? { contactId: telefono, template: plantillaSeleccionada, batchId, batchTotal: total, sentBy }
+                        ? { contactId: telefono, template: plantillaSeleccionada, mediaUrl: plantillaMediaUrl, batchId, batchTotal: total, sentBy }
                         : { contactId: telefono, instructions: instrucciones, orderNumbers: pedidosDeContacto.map(p => p.consecutiveOrderNumber) };
                     const res = await fetch(endpoint, {
                         method: 'POST',

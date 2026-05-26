@@ -3210,15 +3210,34 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     let messageToSaveText = `📄 Plantilla: ${templateName}`; // Texto por defecto para guardar en DB
 
     // --- Procesar Cabecera (HEADER) ---
+    // Nota: el parametro se llama `imageUrl` por historia pero acepta cualquier media URL
+    // (imagen/video/documento). Lo usamos como `mediaUrl` segun el formato del HEADER.
     const headerDef = templateComponents?.find(c => c.type === 'HEADER');
+    const mediaUrl = imageUrl;
     if (headerDef?.format === 'IMAGE') {
-        if (!imageUrl) throw new Error(`La plantilla '${templateName}' requiere una imagen.`);
-        // Añadir componente de cabecera de imagen
+        if (!mediaUrl) throw new Error(`La plantilla '${templateName}' requiere una imagen.`);
         payloadComponents.push({
             type: 'header',
-            parameters: [{ type: 'image', image: { link: imageUrl } }]
+            parameters: [{ type: 'image', image: { link: mediaUrl } }]
         });
         messageToSaveText = `🖼️ Plantilla con imagen: ${templateName}`;
+    }
+    else if (headerDef?.format === 'VIDEO') {
+        if (!mediaUrl) throw new Error(`La plantilla '${templateName}' requiere un video.`);
+        payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'video', video: { link: mediaUrl } }]
+        });
+        messageToSaveText = `🎬 Plantilla con video: ${templateName}`;
+    }
+    else if (headerDef?.format === 'DOCUMENT') {
+        if (!mediaUrl) throw new Error(`La plantilla '${templateName}' requiere un documento.`);
+        const filename = (typeof mediaUrl === 'string' && mediaUrl.split('/').pop().split('?')[0]) || 'documento.pdf';
+        payloadComponents.push({
+            type: 'header',
+            parameters: [{ type: 'document', document: { link: mediaUrl, filename } }]
+        });
+        messageToSaveText = `📄 Plantilla con documento: ${templateName}`;
     }
     // Si la cabecera es texto y espera una variable ({{1}}), usar el nombre del contacto
     if (headerDef?.format === 'TEXT' && headerDef.text?.includes('{{1}}')) {
@@ -3783,7 +3802,7 @@ router.post('/contacts/:contactId/utility-message', async (req, res) => {
 // --- Endpoint POST /api/contacts/:contactId/messages (Enviar mensaje) ---
 router.post('/contacts/:contactId/messages', async (req, res) => {
     const { contactId } = req.params;
-    const { text, fileUrl, fileType, reply_to_wamid, template, tempId, forwarded } = req.body; // tempId es opcional, para UI optimista
+    const { text, fileUrl, fileType, reply_to_wamid, template, templateMediaUrl, tempId, forwarded } = req.body; // tempId es opcional, para UI optimista
 
     // Validaciones básicas
     if (!text && !fileUrl && !template) {
@@ -3885,7 +3904,7 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
 
         // --- Lógica para enviar PLANTILLA ---
         if (template) {
-            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, null, []);
+            const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, templateMediaUrl || null, []);
             if (reply_to_wamid) {
                 payload.context = { message_id: reply_to_wamid };
             }
@@ -8659,7 +8678,7 @@ Analiza la conversación y decide qué mensaje de retargeting enviar al cliente.
 // Enviar plantilla aprobada de Meta como retargeting (modo manual, sin IA)
 router.post('/retargeting/enviar-plantilla', async (req, res) => {
     try {
-        const { contactId, template, batchId, batchTotal, sentBy } = req.body;
+        const { contactId, template, mediaUrl, batchId, batchTotal, sentBy } = req.body;
         if (!contactId || !template?.name) {
             return res.status(400).json({ success: false, message: 'Faltan contactId o template.' });
         }
@@ -8682,7 +8701,7 @@ router.post('/retargeting/enviar-plantilla', async (req, res) => {
             return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
         }
 
-        const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+        const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template, mediaUrl || null);
         const tplResponse = await axios.post(
             `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID_ENV}/messages`,
             payload,

@@ -1349,6 +1349,7 @@ window.cancelReply = cancelReply;
 window.selectQuickReply = selectQuickReply;
 window.selectEmoji = selectEmoji;
 window.handleSendTemplate = handleSendTemplate;
+window.handleSendMediaTemplate = handleSendMediaTemplate;
 window.cancelStagedFile = cancelStagedFile;
 window.removeStagedFile = removeStagedFile;
 window.handleFileInputChange = handleFileInputChange;
@@ -1476,39 +1477,107 @@ function renderTemplatePicker() {
     const picker = document.getElementById('template-picker');
     if (!picker) return;
 
-    // Filtrar plantillas que requieren imagen: el chat no tiene picker de imagen,
-    // se mandan desde Campañas > Plantilla con imagen.
     const allTemplates = state.templates || [];
-    const sendableTemplates = allTemplates.filter(t => {
-        const header = t.components?.find(c => c.type === 'HEADER');
-        const fmt = header?.format;
-        return fmt !== 'IMAGE' && fmt !== 'VIDEO' && fmt !== 'DOCUMENT';
-    });
-    const imageOnlyCount = allTemplates.length - sendableTemplates.length;
+    state.pickerItems = allTemplates;
+    state.pickerSelectedIndex = allTemplates.length > 0 ? 0 : -1;
 
-    state.pickerItems = sendableTemplates;
-    state.pickerSelectedIndex = sendableTemplates.length > 0 ? 0 : -1;
-
-    if (sendableTemplates.length > 0) {
-        picker.innerHTML = sendableTemplates.map(template => {
-            const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
-            return `
-                <div class="picker-item template-item" data-template-name="${template.name}" onclick="handleSendTemplate(${templateString})">
-                    <div class="flex justify-between items-center">
-                        <span class="font-semibold">${template.name}</span>
-                        <span class="template-category">${template.category}</span>
-                    </div>
-                </div>
-            `;
-        }).join('');
-        if (imageOnlyCount > 0) {
-            picker.innerHTML += `<div class="p-2 text-center text-xs text-gray-500 border-t mt-1"><i class="fas fa-info-circle mr-1"></i>${imageOnlyCount} plantilla(s) con imagen no se muestran. Envíalas desde Campañas &gt; Plantilla con imagen.</div>`;
-        }
-    } else {
-        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles para enviar desde el chat.${imageOnlyCount > 0 ? ` (${imageOnlyCount} requieren imagen — envíalas desde Campañas.)` : ''}</div>`;
+    if (allTemplates.length === 0) {
+        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles.</div>`;
+        updatePickerSelection();
+        return;
     }
 
+    const MEDIA_ICONS = { IMAGE: 'fa-image', VIDEO: 'fa-video', DOCUMENT: 'fa-file-pdf' };
+    const MEDIA_LABELS = { IMAGE: 'imagen', VIDEO: 'video', DOCUMENT: 'documento' };
+
+    picker.innerHTML = allTemplates.map(template => {
+        const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
+        const header = template.components?.find(c => c.type === 'HEADER');
+        const mediaFmt = header?.format;
+        const requiresMedia = mediaFmt === 'IMAGE' || mediaFmt === 'VIDEO' || mediaFmt === 'DOCUMENT';
+        const mediaIcon = requiresMedia ? `<i class="fas ${MEDIA_ICONS[mediaFmt]} ml-2" title="Requiere ${MEDIA_LABELS[mediaFmt]}" style="color:#16a34a;"></i>` : '';
+        const handler = requiresMedia
+            ? `handleSendMediaTemplate(${templateString})`
+            : `handleSendTemplate(${templateString})`;
+        return `
+            <div class="picker-item template-item" data-template-name="${template.name}" onclick="${handler}">
+                <div class="flex justify-between items-center">
+                    <span class="font-semibold">${template.name}${mediaIcon}</span>
+                    <span class="template-category">${template.category}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
+
     updatePickerSelection();
+}
+
+// Para plantillas con HEADER de IMAGE/VIDEO/DOCUMENT: abre file picker, sube a Storage, envia.
+async function handleSendMediaTemplate(templateObject) {
+    if (!state.selectedContactId) return;
+    const header = templateObject.components?.find(c => c.type === 'HEADER');
+    const fmt = header?.format;
+    const acceptByFmt = { IMAGE: 'image/*', VIDEO: 'video/mp4,video/3gp,video/quicktime', DOCUMENT: 'application/pdf' };
+    const labelByFmt = { IMAGE: 'una imagen', VIDEO: 'un video', DOCUMENT: 'un documento (PDF)' };
+
+    // Crear input file invisible
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = acceptByFmt[fmt] || '*/*';
+    input.style.display = 'none';
+    document.body.appendChild(input);
+
+    input.onchange = async (ev) => {
+        const file = ev.target.files?.[0];
+        document.body.removeChild(input);
+        if (!file) return;
+
+        const currentContactId = state.selectedContactId;
+        const tempId = `temp_${Date.now()}`;
+        const previewText = `📤 Subiendo ${labelByFmt[fmt]}... (${templateObject.name})`;
+        const pendingMessage = {
+            docId: tempId,
+            from: 'me',
+            status: 'pending',
+            timestamp: { seconds: Math.floor(Date.now() / 1000) },
+            text: previewText
+        };
+        if (state.selectedContactId === currentContactId) {
+            state.messages.push(pendingMessage);
+            appendMessage(pendingMessage);
+        }
+        toggleTemplatePicker();
+
+        try {
+            // Subir archivo a Firebase Storage
+            const safeName = file.name.replace(/[^a-zA-Z0-9_.-]/g, '_');
+            const filePath = `template-media/${Date.now()}_${safeName}`;
+            const fileRef = storage.ref(filePath);
+            const uploadTask = await fileRef.put(file, { contentType: file.type });
+            const mediaUrl = await uploadTask.ref.getDownloadURL();
+
+            // Enviar al backend con templateMediaUrl
+            const response = await fetch(`${API_BASE_URL}/api/contacts/${currentContactId}/messages`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ template: templateObject, templateMediaUrl: mediaUrl, tempId })
+            });
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.message || 'Error del servidor al enviar plantilla con media.');
+            }
+        } catch (error) {
+            console.error("Error al enviar la plantilla con media:", error);
+            showError(error.message);
+            const idx = state.messages.findIndex(m => m.docId === tempId);
+            if (idx > -1) {
+                state.messages.splice(idx, 1);
+                renderMessages();
+            }
+        }
+    };
+
+    input.click();
 }
 
 function renderEmojiPicker() {
