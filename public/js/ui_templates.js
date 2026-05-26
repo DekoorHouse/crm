@@ -795,7 +795,7 @@ const MessageStatusIconTemplate = (status) => {
     }
 };
 
-const RepliedMessagePreviewTemplate = (originalMessage) => {
+const RepliedMessagePreviewTemplate = (originalMessage, targetId = '') => {
     if (!originalMessage) return '';
 
     const authorName = originalMessage.from === state.selectedContactId
@@ -816,7 +816,8 @@ const RepliedMessagePreviewTemplate = (originalMessage) => {
         textPreview = `<p class="reply-text">${plainText}</p>`;
     }
 
-    return `<div class="reply-preview"><p class="reply-author">${authorName}</p>${textPreview}</div>`;
+    const targetAttr = targetId ? ` data-target-id="${targetId}"` : '';
+    return `<div class="reply-preview"${targetAttr} title="Ir al mensaje original"><p class="reply-author">${authorName}</p>${textPreview}</div>`;
 };
 
 const MessageBubbleTemplate = (message) => {
@@ -872,7 +873,7 @@ const MessageBubbleTemplate = (message) => {
     let replyPreviewHTML = '';
     if (message.context && message.context.id) {
         const originalMessage = state.messages.find(m => m.id === message.context.id);
-        replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage);
+        replyPreviewHTML = RepliedMessagePreviewTemplate(originalMessage, message.context.id);
     }
 
     const copyButtonHTML = message.text ? `<button class="message-action-btn" onclick="copyFormattedText('${message.text.replace(/'/g, '\\\'')}', this)" title="Copiar"><i class="far fa-copy"></i></button>` : '';
@@ -897,8 +898,9 @@ const MessageBubbleTemplate = (message) => {
     let bubbleClasses = isSent ? 'sent' : 'received';
     if (message.status === 'queued') bubbleClasses += ' message-queued';
 
+    const msgIdAttr = message.id ? ` data-msg-id="${message.id}"` : '';
     return `
-        <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}">
+        <div class="message-group ${bubbleAlignment}" data-doc-id="${message.docId}"${msgIdAttr}>
             <div class="message-bubble ${bubbleClasses} ${bubbleExtraClass}">
                 ${replyPreviewHTML}
                 ${contentHTML}

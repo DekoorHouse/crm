@@ -429,11 +429,20 @@ body.dark-mode .message-actions { background-color: #292e42; border: 1px solid #
 .reactions-container { position: absolute; bottom: -10px; right: 10px; background-color: white; border-radius: 10px; padding: 2px 5px; font-size: 0.8rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
 body.dark-mode .reactions-container { background-color: #414868; }
 .reactions-container.received-reaction { left: 10px; right: auto; }
-.reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 0 8px 0; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); }
+.reply-preview { background-color: rgba(0,0,0,0.05); padding: 8px; margin: 0 0 8px 0; border-left: 3px solid var(--color-primary); border-radius: var(--border-radius-sm); cursor: pointer; transition: background-color 0.15s ease; }
+.reply-preview:hover { background-color: rgba(0,0,0,0.09); }
 body.dark-mode .reply-preview { background-color: rgba(255,255,255,0.05); }
+body.dark-mode .reply-preview:hover { background-color: rgba(255,255,255,0.10); }
 .reply-preview p { margin: 0; font-size: 0.85rem; }
 .reply-preview .reply-author { font-weight: 600; color: var(--color-primary); }
 .reply-preview .reply-text { color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@keyframes messageHighlightPulse {
+    0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+    25%  { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.45); }
+    100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+.message-bubble.message-highlight { animation: messageHighlightPulse 1.6s ease-out; position: relative; z-index: 1; }
 #reply-context-bar { background-color: #f0f2f5; padding: 8px 16px; border-top: 1px solid var(--color-border); position: relative; }
 body.dark-mode #reply-context-bar { background-color: #1f2335; }
 #cancel-reply-btn { position: absolute; top: 4px; right: 8px; background: none; border: none; font-size: 1.2rem; color: #999; cursor: pointer; }

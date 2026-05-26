@@ -245,9 +245,28 @@ function renderChatWindow(options = {}) {
                             document.selection.empty();
                         }
                         // -----------------------------------------------
-                        
+
                         handleStartReply(e, messageDocId);
                     }
+                });
+
+                // Click en la pre-vista de "respondiendo a..." → saltar al mensaje original
+                messagesContent.addEventListener('click', (e) => {
+                    const replyPreview = e.target.closest('.reply-preview');
+                    if (!replyPreview) return;
+                    const targetId = replyPreview.dataset.targetId;
+                    if (!targetId) return;
+                    e.stopPropagation();
+                    const targetGroup = messagesContent.querySelector(`.message-group[data-msg-id="${CSS.escape(targetId)}"]`);
+                    if (!targetGroup) return;
+                    targetGroup.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    const targetBubble = targetGroup.querySelector('.message-bubble');
+                    if (!targetBubble) return;
+                    targetBubble.classList.remove('message-highlight');
+                    // forzar reflow para reiniciar la animación si se clickea varias veces
+                    void targetBubble.offsetWidth;
+                    targetBubble.classList.add('message-highlight');
+                    setTimeout(() => targetBubble.classList.remove('message-highlight'), 1800);
                 });
             }
             // --- FIN DE LA MODIFICACIÓN ---
