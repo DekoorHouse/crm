@@ -8247,58 +8247,109 @@ Analiza la conversación y decide qué acción de cobranza tomar.`;
 // RETARGETING (mensajes masivos a pedidos Pagado)
 // ============================================
 
+// Cache en memoria de la lista de pedidos Pagado por rango.
+// El servidor es persistente (no Cloud Functions), asi que el Map vive entre requests.
+// Key: "YYYY-MM-DD_YYYY-MM-DD" (normalizamos a dia, no a timestamp exacto).
+// Solo cacheamos la lista de pedidos; el flag retargetadoHoy se calcula en cada
+// request (~17 lecturas pequenas para 500 telefonos) para no servir flags obsoletos.
+const retargetingPedidosCache = new Map();
+const RETARGETING_CACHE_TTL_MS = 30 * 60 * 1000; // 30 min
+
+function pruneRetargetingCache() {
+    const now = Date.now();
+    for (const [key, entry] of retargetingPedidosCache) {
+        if (now - entry.cachedAt > RETARGETING_CACHE_TTL_MS) retargetingPedidosCache.delete(key);
+    }
+}
+
+function dateKeyFromMillis(ms) {
+    return new Date(Number(ms)).toISOString().slice(0, 10);
+}
+
+async function fetchRetargetadoHoyMap(telefonos) {
+    const map = {};
+    if (!telefonos.length) return map;
+    for (let i = 0; i < telefonos.length; i += 30) {
+        const batch = telefonos.slice(i, i + 30);
+        const contactsSnap = await db.collection('contacts_whatsapp')
+            .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
+        contactsSnap.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.lastRetargetingDate) map[doc.id] = d.lastRetargetingDate;
+        });
+    }
+    return map;
+}
+
 // Buscar pedidos Pagado por rango de fecha para retargeting
 router.get('/retargeting/buscar-pedidos', async (req, res) => {
     try {
-        const { startDate, endDate } = req.query;
+        const { startDate, endDate, fresh } = req.query;
         if (!startDate || !endDate) {
             return res.status(400).json({ success: false, message: 'Se requieren startDate y endDate.' });
         }
 
-        const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
-        const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
-
-        const snapshot = await db.collection('pedidos')
-            .where('estatus', '==', 'Pagado')
-            .where('createdAt', '>=', start)
-            .where('createdAt', '<=', end)
-            .orderBy('createdAt', 'desc')
-            .get();
-
-        const orders = snapshot.docs.map(doc => {
-            const data = doc.data();
-            return {
-                id: doc.id,
-                consecutiveOrderNumber: data.consecutiveOrderNumber,
-                producto: data.producto,
-                telefono: data.telefono,
-                precio: data.precio,
-                estatus: data.estatus,
-                createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
-            };
-        });
-
-        // Obtener lastRetargetingDate de cada contacto para marcar "Enviado Hoy"
-        const telefonos = [...new Set(orders.map(o => o.telefono).filter(Boolean))];
-        const retargetingMap = {};
-        // Firestore 'in' soporta max 30 valores por query
-        for (let i = 0; i < telefonos.length; i += 30) {
-            const batch = telefonos.slice(i, i + 30);
-            const contactsSnap = await db.collection('contacts_whatsapp')
-                .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
-            contactsSnap.docs.forEach(doc => {
-                const d = doc.data();
-                if (d.lastRetargetingDate) retargetingMap[doc.id] = d.lastRetargetingDate;
-            });
-        }
-
+        const cacheKey = `${dateKeyFromMillis(startDate)}_${dateKeyFromMillis(endDate)}`;
         const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
 
-        orders.forEach(o => {
-            o.retargetadoHoy = retargetingMap[o.telefono] === todayMx;
-        });
+        let baseOrders = null;
+        let cachedAt = null;
+        let fromCache = false;
 
-        res.json({ success: true, orders });
+        if (fresh !== '1') {
+            const entry = retargetingPedidosCache.get(cacheKey);
+            if (entry && (Date.now() - entry.cachedAt) < RETARGETING_CACHE_TTL_MS) {
+                baseOrders = entry.orders;
+                cachedAt = entry.cachedAt;
+                fromCache = true;
+            }
+        }
+
+        if (!baseOrders) {
+            const start = admin.firestore.Timestamp.fromMillis(Number(startDate));
+            const end = admin.firestore.Timestamp.fromMillis(Number(endDate));
+
+            const snapshot = await db.collection('pedidos')
+                .where('estatus', '==', 'Pagado')
+                .where('createdAt', '>=', start)
+                .where('createdAt', '<=', end)
+                .orderBy('createdAt', 'desc')
+                .get();
+
+            baseOrders = snapshot.docs.map(doc => {
+                const data = doc.data();
+                return {
+                    id: doc.id,
+                    consecutiveOrderNumber: data.consecutiveOrderNumber,
+                    producto: data.producto,
+                    telefono: data.telefono,
+                    precio: data.precio,
+                    estatus: data.estatus,
+                    createdAt: data.createdAt ? data.createdAt.toDate().toISOString() : null
+                };
+            });
+
+            cachedAt = Date.now();
+            pruneRetargetingCache();
+            retargetingPedidosCache.set(cacheKey, { cachedAt, orders: baseOrders });
+        }
+
+        // Siempre refrescar retargetadoHoy (no se cachea para no servir flags obsoletos)
+        const telefonos = [...new Set(baseOrders.map(o => o.telefono).filter(Boolean))];
+        const retargetingMap = await fetchRetargetadoHoyMap(telefonos);
+
+        const orders = baseOrders.map(o => ({
+            ...o,
+            retargetadoHoy: retargetingMap[o.telefono] === todayMx
+        }));
+
+        res.json({
+            success: true,
+            orders,
+            fromCache,
+            cachedAt,
+            cacheAgeMs: Date.now() - cachedAt
+        });
     } catch (error) {
         console.error('Error buscando pedidos para retargeting:', error);
         res.status(500).json({ success: false, message: error.message });

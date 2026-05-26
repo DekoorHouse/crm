@@ -83,7 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return `hace ${days} d`;
     }
 
-    function updateCacheInfoUI(cache) {
+    function updateCacheInfoUI(cache, serverInfo) {
         if (!cache) {
             cacheInfo.textContent = '';
             cacheInfo.className = 'cache-info';
@@ -92,7 +92,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         const age = Date.now() - cache.fetchedAt;
         const fresh = age < CACHE_TTL_MS;
-        cacheInfo.textContent = `Última carga: ${formatRelativeTime(cache.fetchedAt)} (${cache.inicio} → ${cache.fin})${fresh ? '' : ' · expirada'}`;
+        let originText = '';
+        if (serverInfo && serverInfo.fromServerCache) {
+            originText = ` · caché del servidor (${formatRelativeTime(Date.now() - serverInfo.serverCacheAgeMs)})`;
+        }
+        cacheInfo.textContent = `Última carga: ${formatRelativeTime(cache.fetchedAt)} (${cache.inicio} → ${cache.fin})${fresh ? '' : ' · expirada'}${originText}`;
         cacheInfo.className = 'cache-info ' + (fresh ? 'fresh' : 'stale');
         btnActualizar.style.display = 'inline-flex';
     }
@@ -196,7 +200,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             const token = await auth.currentUser.getIdToken();
-            const res = await fetch(`/api/retargeting/buscar-pedidos?startDate=${startDate.getTime()}&endDate=${endDate.getTime()}`, {
+            const url = `/api/retargeting/buscar-pedidos?startDate=${startDate.getTime()}&endDate=${endDate.getTime()}${forceRefresh ? '&fresh=1' : ''}`;
+            const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             const data = await res.json();
@@ -205,7 +210,7 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidosEncontrados = data.orders || [];
             saveCache(pedidosEncontrados, inicio, fin);
             renderPedidos();
-            updateCacheInfoUI(loadCache());
+            updateCacheInfoUI(loadCache(), { fromServerCache: data.fromCache, serverCacheAgeMs: data.cacheAgeMs });
         } catch (e) {
             alert('Error buscando pedidos: ' + e.message);
         } finally {
