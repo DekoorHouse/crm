@@ -76,6 +76,26 @@ button.btn-secondary:hover { background: #d1d5db; }
 .pedido-item.historico .pedido-numero { color: #0e7490; }
 .badge-ya-enviado { font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 9999px; background: #e0f2fe; color: #075985; display: inline-flex; align-items: center; gap: 4px; }
 
+.modo-envio { display: flex; flex-direction: column; gap: 10px; }
+.modo-envio label { display: flex; align-items: center; gap: 8px; font-size: 0.9rem; cursor: pointer; color: #374151; padding: 10px 14px; border: 1px solid #e5e7eb; border-radius: 8px; background: #f9fafb; transition: all 0.15s; }
+.modo-envio label:has(input:checked) { border-color: #16a34a; background: #f0fdf4; box-shadow: 0 0 0 3px rgba(22,163,74,0.08); }
+.modo-envio input[type="radio"] { accent-color: #16a34a; cursor: pointer; }
+.hint-inline { color: #6b7280; font-size: 0.8rem; font-style: italic; }
+
+.plantilla-row { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+.plantilla-row select { flex: 1; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 0.9rem; font-family: inherit; background: white; cursor: pointer; }
+.plantilla-row select:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+.plantilla-row button { padding: 10px 12px; flex-shrink: 0; }
+
+.plantilla-preview { padding: 14px 16px; background: #f0fdf4; border: 1px solid #bbf7d0; border-left: 4px solid #16a34a; border-radius: 8px; font-size: 0.88rem; line-height: 1.5; color: #1f2937; }
+.plantilla-preview .plantilla-header { font-weight: 700; margin-bottom: 8px; color: #166534; }
+.plantilla-preview .plantilla-body { white-space: pre-wrap; }
+.plantilla-preview .plantilla-footer { font-size: 0.8rem; color: #6b7280; margin-top: 8px; font-style: italic; }
+.plantilla-preview .plantilla-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.plantilla-preview .plantilla-button { padding: 4px 12px; background: white; border: 1px solid #16a34a; border-radius: 999px; font-size: 0.78rem; color: #16a34a; font-weight: 600; }
+.plantilla-preview em { color: #16a34a; font-style: normal; font-weight: 700; background: #dcfce7; padding: 1px 6px; border-radius: 4px; }
+.plantilla-preview code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-family: monospace; font-size: 0.85em; }
+
 .pedidos-list { max-height: 400px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 8px; }
 .select-all-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; position: sticky; top: 0; z-index: 2; }
 .select-all-row label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

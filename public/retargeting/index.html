@@ -51,14 +51,38 @@
             </div>
         </div>
 
-        <!-- Instrucciones de IA -->
+        <!-- Modo de envio -->
         <div class="content-box">
+            <h2><i class="fas fa-cog"></i> Modo de env&iacute;o</h2>
+            <div class="modo-envio">
+                <label><input type="radio" name="modoEnvio" value="ia" checked onchange="setModoEnvio('ia')"> <i class="fas fa-brain"></i> <strong>IA decide</strong> <span class="hint-inline">(la IA arma cada mensaje seg&uacute;n las instrucciones)</span></label>
+                <label><input type="radio" name="modoEnvio" value="plantilla" onchange="setModoEnvio('plantilla')"> <i class="fas fa-file-alt"></i> <strong>Plantilla espec&iacute;fica</strong> <span class="hint-inline">(el mismo template aprobado por Meta para todos)</span></label>
+            </div>
+        </div>
+
+        <!-- Instrucciones de IA -->
+        <div id="seccionInstrucciones" class="content-box">
             <h2><i class="fas fa-brain"></i> Instrucciones para la IA de retargeting</h2>
             <p class="hint">La IA leer&aacute; la conversaci&oacute;n de cada cliente que ya pag&oacute; un pedido y decidir&aacute; qu&eacute; mensaje enviar (promoci&oacute;n, nuevo producto, recompra, etc.) basado en estas instrucciones y las respuestas guardadas disponibles.</p>
             <textarea id="instruccionesIA" rows="8" placeholder="Ej: Eres Carmela. Estos clientes ya pagaron un pedido conmigo. Quiero invitarlos a comprar de nuevo: pueden ver nuevos dise&ntilde;os, aprovechar 10% de descuento, o regalar uno similar a un familiar. Personaliza seg&uacute;n el producto que ya compraron."></textarea>
             <button id="btnGuardarInstrucciones" onclick="guardarInstrucciones()">
                 <i class="fas fa-save"></i> Guardar instrucciones
             </button>
+        </div>
+
+        <!-- Selector de plantilla -->
+        <div id="seccionPlantilla" class="content-box" style="display:none;">
+            <h2><i class="fas fa-file-alt"></i> Selecciona la plantilla aprobada por Meta</h2>
+            <p class="hint">Esta plantilla se enviar&aacute; tal cual a TODOS los contactos seleccionados. Si la plantilla tiene <code>{{1}}</code>, se sustituye con el nombre del contacto.</p>
+            <div class="plantilla-row">
+                <select id="plantillaSelect" onchange="onPlantillaChange()">
+                    <option value="">Cargando plantillas...</option>
+                </select>
+                <button id="btnRecargarPlantillas" class="btn-secondary" onclick="cargarPlantillas(true)" title="Recargar plantillas desde Meta">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div id="plantillaPreview" class="plantilla-preview" style="display:none;"></div>
         </div>
 
         <!-- Seleccion de rango -->

@@ -43,6 +43,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let satisfactionFilter = ''; // '' | 'positivo' | 'neutral' | 'negativo' | 'sin_senal' | 'sin_clasificar'
     let sortOrder = 'fecha-desc'; // 'fecha-desc' | 'fecha-asc' | 'precio-desc' | 'precio-asc'
     let ocultarYaEnviados = false;
+    let modoEnvio = 'ia'; // 'ia' | 'plantilla'
+    let plantillasDisponibles = []; // [{ name, language, components }, ...]
+    let plantillaSeleccionada = null;
 
     const SATISFACTION_LABELS = {
         positivo: 'Positivo',
@@ -189,12 +192,94 @@ document.addEventListener('DOMContentLoaded', () => {
             seccionRetargeting.style.display = 'block';
             usuarioLogueado.textContent = user.email;
             await cargarInstrucciones();
+            cargarPlantillas(false);
             restaurarDesdeCache();
         } else {
             seccionLogin.style.display = 'block';
             seccionRetargeting.style.display = 'none';
         }
     });
+
+    // --- Modo de envio ---
+    window.setModoEnvio = (modo) => {
+        modoEnvio = modo === 'plantilla' ? 'plantilla' : 'ia';
+        document.getElementById('seccionInstrucciones').style.display = modoEnvio === 'ia' ? 'block' : 'none';
+        document.getElementById('seccionPlantilla').style.display = modoEnvio === 'plantilla' ? 'block' : 'none';
+        actualizarBotonEnviar();
+    };
+
+    // --- Plantillas de Meta ---
+    const PLANTILLAS_CACHE_KEY = 'retargeting:plantillas:v1';
+    const PLANTILLAS_TTL_MS = 60 * 60 * 1000; // 1h
+
+    window.cargarPlantillas = async (forceRefresh) => {
+        const select = document.getElementById('plantillaSelect');
+        try {
+            if (!forceRefresh) {
+                const raw = localStorage.getItem(PLANTILLAS_CACHE_KEY);
+                if (raw) {
+                    const cached = JSON.parse(raw);
+                    if (Date.now() - cached.cachedAt < PLANTILLAS_TTL_MS && Array.isArray(cached.templates)) {
+                        plantillasDisponibles = cached.templates;
+                        renderPlantillasSelect();
+                        return;
+                    }
+                }
+            }
+            select.innerHTML = '<option value="">Cargando plantillas...</option>';
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/whatsapp-templates', { headers: { 'Authorization': `Bearer ${token}` } });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.message || 'Error al cargar plantillas');
+            plantillasDisponibles = (data.templates || []).filter(t => {
+                // Excluir las que requieren imagen (no soportado en este flujo)
+                const header = t.components?.find(c => c.type === 'HEADER');
+                return !(header?.format === 'IMAGE');
+            });
+            localStorage.setItem(PLANTILLAS_CACHE_KEY, JSON.stringify({ cachedAt: Date.now(), templates: plantillasDisponibles }));
+            renderPlantillasSelect();
+        } catch (e) {
+            console.error('Error cargando plantillas:', e);
+            select.innerHTML = `<option value="">Error: ${e.message}</option>`;
+        }
+    };
+
+    function renderPlantillasSelect() {
+        const select = document.getElementById('plantillaSelect');
+        if (!plantillasDisponibles.length) {
+            select.innerHTML = '<option value="">No hay plantillas aprobadas (solo texto)</option>';
+            return;
+        }
+        select.innerHTML = '<option value="">Selecciona una plantilla...</option>' +
+            plantillasDisponibles.map(t => `<option value="${t.name}">${t.name} (${t.language})</option>`).join('');
+    }
+
+    window.onPlantillaChange = () => {
+        const select = document.getElementById('plantillaSelect');
+        const name = select.value;
+        plantillaSeleccionada = plantillasDisponibles.find(t => t.name === name) || null;
+        const previewBox = document.getElementById('plantillaPreview');
+        if (!plantillaSeleccionada) {
+            previewBox.style.display = 'none';
+            previewBox.innerHTML = '';
+            actualizarBotonEnviar();
+            return;
+        }
+        const header = plantillaSeleccionada.components?.find(c => c.type === 'HEADER');
+        const body = plantillaSeleccionada.components?.find(c => c.type === 'BODY');
+        const footer = plantillaSeleccionada.components?.find(c => c.type === 'FOOTER');
+        const buttons = plantillaSeleccionada.components?.find(c => c.type === 'BUTTONS');
+        const parts = [];
+        if (header?.text) parts.push(`<div class="plantilla-header">${header.text.replace(/\{\{1\}\}/g, '<em>[Nombre]</em>')}</div>`);
+        if (body?.text) parts.push(`<div class="plantilla-body">${body.text.replace(/\{\{1\}\}/g, '<em>[Nombre]</em>').replace(/\{\{(\d+)\}\}/g, '<em>[var $1]</em>').replace(/\n/g, '<br>')}</div>`);
+        if (footer?.text) parts.push(`<div class="plantilla-footer">${footer.text}</div>`);
+        if (buttons?.buttons?.length) {
+            parts.push('<div class="plantilla-buttons">' + buttons.buttons.map(b => `<span class="plantilla-button">${b.text || b.type}</span>`).join('') + '</div>');
+        }
+        previewBox.innerHTML = parts.join('') || '<em>(plantilla sin contenido)</em>';
+        previewBox.style.display = 'block';
+        actualizarBotonEnviar();
+    };
 
     window.cerrarSesion = () => signOut(auth);
 
@@ -418,10 +503,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function actualizarBotonEnviar() {
         const count = pedidosSeleccionados.size;
-        btnEnviar.disabled = count === 0;
-        btnEnviar.innerHTML = count > 0
-            ? `<i class="fas fa-paper-plane"></i> Enviar Retargeting (${count})`
-            : `<i class="fas fa-paper-plane"></i> Enviar Retargeting Masivo`;
+        const requierePlantilla = modoEnvio === 'plantilla';
+        const plantillaLista = !!plantillaSeleccionada;
+        btnEnviar.disabled = count === 0 || (requierePlantilla && !plantillaLista);
+        if (count === 0) {
+            btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar Retargeting Masivo`;
+        } else if (requierePlantilla) {
+            const tplLabel = plantillaLista ? `: ${plantillaSeleccionada.name}` : '';
+            btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar plantilla (${count})${tplLabel}`;
+        } else {
+            btnEnviar.innerHTML = `<i class="fas fa-paper-plane"></i> Enviar Retargeting (${count})`;
+        }
         const contador = document.getElementById('contadorSeleccionados');
         if (contador) contador.textContent = `${count} seleccionados`;
     }
@@ -430,12 +522,21 @@ document.addEventListener('DOMContentLoaded', () => {
     window.enviarRetargeting = async () => {
         if (pedidosSeleccionados.size === 0) return;
 
-        const instrucciones = instruccionesTA.value.trim();
-        if (!instrucciones) { alert('Escribe las instrucciones de IA primero.'); return; }
+        const esPlantilla = modoEnvio === 'plantilla';
+        let instrucciones = '';
+        if (esPlantilla) {
+            if (!plantillaSeleccionada) { alert('Selecciona una plantilla primero.'); return; }
+        } else {
+            instrucciones = instruccionesTA.value.trim();
+            if (!instrucciones) { alert('Escribe las instrucciones de IA primero.'); return; }
+        }
 
         const pedidosAEnviar = pedidosEncontrados.filter(p => pedidosSeleccionados.has(p.id));
         const contactosUnicos = new Set(pedidosAEnviar.map(p => p.telefono).filter(Boolean));
-        if (!confirm(`Se enviarán mensajes de retargeting a ${contactosUnicos.size} contacto(s) (${pedidosAEnviar.length} pedidos). ¿Continuar?`)) return;
+        const confirmMsg = esPlantilla
+            ? `Se enviará la plantilla "${plantillaSeleccionada.name}" a ${contactosUnicos.size} contacto(s) (${pedidosAEnviar.length} pedidos). ¿Continuar?`
+            : `Se enviarán mensajes de retargeting a ${contactosUnicos.size} contacto(s) (${pedidosAEnviar.length} pedidos). ¿Continuar?`;
+        if (!confirm(confirmMsg)) return;
 
         progresoBox.style.display = 'block';
         btnEnviar.disabled = true;
@@ -455,17 +556,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 const orderNumbers = pedidosDeContacto.map(p => `DH${p.consecutiveOrderNumber}`).join(', ');
 
                 try {
-                    const res = await fetch('/api/retargeting/enviar', {
+                    const endpoint = esPlantilla ? '/api/retargeting/enviar-plantilla' : '/api/retargeting/enviar';
+                    const body = esPlantilla
+                        ? { contactId: telefono, template: plantillaSeleccionada }
+                        : { contactId: telefono, instructions: instrucciones, orderNumbers: pedidosDeContacto.map(p => p.consecutiveOrderNumber) };
+                    const res = await fetch(endpoint, {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
                             'Authorization': `Bearer ${token}`
                         },
-                        body: JSON.stringify({
-                            contactId: telefono,
-                            instructions: instrucciones,
-                            orderNumbers: pedidosDeContacto.map(p => p.consecutiveOrderNumber)
-                        })
+                        body: JSON.stringify(body)
                     });
                     const result = await res.json();
 

@@ -8580,6 +8580,62 @@ Analiza la conversación y decide qué mensaje de retargeting enviar al cliente.
     }
 });
 
+// Enviar plantilla aprobada de Meta como retargeting (modo manual, sin IA)
+router.post('/retargeting/enviar-plantilla', async (req, res) => {
+    try {
+        const { contactId, template } = req.body;
+        if (!contactId || !template?.name) {
+            return res.status(400).json({ success: false, message: 'Faltan contactId o template.' });
+        }
+
+        const contactRef = db.collection('contacts_whatsapp').doc(contactId);
+        const contactDoc = await contactRef.get();
+        if (!contactDoc.exists) {
+            return res.json({ success: false, skipped: true, reason: 'Contacto no encontrado en WhatsApp' });
+        }
+
+        const todayMx = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+        const contactData = contactDoc.data();
+        if (contactData.lastRetargetingDate === todayMx) {
+            return res.json({ success: false, skipped: true, reason: 'Ya se envió retargeting hoy' });
+        }
+
+        const PHONE_NUMBER_ID_ENV = process.env.PHONE_NUMBER_ID;
+        const WHATSAPP_TOKEN_ENV = process.env.WHATSAPP_TOKEN;
+        if (!PHONE_NUMBER_ID_ENV || !WHATSAPP_TOKEN_ENV) {
+            return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+        }
+
+        const { payload, messageToSaveText } = await buildAdvancedTemplatePayload(contactId, template);
+        const tplResponse = await axios.post(
+            `https://graph.facebook.com/v19.0/${PHONE_NUMBER_ID_ENV}/messages`,
+            payload,
+            { headers: { Authorization: `Bearer ${WHATSAPP_TOKEN_ENV}`, 'Content-Type': 'application/json' } }
+        );
+        const messageId = tplResponse.data.messages[0].id;
+
+        await contactRef.collection('messages').doc(messageId).set({
+            from: PHONE_NUMBER_ID_ENV,
+            text: messageToSaveText,
+            timestamp: admin.firestore.FieldValue.serverTimestamp(),
+            status: 'sent',
+            id: messageId,
+            isRetargeting: true
+        });
+        await contactRef.update({
+            lastMessage: messageToSaveText,
+            lastMessageTimestamp: admin.firestore.FieldValue.serverTimestamp(),
+            lastRetargetingDate: todayMx
+        });
+
+        res.json({ success: true, sentText: messageToSaveText });
+    } catch (error) {
+        const detail = error.response ? JSON.stringify(error.response.data) : error.message;
+        console.error('Error en retargeting (plantilla):', detail);
+        res.status(500).json({ success: false, message: detail });
+    }
+});
+
 // ============================================
 // SATISFACCION (clasificacion masiva con Gemini)
 // ============================================
