@@ -115,7 +115,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Cache local (sin estarlos llamando cada vez) ---
-    const CACHE_KEY = 'retargeting:pedidos:v1';
+    const CACHE_KEY = 'retargeting:pedidos:v2';
     const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
 
     function loadCache() {
@@ -451,28 +451,40 @@ document.addEventListener('DOMContentLoaded', () => {
                 </label>
                 <span id="contadorSeleccionados">${pedidosSeleccionados.size} seleccionados</span>
             </div>
+            <div class="pedido-header">
+                <span class="col-check"></span>
+                <span class="col-indice">#</span>
+                <span class="col-pedido">Pedido</span>
+                <span class="col-producto">Producto</span>
+                <span class="col-fecha">Fecha</span>
+                <span class="col-estatus">Estatus</span>
+                <span class="col-precio">Precio</span>
+                <span class="col-satisfaccion">Satisfacci&oacute;n</span>
+                <span class="col-retargeting">Retargeting</span>
+                <span class="col-telefono">Tel&eacute;fono</span>
+            </div>
         ` + pedidosVisibles.map((p, idx) => {
             const lv = getOrderLevel(p);
             const lvLabel = SATISFACTION_LABELS[lv] || lv;
             const isChecked = pedidosSeleccionados.has(p.id) && !p.retargetadoHoy;
             const yaEnviado = yaRecibioRetargeting(p);
-            const yaEnviadoBadge = p.retargetadoHoy
+            const retargetingCell = p.retargetadoHoy
                 ? '<span class="badge-enviado">Enviado Hoy</span>'
-                : (yaEnviado ? `<span class="badge-ya-enviado" title="Última vez: ${p.lastRetargetingDate}"><i class="fas fa-history"></i> Ya enviado ${p.lastRetargetingDate}</span>` : '');
+                : (yaEnviado
+                    ? `<span class="badge-ya-enviado" title="Última vez: ${p.lastRetargetingDate}"><i class="fas fa-history"></i> ${p.lastRetargetingDate}</span>`
+                    : '<span class="muted">—</span>');
             return `
-            <div class="pedido-item ${p.retargetadoHoy ? 'enviado' : ''} ${yaEnviado && !p.retargetadoHoy ? 'historico' : ''}">
-                <input type="checkbox" class="pedido-check" data-id="${p.id}" ${p.retargetadoHoy ? 'disabled' : (isChecked ? 'checked' : '')} onchange="togglePedido('${p.id}', this.checked)">
-                <span class="pedido-indice">#${idx + 1}</span>
-                <div class="pedido-info">
-                    <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
-                    <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
-                    <span class="pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
-                    <span class="pedido-estatus">${p.estatus || 'Pagado'}</span>
-                    <span class="pedido-precio">${formatPrice(p)}</span>
-                    <span class="badge-nivel badge-${lv}">${lvLabel}</span>
-                    ${yaEnviadoBadge}
-                </div>
-                <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
+            <div class="pedido-row ${p.retargetadoHoy ? 'enviado' : ''} ${yaEnviado && !p.retargetadoHoy ? 'historico' : ''}">
+                <input type="checkbox" class="col-check pedido-check" data-id="${p.id}" ${p.retargetadoHoy ? 'disabled' : (isChecked ? 'checked' : '')} onchange="togglePedido('${p.id}', this.checked)">
+                <span class="col-indice">#${idx + 1}</span>
+                <span class="col-pedido pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
+                <span class="col-producto pedido-producto" title="${(p.producto || 'Sin producto').replace(/"/g, '&quot;')}">${p.producto || 'Sin producto'}</span>
+                <span class="col-fecha pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
+                <span class="col-estatus"><span class="pedido-estatus">${p.estatus || 'Pagado'}</span></span>
+                <span class="col-precio pedido-precio">${formatPrice(p)}</span>
+                <span class="col-satisfaccion"><span class="badge-nivel badge-${lv}">${lvLabel}</span></span>
+                <span class="col-retargeting">${retargetingCell}</span>
+                <span class="col-telefono pedido-telefono">${p.telefono || 'Sin tel'}</span>
             </div>`;
         }).join('');
 
