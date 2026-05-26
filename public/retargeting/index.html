@@ -104,6 +104,16 @@
                     <button class="chip" data-level="sin_clasificar" onclick="setSatisfactionFilter('sin_clasificar')"><i class="fas fa-circle-notch"></i> Sin clasificar <span class="chip-count" id="cntFilterSinClasificar">0</span></button>
                 </div>
             </div>
+            <div class="orden-row">
+                <label for="sortOrder" class="orden-label"><i class="fas fa-sort"></i> Ordenar:</label>
+                <select id="sortOrder" onchange="setSortOrder(this.value)">
+                    <option value="fecha-desc">Fecha (m&aacute;s reciente primero)</option>
+                    <option value="fecha-asc">Fecha (m&aacute;s antigua primero)</option>
+                    <option value="precio-desc">Precio (mayor a menor)</option>
+                    <option value="precio-asc">Precio (menor a mayor)</option>
+                </select>
+                <label class="orden-check"><input type="checkbox" id="ocultarYaEnviados" onchange="toggleOcultarYaEnviados(this.checked)"> Ocultar los que ya recibieron retargeting</label>
+            </div>
             <div id="listaPedidos" class="pedidos-list"></div>
         </div>
 

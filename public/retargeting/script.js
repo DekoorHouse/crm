@@ -41,6 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let pedidosEncontrados = [];
     let pedidosSeleccionados = new Set();
     let satisfactionFilter = ''; // '' | 'positivo' | 'neutral' | 'negativo' | 'sin_senal' | 'sin_clasificar'
+    let sortOrder = 'fecha-desc'; // 'fecha-desc' | 'fecha-asc' | 'precio-desc' | 'precio-asc'
+    let ocultarYaEnviados = false;
 
     const SATISFACTION_LABELS = {
         positivo: 'Positivo',
@@ -54,10 +56,60 @@ document.addEventListener('DOMContentLoaded', () => {
         return p.satisfactionLevel || 'sin_clasificar';
     }
 
+    function getOrderPrice(p) {
+        const n = parseFloat(p.precio);
+        return isNaN(n) ? 0 : n;
+    }
+
+    function formatPrice(p) {
+        const n = getOrderPrice(p);
+        if (!n) return '—';
+        return '$' + n.toLocaleString('es-MX', { maximumFractionDigits: 0 });
+    }
+
+    function getOrderDateMs(p) {
+        return p.createdAt ? new Date(p.createdAt).getTime() : 0;
+    }
+
+    function yaRecibioRetargeting(p) {
+        return !!p.lastRetargetingDate;
+    }
+
     function pedidoCoincideFiltro(p) {
+        if (ocultarYaEnviados && yaRecibioRetargeting(p)) return false;
         if (!satisfactionFilter) return true;
         return getOrderLevel(p) === satisfactionFilter;
     }
+
+    function aplicarOrden(arr) {
+        const copy = arr.slice();
+        switch (sortOrder) {
+            case 'fecha-asc':
+                copy.sort((a, b) => getOrderDateMs(a) - getOrderDateMs(b));
+                break;
+            case 'precio-desc':
+                copy.sort((a, b) => getOrderPrice(b) - getOrderPrice(a));
+                break;
+            case 'precio-asc':
+                copy.sort((a, b) => getOrderPrice(a) - getOrderPrice(b));
+                break;
+            case 'fecha-desc':
+            default:
+                copy.sort((a, b) => getOrderDateMs(b) - getOrderDateMs(a));
+                break;
+        }
+        return copy;
+    }
+
+    window.setSortOrder = (value) => {
+        sortOrder = value || 'fecha-desc';
+        renderPedidos();
+    };
+
+    window.toggleOcultarYaEnviados = (checked) => {
+        ocultarYaEnviados = !!checked;
+        renderPedidos();
+    };
 
     // --- Cache local (sin estarlos llamando cada vez) ---
     const CACHE_KEY = 'retargeting:pedidos:v1';
@@ -278,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const pedidosVisibles = pedidosEncontrados.filter(pedidoCoincideFiltro);
+        const pedidosVisibles = aplicarOrden(pedidosEncontrados.filter(pedidoCoincideFiltro));
 
         // Limpiar seleccion de pedidos que ya no son visibles (cambio de filtro)
         const idsVisibles = new Set(pedidosVisibles.map(p => p.id));
@@ -292,8 +344,10 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         if (pedidosVisibles.length === 0) {
-            const label = SATISFACTION_LABELS[satisfactionFilter] || satisfactionFilter;
-            listaPedidos.innerHTML = `<div style="padding:20px;text-align:center;color:#999;">Ningún pedido coincide con el filtro <strong>${label}</strong>.</div>`;
+            const motivo = ocultarYaEnviados && !satisfactionFilter
+                ? 'Ningún pedido pendiente de retargeting en este rango.'
+                : `Ningún pedido coincide con el filtro <strong>${SATISFACTION_LABELS[satisfactionFilter] || 'actual'}</strong>.`;
+            listaPedidos.innerHTML = `<div style="padding:20px;text-align:center;color:#999;">${motivo}</div>`;
             actualizarBotonEnviar();
             return;
         }
@@ -302,28 +356,36 @@ document.addEventListener('DOMContentLoaded', () => {
         const seleccionadosVisibles = pedidosVisibles.filter(p => pedidosSeleccionados.has(p.id)).length;
         const allChecked = seleccionablesVisibles > 0 && seleccionadosVisibles === seleccionablesVisibles;
 
+        const tieneFiltroVisible = !!satisfactionFilter || ocultarYaEnviados;
+
         listaPedidos.innerHTML = `
             <div class="select-all-row">
                 <label>
                     <input type="checkbox" id="selectAll" ${allChecked ? 'checked' : ''} onchange="toggleSelectAll(this.checked)">
-                    <strong>Seleccionar todos (${pedidosVisibles.length}${satisfactionFilter ? ' del filtro' : ''})</strong>
+                    <strong>Seleccionar todos (${pedidosVisibles.length}${tieneFiltroVisible ? ' del filtro' : ''})</strong>
                 </label>
                 <span id="contadorSeleccionados">${pedidosSeleccionados.size} seleccionados</span>
             </div>
-        ` + pedidosVisibles.map(p => {
+        ` + pedidosVisibles.map((p, idx) => {
             const lv = getOrderLevel(p);
             const lvLabel = SATISFACTION_LABELS[lv] || lv;
             const isChecked = pedidosSeleccionados.has(p.id) && !p.retargetadoHoy;
+            const yaEnviado = yaRecibioRetargeting(p);
+            const yaEnviadoBadge = p.retargetadoHoy
+                ? '<span class="badge-enviado">Enviado Hoy</span>'
+                : (yaEnviado ? `<span class="badge-ya-enviado" title="Última vez: ${p.lastRetargetingDate}"><i class="fas fa-history"></i> Ya enviado ${p.lastRetargetingDate}</span>` : '');
             return `
-            <div class="pedido-item ${p.retargetadoHoy ? 'enviado' : ''}">
+            <div class="pedido-item ${p.retargetadoHoy ? 'enviado' : ''} ${yaEnviado && !p.retargetadoHoy ? 'historico' : ''}">
                 <input type="checkbox" class="pedido-check" data-id="${p.id}" ${p.retargetadoHoy ? 'disabled' : (isChecked ? 'checked' : '')} onchange="togglePedido('${p.id}', this.checked)">
+                <span class="pedido-indice">#${idx + 1}</span>
                 <div class="pedido-info">
                     <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
                     <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
                     <span class="pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
                     <span class="pedido-estatus">${p.estatus || 'Pagado'}</span>
+                    <span class="pedido-precio">${formatPrice(p)}</span>
                     <span class="badge-nivel badge-${lv}">${lvLabel}</span>
-                    ${p.retargetadoHoy ? '<span class="badge-enviado">Enviado Hoy</span>' : ''}
+                    ${yaEnviadoBadge}
                 </div>
                 <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
             </div>`;

@@ -8348,6 +8348,7 @@ router.get('/retargeting/buscar-pedidos', async (req, res) => {
             return {
                 ...o,
                 retargetadoHoy: meta.lastRetargetingDate === todayMx,
+                lastRetargetingDate: meta.lastRetargetingDate || null,
                 satisfactionLevel: meta.satisfactionLevel || null
             };
         });
