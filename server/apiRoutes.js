@@ -3250,23 +3250,39 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     // --- Procesar Cuerpo (BODY) ---
     const bodyDef = templateComponents?.find(c => c.type === 'BODY');
     if (bodyDef) {
-        // Encontrar cuántas variables ({{n}}) espera el cuerpo
-        const matches = bodyDef.text?.match(/\{\{\d\}\}/g);
-        if (matches) {
-            // Combinar nombre del contacto (para {{1}}) con los parámetros adicionales (para {{2}}, {{3}}, ...)
-            const allParams = [contactName, ...bodyParams];
-            // Crear los parámetros de texto, asegurándose de no exceder los esperados
-            const parameters = allParams.slice(0, matches.length).map(param => ({
-                type: 'text',
-                text: String(param) // Asegurar que sea string
-            }));
+        // Encontrar las variables ({{n}}) y su numero maximo. Usamos \d+ para soportar {{10}}, {{11}}, etc.
+        const varNumbers = new Set();
+        if (bodyDef.text) {
+            const re = /\{\{(\d+)\}\}/g;
+            let m;
+            while ((m = re.exec(bodyDef.text)) !== null) {
+                varNumbers.add(Number(m[1]));
+            }
+        }
+        const maxVar = varNumbers.size ? Math.max(...varNumbers) : 0;
 
+        if (maxVar > 0) {
+            // Construir N parametros: {{1}} = nombre, {{2..N}} = bodyParams o example.body_text de Meta o vacio
+            const exampleValues = (bodyDef.example?.body_text?.[0]) || [];
+            const allParams = [];
+            for (let i = 0; i < maxVar; i++) {
+                if (i === 0) {
+                    allParams.push(contactName);
+                } else if (bodyParams[i - 1] !== undefined && bodyParams[i - 1] !== null) {
+                    allParams.push(bodyParams[i - 1]);
+                } else if (exampleValues[i] !== undefined && exampleValues[i] !== null) {
+                    allParams.push(exampleValues[i]);
+                } else {
+                    allParams.push(''); // Ultima alternativa: vacio (Meta lo acepta)
+                }
+            }
+            const parameters = allParams.map(p => ({ type: 'text', text: String(p) }));
             payloadComponents.push({ type: 'body', parameters });
 
-            // Reconstruir el texto del mensaje para guardarlo en la DB
+            // Reconstruir el texto del mensaje para guardarlo en la DB (todas las ocurrencias)
             let tempText = bodyDef.text;
             parameters.forEach((param, index) => {
-                tempText = tempText.replace(`{{${index + 1}}}`, param.text);
+                tempText = tempText.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), param.text);
             });
             messageToSaveText = tempText;
 
@@ -4513,7 +4529,8 @@ router.get('/whatsapp-templates', async (req, res) => {
                     type: c.type,
                     text: c.text, // Texto (puede tener variables {{n}})
                     format: c.format, // Para header (IMAGE, TEXT, VIDEO, DOCUMENT)
-                    buttons: c.buttons // Array de botones si type es BUTTONS
+                    buttons: c.buttons, // Array de botones si type es BUTTONS
+                    example: c.example // Valores ejemplo de Meta para sustituir {{2}}, {{3}}, ...
                 }))
             }));
         res.status(200).json({ success: true, templates });

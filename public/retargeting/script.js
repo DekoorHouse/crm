@@ -223,7 +223,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     // --- Plantillas de Meta ---
-    const PLANTILLAS_CACHE_KEY = 'retargeting:plantillas:v2';
+    const PLANTILLAS_CACHE_KEY = 'retargeting:plantillas:v3';
     const PLANTILLAS_TTL_MS = 60 * 60 * 1000; // 1h
 
     window.cargarPlantillas = async (forceRefresh) => {
