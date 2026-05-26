@@ -284,20 +284,36 @@ document.addEventListener('DOMContentLoaded', () => {
         btnReclasificar.disabled = disabled;
     }
 
-    function renderBreakdown(bd) {
+    function renderBreakdown(bd, jobData = null) {
         if (!progresoBreakdown) return;
         if (!bd) { progresoBreakdown.style.display = 'none'; return; }
         progresoBreakdown.style.display = 'block';
         const fmt = (iso) => iso ? new Date(iso).toLocaleDateString('es-MX', { day:'2-digit', month:'short', year:'numeric' }) : '-';
+
+        let html = '';
         if (bd.source && bd.source.startsWith('pedidos')) {
             const rangoTxt = bd.dateRange ? `<div class="bd-line">📅 Rango: <strong>${fmt(bd.dateRange.from)} → ${fmt(bd.dateRange.to)}</strong></div>` : `<div class="bd-line">📅 Rango: <strong>todas las fechas</strong></div>`;
-            progresoBreakdown.innerHTML = `
-                ${rangoTxt}
-                <div class="bd-line"><span class="bd-num">${bd.pedidosCount}</span> pedidos Pagado <span class="bd-arrow">→</span> <span class="bd-num">${bd.uniqueTelefonos}</span> teléfonos únicos <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsFound}</span> con WhatsApp <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsLimited}</span> a clasificar</div>
-            `;
+            html += rangoTxt;
+            html += `<div class="bd-line"><span class="bd-num">${bd.pedidosCount}</span> pedidos Pagado <span class="bd-arrow">→</span> <span class="bd-num">${bd.uniqueTelefonos}</span> teléfonos únicos <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsFound}</span> con WhatsApp <span class="bd-arrow">→</span> <span class="bd-num">${bd.contactsLimited}</span> en el alcance</div>`;
         } else {
-            progresoBreakdown.innerHTML = `<div class="bd-line">📂 <strong>${bd.source}</strong>: ${bd.contactsTotal || bd.contactsLimited} contactos</div>`;
+            html += `<div class="bd-line">📂 <strong>${bd.source}</strong>: ${bd.contactsTotal || bd.contactsLimited} contactos en el alcance</div>`;
         }
+
+        // Linea extra: tras aplicar el filtro de modo (pending / recent-activity / all)
+        if (jobData && (jobData.total != null || jobData.skipped != null)) {
+            const total = jobData.total || 0;
+            const skipped = jobData.skipped || 0;
+            const modoLabel = jobData.options?.mode === 'pending' ? 'pendientes nuevos'
+                            : jobData.options?.mode === 'recent-activity' ? 'con actividad nueva'
+                            : 'a re-clasificar (modo: todas)';
+            if (skipped > 0) {
+                html += `<div class="bd-line">🎯 Tras filtrar por modo: <span class="bd-num">${total}</span> ${modoLabel} <span class="bd-arrow">·</span> <span class="bd-num">${skipped}</span> saltados (ya clasificados antes)</div>`;
+            } else {
+                html += `<div class="bd-line">🎯 <span class="bd-num">${total}</span> ${modoLabel}</div>`;
+            }
+        }
+
+        progresoBreakdown.innerHTML = html;
     }
 
     function pollProgreso(jobId) {
@@ -317,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 const etaTxt = data.etaSeconds != null ? ` · ETA ${Math.floor(data.etaSeconds/60)}m ${data.etaSeconds%60}s` : '';
                 const tokTxt = data.tokens?.input ? ` · ~${(data.tokens.input/1000).toFixed(1)}K tokens entrada` : '';
                 progresoExtra.textContent = `Llamadas IA: ${data.aiCalls || 0}${etaTxt}${tokTxt}`;
-                renderBreakdown(data.breakdown);
+                renderBreakdown(data.breakdown, data);
                 if (data.status === 'done' || data.status === 'error' || data.status === 'cancelled') {
                     clearInterval(pollTimer);
                     pollTimer = null;
