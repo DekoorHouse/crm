@@ -3993,8 +3993,15 @@ router.post('/contacts/:contactId/queue-message', async (req, res) => {
         res.status(200).json({ success: true, message: 'Mensaje encolado con éxito.' });
 
     } catch (error) {
+        const metaErr = error.response?.data?.error;
+        const detail = metaErr?.message || error.message || 'Error desconocido';
         console.error('❌ Error al encolar mensaje:', error.response ? JSON.stringify(error.response.data, null, 2) : error.message);
-        res.status(500).json({ success: false, message: 'Error del servidor al encolar el mensaje.' });
+        res.status(500).json({
+            success: false,
+            message: detail,
+            meta_code: metaErr?.code || null,
+            meta_subcode: metaErr?.error_subcode || null
+        });
     }
 });
 

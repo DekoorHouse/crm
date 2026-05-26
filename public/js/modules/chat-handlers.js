@@ -1476,11 +1476,21 @@ function renderTemplatePicker() {
     const picker = document.getElementById('template-picker');
     if (!picker) return;
 
-    state.pickerItems = state.templates || [];
-    state.pickerSelectedIndex = state.pickerItems.length > 0 ? 0 : -1;
+    // Filtrar plantillas que requieren imagen: el chat no tiene picker de imagen,
+    // se mandan desde Campañas > Plantilla con imagen.
+    const allTemplates = state.templates || [];
+    const sendableTemplates = allTemplates.filter(t => {
+        const header = t.components?.find(c => c.type === 'HEADER');
+        const fmt = header?.format;
+        return fmt !== 'IMAGE' && fmt !== 'VIDEO' && fmt !== 'DOCUMENT';
+    });
+    const imageOnlyCount = allTemplates.length - sendableTemplates.length;
 
-    if (state.templates && state.templates.length > 0) {
-        picker.innerHTML = state.templates.map(template => {
+    state.pickerItems = sendableTemplates;
+    state.pickerSelectedIndex = sendableTemplates.length > 0 ? 0 : -1;
+
+    if (sendableTemplates.length > 0) {
+        picker.innerHTML = sendableTemplates.map(template => {
             const templateString = JSON.stringify(template).replace(/"/g, '&quot;');
             return `
                 <div class="picker-item template-item" data-template-name="${template.name}" onclick="handleSendTemplate(${templateString})">
@@ -1491,8 +1501,11 @@ function renderTemplatePicker() {
                 </div>
             `;
         }).join('');
+        if (imageOnlyCount > 0) {
+            picker.innerHTML += `<div class="p-2 text-center text-xs text-gray-500 border-t mt-1"><i class="fas fa-info-circle mr-1"></i>${imageOnlyCount} plantilla(s) con imagen no se muestran. Envíalas desde Campañas &gt; Plantilla con imagen.</div>`;
+        }
     } else {
-        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles.</div>`;
+        picker.innerHTML = `<div class="p-4 text-center text-sm text-gray-500">No hay plantillas de WhatsApp disponibles para enviar desde el chat.${imageOnlyCount > 0 ? ` (${imageOnlyCount} requieren imagen — envíalas desde Campañas.)` : ''}</div>`;
     }
 
     updatePickerSelection();
