@@ -45,22 +45,8 @@
       "collectionGroup": "template_sends",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "wamid", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "template_sends",
-      "queryScope": "COLLECTION",
-      "fields": [
         { "fieldPath": "batchId", "order": "ASCENDING" },
         { "fieldPath": "sentAt", "order": "ASCENDING" }
-      ]
-    },
-    {
-      "collectionGroup": "template_batches",
-      "queryScope": "COLLECTION",
-      "fields": [
-        { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
     }
   ],
