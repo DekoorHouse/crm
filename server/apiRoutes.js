@@ -3248,21 +3248,61 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     }
 
     // --- Procesar Cuerpo (BODY) ---
+    // Meta soporta dos estilos de variables (mutuamente excluyentes por plantilla):
+    //   - Numeradas:  {{1}}, {{2}}, ...
+    //   - Con nombre: {{customer_name}}, {{discount}}, ...
+    // El payload tiene formato distinto: las nombradas requieren `parameter_name`.
     const bodyDef = templateComponents?.find(c => c.type === 'BODY');
     if (bodyDef) {
-        // Encontrar las variables ({{n}}) y su numero maximo. Usamos \d+ para soportar {{10}}, {{11}}, etc.
-        const varNumbers = new Set();
-        if (bodyDef.text) {
-            const re = /\{\{(\d+)\}\}/g;
-            let m;
-            while ((m = re.exec(bodyDef.text)) !== null) {
-                varNumbers.add(Number(m[1]));
-            }
+        const bodyText = bodyDef.text || '';
+
+        // Detectar variables con nombre (primero, son mas especificas que las numeradas)
+        const namedRe = /\{\{([a-zA-Z_][a-zA-Z0-9_]*)\}\}/g;
+        const namedMatches = [];
+        let nm;
+        while ((nm = namedRe.exec(bodyText)) !== null) {
+            if (!namedMatches.includes(nm[1])) namedMatches.push(nm[1]);
         }
+
+        // Detectar variables numeradas
+        const numRe = /\{\{(\d+)\}\}/g;
+        const varNumbers = new Set();
+        while ((nm = numRe.exec(bodyText)) !== null) varNumbers.add(Number(nm[1]));
         const maxVar = varNumbers.size ? Math.max(...varNumbers) : 0;
 
-        if (maxVar > 0) {
-            // Construir N parametros: {{1}} = nombre, {{2..N}} = bodyParams o example.body_text de Meta o vacio
+        // Heuristica: nombres que tipicamente representan el nombre del contacto
+        const NAME_PARAM_RE = /^(customer_name|nombre|nombre_cliente|client_name|first_name|name)$/i;
+
+        if (namedMatches.length > 0) {
+            // ---- Variables con nombre ----
+            const examplesByName = {};
+            (bodyDef.example?.body_text_named_params || []).forEach(p => {
+                examplesByName[p.param_name] = p.example;
+            });
+            const parameters = namedMatches.map((name, idx) => {
+                let value;
+                if (NAME_PARAM_RE.test(name)) {
+                    value = contactName;
+                } else if (bodyParams[idx] !== undefined && bodyParams[idx] !== null) {
+                    value = bodyParams[idx];
+                } else if (examplesByName[name] !== undefined && examplesByName[name] !== null) {
+                    value = examplesByName[name];
+                } else {
+                    value = '';
+                }
+                return { type: 'text', parameter_name: name, text: String(value) };
+            });
+            payloadComponents.push({ type: 'body', parameters });
+
+            // Reconstruir texto para DB
+            let tempText = bodyText;
+            parameters.forEach(p => {
+                tempText = tempText.replace(new RegExp(`\\{\\{${p.parameter_name}\\}\\}`, 'g'), p.text);
+            });
+            messageToSaveText = tempText;
+
+        } else if (maxVar > 0) {
+            // ---- Variables numeradas ----
             const exampleValues = (bodyDef.example?.body_text?.[0]) || [];
             const allParams = [];
             for (let i = 0; i < maxVar; i++) {
@@ -3273,23 +3313,22 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
                 } else if (exampleValues[i] !== undefined && exampleValues[i] !== null) {
                     allParams.push(exampleValues[i]);
                 } else {
-                    allParams.push(''); // Ultima alternativa: vacio (Meta lo acepta)
+                    allParams.push('');
                 }
             }
             const parameters = allParams.map(p => ({ type: 'text', text: String(p) }));
             payloadComponents.push({ type: 'body', parameters });
 
-            // Reconstruir el texto del mensaje para guardarlo en la DB (todas las ocurrencias)
-            let tempText = bodyDef.text;
+            let tempText = bodyText;
             parameters.forEach((param, index) => {
                 tempText = tempText.replace(new RegExp(`\\{\\{${index + 1}\\}\\}`, 'g'), param.text);
             });
             messageToSaveText = tempText;
 
         } else {
-            // Si el cuerpo no tiene variables, añadir componente vacío
+            // Sin variables
             payloadComponents.push({ type: 'body', parameters: [] });
-            messageToSaveText = bodyDef.text || messageToSaveText; // Usar texto del cuerpo si existe
+            messageToSaveText = bodyText || messageToSaveText;
         }
     }
 
