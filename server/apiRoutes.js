@@ -3367,6 +3367,33 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     return { payload, messageToSaveText };
 }
 
+// Extrae metadatos de una plantilla para guardar en el doc del mensaje
+// (para que el CRM pueda renderizar botones, footer y previsualizar media tal como
+// los recibe el cliente en WhatsApp).
+function extractTemplateMetadata(template, mediaUrl) {
+    const meta = { templateName: template.name, templateLanguage: template.language || null };
+    const header = template.components?.find(c => c.type === 'HEADER');
+    const buttonsDef = template.components?.find(c => c.type === 'BUTTONS');
+    const footer = template.components?.find(c => c.type === 'FOOTER');
+    if (header?.format && mediaUrl) {
+        const mimeByFormat = { IMAGE: 'image/jpeg', VIDEO: 'video/mp4', DOCUMENT: 'application/pdf' };
+        if (mimeByFormat[header.format]) {
+            meta.fileUrl = mediaUrl;
+            meta.fileType = mimeByFormat[header.format];
+        }
+    }
+    if (footer?.text) meta.templateFooter = footer.text;
+    if (buttonsDef?.buttons?.length) {
+        meta.templateButtons = buttonsDef.buttons.map(b => ({
+            type: b.type, // QUICK_REPLY | URL | PHONE_NUMBER
+            text: b.text || '',
+            url: b.url || null,
+            phone_number: b.phone_number || null
+        }));
+    }
+    return meta;
+}
+
 // =============================================================
 // TEMPLATE TRACKING (Fase 1) — registra cada envio de plantilla
 // =============================================================
@@ -3970,7 +3997,8 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
             messageId = response.data.messages[0].id;
             messageToSave = {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
-                id: messageId, text: messageToSaveText
+                id: messageId, text: messageToSaveText,
+                ...extractTemplateMetadata(template, templateMediaUrl)
             };
 
             // Tracking de plantilla (Fase 1): cada envio desde chat = batch propio de 1
@@ -8779,7 +8807,8 @@ router.post('/retargeting/enviar-plantilla', async (req, res) => {
             timestamp: admin.firestore.FieldValue.serverTimestamp(),
             status: 'sent',
             id: messageId,
-            isRetargeting: true
+            isRetargeting: true,
+            ...extractTemplateMetadata(template, mediaUrl)
         });
         await contactRef.update({
             lastMessage: messageToSaveText,

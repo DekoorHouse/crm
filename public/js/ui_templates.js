@@ -870,6 +870,29 @@ const MessageBubbleTemplate = (message) => {
          contentHTML += `<div><p class="break-words">${formatWhatsAppText(message.text)}</p></div>`;
     }
 
+    // Footer y botones de plantilla (solo se muestran si vienen de un envio de template)
+    let templateFooterHTML = '';
+    if (message.templateFooter) {
+        templateFooterHTML = `<div class="template-footer">${formatWhatsAppText(message.templateFooter)}</div>`;
+    }
+    let templateButtonsHTML = '';
+    if (Array.isArray(message.templateButtons) && message.templateButtons.length > 0) {
+        templateButtonsHTML = '<div class="template-buttons">' + message.templateButtons.map(b => {
+            const label = b.text || b.type || 'Botón';
+            if (b.type === 'URL' && b.url) {
+                const safeUrl = b.url.replace(/\{\{1\}\}/g, '');
+                return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="template-button template-button-url"><i class="fas fa-external-link-alt"></i> ${label}</a>`;
+            }
+            if (b.type === 'PHONE_NUMBER' && b.phone_number) {
+                return `<a href="tel:${b.phone_number}" class="template-button template-button-phone"><i class="fas fa-phone"></i> ${label}</a>`;
+            }
+            return `<span class="template-button template-button-reply"><i class="fas fa-reply"></i> ${label}</span>`;
+        }).join('') + '</div>';
+    }
+    if (templateFooterHTML || templateButtonsHTML) {
+        contentHTML += templateFooterHTML + templateButtonsHTML;
+    }
+
     let replyPreviewHTML = '';
     if (message.context && message.context.id) {
         const originalMessage = state.messages.find(m => m.id === message.context.id);

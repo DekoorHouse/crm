@@ -1998,3 +1998,50 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
     0%   { transform: translate(0, 0) scale(1); opacity: 1; }
     100% { transform: translate(var(--sx), var(--sy)) scale(0); opacity: 0; }
 }
+
+/* === Plantilla: footer + botones (renderiza tal como los ve el cliente en WhatsApp) === */
+.template-footer {
+    margin-top: 6px;
+    padding-top: 6px;
+    font-size: 0.72rem;
+    color: #6b7280;
+    font-style: italic;
+    border-top: 1px solid rgba(0,0,0,0.06);
+}
+.template-buttons {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(0,0,0,0.08);
+}
+.template-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    background: rgba(0, 100, 0, 0.08);
+    color: #075e54;
+    font-size: 0.82rem;
+    font-weight: 600;
+    text-align: center;
+    text-decoration: none;
+    cursor: default;
+}
+.template-button-reply {
+    cursor: default;
+}
+.template-button-url:hover,
+.template-button-phone:hover {
+    background: rgba(0, 100, 0, 0.14);
+    text-decoration: none;
+}
+.message-bubble.sent .template-footer { color: rgba(255,255,255,0.75); border-top-color: rgba(255,255,255,0.18); }
+.message-bubble.sent .template-buttons { border-top-color: rgba(255,255,255,0.2); }
+.message-bubble.sent .template-button { background: rgba(255,255,255,0.18); color: #fff; }
+.message-bubble.sent .template-button-url:hover,
+.message-bubble.sent .template-button-phone:hover { background: rgba(255,255,255,0.28); }
+
