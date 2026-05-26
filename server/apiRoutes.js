@@ -8725,6 +8725,236 @@ router.post('/retargeting/enviar-plantilla', async (req, res) => {
     }
 });
 
+// =============================================================
+// TEMPLATE METRICS (Fase 3) — dashboard de efectividad de plantillas
+// =============================================================
+const TEMPLATE_PURCHASE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7d
+const TEMPLATE_METRICS_CACHE_TTL_MS = 2 * 60 * 1000; // 2 min — el dashboard se refresca seguido
+const templateMetricsCache = new Map();
+
+function pruneTemplateMetricsCache() {
+    const now = Date.now();
+    for (const [k, v] of templateMetricsCache) {
+        if (now - v.cachedAt > TEMPLATE_METRICS_CACHE_TTL_MS) templateMetricsCache.delete(k);
+    }
+}
+
+// Calcula los counts de un grupo de sends. Recibe array ya leido de docs.
+function computeSendsCounts(sendsDocs) {
+    const counts = { sent: 0, delivered: 0, read: 0, failed: 0, replied: 0, blocked: 0 };
+    for (const d of sendsDocs) {
+        const data = d.data ? d.data() : d;
+        counts.sent++;
+        if (data.status === 'delivered' || data.status === 'read') counts.delivered++;
+        if (data.status === 'read') counts.read++;
+        if (data.status === 'failed') counts.failed++;
+        if (data.repliedAt) counts.replied++;
+        if (data.blocked) counts.blocked++;
+    }
+    return counts;
+}
+
+// Atribuye compras a una tanda: queda con los pedidos Pagado de los contactos del batch
+// creados entre batchCreatedAt y batchCreatedAt + 7d.
+async function attributePurchases(batchCreatedAt, contactIds) {
+    if (!contactIds.length) return { count: 0, value: 0 };
+    const startMs = batchCreatedAt.toMillis();
+    const endMs = startMs + TEMPLATE_PURCHASE_WINDOW_MS;
+    // Query global de pedidos en la ventana — luego filtramos por telefono en memoria.
+    const snap = await db.collection('pedidos')
+        .where('estatus', '==', 'Pagado')
+        .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(startMs))
+        .where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(endMs))
+        .get();
+    const contactSet = new Set(contactIds);
+    let count = 0;
+    let value = 0;
+    for (const doc of snap.docs) {
+        const d = doc.data();
+        if (contactSet.has(d.telefono)) {
+            count++;
+            value += parseFloat(d.precio) || 0;
+        }
+    }
+    return { count, value };
+}
+
+// GET /api/template-metrics/batches?from=&to=&template=&source=&aggregate=
+// Lista tandas con sus metricas computadas
+router.get('/template-metrics/batches', async (req, res) => {
+    try {
+        const { from, to, template, source, aggregate, fresh } = req.query;
+        const cacheKey = `batches_${from || ''}_${to || ''}_${template || ''}_${source || ''}_${aggregate || ''}`;
+        if (fresh !== '1') {
+            const entry = templateMetricsCache.get(cacheKey);
+            if (entry && (Date.now() - entry.cachedAt) < TEMPLATE_METRICS_CACHE_TTL_MS) {
+                return res.json({ success: true, ...entry.data, fromCache: true, cacheAgeMs: Date.now() - entry.cachedAt });
+            }
+        }
+
+        let batchQuery = db.collection('template_batches');
+        if (from) batchQuery = batchQuery.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(from)));
+        if (to) batchQuery = batchQuery.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(to)));
+        if (template) batchQuery = batchQuery.where('templateName', '==', template);
+        if (source) batchQuery = batchQuery.where('source', '==', source);
+        batchQuery = batchQuery.orderBy('createdAt', 'desc').limit(200);
+
+        const batchesSnap = await batchQuery.get();
+        const batches = [];
+        for (const batchDoc of batchesSnap.docs) {
+            const b = batchDoc.data();
+            const sendsSnap = await db.collection('template_sends')
+                .where('batchId', '==', batchDoc.id)
+                .get();
+            const counts = computeSendsCounts(sendsSnap.docs);
+            const contactIds = sendsSnap.docs.map(d => d.data().contactId).filter(Boolean);
+            const purchases = await attributePurchases(b.createdAt, contactIds);
+            batches.push({
+                batchId: batchDoc.id,
+                templateName: b.templateName,
+                templateLanguage: b.templateLanguage || null,
+                source: b.source,
+                sentBy: b.sentBy || null,
+                createdAt: b.createdAt ? b.createdAt.toDate().toISOString() : null,
+                total: b.total || counts.sent,
+                ...counts,
+                purchasesCount: purchases.count,
+                purchaseValue: purchases.value
+            });
+        }
+
+        let response = { batches };
+
+        // Agregacion opcional por plantilla (suma todas las tandas de cada template)
+        if (aggregate === 'template') {
+            const byTpl = new Map();
+            for (const b of batches) {
+                const key = b.templateName;
+                if (!byTpl.has(key)) {
+                    byTpl.set(key, {
+                        templateName: key,
+                        batchesCount: 0,
+                        total: 0, sent: 0, delivered: 0, read: 0, failed: 0,
+                        replied: 0, blocked: 0, purchasesCount: 0, purchaseValue: 0,
+                        sources: new Set()
+                    });
+                }
+                const acc = byTpl.get(key);
+                acc.batchesCount++;
+                acc.total += b.total;
+                acc.sent += b.sent;
+                acc.delivered += b.delivered;
+                acc.read += b.read;
+                acc.failed += b.failed;
+                acc.replied += b.replied;
+                acc.blocked += b.blocked;
+                acc.purchasesCount += b.purchasesCount;
+                acc.purchaseValue += b.purchaseValue;
+                acc.sources.add(b.source);
+            }
+            response.aggregated = Array.from(byTpl.values()).map(r => ({
+                ...r,
+                sources: Array.from(r.sources)
+            }));
+        }
+
+        pruneTemplateMetricsCache();
+        templateMetricsCache.set(cacheKey, { cachedAt: Date.now(), data: response });
+        res.json({ success: true, ...response, fromCache: false });
+    } catch (err) {
+        console.error('Error en template-metrics/batches:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/template-metrics/batches/:batchId - detalle por contacto
+router.get('/template-metrics/batches/:batchId', async (req, res) => {
+    try {
+        const { batchId } = req.params;
+        const batchDoc = await db.collection('template_batches').doc(batchId).get();
+        if (!batchDoc.exists) {
+            return res.status(404).json({ success: false, message: 'Batch no encontrado' });
+        }
+        const batchData = batchDoc.data();
+        const sendsSnap = await db.collection('template_sends')
+            .where('batchId', '==', batchId)
+            .orderBy('sentAt', 'asc')
+            .get();
+        const sends = sendsSnap.docs.map(d => {
+            const s = d.data();
+            return {
+                id: d.id,
+                contactId: s.contactId,
+                contactName: s.contactName || null,
+                wamid: s.wamid,
+                status: s.status,
+                sentAt: s.sentAt ? s.sentAt.toDate().toISOString() : null,
+                deliveredAt: s.deliveredAt ? s.deliveredAt.toDate().toISOString() : null,
+                readAt: s.readAt ? s.readAt.toDate().toISOString() : null,
+                repliedAt: s.repliedAt ? s.repliedAt.toDate().toISOString() : null,
+                failedAt: s.failedAt ? s.failedAt.toDate().toISOString() : null,
+                failureReason: s.failureReason || null,
+                blocked: !!s.blocked
+            };
+        });
+
+        // Atribuir compras por contacto
+        const contactIds = sends.map(s => s.contactId);
+        const startMs = batchData.createdAt.toMillis();
+        const endMs = startMs + TEMPLATE_PURCHASE_WINDOW_MS;
+        const pedidosSnap = await db.collection('pedidos')
+            .where('estatus', '==', 'Pagado')
+            .where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(startMs))
+            .where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(endMs))
+            .get();
+        const purchasesByContact = new Map();
+        for (const pd of pedidosSnap.docs) {
+            const d = pd.data();
+            if (!purchasesByContact.has(d.telefono)) purchasesByContact.set(d.telefono, { count: 0, value: 0 });
+            const acc = purchasesByContact.get(d.telefono);
+            acc.count++;
+            acc.value += parseFloat(d.precio) || 0;
+        }
+        for (const s of sends) {
+            const p = purchasesByContact.get(s.contactId);
+            s.purchasesCount = p?.count || 0;
+            s.purchaseValue = p?.value || 0;
+        }
+
+        res.json({
+            success: true,
+            batch: {
+                batchId,
+                templateName: batchData.templateName,
+                templateLanguage: batchData.templateLanguage || null,
+                source: batchData.source,
+                sentBy: batchData.sentBy || null,
+                createdAt: batchData.createdAt ? batchData.createdAt.toDate().toISOString() : null,
+                total: batchData.total
+            },
+            sends
+        });
+    } catch (err) {
+        console.error('Error en template-metrics/batches/:id:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
+// GET /api/template-metrics/templates - lista las plantillas usadas (para llenar el filtro)
+router.get('/template-metrics/templates', async (_req, res) => {
+    try {
+        const snap = await db.collection('template_batches').get();
+        const names = new Set();
+        for (const d of snap.docs) {
+            if (d.data().templateName) names.add(d.data().templateName);
+        }
+        res.json({ success: true, templates: Array.from(names).sort() });
+    } catch (err) {
+        console.error('Error listando plantillas:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // ============================================
 // SATISFACCION (clasificacion masiva con Gemini)
 // ============================================

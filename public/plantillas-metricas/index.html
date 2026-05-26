@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>M&eacute;tricas de Plantillas</title>
+    <link rel="icon" href="/favicon.png" type="image/png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&family=Nunito+Sans:wght@400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <link rel="stylesheet" href="/plantillas-metricas/style.css?v=1">
+</head>
+<body>
+
+<div id="loading-overlay">
+    <div class="loading-box">
+        <img src="/favicon.png" class="loading-logo" alt="Cargando...">
+    </div>
+</div>
+
+<div class="main-container">
+
+    <div id="seccionLogin">
+        <div class="login-container">
+            <h1><i class="fas fa-chart-line"></i> M&eacute;tricas de Plantillas</h1>
+            <form id="formularioLogin">
+                <div>
+                    <label for="email">Correo Electr&oacute;nico:</label>
+                    <input type="email" id="email" required placeholder="tu.correo@ejemplo.com">
+                </div>
+                <div>
+                    <label for="password">Contrase&ntilde;a:</label>
+                    <input type="password" id="password" required placeholder="--------">
+                </div>
+                <div id="mensajeError"></div>
+                <button type="submit"><i class="fas fa-sign-in-alt"></i> Ingresar</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="seccionMetricas" style="display:none;">
+        <div class="titulo-container">
+            <h1><i class="fas fa-chart-line" style="color:#16a34a;"></i> M&eacute;tricas de Plantillas</h1>
+            <div class="user-info">
+                <span id="usuarioLogueado"></span>
+                <button id="btnCerrarSesion" onclick="cerrarSesion()" title="Cerrar sesi&oacute;n"><i class="fas fa-sign-out-alt"></i></button>
+            </div>
+        </div>
+
+        <div class="content-box">
+            <h2><i class="fas fa-filter"></i> Filtros</h2>
+            <div class="filtros-grid">
+                <div class="filtro-item">
+                    <label for="fechaInicio">Desde:</label>
+                    <input type="date" id="fechaInicio">
+                </div>
+                <div class="filtro-item">
+                    <label for="fechaFin">Hasta:</label>
+                    <input type="date" id="fechaFin">
+                </div>
+                <div class="filtro-item">
+                    <label for="filtroPlantilla">Plantilla:</label>
+                    <select id="filtroPlantilla"><option value="">Todas</option></select>
+                </div>
+                <div class="filtro-item">
+                    <label for="filtroFuente">Fuente:</label>
+                    <select id="filtroFuente">
+                        <option value="">Todas</option>
+                        <option value="chat">Chat individual</option>
+                        <option value="retargeting_plantilla">Retargeting</option>
+                    </select>
+                </div>
+            </div>
+            <div class="acciones-row">
+                <label class="orden-check"><input type="checkbox" id="agruparPlantilla" onchange="recargar()"> Agrupar todas las tandas de una misma plantilla</label>
+                <button id="btnRecargar" onclick="recargar(true)" class="btn-secondary"><i class="fas fa-sync-alt"></i> Recargar</button>
+                <span id="cacheInfo" class="cache-info"></span>
+            </div>
+        </div>
+
+        <div id="resultsBox" class="content-box">
+            <h2><i class="fas fa-th-list"></i> Resultados</h2>
+            <div id="tablaContainer" class="tabla-container">
+                <div class="empty-state"><i class="fas fa-info-circle"></i> Aplica filtros y dale a "Recargar" para ver las tandas.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modal de detalle -->
+<div id="modalDetalle" class="modal" style="display:none;" onclick="cerrarDetalle(event)">
+    <div class="modal-content" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <h3 id="modalTitulo"><i class="fas fa-list"></i> Detalle de tanda</h3>
+            <button onclick="cerrarDetalle()" class="modal-close">&times;</button>
+        </div>
+        <div class="modal-body" id="modalBody">Cargando...</div>
+    </div>
+</div>
+
+<script type="module" src="/plantillas-metricas/script.js?v=1"></script>
+</body>
+</html>
