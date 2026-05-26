@@ -439,10 +439,21 @@ body.dark-mode .reply-preview:hover { background-color: rgba(255,255,255,0.10); 
 
 @keyframes messageHighlightPulse {
     0%   { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
-    25%  { box-shadow: 0 0 0 8px rgba(59, 130, 246, 0.45); }
+    15%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.75); }
+    40%  { box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.30); }
+    65%  { box-shadow: 0 0 0 10px rgba(59, 130, 246, 0.60); }
     100% { box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
-.message-bubble.message-highlight { animation: messageHighlightPulse 1.6s ease-out; position: relative; z-index: 1; }
+.message-bubble.message-highlight {
+    animation: messageHighlightPulse 2.2s ease-out;
+    position: relative;
+    z-index: 1;
+    outline: 2px solid rgba(59, 130, 246, 0.85);
+    outline-offset: 1px;
+    border-radius: var(--border-radius-md);
+}
+.message-bubble.message-highlight.has-image,
+.message-bubble.message-highlight.has-video { border-radius: 10px; }
 #reply-context-bar { background-color: #f0f2f5; padding: 8px 16px; border-top: 1px solid var(--color-border); position: relative; }
 body.dark-mode #reply-context-bar { background-color: #1f2335; }
 #cancel-reply-btn { position: absolute; top: 4px; right: 8px; background: none; border: none; font-size: 1.2rem; color: #999; cursor: pointer; }

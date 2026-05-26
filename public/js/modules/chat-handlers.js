@@ -262,11 +262,14 @@ function renderChatWindow(options = {}) {
                     targetGroup.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     const targetBubble = targetGroup.querySelector('.message-bubble');
                     if (!targetBubble) return;
+                    // Esperar a que termine el scroll suave para que el highlight no se pierda en el movimiento
                     targetBubble.classList.remove('message-highlight');
-                    // forzar reflow para reiniciar la animación si se clickea varias veces
-                    void targetBubble.offsetWidth;
-                    targetBubble.classList.add('message-highlight');
-                    setTimeout(() => targetBubble.classList.remove('message-highlight'), 1800);
+                    setTimeout(() => {
+                        // forzar reflow para reiniciar la animación si se clickea varias veces
+                        void targetBubble.offsetWidth;
+                        targetBubble.classList.add('message-highlight');
+                        setTimeout(() => targetBubble.classList.remove('message-highlight'), 2400);
+                    }, 450);
                 });
             }
             // --- FIN DE LA MODIFICACIÓN ---
