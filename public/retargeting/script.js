@@ -40,6 +40,24 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let pedidosEncontrados = [];
     let pedidosSeleccionados = new Set();
+    let satisfactionFilter = ''; // '' | 'positivo' | 'neutral' | 'negativo' | 'sin_senal' | 'sin_clasificar'
+
+    const SATISFACTION_LABELS = {
+        positivo: 'Positivo',
+        neutral: 'Neutral',
+        negativo: 'Negativo',
+        sin_senal: 'Sin señal',
+        sin_clasificar: 'Sin clasificar'
+    };
+
+    function getOrderLevel(p) {
+        return p.satisfactionLevel || 'sin_clasificar';
+    }
+
+    function pedidoCoincideFiltro(p) {
+        if (!satisfactionFilter) return true;
+        return getOrderLevel(p) === satisfactionFilter;
+    }
 
     // --- Cache local (sin estarlos llamando cada vez) ---
     const CACHE_KEY = 'retargeting:pedidos:v1';
@@ -220,9 +238,38 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     };
 
+    function actualizarContadoresFiltro() {
+        const counts = { all: pedidosEncontrados.length, positivo: 0, neutral: 0, negativo: 0, sin_senal: 0, sin_clasificar: 0 };
+        for (const p of pedidosEncontrados) {
+            const lv = getOrderLevel(p);
+            if (counts[lv] !== undefined) counts[lv]++;
+        }
+        const elAll = document.getElementById('cntFilterAll');
+        const elPos = document.getElementById('cntFilterPositivo');
+        const elNeu = document.getElementById('cntFilterNeutral');
+        const elNeg = document.getElementById('cntFilterNegativo');
+        const elSS = document.getElementById('cntFilterSinSenal');
+        const elSC = document.getElementById('cntFilterSinClasificar');
+        if (elAll) elAll.textContent = counts.all;
+        if (elPos) elPos.textContent = counts.positivo;
+        if (elNeu) elNeu.textContent = counts.neutral;
+        if (elNeg) elNeg.textContent = counts.negativo;
+        if (elSS) elSS.textContent = counts.sin_senal;
+        if (elSC) elSC.textContent = counts.sin_clasificar;
+    }
+
+    window.setSatisfactionFilter = (level) => {
+        satisfactionFilter = level || '';
+        document.querySelectorAll('.filtros-chips .chip').forEach(c => {
+            c.classList.toggle('chip-active', (c.getAttribute('data-level') || '') === satisfactionFilter);
+        });
+        renderPedidos();
+    };
+
     function renderPedidos() {
         resultadosBox.style.display = 'block';
         totalPedidosSpan.textContent = pedidosEncontrados.length;
+        actualizarContadoresFiltro();
 
         if (pedidosEncontrados.length === 0) {
             listaPedidos.innerHTML = '<div style="padding:20px;text-align:center;color:#999;">No hay pedidos con estatus Pagado en este rango.</div>';
@@ -231,30 +278,56 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Seleccionar todos por default excepto los ya enviados hoy
-        pedidosSeleccionados = new Set(pedidosEncontrados.filter(p => !p.retargetadoHoy).map(p => p.id));
+        const pedidosVisibles = pedidosEncontrados.filter(pedidoCoincideFiltro);
+
+        // Limpiar seleccion de pedidos que ya no son visibles (cambio de filtro)
+        const idsVisibles = new Set(pedidosVisibles.map(p => p.id));
+        for (const id of [...pedidosSeleccionados]) {
+            if (!idsVisibles.has(id)) pedidosSeleccionados.delete(id);
+        }
+
+        // Seleccionar por default los visibles no enviados hoy que aun no se hubieran tocado
+        for (const p of pedidosVisibles) {
+            if (!p.retargetadoHoy) pedidosSeleccionados.add(p.id);
+        }
+
+        if (pedidosVisibles.length === 0) {
+            const label = SATISFACTION_LABELS[satisfactionFilter] || satisfactionFilter;
+            listaPedidos.innerHTML = `<div style="padding:20px;text-align:center;color:#999;">Ningún pedido coincide con el filtro <strong>${label}</strong>.</div>`;
+            actualizarBotonEnviar();
+            return;
+        }
+
+        const seleccionablesVisibles = pedidosVisibles.filter(p => !p.retargetadoHoy).length;
+        const seleccionadosVisibles = pedidosVisibles.filter(p => pedidosSeleccionados.has(p.id)).length;
+        const allChecked = seleccionablesVisibles > 0 && seleccionadosVisibles === seleccionablesVisibles;
 
         listaPedidos.innerHTML = `
             <div class="select-all-row">
                 <label>
-                    <input type="checkbox" id="selectAll" checked onchange="toggleSelectAll(this.checked)">
-                    <strong>Seleccionar todos (${pedidosEncontrados.length})</strong>
+                    <input type="checkbox" id="selectAll" ${allChecked ? 'checked' : ''} onchange="toggleSelectAll(this.checked)">
+                    <strong>Seleccionar todos (${pedidosVisibles.length}${satisfactionFilter ? ' del filtro' : ''})</strong>
                 </label>
                 <span id="contadorSeleccionados">${pedidosSeleccionados.size} seleccionados</span>
             </div>
-        ` + pedidosEncontrados.map(p => `
+        ` + pedidosVisibles.map(p => {
+            const lv = getOrderLevel(p);
+            const lvLabel = SATISFACTION_LABELS[lv] || lv;
+            const isChecked = pedidosSeleccionados.has(p.id) && !p.retargetadoHoy;
+            return `
             <div class="pedido-item ${p.retargetadoHoy ? 'enviado' : ''}">
-                <input type="checkbox" class="pedido-check" data-id="${p.id}" ${p.retargetadoHoy ? 'disabled' : 'checked'} onchange="togglePedido('${p.id}', this.checked)">
+                <input type="checkbox" class="pedido-check" data-id="${p.id}" ${p.retargetadoHoy ? 'disabled' : (isChecked ? 'checked' : '')} onchange="togglePedido('${p.id}', this.checked)">
                 <div class="pedido-info">
                     <span class="pedido-numero">DH${p.consecutiveOrderNumber || '?'}</span>
                     <span class="pedido-producto">${p.producto || 'Sin producto'}</span>
                     <span class="pedido-fecha">${p.createdAt ? new Date(p.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: 'short' }) : ''}</span>
                     <span class="pedido-estatus">${p.estatus || 'Pagado'}</span>
+                    <span class="badge-nivel badge-${lv}">${lvLabel}</span>
                     ${p.retargetadoHoy ? '<span class="badge-enviado">Enviado Hoy</span>' : ''}
                 </div>
                 <span class="pedido-telefono">${p.telefono || 'Sin tel'}</span>
-            </div>
-        `).join('');
+            </div>`;
+        }).join('');
 
         actualizarBotonEnviar();
     }
@@ -263,14 +336,20 @@ document.addEventListener('DOMContentLoaded', () => {
         if (checked) pedidosSeleccionados.add(id);
         else pedidosSeleccionados.delete(id);
         const selectAll = document.getElementById('selectAll');
-        const seleccionables = pedidosEncontrados.filter(p => !p.retargetadoHoy).length;
-        if (selectAll) selectAll.checked = pedidosSeleccionados.size === seleccionables;
+        const visibles = pedidosEncontrados.filter(pedidoCoincideFiltro);
+        const seleccionablesVisibles = visibles.filter(p => !p.retargetadoHoy).length;
+        const seleccionadosVisibles = visibles.filter(p => pedidosSeleccionados.has(p.id)).length;
+        if (selectAll) selectAll.checked = seleccionablesVisibles > 0 && seleccionadosVisibles === seleccionablesVisibles;
         actualizarBotonEnviar();
     };
 
     window.toggleSelectAll = (checked) => {
-        if (checked) pedidosSeleccionados = new Set(pedidosEncontrados.filter(p => !p.retargetadoHoy).map(p => p.id));
-        else pedidosSeleccionados.clear();
+        const visibles = pedidosEncontrados.filter(pedidoCoincideFiltro);
+        if (checked) {
+            visibles.filter(p => !p.retargetadoHoy).forEach(p => pedidosSeleccionados.add(p.id));
+        } else {
+            visibles.forEach(p => pedidosSeleccionados.delete(p.id));
+        }
         document.querySelectorAll('.pedido-check:not(:disabled)').forEach(cb => cb.checked = checked);
         actualizarBotonEnviar();
     };

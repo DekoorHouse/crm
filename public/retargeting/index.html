@@ -93,6 +93,17 @@
                     <i class="fas fa-paper-plane"></i> Enviar Retargeting Masivo
                 </button>
             </div>
+            <div class="filtros-satisfaccion">
+                <span class="filtros-satisfaccion-label"><i class="fas fa-smile-beam"></i> Filtrar por satisfacci&oacute;n:</span>
+                <div class="filtros-chips">
+                    <button class="chip chip-active" data-level="" onclick="setSatisfactionFilter('')">Todos <span class="chip-count" id="cntFilterAll">0</span></button>
+                    <button class="chip" data-level="positivo" onclick="setSatisfactionFilter('positivo')"><i class="fas fa-thumbs-up"></i> Positivos <span class="chip-count" id="cntFilterPositivo">0</span></button>
+                    <button class="chip" data-level="neutral" onclick="setSatisfactionFilter('neutral')"><i class="fas fa-equals"></i> Neutrales <span class="chip-count" id="cntFilterNeutral">0</span></button>
+                    <button class="chip" data-level="negativo" onclick="setSatisfactionFilter('negativo')"><i class="fas fa-thumbs-down"></i> Negativos <span class="chip-count" id="cntFilterNegativo">0</span></button>
+                    <button class="chip" data-level="sin_senal" onclick="setSatisfactionFilter('sin_senal')"><i class="fas fa-question"></i> Sin se&ntilde;al <span class="chip-count" id="cntFilterSinSenal">0</span></button>
+                    <button class="chip" data-level="sin_clasificar" onclick="setSatisfactionFilter('sin_clasificar')"><i class="fas fa-circle-notch"></i> Sin clasificar <span class="chip-count" id="cntFilterSinClasificar">0</span></button>
+                </div>
+            </div>
             <div id="listaPedidos" class="pedidos-list"></div>
         </div>
 

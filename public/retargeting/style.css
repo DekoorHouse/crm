@@ -47,6 +47,22 @@ button.btn-secondary:hover { background: #d1d5db; }
 .resultados-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .resultados-header h2 { margin-bottom: 0; }
 
+.filtros-satisfaccion { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; background: #f9fafb; border-radius: 8px; border: 1px solid #f0f0f0; margin-bottom: 12px; }
+.filtros-satisfaccion-label { font-size: 0.8rem; font-weight: 600; color: #374151; }
+.filtros-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; font-size: 0.78rem; font-weight: 600; background: #f3f4f6; color: #6b7280; border: 1px solid transparent; border-radius: 999px; cursor: pointer; transition: all 0.15s; }
+.chip:hover { background: #e5e7eb; }
+.chip.chip-active { background: #16a34a; color: white; }
+.chip-count { font-size: 0.7rem; padding: 1px 6px; border-radius: 999px; background: rgba(0,0,0,0.08); font-weight: 700; }
+.chip.chip-active .chip-count { background: rgba(255,255,255,0.25); color: white; }
+
+.badge-nivel { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+.badge-positivo { background: #dcfce7; color: #166534; }
+.badge-neutral { background: #f3f4f6; color: #4b5563; }
+.badge-negativo { background: #fee2e2; color: #991b1b; }
+.badge-sin_senal { background: #f9fafb; color: #9ca3af; border: 1px solid #e5e7eb; }
+.badge-sin_clasificar { background: #fef3c7; color: #92400e; }
+
 .pedidos-list { max-height: 400px; overflow-y: auto; border: 1px solid #f0f0f0; border-radius: 8px; }
 .select-all-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 2px solid #e5e7eb; background: #f9fafb; border-radius: 8px 8px 0 0; position: sticky; top: 0; z-index: 2; }
 .select-all-row label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

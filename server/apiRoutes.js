@@ -8266,7 +8266,9 @@ function dateKeyFromMillis(ms) {
     return new Date(Number(ms)).toISOString().slice(0, 10);
 }
 
-async function fetchRetargetadoHoyMap(telefonos) {
+async function fetchContactosMetaMap(telefonos) {
+    // Lee de contacts_whatsapp en batches de 30 (limite de Firestore para 'in').
+    // Retorna { [telefono]: { lastRetargetingDate, satisfactionLevel } }
     const map = {};
     if (!telefonos.length) return map;
     for (let i = 0; i < telefonos.length; i += 30) {
@@ -8275,7 +8277,10 @@ async function fetchRetargetadoHoyMap(telefonos) {
             .where(admin.firestore.FieldPath.documentId(), 'in', batch).get();
         contactsSnap.docs.forEach(doc => {
             const d = doc.data();
-            if (d.lastRetargetingDate) map[doc.id] = d.lastRetargetingDate;
+            map[doc.id] = {
+                lastRetargetingDate: d.lastRetargetingDate || null,
+                satisfactionLevel: d.satisfaction?.level || null
+            };
         });
     }
     return map;
@@ -8334,14 +8339,18 @@ router.get('/retargeting/buscar-pedidos', async (req, res) => {
             retargetingPedidosCache.set(cacheKey, { cachedAt, orders: baseOrders });
         }
 
-        // Siempre refrescar retargetadoHoy (no se cachea para no servir flags obsoletos)
+        // Siempre refrescar retargetadoHoy y satisfaccion (no se cachean para no servir datos obsoletos)
         const telefonos = [...new Set(baseOrders.map(o => o.telefono).filter(Boolean))];
-        const retargetingMap = await fetchRetargetadoHoyMap(telefonos);
+        const metaMap = await fetchContactosMetaMap(telefonos);
 
-        const orders = baseOrders.map(o => ({
-            ...o,
-            retargetadoHoy: retargetingMap[o.telefono] === todayMx
-        }));
+        const orders = baseOrders.map(o => {
+            const meta = metaMap[o.telefono] || {};
+            return {
+                ...o,
+                retargetadoHoy: meta.lastRetargetingDate === todayMx,
+                satisfactionLevel: meta.satisfactionLevel || null
+            };
+        });
 
         res.json({
             success: true,
