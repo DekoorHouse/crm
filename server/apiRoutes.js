@@ -8922,6 +8922,72 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
     }
 });
 
+// POST /api/satisfaccion/preview - calcula candidatos sin lanzar job (lectura barata)
+// Body: { mode, audience, startDate, endDate, limit }
+router.post('/satisfaccion/preview', async (req, res) => {
+    try {
+        const { force = false, mode: requestedMode, limit = null, audience: requestedAudience, startDate, endDate } = req.body || {};
+
+        let mode = requestedMode || (force ? 'all' : 'pending');
+        if (!['pending', 'all', 'recent-activity'].includes(mode)) mode = 'pending';
+
+        let audience = requestedAudience || 'pagado';
+        if (!['pagado', 'all'].includes(audience)) audience = 'pagado';
+
+        const dateRange = (audience === 'pagado' && (startDate || endDate)) ? {
+            startMs: startDate ? Number(startDate) : null,
+            endMs: endDate ? Number(endDate) : null
+        } : null;
+
+        const numericLimit = limit ? Number(limit) : null;
+        const { docs: contactDocs, breakdown } = await getCandidateContactsByAudience(audience, numericLimit, dateRange);
+
+        let candidatesCount = 0;
+        let needsAI = 0;
+        for (const doc of contactDocs) {
+            const data = doc.data();
+            const hasClassification = !!(data.satisfaction && data.satisfaction.level);
+
+            let passes = false;
+            if (mode === 'all') passes = true;
+            else if (mode === 'recent-activity') {
+                if (hasClassification) {
+                    const classifiedAtMs = data.satisfaction.classifiedAt?.toMillis?.() || 0;
+                    const lastMsgMs = data.lastMessageTimestamp?.toMillis?.() || 0;
+                    passes = lastMsgMs > classifiedAtMs;
+                }
+            } else {
+                // pending
+                passes = !hasClassification;
+            }
+
+            if (passes) candidatesCount++;
+        }
+
+        // Estimacion conservadora de costo Gemini Flash:
+        // ~1000 tokens entrada + 50 tokens salida por contacto.
+        // Tarifas aprox: entrada $0.30/M, salida $2.50/M
+        // Asumiendo que ~30% pueden ser 'sin_senal' (sin llamada a Gemini)
+        const aiCallsEstimate = Math.round(candidatesCount * 0.7);
+        const inputCostUSD = (aiCallsEstimate * 1000 / 1_000_000) * 0.30;
+        const outputCostUSD = (aiCallsEstimate * 50 / 1_000_000) * 2.50;
+        const estimatedCostUSD = inputCostUSD + outputCostUSD;
+
+        res.json({
+            success: true,
+            mode,
+            audience,
+            breakdown,
+            candidatesCount,
+            aiCallsEstimate,
+            estimatedCostUSD: Number(estimatedCostUSD.toFixed(3))
+        });
+    } catch (err) {
+        console.error('Error en preview de satisfaccion:', err);
+        res.status(500).json({ success: false, message: err.message });
+    }
+});
+
 // POST /api/satisfaccion/cancelar - marca como 'cancelled' cualquier job en curso
 // (o uno especifico si se pasa jobId). Los workers ya en vuelo terminan; no se inician nuevos.
 router.post('/satisfaccion/cancelar', (req, res) => {

@@ -173,12 +173,61 @@ document.addEventListener('DOMContentLoaded', () => {
         const audience = document.querySelector('input[name="audience"]:checked')?.value || 'pagado';
         const { startDate, endDate } = buildDateRange();
 
-        if (audience === 'all' && !confirm('OJO: vas a procesar TODA la base de contacts_whatsapp (80k+ contactos, incluyendo spam y leads sin compra). Costo estimado: ~$80 USD. Continuar?')) return;
-        if (mode === 'all' && !confirm('Esto va a re-clasificar TODAS las conversaciones del alcance seleccionado (incluso las ya clasificadas). Continuar?')) return;
-        if (mode === 'recent-activity' && !confirm('Esto va a re-clasificar solo contactos que recibieron mensajes despues de la ultima clasificacion. Continuar?')) return;
-
+        // --- Preview previo: contamos antes de gastar Gemini ---
         setBotonesDisabled(true);
         progresoBox.style.display = 'block';
+        progresoTexto.textContent = 'Calculando preview...';
+        progresoExtra.textContent = '';
+        if (progresoBreakdown) {
+            progresoBreakdown.style.display = 'none';
+            progresoBreakdown.innerHTML = '';
+        }
+        progressBar.style.width = '0%';
+        progressBar.textContent = '';
+
+        let preview;
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/satisfaccion/preview', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                body: JSON.stringify({ mode, audience, startDate, endDate })
+            });
+            preview = await res.json();
+            if (!res.ok || !preview.success) throw new Error(preview.message || 'Error en preview');
+        } catch (e) {
+            alert('Error al calcular preview: ' + e.message);
+            setBotonesDisabled(false);
+            progresoBox.style.display = 'none';
+            return;
+        }
+
+        // Mostrar el breakdown ya mismo aunque no hayan confirmado
+        progresoTexto.textContent = 'Confirma antes de iniciar...';
+        renderBreakdown(preview.breakdown);
+
+        // Confirmacion enriquecida con conteo y costo
+        const modoTxt = { 'pending': 'pendientes', 'all': 'TODAS (re-clasifica las ya hechas)', 'recent-activity': 'con actividad reciente' }[mode] || mode;
+        const costoTxt = preview.estimatedCostUSD >= 0.01 ? `~$${preview.estimatedCostUSD.toFixed(2)} USD` : '<$0.01 USD';
+        const msg = `Se procesarian ${preview.candidatesCount} contacto(s)\n`
+                  + `(${preview.aiCallsEstimate} llamadas a Gemini estimadas — costo aprox: ${costoTxt})\n\n`
+                  + `Modo: ${modoTxt}\n`
+                  + `Continuar?`;
+
+        if (preview.candidatesCount === 0) {
+            alert('No hay contactos que procesar con estos filtros.');
+            setBotonesDisabled(false);
+            progresoBox.style.display = 'none';
+            return;
+        }
+
+        if (!confirm(msg)) {
+            setBotonesDisabled(false);
+            progresoTexto.textContent = 'Cancelado por el usuario.';
+            return;
+        }
+
+        // --- Lanzar el job real ---
         progresoTexto.textContent = 'Iniciando job...';
         const audienceText = audience === 'pagado' ? `Pagado, ${describeRange()}` : 'TODA la base';
         progresoExtra.textContent = `Alcance: ${audienceText} · Modo: ${mode}`;
