@@ -560,6 +560,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const total = telefonos.length;
         let processed = 0;
 
+        // BatchId compartido por toda la tanda (solo aplica en modo plantilla)
+        const batchId = esPlantilla
+            ? (window.crypto?.randomUUID?.() || `ret_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`)
+            : null;
+        const sentBy = auth.currentUser?.email || null;
+
         try {
             const token = await auth.currentUser.getIdToken();
 
@@ -570,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const endpoint = esPlantilla ? '/api/retargeting/enviar-plantilla' : '/api/retargeting/enviar';
                     const body = esPlantilla
-                        ? { contactId: telefono, template: plantillaSeleccionada }
+                        ? { contactId: telefono, template: plantillaSeleccionada, batchId, batchTotal: total, sentBy }
                         : { contactId: telefono, instructions: instrucciones, orderNumbers: pedidosDeContacto.map(p => p.consecutiveOrderNumber) };
                     const res = await fetch(endpoint, {
                         method: 'POST',

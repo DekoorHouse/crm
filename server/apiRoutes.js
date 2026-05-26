@@ -3293,6 +3293,63 @@ async function buildAdvancedTemplatePayload(contactId, templateObject, imageUrl 
     return { payload, messageToSaveText };
 }
 
+// =============================================================
+// TEMPLATE TRACKING (Fase 1) — registra cada envio de plantilla
+// =============================================================
+// Escribe en:
+//  - template_batches/{batchId}: metadatos de la tanda (template, fuente, total)
+//  - template_sends/{auto}: una doc por envio (contactId, wamid, status, source, batchId)
+// Disenado para fallar silenciosamente: si el tracking explota, el envio NO se rompe.
+const TEMPLATE_TRACKING_SOURCES = new Set(['chat', 'retargeting_plantilla']);
+
+async function recordTemplateSend({ contactId, contactName, template, wamid, source, batchId, batchTotal, sentBy }) {
+    try {
+        if (!contactId || !template?.name || !wamid || !batchId) {
+            console.warn('[template-tracking] Faltan campos requeridos, no se registra.');
+            return;
+        }
+        if (!TEMPLATE_TRACKING_SOURCES.has(source)) {
+            console.warn(`[template-tracking] Fuente desconocida "${source}", no se registra.`);
+            return;
+        }
+        const now = admin.firestore.FieldValue.serverTimestamp();
+
+        // Upsert del batch (merge no sobreescribe createdAt / total si ya existian)
+        const batchRef = db.collection('template_batches').doc(batchId);
+        const batchSnap = await batchRef.get();
+        if (!batchSnap.exists) {
+            await batchRef.set({
+                templateName: template.name,
+                templateLanguage: template.language || null,
+                source,
+                sentBy: sentBy || null,
+                createdAt: now,
+                total: Number(batchTotal) || 1
+            });
+        }
+
+        await db.collection('template_sends').add({
+            contactId,
+            contactName: contactName || null,
+            templateName: template.name,
+            templateLanguage: template.language || null,
+            batchId,
+            source,
+            wamid,
+            sentAt: now,
+            status: 'sent',
+            deliveredAt: null,
+            readAt: null,
+            failedAt: null,
+            failureReason: null,
+            repliedAt: null,
+            blocked: false
+        });
+    } catch (e) {
+        console.error('[template-tracking] Error registrando envio:', e.message);
+    }
+}
+
 
 // --- El resto de las rutas no necesitan cambios ---
 // ... (todas las demás rutas permanecen igual) ...
@@ -3841,6 +3898,18 @@ router.post('/contacts/:contactId/messages', async (req, res) => {
                 from: PHONE_NUMBER_ID, status: 'sent', timestamp: admin.firestore.FieldValue.serverTimestamp(),
                 id: messageId, text: messageToSaveText
             };
+
+            // Tracking de plantilla (Fase 1): cada envio desde chat = batch propio de 1
+            const chatBatchId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            await recordTemplateSend({
+                contactId,
+                contactName: contactDoc.exists ? (contactDoc.data().name || null) : null,
+                template,
+                wamid: messageId,
+                source: 'chat',
+                batchId: chatBatchId,
+                batchTotal: 1
+            });
         }
         // --- Lógica para enviar ARCHIVO (imagen, video, audio, documento) ---
         else if (fileUrl && fileType) {
@@ -8590,7 +8659,7 @@ Analiza la conversación y decide qué mensaje de retargeting enviar al cliente.
 // Enviar plantilla aprobada de Meta como retargeting (modo manual, sin IA)
 router.post('/retargeting/enviar-plantilla', async (req, res) => {
     try {
-        const { contactId, template } = req.body;
+        const { contactId, template, batchId, batchTotal, sentBy } = req.body;
         if (!contactId || !template?.name) {
             return res.status(400).json({ success: false, message: 'Faltan contactId o template.' });
         }
@@ -8635,7 +8704,20 @@ router.post('/retargeting/enviar-plantilla', async (req, res) => {
             lastRetargetingDate: todayMx
         });
 
-        res.json({ success: true, sentText: messageToSaveText });
+        // Tracking de plantilla (Fase 1)
+        const effectiveBatchId = batchId || `ret_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        await recordTemplateSend({
+            contactId,
+            contactName: contactData.name || null,
+            template,
+            wamid: messageId,
+            source: 'retargeting_plantilla',
+            batchId: effectiveBatchId,
+            batchTotal: Number(batchTotal) || 1,
+            sentBy: sentBy || null
+        });
+
+        res.json({ success: true, sentText: messageToSaveText, batchId: effectiveBatchId });
     } catch (error) {
         const detail = error.response ? JSON.stringify(error.response.data) : error.message;
         console.error('Error en retargeting (plantilla):', detail);
