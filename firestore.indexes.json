@@ -31,6 +31,37 @@
         { "fieldPath": "satisfaction.level", "order": "ASCENDING" },
         { "fieldPath": "lastMessageTimestamp", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "template_sends",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "contactId", "order": "ASCENDING" },
+        { "fieldPath": "repliedAt", "order": "ASCENDING" },
+        { "fieldPath": "sentAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "template_sends",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "wamid", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "template_sends",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "batchId", "order": "ASCENDING" },
+        { "fieldPath": "sentAt", "order": "ASCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "template_batches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

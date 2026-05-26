@@ -17,6 +17,76 @@ const TIMEZONE = 'America/Mexico_City';
 const AWAY_MESSAGE = `📩 ¡Hola! Gracias por tu mensaje.\n\n🕑 Nuestro horario de atención es:\n\n🗓 Lunes a Viernes: 7:00 am - 7:00 pm\n\n🗓 Sábado: 7:00 am - 2:00 pm\nTe responderemos tan pronto como regresemos.\n\n🙏 ¡Gracias por tu paciencia!`;
 const GENERAL_WELCOME_MESSAGE = '¡Hola! 👋 Gracias por comunicarte. ¿Cómo podemos ayudarte hoy? 😊';
 
+// =============================================================
+// TEMPLATE METRICS (Fase 2) - actualiza template_sends segun webhook
+// =============================================================
+// Meta error codes que tratamos como "bloqueo" del destinatario:
+//  - 131026: Message Undeliverable (recurrentemente significa block o no-WhatsApp)
+//  - 131047: Re-engagement message (suele ser ventana 24h, no block — no marcamos)
+// Si se descubren nuevos codigos, agregar aqui.
+const TEMPLATE_BLOCK_CODES = new Set([131026]);
+const TEMPLATE_REPLY_WINDOW_MS = 7 * 24 * 60 * 60 * 1000; // 7d para asociar respuesta a la tanda
+
+async function updateTemplateSendStatus(wamid, newStatus, errors) {
+    try {
+        if (!wamid || !newStatus) return;
+        const snap = await db.collection('template_sends').where('wamid', '==', wamid).limit(1).get();
+        if (snap.empty) return; // no era un envio de plantilla trackeado, OK
+        const docRef = snap.docs[0].ref;
+        const now = admin.firestore.FieldValue.serverTimestamp();
+        const update = { status: newStatus };
+        if (newStatus === 'delivered') update.deliveredAt = now;
+        else if (newStatus === 'read') update.readAt = now;
+        else if (newStatus === 'failed') {
+            update.failedAt = now;
+            const err = Array.isArray(errors) ? errors[0] : errors;
+            if (err) {
+                update.failureReason = err.message || err.title || null;
+                update.failureCode = err.code || null;
+                if (err.code && TEMPLATE_BLOCK_CODES.has(err.code)) {
+                    update.blocked = true;
+                }
+            }
+        }
+        await docRef.update(update);
+
+        // Si fue bloqueo, marcar el contacto tambien para excluirlo de envios futuros
+        if (update.blocked) {
+            const contactId = snap.docs[0].data().contactId;
+            if (contactId) {
+                await db.collection('contacts_whatsapp').doc(contactId).set({
+                    templateBlocked: true,
+                    templateBlockedAt: now
+                }, { merge: true }).catch(() => {});
+            }
+        }
+    } catch (e) {
+        console.error('[template-metrics] Error actualizando status:', e.message);
+    }
+}
+
+async function markTemplateRepliedForContact(contactId) {
+    try {
+        if (!contactId) return;
+        const cutoff = admin.firestore.Timestamp.fromMillis(Date.now() - TEMPLATE_REPLY_WINDOW_MS);
+        // Tomar el envio mas reciente sin respuesta a este contacto, dentro de la ventana
+        const snap = await db.collection('template_sends')
+            .where('contactId', '==', contactId)
+            .where('repliedAt', '==', null)
+            .where('sentAt', '>=', cutoff)
+            .orderBy('sentAt', 'desc')
+            .limit(1)
+            .get();
+        if (snap.empty) return;
+        await snap.docs[0].ref.update({
+            repliedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
+    } catch (e) {
+        // Errores comunes: indice compuesto faltante. No es critico, el envio funciona.
+        console.error('[template-metrics] Error marcando respuesta:', e.message);
+    }
+}
+
 /**
  * Downloads media from Meta's temporary URL and uploads it to Firebase Storage.
  * @param {string} mediaId The WhatsApp media ID.
@@ -530,6 +600,9 @@ router.post('/', async (req, res) => {
             await contactRef.collection('messages').add(messageData);
             console.log(`[LOG] Mensaje de ${from} guardado en Firestore.`);
 
+            // Tracking de plantilla (Fase 2): marcar como "respondida" la tanda mas reciente sin respuesta
+            markTemplateRepliedForContact(from).catch(err => console.error('[template-metrics] reply tracking falló:', err.message));
+
             // --- Incrementar métricas diarias pre-agregadas ---
             const contactDoc = await contactRef.get();
             const contactTag = (contactDoc.exists && contactDoc.data().status) || 'sin_etiqueta';
@@ -828,6 +901,9 @@ router.post('/', async (req, res) => {
                     console.warn(`[LOG] No se encontró el mensaje ${messageId} en Firestore (búsqueda global) después de ${attempts} intentos. Es posible que el guardado inicial haya fallado.`);
                 }
                 // --- FIN DE LA CORRECCIÓN ---
+
+                // Tracking de plantilla (Fase 2): replicar el cambio en template_sends si aplica
+                await updateTemplateSendStatus(messageId, newStatus, errors);
 
             } catch (error) {
                 console.error(`❌ Error al actualizar estado ${messageId} en Firestore:`, error.message);
