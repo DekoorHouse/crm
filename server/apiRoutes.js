@@ -8691,7 +8691,7 @@ Clasifica la satisfaccion del cliente.`;
     };
 }
 
-async function getCandidateContactsByAudience(audience, limit) {
+async function getCandidateContactsByAudience(audience, limit, dateRange = null) {
     // 'pagado' (default): solo contactos con al menos un pedido Pagado.
     // 'all': toda la coleccion contacts_whatsapp (puede ser 80k+ — usar con cuidado).
     if (audience === 'all') {
@@ -8702,7 +8702,17 @@ async function getCandidateContactsByAudience(audience, limit) {
     }
 
     // audience === 'pagado'
-    const pagadoSnap = await db.collection('pedidos').where('estatus', '==', 'Pagado').get();
+    let pagadoQuery = db.collection('pedidos').where('estatus', '==', 'Pagado');
+    if (dateRange?.startMs) {
+        pagadoQuery = pagadoQuery.where('createdAt', '>=', admin.firestore.Timestamp.fromMillis(Number(dateRange.startMs)));
+    }
+    if (dateRange?.endMs) {
+        pagadoQuery = pagadoQuery.where('createdAt', '<=', admin.firestore.Timestamp.fromMillis(Number(dateRange.endMs)));
+    }
+    if (dateRange?.startMs || dateRange?.endMs) {
+        pagadoQuery = pagadoQuery.orderBy('createdAt', 'desc');
+    }
+    const pagadoSnap = await pagadoQuery.get();
     const telefonos = [...new Set(pagadoSnap.docs.map(d => {
         const t = d.data().telefono;
         return t ? String(t).replace(/\D/g, '') : null;
@@ -8725,12 +8735,12 @@ async function getCandidateContactsByAudience(audience, limit) {
 }
 
 async function runSatisfaccionJob(jobId, options = {}) {
-    const { mode = 'pending', limit = null, audience = 'pagado' } = options;
+    const { mode = 'pending', limit = null, audience = 'pagado', dateRange = null } = options;
     const job = satisfaccionJobs.get(jobId);
     if (!job) return;
 
     try {
-        const contactDocs = await getCandidateContactsByAudience(audience, limit);
+        const contactDocs = await getCandidateContactsByAudience(audience, limit, dateRange);
 
         const candidates = contactDocs.filter(doc => {
             const data = doc.data();
@@ -8825,7 +8835,7 @@ async function runSatisfaccionJob(jobId, options = {}) {
 // POST /api/satisfaccion/clasificar - lanza un job asincrono
 router.post('/satisfaccion/clasificar', async (req, res) => {
     try {
-        const { force = false, mode: requestedMode, limit = null, audience: requestedAudience } = req.body || {};
+        const { force = false, mode: requestedMode, limit = null, audience: requestedAudience, startDate, endDate } = req.body || {};
 
         // Backward-compat: si vino force=true sin mode, equivale a mode='all'
         let mode = requestedMode || (force ? 'all' : 'pending');
@@ -8836,6 +8846,12 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
         // Audience: 'pagado' (default seguro) o 'all' (toda contacts_whatsapp, puede ser 80k+)
         let audience = requestedAudience || 'pagado';
         if (!['pagado', 'all'].includes(audience)) audience = 'pagado';
+
+        // Rango de fechas opcional (millis); solo aplica cuando audience === 'pagado'
+        const dateRange = (audience === 'pagado' && (startDate || endDate)) ? {
+            startMs: startDate ? Number(startDate) : null,
+            endMs: endDate ? Number(endDate) : null
+        } : null;
 
         // Verificar si ya hay un job en curso
         for (const [id, job] of satisfaccionJobs) {
@@ -8866,11 +8882,11 @@ router.post('/satisfaccion/clasificar', async (req, res) => {
             skipped: 0,
             tokens: { input: 0, output: 0, cached: 0 },
             aiCalls: 0,
-            options: { mode, audience, limit: numericLimit }
+            options: { mode, audience, limit: numericLimit, dateRange }
         });
 
         // Lanzar en background; el frontend pollea /progreso
-        runSatisfaccionJob(jobId, { mode, audience, limit: numericLimit });
+        runSatisfaccionJob(jobId, { mode, audience, limit: numericLimit, dateRange });
 
         res.json({ success: true, jobId });
     } catch (err) {

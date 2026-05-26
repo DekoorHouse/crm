@@ -26,6 +26,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btnReclasificarRecientes = document.getElementById('btnReclasificarRecientes');
     const btnReclasificar = document.getElementById('btnReclasificar');
     const btnCancelar = document.getElementById('btnCancelar');
+    const fechaDesde = document.getElementById('fechaDesde');
+    const fechaHasta = document.getElementById('fechaHasta');
+    const fechaRow = document.getElementById('fechaRow');
     const progresoBox = document.getElementById('progresoBox');
     const progressBar = document.getElementById('progressBar');
     const progresoTexto = document.getElementById('progresoTexto');
@@ -105,9 +108,69 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     window.cerrarSesion = () => signOut(auth);
 
+    // --- Presets de fecha ---
+    window.setFechaPreset = (preset) => {
+        const ymd = (d) => d.toISOString().slice(0, 10);
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        if (preset === '') {
+            fechaDesde.value = '';
+            fechaHasta.value = '';
+            return;
+        }
+        if (preset === 'hoy') {
+            fechaDesde.value = ymd(hoy);
+            fechaHasta.value = ymd(hoy);
+        } else if (preset === 'ayer') {
+            const ayer = new Date(hoy.getTime() - 86400000);
+            fechaDesde.value = ymd(ayer);
+            fechaHasta.value = ymd(ayer);
+        } else if (preset === '7d') {
+            const d = new Date(hoy.getTime() - 6 * 86400000);
+            fechaDesde.value = ymd(d);
+            fechaHasta.value = ymd(hoy);
+        } else if (preset === '30d') {
+            const d = new Date(hoy.getTime() - 29 * 86400000);
+            fechaDesde.value = ymd(d);
+            fechaHasta.value = ymd(hoy);
+        } else if (preset === 'mes') {
+            const d = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+            fechaDesde.value = ymd(d);
+            fechaHasta.value = ymd(hoy);
+        }
+    };
+
+    // Habilita/deshabilita la fila de fechas segun la audience
+    function syncFechaRowState() {
+        const audience = document.querySelector('input[name="audience"]:checked')?.value || 'pagado';
+        fechaRow.classList.toggle('disabled', audience !== 'pagado');
+    }
+    document.querySelectorAll('input[name="audience"]').forEach(r => r.addEventListener('change', syncFechaRowState));
+    syncFechaRowState();
+
+    function buildDateRange() {
+        const desde = fechaDesde.value;
+        const hasta = fechaHasta.value;
+        if (!desde && !hasta) return { startDate: null, endDate: null };
+        const startMs = desde ? new Date(desde + 'T00:00:00').getTime() : null;
+        const endMs = hasta ? new Date(hasta + 'T23:59:59.999').getTime() : null;
+        return { startDate: startMs, endDate: endMs };
+    }
+
+    function describeRange() {
+        const desde = fechaDesde.value;
+        const hasta = fechaHasta.value;
+        if (!desde && !hasta) return 'todas las fechas';
+        if (desde && hasta && desde === hasta) return `pedidos del ${desde}`;
+        if (desde && hasta) return `pedidos del ${desde} al ${hasta}`;
+        if (desde) return `pedidos desde ${desde}`;
+        return `pedidos hasta ${hasta}`;
+    }
+
     // --- Clasificar ---
     window.iniciarClasificacion = async (mode) => {
         const audience = document.querySelector('input[name="audience"]:checked')?.value || 'pagado';
+        const { startDate, endDate } = buildDateRange();
 
         if (audience === 'all' && !confirm('OJO: vas a procesar TODA la base de contacts_whatsapp (80k+ contactos, incluyendo spam y leads sin compra). Costo estimado: ~$80 USD. Continuar?')) return;
         if (mode === 'all' && !confirm('Esto va a re-clasificar TODAS las conversaciones del alcance seleccionado (incluso las ya clasificadas). Continuar?')) return;
@@ -116,7 +179,8 @@ document.addEventListener('DOMContentLoaded', () => {
         setBotonesDisabled(true);
         progresoBox.style.display = 'block';
         progresoTexto.textContent = 'Iniciando job...';
-        progresoExtra.textContent = `Alcance: ${audience === 'pagado' ? 'solo con pedido Pagado' : 'TODA la base'} · Modo: ${mode}`;
+        const audienceText = audience === 'pagado' ? `Pagado, ${describeRange()}` : 'TODA la base';
+        progresoExtra.textContent = `Alcance: ${audienceText} · Modo: ${mode}`;
         progressBar.style.width = '0%';
         progressBar.textContent = '0%';
         if (btnCancelar) btnCancelar.style.display = 'inline-flex';
@@ -125,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/satisfaccion/clasificar', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-                body: JSON.stringify({ mode, audience })
+                body: JSON.stringify({ mode, audience, startDate, endDate })
             });
             const data = await res.json();
             if (!res.ok || !data.success) throw new Error(data.message || 'Error iniciando');

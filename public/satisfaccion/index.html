@@ -57,6 +57,28 @@
                 <label><input type="radio" name="audience" value="all"> TODA la base de contacts_whatsapp <span class="hint-inline">(80k+, ~$80 USD, NO recomendado)</span></label>
             </div>
 
+            <div class="fecha-row" id="fechaRow">
+                <div class="fecha-label">Filtrar pedidos Pagado por fecha (opcional):</div>
+                <div class="fecha-inputs">
+                    <div class="fecha-input">
+                        <label for="fechaDesde">Desde</label>
+                        <input type="date" id="fechaDesde">
+                    </div>
+                    <div class="fecha-input">
+                        <label for="fechaHasta">Hasta</label>
+                        <input type="date" id="fechaHasta">
+                    </div>
+                </div>
+                <div class="fecha-chips">
+                    <button class="chip" onclick="setFechaPreset('hoy')">Hoy</button>
+                    <button class="chip" onclick="setFechaPreset('ayer')">Ayer</button>
+                    <button class="chip" onclick="setFechaPreset('7d')">Ultimos 7 dias</button>
+                    <button class="chip" onclick="setFechaPreset('30d')">Ultimos 30 dias</button>
+                    <button class="chip" onclick="setFechaPreset('mes')">Este mes</button>
+                    <button class="chip" onclick="setFechaPreset('')">Todo</button>
+                </div>
+            </div>
+
             <div class="acciones-clasificar">
                 <button id="btnClasificar" onclick="iniciarClasificacion('pending')">
                     <i class="fas fa-play"></i> Clasificar pendientes
