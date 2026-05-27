@@ -4,10 +4,10 @@
 //  - JS/CSS/Img estáticos: cache-first con actualización en background
 //  - API/Firestore/Firebase: passthrough (sin cachear)
 
-// v9 (2026-05-18): se añade 'jovita' a las reglas de auto-categorización
-// como Sueldos en utils.js (autoCategorizeWithRulesOnly). Bump fuerza
-// refresh de utils.js cacheado por clientes.
-const CACHE_VERSION = 'admon-v9';
+// v10 (2026-05-27): agrega exportacion de KPIs a Excel (3 hojas: KPIs
+// Diarios + Resumen Mensual + Por Cuenta Meta) con boton en pestana KPI's.
+// Bump fuerza refresh de handlers.js, services.js e index.html cacheados.
+const CACHE_VERSION = 'admon-v10';
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const PAGE_CACHE = `${CACHE_VERSION}-pages`;
 

@@ -355,6 +355,11 @@ export function initEventListeners() {
         dryRunInput.addEventListener('change', (ev) => handleFileUpload(ev, { dryRun: true }));
     }
 
+    // Exportar KPIs a Excel (3 hojas: Diarios + Mensual + Por Cuenta).
+    // El boton vive en la pestana KPI's al lado de "Sincronizar con Meta".
+    const exportKpisBtn = document.getElementById('export-kpis-btn');
+    if (exportKpisBtn) exportKpisBtn.addEventListener('click', handleExportKpis);
+
     // Toggle de modo prueba (banner + botón). Lo conecta `ui-manager.js`
     // al renderizar el banner; nada que hacer aquí.
     
@@ -982,6 +987,193 @@ function confirmRemoveDuplicates() {
             }
         }
     });
+}
+
+// ============================================================================
+//  Exportación de KPIs a Excel
+// ============================================================================
+
+/**
+ * Mapping de account IDs (limpios) a etiquetas legibles.
+ * Mantenerlo aquí en lugar de Firestore por simplicidad. Si más adelante
+ * necesitas configurarlo desde UI, mover a Firestore meta_ads_config.
+ */
+const KPI_ACCOUNT_LABELS = {
+    '3508971206028730': 'Cuenta 1',
+    '673591711813934':  'Cuenta 2',
+    '523786137191565':  'Cuenta 3',
+    '674668798389910':  'Cuenta 4',
+    '1890131678412987': 'Cuenta 5',
+    '1396578534439909': 'Dekoor Advance'
+};
+
+/**
+ * Genera y descarga un reporte XLSX con todos los datos históricos de KPIs.
+ *
+ * Hojas:
+ *   1. "KPIs Diarios"    — una fila por día con métricas básicas + breakdown por cuenta.
+ *   2. "Resumen Mensual" — agregado por mes.
+ *   3. "Por Cuenta Meta" — suma total por cada cuenta.
+ *
+ * Lee directamente:
+ *   - Colección 'pedidos' (todos) para leads/pagados/ingresos/cancelados.
+ *   - state.kpis (ya cargado por listener) para costo_publicidad y breakdown.
+ */
+async function handleExportKpis() {
+    if (!ensureXLSXLoaded()) return;
+
+    ui.showModal({
+        title: 'Generando reporte...',
+        body: '<p><i class="fas fa-spinner fa-spin"></i> Leyendo pedidos y KPIs. Esto puede tardar unos segundos.</p>',
+        showConfirm: false,
+        showCancel: false
+    });
+
+    try {
+        // 1. Leer todos los pedidos (no sólo el mes actual)
+        const allPedidos = await services.fetchAllPedidos();
+
+        // 2. state.kpis ya tiene todos los daily_kpis (via listenForKpis)
+        const allKpis = state.kpis || [];
+
+        // 3. Indexar pedidos por fecha (formato YYYY-MM-DD UTC)
+        const pedidosByDate = {};
+        for (const p of allPedidos) {
+            if (!p.createdAt || typeof p.createdAt.toDate !== 'function') continue;
+            const d = p.createdAt.toDate();
+            const fecha = `${d.getUTCFullYear()}-${String(d.getUTCMonth()+1).padStart(2,'0')}-${String(d.getUTCDate()).padStart(2,'0')}`;
+            if (!pedidosByDate[fecha]) pedidosByDate[fecha] = { leads: 0, paid: 0, cancelled: 0, revenue: 0 };
+            pedidosByDate[fecha].leads++;
+            if (p.estatus === 'Pagado' || p.estatus === 'Fabricar') {
+                pedidosByDate[fecha].paid++;
+                pedidosByDate[fecha].revenue += parseFloat(p.precio) || 0;
+            }
+            if (p.estatus === 'Cancelado') {
+                pedidosByDate[fecha].cancelled++;
+            }
+        }
+
+        // 4. Indexar daily_kpis por fecha
+        const kpisByDate = {};
+        for (const k of allKpis) {
+            if (k && k.fecha) kpisByDate[k.fecha] = k;
+        }
+
+        const ACCOUNT_IDS = Object.keys(KPI_ACCOUNT_LABELS);
+        const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
+        // 5. Unir todas las fechas (de pedidos y de daily_kpis) y ordenar
+        const allDatesSet = new Set([...Object.keys(pedidosByDate), ...Object.keys(kpisByDate)]);
+        const sortedDates = [...allDatesSet].filter(Boolean).sort();
+
+        // 6. Hoja 1 — KPIs Diarios
+        const dailyRows = sortedDates.map(fecha => {
+            const orders = pedidosByDate[fecha] || { leads: 0, paid: 0, cancelled: 0, revenue: 0 };
+            const kpi = kpisByDate[fecha] || {};
+            const breakdown = kpi.costo_publicidad_breakdown || {};
+            const costo = parseFloat(kpi.costo_publicidad) || 0;
+
+            const row = {
+                'Fecha':              fecha,
+                'Leads':              orders.leads,
+                'Leads Pagados':      orders.paid,
+                'Cancelados':         orders.cancelled,
+                'Ingresos ($)':       round2(orders.revenue),
+                'Costo Publicidad ($)': round2(costo),
+                'CPL ($)':            orders.leads > 0 ? round2(costo / orders.leads) : 0,
+                'CPV ($)':            orders.paid  > 0 ? round2(costo / orders.paid)  : 0,
+                'Tasa Cierre (%)':    orders.leads > 0 ? round2((orders.paid / orders.leads) * 100) : 0,
+            };
+            for (const accId of ACCOUNT_IDS) {
+                row[`Spend ${KPI_ACCOUNT_LABELS[accId]} ($)`] = round2(breakdown[accId] || 0);
+            }
+            return row;
+        });
+
+        // 7. Hoja 2 — Resumen Mensual
+        const monthlyMap = {};
+        for (const r of dailyRows) {
+            const mes = r['Fecha'].slice(0, 7);
+            if (!monthlyMap[mes]) {
+                monthlyMap[mes] = { Mes: mes, Leads: 0, 'Leads Pagados': 0, Cancelados: 0, 'Ingresos ($)': 0, 'Costo Publicidad ($)': 0 };
+            }
+            monthlyMap[mes]['Leads']               += r['Leads'];
+            monthlyMap[mes]['Leads Pagados']       += r['Leads Pagados'];
+            monthlyMap[mes]['Cancelados']          += r['Cancelados'];
+            monthlyMap[mes]['Ingresos ($)']        += r['Ingresos ($)'];
+            monthlyMap[mes]['Costo Publicidad ($)'] += r['Costo Publicidad ($)'];
+        }
+        const monthlyRows = Object.values(monthlyMap)
+            .sort((a, b) => a.Mes.localeCompare(b.Mes))
+            .map(m => ({
+                'Mes':                  m.Mes,
+                'Leads':                m['Leads'],
+                'Leads Pagados':        m['Leads Pagados'],
+                'Cancelados':           m['Cancelados'],
+                'Ingresos ($)':         round2(m['Ingresos ($)']),
+                'Costo Publicidad ($)': round2(m['Costo Publicidad ($)']),
+                'CPL ($)':              m['Leads']         > 0 ? round2(m['Costo Publicidad ($)'] / m['Leads'])         : 0,
+                'CPV ($)':              m['Leads Pagados'] > 0 ? round2(m['Costo Publicidad ($)'] / m['Leads Pagados']) : 0,
+                'Tasa Cierre (%)':      m['Leads']         > 0 ? round2((m['Leads Pagados'] / m['Leads']) * 100)        : 0,
+            }));
+
+        // 8. Hoja 3 — Por Cuenta Meta
+        const accountTotals = {};
+        for (const accId of ACCOUNT_IDS) accountTotals[accId] = 0;
+        for (const r of dailyRows) {
+            for (const accId of ACCOUNT_IDS) {
+                accountTotals[accId] += r[`Spend ${KPI_ACCOUNT_LABELS[accId]} ($)`] || 0;
+            }
+        }
+        const totalSpend = Object.values(accountTotals).reduce((s, v) => s + v, 0);
+        const accountRows = ACCOUNT_IDS.map(accId => ({
+            'Account ID':      accId,
+            'Etiqueta':        KPI_ACCOUNT_LABELS[accId],
+            'Spend Total ($)': round2(accountTotals[accId]),
+            '% del Total':     totalSpend > 0 ? round2((accountTotals[accId] / totalSpend) * 100) : 0
+        }));
+        accountRows.push({
+            'Account ID':      '',
+            'Etiqueta':        'TOTAL',
+            'Spend Total ($)': round2(totalSpend),
+            '% del Total':     100
+        });
+
+        // 9. Generar libro Excel y descargar
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(dailyRows),   'KPIs Diarios');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(monthlyRows), 'Resumen Mensual');
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(accountRows), 'Por Cuenta Meta');
+
+        const dateFrom = sortedDates[0] || 'inicio';
+        const dateTo   = sortedDates[sortedDates.length - 1] || 'hoy';
+        const filename = `KPIs_${dateFrom}_a_${dateTo}.xlsx`;
+        XLSX.writeFile(wb, filename);
+
+        ui.showModal({
+            title: 'Reporte descargado',
+            body:
+                `<p>Archivo: <strong>${filename}</strong></p>` +
+                `<ul style="margin:8px 0 8px 20px; font-size:13px;">` +
+                `  <li><strong>${dailyRows.length}</strong> días en hoja "KPIs Diarios"</li>` +
+                `  <li><strong>${monthlyRows.length}</strong> meses en hoja "Resumen Mensual"</li>` +
+                `  <li><strong>${ACCOUNT_IDS.length}</strong> cuentas + total en hoja "Por Cuenta Meta"</li>` +
+                `  <li>Rango: <code>${dateFrom}</code> → <code>${dateTo}</code></li>` +
+                `</ul>` +
+                `<p style="font-size:12px;color:var(--text-secondary);">Revisa la carpeta de Descargas del navegador.</p>`,
+            confirmText: 'Entendido',
+            showCancel: false
+        });
+    } catch (err) {
+        console.error('Error generando reporte KPIs:', err);
+        ui.showModal({
+            title: 'Error al generar reporte',
+            body: `<p>No se pudo generar el archivo: <strong>${err.message}</strong></p>` +
+                  `<p style="font-size:12px;color:var(--text-secondary);">Revisa la consola del navegador para más detalles.</p>`,
+            confirmText: 'Cerrar',
+            showCancel: false
+        });
+    }
 }
 
 /**
