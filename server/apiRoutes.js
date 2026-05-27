@@ -5084,7 +5084,9 @@ router.post('/orders', async (req, res) => {
         comentarios,
         fotoUrls, // Array de URLs de GCS para fotos del producto
         fotoPromocionUrls, // Array de URLs de GCS para fotos de la promoción
-        items // Array opcional de productos: [{ producto, precio, datosProducto }]
+        items, // Array opcional de productos: [{ producto, precio, datosProducto }]
+        campana_id, // Opcional: id de la campaña de la que viene el pedido
+        plantilla_origen // Opcional: nombre de la plantilla de la campaña
     } = req.body;
 
     // Normalizar items: si viene el array, úsalo; si no, construir uno desde los campos legacy
@@ -5154,7 +5156,10 @@ router.post('/orders', async (req, res) => {
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
             estatus: 'Sin estatus',
             telefonoVerificado: false,
-            estatusVerificado: false
+            estatusVerificado: false,
+            // Tracking de campañas (opcional): si vienen, persisten; si no, quedan null
+            campana_id: (typeof campana_id === 'string' && campana_id.trim()) ? campana_id.trim() : null,
+            plantilla_origen: (typeof plantilla_origen === 'string' && plantilla_origen.trim()) ? plantilla_origen.trim() : null
         };
 
         // Hacer públicas las fotos para que se vean en la lista de pedidos

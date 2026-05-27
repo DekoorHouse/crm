@@ -981,3 +981,48 @@ async function fetchUserProfile(email) {
 // Exportar la nueva función globalmente
 window.handleMarkAsUnread = handleMarkAsUnread;
 window.fetchUserProfile = fetchUserProfile;
+
+// --- NUEVO: Listeners para Tracking de Campañas ---
+// `campanas`: cada doc es una campaña con plantillas, fechas, conteo de contactados
+// `pedidos` filtrado por campana_id != null: para calcular pedidos/pagados/monto por plantilla
+function listenForCampanas() {
+    if (unsubscribeCampanasListener) unsubscribeCampanasListener();
+    unsubscribeCampanasListener = db.collection('campanas').orderBy('creada_en', 'desc').onSnapshot(snapshot => {
+        state.campanasList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        // Re-render solo si la vista está activa
+        if (state.activeView === 'conversion-campanas' && typeof renderConversionCampanasView === 'function') {
+            renderConversionCampanasView();
+        }
+        // Si el modal de pedido está abierto, refrescar el selector de campañas
+        if (typeof refreshCampanaSelectorsInOpenOrderModal === 'function') {
+            refreshCampanaSelectorsInOpenOrderModal();
+        }
+    }, error => {
+        console.error("Error al escuchar campañas:", error);
+    });
+}
+
+function listenForPedidosConCampana() {
+    if (unsubscribePedidosCampanaListener) unsubscribePedidosCampanaListener();
+    // where != null requiere que el campo exista; los pedidos viejos sin campo no aparecen (deseado)
+    unsubscribePedidosCampanaListener = db.collection('pedidos').where('campana_id', '!=', null).onSnapshot(snapshot => {
+        state.pedidosConCampana = snapshot.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                campana_id: data.campana_id || '',
+                plantilla_origen: data.plantilla_origen || '',
+                estatus: data.estatus || '',
+                precio: typeof data.precio === 'number' ? data.precio : 0
+            };
+        });
+        if (state.activeView === 'conversion-campanas' && typeof renderConversionCampanasView === 'function') {
+            renderConversionCampanasView();
+        }
+    }, error => {
+        console.warn("Error al escuchar pedidos con campaña:", error.message);
+    });
+}
+
+window.listenForCampanas = listenForCampanas;
+window.listenForPedidosConCampana = listenForPedidosConCampana;

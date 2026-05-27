@@ -24,6 +24,7 @@ function startApp() {
     listenForQuickReplies();
     listenForTags();
     listenForAdResponses();
+    listenForCampanas(); // Tracking de campañas — modal de pedido necesita campañas activas
 
     
     // --- NUEVOS LISTENERS PARA DEPARTAMENTOS Y REGLAS ---

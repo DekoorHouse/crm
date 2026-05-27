@@ -153,6 +153,11 @@
                         <span class="sidebar-text">Métricas</span>
                     </a>
 
+                    <a onclick="navigateTo('conversion-campanas')" data-view="conversion-campanas" class="nav-item">
+                        <i class="fas fa-chart-pie"></i>
+                        <span class="sidebar-text">Conversión Campañas</span>
+                    </a>
+
                     <a onclick="navigateTo('ajustes')" data-view="ajustes" class="nav-item">
                         <i class="fas fa-cog"></i>
                         <span class="sidebar-text">Ajustes Generales</span>
@@ -424,6 +429,9 @@
     </div>
 
     <div id="new-order-modal-container"></div>
+
+    <!-- Contenedor para el modal de creación/edición de Campañas (tracking) -->
+    <div id="campana-form-modal-container"></div>
 
     <!-- Contenedor para el modal de previsualización de la conversación -->
     <div id="conversation-preview-modal-container"></div>

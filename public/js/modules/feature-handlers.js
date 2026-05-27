@@ -293,6 +293,19 @@ async function handleSaveOrder(event) {
         // Los arrays de fotos se manejarán después
     };
 
+    // Tracking de campaña (opcional)
+    const vieneCampanaCb = document.getElementById('pedidoVieneDeCampana');
+    if (vieneCampanaCb && vieneCampanaCb.checked) {
+        const campId = document.getElementById('pedidoCampanaId')?.value || '';
+        const plantilla = document.getElementById('pedidoPlantillaOrigen')?.value || '';
+        if (!campId || !plantilla) {
+            errorMessageEl.textContent = 'Si marcaste que viene de campaña, selecciona campaña y plantilla.';
+            return;
+        }
+        orderData.campana_id = campId;
+        orderData.plantilla_origen = plantilla;
+    }
+
     // --- 2. Deshabilitar formulario y mostrar estado de carga ---
     saveButton.disabled = true;
     saveButton.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
@@ -390,6 +403,25 @@ async function handleUpdateExistingOrder(event, orderId) {
         comentarios: document.getElementById('edit-order-comments').value.trim(),
         // Los arrays de fotos se manejan después
     };
+
+    // Tracking de campaña (opcional). El PUT del backend acepta cualquier campo del body.
+    // Si se desmarca el checkbox, los campos se setean a null (limpia tag retroactivamente).
+    const vieneCampanaCb = document.getElementById('editPedidoVieneDeCampana');
+    if (vieneCampanaCb) {
+        if (vieneCampanaCb.checked) {
+            const campId = document.getElementById('editPedidoCampanaId')?.value || '';
+            const plantilla = document.getElementById('editPedidoPlantillaOrigen')?.value || '';
+            if (!campId || !plantilla) {
+                errorMessageEl.textContent = 'Si marcaste que viene de campaña, selecciona campaña y plantilla.';
+                return;
+            }
+            updateData.campana_id = campId;
+            updateData.plantilla_origen = plantilla;
+        } else {
+            updateData.campana_id = null;
+            updateData.plantilla_origen = null;
+        }
+    }
 
     // Deshabilita botón y muestra carga
     saveButton.disabled = true;
@@ -1610,5 +1642,145 @@ window.handleTransferChat = handleTransferChat;
 window.handleStatusChange = handleStatusChange;
 
 // IMPORTANTE: Asegúrate de actualizar ui_templates.js para que el formulario use onsubmit="handleTransferChat(event)"
-// O asigna el listener aquí si prefieres. 
+// O asigna el listener aquí si prefieres.
 // En este proyecto se usa mucho onclick en el HTML generado, así que exponerlo es consistente.
+
+// =====================================================================
+// === HANDLERS TRACKING DE CAMPAÑAS                                  ===
+// =====================================================================
+
+async function handleSaveCampana(event) {
+    event.preventDefault();
+    const form = document.getElementById('campana-form');
+    const errorEl = document.getElementById('campana-form-error');
+    const saveBtn = document.getElementById('campana-save-btn');
+    if (!form || !errorEl) return;
+    errorEl.textContent = '';
+
+    const campanaId = form.dataset.campanaId || '';
+    const nombre = document.getElementById('campana-nombre').value.trim();
+    const fechaIni = document.getElementById('campana-fecha-inicio').value;
+    const fechaFin = document.getElementById('campana-fecha-fin').value;
+    const estatus = document.getElementById('campana-estatus').value;
+    const notas = document.getElementById('campana-notas').value.trim();
+
+    if (!nombre) { errorEl.textContent = 'El nombre es obligatorio'; return; }
+    if (!fechaIni || !fechaFin) { errorEl.textContent = 'Selecciona fechas de inicio y fin'; return; }
+    const [yi, mi, di] = fechaIni.split('-').map(Number);
+    const [yf, mf, df] = fechaFin.split('-').map(Number);
+    const ini = new Date(yi, mi - 1, di, 0, 0, 0, 0);
+    const fin = new Date(yf, mf - 1, df, 23, 59, 59, 999);
+    if (fin < ini) { errorEl.textContent = 'La fecha fin debe ser posterior a la fecha inicio'; return; }
+
+    // Recolectar plantillas
+    const plantillas = {};
+    const rows = document.querySelectorAll('#campana-plantillas-container .campana-plantilla-row');
+    for (const row of rows) {
+        const key = row.querySelector('.campana-plantilla-nombre').value.trim();
+        if (!key) continue;
+        if (plantillas[key]) { errorEl.textContent = `Plantilla repetida: "${key}". Usa nombres únicos.`; return; }
+        plantillas[key] = {
+            contactados: Math.max(0, parseInt(row.querySelector('.campana-plantilla-contactados').value, 10) || 0),
+            notas: row.querySelector('.campana-plantilla-notas').value.trim()
+        };
+    }
+
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Guardando...';
+    }
+
+    try {
+        const Timestamp = firebase.firestore.Timestamp;
+        const payload = {
+            nombre,
+            fecha_inicio: Timestamp.fromDate(ini),
+            fecha_fin: Timestamp.fromDate(fin),
+            estatus,
+            plantillas,
+            notas,
+            actualizada_en: firebase.firestore.FieldValue.serverTimestamp()
+        };
+        if (campanaId) {
+            await db.collection('campanas').doc(campanaId).update(payload);
+            showError('Campaña actualizada', 'success');
+        } else {
+            payload.creada_por = auth.currentUser?.email || auth.currentUser?.uid || 'unknown';
+            payload.creada_en = firebase.firestore.FieldValue.serverTimestamp();
+            await db.collection('campanas').add(payload);
+            showError('Campaña creada', 'success');
+        }
+        closeCampanaFormModal();
+    } catch (err) {
+        console.error('Error guardando campaña:', err);
+        errorEl.textContent = err.message || 'Error al guardar';
+    } finally {
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `<i class="fas fa-save mr-2"></i> ${campanaId ? 'Guardar cambios' : 'Crear campaña'}`;
+        }
+    }
+}
+
+async function handleDeleteCampana(campanaId) {
+    const camp = state.campanasList.find(c => c.id === campanaId);
+    if (!camp) return;
+    if (!confirm(`¿Eliminar la campaña "${camp.nombre}"? Los pedidos tagueados con ella conservan el tag pero ya no se podrán reportar.`)) return;
+    try {
+        await db.collection('campanas').doc(campanaId).delete();
+        showError('Campaña eliminada', 'success');
+    } catch (err) {
+        console.error('Error eliminando campaña:', err);
+        showError('Error al eliminar campaña', 'error');
+    }
+}
+
+async function handleToggleCampanaEstatus(campanaId) {
+    const camp = state.campanasList.find(c => c.id === campanaId);
+    if (!camp) return;
+    const isActiva = camp.estatus === 'activa';
+    if (isActiva && !confirm(`¿Cerrar la campaña "${camp.nombre}"? Ya no aparecerá en el selector de pedidos nuevos.`)) return;
+    try {
+        await db.collection('campanas').doc(campanaId).update({
+            estatus: isActiva ? 'cerrada' : 'activa',
+            actualizada_en: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        showError(isActiva ? 'Campaña cerrada' : 'Campaña reabierta', 'success');
+    } catch (err) {
+        console.error('Error cambiando estatus de campaña:', err);
+        showError('Error al cambiar estatus', 'error');
+    }
+}
+
+function handleExportCampanaCSV(campanaId) {
+    const camp = state.campanasList.find(c => c.id === campanaId);
+    if (!camp) return;
+    const kpis = getKPIsForCampana(camp);
+    const escapeCsv = s => `"${String(s).replace(/"/g, '""')}"`;
+    const rows = [];
+    rows.push(['Plantilla', 'Contactados', 'Pedidos', 'Pagados', 'Conversion', 'Monto MXN', 'Ticket promedio'].join(','));
+    for (const k of kpis.plantillas) {
+        const conv = k.contactados > 0 ? ((k.pagados / k.contactados) * 100).toFixed(2) + '%' : '';
+        const ticket = k.pagados > 0 ? (k.monto / k.pagados).toFixed(2) : '';
+        rows.push([escapeCsv(k.plantilla), k.contactados, k.pedidos, k.pagados, conv, k.monto.toFixed(2), ticket].join(','));
+    }
+    rows.push('');
+    rows.push([
+        'TOTAL', kpis.totalContactados, kpis.totalPedidos, kpis.totalPagados,
+        kpis.totalContactados > 0 ? ((kpis.totalPagados / kpis.totalContactados) * 100).toFixed(2) + '%' : '',
+        kpis.totalMonto.toFixed(2), ''
+    ].join(','));
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${camp.nombre.replace(/[^a-z0-9]+/gi, '_')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+window.handleSaveCampana = handleSaveCampana;
+window.handleDeleteCampana = handleDeleteCampana;
+window.handleToggleCampanaEstatus = handleToggleCampanaEstatus;
+window.handleExportCampanaCSV = handleExportCampanaCSV;

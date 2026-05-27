@@ -1417,6 +1417,29 @@ const NewOrderModalTemplate = () => `
                                <label for="pedidoComentarios">Comentarios Adicionales:</label>
                                <textarea id="pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
                         </div>
+
+                        <!-- Tracking de campaña (opcional) -->
+                        <div class="form-item form-item-full" style="background:#f8f9fa;padding:14px;border-radius:10px;border:1px solid #e2e8f0;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <input type="checkbox" id="pedidoVieneDeCampana" style="width:16px;height:16px;cursor:pointer;" onchange="togglePedidoCampanaSection(false)">
+                                <i class="fas fa-bullhorn" style="color:#81B29A;"></i>
+                                <label for="pedidoVieneDeCampana" style="font-weight:600;cursor:pointer;margin:0;">¿Viene de una campaña?</label>
+                            </div>
+                            <div id="pedidoCampanaSelectors" style="margin-top:12px;grid-template-columns:1fr 1fr;gap:10px;display:none;">
+                                <div>
+                                    <label for="pedidoCampanaId" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Campaña *</label>
+                                    <select id="pedidoCampanaId" onchange="onPedidoCampanaChange(false)" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:white;margin-top:4px;">
+                                        <option value="">Sin campañas activas</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="pedidoPlantillaOrigen" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Plantilla origen *</label>
+                                    <select id="pedidoPlantillaOrigen" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:white;margin-top:4px;">
+                                        <option value="">Elige campaña primero</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                      </div>
                      <div id="mensajeErrorPedido"></div>
                      <div class="form-actions">
@@ -1647,6 +1670,29 @@ const OrderEditModalTemplate = (order) => `
                                <label for="edit-order-comments">Comentarios Adicionales:</label>
                                <textarea id="edit-order-comments" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
                         </div>
+
+                        <!-- Tracking de campaña (opcional) -->
+                        <div class="form-item form-item-full" style="background:#f8f9fa;padding:14px;border-radius:10px;border:1px solid #e2e8f0;">
+                            <div style="display:flex;align-items:center;gap:8px;">
+                                <input type="checkbox" id="editPedidoVieneDeCampana" style="width:16px;height:16px;cursor:pointer;" onchange="togglePedidoCampanaSection(true)">
+                                <i class="fas fa-bullhorn" style="color:#81B29A;"></i>
+                                <label for="editPedidoVieneDeCampana" style="font-weight:600;cursor:pointer;margin:0;">¿Viene de una campaña?</label>
+                            </div>
+                            <div id="editPedidoCampanaSelectors" style="margin-top:12px;grid-template-columns:1fr 1fr;gap:10px;display:none;">
+                                <div>
+                                    <label for="editPedidoCampanaId" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Campaña *</label>
+                                    <select id="editPedidoCampanaId" onchange="onPedidoCampanaChange(true)" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:white;margin-top:4px;">
+                                        <option value="">Sin campañas activas</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="editPedidoPlantillaOrigen" style="font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Plantilla origen *</label>
+                                    <select id="editPedidoPlantillaOrigen" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:white;margin-top:4px;">
+                                        <option value="">Elige campaña primero</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
                      </div>
                      <div id="edit-order-error-message"></div>
                      <div class="form-actions">
@@ -1658,3 +1704,199 @@ const OrderEditModalTemplate = (order) => `
         </div>
     </div>
 `;
+
+// =====================================================================
+// === TRACKING DE CAMPAÑAS (vista, modal de campaña, helpers)        ===
+// =====================================================================
+
+const ConversionCampanasViewTemplate = () => `
+    <div class="view-container" style="padding:24px;max-width:1280px;margin:0 auto;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+            <div>
+                <h1 style="font-size:24px;font-weight:800;margin:0 0 4px 0;display:flex;align-items:center;gap:10px;">
+                    <i class="fas fa-chart-pie" style="color:#81B29A;"></i> Conversión de Campañas
+                </h1>
+                <p style="color:#6b7280;font-size:13px;margin:0;">Tracking de pedidos por plantilla. Los pedidos se taguean desde el modal "Registrar Pedido".</p>
+            </div>
+            <button onclick="openCampanaFormModal(null)" class="btn btn-primary" style="display:flex;align-items:center;gap:6px;">
+                <i class="fas fa-plus"></i> Nueva campaña
+            </button>
+        </div>
+        <div id="conversion-campanas-list"></div>
+    </div>
+`;
+
+const CampanaKPIRowTemplate = (k) => {
+    const pct = k.contactados > 0 ? ((k.pagados / k.contactados) * 100).toFixed(1) + '%' : '—';
+    const ticket = k.pagados > 0 ? '$' + Math.round(k.monto / k.pagados).toLocaleString('es-MX') : '—';
+    const monto = '$' + Math.round(k.monto).toLocaleString('es-MX');
+    return `
+        <tr>
+            <td style="padding:8px 10px;font-weight:500;">${escapeHtml(k.plantilla)}</td>
+            <td style="padding:8px 10px;text-align:right;color:#6b7280;">${k.contactados}</td>
+            <td style="padding:8px 10px;text-align:right;color:#6b7280;">${k.pedidos}</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;">${k.pagados}</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:700;color:#81B29A;">${pct}</td>
+            <td style="padding:8px 10px;text-align:right;font-weight:600;">${monto}</td>
+            <td style="padding:8px 10px;text-align:right;color:#6b7280;">${ticket}</td>
+        </tr>
+    `;
+};
+
+const CampanaCardTemplate = (c, kpis) => {
+    const isOpen = !!state.campanaExpandState[c.id];
+    const ini = c.fecha_inicio?.toDate ? c.fecha_inicio.toDate() : (c.fecha_inicio?._seconds ? new Date(c.fecha_inicio._seconds * 1000) : null);
+    const fin = c.fecha_fin?.toDate ? c.fecha_fin.toDate() : (c.fecha_fin?._seconds ? new Date(c.fecha_fin._seconds * 1000) : null);
+    const fmt = d => d ? d.toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' }) : '—';
+    const rango = `${fmt(ini)} → ${fmt(fin)}`;
+    const totalPct = kpis.totalContactados > 0 ? ((kpis.totalPagados / kpis.totalContactados) * 100).toFixed(1) + '%' : '—';
+    const totalMonto = '$' + Math.round(kpis.totalMonto).toLocaleString('es-MX');
+    const isActiva = c.estatus === 'activa';
+    const estatusColor = isActiva ? '#81B29A' : '#9ca3af';
+    const estatusBg = isActiva ? 'rgba(129,178,154,0.15)' : '#e5e7eb';
+
+    return `
+        <div class="campana-card" style="background:white;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;margin-bottom:12px;">
+            <div style="display:flex;align-items:center;gap:12px;padding:14px 18px;">
+                <button onclick="toggleCampanaExpand('${c.id}')" style="background:none;border:none;cursor:pointer;padding:4px;color:#6b7280;">
+                    <i class="fas fa-chevron-${isOpen ? 'down' : 'right'}"></i>
+                </button>
+                <div style="flex:1;min-width:0;">
+                    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+                        <h3 style="font-size:15px;font-weight:700;margin:0;">${escapeHtml(c.nombre || '(sin nombre)')}</h3>
+                        <span style="font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;padding:2px 8px;border-radius:9999px;background:${estatusBg};color:${estatusColor};">${c.estatus || 'activa'}</span>
+                    </div>
+                    <p style="font-size:12px;color:#6b7280;margin:2px 0 0 0;">${rango}</p>
+                </div>
+                <div style="display:flex;align-items:center;gap:18px;font-size:12px;color:#6b7280;flex-wrap:wrap;">
+                    <div style="text-align:right;">
+                        <div style="font-weight:700;color:#111827;">${kpis.totalPagados} / ${kpis.totalContactados}</div>
+                        <div style="font-size:10px;">Pagados / Contact.</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:700;color:#81B29A;">${totalPct}</div>
+                        <div style="font-size:10px;">Conversión</div>
+                    </div>
+                    <div style="text-align:right;">
+                        <div style="font-weight:700;color:#111827;">${totalMonto}</div>
+                        <div style="font-size:10px;">Cobrado</div>
+                    </div>
+                </div>
+            </div>
+            ${isOpen ? `
+            <div style="border-top:1px solid #f1f5f9;padding:16px 18px;background:#fafbfc;">
+                ${kpis.plantillas.length === 0 ? `
+                    <p style="font-size:12px;color:#9ca3af;font-style:italic;">Esta campaña no tiene plantillas configuradas todavía.</p>
+                ` : `
+                <div style="overflow-x:auto;">
+                <table style="width:100%;font-size:13px;border-collapse:collapse;">
+                    <thead>
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                            <th style="text-align:left;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Plantilla</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Contactados</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Pedidos</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Pagados</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Conversión</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Cobrado</th>
+                            <th style="text-align:right;padding:8px 10px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;color:#6b7280;">Ticket prom.</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${kpis.plantillas.map(CampanaKPIRowTemplate).join('')}
+                        <tr style="background:#f1f5f9;font-weight:700;">
+                            <td style="padding:10px;">TOTAL</td>
+                            <td style="padding:10px;text-align:right;">${kpis.totalContactados}</td>
+                            <td style="padding:10px;text-align:right;">${kpis.totalPedidos}</td>
+                            <td style="padding:10px;text-align:right;">${kpis.totalPagados}</td>
+                            <td style="padding:10px;text-align:right;color:#81B29A;">${totalPct}</td>
+                            <td style="padding:10px;text-align:right;">${totalMonto}</td>
+                            <td style="padding:10px;text-align:right;color:#6b7280;">${kpis.totalPagados > 0 ? '$' + Math.round(kpis.totalMonto / kpis.totalPagados).toLocaleString('es-MX') : '—'}</td>
+                        </tr>
+                    </tbody>
+                </table>
+                </div>
+                `}
+                ${c.notas ? `<p style="margin-top:12px;font-size:12px;color:#6b7280;font-style:italic;"><strong style="font-style:normal;">Notas:</strong> ${escapeHtml(c.notas)}</p>` : ''}
+                <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;">
+                    <button onclick="openCampanaFormModal('${c.id}')" class="btn btn-subtle" style="font-size:12px;padding:6px 12px;"><i class="fas fa-edit"></i> Editar</button>
+                    <button onclick="handleToggleCampanaEstatus('${c.id}')" class="btn btn-subtle" style="font-size:12px;padding:6px 12px;"><i class="fas fa-${isActiva ? 'lock' : 'lock-open'}"></i> ${isActiva ? 'Cerrar' : 'Reabrir'}</button>
+                    <button onclick="handleExportCampanaCSV('${c.id}')" class="btn btn-subtle" style="font-size:12px;padding:6px 12px;"><i class="fas fa-download"></i> Exportar CSV</button>
+                    <button onclick="handleDeleteCampana('${c.id}')" class="btn btn-subtle" style="font-size:12px;padding:6px 12px;color:#dc3545;"><i class="fas fa-trash"></i> Eliminar</button>
+                </div>
+            </div>
+            ` : ''}
+        </div>
+    `;
+};
+
+const CampanaFormModalTemplate = (campana) => {
+    const isEdit = !!campana;
+    const nombre = campana?.nombre || '';
+    const ini = campana?.fecha_inicio?.toDate ? campana.fecha_inicio.toDate() : (campana?.fecha_inicio?._seconds ? new Date(campana.fecha_inicio._seconds * 1000) : null);
+    const fin = campana?.fecha_fin?.toDate ? campana.fecha_fin.toDate() : (campana?.fecha_fin?._seconds ? new Date(campana.fecha_fin._seconds * 1000) : null);
+    const dateValue = d => d ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : '';
+    const estatus = campana?.estatus || 'activa';
+    const notas = campana?.notas || '';
+    const plantillas = campana?.plantillas || {};
+    const plantillaEntries = Object.entries(plantillas);
+
+    const rowsHtml = (plantillaEntries.length === 0 ? [['', { contactados: 0, notas: '' }]] : plantillaEntries).map(([key, val], idx) => `
+        <div class="campana-plantilla-row" data-row-idx="${idx}" style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;align-items:center;padding:8px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">
+            <input type="text" class="campana-plantilla-nombre" value="${escapeHtml(key)}" placeholder="Nombre plantilla" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="number" min="0" class="campana-plantilla-contactados" value="${val.contactados || 0}" placeholder="Contactados" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="text" class="campana-plantilla-notas" value="${escapeHtml(val.notas || '')}" placeholder="Notas (opcional)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <button type="button" onclick="removeCampanaPlantillaRow(this)" style="background:none;border:none;color:#6b7280;cursor:pointer;padding:6px;" title="Quitar"><i class="fas fa-trash"></i></button>
+        </div>
+    `).join('');
+
+    return `
+        <div id="campana-form-modal" class="modal-backdrop" onclick="closeCampanaFormModal()">
+            <div class="modal-content" onclick="event.stopPropagation()" style="max-width:720px;">
+                <h2><i class="fas fa-bullhorn" style="color:#81B29A;"></i> ${isEdit ? 'Editar Campaña' : 'Nueva Campaña'}</h2>
+                <form id="campana-form" data-campana-id="${campana?.id || ''}">
+                    <div style="margin-bottom:14px;">
+                        <label for="campana-nombre">Nombre *</label>
+                        <input type="text" id="campana-nombre" value="${escapeHtml(nombre)}" placeholder="Ej: Mayo 2026 - Promoción Base" required>
+                    </div>
+                    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:14px;">
+                        <div>
+                            <label for="campana-fecha-inicio">Fecha inicio *</label>
+                            <input type="date" id="campana-fecha-inicio" value="${dateValue(ini)}" required>
+                        </div>
+                        <div>
+                            <label for="campana-fecha-fin">Fecha fin *</label>
+                            <input type="date" id="campana-fecha-fin" value="${dateValue(fin)}" required>
+                        </div>
+                        <div>
+                            <label for="campana-estatus">Estatus</label>
+                            <select id="campana-estatus" style="width:100%;padding:8px;border:1px solid #d1d5db;border-radius:6px;background:white;">
+                                <option value="activa" ${estatus === 'activa' ? 'selected' : ''}>Activa</option>
+                                <option value="cerrada" ${estatus === 'cerrada' ? 'selected' : ''}>Cerrada</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                            <label style="margin:0;">Plantillas usadas</label>
+                            <button type="button" onclick="addCampanaPlantillaRow()" style="background:none;border:none;color:#81B29A;font-weight:600;font-size:12px;cursor:pointer;">
+                                <i class="fas fa-plus"></i> Agregar plantilla
+                            </button>
+                        </div>
+                        <div id="campana-plantillas-container">${rowsHtml}</div>
+                    </div>
+                    <div style="margin-bottom:14px;">
+                        <label for="campana-notas">Notas</label>
+                        <textarea id="campana-notas" rows="2" placeholder="Contexto adicional...">${escapeHtml(notas)}</textarea>
+                    </div>
+                    <div id="campana-form-error" style="color:#dc3545;font-size:13px;margin-bottom:10px;"></div>
+                    <div class="flex justify-end gap-3 mt-4">
+                        <button type="button" onclick="closeCampanaFormModal()" class="btn btn-subtle">Cancelar</button>
+                        <button type="submit" class="btn btn-primary" id="campana-save-btn"><i class="fas fa-save mr-2"></i> ${isEdit ? 'Guardar cambios' : 'Crear campaña'}</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+};
+
+// Nota: `escapeHtml` ya está definido globalmente en ui-manager.js — los templates de arriba lo usan.

@@ -101,7 +101,12 @@ let state = {
 
     // --- NUEVO: Cola de Mensajes ---
     messageQueue: [], // Cola de mensajes pendientes de envío
-    isProcessingQueue: false // Indicador de si la cola se está procesando
+    isProcessingQueue: false, // Indicador de si la cola se está procesando
+
+    // --- NUEVO: Tracking de campañas WhatsApp ---
+    campanasList: [], // Lista de todas las campañas (activas + cerradas)
+    pedidosConCampana: [], // Pedidos que tienen campana_id != null (para calcular KPIs)
+    campanaExpandState: {} // Map id -> bool: estado expandido/colapsado en vista tracking
 };
 
 // --- Variables para cancelar listeners de Firestore ---
@@ -118,7 +123,9 @@ let unsubscribeMessagesListener = null,
     unsubscribeDepartmentsListener = null,
     unsubscribeAdRoutingRulesListener = null,
     unsubscribePendingAiCountListener = null,
-    unsubscribeDailyOrdersListener = null;
+    unsubscribeDailyOrdersListener = null,
+    unsubscribeCampanasListener = null,
+    unsubscribePedidosCampanaListener = null;
 
 // --- Instancias de Gráficas (Chart.js) ---
 let dailyMessagesChart = null; // Gráfica de mensajes diarios (general)

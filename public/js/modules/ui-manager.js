@@ -95,6 +95,14 @@ function navigateTo(viewName, force = false) {
             mainViewContainer.innerHTML = MetricsViewTemplate();
             renderMetricsView(); // Dibuja la vista de métricas (incluyendo la nueva sección)
             break;
+        case 'conversion-campanas':
+            mainViewContainer.innerHTML = ConversionCampanasViewTemplate();
+            // Lazy-load del listener de pedidos con campaña (costoso si se cargara siempre)
+            if (typeof listenForPedidosConCampana === 'function') {
+                listenForPedidosConCampana();
+            }
+            renderConversionCampanasView();
+            break;
         case 'entrenamiento-ia':
             mainViewContainer.innerHTML = AITrainingViewTemplate();
             renderAITrainingView();
@@ -1844,6 +1852,11 @@ function abrirModalPedido(contactData = null) {
             }
         });
     }
+
+    // Pre-popular el selector de campañas (oculto por default; aparece si se marca el checkbox)
+    if (typeof populateCampanaSelectorsInOrderModal === 'function') {
+        populateCampanaSelectorsInOrderModal(false);
+    }
 }
 
 /**
@@ -2072,6 +2085,11 @@ function openOrderEditModal(orderId) {
         form.addEventListener('submit', (event) => handleUpdateExistingOrder(event, orderId));
     } else {
         console.error("El formulario de edición de pedido ('edit-order-form') no se encontró en la plantilla.");
+    }
+
+    // Pre-llenar selector de campaña/plantilla si el pedido ya estaba tagueado
+    if (typeof prefillEditOrderCampaign === 'function') {
+        prefillEditOrderCampaign(order);
     }
 }
 
@@ -3316,3 +3334,221 @@ function closeChatOnMobile() {
 window.actualizarBadgePedidosHoy = actualizarBadgePedidosHoy;
 window.closeChatOnMobile = closeChatOnMobile;
 window.toggleTagSidebar = toggleTagSidebar;
+
+// =====================================================================
+// === TRACKING DE CAMPAÑAS — render, modal de campaña, helpers       ===
+// =====================================================================
+
+/**
+ * Calcula KPIs por plantilla para una campaña, leyendo de state.pedidosConCampana.
+ * Devuelve plantillas[] + totales.
+ */
+function getKPIsForCampana(campana) {
+    const pedidosCampana = state.pedidosConCampana.filter(p => p.campana_id === campana.id);
+    const plantillasDeclaradas = Object.keys(campana.plantillas || {});
+    const plantillasEnPedidos = Array.from(new Set(pedidosCampana.map(p => p.plantilla_origen || '(sin plantilla)')));
+    const allPlantillas = Array.from(new Set([...plantillasDeclaradas, ...plantillasEnPedidos]));
+
+    const plantillas = allPlantillas.map(p => {
+        const pedidosPlantilla = pedidosCampana.filter(x => (x.plantilla_origen || '(sin plantilla)') === p);
+        const pagados = pedidosPlantilla.filter(x => x.estatus === 'Pagado');
+        const monto = pagados.reduce((s, x) => s + (x.precio || 0), 0);
+        const contactados = campana.plantillas?.[p]?.contactados ?? 0;
+        return { plantilla: p, contactados, pedidos: pedidosPlantilla.length, pagados: pagados.length, monto };
+    });
+
+    return {
+        plantillas,
+        totalContactados: plantillas.reduce((s, k) => s + k.contactados, 0),
+        totalPedidos: plantillas.reduce((s, k) => s + k.pedidos, 0),
+        totalPagados: plantillas.reduce((s, k) => s + k.pagados, 0),
+        totalMonto: plantillas.reduce((s, k) => s + k.monto, 0)
+    };
+}
+
+function renderConversionCampanasView() {
+    if (state.activeView !== 'conversion-campanas') return;
+    const container = document.getElementById('conversion-campanas-list');
+    if (!container) return;
+
+    if (!state.campanasList || state.campanasList.length === 0) {
+        container.innerHTML = `
+            <div style="background:#f8f9fa;border-radius:12px;padding:48px;text-align:center;">
+                <i class="fas fa-bullhorn" style="font-size:48px;color:#cbd5e1;"></i>
+                <p style="margin-top:12px;color:#6b7280;font-size:14px;">No hay campañas todavía.</p>
+                <p style="font-size:12px;color:#9ca3af;">Crea una para empezar a medir conversión por plantilla.</p>
+            </div>
+        `;
+        return;
+    }
+
+    // Auto-expandir activas si es la primera carga
+    if (Object.keys(state.campanaExpandState).length === 0) {
+        state.campanasList.forEach(c => {
+            if (c.estatus === 'activa') state.campanaExpandState[c.id] = true;
+        });
+    }
+
+    container.innerHTML = state.campanasList.map(c => {
+        const kpis = getKPIsForCampana(c);
+        return CampanaCardTemplate(c, kpis);
+    }).join('');
+}
+
+function toggleCampanaExpand(id) {
+    state.campanaExpandState[id] = !state.campanaExpandState[id];
+    renderConversionCampanasView();
+}
+
+// --- Modal crear/editar campaña ---
+function openCampanaFormModal(campanaId) {
+    const campana = campanaId ? state.campanasList.find(c => c.id === campanaId) : null;
+    const container = document.getElementById('campana-form-modal-container');
+    if (!container) return;
+    container.innerHTML = CampanaFormModalTemplate(campana);
+    const form = document.getElementById('campana-form');
+    if (form) form.addEventListener('submit', handleSaveCampana);
+}
+
+function closeCampanaFormModal() {
+    const container = document.getElementById('campana-form-modal-container');
+    if (container) container.innerHTML = '';
+}
+
+function addCampanaPlantillaRow() {
+    const container = document.getElementById('campana-plantillas-container');
+    if (!container) return;
+    const idx = container.children.length;
+    const html = `
+        <div class="campana-plantilla-row" data-row-idx="${idx}" style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;align-items:center;padding:8px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">
+            <input type="text" class="campana-plantilla-nombre" value="" placeholder="Nombre plantilla" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="number" min="0" class="campana-plantilla-contactados" value="0" placeholder="Contactados" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="text" class="campana-plantilla-notas" value="" placeholder="Notas (opcional)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <button type="button" onclick="removeCampanaPlantillaRow(this)" style="background:none;border:none;color:#6b7280;cursor:pointer;padding:6px;" title="Quitar"><i class="fas fa-trash"></i></button>
+        </div>
+    `;
+    container.insertAdjacentHTML('beforeend', html);
+}
+
+function removeCampanaPlantillaRow(btn) {
+    const row = btn.closest('.campana-plantilla-row');
+    if (row) row.remove();
+}
+
+// --- Helpers para los selectores de campaña dentro del modal de pedido (crear/editar) ---
+// `isEdit` = true → modal de edición (IDs con prefijo "edit"); false → modal de creación
+function togglePedidoCampanaSection(isEdit) {
+    const cbId = isEdit ? 'editPedidoVieneDeCampana' : 'pedidoVieneDeCampana';
+    const wrapId = isEdit ? 'editPedidoCampanaSelectors' : 'pedidoCampanaSelectors';
+    const cb = document.getElementById(cbId);
+    const wrap = document.getElementById(wrapId);
+    if (!cb || !wrap) return;
+    if (cb.checked) {
+        wrap.style.display = 'grid';
+        // Poblar selectores de campañas activas si están vacíos
+        populateCampanaSelectorsInOrderModal(isEdit);
+    } else {
+        wrap.style.display = 'none';
+    }
+}
+
+function populateCampanaSelectorsInOrderModal(isEdit) {
+    const campId = isEdit ? 'editPedidoCampanaId' : 'pedidoCampanaId';
+    const sel = document.getElementById(campId);
+    if (!sel) return;
+    // Conserva el valor seleccionado si existe
+    const prevValue = sel.value;
+    const activas = state.campanasList.filter(c => c.estatus === 'activa');
+    if (activas.length === 0) {
+        sel.innerHTML = '<option value="">Sin campañas activas</option>';
+    } else {
+        sel.innerHTML = '<option value="">Seleccionar campaña...</option>' +
+            activas.map(c => `<option value="${c.id}" ${prevValue === c.id ? 'selected' : ''}>${escapeHtmlSafe(c.nombre)}</option>`).join('');
+    }
+    onPedidoCampanaChange(isEdit, true);
+}
+
+function onPedidoCampanaChange(isEdit, preserveSelectedPlantilla) {
+    const campId = isEdit ? 'editPedidoCampanaId' : 'pedidoCampanaId';
+    const plantId = isEdit ? 'editPedidoPlantillaOrigen' : 'pedidoPlantillaOrigen';
+    const sel = document.getElementById(campId);
+    const plant = document.getElementById(plantId);
+    if (!sel || !plant) return;
+    const prevPlantilla = preserveSelectedPlantilla ? plant.value : '';
+    const camp = state.campanasList.find(c => c.id === sel.value);
+    const keys = camp ? Object.keys(camp.plantillas || {}) : [];
+    if (keys.length === 0) {
+        plant.innerHTML = '<option value="">Elige campaña primero</option>';
+    } else {
+        plant.innerHTML = '<option value="">Seleccionar plantilla...</option>' +
+            keys.map(k => `<option value="${escapeHtmlSafe(k)}" ${prevPlantilla === k ? 'selected' : ''}>${escapeHtmlSafe(k)}</option>`).join('');
+    }
+}
+
+// Llamada por el listener de campañas cuando cambian (para refrescar dropdowns si el modal está abierto)
+function refreshCampanaSelectorsInOpenOrderModal() {
+    if (document.getElementById('pedidoCampanaId')) {
+        populateCampanaSelectorsInOrderModal(false);
+    }
+    if (document.getElementById('editPedidoCampanaId')) {
+        populateCampanaSelectorsInOrderModal(true);
+    }
+}
+
+// Para pre-llenar campos al EDITAR un pedido que ya tiene campana_id/plantilla_origen.
+// Se llama desde openOrderEditModal() después de poblar el resto.
+function prefillEditOrderCampaign(order) {
+    const cb = document.getElementById('editPedidoVieneDeCampana');
+    if (!cb) return;
+    if (order.campana_id) {
+        cb.checked = true;
+        const wrap = document.getElementById('editPedidoCampanaSelectors');
+        if (wrap) wrap.style.display = 'grid';
+        populateCampanaSelectorsInOrderModal(true);
+        const camp = document.getElementById('editPedidoCampanaId');
+        if (camp) {
+            // Si la campaña ya está cerrada y no aparece en activas, agregar manualmente
+            if (!Array.from(camp.options).some(o => o.value === order.campana_id)) {
+                const camHistorico = state.campanasList.find(c => c.id === order.campana_id);
+                const label = camHistorico ? `${camHistorico.nombre} (cerrada)` : `(campaña ${order.campana_id.slice(0,6)})`;
+                const opt = document.createElement('option');
+                opt.value = order.campana_id;
+                opt.textContent = label;
+                camp.appendChild(opt);
+            }
+            camp.value = order.campana_id;
+        }
+        onPedidoCampanaChange(true, false);
+        const plant = document.getElementById('editPedidoPlantillaOrigen');
+        if (plant && order.plantilla_origen) {
+            // Si la plantilla no está en la lista (campaña ajustada), agregarla manualmente
+            if (!Array.from(plant.options).some(o => o.value === order.plantilla_origen)) {
+                const opt = document.createElement('option');
+                opt.value = order.plantilla_origen;
+                opt.textContent = order.plantilla_origen;
+                plant.appendChild(opt);
+            }
+            plant.value = order.plantilla_origen;
+        }
+    } else {
+        cb.checked = false;
+    }
+}
+
+function escapeHtmlSafe(s) {
+    if (typeof s !== 'string') return '';
+    return s.replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
+}
+
+window.toggleCampanaExpand = toggleCampanaExpand;
+window.openCampanaFormModal = openCampanaFormModal;
+window.closeCampanaFormModal = closeCampanaFormModal;
+window.addCampanaPlantillaRow = addCampanaPlantillaRow;
+window.removeCampanaPlantillaRow = removeCampanaPlantillaRow;
+window.togglePedidoCampanaSection = togglePedidoCampanaSection;
+window.onPedidoCampanaChange = onPedidoCampanaChange;
+window.populateCampanaSelectorsInOrderModal = populateCampanaSelectorsInOrderModal;
+window.refreshCampanaSelectorsInOpenOrderModal = refreshCampanaSelectorsInOpenOrderModal;
+window.prefillEditOrderCampaign = prefillEditOrderCampaign;
+window.renderConversionCampanasView = renderConversionCampanasView;
+window.getKPIsForCampana = getKPIsForCampana;
