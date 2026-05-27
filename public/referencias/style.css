@@ -362,7 +362,7 @@ textarea {
 
 .rating-stars i {
     font-size: 1.8rem;
-    color: rgba(255, 255, 255, 0.15);
+    color: #cbd5e1;
     cursor: pointer;
     transition: color 0.15s ease, transform 0.15s ease;
 }
