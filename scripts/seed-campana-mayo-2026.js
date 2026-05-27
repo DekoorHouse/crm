@@ -18,9 +18,9 @@ const CAMPANA = {
     fecha_fin:    new Date(2026, 4, 31, 23, 59, 59, 999), // 31 may 2026 23:59:59
     estatus: 'activa',
     plantillas: {
-        'A_porta_retrato':       { contactados: 250, notas: 'Oferta porta retrato gratis' },
-        'B_combo_999':           { contactados: 250, notas: 'Combo $999 segunda lámpara mitad de precio' },
-        'multi_pieza_dirigido':  { contactados: 0,   notas: 'Dirigido a clientes con historial multi-pieza (ajustar conteo)' },
+        // Nombres REALES de las plantillas Meta/WhatsApp Business
+        'dekoor_promo_mayo_porta_retrato':   { contactados: 250, notas: 'Plantilla A — oferta porta retrato gratis' },
+        'dekoor_promo_mayo_segunda_lampara': { contactados: 250, notas: 'Plantilla B — combo $999 segunda lámpara mitad de precio' },
     },
     notas: 'Primera campaña tracked. 500 plantillas piloto enviadas martes 26 (250 A + 250 B).',
 };
