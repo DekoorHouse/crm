@@ -160,7 +160,8 @@ app.get('/crm', (req, res) => {
 const crmSections = [
     'chats', 'departamentos', 'reglas-ads', 'etiquetas',
     'mensajes-ads', 'respuestas-rapidas', 'entrenamiento-ia',
-    'simulador-ia', 'ajustes', 'carritos-abandonados', 'rentabilidad'
+    'simulador-ia', 'ajustes', 'carritos-abandonados', 'rentabilidad',
+    'campanas'
 ];
 crmSections.forEach(section => {
     app.get(`/crm/${section}`, (req, res) => {
