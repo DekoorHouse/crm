@@ -253,55 +253,137 @@ router.get('/insights/ads/:id', asyncHandler(async (req, res) => {
     res.json(data);
 }));
 
+// ===================== KPI ACCOUNTS (gestion de la lista que suma) =====================
+
+/**
+ * GET /api/meta-ads/kpi-accounts
+ * Devuelve la lista de account IDs (limpios) configurados para sumar al
+ * daily_kpis.costo_publicidad. Si nunca se configuro, devuelve [].
+ */
+router.get('/kpi-accounts', asyncHandler(async (req, res) => {
+    const ids = await svc.getKpiAccountIds();
+    res.json({ success: true, accountIds: ids });
+}));
+
+/**
+ * PUT /api/meta-ads/kpi-accounts
+ * Reemplaza la lista de cuentas KPI por la que se reciba en el body.
+ * Body: { accountIds: ["123...", "act_456...", ...] }   (prefijo act_ opcional)
+ */
+router.put('/kpi-accounts', asyncHandler(async (req, res) => {
+    const ids = req.body?.accountIds;
+    if (!Array.isArray(ids)) {
+        return res.status(400).json({ success: false, error: 'accountIds debe ser un array' });
+    }
+    const saved = await svc.setKpiAccountIds(ids);
+    res.json({ success: true, accountIds: saved });
+}));
+
 // ===================== KPI SYNC (auto) =====================
 
 /**
- * Sincroniza daily_kpis.costo_publicidad con el gasto diario de Meta Ads,
- * usando la cuenta activa ya configurada en Firestore (no requiere credenciales).
- * Query params opcionales: date_from, date_to (YYYY-MM-DD). Default: mes actual.
+ * Sincroniza daily_kpis.costo_publicidad con el gasto diario de Meta Ads.
+ *
+ * Comportamiento:
+ *   1. Si settings.kpiAccountIds esta configurado y tiene >=1 ID, itera TODAS
+ *      esas cuentas, suma su spend diario y guarda el total en
+ *      daily_kpis.costo_publicidad. Ademas guarda el desglose por cuenta en
+ *      daily_kpis.costo_publicidad_breakdown: { accountId: spend }.
+ *   2. Si la lista esta vacia o no existe, cae al comportamiento legacy:
+ *      usa la cuenta unica de settings.activeAccountId.
+ *
+ * Query/body params opcionales: date_from, date_to (YYYY-MM-DD).
+ * Default: mes actual.
+ *
+ * Respuesta: { success, dateFrom, dateTo, accountIds, count, updates, errors? }
  */
 router.post('/sync-kpis', asyncHandler(async (req, res) => {
     const { db } = require('../config');
-    const settings = await svc.getActiveAccount();
-    const accountId = req.body?.accountId || req.query.accountId || settings?.activeAccountId;
-    if (!accountId) {
-        return res.status(400).json({ success: false, error: 'No hay cuenta Meta activa. Configura una en el panel de Meta.' });
+
+    // 1. Resolver lista de cuentas a sincronizar.
+    let accountIds = await svc.getKpiAccountIds();
+    if (accountIds.length === 0) {
+        // Fallback legacy: cuenta activa unica.
+        const settings = await svc.getActiveAccount();
+        const fallback = req.body?.accountId || req.query.accountId || settings?.activeAccountId;
+        if (fallback) {
+            accountIds = [String(fallback).replace('act_', '')];
+        }
+    }
+    if (accountIds.length === 0) {
+        return res.status(400).json({
+            success: false,
+            error: 'No hay cuentas Meta configuradas. Define settings.kpiAccountIds (PUT /api/meta-ads/kpi-accounts) o una cuenta activa.'
+        });
     }
 
+    // 2. Rango de fechas (default: mes actual).
     const today = new Date();
     const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
     const dateFrom = req.body?.date_from || req.query.date_from || firstOfMonth.toISOString().split('T')[0];
-    const dateTo = req.body?.date_to || req.query.date_to || today.toISOString().split('T')[0];
+    const dateTo   = req.body?.date_to   || req.query.date_to   || today.toISOString().split('T')[0];
 
-    let insights;
-    try {
-        insights = await svc.getInsights('account', null, accountId, {
-            dateFrom, dateTo,
-            fields: 'spend,date_start',
-            timeIncrement: 1,
-            limit: 500
-        });
-    } catch (err) {
-        console.error('Meta insights error:', err.response?.data || err.message);
-        return res.status(500).json({ success: false, error: err.response?.data?.error?.message || err.message });
-    }
+    // 3. Iterar cada cuenta, acumular spend por fecha.
+    const dailyMap = new Map(); // fecha -> { total, breakdown: { accountId: spend } }
+    const errors = [];
 
-    const data = insights?.data || [];
-    const updates = [];
-    for (const row of data) {
-        const fecha = row.date_start; // YYYY-MM-DD
-        const spend = parseFloat(row.spend) || 0;
-        if (!fecha) continue;
-        const existing = await db.collection('daily_kpis').where('fecha', '==', fecha).limit(1).get();
-        if (!existing.empty) {
-            await existing.docs[0].ref.update({ costo_publicidad: spend, metaSyncedAt: new Date() });
-        } else {
-            await db.collection('daily_kpis').add({ fecha, costo_publicidad: spend, metaSyncedAt: new Date() });
+    for (const accId of accountIds) {
+        try {
+            const insights = await svc.getInsights('account', null, accId, {
+                dateFrom, dateTo,
+                fields: 'spend,date_start',
+                timeIncrement: 1,
+                limit: 500
+            });
+            const rows = insights?.data || [];
+            for (const row of rows) {
+                const fecha = row.date_start; // YYYY-MM-DD
+                const spend = parseFloat(row.spend) || 0;
+                if (!fecha || spend <= 0) continue;
+
+                if (!dailyMap.has(fecha)) {
+                    dailyMap.set(fecha, { total: 0, breakdown: {} });
+                }
+                const entry = dailyMap.get(fecha);
+                entry.total += spend;
+                entry.breakdown[accId] = spend;
+            }
+        } catch (err) {
+            const msg = err.response?.data?.error?.message || err.message;
+            errors.push({ accountId: accId, error: msg });
+            console.error(`Meta sync-kpis error for account ${accId}:`, err.response?.data || err.message);
         }
-        updates.push({ fecha, spend });
     }
 
-    res.json({ success: true, dateFrom, dateTo, accountId, count: updates.length, updates });
+    // 4. Upsert daily_kpis con total + breakdown por cuenta.
+    const updates = [];
+    for (const [fecha, { total, breakdown }] of dailyMap.entries()) {
+        const existing = await db.collection('daily_kpis').where('fecha', '==', fecha).limit(1).get();
+        const payload = {
+            costo_publicidad: Math.round(total * 100) / 100,
+            costo_publicidad_breakdown: breakdown,
+            metaSyncedAt: new Date()
+        };
+        if (!existing.empty) {
+            await existing.docs[0].ref.update(payload);
+        } else {
+            await db.collection('daily_kpis').add({ fecha, ...payload });
+        }
+        updates.push({
+            fecha,
+            total: payload.costo_publicidad,
+            accounts: Object.keys(breakdown).length
+        });
+    }
+
+    res.json({
+        success: true,
+        dateFrom, dateTo,
+        accountIds,
+        count: updates.length,
+        updates,
+        errors: errors.length ? errors : undefined
+    });
 }));
 
 // ===================== AUDIENCES / TARGETING =====================
