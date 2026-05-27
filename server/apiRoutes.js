@@ -4660,6 +4660,73 @@ router.post('/campaigns/send-template', async (req, res) => {
     });
 });
 
+// --- Endpoint POST /api/campanas/contar-envios (Detectar contactos que recibieron una plantilla) ---
+// Cuenta contactos UNICOS que recibieron una plantilla especifica en un rango de fechas.
+// Lee de contacts_whatsapp/{id}/messages buscando los textos generados por
+// buildAdvancedTemplatePayload (apiRoutes.js:3210-3240).
+router.post('/campanas/contar-envios', async (req, res) => {
+    try {
+        const { template, fechaInicio, fechaFin } = req.body;
+        if (!template || !fechaInicio) {
+            return res.status(400).json({ success: false, message: 'Faltan template o fechaInicio' });
+        }
+
+        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
+        const startTs = admin.firestore.Timestamp.fromDate(new Date(fechaInicio));
+        const endTs = fechaFin ? admin.firestore.Timestamp.fromDate(new Date(fechaFin)) : null;
+
+        // Patrones de texto que matchean (4 variantes generadas por buildAdvancedTemplatePayload)
+        const patterns = new Set([
+            `📄 Plantilla: ${template}`,
+            `🖼️ Plantilla con imagen: ${template}`,
+            `🎬 Plantilla con video: ${template}`,
+            `📄 Plantilla con documento: ${template}`,
+        ]);
+
+        // Collection group query: todos los messages bajo cualquier contacts_whatsapp
+        let q = db.collectionGroup('messages')
+            .where('from', '==', PHONE_NUMBER_ID)
+            .where('timestamp', '>=', startTs);
+        if (endTs) q = q.where('timestamp', '<=', endTs);
+
+        const snap = await q.get();
+
+        // Cuenta contactos UNICOS (no mensajes — si una plantilla se reenvio al mismo numero, cuenta 1)
+        const uniqueContacts = new Set();
+        let totalMessagesMatched = 0;
+        snap.docs.forEach(d => {
+            const text = d.data()?.text;
+            if (typeof text === 'string' && patterns.has(text)) {
+                const contactId = d.ref.parent.parent?.id;
+                if (contactId) {
+                    uniqueContacts.add(contactId);
+                    totalMessagesMatched++;
+                }
+            }
+        });
+
+        res.json({
+            success: true,
+            template,
+            count: uniqueContacts.size,
+            totalMessagesMatched, // util para diagnostico: si > count, hubo reenvios al mismo numero
+            totalMessagesScanned: snap.size,
+        });
+    } catch (err) {
+        console.error('Error en /campanas/contar-envios:', err);
+        const errMsg = (err && err.message) || 'Error interno';
+        // Si Firestore pide un indice, devolver mensaje claro con el link
+        if (errMsg.includes('index')) {
+            return res.status(500).json({
+                success: false,
+                message: 'Falta indice Firestore. Revisa logs del servidor para el link de creacion.',
+                detail: errMsg,
+            });
+        }
+        res.status(500).json({ success: false, message: errMsg });
+    }
+});
+
 // --- Endpoint POST /api/campaigns/send-template-with-image (Enviar campaña con imagen) ---
 router.post('/campaigns/send-template-with-image', async (req, res) => {
     const { contactIds, templateObject, imageUrl, phoneNumber } = req.body;

@@ -1787,3 +1787,72 @@ window.handleSaveCampana = handleSaveCampana;
 window.handleDeleteCampana = handleDeleteCampana;
 window.handleToggleCampanaEstatus = handleToggleCampanaEstatus;
 window.handleExportCampanaCSV = handleExportCampanaCSV;
+
+/**
+ * Detecta automáticamente cuántos contactos recibieron la plantilla de esta fila
+ * en el rango de fechas del modal (fecha_inicio → fecha_fin si existe).
+ * Llamada por el botón "🔍 Detectar" en cada row del modal de campaña.
+ */
+async function detectContactadosForRow(button) {
+    const row = button.closest('.campana-plantilla-row');
+    if (!row) return;
+
+    const nombreInput = row.querySelector('.campana-plantilla-nombre');
+    const contactadosInput = row.querySelector('.campana-plantilla-contactados');
+    const fechaIniInput = document.getElementById('campana-fecha-inicio');
+    const fechaFinInput = document.getElementById('campana-fecha-fin');
+
+    const template = (nombreInput?.value || '').trim();
+    const fechaIni = fechaIniInput?.value || '';
+    const fechaFin = fechaFinInput?.value || '';
+
+    if (!template) {
+        showError('Primero escribe el nombre de la plantilla');
+        nombreInput?.focus();
+        return;
+    }
+    if (!fechaIni) {
+        showError('Primero selecciona la fecha de inicio de la campaña');
+        fechaIniInput?.focus();
+        return;
+    }
+
+    // UI loading state
+    const originalHtml = button.innerHTML;
+    button.disabled = true;
+    button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> ...';
+
+    try {
+        // ISO al inicio del día y final del día respectivamente
+        const [yi, mi, di] = fechaIni.split('-').map(Number);
+        const iniIso = new Date(yi, mi - 1, di, 0, 0, 0, 0).toISOString();
+        let finIso = null;
+        if (fechaFin) {
+            const [yf, mf, df] = fechaFin.split('-').map(Number);
+            finIso = new Date(yf, mf - 1, df, 23, 59, 59, 999).toISOString();
+        }
+
+        const response = await fetch(`${API_BASE_URL}/api/campanas/contar-envios`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ template, fechaInicio: iniIso, fechaFin: finIso }),
+        });
+        const result = await response.json();
+        if (!response.ok || !result.success) {
+            throw new Error(result.message || 'Error detectando contactados');
+        }
+
+        contactadosInput.value = result.count;
+        contactadosInput.style.background = '#dcfce7'; // verde suave de confirmación
+        setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
+        showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"`, 'success');
+    } catch (err) {
+        console.error('Error detectando contactados:', err);
+        showError(err.message || 'No se pudo detectar', 'error');
+    } finally {
+        button.disabled = false;
+        button.innerHTML = originalHtml;
+    }
+}
+
+window.detectContactadosForRow = detectContactadosForRow;
