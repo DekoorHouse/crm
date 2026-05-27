@@ -7,6 +7,9 @@ import Select from "@/components/ui/Select";
 import type { SelectOption } from "@/components/ui/Select";
 import { createOrder, updateOrder } from "@/lib/firebase/firestore";
 import { processPhotos } from "@/lib/firebase/storage";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { db } from "@/lib/firebase/config";
+import { mapCampanaDoc, type Campana } from "@/lib/api/campanas";
 import toast from "react-hot-toast";
 
 interface PhotoItem {
@@ -44,12 +47,53 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
     () => (order?.fotoPromocionUrls ?? []).map((url) => ({ url, isNew: false, preview: url }))
   );
 
+  // Campaña tracking (opcional)
+  const [campanasActivas, setCampanasActivas] = useState<Campana[]>([]);
+  const [campanaIdActual, setCampanaIdActual] = useState<string>(order?.campana_id ?? "");
+  const [plantillaOrigen, setPlantillaOrigen] = useState<string>(order?.plantilla_origen ?? "");
+  const [vieneDeCampana, setVieneDeCampana] = useState<boolean>(
+    !!(order?.campana_id && order.campana_id.length > 0)
+  );
+
   const [saving, setSaving] = useState(false);
   const [savingText, setSavingText] = useState("");
   const [error, setError] = useState("");
 
   const orderFileRef = useRef<HTMLInputElement>(null);
   const promoFileRef = useRef<HTMLInputElement>(null);
+
+  // Listener de campañas activas (para mostrar en el selector si el usuario marca el checkbox)
+  useEffect(() => {
+    const q = query(collection(db, "campanas"), where("estatus", "==", "activa"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const list = snap.docs.map((d) => mapCampanaDoc(d.id, d.data()));
+        // Si estamos editando un pedido cuya campaña ya está cerrada, la incluimos también
+        // para no perder el tag retroactivo al re-guardar.
+        if (order?.campana_id && !list.find((c) => c.id === order.campana_id)) {
+          // Cargar esa campaña una sola vez vía snapshot adicional sería overkill; en su lugar
+          // marcamos un placeholder con el id para que el Select muestre algo si es necesario.
+          list.push({
+            id: order.campana_id,
+            nombre: `(campaña cerrada · ${order.campana_id.slice(0, 6)})`,
+            fecha_inicio: null,
+            fecha_fin: null,
+            estatus: "cerrada",
+            plantillas: order.plantilla_origen ? { [order.plantilla_origen]: { contactados: 0, notas: "" } } : {},
+            notas: "",
+            creada_por: "",
+            creada_en: null,
+          });
+        }
+        setCampanasActivas(list);
+      },
+      (err) => {
+        console.warn("[OrderModal] Error cargando campañas activas:", err);
+      }
+    );
+    return () => unsub();
+  }, [order?.campana_id, order?.plantilla_origen]);
 
   // Handle paste for photos
   useEffect(() => {
@@ -114,6 +158,20 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
       const finalOrderUrls = await processPhotos(orderPhotos, order?.fotoUrls ?? [], "pedidos");
       const finalPromoUrls = await processPhotos(finalPhotos, order?.fotoPromocionUrls ?? [], "promociones");
 
+      // Campaña: solo se guardan si el checkbox está marcado Y se seleccionaron ambos.
+      // Si se desmarca el checkbox al editar, se limpian los campos (pasan a null).
+      const campana_id =
+        vieneDeCampana && campanaIdActual ? campanaIdActual : null;
+      const plantilla_origen_final =
+        vieneDeCampana && plantillaOrigen ? plantillaOrigen : null;
+
+      if (vieneDeCampana && (!campanaIdActual || !plantillaOrigen)) {
+        setSaving(false);
+        setSavingText("");
+        setError("Si marcaste que viene de campaña, selecciona campaña y plantilla.");
+        return;
+      }
+
       const data = {
         producto,
         telefono: telefono.trim(),
@@ -123,6 +181,8 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
         comentarios: comentarios.trim(),
         fotoUrls: finalOrderUrls,
         fotoPromocionUrls: finalPromoUrls,
+        campana_id,
+        plantilla_origen: plantilla_origen_final,
       };
 
       if (isEditing && order) {
@@ -310,6 +370,65 @@ export default function OrderModal({ order, onClose, onSaved }: OrderModalProps)
               className="w-full px-3 py-2 bg-surface-container-low border-none rounded-xl text-sm text-on-surface focus:ring-primary/20 resize-none placeholder:text-on-surface-variant/50"
               placeholder="Notas internas, instrucciones especiales..."
             />
+          </div>
+
+          {/* Campaña (opcional) */}
+          <div className="space-y-2 rounded-xl bg-surface-container-low/60 px-4 py-3 border border-outline-variant/15">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={vieneDeCampana}
+                onChange={(e) => {
+                  setVieneDeCampana(e.target.checked);
+                  if (!e.target.checked) {
+                    setCampanaIdActual("");
+                    setPlantillaOrigen("");
+                  }
+                }}
+                className="rounded text-primary focus:ring-primary/20"
+              />
+              <span className="material-symbols-outlined text-primary" style={{ fontSize: 18 }}>campaign</span>
+              <span className="text-sm font-semibold text-on-surface">¿Viene de una campaña?</span>
+            </label>
+
+            {vieneDeCampana && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Campaña *</label>
+                  <Select
+                    value={campanaIdActual}
+                    onChange={(v) => {
+                      setCampanaIdActual(v);
+                      // Si la campaña cambia, limpiar la plantilla seleccionada para evitar inconsistencia
+                      setPlantillaOrigen("");
+                    }}
+                    placeholder={campanasActivas.length === 0 ? "Sin campañas activas" : "Seleccionar campaña..."}
+                    options={[
+                      { value: "", label: "Seleccionar campaña..." },
+                      ...campanasActivas.map((c) => ({ value: c.id, label: c.nombre })),
+                    ]}
+                    className="w-full"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-on-surface-variant ml-1">Plantilla origen *</label>
+                  <Select
+                    value={plantillaOrigen}
+                    onChange={setPlantillaOrigen}
+                    placeholder="Seleccionar plantilla..."
+                    options={(() => {
+                      const camp = campanasActivas.find((c) => c.id === campanaIdActual);
+                      const keys = camp ? Object.keys(camp.plantillas) : [];
+                      return [
+                        { value: "", label: keys.length === 0 ? "Elige campaña primero" : "Seleccionar plantilla..." },
+                        ...keys.map((k) => ({ value: k, label: k })),
+                      ];
+                    })()}
+                    className="w-full"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Error */}

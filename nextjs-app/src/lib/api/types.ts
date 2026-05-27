@@ -23,6 +23,8 @@ export interface Order {
   createdAt: { _seconds: number; _nanoseconds: number } | null;
   contactId: string | null;
   items?: OrderItem[];
+  campana_id?: string | null;
+  plantilla_origen?: string | null;
 }
 
 export interface OrderFilters {

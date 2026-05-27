@@ -26,6 +26,7 @@ const NAV_SECTIONS: { label?: string; items: NavItem[] }[] = [
     items: [
       { href: "/crm/rentabilidad", icon: "trending_up", label: "Rentabilidad" },
       { href: "/crm/mensajes-ads", icon: "chat_bubble", label: "Mensajes Ads" },
+      { href: "/crm/campanas", icon: "campaign", label: "Campañas" },
       { href: "/crm/carritos-abandonados", icon: "shopping_cart_off", label: "Carritos abandonados" },
     ],
   },

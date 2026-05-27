@@ -21,6 +21,8 @@ interface OrderData {
   comentarios: string;
   fotoUrls: string[];
   fotoPromocionUrls: string[];
+  campana_id?: string | null;
+  plantilla_origen?: string | null;
 }
 
 export async function createOrder(data: OrderData): Promise<string> {
