@@ -77,6 +77,43 @@ async function storeGlobalToken(token) {
     }, { merge: true });
 }
 
+// ===================== KPI ACCOUNTS (lista de cuentas que suman al daily_kpis.costo_publicidad) =====================
+
+/**
+ * Devuelve la lista de Ad Account IDs (limpios, sin prefijo act_) que deben
+ * sumar para el calculo diario de costo_publicidad. Si nunca se configuro,
+ * devuelve un array vacio y /sync-kpis cae al comportamiento legacy
+ * (cuenta activa unica de settings.activeAccountId).
+ *
+ * Storage: meta_ads_config/settings.kpiAccountIds: string[]
+ */
+async function getKpiAccountIds() {
+    const doc = await db.collection(CONFIG_COLLECTION).doc('settings').get();
+    if (!doc.exists) return [];
+    const ids = doc.data()?.kpiAccountIds;
+    if (!Array.isArray(ids)) return [];
+    return ids.map(id => String(id).replace('act_', ''));
+}
+
+/**
+ * Reemplaza por completo la lista de Ad Account IDs que suman al KPI diario.
+ * Normaliza removiendo el prefijo "act_" si lo trae cada ID.
+ * Lanza error si accountIds no es array.
+ */
+async function setKpiAccountIds(accountIds) {
+    if (!Array.isArray(accountIds)) {
+        throw new Error('accountIds debe ser un array');
+    }
+    const clean = accountIds
+        .filter(id => typeof id === 'string' && id.trim().length > 0)
+        .map(id => String(id).replace('act_', '').trim());
+    await db.collection(CONFIG_COLLECTION).doc('settings').set({
+        kpiAccountIds: clean,
+        kpiAccountIdsUpdatedAt: new Date()
+    }, { merge: true });
+    return clean;
+}
+
 // ===================== CAMPAIGNS =====================
 
 async function listCampaigns(accountId, { status, dateFrom, dateTo, limit = 50, after } = {}) {
@@ -379,6 +416,8 @@ async function listCustomAudiences(accountId, { limit = 50, after } = {}) {
 module.exports = {
     // Accounts
     listAdAccounts, getActiveAccount, setActiveAccount, storeAccountToken, storeGlobalToken,
+    // KPI Accounts (lista que suma al daily_kpis.costo_publicidad)
+    getKpiAccountIds, setKpiAccountIds,
     // Campaigns
     listCampaigns, getCampaign, createCampaign, updateCampaign, deleteCampaign,
     // Ad Sets
