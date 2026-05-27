@@ -847,6 +847,24 @@ export async function deleteEmployee(employeeId) {
 // --- GESTIÓN DEL HISTORIAL (UNDO) ---
 
 // ---------------------------------------------------------------------------
+//  Lectura completa de pedidos (para reportes / exportación)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lee TODOS los documentos de la colección `pedidos` sin filtros.
+ * Útil para exportar reportes históricos (KPIs a Excel).
+ *
+ * IMPORTANTE: se invoca bajo demanda, no como listener. Si la colección
+ * crece a decenas de miles, considerar paginación o `where` por fechas.
+ *
+ * @returns {Promise<Array<object>>} array de pedidos crudos
+ */
+export async function fetchAllPedidos() {
+    const snap = await getDocs(collection(db, "pedidos"));
+    return snap.docs.map(d => ({ id: d.id, ...d.data() }));
+}
+
+// ---------------------------------------------------------------------------
 //  Eliminación SEGURA de duplicados exactos
 // ---------------------------------------------------------------------------
 
