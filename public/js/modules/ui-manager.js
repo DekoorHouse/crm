@@ -3421,7 +3421,7 @@ function addCampanaPlantillaRow() {
     const idx = container.children.length;
     const html = `
         <div class="campana-plantilla-row" data-row-idx="${idx}" style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;align-items:center;padding:8px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">
-            <input type="text" class="campana-plantilla-nombre" value="" placeholder="Nombre plantilla" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="text" class="campana-plantilla-nombre" value="" placeholder="Nombre plantilla" list="meta-templates-list" autocomplete="off" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <input type="number" min="0" class="campana-plantilla-contactados" value="0" placeholder="Contactados" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <input type="text" class="campana-plantilla-notas" value="" placeholder="Notas (opcional)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <button type="button" onclick="removeCampanaPlantillaRow(this)" style="background:none;border:none;color:#6b7280;cursor:pointer;padding:6px;" title="Quitar"><i class="fas fa-trash"></i></button>

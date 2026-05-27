@@ -1842,16 +1842,23 @@ const CampanaFormModalTemplate = (campana) => {
 
     const rowsHtml = (plantillaEntries.length === 0 ? [['', { contactados: 0, notas: '' }]] : plantillaEntries).map(([key, val], idx) => `
         <div class="campana-plantilla-row" data-row-idx="${idx}" style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;align-items:center;padding:8px;background:#f8f9fa;border-radius:8px;margin-bottom:8px;">
-            <input type="text" class="campana-plantilla-nombre" value="${escapeHtml(key)}" placeholder="Nombre plantilla" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
+            <input type="text" class="campana-plantilla-nombre" value="${escapeHtml(key)}" placeholder="Nombre plantilla" list="meta-templates-list" autocomplete="off" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <input type="number" min="0" class="campana-plantilla-contactados" value="${val.contactados || 0}" placeholder="Contactados" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <input type="text" class="campana-plantilla-notas" value="${escapeHtml(val.notas || '')}" placeholder="Notas (opcional)" style="padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;">
             <button type="button" onclick="removeCampanaPlantillaRow(this)" style="background:none;border:none;color:#6b7280;cursor:pointer;padding:6px;" title="Quitar"><i class="fas fa-trash"></i></button>
         </div>
     `).join('');
 
+    // Datalist con plantillas Meta para autocompletado del input "Nombre plantilla"
+    const templates = Array.isArray(state.templates) ? state.templates : [];
+    const datalistHtml = `<datalist id="meta-templates-list">${
+        templates.map(t => `<option value="${escapeHtml(t.name)}">${t.language ? escapeHtml(t.language) : ''}</option>`).join('')
+    }</datalist>`;
+
     return `
         <div id="campana-form-modal" class="modal-backdrop" onclick="closeCampanaFormModal()">
             <div class="modal-content" onclick="event.stopPropagation()" style="max-width:720px;">
+                ${datalistHtml}
                 <h2><i class="fas fa-bullhorn" style="color:#81B29A;"></i> ${isEdit ? 'Editar Campaña' : 'Nueva Campaña'}</h2>
                 <form id="campana-form" data-campana-id="${campana?.id || ''}">
                     <div style="margin-bottom:14px;">
@@ -1876,11 +1883,20 @@ const CampanaFormModalTemplate = (campana) => {
                         </div>
                     </div>
                     <div style="margin-bottom:14px;">
-                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
                             <label style="margin:0;">Plantillas usadas</label>
                             <button type="button" onclick="addCampanaPlantillaRow()" style="background:none;border:none;color:#81B29A;font-weight:600;font-size:12px;cursor:pointer;">
                                 <i class="fas fa-plus"></i> Agregar plantilla
                             </button>
+                        </div>
+                        <p style="font-size:11px;color:#6b7280;margin:0 0 8px 0;">
+                            <i class="fas fa-info-circle"></i> Empieza a escribir y se autocompletan las plantillas aprobadas en Meta (${templates.length} disponibles).
+                        </p>
+                        <div style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;padding:0 8px 4px 8px;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">
+                            <div>Nombre plantilla Meta</div>
+                            <div style="text-align:center;">Contactados</div>
+                            <div>Notas</div>
+                            <div style="width:28px;"></div>
                         </div>
                         <div id="campana-plantillas-container">${rowsHtml}</div>
                     </div>
