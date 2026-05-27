@@ -1845,28 +1845,25 @@ async function detectContactadosForRow(button) {
         contactadosInput.value = result.count;
 
         if (result.count === 0) {
-            // Diagnostico claro cuando no encuentra nada
+            // Diagnostico cuando no hay matches
             console.warn('[Detectar] Resultado 0. Diagnostico:', result);
-            const scanned = result.totalMessagesScanned ?? 0;
-            const withTemplate = result.messagesWithAnyTemplate ?? 0;
             const samples = result.sampleTemplateNames || [];
 
-            let msg = `0 contactos para "${template}".`;
-            if (scanned === 0) {
-                msg += ` No hay mensajes salientes en el rango ${result.rango?.desde || fechaIni} → ${result.rango?.hasta || 'ahora'}. Revisa la fecha de inicio.`;
-            } else if (withTemplate === 0) {
-                msg += ` Se escanearon ${scanned} mensajes salientes en el rango pero ninguno tiene formato de plantilla. Posiblemente la campaña se envió por otro canal (no desde el CRM).`;
+            let msg = `0 envíos detectados para "${template}" en ${result.rango?.desde || fechaIni} → ${result.rango?.hasta || 'ahora'}.`;
+            if (samples.length === 0) {
+                msg += ` No hay registros de envío de plantillas en el rango. Revisa la fecha de inicio o verifica que se hayan enviado desde el CRM/retargeting.`;
             } else {
                 const topList = samples.map(s => `${s.name} (${s.count})`).join(', ');
-                msg += ` Se escanearon ${scanned} mensajes (${withTemplate} de plantilla) pero ninguno con ese nombre. Plantillas encontradas: ${topList}. Revisa typos o si el nombre es exacto al de Meta.`;
+                msg += ` En el rango sí hubo envíos de OTRAS plantillas: ${topList}. Verifica el nombre exacto.`;
             }
             contactadosInput.style.background = '#fef3c7'; // amarillo de aviso
             setTimeout(() => { contactadosInput.style.background = ''; }, 3000);
             showError(msg, 'warning');
         } else {
+            const srcInfo = result.bySource ? ` (${result.bySource.retargeting_plantilla} retargeting + ${result.bySource.chat} chat)` : '';
             contactadosInput.style.background = '#dcfce7'; // verde de confirmación
             setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
-            showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"`, 'success');
+            showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"${srcInfo}`, 'success');
         }
     } catch (err) {
         console.error('Error detectando contactados:', err);

@@ -1,20 +1,17 @@
 /**
  * Backfill retroactivo: taguea pedidos con `campana_id` + `plantilla_origen`
- * cruzando contactId con el historial de mensajes de plantilla WhatsApp.
+ * cruzando contactId con la coleccion `template_sends` (fuente de verdad de
+ * los envios de retargeting y chat — apiRoutes.js:3432-3448).
  *
- * Patrón:
- *   Cuando se manda una plantilla desde el CRM (endpoints /api/campaigns/*),
- *   el mensaje queda registrado en contacts_whatsapp/{contactId}/messages
- *   con `from == PHONE_NUMBER_ID` y un texto del tipo:
- *     "📄 Plantilla: dekoor_promo_mayo_porta_retrato"
- *     "🖼️ Plantilla con imagen: dekoor_promo_mayo_segunda_lampara"
+ * Schema template_sends:
+ *   templateName, contactId, sentAt, source ('chat'|'retargeting_plantilla'), batchId
  *
  * Algoritmo:
  *   Para cada pedido SIN campana_id, creado >= campana.fecha_inicio:
- *     1. Trae mensajes del contacto donde timestamp <= pedido.createdAt
- *     2. Extrae nombres de plantilla recibidas que estén en campana.plantillas
- *     3. Si recibió EXACTAMENTE UNA plantilla → taguea
- *     4. Si recibió 2+ o 0 → skip (queda para revisión manual)
+ *     1. Trae template_sends del contacto donde sentAt <= pedido.createdAt
+ *        y templateName in campana.plantillas
+ *     2. Si recibió EXACTAMENTE UNA plantilla de la campaña → taguea
+ *     3. Si recibió 2+ o 0 → skip (queda para revisión manual)
  *
  * Uso:
  *   node scripts/backfill-campana-pedidos.js <campana_id> --dry-run
@@ -49,13 +46,7 @@ try {
 
 const db = admin.firestore();
 
-// Regex que matchea los formatos generados por buildAdvancedTemplatePayload()
-// en server/apiRoutes.js:3210-3240. Captura el nombre de la plantilla.
-//   "📄 Plantilla: dekoor_promo_mayo_porta_retrato"
-//   "🖼️ Plantilla con imagen: dekoor_promo_mayo_segunda_lampara"
-//   "🎬 Plantilla con video: foo"
-//   "📄 Plantilla con documento: bar"
-const PLANTILLA_REGEX = /Plantilla(?:\s+con\s+(?:imagen|video|documento))?\s*:\s*([A-Za-z0-9_\-]+)/i;
+// Sin regex — usamos template_sends como fuente de verdad directa.
 
 async function listCampanas() {
     const snap = await db.collection('campanas').orderBy('creada_en', 'desc').get();
@@ -94,31 +85,22 @@ async function getCampana(campanaId) {
 }
 
 /**
- * Extrae el set de plantillas de la campaña que recibió el contacto
- * antes del timestamp dado.
+ * Devuelve el set de plantillas de la campaña que recibió el contacto
+ * antes del timestamp dado, leyendo de template_sends.
  */
 async function getPlantillasRecibidasAntes(contactId, beforeTimestamp, plantillasValidas) {
     if (!contactId) return new Set();
-    const msgsSnap = await db
-        .collection('contacts_whatsapp')
-        .doc(contactId)
-        .collection('messages')
-        .where('timestamp', '<=', beforeTimestamp)
+    const sendsSnap = await db
+        .collection('template_sends')
+        .where('contactId', '==', contactId)
+        .where('sentAt', '<=', beforeTimestamp)
         .get();
 
     const found = new Set();
-    msgsSnap.docs.forEach(m => {
-        const data = m.data();
-        // Solo mensajes salientes (de nuestro PHONE_NUMBER_ID) son plantillas
-        // pero el endpoint guarda `from: PHONE_NUMBER_ID` así que también filtramos.
-        // Robustez: filtra por texto que matchee el patrón, sin importar `from`.
-        const text = typeof data.text === 'string' ? data.text : '';
-        const m2 = text.match(PLANTILLA_REGEX);
-        if (m2) {
-            const name = m2[1];
-            if (plantillasValidas.has(name)) {
-                found.add(name);
-            }
+    sendsSnap.docs.forEach(d => {
+        const name = d.data()?.templateName;
+        if (typeof name === 'string' && plantillasValidas.has(name)) {
+            found.add(name);
         }
     });
     return found;

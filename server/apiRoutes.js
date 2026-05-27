@@ -4661,9 +4661,10 @@ router.post('/campaigns/send-template', async (req, res) => {
 });
 
 // --- Endpoint POST /api/campanas/contar-envios (Detectar contactos que recibieron una plantilla) ---
-// Cuenta contactos UNICOS que recibieron una plantilla especifica en un rango de fechas.
-// Lee de contacts_whatsapp/{id}/messages buscando los textos generados por
-// buildAdvancedTemplatePayload (apiRoutes.js:3210-3240).
+// Cuenta contactos UNICOS que recibieron una plantilla en un rango de fechas usando la
+// coleccion `template_sends` (fuente de verdad para retargeting y envios de chat).
+// Schema en recordTemplateSend (apiRoutes.js:3432-3448):
+//   templateName, contactId, sentAt, source ('chat'|'retargeting_plantilla'), batchId, etc.
 router.post('/campanas/contar-envios', async (req, res) => {
     try {
         const { template, fechaInicio, fechaFin } = req.body;
@@ -4671,81 +4672,64 @@ router.post('/campanas/contar-envios', async (req, res) => {
             return res.status(400).json({ success: false, message: 'Faltan template o fechaInicio' });
         }
 
-        const PHONE_NUMBER_ID = process.env.PHONE_NUMBER_ID;
         const startTs = admin.firestore.Timestamp.fromDate(new Date(fechaInicio));
         const endTs = fechaFin ? admin.firestore.Timestamp.fromDate(new Date(fechaFin)) : null;
 
-        // Patrones de texto que matchean (4 variantes generadas por buildAdvancedTemplatePayload)
-        const patterns = new Set([
-            `📄 Plantilla: ${template}`,
-            `🖼️ Plantilla con imagen: ${template}`,
-            `🎬 Plantilla con video: ${template}`,
-            `📄 Plantilla con documento: ${template}`,
-        ]);
-
-        // Regex que matchea CUALQUIER plantilla (para diagnostico)
-        const anyPlantillaRegex = /Plantilla(?:\s+con\s+(?:imagen|video|documento))?\s*:\s*([A-Za-z0-9_\-]+)/i;
-
-        // Collection group query: todos los messages bajo cualquier contacts_whatsapp
-        let q = db.collectionGroup('messages')
-            .where('from', '==', PHONE_NUMBER_ID)
-            .where('timestamp', '>=', startTs);
-        if (endTs) q = q.where('timestamp', '<=', endTs);
+        // Query principal: template_sends por templateName + rango de sentAt
+        let q = db.collection('template_sends')
+            .where('templateName', '==', template)
+            .where('sentAt', '>=', startTs);
+        if (endTs) q = q.where('sentAt', '<=', endTs);
 
         const snap = await q.get();
 
         const uniqueContacts = new Set();
-        let totalMessagesMatched = 0;
-        const otherTemplatesFound = new Map(); // diagnostico: nombre → conteo
-        let messagesWithAnyTemplate = 0;
-
+        const bySource = { chat: 0, retargeting_plantilla: 0, other: 0 };
         snap.docs.forEach(d => {
-            const text = d.data()?.text;
-            if (typeof text !== 'string') return;
-
-            // 1. Match exacto contra la plantilla solicitada
-            if (patterns.has(text)) {
-                const contactId = d.ref.parent.parent?.id;
-                if (contactId) {
-                    uniqueContacts.add(contactId);
-                    totalMessagesMatched++;
-                }
-            }
-
-            // 2. Diagnostico: detecta CUALQUIER plantilla en el rango
-            const m = text.match(anyPlantillaRegex);
-            if (m) {
-                messagesWithAnyTemplate++;
-                const found = m[1];
-                otherTemplatesFound.set(found, (otherTemplatesFound.get(found) || 0) + 1);
-            }
+            const data = d.data();
+            const contactId = data?.contactId;
+            if (contactId) uniqueContacts.add(contactId);
+            const src = data?.source;
+            if (src === 'chat') bySource.chat++;
+            else if (src === 'retargeting_plantilla') bySource.retargeting_plantilla++;
+            else bySource.other++;
         });
 
-        // Top 8 plantillas detectadas en el rango (para que el user vea si su nombre matchea)
-        const sampleTemplateNames = [...otherTemplatesFound.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .slice(0, 8)
-            .map(([name, count]) => ({ name, count }));
+        // Diagnostico: si count==0, ver que plantillas SI hubo envios en el rango
+        let sampleTemplateNames = [];
+        if (uniqueContacts.size === 0) {
+            let diagQ = db.collection('template_sends').where('sentAt', '>=', startTs);
+            if (endTs) diagQ = diagQ.where('sentAt', '<=', endTs);
+            const diagSnap = await diagQ.get();
+            const tplCount = new Map();
+            diagSnap.docs.forEach(d => {
+                const name = d.data()?.templateName;
+                if (name) tplCount.set(name, (tplCount.get(name) || 0) + 1);
+            });
+            sampleTemplateNames = [...tplCount.entries()]
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 10)
+                .map(([name, count]) => ({ name, count }));
+        }
 
         res.json({
             success: true,
             template,
             count: uniqueContacts.size,
-            totalMessagesMatched,
-            totalMessagesScanned: snap.size,
-            messagesWithAnyTemplate,
+            totalSendsScanned: snap.size,
+            bySource,
             sampleTemplateNames,
-            phoneNumberIdUsed: PHONE_NUMBER_ID ? `${String(PHONE_NUMBER_ID).slice(0, 4)}…` : '(no definido)',
             rango: { desde: fechaInicio, hasta: fechaFin || 'ahora' },
         });
     } catch (err) {
         console.error('Error en /campanas/contar-envios:', err);
         const errMsg = (err && err.message) || 'Error interno';
         // Si Firestore pide un indice, devolver mensaje claro con el link
-        if (errMsg.includes('index')) {
+        if (errMsg.includes('index') || errMsg.includes('requires an index')) {
+            console.error('Falta indice. Link de creacion debe estar en este error:', errMsg);
             return res.status(500).json({
                 success: false,
-                message: 'Falta indice Firestore. Revisa logs del servidor para el link de creacion.',
+                message: 'Falta indice Firestore (template_sends por templateName+sentAt). Revisa logs del servidor en Render para el link de creacion.',
                 detail: errMsg,
             });
         }

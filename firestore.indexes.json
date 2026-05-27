@@ -58,11 +58,11 @@
       ]
     },
     {
-      "collectionGroup": "messages",
-      "queryScope": "COLLECTION_GROUP",
+      "collectionGroup": "template_sends",
+      "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "from", "order": "ASCENDING" },
-        { "fieldPath": "timestamp", "order": "ASCENDING" }
+        { "fieldPath": "templateName", "order": "ASCENDING" },
+        { "fieldPath": "sentAt", "order": "ASCENDING" }
       ]
     }
   ],
