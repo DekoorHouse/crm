@@ -34,7 +34,7 @@ export interface Campana {
 export interface CampanaInput {
   nombre: string;
   fecha_inicio: Date;
-  fecha_fin: Date;
+  fecha_fin: Date | null; // null = campaña en curso sin fecha de cierre planeada
   estatus: EstatusCampana;
   plantillas: Record<string, CampanaPlantilla>;
   notas: string;
@@ -47,7 +47,7 @@ export async function createCampana(data: CampanaInput): Promise<string> {
   const payload = {
     nombre: data.nombre.trim(),
     fecha_inicio: Timestamp.fromDate(data.fecha_inicio),
-    fecha_fin: Timestamp.fromDate(data.fecha_fin),
+    fecha_fin: data.fecha_fin ? Timestamp.fromDate(data.fecha_fin) : null,
     estatus: data.estatus,
     plantillas: data.plantillas,
     notas: data.notas.trim(),
@@ -64,7 +64,7 @@ export async function updateCampana(id: string, data: Partial<CampanaInput>): Pr
   const payload: Record<string, unknown> = { actualizada_en: serverTimestamp() };
   if (data.nombre !== undefined) payload.nombre = data.nombre.trim();
   if (data.fecha_inicio !== undefined) payload.fecha_inicio = Timestamp.fromDate(data.fecha_inicio);
-  if (data.fecha_fin !== undefined) payload.fecha_fin = Timestamp.fromDate(data.fecha_fin);
+  if (data.fecha_fin !== undefined) payload.fecha_fin = data.fecha_fin ? Timestamp.fromDate(data.fecha_fin) : null;
   if (data.estatus !== undefined) payload.estatus = data.estatus;
   if (data.plantillas !== undefined) payload.plantillas = data.plantillas;
   if (data.notas !== undefined) payload.notas = data.notas.trim();
@@ -119,5 +119,6 @@ export function formatRangoFechas(c: Campana): string {
     if (!t) return "—";
     return t.toDate().toLocaleDateString("es-MX", { day: "numeric", month: "short", year: "numeric" });
   };
-  return `${fmt(c.fecha_inicio)} → ${fmt(c.fecha_fin)}`;
+  // Si no hay fecha_fin, la campaña está "en curso" sin fecha de cierre planeada
+  return c.fecha_fin ? `${fmt(c.fecha_inicio)} → ${fmt(c.fecha_fin)}` : `${fmt(c.fecha_inicio)} → en curso`;
 }

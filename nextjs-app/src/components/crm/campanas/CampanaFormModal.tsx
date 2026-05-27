@@ -75,12 +75,12 @@ export default function CampanaFormModal({ campana, onClose, onSaved }: Props) {
       return;
     }
     const ini = parseInputDate(fechaInicio, false);
-    const fin = parseInputDate(fechaFin, true);
-    if (!ini || !fin) {
-      setError("Selecciona fechas de inicio y fin");
+    const fin = parseInputDate(fechaFin, true); // null si está vacía → "en curso"
+    if (!ini) {
+      setError("Selecciona la fecha de inicio");
       return;
     }
-    if (fin < ini) {
+    if (fin && fin < ini) {
       setError("La fecha fin debe ser posterior a la fecha inicio");
       return;
     }

@@ -1748,7 +1748,7 @@ const CampanaCardTemplate = (c, kpis) => {
     const ini = c.fecha_inicio?.toDate ? c.fecha_inicio.toDate() : (c.fecha_inicio?._seconds ? new Date(c.fecha_inicio._seconds * 1000) : null);
     const fin = c.fecha_fin?.toDate ? c.fecha_fin.toDate() : (c.fecha_fin?._seconds ? new Date(c.fecha_fin._seconds * 1000) : null);
     const fmt = d => d ? d.toLocaleDateString('es-MX', { day:'numeric', month:'short', year:'numeric' }) : '—';
-    const rango = `${fmt(ini)} → ${fmt(fin)}`;
+    const rango = fin ? `${fmt(ini)} → ${fmt(fin)}` : `${fmt(ini)} → en curso`;
     const totalPct = kpis.totalContactados > 0 ? ((kpis.totalPagados / kpis.totalContactados) * 100).toFixed(1) + '%' : '—';
     const totalMonto = '$' + Math.round(kpis.totalMonto).toLocaleString('es-MX');
     const isActiva = c.estatus === 'activa';
@@ -1871,8 +1871,8 @@ const CampanaFormModalTemplate = (campana) => {
                             <input type="date" id="campana-fecha-inicio" value="${dateValue(ini)}" required>
                         </div>
                         <div>
-                            <label for="campana-fecha-fin">Fecha fin *</label>
-                            <input type="date" id="campana-fecha-fin" value="${dateValue(fin)}" required>
+                            <label for="campana-fecha-fin">Fecha fin <span style="font-weight:400;color:#9ca3af;font-size:11px;">(opcional)</span></label>
+                            <input type="date" id="campana-fecha-fin" value="${dateValue(fin)}" title="Déjala vacía si la campaña sigue en curso sin fecha de cierre planeada">
                         </div>
                         <div>
                             <label for="campana-estatus">Estatus</label>
@@ -1889,12 +1889,15 @@ const CampanaFormModalTemplate = (campana) => {
                                 <i class="fas fa-plus"></i> Agregar plantilla
                             </button>
                         </div>
-                        <p style="font-size:11px;color:#6b7280;margin:0 0 8px 0;">
+                        <p style="font-size:11px;color:#6b7280;margin:0 0 4px 0;">
                             <i class="fas fa-info-circle"></i> Empieza a escribir y se autocompletan las plantillas aprobadas en Meta (${templates.length} disponibles).
+                        </p>
+                        <p style="font-size:11px;color:#6b7280;margin:0 0 8px 0;">
+                            <i class="fas fa-users"></i> <strong>Contactados</strong> = a cuántos teléfonos enviaste esa plantilla (se usa como denominador para calcular % de conversión).
                         </p>
                         <div style="display:grid;grid-template-columns:5fr 2fr 4fr auto;gap:8px;padding:0 8px 4px 8px;font-size:10px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">
                             <div>Nombre plantilla Meta</div>
-                            <div style="text-align:center;">Contactados</div>
+                            <div style="text-align:center;" title="Cuántos teléfonos recibieron esta plantilla">Tel. enviados</div>
                             <div>Notas</div>
                             <div style="width:28px;"></div>
                         </div>

@@ -63,7 +63,7 @@ async function listCampanas() {
     snap.docs.forEach(d => {
         const data = d.data();
         const ini = data.fecha_inicio?.toDate().toISOString().slice(0, 10) || '—';
-        const fin = data.fecha_fin?.toDate().toISOString().slice(0, 10) || '—';
+        const fin = data.fecha_fin?.toDate().toISOString().slice(0, 10) || 'en curso';
         const plantillas = Object.keys(data.plantillas || {});
         console.log(`  ${d.id}  [${data.estatus || 'activa'}]  ${data.nombre}`);
         console.log(`    ${ini} → ${fin}`);
@@ -127,7 +127,9 @@ async function getPlantillasRecibidasAntes(contactId, beforeTimestamp, plantilla
 async function processCampana(campanaId) {
     const campana = await getCampana(campanaId);
     console.log(`\nCampaña: "${campana.nombre}" (${campanaId})`);
-    console.log(`Rango:    ${campana.fecha_inicio?.toISOString().slice(0, 10)} → ${campana.fecha_fin?.toISOString().slice(0, 10)}`);
+    const iniStr = campana.fecha_inicio?.toISOString().slice(0, 10) || '—';
+    const finStr = campana.fecha_fin?.toISOString().slice(0, 10) || 'en curso';
+    console.log(`Rango:    ${iniStr} → ${finStr}`);
     console.log(`Plantillas: ${[...campana.plantillas].join(', ')}`);
     console.log(`Modo:     ${DRY_RUN ? 'DRY-RUN (no escribe)' : 'APPLY (escribe a Firestore)'}\n`);
 

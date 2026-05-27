@@ -1665,12 +1665,15 @@ async function handleSaveCampana(event) {
     const notas = document.getElementById('campana-notas').value.trim();
 
     if (!nombre) { errorEl.textContent = 'El nombre es obligatorio'; return; }
-    if (!fechaIni || !fechaFin) { errorEl.textContent = 'Selecciona fechas de inicio y fin'; return; }
+    if (!fechaIni) { errorEl.textContent = 'Selecciona la fecha de inicio'; return; }
     const [yi, mi, di] = fechaIni.split('-').map(Number);
-    const [yf, mf, df] = fechaFin.split('-').map(Number);
     const ini = new Date(yi, mi - 1, di, 0, 0, 0, 0);
-    const fin = new Date(yf, mf - 1, df, 23, 59, 59, 999);
-    if (fin < ini) { errorEl.textContent = 'La fecha fin debe ser posterior a la fecha inicio'; return; }
+    let fin = null;
+    if (fechaFin) {
+        const [yf, mf, df] = fechaFin.split('-').map(Number);
+        fin = new Date(yf, mf - 1, df, 23, 59, 59, 999);
+        if (fin < ini) { errorEl.textContent = 'La fecha fin debe ser posterior a la fecha inicio'; return; }
+    }
 
     // Recolectar plantillas
     const plantillas = {};
@@ -1695,7 +1698,7 @@ async function handleSaveCampana(event) {
         const payload = {
             nombre,
             fecha_inicio: Timestamp.fromDate(ini),
-            fecha_fin: Timestamp.fromDate(fin),
+            fecha_fin: fin ? Timestamp.fromDate(fin) : null, // null = en curso sin fecha de cierre
             estatus,
             plantillas,
             notas,
