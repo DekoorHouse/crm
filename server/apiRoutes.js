@@ -4683,6 +4683,9 @@ router.post('/campanas/contar-envios', async (req, res) => {
             `📄 Plantilla con documento: ${template}`,
         ]);
 
+        // Regex que matchea CUALQUIER plantilla (para diagnostico)
+        const anyPlantillaRegex = /Plantilla(?:\s+con\s+(?:imagen|video|documento))?\s*:\s*([A-Za-z0-9_\-]+)/i;
+
         // Collection group query: todos los messages bajo cualquier contacts_whatsapp
         let q = db.collectionGroup('messages')
             .where('from', '==', PHONE_NUMBER_ID)
@@ -4691,26 +4694,49 @@ router.post('/campanas/contar-envios', async (req, res) => {
 
         const snap = await q.get();
 
-        // Cuenta contactos UNICOS (no mensajes — si una plantilla se reenvio al mismo numero, cuenta 1)
         const uniqueContacts = new Set();
         let totalMessagesMatched = 0;
+        const otherTemplatesFound = new Map(); // diagnostico: nombre → conteo
+        let messagesWithAnyTemplate = 0;
+
         snap.docs.forEach(d => {
             const text = d.data()?.text;
-            if (typeof text === 'string' && patterns.has(text)) {
+            if (typeof text !== 'string') return;
+
+            // 1. Match exacto contra la plantilla solicitada
+            if (patterns.has(text)) {
                 const contactId = d.ref.parent.parent?.id;
                 if (contactId) {
                     uniqueContacts.add(contactId);
                     totalMessagesMatched++;
                 }
             }
+
+            // 2. Diagnostico: detecta CUALQUIER plantilla en el rango
+            const m = text.match(anyPlantillaRegex);
+            if (m) {
+                messagesWithAnyTemplate++;
+                const found = m[1];
+                otherTemplatesFound.set(found, (otherTemplatesFound.get(found) || 0) + 1);
+            }
         });
+
+        // Top 8 plantillas detectadas en el rango (para que el user vea si su nombre matchea)
+        const sampleTemplateNames = [...otherTemplatesFound.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([name, count]) => ({ name, count }));
 
         res.json({
             success: true,
             template,
             count: uniqueContacts.size,
-            totalMessagesMatched, // util para diagnostico: si > count, hubo reenvios al mismo numero
+            totalMessagesMatched,
             totalMessagesScanned: snap.size,
+            messagesWithAnyTemplate,
+            sampleTemplateNames,
+            phoneNumberIdUsed: PHONE_NUMBER_ID ? `${String(PHONE_NUMBER_ID).slice(0, 4)}…` : '(no definido)',
+            rango: { desde: fechaInicio, hasta: fechaFin || 'ahora' },
         });
     } catch (err) {
         console.error('Error en /campanas/contar-envios:', err);

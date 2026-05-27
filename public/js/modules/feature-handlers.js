@@ -1843,9 +1843,31 @@ async function detectContactadosForRow(button) {
         }
 
         contactadosInput.value = result.count;
-        contactadosInput.style.background = '#dcfce7'; // verde suave de confirmación
-        setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
-        showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"`, 'success');
+
+        if (result.count === 0) {
+            // Diagnostico claro cuando no encuentra nada
+            console.warn('[Detectar] Resultado 0. Diagnostico:', result);
+            const scanned = result.totalMessagesScanned ?? 0;
+            const withTemplate = result.messagesWithAnyTemplate ?? 0;
+            const samples = result.sampleTemplateNames || [];
+
+            let msg = `0 contactos para "${template}".`;
+            if (scanned === 0) {
+                msg += ` No hay mensajes salientes en el rango ${result.rango?.desde || fechaIni} → ${result.rango?.hasta || 'ahora'}. Revisa la fecha de inicio.`;
+            } else if (withTemplate === 0) {
+                msg += ` Se escanearon ${scanned} mensajes salientes en el rango pero ninguno tiene formato de plantilla. Posiblemente la campaña se envió por otro canal (no desde el CRM).`;
+            } else {
+                const topList = samples.map(s => `${s.name} (${s.count})`).join(', ');
+                msg += ` Se escanearon ${scanned} mensajes (${withTemplate} de plantilla) pero ninguno con ese nombre. Plantillas encontradas: ${topList}. Revisa typos o si el nombre es exacto al de Meta.`;
+            }
+            contactadosInput.style.background = '#fef3c7'; // amarillo de aviso
+            setTimeout(() => { contactadosInput.style.background = ''; }, 3000);
+            showError(msg, 'warning');
+        } else {
+            contactadosInput.style.background = '#dcfce7'; // verde de confirmación
+            setTimeout(() => { contactadosInput.style.background = ''; }, 1500);
+            showError(`Detectados ${result.count} contactos únicos que recibieron "${template}"`, 'success');
+        }
     } catch (err) {
         console.error('Error detectando contactados:', err);
         showError(err.message || 'No se pudo detectar', 'error');
