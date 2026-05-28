@@ -208,7 +208,6 @@ document.addEventListener('DOMContentLoaded', () => {
             await cargarInstrucciones();
             cargarPlantillas(false);
             restaurarDesdeCache();
-            cargarCampanas(false);
         } else {
             seccionLogin.style.display = 'block';
             seccionRetargeting.style.display = 'none';
@@ -693,9 +692,6 @@ document.addEventListener('DOMContentLoaded', () => {
             saveCache(pedidosEncontrados, fechaIni, fechaFin);
             updateCacheInfoUI(loadCache());
             renderPedidos();
-
-            // Refrescar el panel de campañas para mostrar la nueva tanda
-            if (esPlantilla) cargarCampanas(true);
 
         } catch (e) {
             alert('Error general: ' + e.message);
@@ -1226,33 +1222,6 @@ document.addEventListener('DOMContentLoaded', () => {
             gananciaSubEl.textContent = 'ingreso − gasto';
             if (gananciaCard) gananciaCard.classList.remove('gan-good', 'gan-bad');
         }
-    };
-
-    window.prefillCalculadora = () => {
-        // Tomamos los valores del último render del resumen global (DOM)
-        const grabValue = (selector) => {
-            const el = document.querySelector(selector);
-            if (!el) return null;
-            const txt = el.textContent.replace(/[^0-9.]/g, '');
-            return txt ? Number(txt) : null;
-        };
-        // Importe gastado: primer .resumen-kpi-cost .resumen-value
-        const gastoEl = document.querySelector('.resumen-kpi-cost .resumen-value');
-        const enviadosEls = document.querySelectorAll('.resumen-kpi .resumen-value');
-        // El KPI "Enviados" es el tercero (índice 2): cost, cpd, enviados...
-        let gasto = 0, enviados = 0;
-        if (gastoEl) {
-            const txt = gastoEl.textContent.replace(/[^0-9.,]/g, '').replace(/,/g, '');
-            gasto = parseFloat(txt) || 0;
-        }
-        if (enviadosEls.length >= 3) {
-            const txt = enviadosEls[2].textContent.replace(/[^0-9]/g, '');
-            enviados = parseInt(txt) || 0;
-        }
-        document.getElementById('calcGasto').value = gasto.toFixed(2);
-        document.getElementById('calcEnviados').value = enviados;
-        // Conversiones queda como el usuario las ponga
-        recalcularConversion();
     };
 
     // Restaurar valores guardados al cargar (después de auth)

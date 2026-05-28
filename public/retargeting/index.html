@@ -181,35 +181,10 @@
             <div id="logRetargeting" class="log-container"></div>
         </div>
 
-        <!-- Campañas enviadas (historial con conteos de entregados / respondieron) -->
-        <div class="content-box">
-            <div class="campanas-header">
-                <h2><i class="fas fa-chart-bar"></i> Mis campa&ntilde;as enviadas</h2>
-                <div class="campanas-acciones">
-                    <select id="campanasRango" onchange="cargarCampanas(true)">
-                        <option value="7">&Uacute;ltimos 7 d&iacute;as</option>
-                        <option value="30" selected>&Uacute;ltimos 30 d&iacute;as</option>
-                        <option value="90">&Uacute;ltimos 90 d&iacute;as</option>
-                        <option value="365">&Uacute;ltimo a&ntilde;o</option>
-                    </select>
-                    <button id="btnRecargarCampanas" class="btn-secondary" onclick="cargarCampanas(true)" title="Recargar">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                </div>
-            </div>
-            <p class="hint">Cada fila es un env&iacute;o masivo. <strong>Enviados</strong> = contactos que recibieron la plantilla. <strong>Respondieron</strong> = contactos que contestaron despu&eacute;s del env&iacute;o.</p>
-            <div id="campanasContainer" class="campanas-container">
-                <div class="campanas-empty"><i class="fas fa-spinner fa-spin"></i> Cargando campa&ntilde;as...</div>
-            </div>
-        </div>
-
         <!-- Calculadora manual de conversi&oacute;n -->
         <div class="content-box">
             <div class="calc-header">
                 <h2><i class="fas fa-calculator"></i> Calculadora de conversi&oacute;n</h2>
-                <button class="btn-secondary calc-prefill-btn" onclick="prefillCalculadora()" title="Llenar con los datos actuales del panel">
-                    <i class="fas fa-magic"></i> Usar datos del panel
-                </button>
             </div>
             <p class="hint">Mete gasto, enviados, conversiones e ingreso generado. Te calcula <strong>costo por conversi&oacute;n</strong>, <strong>% de conversi&oacute;n</strong>, <strong>ROAS</strong> y <strong>ganancia neta</strong> en vivo.</p>
             <div class="calc-grid calc-grid-4">
@@ -262,6 +237,6 @@
     </div>
 </div>
 
-<script type="module" src="/retargeting/script.js?v=22"></script>
+<script type="module" src="/retargeting/script.js?v=23"></script>
 </body>
 </html>
