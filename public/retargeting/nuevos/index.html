@@ -103,6 +103,50 @@
         @media (max-width: 700px) {
             .shift-hint { display: none; }
         }
+        .danger-zone {
+            margin-top: 16px;
+            padding: 12px 14px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-left: 4px solid #dc2626;
+            border-radius: 8px;
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+        .danger-zone-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.82rem;
+            color: #991b1b;
+            flex-basis: 100%;
+            margin-bottom: 2px;
+        }
+        .danger-zone-header i { color: #dc2626; }
+        .btn-danger {
+            padding: 8px 14px;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn-danger:hover { background: #b91c1c; }
+        .btn-danger:disabled { background: #9ca3af; cursor: not-allowed; }
+        .danger-zone-status {
+            font-size: 0.8rem;
+            color: #6b7280;
+            font-style: italic;
+        }
+        .danger-zone-status.success { color: #16a34a; font-style: normal; font-weight: 600; }
+        .danger-zone-status.error { color: #dc2626; font-style: normal; font-weight: 600; }
     </style>
 </head>
 <body>
@@ -210,6 +254,18 @@
                 </button>
                 <span id="cacheInfo" class="cache-info"></span>
             </div>
+
+            <!-- Danger zone: acciones masivas sobre TODO el departamento -->
+            <div class="danger-zone">
+                <div class="danger-zone-header">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span><strong>Acciones masivas sobre TODO el departamento seleccionado</strong> (sin importar fecha)</span>
+                </div>
+                <button id="btnQuitarIA" class="btn-danger" onclick="quitarIAATodosDelDepto()">
+                    <i class="fas fa-brain-circuit"></i> <i class="fas fa-times"></i> Quitar IA a todos los del depto
+                </button>
+                <span id="quitarIAStatus" class="danger-zone-status"></span>
+            </div>
         </div>
 
         <!-- Resultados -->
@@ -254,6 +310,6 @@
     </div>
 </div>
 
-<script type="module" src="/retargeting/nuevos/script.js?v=4"></script>
+<script type="module" src="/retargeting/nuevos/script.js?v=5"></script>
 </body>
 </html>

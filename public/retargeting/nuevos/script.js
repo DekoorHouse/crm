@@ -374,6 +374,87 @@ document.addEventListener('DOMContentLoaded', () => {
 
     window.cerrarSesion = () => signOut(auth);
 
+    // --- Acción masiva: quitar IA a todos los contactos del depto ---
+    window.quitarIAATodosDelDepto = async () => {
+        const departmentId = departamentoSelect.value;
+        const btn = document.getElementById('btnQuitarIA');
+        const statusEl = document.getElementById('quitarIAStatus');
+
+        if (!departmentId) {
+            alert('Primero selecciona un departamento en el filtro de arriba.');
+            return;
+        }
+
+        const dept = departamentosDisponibles.find(d => d.id === departmentId);
+        const deptName = dept ? dept.name : '(sin nombre)';
+
+        // 1ra confirmación
+        if (!confirm(`¿Quitar la IA a TODOS los contactos del departamento "${deptName}" que la tengan activa?\n\n(Esto NO depende del rango de fecha — afecta a TODOS los contactos del depto.)`)) {
+            return;
+        }
+
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Contando...';
+        statusEl.textContent = '';
+        statusEl.className = 'danger-zone-status';
+
+        try {
+            const token = await auth.currentUser.getIdToken();
+
+            // Cuenta primero para confirmar con número exacto
+            const countRes = await fetch(`/api/contacts/ia-active-count?departmentId=${encodeURIComponent(departmentId)}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const countData = await countRes.json();
+            if (!countRes.ok || !countData.success) {
+                throw new Error(countData.message || 'Error al contar contactos con IA activa');
+            }
+            const total = countData.count;
+
+            if (total === 0) {
+                statusEl.textContent = `No hay contactos con IA activa en "${deptName}".`;
+                statusEl.className = 'danger-zone-status success';
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                return;
+            }
+
+            // 2da confirmación con número exacto
+            if (!confirm(`Se va a desactivar la IA para ${total} contacto(s) en "${deptName}".\n\n¿Confirmar?`)) {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                statusEl.textContent = 'Cancelado.';
+                return;
+            }
+
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Desactivando...';
+
+            const res = await fetch('/api/contacts/disable-ia-bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ departmentId })
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+                throw new Error(data.message || 'Error al desactivar IA');
+            }
+
+            statusEl.innerHTML = `<i class="fas fa-check-circle"></i> IA desactivada para ${data.disabled} contacto(s) de "${deptName}".`;
+            statusEl.className = 'danger-zone-status success';
+        } catch (e) {
+            console.error('Error quitando IA masivo:', e);
+            statusEl.innerHTML = `<i class="fas fa-exclamation-circle"></i> Error: ${e.message}`;
+            statusEl.className = 'danger-zone-status error';
+        } finally {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    };
+
     // --- Instrucciones (independientes de la página de Pagados) ---
     async function cargarInstrucciones() {
         try {

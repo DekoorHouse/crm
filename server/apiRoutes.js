@@ -3482,6 +3482,82 @@ router.get('/contacts/pending-ia-count', async (req, res) => {
     }
 });
 
+// --- Helper: arma query de contactos con botActive=true filtrada por depto ---
+// Soporta departmentId simple ("X") o multi separado por coma ("X,Y,Z", max 10).
+function buildIaActiveQueryForDept(departmentId) {
+    let query = db.collection('contacts_whatsapp').where('botActive', '==', true);
+    if (departmentId && departmentId !== 'all') {
+        if (departmentId.includes(',')) {
+            const ids = departmentId.split(',').map(s => s.trim()).filter(Boolean).slice(0, 10);
+            if (ids.length > 0) {
+                query = query.where('assignedDepartmentId', 'in', ids);
+            }
+        } else {
+            query = query.where('assignedDepartmentId', '==', departmentId);
+        }
+    }
+    return query;
+}
+
+// --- GET /api/contacts/ia-active-count ---
+// Cuenta contactos con IA activa (botActive=true) en el depto indicado.
+// Usa Firestore count() — barato, no lee documentos.
+router.get('/contacts/ia-active-count', async (req, res) => {
+    try {
+        const { departmentId } = req.query;
+        if (!departmentId) {
+            return res.status(400).json({ success: false, message: 'Se requiere departmentId.' });
+        }
+        const query = buildIaActiveQueryForDept(departmentId);
+        const countSnapshot = await query.count().get();
+        const totalCount = countSnapshot.data().count;
+        res.status(200).json({ success: true, count: totalCount });
+    } catch (error) {
+        console.error('Error counting IA-active contacts:', error);
+        res.status(500).json({ success: false, message: 'Error al contar contactos con IA activa.', error: error.message });
+    }
+});
+
+// --- POST /api/contacts/disable-ia-bulk ---
+// Desactiva la IA (botActive=false) para TODOS los contactos del depto que la tengan
+// activa actualmente. Procesa en batches de 500 (limite de Firestore para writes).
+router.post('/contacts/disable-ia-bulk', async (req, res) => {
+    try {
+        const { departmentId } = req.body || {};
+        if (!departmentId) {
+            return res.status(400).json({ success: false, message: 'Se requiere departmentId en el body.' });
+        }
+
+        const query = buildIaActiveQueryForDept(departmentId);
+        const snapshot = await query.get();
+
+        if (snapshot.empty) {
+            return res.status(200).json({ success: true, disabled: 0, message: 'No había contactos con IA activa.' });
+        }
+
+        // Batches de 500 (limite de Firestore para writes en un solo batch)
+        const docs = snapshot.docs;
+        const BATCH_SIZE = 500;
+        let disabled = 0;
+
+        for (let i = 0; i < docs.length; i += BATCH_SIZE) {
+            const batch = db.batch();
+            const slice = docs.slice(i, i + BATCH_SIZE);
+            slice.forEach(doc => {
+                batch.update(doc.ref, { botActive: false });
+            });
+            await batch.commit();
+            disabled += slice.length;
+        }
+
+        console.log(`[disable-ia-bulk] Desactivada IA para ${disabled} contactos en depto(s): ${departmentId}`);
+        res.status(200).json({ success: true, disabled });
+    } catch (error) {
+        console.error('Error desactivando IA masivo:', error);
+        res.status(500).json({ success: false, message: 'Error al desactivar IA masivo.', error: error.message });
+    }
+});
+
 // --- Endpoint GET /api/contacts (Paginado y con filtro de etiqueta) ---
 router.get('/contacts', async (req, res) => {
     try {
