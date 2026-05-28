@@ -1204,7 +1204,7 @@ const ChatWindowTemplate = (contact) => {
             </div>
         </div>
         <header class="chat-header p-2 shadow-sm flex items-center space-x-2" ${headerStyle}>
-            <button id="chat-back-btn" onclick="closeChatOnMobile()" class="hidden"><i class="fas fa-arrow-left"></i></button>
+            <button id="chat-back-btn" onclick="closeChatOnMobile()" class="md:hidden chat-back-btn-mobile" aria-label="Volver a la lista de chats"><i class="fas fa-arrow-left"></i></button>
             <div class="flex-shrink-0 pt-0.5">${UserIcon(contact)}</div>
             <div class="flex-grow">
                 <h2 class="text-base font-semibold cursor-pointer" style="color: var(--color-text);" onclick="openContactDetails()">

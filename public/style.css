@@ -2045,3 +2045,134 @@ body.dark-mode .drag-overlay-footer { background-color: rgba(36, 40, 59, 0.9); }
 .message-bubble.sent .template-button-url:hover,
 .message-bubble.sent .template-button-phone:hover { background: rgba(255,255,255,0.28); }
 
+/* =====================================================================
+   MOBILE RESPONSIVE FIXES (auditoría 2026-05)
+   - Sidebar más compacto en pantallas chicas
+   - Modales sobre sidebar drawer (z-index)
+   - Botón back visible en chat mobile
+   - Inputs 16px (evita auto-zoom iOS)
+   - Filtros con scroll horizontal en mobile
+   ===================================================================== */
+
+/* Botón back del chat (siempre en DOM, Tailwind md:hidden lo oculta en >=768px) */
+.chat-back-btn-mobile {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text, #5D5C61);
+    font-size: 1.1rem;
+    padding: 10px 12px;
+    margin-right: 4px;
+    border-radius: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.15s ease;
+}
+.chat-back-btn-mobile:hover,
+.chat-back-btn-mobile:active {
+    background-color: rgba(0,0,0,0.05);
+}
+body.dark-mode .chat-back-btn-mobile:hover,
+body.dark-mode .chat-back-btn-mobile:active {
+    background-color: rgba(255,255,255,0.08);
+}
+
+@media (max-width: 768px) {
+    /* === Fix 1: Sidebar más compacto y nunca más ancho que el viewport === */
+    #main-sidebar {
+        width: min(80vw, 280px) !important;
+        max-width: 280px !important;
+        left: calc(-1 * min(80vw, 280px)) !important;
+    }
+    #main-sidebar.mobile-open {
+        left: 0 !important;
+    }
+
+    /* === Fix 2: Modales por encima del sidebar drawer === */
+    /* Sidebar mobile usa z-index 1000, modales 998 → modales tapadas. Subimos modales. */
+    .modal-backdrop,
+    .modal-overlay,
+    .image-modal-backdrop {
+        z-index: 1100 !important;
+    }
+    /* Backdrop del sidebar entre modal y sidebar (no se mezcla) */
+    .sidebar-overlay.active {
+        z-index: 999 !important;
+    }
+
+    /* === Fix 3: Inputs >=16px para evitar zoom automático en iOS Safari === */
+    input[type="text"],
+    input[type="tel"],
+    input[type="email"],
+    input[type="number"],
+    input[type="search"],
+    input[type="password"],
+    input[type="date"],
+    input[type="datetime-local"],
+    input[type="url"],
+    textarea,
+    select {
+        font-size: 16px !important;
+    }
+
+    /* === Fix 4: Filtros de chat con scroll horizontal cuando se desbordan === */
+    #tag-filters-container {
+        flex-wrap: nowrap !important;
+        overflow-x: auto !important;
+        overflow-y: hidden !important;
+        justify-content: flex-start !important;
+        scrollbar-width: none; /* Firefox */
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 6px !important;
+    }
+    #tag-filters-container::-webkit-scrollbar { display: none; }
+    /* Los chips dentro no deben encogerse */
+    #tag-filters-container > * {
+        flex-shrink: 0 !important;
+    }
+
+    /* === Fix 5: Mejoras varias === */
+    /* Modales de pedido / campaña no caen en padding 30 40 desktop */
+    #new-order-modal-container .modal-content,
+    #order-edit-modal-container .modal-content,
+    #campana-form-modal-container .modal-content {
+        padding: 18px !important;
+        width: 96% !important;
+        max-width: 600px !important;
+    }
+    /* Grid de plantillas en el modal de campaña: 1 columna en mobile */
+    .campana-plantilla-row {
+        grid-template-columns: 1fr !important;
+        gap: 6px !important;
+    }
+    /* Headers de columna del modal de campaña: ocultos en mobile (no aplican con grid 1fr) */
+    #campana-plantillas-container ~ * { /* placeholder, sin uso */ }
+
+    /* Botones del kanban / filas en pedidos: tap-target mínimo */
+    button:not(.chat-back-btn-mobile):not(.nav-item) {
+        min-height: 40px;
+    }
+
+    /* Botón Detectar dentro del modal de campaña: ocupar ancho */
+    .campana-plantilla-row button[onclick*="detectContactadosForRow"] {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+/* Mobile chico (<=480px): refinos extra */
+@media (max-width: 480px) {
+    /* Header logo más pequeño */
+    #app-header h1 {
+        font-size: 1.05rem !important;
+    }
+    /* User-info: solo iniciales o icono */
+    #app-header #user-info {
+        max-width: 60px !important;
+        font-size: 0.7rem !important;
+    }
+}
+
