@@ -9252,8 +9252,11 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
         }
 
         const stats = {};
+        // Mapa interno para acumular clics por (label|type) por plantilla
+        const clickedAccum = new Map(); // templateName → Map(key → {label, type, count})
         for (const n of names) {
-            stats[n] = { sent: 0, delivered: 0, read: 0, clicked: 0, costValue: 0, costCurrency: null, resolved: !!nameToId.get(n) };
+            stats[n] = { sent: 0, delivered: 0, read: 0, clicked: 0, clickedBreakdown: [], costValue: 0, costCurrency: null, resolved: !!nameToId.get(n) };
+            clickedAccum.set(n, new Map());
         }
 
         if (ids.length) {
@@ -9281,7 +9284,16 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
                 s.delivered += Number(dp.delivered || 0);
                 s.read += Number(dp.read || 0);
                 if (Array.isArray(dp.clicked)) {
-                    for (const c of dp.clicked) s.clicked += Number(c.count || 0);
+                    const acc = clickedAccum.get(name);
+                    for (const c of dp.clicked) {
+                        const count = Number(c.count || 0);
+                        s.clicked += count;
+                        const label = c.button_content || c.label || c.text || '(sin etiqueta)';
+                        const type = c.type || 'button';
+                        const key = `${label}||${type}`;
+                        if (!acc.has(key)) acc.set(key, { label, type, count: 0 });
+                        acc.get(key).count += count;
+                    }
                 }
                 if (Array.isArray(dp.cost)) {
                     for (const c of dp.cost) {
@@ -9289,6 +9301,11 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
                         if (c.currency && !s.costCurrency) s.costCurrency = c.currency;
                     }
                 }
+            }
+            // Volcar el desglose ordenado
+            for (const n of names) {
+                stats[n].clickedBreakdown = [...clickedAccum.get(n).values()]
+                    .sort((a, b) => b.count - a.count);
             }
         }
 

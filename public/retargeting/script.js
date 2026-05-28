@@ -812,6 +812,33 @@ document.addEventListener('DOMContentLoaded', () => {
         container.innerHTML = `<div class="campanas-list">` + plantillasOrdenadas.map(([nombre, tandas]) => {
             const m = metaStats?.[nombre];
             const tasaResp = m ? pct(tandas.reduce((s, b) => s + (b.replied || 0), 0), m.sent) : null;
+            const tipoLabels = {
+                quick_reply_button: 'Respuesta rápida',
+                url_button: 'URL',
+                phone_number_button: 'Teléfono',
+                copy_code_button: 'Copiar código',
+                catalog_button: 'Catálogo',
+                flow_button: 'Flow',
+                button: 'Botón'
+            };
+            const clicksHTML = (m && m.clickedBreakdown && m.clickedBreakdown.length)
+                ? `
+                <div class="meta-clicks">
+                    <div class="meta-clicks-title"><i class="fas fa-hand-pointer"></i> Clics en el botón</div>
+                    <table class="meta-clicks-table">
+                        <thead><tr><th>Etiqueta</th><th>Tipo</th><th class="num">Total</th><th class="num">% clics</th></tr></thead>
+                        <tbody>${m.clickedBreakdown.map(c => `
+                            <tr>
+                                <td>${c.label}</td>
+                                <td><span class="meta-click-tipo">${tipoLabels[c.type] || c.type}</span></td>
+                                <td class="num"><strong>${c.count}</strong></td>
+                                <td class="num">${pct(c.count, m.sent)}</td>
+                            </tr>
+                        `).join('')}</tbody>
+                    </table>
+                </div>
+            ` : '';
+
             const metaBlock = !metaStats
                 ? `<div class="meta-stats meta-stats-loading"><i class="fas fa-spinner fa-spin"></i> Cargando métricas oficiales...</div>`
                 : !m || !m.sent
@@ -825,6 +852,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="meta-stat"><div class="meta-stat-num">${m.clicked}</div><div class="meta-stat-label">Clics</div><div class="meta-stat-sub">${pct(m.clicked, m.sent)}</div></div>
                     <div class="meta-stat"><div class="meta-stat-num">${fmtMoney(m.costValue, m.costCurrency)}</div><div class="meta-stat-label">Costo</div><div class="meta-stat-sub">${m.delivered ? fmtMoney(m.costValue / m.delivered, m.costCurrency) + '/msg' : '—'}</div></div>
                 </div>
+                ${clicksHTML}
             `;
 
             const tandasHTML = tandas

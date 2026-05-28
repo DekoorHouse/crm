@@ -183,6 +183,18 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; margin-top: 3px; font-weight: 700; }
 .meta-stat-sub { font-size: 0.68rem; color: #9ca3af; margin-top: 2px; }
 
+/* Clics por botón */
+.meta-clicks { padding: 10px 14px 12px; background: white; border-bottom: 1px solid #f0f0f0; }
+.meta-clicks-title { font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.4px; }
+.meta-clicks-title i { color: #16a34a; margin-right: 5px; }
+.meta-clicks-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.meta-clicks-table th { text-align: left; padding: 6px 8px; background: #f9fafb; color: #6b7280; font-weight: 700; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.3px; border-bottom: 1px solid #e5e7eb; }
+.meta-clicks-table th.num, .meta-clicks-table td.num { text-align: right; }
+.meta-clicks-table td { padding: 6px 8px; border-bottom: 1px solid #f3f4f6; color: #374151; }
+.meta-clicks-table tr:last-child td { border-bottom: none; }
+.meta-clicks-table td strong { color: #0e7490; }
+.meta-click-tipo { font-size: 0.72rem; padding: 2px 8px; background: #f0fdf4; color: #166534; border-radius: 999px; font-weight: 600; }
+
 .tandas-list { display: flex; flex-direction: column; }
 .tanda-row { display: grid; grid-template-columns: 1fr auto auto; gap: 12px; align-items: center; padding: 8px 14px; font-size: 0.82rem; border-top: 1px solid #f0f0f0; }
 .tanda-row:first-child { border-top: none; }
@@ -195,6 +207,7 @@ button.btn-secondary:hover { background: #d1d5db; }
 @media (max-width: 700px) {
     .meta-stats { grid-template-columns: repeat(3, 1fr); }
     .tanda-row { grid-template-columns: 1fr; gap: 4px; }
+    .meta-clicks-table { font-size: 0.78rem; }
 }
 
 @media (max-width: 600px) {
