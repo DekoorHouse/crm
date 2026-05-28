@@ -198,6 +198,40 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-aviso-result-ok { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
 .meta-aviso-result-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 
+/* Calculadora de conversión */
+.calc-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+.calc-header h2 { margin-bottom: 0; }
+.calc-prefill-btn { padding: 6px 12px; font-size: 0.82rem; display: inline-flex; align-items: center; gap: 6px; }
+.calc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+.calc-input label { display: block; font-size: 0.78rem; font-weight: 700; color: #374151; margin-bottom: 6px; }
+.calc-input label i { color: #16a34a; margin-right: 4px; }
+.calc-input-wrap { position: relative; display: flex; align-items: center; }
+.calc-prefix { position: absolute; left: 10px; font-size: 0.85rem; color: #6b7280; font-weight: 600; pointer-events: none; }
+.calc-input input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 1rem; font-family: inherit; font-weight: 600; color: #111827; }
+.calc-input-wrap input { padding-left: 42px; }
+.calc-input input:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+
+.calc-outputs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+.calc-output { padding: 14px; border-radius: 10px; text-align: center; border: 1px solid #e5e7eb; background: white; }
+.calc-output-cpc { background: linear-gradient(135deg, #eff6ff, #f0f9ff); border-color: #bfdbfe; }
+.calc-output-tasa { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); border-color: #bbf7d0; }
+.calc-output-revenue { background: linear-gradient(135deg, #fef3c7, #fef9c3); border-color: #fde047; }
+.calc-output-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.5px; color: #6b7280; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 6px; margin-bottom: 6px; }
+.calc-output-label i { font-size: 0.78rem; }
+.calc-output-cpc .calc-output-label i { color: #2563eb; }
+.calc-output-tasa .calc-output-label i { color: #16a34a; }
+.calc-output-revenue .calc-output-label i { color: #d97706; }
+.calc-output-value { font-size: 1.8rem; font-weight: 700; line-height: 1.1; font-family: 'Poppins', sans-serif; color: #111827; }
+.calc-output-cpc .calc-output-value { color: #1d4ed8; }
+.calc-output-tasa .calc-output-value { color: #166534; }
+.calc-output-revenue .calc-output-value { color: #92400e; }
+.calc-output-sub { font-size: 0.74rem; color: #9ca3af; margin-top: 4px; }
+
+@media (max-width: 700px) {
+    .calc-grid { grid-template-columns: 1fr; }
+    .calc-outputs { grid-template-columns: 1fr; }
+}
+
 /* Badge de fuente de datos (Meta oficial vs tracking interno) */
 .resumen-source { margin-bottom: 8px; display: flex; justify-content: flex-end; }
 .src-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }

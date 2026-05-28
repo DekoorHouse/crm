@@ -1132,4 +1132,91 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
     }
+
+    // --- Calculadora manual de conversión ---
+    const CALC_STORAGE_KEY = 'retargeting:calc:v1';
+
+    function restaurarCalculadora() {
+        try {
+            const raw = localStorage.getItem(CALC_STORAGE_KEY);
+            if (!raw) return;
+            const saved = JSON.parse(raw);
+            if (saved.gasto != null) document.getElementById('calcGasto').value = saved.gasto;
+            if (saved.enviados != null) document.getElementById('calcEnviados').value = saved.enviados;
+            if (saved.conversiones != null) document.getElementById('calcConversiones').value = saved.conversiones;
+            recalcularConversion();
+        } catch {}
+    }
+
+    window.recalcularConversion = () => {
+        const gasto = parseFloat(document.getElementById('calcGasto').value) || 0;
+        const enviados = parseInt(document.getElementById('calcEnviados').value) || 0;
+        const conversiones = parseInt(document.getElementById('calcConversiones').value) || 0;
+
+        const fmt = (v) => `US$${Number(v).toLocaleString('es-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+        // Persistir últimos valores
+        try {
+            localStorage.setItem(CALC_STORAGE_KEY, JSON.stringify({ gasto, enviados, conversiones }));
+        } catch {}
+
+        const cpc = conversiones > 0 ? (gasto / conversiones) : null;
+        const tasa = enviados > 0 ? (conversiones / enviados * 100) : null;
+
+        const cpcEl = document.getElementById('calcCostoConversion');
+        const cpcSub = document.getElementById('calcCostoConversionSub');
+        const tasaEl = document.getElementById('calcTasaConversion');
+        const tasaSub = document.getElementById('calcTasaConversionSub');
+        const beEl = document.getElementById('calcBreakeven');
+
+        if (cpc != null) {
+            cpcEl.textContent = fmt(cpc);
+            cpcSub.textContent = `${fmt(gasto)} / ${conversiones} conv.`;
+        } else {
+            cpcEl.textContent = '—';
+            cpcSub.textContent = 'agrega gasto y conversiones';
+        }
+        if (tasa != null) {
+            tasaEl.textContent = tasa.toFixed(2).replace(/\.00$/, '') + '%';
+            tasaSub.textContent = `${conversiones} de ${enviados} enviados`;
+        } else {
+            tasaEl.textContent = '—';
+            tasaSub.textContent = 'agrega enviados y conversiones';
+        }
+        // Ingreso mínimo: lo mismo que el CPC — para no perder, cada conversión
+        // debe generar al menos el costo que costó conseguirla.
+        beEl.textContent = cpc != null ? fmt(cpc) : '—';
+    };
+
+    window.prefillCalculadora = () => {
+        // Tomamos los valores del último render del resumen global (DOM)
+        const grabValue = (selector) => {
+            const el = document.querySelector(selector);
+            if (!el) return null;
+            const txt = el.textContent.replace(/[^0-9.]/g, '');
+            return txt ? Number(txt) : null;
+        };
+        // Importe gastado: primer .resumen-kpi-cost .resumen-value
+        const gastoEl = document.querySelector('.resumen-kpi-cost .resumen-value');
+        const enviadosEls = document.querySelectorAll('.resumen-kpi .resumen-value');
+        // El KPI "Enviados" es el tercero (índice 2): cost, cpd, enviados...
+        let gasto = 0, enviados = 0;
+        if (gastoEl) {
+            const txt = gastoEl.textContent.replace(/[^0-9.,]/g, '').replace(/,/g, '');
+            gasto = parseFloat(txt) || 0;
+        }
+        if (enviadosEls.length >= 3) {
+            const txt = enviadosEls[2].textContent.replace(/[^0-9]/g, '');
+            enviados = parseInt(txt) || 0;
+        }
+        document.getElementById('calcGasto').value = gasto.toFixed(2);
+        document.getElementById('calcEnviados').value = enviados;
+        // Conversiones queda como el usuario las ponga
+        recalcularConversion();
+    };
+
+    // Restaurar valores guardados al cargar (después de auth)
+    onAuthStateChanged(auth, (user) => {
+        if (user) restaurarCalculadora();
+    });
 });

@@ -13,7 +13,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/es.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-    <link rel="stylesheet" href="/retargeting/style.css?v=16">
+    <link rel="stylesheet" href="/retargeting/style.css?v=17">
 </head>
 <body>
 
@@ -173,9 +173,54 @@
                 <div class="campanas-empty"><i class="fas fa-spinner fa-spin"></i> Cargando campa&ntilde;as...</div>
             </div>
         </div>
+
+        <!-- Calculadora manual de conversi&oacute;n -->
+        <div class="content-box">
+            <div class="calc-header">
+                <h2><i class="fas fa-calculator"></i> Calculadora de conversi&oacute;n</h2>
+                <button class="btn-secondary calc-prefill-btn" onclick="prefillCalculadora()" title="Llenar con los datos actuales del panel">
+                    <i class="fas fa-magic"></i> Usar datos del panel
+                </button>
+            </div>
+            <p class="hint">Mete el gasto, los enviados y cu&aacute;ntas conversiones tuviste. Te calcula <strong>costo por conversi&oacute;n</strong> y <strong>% de conversi&oacute;n</strong> en vivo.</p>
+            <div class="calc-grid">
+                <div class="calc-input">
+                    <label for="calcGasto"><i class="fas fa-dollar-sign"></i> Importe gastado</label>
+                    <div class="calc-input-wrap">
+                        <span class="calc-prefix">US$</span>
+                        <input type="number" id="calcGasto" step="0.01" min="0" placeholder="0.00" oninput="recalcularConversion()">
+                    </div>
+                </div>
+                <div class="calc-input">
+                    <label for="calcEnviados"><i class="fas fa-paper-plane"></i> Mensajes enviados</label>
+                    <input type="number" id="calcEnviados" step="1" min="0" placeholder="0" oninput="recalcularConversion()">
+                </div>
+                <div class="calc-input">
+                    <label for="calcConversiones"><i class="fas fa-bullseye"></i> Conversiones</label>
+                    <input type="number" id="calcConversiones" step="1" min="0" placeholder="0" oninput="recalcularConversion()">
+                </div>
+            </div>
+            <div class="calc-outputs">
+                <div class="calc-output calc-output-cpc">
+                    <div class="calc-output-label"><i class="fas fa-receipt"></i> Costo por conversi&oacute;n</div>
+                    <div class="calc-output-value" id="calcCostoConversion">—</div>
+                    <div class="calc-output-sub" id="calcCostoConversionSub">gasto / conversiones</div>
+                </div>
+                <div class="calc-output calc-output-tasa">
+                    <div class="calc-output-label"><i class="fas fa-percentage"></i> % de conversi&oacute;n</div>
+                    <div class="calc-output-value" id="calcTasaConversion">—</div>
+                    <div class="calc-output-sub" id="calcTasaConversionSub">conversiones / enviados</div>
+                </div>
+                <div class="calc-output calc-output-revenue">
+                    <div class="calc-output-label"><i class="fas fa-coins"></i> Ingreso m&iacute;nimo necesario</div>
+                    <div class="calc-output-value" id="calcBreakeven">—</div>
+                    <div class="calc-output-sub">por conversi&oacute;n para no perder</div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
-<script type="module" src="/retargeting/script.js?v=20"></script>
+<script type="module" src="/retargeting/script.js?v=21"></script>
 </body>
 </html>
