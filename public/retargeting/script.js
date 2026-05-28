@@ -843,7 +843,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (m.costCurrency && !currency) currency = m.costCurrency;
             }
             // Métricas internas (tracking propio: template_sends.status del webhook)
-            const intSent = batches.reduce((s, b) => s + (b.sent || 0), 0);
+            // "Enviados" = aceptados por Meta − fallidos − bloqueados, para coincidir
+            // con el conteo del WhatsApp Manager (que descuenta failed/blocked).
+            const intSentRaw = batches.reduce((s, b) => s + (b.sent || 0), 0);
+            const intFailed = batches.reduce((s, b) => s + (b.failed || 0), 0);
+            const intBlocked = batches.reduce((s, b) => s + (b.blocked || 0), 0);
+            const intSent = intSentRaw - intFailed - intBlocked;
             const intDelivered = batches.reduce((s, b) => s + (b.delivered || 0), 0);
             const intRead = batches.reduce((s, b) => s + (b.read || 0), 0);
             const intReplied = batches.reduce((s, b) => s + (b.replied || 0), 0);
@@ -901,7 +906,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     <div class="resumen-kpi">
                         <div class="resumen-label"><i class="fas fa-paper-plane"></i> Enviados</div>
                         <div class="resumen-value">${totalSent}</div>
-                        <div class="resumen-sub">${totalDelivered} entregados (${pct(totalDelivered, totalSent)})</div>
+                        <div class="resumen-sub">${totalDelivered} entregados (${pct(totalDelivered, totalSent)})${!usarMeta && (intFailed + intBlocked) ? ` · ${intFailed + intBlocked} fallidos/bloqueados restados` : ''}</div>
                     </div>
                     <div class="resumen-kpi">
                         <div class="resumen-label"><i class="fas fa-eye"></i> Leídos</div>
@@ -999,7 +1004,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
                 .map(b => {
                     const respondieron = b.replied || 0;
-                    const enviadosBatch = b.sent || 0;
+                    // Mismo criterio que el resumen global: descontar failed/blocked
+                    const enviadosBatch = (b.sent || 0) - (b.failed || 0) - (b.blocked || 0);
                     const meta = [
                         `<span><i class="fas fa-clock"></i>${fmtFecha(b.createdAt)}</span>`,
                         b.sentBy ? `<span><i class="fas fa-user"></i>${b.sentBy}</span>` : ''
