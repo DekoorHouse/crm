@@ -778,7 +778,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (metaDebugLast) {
             console.log('[meta-stats] debug:', metaDebugLast);
             if (metaDebugLast.sampleDataPointJson) {
-                console.log('[meta-stats] sample (json):', metaDebugLast.sampleDataPointJson);
+                console.log('[meta-stats] sample con datos (json):', metaDebugLast.sampleDataPointJson);
+            }
+            if (metaDebugLast.sampleWithCostJson) {
+                console.log('[meta-stats] sample con cost.value (json):', metaDebugLast.sampleWithCostJson);
+            } else if (metaDebugLast.totalDataPoints) {
+                console.warn('[meta-stats] NINGÚN datapoint trae cost.value — Meta no nos está devolviendo el gasto en este endpoint.');
+            }
+            if (metaDebugLast.byTemplateId) {
+                console.table(metaDebugLast.byTemplateId);
             }
         }
         return data.stats || {};

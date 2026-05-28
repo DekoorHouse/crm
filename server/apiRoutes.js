@@ -9289,11 +9289,30 @@ router.get('/template-metrics/meta-stats', async (req, res) => {
             }
             debug.totalDataPoints = dataPoints.length;
             debug.rawDataEntries = resp.data?.data?.length || 0;
+            // Sample con datos reales si existe; si no, el primero
+            const sampleWithData = dataPoints.find(d => Number(d.sent || 0) > 0) || dataPoints[0];
+            // Sample con cost.value si existe (para ver shape del cost lleno)
+            const sampleWithCost = dataPoints.find(d => Array.isArray(d.cost) && d.cost.some(c => c.value != null));
             if (dataPoints.length) {
-                debug.sampleDataPoint = dataPoints[0];
-                debug.sampleDataPointJson = JSON.stringify(dataPoints[0]);
+                debug.sampleDataPoint = sampleWithData;
+                debug.sampleDataPointJson = JSON.stringify(sampleWithData);
+                debug.sampleWithCostJson = sampleWithCost ? JSON.stringify(sampleWithCost) : null;
                 debug.sampleTemplateIds = [...new Set(dataPoints.map(d => String(d.template_id || d.templateId || '')))].slice(0, 5);
                 debug.idMapKeys = [...idToName.keys()].slice(0, 5);
+                // Distribucion por template_id
+                const byTid = new Map();
+                for (const d of dataPoints) {
+                    const tid = String(d.template_id ?? d.templateId ?? '');
+                    if (!byTid.has(tid)) byTid.set(tid, { count: 0, sumSent: 0, sumDelivered: 0, sumCostValue: 0 });
+                    const r = byTid.get(tid);
+                    r.count++;
+                    r.sumSent += Number(d.sent || 0);
+                    r.sumDelivered += Number(d.delivered || 0);
+                    if (Array.isArray(d.cost)) {
+                        for (const c of d.cost) r.sumCostValue += Number(c.value || 0);
+                    }
+                }
+                debug.byTemplateId = Object.fromEntries(byTid);
             }
             let matched = 0, unmatched = 0;
 
