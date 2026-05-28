@@ -827,32 +827,55 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // --- Resumen global (estilo Meta: Importe gastado + Costo por mensaje entregado) ---
+        // Si Meta no devuelve datos (Insights apagado o aún sin agregar), usamos
+        // nuestro tracking interno (template_sends.status) como fallback.
         let resumenHTML = '';
         if (metaStats) {
-            let totalCost = 0, totalDelivered = 0, totalSent = 0, totalRead = 0, totalClicked = 0, currency = null;
+            // Métricas Meta (oficiales)
+            let metaCost = 0, metaDelivered = 0, metaSent = 0, metaRead = 0, metaClicked = 0, currency = null;
             for (const m of Object.values(metaStats)) {
                 if (!m) continue;
-                totalCost += Number(m.costValue || 0);
-                totalDelivered += Number(m.delivered || 0);
-                totalSent += Number(m.sent || 0);
-                totalRead += Number(m.read || 0);
-                totalClicked += Number(m.clicked || 0);
+                metaCost += Number(m.costValue || 0);
+                metaDelivered += Number(m.delivered || 0);
+                metaSent += Number(m.sent || 0);
+                metaRead += Number(m.read || 0);
+                metaClicked += Number(m.clicked || 0);
                 if (m.costCurrency && !currency) currency = m.costCurrency;
             }
-            const totalRepliedAll = batches.reduce((s, b) => s + (b.replied || 0), 0);
+            // Métricas internas (tracking propio: template_sends.status del webhook)
+            const intSent = batches.reduce((s, b) => s + (b.sent || 0), 0);
+            const intDelivered = batches.reduce((s, b) => s + (b.delivered || 0), 0);
+            const intRead = batches.reduce((s, b) => s + (b.read || 0), 0);
+            const intReplied = batches.reduce((s, b) => s + (b.replied || 0), 0);
+
+            // Tarifa estimada por mensaje (Meta WhatsApp Marketing México ~ $0.0344 USD)
+            const TARIFA_DEFAULT_USD = 0.034;
+            const tarifa = Number(localStorage.getItem('retargeting:tarifa') || TARIFA_DEFAULT_USD);
+
+            // Origen de los datos: Meta si tiene sent>0, sino tracking interno
+            const usarMeta = metaSent > 0;
+            const totalSent = usarMeta ? metaSent : intSent;
+            const totalDelivered = usarMeta ? metaDelivered : intDelivered;
+            const totalRead = usarMeta ? metaRead : intRead;
+            const totalClicked = usarMeta ? metaClicked : 0;
+            const totalCost = usarMeta ? metaCost : (intDelivered * tarifa);
+            const totalRepliedAll = intReplied; // siempre del tracking propio
             const cpd = totalDelivered ? (totalCost / totalDelivered) : 0;
+            const curr = currency || 'USD';
+            const sourceLabel = usarMeta
+                ? '<span class="src-badge src-meta"><i class="fas fa-check-circle"></i> Meta oficial</span>'
+                : `<span class="src-badge src-internal" title="Tracking propio: status de los webhooks de WhatsApp + tarifa estimada">⚙️ Tracking propio · costo estimado @ ${fmtMoney(tarifa, curr)}/msg</span>`;
 
             // Aviso cuando Meta devuelve solo ceros pero hay batches enviados (= is_enabled_for_insights apagado)
-            const batchesSent = batches.reduce((s, b) => s + (b.sent || 0), 0);
-            if (totalSent === 0 && totalCost === 0 && batchesSent > 0) {
+            if (metaSent === 0 && metaCost === 0 && intSent > 0) {
                 resumenHTML += `
                     <div class="meta-aviso">
                         <div class="meta-aviso-icon"><i class="fas fa-exclamation-triangle"></i></div>
                         <div class="meta-aviso-body">
-                            <div class="meta-aviso-title">Las métricas oficiales de Meta están desactivadas</div>
+                            <div class="meta-aviso-title">Las métricas oficiales de Meta están desactivadas (o aún sin agregar)</div>
                             <div class="meta-aviso-desc">
                                 Tu cuenta de WhatsApp Business no tiene activado el flag <code>is_enabled_for_insights</code>, por eso el Manager muestra el importe gastado pero la API devuelve ceros.
-                                Actívalo con un clic; Meta empezará a registrar las métricas (puede tardar 24-48h en aparecer aquí).
+                                <strong>Mientras tanto los números de abajo se calculan con tu tracking interno</strong> (Entregados/Leídos vienen de los webhooks de WhatsApp; el costo se estima con la tarifa promedio).
                             </div>
                             <button class="meta-aviso-btn" onclick="activarMetaInsights(this)">
                                 <i class="fas fa-bolt"></i> Activar Analytics oficiales de Meta
@@ -863,15 +886,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 `;
             }
             resumenHTML += `
+                <div class="resumen-source">${sourceLabel}</div>
                 <div class="resumen-meta">
                     <div class="resumen-kpi resumen-kpi-cost">
-                        <div class="resumen-label"><i class="fas fa-dollar-sign"></i> Importe gastado</div>
-                        <div class="resumen-value">${fmtMoney(totalCost, currency)}</div>
+                        <div class="resumen-label"><i class="fas fa-dollar-sign"></i> Importe gastado ${usarMeta ? '' : '<span class="est-tag">est.</span>'}</div>
+                        <div class="resumen-value">${fmtMoney(totalCost, curr)}</div>
                         <div class="resumen-sub">en ${plantillasOrdenadas.length} plantilla${plantillasOrdenadas.length === 1 ? '' : 's'}</div>
                     </div>
                     <div class="resumen-kpi resumen-kpi-cpd">
-                        <div class="resumen-label"><i class="fas fa-receipt"></i> Costo por mensaje entregado</div>
-                        <div class="resumen-value">${fmtMoney(cpd, currency)}</div>
+                        <div class="resumen-label"><i class="fas fa-receipt"></i> Costo por mensaje entregado ${usarMeta ? '' : '<span class="est-tag">est.</span>'}</div>
+                        <div class="resumen-value">${fmtMoney(cpd, curr)}</div>
                         <div class="resumen-sub">${totalDelivered} entregados</div>
                     </div>
                     <div class="resumen-kpi">
@@ -890,9 +914,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         <div class="resumen-sub">${pct(totalRepliedAll, totalSent)} tasa resp.</div>
                     </div>
                     <div class="resumen-kpi">
-                        <div class="resumen-label"><i class="fas fa-hand-pointer"></i> Clics</div>
-                        <div class="resumen-value">${totalClicked}</div>
-                        <div class="resumen-sub">${pct(totalClicked, totalSent)} de enviados</div>
+                        <div class="resumen-label"><i class="fas fa-hand-pointer"></i> Clics ${usarMeta ? '' : '<span class="est-tag" title="Sólo Meta puede medir clics; el tracking interno no los ve">n/d</span>'}</div>
+                        <div class="resumen-value">${usarMeta ? totalClicked : '—'}</div>
+                        <div class="resumen-sub">${usarMeta ? pct(totalClicked, totalSent) + ' de enviados' : 'requiere Meta Insights'}</div>
                     </div>
                 </div>
             `;

@@ -198,6 +198,14 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-aviso-result-ok { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
 .meta-aviso-result-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
 
+/* Badge de fuente de datos (Meta oficial vs tracking interno) */
+.resumen-source { margin-bottom: 8px; display: flex; justify-content: flex-end; }
+.src-badge { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+.src-badge i { font-size: 0.78rem; }
+.src-meta { background: #dcfce7; color: #166534; }
+.src-internal { background: #fef3c7; color: #92400e; }
+.est-tag { font-size: 0.62rem; padding: 1px 6px; background: #f3f4f6; color: #6b7280; border-radius: 4px; font-weight: 600; margin-left: 4px; vertical-align: middle; }
+
 /* Resumen global Meta (costo total + KPIs globales) */
 .resumen-meta { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
 .resumen-meta-loading { padding: 14px; text-align: center; color: #6b7280; font-size: 0.85rem; background: #f9fafb; border-radius: 8px; margin-bottom: 14px; }
