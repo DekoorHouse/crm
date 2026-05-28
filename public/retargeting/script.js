@@ -841,6 +841,27 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const totalRepliedAll = batches.reduce((s, b) => s + (b.replied || 0), 0);
             const cpd = totalDelivered ? (totalCost / totalDelivered) : 0;
+
+            // Aviso cuando Meta devuelve solo ceros pero hay batches enviados (= is_enabled_for_insights apagado)
+            const batchesSent = batches.reduce((s, b) => s + (b.sent || 0), 0);
+            if (totalSent === 0 && totalCost === 0 && batchesSent > 0) {
+                resumenHTML += `
+                    <div class="meta-aviso">
+                        <div class="meta-aviso-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="meta-aviso-body">
+                            <div class="meta-aviso-title">Las métricas oficiales de Meta están desactivadas</div>
+                            <div class="meta-aviso-desc">
+                                Tu cuenta de WhatsApp Business no tiene activado el flag <code>is_enabled_for_insights</code>, por eso el Manager muestra el importe gastado pero la API devuelve ceros.
+                                Actívalo con un clic; Meta empezará a registrar las métricas (puede tardar 24-48h en aparecer aquí).
+                            </div>
+                            <button class="meta-aviso-btn" onclick="activarMetaInsights(this)">
+                                <i class="fas fa-bolt"></i> Activar Analytics oficiales de Meta
+                            </button>
+                            <div id="metaInsightsResult" class="meta-aviso-result"></div>
+                        </div>
+                    </div>
+                `;
+            }
             resumenHTML = `
                 <div class="resumen-meta">
                     <div class="resumen-kpi resumen-kpi-cost">
@@ -1023,6 +1044,32 @@ document.addEventListener('DOMContentLoaded', () => {
     function slug(s) {
         return String(s).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
     }
+
+    // Activar Analytics oficiales de Meta (is_enabled_for_insights=true en la WABA)
+    window.activarMetaInsights = async (btn) => {
+        const resultEl = document.getElementById('metaInsightsResult');
+        if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Activando...'; }
+        try {
+            const token = await auth.currentUser.getIdToken();
+            const res = await fetch('/api/template-metrics/enable-meta-insights', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) throw new Error(data.detail || data.message || 'Error');
+            if (resultEl) {
+                resultEl.className = 'meta-aviso-result meta-aviso-result-ok';
+                resultEl.innerHTML = '<i class="fas fa-check-circle"></i> ¡Activado! Meta empezará a registrar métricas desde hoy. Vuelve mañana para ver los primeros números (suele tardar 24-48h).';
+            }
+            if (btn) btn.innerHTML = '<i class="fas fa-check"></i> Activado';
+        } catch (e) {
+            if (resultEl) {
+                resultEl.className = 'meta-aviso-result meta-aviso-result-err';
+                resultEl.innerHTML = `<i class="fas fa-exclamation-circle"></i> No se pudo activar: ${e.message}. Es posible que el token no tenga el permiso whatsapp_business_management — actívalo manualmente en Business Manager → WhatsApp Manager → Configuración.`;
+            }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-bolt"></i> Reintentar'; }
+        }
+    };
 
     function renderFunnel(m, respondieron) {
         const steps = [

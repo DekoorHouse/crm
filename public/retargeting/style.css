@@ -183,6 +183,21 @@ button.btn-secondary:hover { background: #d1d5db; }
 .meta-stat-label { font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.4px; color: #6b7280; margin-top: 3px; font-weight: 700; }
 .meta-stat-sub { font-size: 0.68rem; color: #9ca3af; margin-top: 2px; }
 
+/* Aviso para activar Meta Insights */
+.meta-aviso { display: flex; gap: 14px; padding: 16px; background: linear-gradient(135deg, #fef3c7, #fef9c3); border: 1px solid #fde047; border-radius: 12px; margin-bottom: 14px; }
+.meta-aviso-icon { font-size: 1.8rem; color: #d97706; flex-shrink: 0; }
+.meta-aviso-body { flex: 1; }
+.meta-aviso-title { font-weight: 700; color: #92400e; font-size: 0.95rem; margin-bottom: 6px; font-family: 'Poppins', sans-serif; }
+.meta-aviso-desc { font-size: 0.85rem; color: #78350f; line-height: 1.45; margin-bottom: 10px; }
+.meta-aviso-desc code { background: rgba(120,53,15,0.1); padding: 1px 6px; border-radius: 4px; font-family: monospace; font-size: 0.82em; }
+.meta-aviso-btn { background: #d97706; color: white; border: none; padding: 9px 16px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.meta-aviso-btn:hover:not(:disabled) { background: #b45309; }
+.meta-aviso-btn:disabled { background: #d1d5db; cursor: not-allowed; }
+.meta-aviso-result { margin-top: 10px; font-size: 0.85rem; padding: 8px 12px; border-radius: 6px; }
+.meta-aviso-result:empty { display: none; }
+.meta-aviso-result-ok { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+.meta-aviso-result-err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
 /* Resumen global Meta (costo total + KPIs globales) */
 .resumen-meta { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; margin-bottom: 14px; }
 .resumen-meta-loading { padding: 14px; text-align: center; color: #6b7280; font-size: 0.85rem; background: #f9fafb; border-radius: 8px; margin-bottom: 14px; }

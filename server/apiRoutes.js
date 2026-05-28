@@ -9222,6 +9222,53 @@ async function getMetaTemplateIdMap() {
 const metaAnalyticsCache = new Map();
 const META_ANALYTICS_CACHE_TTL_MS = 5 * 60 * 1000;
 
+// GET /api/template-metrics/meta-insights-status
+// Verifica si la cuenta tiene activado is_enabled_for_insights (analytics oficiales de Meta).
+router.get('/template-metrics/meta-insights-status', async (req, res) => {
+    try {
+        const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+        const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+        if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+            return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+        }
+        const url = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}`;
+        const resp = await axios.get(url, {
+            params: { fields: 'is_enabled_for_insights,name,id' },
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        res.json({ success: true, enabled: !!resp.data?.is_enabled_for_insights, account: resp.data });
+    } catch (err) {
+        const detail = err.response ? JSON.stringify(err.response.data) : err.message;
+        console.error('Error en meta-insights-status:', detail);
+        res.status(500).json({ success: false, message: err.message, detail });
+    }
+});
+
+// POST /api/template-metrics/enable-meta-insights
+// Activa el flag is_enabled_for_insights en la WhatsApp Business Account.
+// Despues de activarlo, Meta empieza a poblar template_analytics (puede tardar 24-48h).
+router.post('/template-metrics/enable-meta-insights', async (req, res) => {
+    try {
+        const WHATSAPP_BUSINESS_ACCOUNT_ID = process.env.WHATSAPP_BUSINESS_ACCOUNT_ID;
+        const WHATSAPP_TOKEN = process.env.WHATSAPP_TOKEN;
+        if (!WHATSAPP_BUSINESS_ACCOUNT_ID || !WHATSAPP_TOKEN) {
+            return res.status(500).json({ success: false, message: 'Faltan credenciales de WhatsApp.' });
+        }
+        const url = `https://graph.facebook.com/v22.0/${WHATSAPP_BUSINESS_ACCOUNT_ID}`;
+        const resp = await axios.post(url, null, {
+            params: { is_enabled_for_insights: true },
+            headers: { Authorization: `Bearer ${WHATSAPP_TOKEN}` }
+        });
+        // Invalidar cache de analytics
+        metaAnalyticsCache.clear();
+        res.json({ success: true, data: resp.data });
+    } catch (err) {
+        const detail = err.response ? JSON.stringify(err.response.data) : err.message;
+        console.error('Error en enable-meta-insights:', detail);
+        res.status(500).json({ success: false, message: err.message, detail });
+    }
+});
+
 // GET /api/template-metrics/meta-stats?from=<ms>&to=<ms>&templates=name1,name2
 // Devuelve { stats: { [templateName]: { sent, delivered, read, clicked, costValue, costCurrency } } }
 router.get('/template-metrics/meta-stats', async (req, res) => {
