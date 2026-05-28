@@ -486,6 +486,10 @@ document.addEventListener('DOMContentLoaded', () => {
         fileInputContainerPromocion.style.pointerEvents = 'auto';
         fileInputContainerPromocion.style.opacity = '1';
         
+        // Reset del bloque de campaña (siempre limpio al abrir)
+        resetCampanaPedidoUI();
+        cargarPlantillasParaPedido();
+
         if (pedidoData) { // EDIT MODE
             modalTitle.innerHTML = '<i class="fas fa-edit"></i> Editar Pedido';
             btnGuardarPedido.innerHTML = '<i class="fas fa-save"></i> Guardar Cambios';
@@ -503,6 +507,17 @@ document.addEventListener('DOMContentLoaded', () => {
             pedidoComentariosInput.value = pedidoData.comentarios || '';
             pedidoDatosProductoInput.value = pedidoData.datosProducto || '';
             pedidoDatosPromocionInput.value = pedidoData.datosPromocion || '';
+
+            // Pre-llenar campaña si el pedido ya estaba etiquetado
+            if (pedidoData.campana_id) {
+                document.getElementById('pedidoVieneCampana').checked = true;
+                togglePedidoCampana();
+                // El select aún no terminó de cargar; guardamos lo que hay que seleccionar
+                window._pedidoCampanaPendienteSelect = {
+                    campanaId: pedidoData.campana_id,
+                    plantillaOrigen: pedidoData.plantilla_origen || ''
+                };
+            }
 
             const photoUrls = pedidoData.fotoUrls || (pedidoData.fotoUrl ? [pedidoData.fotoUrl] : []);
             initialOrderPhotoUrls.push(...photoUrls);
@@ -1688,6 +1703,11 @@ document.addEventListener('DOMContentLoaded', () => {
             const finalPromoPhotoUrls = await processPhotos(promoPhotosManager, initialPromoPhotoUrls, 'promociones');
             
             const cantidad = Math.max(1, parseInt(pedidoCantidadInput?.value, 10) || 1);
+            // Campaña tracking
+            const vieneCampana = document.getElementById('pedidoVieneCampana')?.checked;
+            const campanaId = vieneCampana ? (document.getElementById('pedidoCampanaSelect')?.value || '') : '';
+            const plantillaOrigen = vieneCampana ? (document.getElementById('pedidoPlantillaOrigen')?.value || '') : '';
+
             const pedidoData = {
                 producto: productoFinal,
                 telefono: telefono,
@@ -1698,7 +1718,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 datosPromocion: pedidoDatosPromocionInput.value.trim(),
                 cantidad: cantidad,
                 precio: Number(pedidoPrecioInput.value) || 0,
-                userEmail: auth.currentUser.email
+                userEmail: auth.currentUser.email,
+                campana_id: campanaId,
+                plantilla_origen: plantillaOrigen
             };
 
             if (editingPedidoId) {
@@ -2470,4 +2492,109 @@ document.addEventListener('DOMContentLoaded', () => {
             updateModalImageView();
         }
     });
+
+    // --- Tracking de campaña en el modal de pedido ---
+    let plantillasMetaCache = null;
+    let plantillasMetaCacheAt = 0;
+    const PLANTILLAS_TTL_MS = 60 * 60 * 1000; // 1h
+
+    window.togglePedidoCampana = () => {
+        const check = document.getElementById('pedidoVieneCampana');
+        const box = document.getElementById('pedidoCampanaFields');
+        if (!box) return;
+        box.style.display = check.checked ? 'block' : 'none';
+        if (!check.checked) {
+            const sel = document.getElementById('pedidoCampanaSelect');
+            const pl = document.getElementById('pedidoPlantillaOrigen');
+            if (sel) sel.value = '';
+            if (pl) pl.value = '';
+        }
+    };
+
+    window.resetCampanaPedidoUI = () => {
+        const check = document.getElementById('pedidoVieneCampana');
+        if (check) check.checked = false;
+        const box = document.getElementById('pedidoCampanaFields');
+        if (box) box.style.display = 'none';
+        window._pedidoCampanaPendienteSelect = null;
+    };
+
+    window.onPedidoCampanaChange = () => {
+        const campanaId = document.getElementById('pedidoCampanaSelect').value;
+        const plSel = document.getElementById('pedidoPlantillaOrigen');
+        if (!campanaId) {
+            plSel.innerHTML = '<option value="">Elige campaña primero</option>';
+            return;
+        }
+        // Campañas virtuales: id="tpl:<templateName>" → la plantilla origen es la misma plantilla.
+        if (campanaId.startsWith('tpl:')) {
+            const tplName = campanaId.slice(4);
+            plSel.innerHTML = `<option value="${tplName}">${tplName}</option>`;
+            plSel.value = tplName;
+            return;
+        }
+        // Campañas manuales reales: buscar en cache de campañas (si las cargamos)
+        const camp = (window._campanasManuales || []).find(c => c.id === campanaId);
+        const plantillas = camp ? Object.keys(camp.plantillas || {}) : [];
+        plSel.innerHTML = plantillas.length
+            ? '<option value="">Seleccionar plantilla...</option>' + plantillas.map(p => `<option value="${p}">${p}</option>`).join('')
+            : '<option value="">Esta campaña no tiene plantillas</option>';
+    };
+
+    window.cargarPlantillasParaPedido = async () => {
+        const sel = document.getElementById('pedidoCampanaSelect');
+        if (!sel) return;
+
+        // Cache
+        let plantillas;
+        if (plantillasMetaCache && (Date.now() - plantillasMetaCacheAt) < PLANTILLAS_TTL_MS) {
+            plantillas = plantillasMetaCache;
+        } else {
+            try {
+                const token = await auth.currentUser.getIdToken();
+                const res = await fetch('/api/whatsapp-templates', { headers: { 'Authorization': `Bearer ${token}` } });
+                const data = await res.json();
+                if (!data?.success || !Array.isArray(data.templates)) throw new Error(data?.message || 'sin templates');
+                plantillas = data.templates;
+                plantillasMetaCache = plantillas;
+                plantillasMetaCacheAt = Date.now();
+            } catch (e) {
+                console.warn('[pedidos] No se pudieron cargar plantillas:', e);
+                sel.innerHTML = '<option value="">No se pudieron cargar plantillas</option>';
+                return;
+            }
+        }
+
+        if (!plantillas.length) {
+            sel.innerHTML = '<option value="">Sin plantillas activas</option>';
+            return;
+        }
+        sel.innerHTML = '<option value="">Seleccionar campaña...</option>' +
+            plantillas.map(t => `<option value="tpl:${t.name}">📨 ${t.name}</option>`).join('');
+
+        // Si hay una selección pendiente (modo edición), aplicarla ahora
+        if (window._pedidoCampanaPendienteSelect) {
+            const { campanaId, plantillaOrigen } = window._pedidoCampanaPendienteSelect;
+            // Si la campaña ya está en el listado, seleccionarla; si no, agregar opción temporal
+            if (![...sel.options].some(o => o.value === campanaId)) {
+                const opt = document.createElement('option');
+                opt.value = campanaId;
+                opt.textContent = campanaId.startsWith('tpl:') ? `📨 ${campanaId.slice(4)}` : `(${campanaId.slice(0, 8)}…)`;
+                sel.appendChild(opt);
+            }
+            sel.value = campanaId;
+            onPedidoCampanaChange();
+            const plSel = document.getElementById('pedidoPlantillaOrigen');
+            if (plantillaOrigen && plSel) {
+                if (![...plSel.options].some(o => o.value === plantillaOrigen)) {
+                    const opt = document.createElement('option');
+                    opt.value = plantillaOrigen;
+                    opt.textContent = plantillaOrigen;
+                    plSel.appendChild(opt);
+                }
+                plSel.value = plantillaOrigen;
+            }
+            window._pedidoCampanaPendienteSelect = null;
+        }
+    };
 });

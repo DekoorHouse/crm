@@ -1446,3 +1446,17 @@ body.dark-mode #scrollToTopBtn:hover {
     0%   { transform: translate(0, 0) scale(1); opacity: 1; }
     100% { transform: translate(var(--sx), var(--sy)) scale(0); opacity: 0; }
 }
+
+/* Tracking de campaña en el modal de pedido */
+.pedido-campana-box { background: #f9fafb; border: 1px solid #e5e7eb; border-radius: 10px; padding: 12px 14px; margin-top: 8px; }
+.pedido-campana-check { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 600; color: #374151; font-size: 0.92rem; }
+.pedido-campana-check input { accent-color: #16a34a; cursor: pointer; width: 16px; height: 16px; }
+.pedido-campana-check i { color: #d97706; margin-right: 2px; }
+.pedido-campana-fields { margin-top: 12px; }
+.pedido-campana-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.pedido-campana-grid label { display: block; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.4px; font-weight: 700; color: #6b7280; margin-bottom: 4px; }
+.pedido-campana-grid select { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 0.88rem; background: white; cursor: pointer; font-family: inherit; }
+.pedido-campana-grid select:focus { outline: none; border-color: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,0.1); }
+@media (max-width: 600px) {
+    .pedido-campana-grid { grid-template-columns: 1fr; }
+}

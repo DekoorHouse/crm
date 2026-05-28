@@ -224,6 +224,30 @@
                            <label for="pedidoComentarios">Comentarios Adicionales:</label>
                            <textarea id="pedidoComentarios" placeholder="Añade cualquier otra nota relevante sobre el pedido..."></textarea>
                     </div>
+
+                    <!-- Tracking de campaña (¿de qué plantilla viene el pedido?) -->
+                    <div class="form-item form-item-full pedido-campana-box">
+                        <label class="pedido-campana-check">
+                            <input type="checkbox" id="pedidoVieneCampana" onchange="togglePedidoCampana()">
+                            <span><i class="fas fa-bullhorn"></i> ¿Viene de una campaña?</span>
+                        </label>
+                        <div id="pedidoCampanaFields" class="pedido-campana-fields" style="display:none;">
+                            <div class="pedido-campana-grid">
+                                <div>
+                                    <label for="pedidoCampanaSelect">CAMPAÑA *</label>
+                                    <select id="pedidoCampanaSelect" onchange="onPedidoCampanaChange()">
+                                        <option value="">Cargando plantillas...</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label for="pedidoPlantillaOrigen">PLANTILLA ORIGEN *</label>
+                                    <select id="pedidoPlantillaOrigen">
+                                        <option value="">Elige campaña primero</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                  </div>
                  <div id="mensajeErrorPedido"></div>
                  <div class="form-actions">
