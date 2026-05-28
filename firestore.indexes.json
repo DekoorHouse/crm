@@ -64,6 +64,14 @@
         { "fieldPath": "templateName", "order": "ASCENDING" },
         { "fieldPath": "sentAt", "order": "ASCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "template_batches",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "source", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []
